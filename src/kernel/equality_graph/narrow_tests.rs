@@ -237,12 +237,9 @@ fn check_narrow_store_equation(format: Ty) {
             !narrow_equal(&empty.equality_graph, format, &read, &stored),
             "native {format:?}, alias={aliased}: a read must not import its cached value"
         );
-        let equation = crate::kernel::memory_provenance::store_value_equation(
-            memory.memory(),
-            &pointer,
-            &value,
-        )
-        .unwrap();
+        let equation =
+            crate::kernel::memory_history::store_value_equation(memory.memory(), &pointer, &value)
+                .unwrap();
         let established = empty.clone().assume_proposition(equation.clone());
         assert!(
             narrow_equal(&established.equality_graph, format, &read, &stored),
@@ -290,7 +287,7 @@ fn check_narrow_store_equation(format: Ty) {
             &constant(format, 4)
         ));
         let updated = established.assume_proposition(
-            crate::kernel::memory_provenance::store_value_equation(
+            crate::kernel::memory_history::store_value_equation(
                 after.memory(),
                 &pointer,
                 &new_value,

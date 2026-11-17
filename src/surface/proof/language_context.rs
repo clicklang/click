@@ -229,7 +229,7 @@ pub(in crate::surface::proof) struct ExecutionProofConstants {
     pub(in crate::surface::proof) proof_site: Option<ProofSite>,
     pub(in crate::surface::proof) source_layout: SourceExecutionLayout,
     pub(in crate::surface::proof) execution_start_facts: Arc<PureFactList>,
-    /// Construction-time provenance aligned exactly with
+    /// Construction-time origins aligned exactly with
     /// `execution_start_facts`. It is presentation metadata only.
     pub(in crate::surface::proof) entry_fact_origins: Arc<Vec<EntryFactOrigin>>,
     /// Bounded proof-local index of direct caller predicate requirements.

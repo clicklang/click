@@ -627,7 +627,7 @@ impl PureFactStore {
                                 _ => None,
                             };
                             raw(a).zip(raw(b)).is_some_and(|(a, b)|
-                                crate::kernel::memory_provenance::checked_recorded_atomic_load_equality(
+                                crate::kernel::memory_history::checked_recorded_atomic_load_equality(
                                     &a, &b, self.assumptions()))
                         };
                         if !self.pure_known_available(&selected)
@@ -702,7 +702,7 @@ impl PureFactStore {
                 &self.load_equalities_mentioning(&selected),
                 self.assumptions(),
             )
-            || crate::kernel::memory_provenance::checked_stored_origin_operand_equality(
+            || crate::kernel::memory_history::checked_stored_origin_operand_equality(
                 a,
                 b,
                 self.assumptions(),
@@ -742,7 +742,7 @@ struct IntegerConditionAlphaCandidate {
     proposition: Proposition,
 }
 
-/// A bounded-comparison selector for equality rewrite provenance. Complex
+/// A bounded-comparison selector for equality rewrite derivations. Complex
 /// arithmetic operands remain on the kernel-derivation path; this index covers
 /// the atomic value/state operands that outcome arithmetic rewrites need.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -2165,7 +2165,7 @@ impl PureFactStore {
 
         // A checked Integer comparison may contain range-fold binders freshly
         // allocated by the preceding rewrite. Return the stored proposition
-        // so callers retain the source fact and its certificate provenance;
+        // so callers retain the source fact and its certificate evidence;
         // do not synthesize the requested presentation here.
         if let Some(candidate) = self.matching_integer_condition_alpha_fact(required) {
             return Some(candidate);
@@ -5022,7 +5022,7 @@ mod held_separation_tests {
         };
         Resource::Memory(
             range
-                .with_designation(Arc::new(origin.base().clone()))
+                .with_provenance(Arc::new(origin.base().clone()))
                 .with_opaque_extent(Some(Arc::new(origin.base().clone())), false)
                 .with_typed_carrier(),
         )

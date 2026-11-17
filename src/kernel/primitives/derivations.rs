@@ -717,7 +717,7 @@ impl PropositionDerivation {
 impl AtomicPropositionDerivationEvidence {
     /// Exact sources already retained by these equality producers. Other
     /// evidence families keep their selected context until they expose a
-    /// complete dependency list too; partial provenance is never sufficient.
+    /// complete dependency list too; partial dependencies are never sufficient.
     pub(in crate::kernel) fn equality_premises(&self) -> Option<BTreeSet<Proposition>> {
         let mut premises = BTreeSet::new();
         match self {

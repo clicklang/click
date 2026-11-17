@@ -54,11 +54,11 @@ an admitted complete typed cell retains its initialized bytes. Adjacent cells
 in a symbolic run remain one interval, without enumerating its elements.
 Conversely, obtaining ownership of raw storage does not give it a value.
 
-## Addresses, designation and lifetime
+## Addresses, provenance and lifetime
 
 Pointers retain allocation identity and byte offset for address lookup, plus
-the designation required for legal access. Equal numeric addresses do not
-supply another pointer's designation, authority or lifetime. Copying a pointer
+the provenance required for legal access. Equal numeric addresses do not
+supply another pointer's provenance, authority or lifetime. Copying a pointer
 preserves its value; copying an object containing a self-pointer does not
 rebase that pointer into the copy.
 
@@ -144,7 +144,7 @@ pinned standard-library model is separate from certification of the model body.
 
 Symbolic entry and actual modular calls must enforce matching native
 requirements for the selected profile. Check layout, type, constness,
-designation, initialization and lifetime separately from resource permission.
+provenance, initialization and lifetime separately from resource permission.
 A native signature or successful cell lookup cannot justify all of them.
 The completed [entry/call matrix](object-model-current-audit.md#native-interface-evidence-matrix)
 records the selected evidence; no particular archived `valid_place` or

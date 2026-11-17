@@ -191,11 +191,11 @@ fn pointer_call_address_equality_does_not_merge_result_domains() {
     let left = PointerValue::new(a.clone(), ProgramType::Int32Pointer);
     let right = PointerValue::new(b.clone(), ProgramType::Int32Pointer);
     let context = PureFactContext::new().assume_proposition(equal(&a, &b));
-    assert!(!context.pointer_designations_match(&left, &right));
+    assert!(!context.pointer_provenance_match(&left, &right));
     let complete = context.clone().assume_condition(
         ConditionTerm::pointer_value_equal(left.clone(), right.clone()),
         true,
     );
-    assert!(complete.pointer_designations_match(&left, &right));
-    assert!(!context.pointer_designations_match(&left, &right));
+    assert!(complete.pointer_provenance_match(&left, &right));
+    assert!(!context.pointer_provenance_match(&left, &right));
 }

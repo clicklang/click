@@ -44,7 +44,7 @@
 //! The earlier ownership rules can only keep a cell too. Skipping these cells
 //! changes neither the result nor the forget mark: a kept cell never sets it. Two things the ladder does
 //! besides answering are not reproduced, and each disables the skip:
-//! while implicit reasoning provenance is being captured, the ownership
+//! while implicit consulted premises are being captured, the ownership
 //! rung records the composition it used, so nothing is skipped; and once the
 //! verification deadline has passed, the ladder refuses every question, so
 //! nothing is skipped either. A deadline that passes during one store's scan
@@ -107,7 +107,7 @@ pub(in crate::kernel) fn store_gap_kept_ranges(
 ) -> Vec<(Pointer, Pointer)> {
     if bytes == 0
         || store_gap_skip_disabled()
-        || crate::kernel::assumptions::implicit_reasoning_provenance_capturing()
+        || crate::kernel::assumptions::implicit_consulted_premises_capturing()
         || crate::kernel::assumptions::reasoning_interrupted()
     {
         return Vec::new();
@@ -212,7 +212,7 @@ pub(in crate::kernel) fn anchor_is_normal(
     {
         return false;
     }
-    crate::kernel::memory_provenance::normalize_exact_memory_loads_in_pointer_offset(
+    crate::kernel::memory_history::normalize_exact_memory_loads_in_pointer_offset(
         anchor,
         assumptions,
     ) == *anchor

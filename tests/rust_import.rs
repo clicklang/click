@@ -3040,6 +3040,37 @@ fn charon_boxes_allocate_read_write_and_free_their_struct() {
     }
 }
 
+/// The return place a drop follows is a local named `result`: `read` writes
+/// it with the box's field, then frees the box, then returns it. A proof
+/// steps to that write and reads `result` before the free.
+#[test]
+fn charon_return_place_before_cleanup_is_named_result() {
+    let p = Project::from_fixture("design/charon-trial/boxes");
+    fs::write(p.root.join("borrow.click"), BOX_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    let contract = "    ensures result == old(b.value);\n}\n\nfn boxed::through";
+    assert!(BOX_SIDECAR.contains(contract));
+    let read = |claim: &str| {
+        BOX_SIDECAR.replacen(
+            contract,
+            &format!(
+                "    ensures result == old(b.value);\n}} by {{\n    step_until(assignment(result, 0));\n    step();\n    have {claim};\n    step_until(function.exit);\n}}\n\nfn boxed::through"
+            ),
+            1,
+        )
+    };
+    verify_rust_function(&read("result == old(b.value)"), &prepared, "boxed::read")
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    assert!(
+        verify_rust_function(
+            &read("result == old(b.value) + 1u32"),
+            &prepared,
+            "boxed::read"
+        )
+        .is_err()
+    );
+}
+
 const OPTION_BOX_SIDECAR: &str = include_str!("../design/charon-trial/option-boxes/options.click");
 
 // An `Option<Box<R>>` is the box's address or null: `Some` and `None` make

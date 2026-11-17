@@ -4309,7 +4309,7 @@ fn owned_members_in_different_blocks_are_separate() {
 /// must come back with no evidence.
 #[test]
 fn a_composition_separates_a_store_from_a_load_only_through_two_owners() {
-    use crate::kernel::memory_provenance::owned_composition_store_separated_evidence;
+    use crate::kernel::memory_history::owned_composition_store_separated_evidence;
 
     let value = Pointer {
         block: PointerBlock::ExternalArgument,
@@ -7740,8 +7740,8 @@ fn stated_separation_decides_pointer_forms_with_scoped_nonempty_evidence() {
         assert_eq!(branch.decide(&comparison), Some(false));
         let unequal = Proposition::ConditionIs(comparison.clone(), false);
         let equal = Proposition::ConditionIs(comparison.clone(), true);
-        let (known, premises) = crate::kernel::assumptions::collect_reasoning_provenance(|| {
-            crate::kernel::assumptions::capture_implicit_reasoning_provenance(|| {
+        let (known, premises) = crate::kernel::assumptions::collect_consulted_premises(|| {
+            crate::kernel::assumptions::capture_implicit_consulted_premises(|| {
                 branch.contains_known(&unequal)
             })
         });

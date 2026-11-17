@@ -193,7 +193,7 @@ pub(super) struct MutexLedger {
 /// Keeping fresh and concrete objects out of the ambiguous buckets avoids
 /// scanning unrelated initializations on every allocation retirement.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-enum StorageProvenance {
+enum ProvenanceKind {
     Local,
     Global,
     Fresh,
@@ -202,7 +202,7 @@ enum StorageProvenance {
     Other,
 }
 
-impl StorageProvenance {
+impl ProvenanceKind {
     fn of(block: &super::PointerBlock) -> Self {
         use super::PointerBlock;
         match block {
@@ -227,7 +227,7 @@ impl StorageProvenance {
     /// Possible aliases *outside* the queried block. Same-block footprints
     /// are visited through `by_block`, including fresh and concrete objects.
     fn cross_block_candidates(self) -> &'static [Self] {
-        use StorageProvenance::*;
+        use ProvenanceKind::*;
         match self {
             Fresh => &[Symbolic],
             Local => &[Symbolic, Other],
@@ -246,7 +246,7 @@ struct MutexLedgerStorage {
     direct_loop_selection: Arc<Vec<Pointer>>,
     by_block: PersistentMap<super::PointerBlock, PersistentMap<Pointer, u32>>,
     reserved: MutexStorageIndex,
-    by_provenance: PersistentMap<StorageProvenance, PersistentMap<Pointer, u32>>,
+    by_provenance: PersistentMap<ProvenanceKind, PersistentMap<Pointer, u32>>,
     /// Initializations whose symbolic provenance may name any automatic object.
     /// Kept separately so a scope exit never scans unrelated concrete mutexes.
     ambiguous_automatic_storage: PersistentMap<Pointer, ()>,
@@ -445,7 +445,7 @@ fn ledger_storage_write_refusal(
                 .map(|(pointer, bytes)| (pointer.clone(), *bytes))
                 .collect()
         });
-    let possible_aliases = StorageProvenance::of(block)
+    let possible_aliases = ProvenanceKind::of(block)
         .cross_block_candidates()
         .iter()
         .filter_map(|provenance| ledger.storage.by_provenance.get(provenance))
@@ -2073,7 +2073,7 @@ impl MutexLedger {
             .get(block)
             .into_iter()
             .flat_map(|entries| entries.iter());
-        let possible_aliases = StorageProvenance::of(block)
+        let possible_aliases = ProvenanceKind::of(block)
             .cross_block_candidates()
             .iter()
             .filter_map(|provenance| self.storage.by_provenance.get(provenance))
@@ -2193,7 +2193,7 @@ impl MutexLedger {
                     self.storage.reserved.clone()
                 },
                 by_provenance: if self.get(&mutex).is_none() {
-                    let provenance = StorageProvenance::of(&mutex.block);
+                    let provenance = ProvenanceKind::of(&mutex.block);
                     let entries = self
                         .storage
                         .by_provenance
@@ -2270,7 +2270,7 @@ impl MutexLedger {
                 },
                 consumed_storage: self.storage.consumed_storage.without_key(mutex),
                 by_provenance: {
-                    let provenance = StorageProvenance::of(&mutex.block);
+                    let provenance = ProvenanceKind::of(&mutex.block);
                     let entries = self
                         .storage
                         .by_provenance
@@ -3968,9 +3968,9 @@ mod tests {
             for mutex in &blocks {
                 if allocation != mutex && !allocation.proven_distinct(mutex) {
                     assert!(
-                        StorageProvenance::of(allocation)
+                        ProvenanceKind::of(allocation)
                             .cross_block_candidates()
-                            .contains(&StorageProvenance::of(mutex)),
+                            .contains(&ProvenanceKind::of(mutex)),
                         "missing possible alias: {allocation:?}, {mutex:?}"
                     );
                 }

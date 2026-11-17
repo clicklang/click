@@ -4218,7 +4218,7 @@ fn constant_query_range(p: Pointer, start: u64, end: u64, native: bool) -> Memor
 
 #[test]
 fn native_symbolic_partition_ignores_unrelated_fragments() {
-    for case in ["joined", "gap", "view", "ambiguous", "designation"] {
+    for case in ["joined", "gap", "view", "ambiguous", "provenance"] {
         let mut samples = Vec::new();
         for count in [4u64, 16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
@@ -4235,14 +4235,14 @@ fn native_symbolic_partition_ignores_unrelated_fragments() {
                 n.clone()
             };
             let suffix = range(start, c(32));
-            let second =
-                match case {
-                    "view" => ResourceFact::view_memory(suffix),
-                    "designation" => ResourceFact::own_memory(suffix.with_designation(
-                        std::sync::Arc::new(Pointer::symbolic(Variable(989_974))),
-                    )),
-                    _ => ResourceFact::own_memory(suffix),
-                };
+            let second = match case {
+                "view" => ResourceFact::view_memory(suffix),
+                "provenance" => ResourceFact::own_memory(
+                    suffix
+                        .with_provenance(std::sync::Arc::new(Pointer::symbolic(Variable(989_974)))),
+                ),
+                _ => ResourceFact::own_memory(suffix),
+            };
             let mut context = ResourceContext::new_with_equalities(&facts)
                 .unchecked_with_facts([first.clone(), second.clone()]);
             if case == "ambiguous" {

@@ -221,7 +221,7 @@ impl ProofStepSite {
     }
 }
 
-/// Private persistent surface-provenance node.
+/// Private persistent surface-lineage node.
 ///
 /// This lineage serializes already-checked operations; it does not own the
 /// semantic state or grant authority to construct a successor.

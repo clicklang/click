@@ -303,7 +303,7 @@ fn extend_related_memory_base_roots(
     ) = match &atom {
         PointerOffsetTerm::Int32Scaled { value, byte_width } => {
             (value, (false, *byte_width, false), &|member| {
-                crate::kernel::memory_provenance::rebuild_scaled_pointer_index(
+                crate::kernel::memory_history::rebuild_scaled_pointer_index(
                     member,
                     *byte_width,
                     None,
@@ -315,7 +315,7 @@ fn extend_related_memory_base_roots(
             byte_width,
             unsigned,
         } => (value, (true, *byte_width, *unsigned), &|member| {
-            crate::kernel::memory_provenance::rebuild_scaled_pointer_index(
+            crate::kernel::memory_history::rebuild_scaled_pointer_index(
                 member,
                 *byte_width,
                 Some(*unsigned),
@@ -3764,7 +3764,7 @@ impl ResourceContext {
             )
         {
             (!required.typed_carrier
-                || assumptions.access_designations_match(required.access_designation(), &available))
+                || assumptions.access_provenance_match(required.access_provenance(), &available))
                 && memory_range_covers_by_routes(&available, required, assumptions)
         } else {
             resource_fact_entails(available, required, assumptions)
@@ -3794,7 +3794,7 @@ impl ResourceContext {
     /// Reserve a constant-length owned footprint from its live byte fragments. Each
     /// step checks and consumes the actual indexed occurrence; a view, gap,
     /// stale occurrence, or unsupported coordinate proves no ownership. The
-    /// returned provenance retains every supplier rather than inventing a
+    /// returned support retains every supplier rather than inventing a
     /// single owner for the joined range. Work follows the consumed fragments,
     /// with logarithmic queries and edits, not unrelated memory in the block.
     #[cfg(test)]
@@ -3874,10 +3874,10 @@ impl ResourceContext {
             let available = candidate.memory_own_range()?;
             // A query must establish the requested carrier on every piece.
             // Narrow byte transfers instead retain their suppliers' carriers;
-            // native transfers already require matching typed designations.
+            // native transfers already require matching typed provenances.
             if (establish_requested_carrier || range.wide_bounds().is_some())
                 && range.typed_carrier
-                && !assumptions.access_designations_match(range.access_designation(), available)
+                && !assumptions.access_provenance_match(range.access_provenance(), available)
             {
                 return None;
             }
@@ -4072,7 +4072,7 @@ impl ResourceContext {
     /// A supported projection is not an independent capability. It is an
     /// observation published from one exact owned occurrence, indexed under
     /// it, and dropped when that occurrence is consumed or its memory support
-    /// is invalidated. Provenance decisions therefore use this record instead
+    /// is invalidated. Support decisions therefore use this record instead
     /// of asking whether some owner in the frame happens to satisfy the fact:
     /// an equal owner is not the owner a projection came from, and a view
     /// justified by equality alone would survive that owner's consumption.
@@ -4204,7 +4204,7 @@ impl ResourceContext {
             current = derivation.base().clone();
         }
         if !reached_before {
-            // A provenance barrier (for example an interface join) has no
+            // A history barrier (for example an interface join) has no
             // typed write set.  Only memory-qualified projections are stale;
             // the entry index bounds this conservative cleanup.
             for occurrence in self.storage.support_metadata_by_projection.keys() {
@@ -6894,7 +6894,7 @@ impl ResourceContext {
                 };
                 available.is_some_and(|available| {
                     (!required.typed_carrier
-                        || (available.designation == required.designation
+                        || (available.provenance == required.provenance
                             && (required.carrier_extent_known
                                 || available.opaque_extent == required.opaque_extent)))
                         && memory_range_structurally_covers(&available, required, None)
@@ -6915,7 +6915,7 @@ impl ResourceContext {
     pub(in crate::kernel) fn permits_designated_memory_read(
         &self,
         pointer: &Pointer,
-        designation: Option<(&Pointer, Option<&Pointer>)>,
+        provenance: Option<(&Pointer, Option<&Pointer>)>,
         byte_width: u32,
         assumptions: &PureFactContext,
     ) -> bool {
@@ -6926,10 +6926,10 @@ impl ResourceContext {
             let Some(address) = entries.address() else {
                 return false;
             };
-            if designation.is_some_and(|designation| {
+            if provenance.is_some_and(|provenance| {
                 resource
                     .memory_range()
-                    .is_none_or(|range| !assumptions.access_designations_match(designation, range))
+                    .is_none_or(|range| !assumptions.access_provenance_match(provenance, range))
             }) {
                 return false;
             }
@@ -6947,7 +6947,7 @@ impl ResourceContext {
         &self,
         pointer: &Pointer,
         operand: &Pointer,
-        designation: (&Pointer, Option<&Pointer>),
+        provenance: (&Pointer, Option<&Pointer>),
         assumptions: &PureFactContext,
     ) -> bool {
         let Some(entries) = self.read_access(pointer, 0, assumptions) else {
@@ -6959,7 +6959,7 @@ impl ResourceContext {
         let Some(range) = resource_fact_read_core_range(self.fact(entry)) else {
             return false;
         };
-        if !assumptions.access_designations_match(designation, &range) {
+        if !assumptions.access_provenance_match(provenance, &range) {
             return false;
         }
         if pointer_formation_in_range(&address, operand, &range, assumptions)
@@ -6977,7 +6977,7 @@ impl ResourceContext {
     /// required from the held byte range `p[0u64..n * 8u64]` needs `n * 8`
     /// not to wrap. The owner is the one indexed supplier coverage selects
     /// for the requirement; `None` when there is none, the widths agree, neither range is
-    /// wide, the requirement's designation does not match the owner's, or
+    /// wide, the requirement's provenance does not match the owner's, or
     /// one re-spelling has every product decided (coverage then refused for
     /// another reason). Diagnostic only: it runs after coverage has refused,
     /// with at most two re-spellings and one decision per product.
@@ -6993,7 +6993,7 @@ impl ResourceContext {
         crate::instrumentation::record_deterministic_work(1);
         let held = self.fact(entry).memory_own_range()?;
         if (required.typed_carrier
-            && !assumptions.access_designations_match(required.access_designation(), held))
+            && !assumptions.access_provenance_match(required.access_provenance(), held))
             || held.element_width() == required.element_width()
             || (held.wide_bounds().is_none() && required.wide_bounds().is_none())
         {
@@ -7032,7 +7032,7 @@ impl ResourceContext {
     pub(in crate::kernel) fn permits_designated_storage_read(
         &self,
         pointer: &Pointer,
-        designation: Option<(&Pointer, Option<&Pointer>)>,
+        provenance: Option<(&Pointer, Option<&Pointer>)>,
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> bool {
@@ -7047,7 +7047,7 @@ impl ResourceContext {
         let Some(range) = self.fact(entry).memory_range() else {
             return false;
         };
-        if designation.is_some_and(|d| !assumptions.access_designations_match(d, range)) {
+        if provenance.is_some_and(|d| !assumptions.access_provenance_match(d, range)) {
             return false;
         }
         let required = ResourceFact::view_memory(
@@ -7076,11 +7076,11 @@ impl ResourceContext {
     pub(in crate::kernel) fn owns_designated_storage_access(
         &self,
         pointer: &Pointer,
-        designation: (&Pointer, Option<&Pointer>),
+        provenance: (&Pointer, Option<&Pointer>),
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> bool {
-        self.owned_storage_access(pointer, Some(designation), bytes, assumptions)
+        self.owned_storage_access(pointer, Some(provenance), bytes, assumptions)
             .is_some()
     }
 
@@ -7099,7 +7099,7 @@ impl ResourceContext {
     fn owned_storage_access(
         &self,
         pointer: &Pointer,
-        designation: Option<(&Pointer, Option<&Pointer>)>,
+        provenance: Option<(&Pointer, Option<&Pointer>)>,
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> Option<ResourceFact> {
@@ -7111,7 +7111,7 @@ impl ResourceContext {
         }
         let address = entries.address()?;
         let range = self.fact(entry).memory_range()?;
-        if designation.is_some_and(|d| !assumptions.access_designations_match(d, range)) {
+        if provenance.is_some_and(|d| !assumptions.access_provenance_match(d, range)) {
             return None;
         }
         let aligned = ResourceFact::own_memory(
@@ -7136,7 +7136,7 @@ impl ResourceContext {
     pub(in crate::kernel) fn designated_memory_write_range(
         &self,
         pointer: &Pointer,
-        designation: Option<(&Pointer, Option<&Pointer>)>,
+        provenance: Option<(&Pointer, Option<&Pointer>)>,
         byte_width: u32,
         assumptions: &PureFactContext,
     ) -> Option<&MemoryRange> {
@@ -7145,8 +7145,7 @@ impl ResourceContext {
             crate::instrumentation::record_deterministic_work(1);
             let resource = self.fact(entry);
             let range = resource.memory_own_range()?;
-            if designation
-                .is_some_and(|origin| !assumptions.access_designations_match(origin, range))
+            if provenance.is_some_and(|origin| !assumptions.access_provenance_match(origin, range))
             {
                 return None;
             }
@@ -7428,7 +7427,7 @@ impl ResourceContext {
             };
             let piece_range = piece.memory_own_range()?;
             if range.typed_carrier
-                && !assumptions.access_designations_match(range.access_designation(), piece_range)
+                && !assumptions.access_provenance_match(range.access_provenance(), piece_range)
             {
                 return None;
             }
@@ -9070,7 +9069,7 @@ fn memory_resource_fact_entails(
 ) -> bool {
     if let (Some(available), Some(required)) = (available.memory_range(), required.memory_range())
         && required.typed_carrier
-        && !assumptions.access_designations_match(required.access_designation(), available)
+        && !assumptions.access_provenance_match(required.access_provenance(), available)
     {
         return false;
     }
@@ -9103,7 +9102,7 @@ fn consume_memory_resource_fact(
 ) -> Option<ResourceFactConsumption> {
     if let (Some(available), Some(required)) = (available.memory_range(), required.memory_range())
         && required.typed_carrier
-        && !assumptions.access_designations_match(required.access_designation(), available)
+        && !assumptions.access_provenance_match(required.access_provenance(), available)
     {
         return None;
     }
@@ -12659,13 +12658,13 @@ fn combine_memory_resource_facts(
     }
 }
 
-/// Joins two abutting ranges named through one designation.
+/// Joins two abutting ranges named through one provenance.
 fn merge_memory_ranges(
     left: &MemoryRange,
     right: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> Option<MemoryRange> {
-    if !assumptions.designations_equal(&left.designation, &right.designation)
+    if !assumptions.provenance_equal(&left.provenance, &right.provenance)
         || !match (
             left.opaque_extent.as_deref(),
             right.opaque_extent.as_deref(),

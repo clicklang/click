@@ -1,6 +1,29 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: repeated entry guard provenance"]
+fn entry_requirement_provenance_survives_repeated_extent_guards() {
+    let sources = [("entry.c", "int32 entry(int32 a[], int32 n) { return 0; }")];
+    let source = r#"
+        verifying "entry.c";
+        int32 entry(int32 a[], int32 n) {
+            requires 0 <= n and n <= 1000;
+            requires n <= 1073741823;
+            requires viewable(a[0..n]);
+            views a[0..n];
+            requires forall (k: int32) {
+                0 <= k and k < n implies -1000 <= a[k] and a[k] <= 1000
+            };
+            ensures result == 0;
+        } by { step(); known(); }
+    "#;
+    verify_c_sources(source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let bad_sources = [("entry.c", "int32 entry(int32 a[], int32 n) { return 1; }")];
+    let error = verify_c_sources(source, &bad_sources).unwrap_err();
+    assert!(error.message().contains("known"), "{}", error.report());
+}
+
+#[test]
 #[ignore = "nightly: symbolic loop frame verification, expansion and cold replay"]
 fn symbolic_loop_frame_expands_and_cold_replays() {
     let (source, sources) = mdtest_sources("mdtests/loop_symbolic_disjoint_array_store_frame.md");
@@ -1586,7 +1609,7 @@ fn assert_no_legacy_pure_arithmetic_leaves(verified: &[VerifiedPureTheorem]) {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_08")]
-fn arithmetic_using_is_input_only_and_not_serializable_provenance() {
+fn arithmetic_using_is_input_only_and_not_serializable_evidence() {
     let source = ProofCertificate::from_proof_tactics(&[ProofTactic::ArithmeticUsing(vec![])])
         .expect("the source smart request remains a valid input tactic");
     assert!(source.contains_arithmetic_using());
@@ -2697,10 +2720,7 @@ fn integer_sum_range_fold_expands_and_reverifies() {
         .collect::<Vec<_>>();
     let verified_for_expansion =
         verify_c_sources(click_source, &c_sources).unwrap_or_else(|error| {
-            panic!(
-                "summation ordinary verification failed: {}",
-                error.message()
-            )
+            panic!("summation ordinary verification failed: {}", error.report())
         });
     let expanded = expand_checked_grouped_claim(click_source, &verified_for_expansion, "sum")
         .expect("the summation grouped proof should expand");
@@ -10476,7 +10496,7 @@ fn grouped_post_execution_predicate_unfold_before_frame_stays_on_proof() {
 
     let tactics = verified[0]
         .expanded_proof_tactics()
-        .expect("the predicate unfold should retain provenance");
+        .expect("the predicate unfold should retain evidence");
     assert!(
         tactics.iter().any(|tactic| matches!(
             tactic,
@@ -10528,7 +10548,7 @@ fn quantified_contract_resource_open_stays_on_one_proof() {
 
     let tactics = verified[0]
         .expanded_proof_tactics()
-        .expect("the quantified resource scope should retain provenance");
+        .expect("the quantified resource scope should retain evidence");
     assert!(
         matches!(
             tactics.first(),
@@ -10735,7 +10755,7 @@ fn nested_composite_resource_scopes_stay_on_one_proof() {
 
     let tactics = verified[0]
         .expanded_proof_tactics()
-        .expect("the nested resource scopes should retain provenance");
+        .expect("the nested resource scopes should retain evidence");
     assert!(
         matches!(
             tactics.first(),
@@ -10956,7 +10976,7 @@ fn execution_branch_arm_resource_scope_stays_on_one_proof() {
 
     let tactics = verified[0]
         .expanded_proof_tactics()
-        .expect("the branch-arm resource scope should retain provenance");
+        .expect("the branch-arm resource scope should retain evidence");
     assert!(
         tactics.iter().any(|tactic| matches!(
             tactic,
@@ -11061,7 +11081,7 @@ fn scoped_execution_branch_arm_resource_scope_stays_on_one_proof() {
 
     let tactics = verified[0]
         .expanded_proof_tactics()
-        .expect("the nested branch-arm scope should retain provenance");
+        .expect("the nested branch-arm scope should retain evidence");
     assert!(
         matches!(
             tactics.first(),
@@ -11146,7 +11166,7 @@ fn execution_branch_arm_terminal_proof_if_stays_on_one_proof() {
 
     let tactics = verified[0]
         .expanded_proof_tactics()
-        .expect("the nested terminal proof if should retain provenance");
+        .expect("the nested terminal proof if should retain evidence");
     assert!(
         matches!(
             tactics.first(),
@@ -11190,7 +11210,7 @@ fn execution_branch_arm_terminal_proof_if_stays_on_one_proof() {
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
     });
     let selected_expansion = selected_expansion
-        .expect("the selected terminal-arm solve should expand from retained provenance");
+        .expect("the selected terminal-arm solve should expand from retained evidence");
     assert_eq!(
         selected_flat_units, 1,
         "selected expansion should retain one Proof"
@@ -13136,7 +13156,7 @@ fn outcome_predicate_unfold_relowers_resource_counts_on_the_checked_proof() {
 
 #[test]
 #[ignore = "nightly: 2.1s in the parallel gate"]
-fn outcome_predicate_unfold_provenance_survives_nested_have_expansion() {
+fn outcome_predicate_unfold_evidence_survives_nested_have_expansion() {
     let c_source = r#"
         int32 sort_three_cells(int32 p[3]) {
             int32 tmp;
@@ -21685,7 +21705,7 @@ test_batches! {
         selected_tactic_batch_removes_all_sites_in_a_dropped_arm,
         selected_tactic_batch_captures_multiple_sites_inside_one_have,
         selected_tactic_batch_retains_the_unselected_prefix_and_suffix,
-        arithmetic_using_is_input_only_and_not_serializable_provenance,
+        arithmetic_using_is_input_only_and_not_serializable_evidence,
     ],
     expansion_batch_09: [
         source_backed_call_requirement_expands_and_reverifies,

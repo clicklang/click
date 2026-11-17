@@ -9580,7 +9580,7 @@ impl AnnotationLowerer<'_> {
             } = target.as_ref()
         {
             // Evaluate only the base through the selected specification state.
-            // Retain the C place steps for designation, extent and qualification.
+            // Retain the C place steps for provenance, extent and qualification.
             let mut base = pointer.as_ref();
             let mut steps = Vec::new();
             loop {

@@ -25,7 +25,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 
-use super::provenance::CSourceMap;
+use super::source_map::CSourceMap;
 use crate::source::SourcePosition;
 
 /// The import option that selects this projection.

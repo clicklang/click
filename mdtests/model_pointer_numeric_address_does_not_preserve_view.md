@@ -1,7 +1,7 @@
 # A numeric packed address does not preserve the full pointer value
 
 Matching the model recovers object-type evidence, but numeric address
-equality does not recover the saved pointer's designation and bounds.
+equality does not recover the saved pointer's provenance and bounds.
 The full-pointer relation in the positive control is deliberately absent.
 
 ```c filename=packed_model.c

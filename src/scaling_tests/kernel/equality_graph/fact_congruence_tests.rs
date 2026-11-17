@@ -305,7 +305,7 @@ fn later_pointer_read_definition_work(count: u32, unrelated: u64) -> usize {
         intern_memory(Memory::new().store(other.clone(), ProgramValue::UInt32(0u32.into())));
     let name = |memory: &SharedMemory, cell: &Pointer| {
         Pointer::loaded_value(
-            &crate::kernel::memory_provenance::canonical_value_load_memory(memory, cell, 8),
+            &crate::kernel::memory_history::canonical_value_load_memory(memory, cell, 8),
             cell,
         )
     };
@@ -422,7 +422,7 @@ fn pointer_domain_queries_scale_with_selected_read_definitions() {
                     ProgramValue::typed_pointer(previous.clone(), ProgramType::Int32Pointer),
                 );
                 let read = Pointer::loaded_value(&intern_memory_ref(&memory), &slot);
-                assert!(graph.designations_equal(&read, &target));
+                assert!(graph.provenance_equal(&read, &target));
                 assert!(graph.opaque_extent_is_root(&read));
                 if previous != target {
                     assert!(graph.opaque_extents_equal(&read, &previous));

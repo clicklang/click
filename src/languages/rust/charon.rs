@@ -3519,6 +3519,7 @@ pub(super) fn decode_crate(
         let mut local_names = BTreeSet::new();
         let mut occurrences = BTreeMap::<&str, usize>::new();
         let mut reserved = BTreeSet::new();
+        let mut return_place = String::from("result");
         // The locals the source does not name, apart from the return slot.
         let mut temporaries = BTreeSet::new();
         for local in &body.locals.locals {
@@ -3545,6 +3546,16 @@ pub(super) fn decode_crate(
                 && local.index.index() != 0
             {
                 name.clone()
+            } else if local.index.index() == 0 {
+                // The return place holds the value the function returns,
+                // which contracts call `result`; a source local of that name
+                // keeps it, and the return place takes the next free spelling.
+                let mut name = String::from("result");
+                while !reserved.insert(name.clone()) {
+                    name.push('_');
+                }
+                return_place = name.clone();
+                name
             } else {
                 // rustc gives every nested `for` temporary the name `iter`.
                 // Preserve unique source names; ambiguous/unnamed locals use
@@ -3756,7 +3767,7 @@ pub(super) fn decode_crate(
         temporaries::call_steps(&mut locals, &mut blocks, &temporaries);
         temporaries::collapse_iterator_moves(&mut locals, &mut blocks, &temporaries);
         temporaries::bind_range_payloads(&mut locals, &mut blocks, &temporaries);
-        temporaries::return_values(&mut locals, &mut blocks);
+        temporaries::return_values(&mut locals, &mut blocks, &return_place);
         functions.push(out::Function {
             sites: source_statements
                 .iter()
@@ -3771,7 +3782,11 @@ pub(super) fn decode_crate(
             })?,
             parameters,
             body: vec![],
-            mir: Some(out::MirBody { locals, blocks }),
+            mir: Some(out::MirBody {
+                locals,
+                blocks,
+                return_place,
+            }),
             external: false,
             captures: captures.as_ref().map_or(0, Vec::len),
             implements: adapter.trait_impl_methods.get(id).cloned(),
@@ -4860,7 +4875,9 @@ mod tests {
             let a::Body::Unstructured(body) = &mut function.body else { return None; };
             Some(body)
         }).unwrap();
-        body.locals.locals[a::LocalId::from_usize(1)].name = Some("__rust_mir_0".into());
+        // A source local named `result` keeps that name; the return place
+        // takes the next free spelling.
+        body.locals.locals[a::LocalId::from_usize(1)].name = Some("result".into());
         body.locals.locals[a::LocalId::from_usize(7)].name = Some("__rust_mir_8".into());
         let export = decode(
             &serde_json::to_vec(&artifact).unwrap(),
@@ -4883,7 +4900,8 @@ mod tests {
             names.iter().copied().collect::<BTreeSet<_>>().len(),
             names.len()
         );
-        assert!(names.iter().any(|n| n.as_str() == "__rust_mir_0_"));
+        assert!(names.iter().any(|n| n.as_str() == "result"));
+        assert_eq!(function.mir.as_ref().unwrap().return_place, "result_");
         assert!(names.iter().any(|n| n.as_str() == "__rust_mir_8_"));
     }
 

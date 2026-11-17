@@ -378,9 +378,11 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     program_return(program_void_value())
                 } else {
                     if let Type::Record { name } = &f.return_type {
-                        check("__rust_mir_0", name)?;
+                        check(&mir.return_place, name)?;
                     }
-                    program_return(crate::kernel::program_expression::variable("__rust_mir_0"))
+                    program_return(crate::kernel::program_expression::variable(
+                        &mir.return_place,
+                    ))
                 }
             }
             // The value MIR wrote to its return place, returned as written.
@@ -1544,6 +1546,7 @@ mod tests {
             core_method: None,
             span: span.clone(),
             mir: Some(MirBody {
+                return_place: "__rust_mir_0".into(),
                 locals: vec![Place {
                     name: "value".into(),
                     value_type: Type::Record {
@@ -1633,6 +1636,7 @@ mod tests {
                 terminator: T::Return,
             });
             let mir = MirBody {
+                return_place: "__rust_mir_0".into(),
                 locals: vec![],
                 blocks,
             };

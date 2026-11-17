@@ -12,6 +12,8 @@ mod owned_parameter_regressions;
 mod ranges;
 #[cfg(test)]
 mod record_pointer_fields_tests;
+#[cfg(test)]
+mod return_call_tests;
 mod shared_arrays;
 use crate::kernel::*;
 use crate::languages::c::syntax::LongRank;
@@ -770,10 +772,10 @@ fn lower_function(
     let (body, region_sites) = match &f.mir {
         Some(mir) if f.body.is_empty() => {
             let lowered = moves::lower(&mut cx, f, mir)?;
-            (lowered.statement, lowered.sites)
+            (lowered.statement, Some(lowered.sites))
         }
         Some(_) => return Err("Rust function must select exactly one body representation".into()),
-        None => (cx.body(&f.body)?, Vec::new()),
+        None => (cx.body(&f.body)?, None),
     };
     let loop_iterators = std::mem::take(&mut cx.loop_iterators);
     let mut kernel = program_function(
@@ -803,11 +805,15 @@ fn lower_function(
         .with_prelowered_kernel_function(kernel)
         .with_closure_captures(f.captures)
         .with_trait_interface(f.implements.clone())
-        .with_loop_iterators(loop_iterators)
-        .with_source_sites(crate::languages::interface::SourceSites {
+        .with_loop_iterators(loop_iterators);
+    // Only MIR lowering supplies a map from kernel regions to source sites.
+    // A structured body must not claim to supply an empty map for its regions.
+    if let Some(regions) = region_sites {
+        lowered = lowered.with_source_sites(crate::languages::interface::SourceSites {
             paths: f.sites.clone(),
-            regions: region_sites,
+            regions,
         });
+    }
     if let Some((name, layout)) = return_layout {
         lowered = lowered.with_struct_return(name.clone(), layout.clone());
     }
@@ -1116,21 +1122,11 @@ impl Context<'_> {
                         arguments,
                     }),
             } => {
-                let mut name = "__rust_return_value".to_string();
-                while self.locals.contains(&name) {
-                    name.push('_');
-                }
-                self.locals.insert(name.clone());
                 let (checks, arguments) = self.prepared_arguments(function, arguments)?;
+                let (call, value) = self.call_value(function, arguments);
                 Ok(program_seq(
                     checks,
-                    program_seq(
-                        program_declare(&name, self.return_type.to_kernel_type()),
-                        program_seq(
-                            self.call_then_assign(&name, function, arguments),
-                            program_return(crate::kernel::program_expression::variable(name)),
-                        ),
-                    ),
+                    program_seq(call, program_return(value)),
                 ))
             }
             S::Return { value: Some(value) } => {

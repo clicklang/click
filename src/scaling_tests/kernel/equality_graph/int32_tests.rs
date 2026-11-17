@@ -152,7 +152,7 @@ fn direct_composite_int32_argument_graph_queries_scale_without_fact_index() {
         PureFactContext::reset_bitvector_equality_index_fact_visits();
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 1..=size {
-                assert!(crate::kernel::memory_provenance::resources_directly_match(
+                assert!(crate::kernel::memory_history::resources_directly_match(
                     &left,
                     &resource(var(index)),
                     &context,
@@ -195,7 +195,7 @@ fn resource_instance_int32_argument_graph_queries_scale_without_fact_index() {
         PureFactContext::reset_bitvector_equality_index_fact_visits();
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 1..=size {
-                assert!(crate::kernel::memory_provenance::resources_directly_match(
+                assert!(crate::kernel::memory_history::resources_directly_match(
                     &left,
                     &instance(var(index)),
                     &context,

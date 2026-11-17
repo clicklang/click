@@ -314,7 +314,7 @@ fn same_block_pointer_offset_rewrite_does_not_search_recorded_states() {
 }
 
 #[test]
-fn both_and_scopes_are_isolated_check_provenance_and_scale() {
+fn both_and_scopes_are_isolated_check_lineage_and_scale() {
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);

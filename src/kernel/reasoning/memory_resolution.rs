@@ -213,7 +213,7 @@ pub(in crate::kernel) fn load_definition_generation() -> u64 {
 }
 
 /// Records the exact source used when load canonicalization constructs a
-/// pointer-observable projection. This is provenance, not a cache: checked
+/// pointer-observable projection. This is a derivation record, not a cache: checked
 /// evidence later names this exact edge and validates it by identity, without
 /// rescanning either state. A canonical projection can be interned from
 /// multiple equivalent sources, so all exact triples remain valid while the
@@ -1205,7 +1205,7 @@ fn pointers_proven_equal_for_memory_resolution_unmemoized(
 /// `pointer` spelled as an address in `block`, when the two name one
 /// coordinate: the same block, an affine equality class the graph maintains,
 /// or two reads of one cell whose states agree on its bytes. This answers
-/// where an address is; it grants no access, which the caller's designation
+/// where an address is; it grants no access, which the caller's provenance
 /// check still decides.
 pub(in crate::kernel) fn pointer_in_block_for_memory_resolution(
     pointer: &Pointer,
@@ -1230,12 +1230,12 @@ pub(in crate::kernel) fn pointer_in_block_for_memory_resolution(
     // As for a retained read's stored value (`pointer_read_stored_value`),
     // the comparison may cross cache-forgetting edges: they discard
     // knowledge but write no program bytes. A projected read is compared
-    // from its source state, as its designation is.
+    // from its source state, as its provenance is.
     (pointers_proven_equal_for_memory_resolution(
         &read.defining_address,
         &target.defining_address,
         assumptions,
-    ) && crate::kernel::memory_provenance::pointer_reads_see_one_cell_source(
+    ) && crate::kernel::memory_history::pointer_reads_see_one_cell_source(
         &read,
         &target,
         assumptions,
@@ -2239,7 +2239,7 @@ fn bitvector_terms_equal_for_memory_resolution_unmemoized(
         return false;
     };
     // A load variable is its load for equality reasoning: view it
-    // through the registry so state provenance fires exactly as it would
+    // through the registry so memory-history reasoning fires exactly as it would
     // for the load term, then fall through to the variable-form
     // paths if the load view does not decide.
     let canonical_view = |term: &MachineTerm| {
@@ -2556,7 +2556,7 @@ pub(in crate::kernel) fn program_values_proven_equal_for_memory_resolution(
             bitvector_terms_proven_equal_for_memory_resolution(left, right, assumptions)
         }
         (ProgramValue::Pointer(left), ProgramValue::Pointer(right)) => {
-            assumptions.pointer_designations_match(left, right)
+            assumptions.pointer_provenance_match(left, right)
                 && pointers_proven_equal_for_memory_resolution(
                     left.pointer(),
                     right.pointer(),
@@ -4450,7 +4450,7 @@ fn run_has_direct_store_separation(
         contains_access(&run_pointer, run_bytes, range) && contains_access(pointer, bytes, access)
     };
     if fits(left, right) || fits(right, left) {
-        crate::kernel::record_implicit_reasoning_provenance(assumptions, fact);
+        crate::kernel::record_implicit_consulted_premises(assumptions, fact);
         true
     } else {
         false

@@ -97,7 +97,7 @@ Kernel files:
   closing rules are named `ProofObject` operations that return opaque checked
   successors. Proposition case splits and closed-arm joins likewise allocate
   and validate their branch identities inside `ProofObject`; the language
-  retains only arm provenance and diagnostics. Logical execution-frontier
+  retains only arm evidence and diagnostics. Logical execution-frontier
   cases reuse that split while sharing the unchanged checked execution core;
   proof-level execution `if` accepts only opaque per-arm presentation and
   clones semantic execution state inside the kernel. Presentation-only
@@ -1445,7 +1445,11 @@ from nowhere else, as C's `return value` does:
 `_0` is then not a local. It stays one when it is written on several paths
 that join before the return, when cleanup such as a drop runs between the
 write and the return, or when it holds a struct, a generic value or a heap
-value.
+value. A kept `_0` is named `result`, the name contracts give the returned
+value, or the next free spelling (`result_`) when a source local has that name;
+`MirBody::return_place` records the name for the lowering. The C++ importer
+names its capture of a return value that destructors follow the same way,
+with a numeric suffix on a collision.
 
 These still stay a temporary:
 
@@ -1680,7 +1684,7 @@ layout leaves a scope. The layout indexes normal and abrupt exits once; each
 exit visits only the declarations it retires. The event retains the exact
 before and after states; branch validation and return certification check the
 retirement. This includes a `for` initializer's scope. The saved loop-exit
-state still names its final index for proof provenance; the subsequent
+state still names its final index for proof lineage; the subsequent
 execution state has retired its storage.
 
 A loop owns one test region and an optional shared update. A plain test region
@@ -1707,7 +1711,7 @@ Specification addresses such as `&p->field` lower to
 saved-state pointer read stays in the selected memory. Typed, outside-in
 `SpecAddressStep` projections retain C byte offsets and subobject selection;
 the evaluated base feeds the ordinary C address operation, preserving its
-member designation, extent, qualifiers, and checked-address obligations.
+member provenance, extent, qualifiers, and checked-address obligations.
 Evaluation introduces no execution local or lexical binder. The Surface form
 remains the original address expression, including `old(...)`/`at(...)` state
 selectors; no generated operand name or replacement syntax is required.
@@ -2027,6 +2031,14 @@ function-entry memory and entry scalar values, then elaborates `expr`
 normally. The surface evaluates no expression itself: every C fragment,
 wherever it is stated, is elaborated this way and evaluated by the kernel.
 
+Declared resource arguments with `ResourceStateSource::Entry` use the
+entry state unless the evaluation frame carries the same actual program-point
+ID (or is the entry state object itself). Such a frame may add the folded
+clauses' read authority at entry. Equal memory snapshots at distinct points
+do not select the entry frame; two missing point IDs do not identify states.
+`functions::resource_argument_point_tests` covers these distinctions. This
+selection does not use `ProgramPoint`'s legacy snapshot-based equality.
+
 Memory access obligations carry the operation byte width. Do not infer load or
 store width only from pointer syntax; the operation type is what determines
 whether an access needs one byte or four bytes.
@@ -2088,17 +2100,28 @@ carriers. Scalar algebraic fields and read addresses keep selected compatibility
 descriptors; memory keys and exact refresh remain separate consumers.
 Projection memos belong to one verification, with iterative construction,
 comparison and disposal for shared or deep algebraic structure.
-Pointer keys preserve the native address/designation/type/volatility/extent
+Pointer keys preserve the native address/provenance/type/volatility/extent
 identity tuple. Offset DAGs use shared child keys and the existing native offset
 index handles, with iterative construction/comparison/disposal and per-session
 memos. Subobject widths retain their selected native structural descriptor;
 key operations do not request the enclosing native pointer value.
 
-`StoredMemoryValue` preserves native `ProgramValue` structural equality, order,
-and hash stream. Replacing it with a local observation key would change the
-contract. Exact outcome refresh uses `same_native_value`, separately from local
-storage equality. Certification syntax and fact observations have their own
-admission rules; neither inherits a storage key's equivalences.
+`StoredMemoryValue` preserves native `ProgramValue` structural equality and
+ordering. Boolean, float, algebraic and pointer cells cache the same structural
+family projections across immutable cell clones; hashes consume their cached
+fingerprints without exporting an enclosing native value. Native/shared equal
+cells hash equally, but matching the raw `ProgramValue` hash bytes is no longer
+a contract for these families. Numeric cells retain their native carrier and
+structural key/hash; local machine observation equivalence is not used for
+memory cells. Selected scalar compatibility adapters inside family projections
+remain explicit boundaries.
+
+Memory maps still maintain their content hashes incrementally; snapshot
+interning and collision checks are unchanged. Content hashes and the state
+ordering that uses them can change when cell hash encoding changes. Exact
+outcome refresh uses `same_native_value`, separately from local storage equality.
+Certification syntax and fact observations have their own admission rules;
+neither inherits a storage key's equivalences.
 
 Regression evidence: `execution_value::storage_contract_tests` checks pairwise
 mixed-carrier order/hash classes and float call-argument distinctions. Existing

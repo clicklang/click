@@ -89,7 +89,7 @@ coordinator must choose and document the exact configuration discovery and CLI
 interface after inspecting the existing project loader; workers must not
 independently invent competing interfaces.
 
-This does require making validated build identity and source provenance
+This does require making validated build identity and source origin
 explicit frontend inputs and carrying import identity into verification-result
 and incremental-reuse boundaries. Additional C syntax or execution rules may
 be necessary for actual expansions; those are separate, justified semantic
@@ -281,9 +281,9 @@ original columns inside a macro expansion. Report that limitation honestly;
 do not manufacture precision. Reject or model residual semantic directives
 such as packing pragmas rather than deleting all lines beginning with `#`.
 
-Use an indexed source map shared by the prepared artifact. Preserve provenance
+Use an indexed source map shared by the prepared artifact. Preserve source origins
 through tokens, AST nodes, lowering, and the diagnostic paths used by verify,
-profile, audit, and expansion. Keep provenance separate from translation-unit
+profile, audit, and expansion. Keep source origins separate from translation-unit
 identity so a static inline function in one header can have different local
 instances in different translation units without duplicate linkage names.
 
@@ -352,7 +352,7 @@ and a compact record of active worker branches and outstanding assignments.
 
 Use the following dependency order, refining ownership after Stage 0. The
 interface names are descriptive, not required Rust type names. Prefer a shared
-immutable prepared-import representation carrying expanded text, provenance,
+immutable prepared-import representation carrying expanded text, source map,
 dependencies, target, and validated identity. It should be constructed only
 through validation paths; raw caller-supplied text plus a digest must not gain
 validated-import status. Keep filesystem/compiler orchestration separate from
@@ -362,7 +362,7 @@ pure parsing/checking so library users and fixture gates can share the engine.
 | --- | --- | --- |
 | 0. Capture and design | Astra; bounded Luna assistance | Actual pinned output inventory, settled import contract, task boundaries, and fixture/bootstrap plan |
 | 1. Manifest and compiler adapter | Luna after checkpoint A | Lock creation and validation, controlled compiler invocation, mismatch diagnostics, bounded failure behavior |
-| 2. Provenance | Luna after the shared artifact interface is fixed | Line-marker decoding, indexed mapping, propagation to C and proof diagnostics, linkage-preserving regressions |
+| 2. Source map | Luna after the shared artifact interface is fixed | Line-marker decoding, indexed mapping, propagation to C and proof diagnostics, linkage-preserving regressions |
 | 3. Required C forms/projection | Narrow Luna assignments after inventory; Astra semantic review | Modeled constructs or justified checked omissions with positive and negative tests |
 | 4. Project and reuse integration | One Luna integration owner after interfaces stabilize | One shared prepared-import route for verification tools, target/result identity, safe incremental invalidation |
 | 5. Pinned regression and scale | Luna after packages 1-4; fixture preparation can start earlier | Real rbtree import/lowering gate, focused proof coverage, deterministic scaling, documented reproducible setup |
@@ -384,7 +384,7 @@ complete pinned Linux translation unit imports successfully.
 Packages are dependency groups, not single worker-sized assignments. Split
 package 1 into manifest validation, bounded compiler process ownership, and
 toolchain/input reproduction changes with explicit intermediate contracts.
-Split package 2 into line-marker indexing and downstream provenance propagation.
+Split package 2 into line-marker indexing and downstream source-origin propagation.
 Each slice must be reviewable and green independently; keep incomplete wiring
 in the task worktree until its tests establish coherent behavior.
 
@@ -479,7 +479,7 @@ regression establishes coverage of the real source boundary.
 
 Make fixture provisioning reproducible on the receiving machine and in CI.
 Choose checked-in unmodified dependencies or a content-pinned prepared fixture
-bundle/toolchain with documented bootstrap and provenance/license information.
+bundle/toolchain with documented bootstrap and origin/license information.
 Record that decision after Stage 0. Keep downloads out of `scripts/check.sh`;
 bootstrap prepares required inputs separately. The gate must actually exercise
 the pinned regression and clearly fail on missing prerequisites, never silently
@@ -592,7 +592,7 @@ qualifies as harmless metadata.
 
 The capture was reproduced on a second machine from the release archive. The
 input closure is checked in at `integrations/linux-rbtree/` with its
-provenance, and two library tests gate it
+manifest, and two library tests gate it
 (`src/languages/c/linux_rbtree_tests.rs`). Preprocessing the extracted closure
 alone yields the recorded 637,604 bytes and SHA-256. Three corrections to the
 Stage 0 record:

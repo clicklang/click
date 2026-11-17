@@ -37,7 +37,7 @@ and `<sys/types.h>`. The lock records
 the driver, compiler resources, ABI probe, exact options, source closure, and
 prepared bytes. Ordinary verification loads the prepared input offline and
 checks original local inputs; it does not run or attest the compiler. The
-producer's absolute paths in the lock and line directives are provenance,
+producer's absolute paths in the lock and line directives are origin records,
 not a requirement to check out this fixture at that path.
 
 From the repository root:

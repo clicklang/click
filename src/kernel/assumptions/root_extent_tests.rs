@@ -25,13 +25,13 @@ fn a_full_pointer_equality_connects_a_read_extent_to_owned_root_storage() {
         ConditionTerm::pointer_equal(read.pointer().clone(), base),
         true,
     );
-    assert!(!before.access_designations_match(read.access_designation(), &held));
+    assert!(!before.access_provenance_match(read.access_provenance(), &held));
     let after = before.clone().assume_condition(
         ConditionTerm::pointer_value_equal(read.clone(), stored),
         true,
     );
-    assert!(after.access_designations_match(read.access_designation(), &held));
-    assert!(!before.access_designations_match(read.access_designation(), &held));
+    assert!(after.access_provenance_match(read.access_provenance(), &held));
+    assert!(!before.access_provenance_match(read.access_provenance(), &held));
     let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(held));
     resources.synchronize_memory_equalities(&after);
     let required = ResourceFact::own_memory(
@@ -65,13 +65,13 @@ fn a_known_subobject_extent_does_not_grant_root_storage_access() {
         true,
     );
     let held = MemoryRange::new(base, 0u32.into(), 8u32.into());
-    assert!(facts.designations_equal(read.designation(), &held.designation));
+    assert!(facts.provenance_equal(read.provenance(), &held.provenance));
     assert!(
         !facts
             .equality_graph
             .opaque_extent_is_root(read.opaque_extent().unwrap())
     );
-    assert!(!facts.access_designations_match(read.access_designation(), &held));
+    assert!(!facts.access_provenance_match(read.access_provenance(), &held));
 }
 
 #[cfg(test)]

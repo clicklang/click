@@ -424,7 +424,7 @@ or consumption route.
 
 The retained summary rule now also binds literal/parameter footprints of
 one-level composite children to consumed input clauses. Unguarded parameter-only borrowed
-children keep entry provenance; conversions, loads, and unmatched footprints
+children keep entry origin; conversions, loads, and unmatched footprints
 retain their boundary checks. Composite scaling grows selected body parts as
 well as retained same-block owners and both alias shapes at 4/16/64.
 Iterated `take`/`scatter` now construct their exposed ownership from the checked
@@ -465,7 +465,7 @@ The pointee-store route generates a separation obligation without alias
 search. The source write regression is flat at 179 charged units with one loan
 and 4/16/64 aliases (110 without a loan); these measurements cover this route,
 not the remaining callers below. Explicit source proofs retain typed subobject
-extent and designation. The `contains_element` law supports signed 32-bit and
+extent and provenance. The `contains_element` law supports signed 32-bit and
 unsigned 64-bit interval bounds without wrapping the selected upper endpoint.
 Exact pointer argument spellings use an entry-built index; enclosing recorded
 requirement clauses use the existing conjunct index. Keep the position-drift,

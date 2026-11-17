@@ -124,7 +124,7 @@ pub(super) fn execute(
             if bytes != 0
                 && !state.resources().owns_designated_storage_access(
                     target,
-                    target_pointer.access_designation(),
+                    target_pointer.access_provenance(),
                     bytes,
                     &selected,
                 )
@@ -172,7 +172,7 @@ pub(super) fn execute(
                 if !crate::kernel::api::with_extended_dag_bridging(|| {
                     state.resources().permits_designated_storage_read(
                         source.pointer(),
-                        Some(source.access_designation()),
+                        Some(source.access_provenance()),
                         bytes,
                         &selected,
                     )

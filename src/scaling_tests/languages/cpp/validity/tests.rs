@@ -17,7 +17,7 @@ fn metadata_work_scales_with_nodes_and_aliases_without_outer_environments() {
         assert_eq!(work, 4 + 16 * size);
     }
     // Type wrappers and aliases are structural; widths and pointee support
-    // are left to the semantic validator. Alias provenance still matters.
+    // are left to the semantic validator. Alias origin still matters.
     let mut value_type = ty();
     value_type["source_aliases"][0]["span"]["file"] = json!("types.hpp");
     let value_type: CppType = serde_json::from_value(

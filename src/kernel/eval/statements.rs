@@ -571,7 +571,7 @@ fn write_program_lvalue_paths_for_initialization(
         }
     };
 
-    let lvalue_access_designation = lvalue.designation.as_deref().map(|root| {
+    let lvalue_access_provenance = lvalue.provenance.as_deref().map(|root| {
         (
             root,
             if lvalue.extent_known {
@@ -629,15 +629,15 @@ fn write_program_lvalue_paths_for_initialization(
                 )]);
             }
             if let Some(pointer) = state.locals.slot(&name)
-                && lvalue.designation.as_deref().is_some_and(|origin| {
-                    !effective_assumptions.designations_equal(origin, &pointer.object_identity())
+                && lvalue.provenance.as_deref().is_some_and(|origin| {
+                    !effective_assumptions.provenance_equal(origin, &pointer.object_identity())
                         || !lvalue.extent_known && lvalue.opaque_extent.is_some()
                 })
                 && state
                     .resources()
                     .designated_memory_write_range(
                         pointer,
-                        lvalue_access_designation,
+                        lvalue_access_provenance,
                         value.program_type().byte_width(),
                         &effective_assumptions,
                     )
@@ -786,15 +786,15 @@ fn write_program_lvalue_paths_for_initialization(
                 )]);
             }
             let is_external = is_external_memory_pointer(&pointer)
-                || lvalue.designation.as_deref().is_some_and(|origin| {
-                    !effective_assumptions.designations_equal(origin, &pointer.object_identity())
+                || lvalue.provenance.as_deref().is_some_and(|origin| {
+                    !effective_assumptions.provenance_equal(origin, &pointer.object_identity())
                         || !lvalue.extent_known && lvalue.opaque_extent.is_some()
                 });
             let authorized_range = is_external
                 .then(|| {
                     state.resources().designated_memory_write_range(
                         &pointer,
-                        lvalue_access_designation,
+                        lvalue_access_provenance,
                         value.byte_width(),
                         &effective_assumptions,
                     )
@@ -857,8 +857,8 @@ fn write_program_lvalue_paths_for_initialization(
             )
             .with_opaque_extent(lvalue.opaque_extent.clone(), lvalue.extent_known)
             .with_typed_carrier();
-            if let Some(designation) = &lvalue.designation {
-                write_range = write_range.with_designation(designation.clone());
+            if let Some(provenance) = &lvalue.provenance {
+                write_range = write_range.with_provenance(provenance.clone());
             }
             if let Some(outcome) = memory_write_obligation_outcome(
                 state,
@@ -1311,7 +1311,7 @@ fn missing_aggregate_copy_write_resource(
 ) -> Option<ResourceFact> {
     if !is_external_memory_pointer(target)
         && target.extent_is_known()
-        && assumptions.designations_equal(target.designation(), &target.pointer().object_identity())
+        && assumptions.provenance_equal(target.provenance(), &target.pointer().object_identity())
     {
         return None;
     }
@@ -1331,7 +1331,7 @@ fn missing_aggregate_copy_write_resource(
             .resources()
             .designated_memory_write_range(
                 &pointer,
-                Some(target.access_designation()),
+                Some(target.access_provenance()),
                 bytes,
                 assumptions,
             )
@@ -1362,15 +1362,14 @@ pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
     // extent, not merely its identity, to authorize this selected copy.
     if matches!(source.block, PointerBlock::Temporary(_))
         && source.extent_is_known()
-        && assumptions.designations_equal(source.designation(), &source.pointer().object_identity())
+        && assumptions.provenance_equal(source.provenance(), &source.pointer().object_identity())
         && state.memory.access_in_bounds(source, layout.size_bytes())
     {
         return None;
     }
     if (!crate::kernel::eval::is_external_memory_pointer(source)
         && source.extent_is_known()
-        && assumptions
-            .designations_equal(source.designation(), &source.pointer().object_identity())
+        && assumptions.provenance_equal(source.provenance(), &source.pointer().object_identity())
         && !state.memory.requires_explicit_scalar_ownership(source)
         && !assumptions.should_require_owned_expression_loads())
         || (assumptions.should_allow_symbolic_contract_loads()
@@ -1382,7 +1381,7 @@ pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
         crate::instrumentation::record_deterministic_work(1);
         if !state.resources().permits_designated_memory_read(
             &source.offset_by_bytes(field.offset_bytes()),
-            Some(source.access_designation()),
+            Some(source.access_provenance()),
             field.program_type().byte_width(),
             assumptions,
         ) {
@@ -1403,7 +1402,7 @@ pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
         let pointer = source.offset_by_bytes(union.offset_bytes());
         if !state.resources().permits_designated_memory_read(
             &pointer,
-            Some(source.access_designation()),
+            Some(source.access_provenance()),
             union.size_bytes(),
             assumptions,
         ) {
@@ -2781,7 +2780,7 @@ fn execute_program_heap_free_paths(
         };
         // The owned token can itself be spelled by a returned alias. Resolve
         // that address to its indexed storage coordinate before asking whether
-        // it is the exact live allocation base. Keep designation and extent;
+        // it is the exact live allocation base. Keep provenance and extent;
         // this address spelling grants no permission and preserves offsets.
         pointer.replace_pointer(
             effective_assumptions

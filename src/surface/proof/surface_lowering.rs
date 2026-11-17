@@ -559,7 +559,7 @@ impl<'a> Proof<'a> {
 
     /// [`Self::lower_surface_goal`], also returning the head chain the
     /// kernel lowering recorded for the goal it produced, when this context
-    /// lowered the goal itself. `None` means no lowering provenance was
+    /// lowered the goal itself. `None` means no lowering head chain was
     /// recorded for this goal: the proposition came from a recorded
     /// correspondence rather than from a lowering performed here.
     pub(super) fn lower_surface_goal_recording_introductions(

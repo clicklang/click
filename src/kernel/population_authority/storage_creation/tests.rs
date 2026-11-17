@@ -69,7 +69,7 @@ fn only_successful_real_malloc_records_creation() {
             .population_effects
             .creation,
         succeeded.population_effects.creation,
-        "opt-in cannot reset a live provenance ledger"
+        "opt-in cannot reset a live creation ledger"
     );
 
     let imported = ExecutionState::new()

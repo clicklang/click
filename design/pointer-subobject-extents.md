@@ -32,7 +32,7 @@ So the bug is two defects:
    Dereference (`read_c_lvalue_paths_without_ranges`, `write_c_lvalue_paths_*`)
    is checked only for address coverage by an owned or viewed range
    (`ResourceContext::permits_memory_read` / `memory_write_range`).
-2. **Modular (designation across address equality).** In a callee, a pointer
+2. **Modular (provenance across address equality).** In a callee, a pointer
    parameter is an opaque address. Authority lookup
    (`read_access_entries` through equality-graph pointer classes) accepts any
    pointer whose address is proven equal to a carrier that holds authority.
@@ -90,7 +90,7 @@ enum PointerExtent {
 | Address of a declared object `&x`, array decay, `malloc`, string literal | `Root` (already exact: the block is the object) |
 | Typed pointer arithmetic `q + n`, `q - n`, `&q[n]` | same extent as `q` |
 | Copy, local assignment, argument binding, return | same extent |
-| Store to memory, then reload of that exact cell | same extent: cached `CValue::Pointer` cells already return the stored value. The `pointer_read_stored_value` family in `memory_provenance.rs` must return the whole `CPointerValue`, not `Pointer`. |
+| Store to memory, then reload of that exact cell | same extent: cached `CValue::Pointer` cells already return the stored value. The `pointer_read_stored_value` family in `memory_history.rs` must return the whole `CPointerValue`, not `Pointer`. |
 | Reload of an unknown cell, havoc, modular result | Fresh opaque domain; formation and access require matching bounds evidence (Phase C) |
 | Cast to a non-character object pointer type | same extent (a cast neither narrows nor widens; D3) |
 | Cast between character-pointer types | same extent, including signedness changes (D4 refinement) |
@@ -172,7 +172,7 @@ first. A pointer without an extent is unaffected.
 A contract `==` between two pointers that both carry an extent also requires
 the extents to be equal (D2), so a call cannot satisfy `requires q == p` with
 `&pair->first + 1` and `&pair->second`. When either value has none, the
-comparison stays an address equality: that value's designation may be
+comparison stays an address equality: that value's provenance may be
 unknown, and assuming the equality must not refute a reachable path. A
 contract's scalar member address `&p->f` is narrowed to the member as the C
 frontend narrows it, so `ensures result == &p->second` does not hold for
@@ -181,7 +181,7 @@ are not narrowed.
 
 ## Phase B: C `==` states address equality (modular defect)
 
-Approved 2026-10-15. It replaces the earlier "designation is part of the
+Approved 2026-10-15. It replaces the earlier "provenance is part of the
 pointer value" plan, which is parked (see *Abandoned approach* below).
 
 ### Principle

@@ -2,7 +2,7 @@
 
 One exit establishes C address equality and hands back a cursor at p's address
 while cur is q. The cursor's phantom position is a numeric address, so exit
-rebinding uses that equality without asserting equal pointer designations.
+rebinding uses that equality without asserting equal pointer provenances.
 The anchor remains a complete pointer because it carries the owned cell.
 
 ```c filename=loop_exit_resource_argument_uses_exit_alias.c

@@ -50,7 +50,7 @@ than manufacture access from a numeric address equality.
 
 Slice-value equality is identity of data pointer and length. It is not Rust's
 content-comparing `PartialEq`; content equality needs an explicit predicate
-and read authority. Pointer identity retains its designation, not just its
+and read authority. Pointer identity retains its provenance, not just its
 numeric address. A constructed slice does not itself establish a live Rust
 reference or the `isize::MAX` byte-size bound. Native entry validity and actual
 formation/access checks supply their independent obligations.

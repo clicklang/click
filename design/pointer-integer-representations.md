@@ -37,7 +37,7 @@ Integer observations in specifications project only the number, so model
 functions and numeric resource parameters cannot transport pointer authority.
 
 An untracked nonzero integer with a checked address form can still reconstruct
-that address for C comparisons, but receives a fresh opaque designation from
+that address for C comparisons, but receives a fresh opaque provenance from
 the execution's bounded identity allocator and no original bounds. This identity
 is never interned by integer bits or merged by numeric congruence. An incoming parameter, modular result or complete typed word read now carries
 its own opaque identity. An explicit specification cast names its reconstructed
@@ -125,7 +125,7 @@ Use existing full pointer equality, without adding a predicate:
 requires (word as (int32 *)) == p;
 ```
 
-Under Phase B this states designation equality as well as address equality.
+Under Phase B this states provenance equality as well as address equality.
 A tagged word can use the corresponding masked cast. Evaluation must be able
 to name an opaque reconstructed pointer before its origin is established;
 otherwise this spelling would circularly require the relation it is declaring.
@@ -147,7 +147,7 @@ from ordinary address equations. These are separate operations.
 A resource's numeric word key observes its bits. When its contract also needs
 the complete decoded value, pass that value as a pointer argument, for example
 `owns h: held(w, w as (struct node *));`, and relate that pointer parameter to the
-resource's model. Pointer arguments preserve designation and bounds. A fact
+resource's model. Pointer arguments preserve provenance and bounds. A fact
 about a word stored in memory can name that storage directly, as in
 `fact (p->parent_word as (struct node *)) == q;`.
 
@@ -182,7 +182,7 @@ it. New allocation producers establish their own known allocation extent.
 
 Arithmetic changes the numeric component. Preserve a pointer carrier only
 through the checked lossless tag operations; a zero-tag cast back returns the
-same pointer designation. If an operation loses the carrier, an address may
+same pointer provenance. If an operation loses the carrier, an address may
 still be recoverable for comparisons, but dereference requires an explicit
 representation relation. Do not reconstruct a known allocation extent merely
 because the recovered physical block happens to be concrete.
@@ -209,14 +209,14 @@ a producer's output in the same session.
 | Member pointer to word and back, reading the member | Accept |
 | Same round trip, reading its sibling | Reject |
 | One-past member pointer round trip without dereference | Accept |
-| Whole word local copy, store/reload, aggregate copy | Retain designation |
-| Tag then clear supported low bits | Retain designation |
+| Whole word local copy, store/reload, aggregate copy | Retain provenance |
+| Tag then clear supported low bits | Retain provenance |
 | Equal numeric addresses with different selected extents | No bounds transfer |
 | Numeric equality rewrite, pure function or integer model argument | No bounds transfer |
 | Entry word constrained only by its numeric address | No dereference authority |
-| Entry word constrained by full cast equality | Adopt the stated designation |
+| Entry word constrained by full cast equality | Adopt the stated provenance |
 | Callee returns a word with only numeric equality | No bounds transfer |
-| Callee explicitly preserves full cast equality | Retain designation |
+| Callee explicitly preserves full cast equality | Retain provenance |
 | Partial overwrite followed by reconstruction | No retained carrier |
 | Withdrawal of the only representation premise | Revoke its bounds relation |
 

@@ -4600,7 +4600,7 @@ fn implicit_byte_pointer_coercion_retains_the_selected_extent() {
         panic!("a pointer coercion must yield a pointer")
     };
     assert_eq!(coerced.program_type(), ProgramType::UInt8Pointer);
-    assert_eq!(coerced.designation(), pointer.designation());
+    assert_eq!(coerced.provenance(), pointer.provenance());
     assert_eq!(coerced.opaque_extent(), pointer.opaque_extent());
     assert_eq!(coerced.extent(), pointer.extent());
     for source in [ProgramType::Int8Pointer, ProgramType::UInt8Pointer] {
@@ -4621,7 +4621,7 @@ fn implicit_byte_pointer_coercion_retains_the_selected_extent() {
                 panic!("a pointer cast must yield a pointer")
             };
             assert_eq!(explicit.program_type(), target);
-            assert_eq!(explicit.designation(), pointer.designation());
+            assert_eq!(explicit.provenance(), pointer.provenance());
             assert_eq!(explicit.opaque_extent(), pointer.opaque_extent());
             assert_eq!(explicit.extent(), pointer.extent());
         }
@@ -4697,10 +4697,10 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
     let context = context.assume_proposition(equality);
     let first = read(&memory, &a);
     let second = read(&memory, &b);
-    assert!(context.pointer_designations_match(&first, &stored));
-    assert!(context.pointer_designations_match(&first, &second));
-    assert!(!context.pointer_designations_match(&first.clone().with_root_extent(), &stored));
-    assert!(!context.pointer_designations_match(
+    assert!(context.pointer_provenance_match(&first, &stored));
+    assert!(context.pointer_provenance_match(&first, &second));
+    assert!(!context.pointer_provenance_match(&first.clone().with_root_extent(), &stored));
+    assert!(!context.pointer_provenance_match(
         &first.clone().with_extent(Some(SubobjectExtent {
             start: stored.pointer().clone(),
             width: 2u32.into(),
@@ -4739,15 +4739,15 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
     )
     .expect("the selected write preserves the copied pointer's source");
     let framed = framed.assume_proposition(equality);
-    assert!(framed.pointer_designations_match(&read(&copied, &a), &original));
-    assert!(!context.pointer_designations_match(&first, &stored.clone().with_root_extent()));
+    assert!(framed.pointer_provenance_match(&read(&copied, &a), &original));
+    assert!(!context.pointer_provenance_match(&first, &stored.clone().with_root_extent()));
     let partial = memory.store(a.clone().offset_by_bytes(4), int32(0));
-    assert!(!context.pointer_designations_match(&read(&partial, &a), &stored));
+    assert!(!context.pointer_provenance_match(&read(&partial, &a), &stored));
     let numeric = Memory::new().store(
         a.clone(),
         ProgramValue::UInt64(MachineTerm::pointer_address(stored.pointer().clone())),
     );
-    assert!(!context.pointer_designations_match(&read(&numeric, &a), &stored));
+    assert!(!context.pointer_provenance_match(&read(&numeric, &a), &stored));
 }
 
 fn checked_term(value: &ProgramValue) -> MachineTerm {

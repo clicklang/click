@@ -1279,7 +1279,7 @@ fn memory_only_adds_named_cells(
         } else if rebased.union_cells != before.union_cells {
             "union cells"
         } else if rebased.forgotten != before.forgotten {
-            "forgotten-cell provenance"
+            "forgotten-cell history"
         } else if rebased.heap.initialized != before.heap.initialized {
             "initialized bytes"
         } else {
@@ -1411,7 +1411,7 @@ fn describe_changed_state_field(
 /// Whether a materialized cell's value is exactly the given load of its own
 /// cell, in one of the representations resource projection writes: the scalar
 /// term itself, the `_Bool` normalization of it, or the complete typed pointer
-/// read (including its designation and extent).
+/// read (including its provenance and extent).
 fn cell_value_is_exactly_load(value: &ProgramValue, load: &MachineTerm) -> bool {
     match value {
         ProgramValue::Int8(term) => term == load,
@@ -5244,7 +5244,7 @@ fn checked_interface_effect_facts_along(
         // The arm's checked walk and exact effect stream already account
         // for each statement's writes. Combine their recorded footprints;
         // do not reconstruct those same stores or call havocs at the join.
-        // Without that provenance, retain the standalone coverage checks.
+        // Without that record, retain the standalone coverage checks.
         let chained = arm_memory_steps.is_some_and(|steps| {
             arm_effects_follow_memory_steps(
                 steps[arm_index],

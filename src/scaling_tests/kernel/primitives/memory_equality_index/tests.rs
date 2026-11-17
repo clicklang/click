@@ -87,7 +87,7 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
         assert!(work < 2000, "size={size}, work={work}");
         samples.push(work);
         assert_eq!(
-            crate::kernel::memory_provenance::checked_pointer_read_endpoint(&current, &context),
+            crate::kernel::memory_history::checked_pointer_read_endpoint(&current, &context),
             Some(source.clone()),
             "the complete-cell certificate must recover this exact stored value",
         );
@@ -390,29 +390,24 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
         let permits = |resources: &ResourceContext,
                        query: &Pointer,
                        facts: &PureFactContext,
-                       designation: (&Pointer, Option<&Pointer>)| {
-            resources.permits_designated_pointer_position(query, &cursor, designation, facts)
+                       provenance: (&Pointer, Option<&Pointer>)| {
+            resources.permits_designated_pointer_position(query, &cursor, provenance, facts)
         };
         let (permitted, work) = crate::instrumentation::measure_deterministic_work(|| {
-            permits(
-                &resources,
-                &query,
-                &facts,
-                cursor_value.access_designation(),
-            )
+            permits(&resources, &query, &facts, cursor_value.access_provenance())
         });
         assert!(permitted, "the advancing cursor keeps its native bounds");
         assert!(!permits(
             &ResourceContext::new(),
             &query,
             &facts,
-            cursor_value.access_designation()
+            cursor_value.access_provenance()
         ));
         assert!(!permits(
             &resources,
             &query,
             &aliases,
-            cursor_value.access_designation()
+            cursor_value.access_provenance()
         ));
         assert!(!permits(
             &resources,
@@ -432,13 +427,13 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
                 true
             ),
             &facts,
-            cursor_value.access_designation()
+            cursor_value.access_provenance()
         ));
         assert!(!permits(
             &resources,
             &cursor.offset_by_typed_elements(advance, 2, true, true),
             &facts,
-            cursor_value.access_designation()
+            cursor_value.access_provenance()
         ));
         samples.push(work);
     }

@@ -15,7 +15,7 @@ a whole kernel tree.
   compilation reads (`lib/rbtree.c`, 216 headers from the release archive, and
   7 headers that the kernel build generates), plus the kernel's `COPYING` and
   the two license texts those files name. It is 345 KB.
-- [`provenance.json`](provenance.json): the release archive URL and SHA-256,
+- [`manifest.json`](manifest.json): the release archive URL and SHA-256,
   the tag and commit, the compiler and `cc1` hashes, the preprocessing
   argument vector and environment, the size and SHA-256 of the preprocessed
   output, and the size and SHA-256 of every closure file.
@@ -52,7 +52,7 @@ which Kbuild removes `include/generated/autoconf.h`, and it does not list
 `src/languages/c/linux_rbtree_tests.rs`. None uses the network or a kernel
 build.
 
-`linux_rbtree_closure_matches_its_provenance` runs everywhere. It checks the
+`linux_rbtree_closure_matches_its_manifest` runs everywhere. It checks the
 archive hash, every member's size and hash, that no recorded file is missing
 and no unrecorded file is present, and that the project's unit carries
 every recorded argument except `-E` and the source operand, which the
@@ -114,7 +114,7 @@ summary is in `roadmap/kernel-scale-preprocessing.md`.
 ## Rebuilding the closure
 
 Download nothing inside the gate. To rebuild the archive, obtain the release
-archive named in `provenance.json`, check its SHA-256, extract it, and build
+archive named in `manifest.json`, check its SHA-256, extract it, and build
 the one object with the recorded compiler in a cleared environment:
 
 ```sh
@@ -124,10 +124,10 @@ python3 integrations/linux-rbtree/make-closure.py --linux-tree <tree>
 ```
 
 The kernel build needs `flex`, `bison`, and the libelf development headers on
-the host. The script checks every file against `provenance.json` before it
+the host. The script checks every file against `manifest.json` before it
 writes anything, and the archive is deterministic: sorted members, zero
 timestamps and owners, fixed modes. A changed archive needs its new hash in
-`provenance.json`.
+`manifest.json`.
 
 One discrepancy is unresolved. The reproduced `.config` hashes to
 `1d9edddb…bf1a90`, not the `75c6fd00…3797a` that the original capture

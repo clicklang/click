@@ -277,7 +277,7 @@ project-local header is rejected during loading. A change to external headers,
 or the appearance of a previously absent header selected by `__has_include`,
 does not silently change that state; run `click import lock` in the selected
 toolchain environment to prepare a new one. The lock is a consistency record,
-so publication and provenance of a native platform artifact still need a
+so publication and origin of a native platform artifact still need a
 trusted preparation process.
 
 Lock creation is source preparation, not proof verification. The C parser can
@@ -1086,7 +1086,7 @@ previous artifacts require an explicit lock refresh.
 
 The offline checker validates recursive function metadata before checking the
 supported semantic profile. It checks source spans, declaration metadata, and
-type-alias provenance and cycles throughout both branch arms, scopes, handlers,
+type-alias origins and cycles throughout both branch arms, scopes, handlers,
 initializers, calls, and cleanup lists. A malformed node inside an unsupported
 lifetime arrangement reports a metadata error first. Supported widths, operand
 types, lexical visibility, and cleanup ordering are checked separately; valid
@@ -1160,7 +1160,7 @@ and proof-facing signatures. It distinguishes mutable and const qualification
 from the seven supported value kinds: Boolean, int32, int64, uint32, uint64,
 int128, and uint128.
 Integer literals use one checked parser in validation and lowering. Source
-aliases preserve provenance without changing the value kind. Reference and
+aliases preserve their origin without changing the value kind. Reference and
 record-field restrictions remain specific to their positions in the profile.
 Explicit integral casts use one C++ conversion policy over the common kernel;
 the frontend does not re-infer promotions from source syntax.
@@ -1179,7 +1179,7 @@ overflow pair fail verification. Addition, subtraction, multiplication, and
 negation retain their signed-overflow obligations. Scalar local call initializers
 also accept an ordered chain of Clang-resolved integral and Boolean conversions,
 including explicit same-type alias casts. Each conversion retains its exact
-cast kind, explicit/implicit origin, source and result types, alias provenance,
+cast kind, explicit/implicit origin, source and result types, alias origin,
 and executable source span. The shared scalar normalizer calls the helper once
 into a temporary of its original return type, then converts that captured value
 into the declared local. Direct matching-type calls keep their existing lowering.
@@ -1583,7 +1583,7 @@ selected function implementations still require verified sidecar contracts.
 
 The shared signed-64 reasoning rules also verify `x + z` and `x - z` across
 the full signed range when a modular helper establishes `z == 0`. They retain
-the equality's proof provenance, read only the queried operands' fact indexes,
+the equality's proof lineage, read only the queried operands' fact indexes,
 and strip chains of zero additions through borrowed operands. Deterministic
 regressions check unrelated fact populations and increasing expression depth;
 the C `int64_returned_zero_identity` fixture covers the common kernel path.

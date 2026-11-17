@@ -306,7 +306,7 @@ struct FunctionResourceTransfer {
     consumed_inputs: Vec<CheckedResourceFact>,
     /// Checked callee-side borrowed ownership paired with an equivalent
     /// caller-side spelling selected by the exclusive reservation planner.
-    /// This is output-sized call-boundary provenance, not a search through
+    /// This is output-sized call-boundary pairing, not a search through
     /// the caller frame.
     canonical_borrowed_owners: Vec<(ResourceFact, ResourceFact)>,
     consumed_cell_returns: ConsumedCellReturns,
@@ -322,7 +322,7 @@ struct FunctionResourceTransfer {
     resource_effect_bound: Option<Resource>,
     post_outputs: Option<ResourceContext>,
     /// Every evaluated ensured view, kept beside the composed return
-    /// resources so the provenance routes see each one exactly once even
+    /// resources so the recovery routes see each one exactly once even
     /// when composition merges or normalizes it away.
     candidate_output_views: Vec<ResourceFact>,
     /// Each viewed piece in the one-level frontier of an ensured owned
@@ -1188,7 +1188,7 @@ pub(crate) struct FunctionMemoryEffectProjection {
     /// The owned requirement each projected range came out of, for the ranges
     /// a checked resource transition produced. An explicit effect segment
     /// names no requirement and appears here not at all; the call site reads
-    /// this only to recover an effect's caller-side provenance and never to
+    /// this only to recover an effect's caller-side source occurrence and never to
     /// widen or narrow the ranges themselves.
     range_sources: Vec<(MemoryRange, ResourceFact)>,
 }
@@ -1266,7 +1266,7 @@ fn candidate_memory_ranges_proven_separate(
 /// reserved out of: the projection says which requirement produced a range,
 /// and the plan says which caller occurrence supplied that requirement.
 /// Two sources claiming one range, or one requirement reserved from two
-/// occurrences, would not be a partition; such a key records no provenance
+/// occurrences, would not be a partition; such a key records no support
 /// rather than picking a support, which leaves that effect on the arithmetic
 /// comparison.
 fn reserved_effect_support_index(
@@ -1287,7 +1287,7 @@ fn reserved_effect_support_index(
     // One canonical range may come from several requirements -- the unnamed
     // footprint comes from every requirement that reaches unnamed memory --
     // so each range keeps the set of occurrences it was reserved out of, and
-    // loses its provenance when any of them has none.
+    // loses its support when any of them has none.
     let mut index = BTreeMap::<MemoryRange, Option<BTreeSet<ResourceOccurrenceId>>>::new();
     for (range, source) in range_sources {
         let support = by_requirement.get(source).copied().flatten();
@@ -1309,15 +1309,15 @@ fn reserved_effect_support_index(
 /// The partition read at a call: a mutable effect reserved out of one owned
 /// occurrence and a view lent from a different owned occurrence are bytewise
 /// disjoint by the resource context's partition invariant (step 4), so the
-/// relation is settled by provenance and the arithmetic oracle is not
+/// relation is settled by reservation support and the arithmetic oracle is not
 /// consulted. This never decides a pair the other way: an effect with no
 /// reservation behind it (an explicit `mutable` segment, or a range a
 /// composite expansion produced) and a view with no owner behind it (an
-/// intrinsic or empty-composite view) carry no provenance, and an effect and
+/// intrinsic or empty-composite view) carry no support, and an effect and
 /// a view from the same occurrence -- a partial borrow of one owner, D8 --
 /// still need the arithmetic proof. An effect reserved out of several
 /// occurrences is disjoint from a view lent from none of them.
-fn effect_is_disjoint_from_view_by_provenance(
+fn effect_is_disjoint_from_view_by_support(
     reserved_effect_supports: &BTreeMap<MemoryRange, Option<BTreeSet<ResourceOccurrenceId>>>,
     effect: &MemoryRange,
     viewed_support: Option<ResourceOccurrenceId>,
@@ -2779,7 +2779,7 @@ fn instance_binder_shape(parameter: &ResourceSpec) -> Option<(&str, usize)> {
 #[derive(Clone, Copy)]
 struct FunctionContractApplication<'a> {
     pointer_result: Option<&'a PurePointerResult>,
-    /// Concrete callee name used for diagnostics and call provenance.
+    /// Concrete callee name used for diagnostics and call attribution.
     name: &'a str,
     /// Nominal interface name used to distinguish candidates and their source
     /// requirement metadata.
@@ -4652,7 +4652,7 @@ fn execute_verified_function_applications_with_suspension(
         };
 
         let mut return_state = caller_state.clone();
-        return_state.set_memory(post_state.memory.clone());
+        return_state.set_memory_of(&post_state);
         refresh_call_written_locals(
             &mut return_state,
             &transfer.memory_effects,
@@ -5072,7 +5072,7 @@ fn exceptional_direct_function_path(
 }
 
 struct PreparedVerifiedFunctionCall<'a> {
-    /// The nominal callee name used for diagnostics and provenance. It is not
+    /// The nominal callee name used for diagnostics and attribution. It is not
     /// a source-body handle for named callbacks.
     name: &'a str,
     interface_name: &'a str,
@@ -6041,7 +6041,7 @@ fn prepare_verified_function_call<'a>(
                             &guarded,
                         ))
                 {
-                    super::assumptions::record_reasoning_provenance(
+                    super::assumptions::record_consulted_premises(
                         requirement_assumptions,
                         &guarded,
                     );
@@ -6064,7 +6064,7 @@ fn prepare_verified_function_call<'a>(
                     budget,
                 )?;
             let requirement_is_proven = !assumptions.retains_required_obligations()
-                && super::assumptions::capture_implicit_reasoning_provenance(|| {
+                && super::assumptions::capture_implicit_consulted_premises(|| {
                     if contract_requirement_is_proven {
                         return true;
                     }
@@ -6102,7 +6102,7 @@ fn prepare_verified_function_call<'a>(
                     }
                 });
             if requirement_is_proven {
-                super::assumptions::record_reasoning_provenance(
+                super::assumptions::record_consulted_premises(
                     &path_assumptions,
                     &requirement_path.proposition,
                 );
@@ -6129,7 +6129,7 @@ fn prepare_verified_function_call<'a>(
                         &guarded_requirement,
                     )
                 {
-                    super::assumptions::record_reasoning_provenance(
+                    super::assumptions::record_consulted_premises(
                         requirement_assumptions,
                         &guarded_requirement,
                     );
@@ -6209,7 +6209,7 @@ fn prepare_verified_function_call<'a>(
             None => {
                 let guard = Proposition::ConditionIs(order, true);
                 if required_obligation_is_exactly_discharged(&guard_context, &guard) {
-                    super::assumptions::record_reasoning_provenance(&guard_context, &guard);
+                    super::assumptions::record_consulted_premises(&guard_context, &guard);
                 } else {
                     obligations.push(
                         ProofObligation::verification_condition(guard)
@@ -6422,7 +6422,7 @@ fn prepare_verified_function_call<'a>(
     );
     // Reassemble the transition in source order from its role partitions.
     // This keeps the effect projection tied to the checked role-bearing
-    // inputs rather than to a normalized context that erased provenance.
+    // inputs rather than to a normalized context that erased source metadata.
     let mut checked_transition_inputs = transfer.borrowed_inputs.clone();
     checked_transition_inputs.extend(transfer.consumed_inputs.clone());
     checked_transition_inputs.sort_by_key(|checked| checked.clause_position);
@@ -6466,14 +6466,14 @@ fn prepare_verified_function_call<'a>(
         // intrinsic and empty-composite views never reach the planner at
         // all; the transfer carries both groups for exactly this check.
         //
-        // The pair is read by provenance first. A valid resource context is a
+        // The pair is read by reservation support first. A valid resource context is a
         // partition, so an effect reserved out of one owned occurrence and a
         // view lent from a different one are bytewise disjoint by
         // construction; asking the arithmetic oracle about two symbolic
         // ranges it cannot order would refuse what the caller's own partition
         // already settles. Only an effect and a view drawn from the *same*
         // occurrence -- a partial borrow of one owner (D8) -- still need the
-        // arithmetic proof, and a range with no provenance on either side
+        // arithmetic proof, and a range with no support on either side
         // always does.
         let reserved_effect_supports = transfer
             .stable_view_plan
@@ -6507,7 +6507,7 @@ fn prepare_verified_function_call<'a>(
             if let Some((mutable_range, relation)) = mutable_ranges
                 .iter()
                 .filter(|mutable_range| {
-                    !effect_is_disjoint_from_view_by_provenance(
+                    !effect_is_disjoint_from_view_by_support(
                         &reserved_effect_supports,
                         mutable_range,
                         viewed_support,
@@ -7930,7 +7930,7 @@ fn open_unmatched_instance_body(
 /// through its ownership-first rung and the composition rung of its ladder)
 /// and every route that later re-asks the store-versus-load question (the
 /// memory-DAG `Store` hop and both transport sites, through
-/// `memory_provenance::owned_composition_store_separated_evidence`) read the
+/// `memory_history::owned_composition_store_separated_evidence`) read the
 /// same composition and give the same answer.
 pub(in crate::kernel) fn store_opened_instance_composition(
     state: &ExecutionState,
@@ -7945,7 +7945,7 @@ pub(in crate::kernel) fn store_opened_instance_composition(
     let definitions = crate::kernel::assumptions::frame_composite_definitions()?;
     let write = Pointer {
         block: write.block.clone(),
-        offset: crate::kernel::memory_provenance::normalize_exact_memory_loads_in_pointer_offset(
+        offset: crate::kernel::memory_history::normalize_exact_memory_loads_in_pointer_offset(
             &write.offset,
             assumptions,
         ),
@@ -8665,7 +8665,7 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
             for range in expanded {
                 // Every byte of the expansion belongs to this one requirement,
                 // whatever depth it came from, so the requirement is the
-                // provenance recorded for each of its ranges.
+                // source recorded for each of its ranges.
                 range_sources.push((range.clone(), checked.fact.clone()));
                 ranges.insert(range);
             }
@@ -11405,7 +11405,7 @@ fn prepare_contract_resource_transfer_unexplained(
         }
     }
     let (mut required_resources, mut checked_required_resources) =
-        match super::assumptions::capture_implicit_reasoning_provenance(|| {
+        match super::assumptions::capture_implicit_consulted_premises(|| {
             evaluate_function_resource_context_with_metadata(
                 &input_evaluation_state,
                 interface.resource_requires(),
@@ -12367,7 +12367,7 @@ fn prepare_contract_resource_transfer_unexplained(
     }
     // Consumption uses the normalized algebraic context so duplicate token
     // clauses retain their quantity (and diagnostics name the complete
-    // requirement).  The provenance-bearing list remains the effect source;
+    // requirement).  The metadata-bearing list remains the effect source;
     // normalization is not allowed to erase its role/state metadata.
     let mut required_resource_list = required_resources.facts().to_vec();
     required_resource_list.sort_by_key(resource_fact_transfer_priority);
@@ -12714,7 +12714,7 @@ fn evaluate_contract_return_resource_context(
     // identity with a symbolic parameter spelling, even though the resource
     // being returned is exactly the occurrence that was lent. Consume the
     // already checked owned inputs in their source order instead. Views keep
-    // their ordinary evaluation path because their loan provenance is
+    // their ordinary evaluation path because their loan source is
     // reconstructed separately, and post-state instances carry fresh
     // fields rather than an entry fact.
     let mut canonical_by_checked = BTreeMap::<ResourceFact, VecDeque<ResourceFact>>::new();
@@ -13413,7 +13413,7 @@ fn evaluate_contract_return_resources(
     // longer a valid way to discharge obligations", closed as step 6's
     // F14(c)). It was a filter against `satisfies_fact`, so an owner the
     // caller happened to hold silently answered a returned view; the
-    // provenance routes in `recover_candidate_stable_view_resources` decide
+    // recovery routes in `recover_candidate_stable_view_resources` decide
     // that question now, over the declared output delta `candidate_output_views`.
     let (return_resources, inserted_ensured_occurrences) =
         match crate::instrumentation::measure_operation(
@@ -14365,11 +14365,7 @@ fn resource_body_fact_is_established(
     // typed read relation already checked for contract facts: it requires
     // the same recorded state and address, or a checked stored value.
     if let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) = proposition
-        && crate::kernel::memory_provenance::pointer_read_has_recorded_value(
-            left,
-            right,
-            established,
-        )
+        && crate::kernel::memory_history::pointer_read_has_recorded_value(left, right, established)
     {
         return true;
     }
@@ -14378,7 +14374,7 @@ fn resource_body_fact_is_established(
         Proposition::ConditionIs(
             ConditionTerm::PointerOffsetEqual(left, right),
             true,
-        ) if crate::kernel::memory_provenance::pointer_load_offset_proven_equal(
+        ) if crate::kernel::memory_history::pointer_load_offset_proven_equal(
             left,
             right,
             established,
@@ -15441,7 +15437,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     };
     next.record_instance_population_exchange(state, instance, !unfold, assumptions)
         .map_err(ResourceRewriteRefusal::OwnedMessage)?;
-    // Publish provenance only after the complete rewrite is checked. It names
+    // Publish instance consumption records only after the complete rewrite is checked. It names
     // the affected identities without retaining or scanning a proof history.
     if unfold {
         next.resources
@@ -16122,12 +16118,12 @@ pub(crate) fn evaluate_guarded_contract_condition_with_loop_entry(
         _ => required_obligation_is_exactly_discharged(assumptions, proposition),
     };
     if proves_body_condition(&path.proposition) {
-        super::assumptions::record_reasoning_provenance(assumptions, &path.proposition);
+        super::assumptions::record_consulted_premises(assumptions, &path.proposition);
         return Some(true);
     }
     let false_proposition = negated_contract_proposition(&path.proposition);
     if proves_body_condition(&false_proposition) {
-        super::assumptions::record_reasoning_provenance(assumptions, &false_proposition);
+        super::assumptions::record_consulted_premises(assumptions, &false_proposition);
         Some(false)
     } else {
         None
@@ -16419,7 +16415,7 @@ pub(super) fn function_return_resources_definitionally_established(
         return false;
     };
     let assumptions = assumptions_with_propositions(assumptions, &post_resource_facts);
-    let mut post_state = callee_state.with_memory(exit_memory);
+    let mut post_state = callee_state.with_memory_continuing(&claim_return_state, exit_memory);
     post_state.resources = post_resources;
     post_state.population_access = return_state.population_access.clone();
     post_state.observed_population_families = return_state.observed_population_families.clone();
@@ -17044,7 +17040,7 @@ pub(crate) fn evaluate_function_resource_context(
 /// Evaluate a resource section once and retain the source metadata alongside
 /// each checked fact.  The ordinary context API below is a compatibility view
 /// for callers that only need algebraic containment; transition/effect code
-/// must use this provenance-bearing result.
+/// must use this metadata-bearing result.
 pub(crate) fn evaluate_function_resource_context_with_metadata(
     state: &ExecutionState,
     resources: &[ResourceSpec],
@@ -17175,7 +17171,7 @@ fn evaluate_function_resource_context_with_entry_and_normalization(
 /// two `Resource::Memory` operands, exactly the proposition a written
 /// `requires separate(memory(a[0..n]), memory(g[0..1]))` lowers to. Nothing
 /// new is invented: the Store ladder already spends it at
-/// `memory_provenance::typed_store_separated_ranges_evidence`, and the caller
+/// `memory_history::typed_store_separated_ranges_evidence`, and the caller
 /// of this function installs the result as an entry fact beside the
 /// `viewable(..)` fact and the byte-count guards the same clause already
 /// yields.
@@ -17214,7 +17210,7 @@ fn evaluate_function_resource_context_with_entry_and_normalization(
 ///   one fact per written clause, never a context's derived facts.
 /// - Never two borrowed views: two `views` clauses may overlap freely.
 /// - Never two owners: that pair is
-///   `memory_provenance::owned_composition_store_separated_evidence` already
+///   `memory_history::owned_composition_store_separated_evidence` already
 ///   (Route B), and duplicating it here would be a second spelling of one rule.
 /// - A clause that is not plain memory — a composite, a token, an instance —
 ///   has no `MemoryRange` to name, and `separate(memory(..), memory(..))`
@@ -19720,6 +19716,31 @@ pub(crate) fn quantified_resource_requirement_assumptions(
 #[cfg(test)]
 mod quantified_entry_read_tests;
 
+/// An entry clause's evaluation frame can add read authority while remaining
+/// at the entry point. Equal memory contents at a later point do not make
+/// that later frame eligible to supply entry authority or bindings.
+fn declared_resource_argument_state<'a>(
+    entry_state: &'a ExecutionState,
+    state: &'a ExecutionState,
+    source: ResourceStateSource,
+) -> &'a ExecutionState {
+    match source {
+        ResourceStateSource::Entry
+            if std::ptr::eq(state, entry_state)
+                || state
+                    .program_point_id()
+                    .is_some_and(|point| entry_state.program_point_id() == Some(point)) =>
+        {
+            state
+        }
+        ResourceStateSource::Entry => entry_state,
+        ResourceStateSource::Current | ResourceStateSource::Post => state,
+    }
+}
+
+#[cfg(test)]
+mod resource_argument_point_tests;
+
 fn evaluate_function_declared_resource_spec(
     entry_state: &ExecutionState,
     state: &ExecutionState,
@@ -19746,15 +19767,8 @@ fn evaluate_function_declared_resource_spec(
         .zip(parameter_types)
         .enumerate()
     {
-        let argument_state = match argument_state_source {
-            // A clause checked at entry is evaluated in a frame that adds
-            // the read authority of the clause set's own folded instances;
-            // an `old(..)` argument read at that same state reads through
-            // the same authority. The frame changes no cell.
-            ResourceStateSource::Entry if state.memory() == entry_state.memory() => state,
-            ResourceStateSource::Entry => entry_state,
-            ResourceStateSource::Current | ResourceStateSource::Post => state,
-        };
+        let argument_state =
+            declared_resource_argument_state(entry_state, state, *argument_state_source);
         let written = argument;
         let mut argument = argument.clone();
         resolve_retained_aggregate_fields(
@@ -20208,7 +20222,7 @@ fn unreturned_allocation_obligation(
 }
 
 /// Finds the folded declared resource whose body accounts for a leaked
-/// allocation. This is diagnostic provenance only: the allocation check
+/// allocation. This is diagnostic metadata only: the allocation check
 /// remains the authority, and failure to identify a containing resource must
 /// not change verification.
 fn resource_fact_containing_allocation(
@@ -21884,7 +21898,7 @@ pub(super) fn function_outcome_from_body(
             let retired_creation_blocks = match retired_memory {
                 Ok(memory) => {
                     let blocks = retired_automatistorage_creation_blocks(&state, &memory);
-                    caller_state.set_memory(memory);
+                    caller_state.set_memory_continuing(&state, memory);
                     blocks
                 }
                 Err(error) => return (FunctionOutcome::RuntimeError(error), obligations),
@@ -21974,7 +21988,7 @@ pub(super) fn function_outcome_from_body(
             let retired_creation_blocks = match retired_memory {
                 Ok(memory) => {
                     let blocks = retired_automatistorage_creation_blocks(&state, &memory);
-                    caller_state.set_memory(memory);
+                    caller_state.set_memory_continuing(&state, memory);
                     blocks
                 }
                 Err(error) => return (FunctionOutcome::RuntimeError(error), obligations),

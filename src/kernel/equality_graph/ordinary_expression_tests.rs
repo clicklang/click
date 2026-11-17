@@ -381,7 +381,7 @@ fn nested_operators_register_the_pointer_arguments_they_use() {
     let b = expression(q.clone());
     assert!(!graph.are_uint64_equal(&a, &b));
     graph.add_equality(&p, &q);
-    // A pure pointer argument includes its designation and bounds. Numeric
+    // A pure pointer argument includes its provenance and bounds. Numeric
     // address equality alone must not identify these function applications.
     assert!(!graph.are_uint64_equal(&a, &b));
     graph.add_pointer_value_equality(

@@ -3268,7 +3268,7 @@ impl<'a> TermRewrite<'a> {
                 };
                 if let Some((from, to)) = self.pointer_value_exact
                     && !self.source_disabled
-                    && range.designation.as_ref() == from.designation()
+                    && range.provenance.as_ref() == from.provenance()
                     && range.opaque_extent.as_deref() == from.opaque_extent()
                     && range.carrier_extent_known == from.extent_is_known()
                 {
@@ -3752,9 +3752,12 @@ impl<'a> TermRewrite<'a> {
                                 )
                                 .unwrap_or_else(|| memory.clone());
                                 AlgebraicTermNode::MemoryLoad {
-                                    memory: crate::kernel::memory_provenance::canonical_value_load_memory(
-                                        &origin, &moved_pointer, crate::kernel::ABSTRACT_VALUE_WIDTH,
-                                    ),
+                                    memory:
+                                        crate::kernel::memory_history::canonical_value_load_memory(
+                                            &origin,
+                                            &moved_pointer,
+                                            crate::kernel::ABSTRACT_VALUE_WIDTH,
+                                        ),
                                     pointer: moved_pointer,
                                 }
                             }
@@ -4000,7 +4003,7 @@ impl<'a> TermRewrite<'a> {
                                 && to.pointer().block == PointerBlock::ExternalArgument))
                 });
                 let shifted_replacement = shifted_source.and_then(|(from, to)| {
-                    (v.designation() == from.designation()
+                    (v.provenance() == from.provenance()
                         && v.extent() == from.extent()
                         && v.extent_is_known() == from.extent_is_known()
                         && v.opaque_extent() == from.opaque_extent())
@@ -4023,7 +4026,7 @@ impl<'a> TermRewrite<'a> {
                     let (from, to) = self.pointer_variable?;
                     if self.pointer_addresses_only || self.scope.program_values.contains_key(&from)
                         || !matches!(v.pointer().block, PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) if variable == from)
-                        || v.designation() != &v.pointer().object_identity()
+                        || v.provenance() != &v.pointer().object_identity()
                     {
                         return None;
                     }
@@ -4038,24 +4041,24 @@ impl<'a> TermRewrite<'a> {
                 };
                 let addresses_only = self.pointer_addresses_only
                     || (self.pointer_exact.is_some() && self.pointer_value_exact.is_none());
-                let designation = if addresses_only {
-                    v.designation().clone()
+                let provenance = if addresses_only {
+                    v.provenance().clone()
                 } else if let Some(replacement) = &replacement {
-                    replacement.designation().clone()
+                    replacement.provenance().clone()
                 } else if let Some((from, to)) = self.pointer_variable
                     && !self.scope.program_values.contains_key(&from)
-                    && matches!(v.designation().block, PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) if variable == from)
+                    && matches!(v.provenance().block, PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) if variable == from)
                 {
                     to.object_identity()
                 } else if let Some((from, to)) = self.pointer_value_exact
                     && !self.source_disabled
-                    && v.designation() == from.designation()
+                    && v.provenance() == from.provenance()
                 {
-                    to.designation().clone()
+                    to.provenance().clone()
                 } else if self.pointer_exact.is_some() && self.pointer_value_exact.is_none() {
-                    v.designation().clone()
+                    v.provenance().clone()
                 } else {
-                    self.pointer(v.designation())
+                    self.pointer(v.provenance())
                 };
                 let opaque_extent = match v.opaque_extent() {
                     None => None,
@@ -4093,17 +4096,17 @@ impl<'a> TermRewrite<'a> {
                 }
                 let mut mapped = v
                     .map_pointers(|address| self.pointer(address))
-                    .with_designation(std::sync::Arc::new(designation))
+                    .with_provenance(std::sync::Arc::new(provenance))
                     .with_opaque_extent(opaque_extent);
                 if retain_view && let Some((from, _)) = shifted_source {
                     // The numeric consequence cannot identify the base's own
                     // domain with a different view's domain. Nested reads still
                     // substitute their arguments through the equality.
-                    if v.designation() != from.designation()
-                        && v.designation().block == from.pointer().block
+                    if v.provenance() != from.provenance()
+                        && v.provenance().block == from.pointer().block
                     {
                         mapped =
-                            mapped.with_designation(std::sync::Arc::new(v.designation().clone()));
+                            mapped.with_provenance(std::sync::Arc::new(v.provenance().clone()));
                     }
                     if (from.extent_is_known() || v.opaque_extent() != from.opaque_extent())
                         && v.opaque_extent()
@@ -5193,7 +5196,7 @@ impl<'a> TermRewrite<'a> {
                 .as_ref()
                 .and_then(|values| values.program_values.get(variable))
             {
-                let root = replacement.designation().clone();
+                let root = replacement.provenance().clone();
                 self.changed = true;
                 return Pointer {
                     block: root.block,
@@ -5938,11 +5941,11 @@ impl<'a> TermRewrite<'a> {
             ConditionTerm::PointerValueEqual(left, right) => {
                 let matches = self.pointer_context.map_or_else(
                     || {
-                        left.designation() == right.designation()
+                        left.provenance() == right.provenance()
                             && left.extent() == right.extent()
                             && left.extent_is_known() == right.extent_is_known()
                     },
-                    |context| context.pointer_designations_match(left, right),
+                    |context| context.pointer_provenance_match(left, right),
                 );
                 matches && graph.are_equal(left.pointer(), right.pointer())
             }
@@ -6612,7 +6615,7 @@ impl<'a> TermRewrite<'a> {
                     && self.pointer_exact.is_none()
                     && self.pointer_offset_exact.is_none()
                 {
-                    crate::kernel::memory_provenance::canonical_projected_load_memory(
+                    crate::kernel::memory_history::canonical_projected_load_memory(
                         &memory, &rewritten,
                     )
                 } else {
@@ -8837,11 +8840,8 @@ mod pointer_integer_rewrite_tests {
             },
             ProgramValue::UInt32(7u32.into()),
         ));
-        let _ = crate::kernel::memory_provenance::canonical_value_load_memory(
-            &partial,
-            from.pointer(),
-            4,
-        );
+        let _ =
+            crate::kernel::memory_history::canonical_value_load_memory(&partial, from.pointer(), 4);
         let expected = AlgebraicTermNode::parameter_load(memory, to.pointer().clone(), parameter);
         assert_ne!(expected, stored, "a rewritten logical read stays a read");
         let rewritten = TermRewrite::for_pointer_value_exact(&from, &to).value(&read);
