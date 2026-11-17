@@ -20,7 +20,7 @@ fn cold_offset_evidence_misses_do_not_export_shared_dags() {
                 [right.clone(), right],
             );
         }
-        let wrap = |root| PointerOffsetTerm::Int32Scaled {
+        let wrap = |root| AddressOffset::Int32Scaled {
             value: SharedMachineIntegerTerm::from_shared(ty, root).unwrap(),
             byte_width: 4,
         };
@@ -69,11 +69,11 @@ fn shared_offset_source_paths_scale_with_selected_dags() {
             crate::kernel::IntegerTerm::Machine(l.clone()).into(),
             crate::kernel::IntegerTerm::Machine(r.clone()).into(),
         );
-        let a = PointerOffsetTerm::Int32Scaled {
+        let a = AddressOffset::Int32Scaled {
             value: l,
             byte_width: 4,
         };
-        let b = PointerOffsetTerm::Int32Scaled {
+        let b = AddressOffset::Int32Scaled {
             value: r,
             byte_width: 4,
         };

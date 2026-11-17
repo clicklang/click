@@ -5,10 +5,10 @@
 use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
-fn byte(offset: i64) -> Pointer {
-    Pointer {
-        block: PointerBlock::from("global:bytes"),
-        offset: PointerOffsetTerm::Constant(offset),
+fn byte(offset: i64) -> Address {
+    Address {
+        base: AddressBase::from("global:bytes"),
+        offset: AddressOffset::Constant(offset),
     }
 }
 

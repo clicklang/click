@@ -21,8 +21,8 @@ fn shared_index_addresses_preserve_native_queries_and_late_aliases() {
             for successor in [false, true] {
                 for alias_first in [false, true] {
                     let mut graph = EqualityGraph::default();
-                    let p = Pointer::symbolic(Variable(991403));
-                    let q = Pointer::symbolic(Variable(991404)).offset_by_bytes(12);
+                    let p = Address::symbolic(Variable(991403));
+                    let q = Address::symbolic(Variable(991404)).offset_by_bytes(12);
                     if alias_first {
                         graph.add_equality(&p, &q);
                     }
@@ -90,12 +90,12 @@ fn scaled_offset_keys_and_congruence_retain_shared_operands() {
                 .unwrap();
             let value = SharedMachineIntegerTerm::from_shared(container, root).unwrap();
             if ty == MachineIntegerType::Int32 {
-                PointerOffsetTerm::Int32Scaled {
+                AddressOffset::Int32Scaled {
                     value,
                     byte_width: stride,
                 }
             } else {
-                PointerOffsetTerm::Int64Scaled {
+                AddressOffset::Int64Scaled {
                     value,
                     byte_width: stride,
                     unsigned: ty == MachineIntegerType::UInt64,

@@ -1,9 +1,9 @@
 use super::*;
 
-fn at(id: u64) -> Pointer {
-    Pointer::symbolic(Variable(8_770_000 + id))
+fn at(id: u64) -> Address {
+    Address::symbolic(Variable(8_770_000 + id))
 }
-fn owner(base: Pointer, start: u32, end: u32) -> ResourceFact {
+fn owner(base: Address, start: u32, end: u32) -> ResourceFact {
     ResourceFact::own_memory(MemoryRange::new_with_element_width(
         base,
         start.into(),

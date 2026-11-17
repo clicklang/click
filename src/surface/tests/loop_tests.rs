@@ -2644,7 +2644,7 @@ fn a_loop_state_is_one_entry_under_every_spelling() {
 fn recorded_states_find_the_point_reading_a_memory() {
     let mark = |name: &str| ProgramPointSelector::Mark(name.to_string());
     let memory = |index: u32| {
-        let pointer = Pointer::symbolic(Variable(97_400 + u64::from(index)));
+        let pointer = Address::symbolic(Variable(97_400 + u64::from(index)));
         crate::kernel::intern_memory(
             Memory::new().store(pointer, ProgramValue::Int32(MachineTerm::constant(index))),
         )

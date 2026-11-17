@@ -17,8 +17,8 @@ fn retained_index(ty: MachineIntegerType, id: u64) -> SharedMachineIntegerTerm {
     let root = KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [atom, zero]);
     MachineOperandView::Shared(&root).retain(ty)
 }
-fn wide(value: SharedMachineIntegerTerm, byte_width: i64) -> PointerOffsetTerm {
-    PointerOffsetTerm::Int64Scaled {
+fn wide(value: SharedMachineIntegerTerm, byte_width: i64) -> AddressOffset {
+    AddressOffset::Int64Scaled {
         value,
         byte_width,
         unsigned: true,
@@ -62,8 +62,8 @@ fn retained_wide_distinctness_uses_full_words_and_preserves_shape_refusals() {
         Some(false)
     );
     for (a, b) in [
-        (&right, &PointerOffsetTerm::Constant(0)),
-        (&PointerOffsetTerm::Constant(0), &right),
+        (&right, &AddressOffset::Constant(0)),
+        (&AddressOffset::Constant(0), &right),
     ] {
         assert_eq!(
             wide_element_offsets_proven_distinct(a, b, &context),
@@ -79,7 +79,7 @@ fn retained_wide_distinctness_uses_full_words_and_preserves_shape_refusals() {
         Some(false)
     );
     assert_eq!(
-        wide_element_offsets_proven_distinct(&right, &PointerOffsetTerm::Constant(1), &context),
+        wide_element_offsets_proven_distinct(&right, &AddressOffset::Constant(1), &context),
         None
     );
     assert_eq!(
@@ -97,9 +97,9 @@ fn exact_index_constant_substitution_requires_its_selected_fact_and_fitting_prod
     let fact = Proposition::ConditionIs(equality(&value, ty, &MachineTerm::constant(7)), true);
     let parent = PureFactContext::new();
     let context = parent.clone().assume_proposition(fact.clone());
-    let pointer = |width| Pointer {
-        block: "retained-exact-index".into(),
-        offset: PointerOffsetTerm::Int32Scaled {
+    let pointer = |width| Address {
+        base: "retained-exact-index".into(),
+        offset: AddressOffset::Int32Scaled {
             value: value.clone(),
             byte_width: width,
         },
@@ -115,7 +115,7 @@ fn exact_index_constant_substitution_requires_its_selected_fact_and_fitting_prod
     let exports = KernelTermExport::machine_export_count();
     assert_eq!(
         pointer_with_exact_index_constants(&address, &context).offset,
-        PointerOffsetTerm::Constant(28)
+        AddressOffset::Constant(28)
     );
     assert_eq!(
         pointer_with_exact_index_constants(&address, &parent),
@@ -127,7 +127,7 @@ fn exact_index_constant_substitution_requires_its_selected_fact_and_fitting_prod
     );
     assert_eq!(
         pointer_with_exact_index_constants(&address, &native_context).offset,
-        PointerOffsetTerm::Constant(28)
+        AddressOffset::Constant(28)
     );
     assert_eq!(
         pointer_with_exact_index_constants(&address, &false_context),

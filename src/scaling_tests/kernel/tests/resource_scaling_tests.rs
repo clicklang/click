@@ -20,14 +20,14 @@ const SIZES: [usize; 4] = [16, 64, 256, 1024];
 /// ones take identities below it.
 const TARGET_HEAP: u64 = 1_000_000;
 
-fn heap_base(identity: u64) -> Pointer {
-    Pointer {
-        block: PointerBlock::Heap(identity),
-        offset: PointerOffsetTerm::Constant(0),
+fn heap_base(identity: u64) -> Address {
+    Address {
+        base: AddressBase::Heap(identity),
+        offset: AddressOffset::Constant(0),
     }
 }
 
-fn owned_range(base: Pointer, start: u32, end: u32) -> ResourceFact {
+fn owned_range(base: Address, start: u32, end: u32) -> ResourceFact {
     ResourceFact::own_memory(MemoryRange::new(
         base,
         MachineTerm::constant(start),
@@ -70,14 +70,14 @@ fn frame_with_unrelated_allocations(unrelated: usize) -> ResourceContext {
         ])
 }
 
-fn pointer_equal(left: Pointer, right: Pointer) -> ConditionTerm {
+fn pointer_equal(left: Address, right: Address) -> ConditionTerm {
     ConditionTerm::PointerEqual(Box::new(left), Box::new(right))
 }
 
-fn symbolic_base(identity: u64) -> Pointer {
-    Pointer {
-        block: PointerBlock::Symbolic(Variable(identity)),
-        offset: PointerOffsetTerm::Constant(0),
+fn symbolic_base(identity: u64) -> Address {
+    Address {
+        base: AddressBase::Symbolic(Variable(identity)),
+        offset: AddressOffset::Constant(0),
     }
 }
 
@@ -607,7 +607,7 @@ fn unmatched_instance_body_views_ignore_unrelated_instances() {
             .iter()
             .filter(|fact| {
                 matches!(fact, ResourceFact::View(Resource::Memory(range))
-                    if range.base().block == PointerBlock::Heap(TARGET_HEAP))
+                    if range.base().base == AddressBase::Heap(TARGET_HEAP))
             })
             .count();
         assert_eq!(published, 4, "the target body's four cells are published");
@@ -760,7 +760,7 @@ fn nested_composite_body_views_ignore_unrelated_instances() {
             .iter()
             .filter(|fact| {
                 matches!(fact, ResourceFact::View(Resource::Memory(range))
-                    if range.base().block == PointerBlock::Heap(TARGET_HEAP))
+                    if range.base().base == AddressBase::Heap(TARGET_HEAP))
             })
             .count();
         assert!(
@@ -820,15 +820,15 @@ fn nested_composite_body_views_are_linear_in_the_child_body() {
 fn a_kept_cell_is_placed_without_visiting_unrelated_ranges() {
     // Objects reached through parameters share one block and differ by a
     // symbolic base, as the arena's descriptors do.
-    let object = |identity: u64| Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(identity)), 4),
+    let object = |identity: u64| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(identity)), 4),
     };
-    let field = |identity: u64, bytes: i64| Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Add(
+    let field = |identity: u64, bytes: i64| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Add(
             Box::new(object(identity).offset),
-            Box::new(PointerOffsetTerm::Constant(bytes)),
+            Box::new(AddressOffset::Constant(bytes)),
         ),
     };
     let mut samples = Vec::new();
@@ -852,7 +852,7 @@ fn a_kept_cell_is_placed_without_visiting_unrelated_ranges() {
     assert_constant_plus_log_growth("kept cell placement", &samples, 4.0);
 }
 
-fn variable_range(base: Pointer, start: MachineTerm, end: MachineTerm) -> ResourceFact {
+fn variable_range(base: Address, start: MachineTerm, end: MachineTerm) -> ResourceFact {
     ResourceFact::own_memory(MemoryRange::new(base, start, end))
 }
 
@@ -991,10 +991,10 @@ fn retirement_stale_check_ignores_unrelated_kept_resources() {
 
 /// A pointer parameter: every one lives in the single `ExternalArgument`
 /// block, at four times its own index variable.
-fn parameter_base(identity: u64) -> Pointer {
-    Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(identity)), 4),
+fn parameter_base(identity: u64) -> Address {
+    Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(identity)), 4),
     }
 }
 
@@ -1189,8 +1189,8 @@ fn holding_a_parameter_composition_states_no_pairs() {
         });
         assert_eq!(
             assumptions.memory_separation_candidate_count(
-                &PointerBlock::ExternalArgument,
-                &PointerBlock::ExternalArgument
+                &AddressBase::ExternalArgument,
+                &AddressBase::ExternalArgument
             ),
             0
         );
@@ -1353,9 +1353,9 @@ fn normalizing_external_ranges_compares_only_related_bases() {
     for size in [8_u64, 16, 32, 64] {
         let mut facts = Vec::new();
         for index in 0..size {
-            let base = Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::scale_int32(
+            let base = Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::scale_int32(
                     MachineTerm::Variable(Variable(9 * TARGET_HEAP + index)),
                     4,
                 ),
@@ -1545,9 +1545,9 @@ fn a_recursive_footprint_is_constant_in_live_nodes() {
         // The live nodes: a known cell at each of them.
         let memory = (0..nodes).fold(Memory::new(), |memory, node| {
             memory.store(
-                Pointer {
-                    block: PointerBlock::Heap(TARGET_HEAP),
-                    offset: PointerOffsetTerm::Constant(4 * node as i64),
+                Address {
+                    base: AddressBase::Heap(TARGET_HEAP),
+                    offset: AddressOffset::Constant(4 * node as i64),
                 },
                 int32(node as u32),
             )
@@ -1621,18 +1621,18 @@ fn slot_definitions() -> Vec<CompositeResourceDefinition> {
     ]
 }
 
-fn external_descriptor(identity: u64) -> Pointer {
-    Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(identity)), 4),
+fn external_descriptor(identity: u64) -> Address {
+    Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(identity)), 4),
     }
 }
 
 /// The pointer a load of `cell` reads in `source`, as execution materializes
 /// it: the value named by that read.
-fn materialized_pointer(source: &Memory, cell: &Pointer) -> ProgramValue {
+fn materialized_pointer(source: &Memory, cell: &Address) -> ProgramValue {
     ProgramValue::Pointer(PointerValue::from_read(
-        Pointer::loaded(&MachineTerm::MemoryLoad(
+        Address::loaded(&MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory_ref(source))),
             Box::new(cell.clone()),
             crate::kernel::LoadKind::Int32,
@@ -1762,7 +1762,7 @@ const STORE_KEPT_PARAMETER: u64 = 97_001;
 /// Frames one store at the written parameter's object as the store
 /// statement does: the opened composition first, then the cached cells. It
 /// returns the charged work and how many of `kept` cached cells survived.
-fn framed_store_beside_instances(state: &ExecutionState, kept: &[Pointer]) -> (usize, usize) {
+fn framed_store_beside_instances(state: &ExecutionState, kept: &[Address]) -> (usize, usize) {
     let write = parameter_base(STORE_WRITTEN_PARAMETER);
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::ResourceComposition(state.resources().clone()));
@@ -2219,10 +2219,10 @@ fn observable_projection_tracks_supported_views_caches_and_owner_retirement() {
     }
 }
 
-fn argument_base(variable: u64) -> Pointer {
-    Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
+fn argument_base(variable: u64) -> Address {
+    Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
     }
 }
 
@@ -2420,7 +2420,7 @@ fn caller_beside_unrelated_allocations(unrelated: usize) -> ExecutionState {
     for (name, identity) in &locals {
         let slot = Memory::local_pointer(name);
         memory = memory
-            .with_block(slot.block.clone(), 8)
+            .with_block(slot.base.clone(), 8)
             .store(slot.clone(), ProgramValue::pointer(heap_base(*identity)));
         resources = resources.unchecked_with_fact(owned_range(slot, 0, 8));
         state = state.with_local(name.clone(), ProgramValue::pointer(heap_base(*identity)));
@@ -2682,9 +2682,9 @@ fn respelling_a_wide_struct_range_is_logarithmic_in_unrelated_and_same_block_ran
     // A struct range at a symbolic element of the target block.
     let same_block = |index: u64| {
         MemoryRange::new_wide(
-            Pointer {
-                block: PointerBlock::Heap(TARGET_HEAP),
-                offset: PointerOffsetTerm::scaled_int64_node(
+            Address {
+                base: AddressBase::Heap(TARGET_HEAP),
+                offset: AddressOffset::scaled_int64_node(
                     MachineTerm::Variable(Variable((1 << 41) + index)),
                     8,
                     true,
@@ -2719,15 +2719,15 @@ fn respelling_a_wide_struct_range_is_logarithmic_in_unrelated_and_same_block_ran
         resources.synchronize_memory_equalities(assumptions);
         resources
     };
-    let field = Pointer {
-        block: PointerBlock::Heap(TARGET_HEAP),
-        offset: PointerOffsetTerm::Add(
-            Box::new(PointerOffsetTerm::scaled_int64_node(
+    let field = Address {
+        base: AddressBase::Heap(TARGET_HEAP),
+        offset: AddressOffset::Add(
+            Box::new(AddressOffset::scaled_int64_node(
                 MachineTerm::int64_multiply(index.clone(), MachineTerm::int64_constant(8)),
                 1,
                 false,
             )),
-            Box::new(PointerOffsetTerm::Constant(4)),
+            Box::new(AddressOffset::Constant(4)),
         ),
     };
     let mut take = Vec::new();

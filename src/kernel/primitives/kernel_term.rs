@@ -35,10 +35,10 @@ mod addresses;
 mod offsets;
 #[allow(dead_code)]
 mod pointers;
-pub(crate) use addresses::{SharedPointerAddress, SharedPointerBlock};
+pub(crate) use addresses::{SharedAddress, SharedAddressBase};
 pub use machine::KernelMachineLiteral;
 use num_bigint::BigInt;
-pub(crate) use offsets::{KernelPointerOffset, SharedPointerOffset};
+pub(crate) use offsets::{KernelAddressOffset, SharedAddressOffset};
 pub(crate) use pointers::{PointerRewrite, PointerRewriteError, SharedPointerValue};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Mutex, Weak};
@@ -104,10 +104,10 @@ pub enum KernelTermNode {
     },
     PointerValueEqual(KernelPointerEquality),
     PointerEqual {
-        arguments: [SharedPointerAddress; 2],
+        arguments: [SharedAddress; 2],
     },
     PointerOffsetEqual {
-        arguments: [SharedPointerOffset; 2],
+        arguments: [SharedAddressOffset; 2],
     },
     IntegerCompare {
         operator: IntegerComparisonOperator,
@@ -165,7 +165,7 @@ pub enum KernelTermNode {
     /// Native addresses remain an explicit input boundary during migration.
     MemoryLoad {
         memory: SharedMemory,
-        address: SharedPointerAddress,
+        address: SharedAddress,
         kind: LoadKind,
     },
     /// Complete formed pointer value with prepared address and metadata children.
@@ -194,11 +194,11 @@ pub enum KernelTermNode {
     PointerRead {
         value: SharedPointerValue,
         memory: SharedMemory,
-        address: SharedPointerAddress,
+        address: SharedAddress,
     },
     /// Address observation retains its exact prepared address and object annotation.
     PointerAddress {
-        address: SharedPointerAddress,
+        address: SharedAddress,
         object_class: Option<crate::kernel::effective_type::CAccessClass>,
     },
     MachineObservation {
@@ -1375,7 +1375,7 @@ mod tests {
             vec![PureFunctionArgument::Value(ProgramValue::Int32(
                 MachineTerm::MemoryLoad(
                     ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
-                    Box::new(Pointer::symbolic(Variable(87654328))),
+                    Box::new(Address::symbolic(Variable(87654328))),
                     LoadKind::Int32,
                 ),
             ))],
@@ -1501,7 +1501,7 @@ mod tests {
 
     #[test]
     fn legacy_pointer_equality_does_not_discard_auxiliary_qualifiers() {
-        let pointer = PointerValue::new(Pointer::symbolic(Variable(76)), ProgramType::Int32Pointer);
+        let pointer = PointerValue::new(Address::symbolic(Variable(76)), ProgramType::Int32Pointer);
         let constant = pointer.clone().with_pointee_constant(true);
         assert_eq!(
             pointer, constant,
@@ -1528,7 +1528,7 @@ mod tests {
 
     #[test]
     fn legacy_adapter_keeps_complete_pointers_and_scoped_integer_nodes() {
-        let base = Pointer::symbolic(Variable(75));
+        let base = Address::symbolic(Variable(75));
         let root = PointerValue::new(base.clone(), ProgramType::Int32Pointer);
         let member = root.clone().with_bounds(Some(SubobjectBounds {
             start: base,

@@ -617,9 +617,9 @@ fn wide_cast_hostile_metadata_and_word_payloads_are_rejected_locally() {
 
 #[test]
 fn wide_cast_canonicalization_keeps_source_load_width_and_memory_dependencies() {
-    let pointer = Pointer {
-        block: "wide-cast-source".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "wide-cast-source".into(),
+        offset: AddressOffset::Constant(0),
     };
     let memory = Memory::new().with_block("wide-cast-source", 4).store(
         pointer.clone(),
@@ -759,9 +759,9 @@ fn uint64_to_int64_specification_cast_requires_exact_representable_range() {
 #[test]
 fn wide_cached_load_canonicalization_preserves_kind_and_all_bits() {
     for signed in [false, true] {
-        let pointer = Pointer {
-            block: "wide-cached-read".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "wide-cached-read".into(),
+            offset: AddressOffset::Constant(0),
         };
         let bits = if signed {
             MachineTerm::int64_constant(0x1_0000_0001)

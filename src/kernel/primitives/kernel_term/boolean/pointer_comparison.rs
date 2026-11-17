@@ -2,21 +2,21 @@
 use super::*;
 
 impl KernelTerm {
-    pub(crate) fn pointer_equal_raw(arguments: [SharedPointerAddress; 2]) -> Self {
+    pub(crate) fn pointer_equal_raw(arguments: [SharedAddress; 2]) -> Self {
         Self::intern(KernelType::Bool, KernelTermNode::PointerEqual { arguments })
     }
 
-    pub(crate) fn pointer_equal(arguments: [SharedPointerAddress; 2]) -> Self {
+    pub(crate) fn pointer_equal(arguments: [SharedAddress; 2]) -> Self {
         let [a, b] = arguments.each_ref().map(|address| address.node());
-        let left = a.block.native_atom();
-        let right = b.block.native_atom();
+        let left = a.base.native_atom();
+        let right = b.base.native_atom();
         if left.proven_distinct(right) {
             return Self::intern(KernelType::Bool, KernelTermNode::BoolLiteral(false));
         }
         if left == right {
             let comparison = Self::pointer_offset_equal([a.offset.clone(), b.offset.clone()]);
             if let KernelTermNode::BoolLiteral(value) = comparison.node()
-                && !(*value && matches!(left, PointerBlock::LoadedPointer(_)))
+                && !(*value && matches!(left, AddressBase::LoadedPointer(_)))
             {
                 return comparison;
             }
@@ -28,43 +28,43 @@ impl KernelTerm {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn pointers() -> Vec<Pointer> {
+    fn pointers() -> Vec<Address> {
         let memory =
             crate::kernel::intern_memory(crate::kernel::Memory::new().with_block("raw-pointer", 8));
         let mut values = vec![
-            Pointer::null(),
-            Pointer::symbolic(Variable(999001)),
-            Pointer {
-                block: PointerBlock::FunctionSymbolic(Variable(999001)),
-                offset: PointerOffsetTerm::Constant(0),
+            Address::null(),
+            Address::symbolic(Variable(999001)),
+            Address {
+                base: AddressBase::FunctionSymbolic(Variable(999001)),
+                offset: AddressOffset::Constant(0),
             },
-            Pointer {
-                block: PointerBlock::ExternalObject(Variable(999001)),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: AddressBase::ExternalObject(Variable(999001)),
+                offset: AddressOffset::Constant(0),
             },
             crate::kernel::Memory::global_pointer("raw-pointer"),
-            Pointer::loaded_value(
+            Address::loaded_value(
                 &memory,
                 &crate::kernel::Memory::global_pointer("raw-pointer"),
             ),
-            Pointer::integer_address(MachineTerm::Variable(Variable(999002))),
-            Pointer {
-                block: PointerBlock::PureFunctionApplication(SharedPureApplication::intern(
+            Address::integer_address(MachineTerm::Variable(Variable(999002))),
+            Address {
+                base: AddressBase::PureFunctionApplication(SharedPureApplication::intern(
                     "raw_pointer_call".into(),
                     vec![PureFunctionArgument::Value(ProgramValue::Int32(
                         MachineTerm::Variable(Variable(999002)),
                     ))],
                 )),
-                offset: PointerOffsetTerm::Constant(0),
+                offset: AddressOffset::Constant(0),
             },
         ];
         let base = values.clone();
         for pointer in base {
-            values.push(Pointer {
-                block: pointer.block,
-                offset: PointerOffsetTerm::Add(
-                    Box::new(PointerOffsetTerm::Constant(0)),
-                    Box::new(PointerOffsetTerm::scaled_int32_node(
+            values.push(Address {
+                base: pointer.base,
+                offset: AddressOffset::Add(
+                    Box::new(AddressOffset::Constant(0)),
+                    Box::new(AddressOffset::scaled_int32_node(
                         MachineTerm::Variable(Variable(999002)),
                         4,
                     )),
@@ -80,10 +80,7 @@ mod tests {
         let values = pointers();
         for a in &values {
             for b in &values {
-                let shared = [
-                    SharedPointerAddress::import(a),
-                    SharedPointerAddress::import(b),
-                ];
+                let shared = [SharedAddress::import(a), SharedAddress::import(b)];
                 let expected = ConditionTerm::pointer_equal(a.clone(), b.clone());
                 let actual = KernelTerm::pointer_equal(shared);
                 assert_eq!(KernelTermExport::condition(&actual).unwrap(), expected);
@@ -105,15 +102,15 @@ mod tests {
     #[test]
     fn raw_pointer_condition_substitutions_preserve_native_policy() {
         let _session = crate::kernel::VerificationSession::enter();
-        let target = Pointer {
-            block: PointerBlock::Symbolic(Variable(999010)),
-            offset: PointerOffsetTerm::Add(
-                Box::new(PointerOffsetTerm::Constant(1)),
-                Box::new(PointerOffsetTerm::Constant(2)),
+        let target = Address {
+            base: AddressBase::Symbolic(Variable(999010)),
+            offset: AddressOffset::Add(
+                Box::new(AddressOffset::Constant(1)),
+                Box::new(AddressOffset::Constant(2)),
             ),
         };
         for pointer in pointers() {
-            let source = ConditionTerm::PointerEqual(Box::new(pointer), Box::new(Pointer::null()));
+            let source = ConditionTerm::PointerEqual(Box::new(pointer), Box::new(Address::null()));
             for source in [
                 source.clone(),
                 ConditionTerm::BoolEqual(
@@ -169,21 +166,21 @@ mod tests {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
         let _session = crate::kernel::VerificationSession::enter();
         let roots = [CScalarClass::Int, CScalarClass::Char].map(|class| {
-            let block = PointerBlock::PureFunctionApplication(SharedPureApplication::intern(
+            let block = AddressBase::PureFunctionApplication(SharedPureApplication::intern(
                 "raw_pointer_metadata".into(),
                 vec![PureFunctionArgument::Value(ProgramValue::UInt64(
                     MachineTerm::PointerAddress(
-                        Box::new(Pointer::symbolic(Variable(999020))),
+                        Box::new(Address::symbolic(Variable(999020))),
                         AddressObjectClass::new(Some(CAccessClass::Scalar(class))),
                     ),
                 ))],
             ));
             let source = ConditionTerm::PointerEqual(
-                Box::new(Pointer {
-                    block,
-                    offset: PointerOffsetTerm::Constant(0),
+                Box::new(Address {
+                    base: block,
+                    offset: AddressOffset::Constant(0),
                 }),
-                Box::new(Pointer::null()),
+                Box::new(Address::null()),
             );
             KernelTermImport::default().condition(&source)
         });
@@ -232,16 +229,16 @@ mod tests {
                     },
                 );
                 let offset = if wide {
-                    PointerOffsetTerm::scaled_int64_node(value, 8, false)
+                    AddressOffset::scaled_int64_node(value, 8, false)
                 } else {
-                    PointerOffsetTerm::scaled_int32_node(value, 4)
+                    AddressOffset::scaled_int32_node(value, 4)
                 };
                 ConditionTerm::PointerEqual(
-                    Box::new(Pointer {
-                        block: PointerBlock::Symbolic(Variable(999030)),
+                    Box::new(Address {
+                        base: AddressBase::Symbolic(Variable(999030)),
                         offset,
                     }),
-                    Box::new(Pointer::null()),
+                    Box::new(Address::null()),
                 )
             };
             let a = condition(ProgramPoint::at(&memory_a));

@@ -33,7 +33,7 @@ fn helper_transfers_ignore_unrelated_resources_protocols_and_history() {
                 .loan_ledger
                 .as_ref()
                 .unwrap()
-                .borrowed_mutex_use_input(holder, support, Pointer::symbolic(Variable(900 + index)))
+                .borrowed_mutex_use_input(holder, support, Address::symbolic(Variable(900 + index)))
                 .unwrap();
             state.resources = state
                 .resources

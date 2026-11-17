@@ -28,7 +28,7 @@ fn hashing_a_pointer_word_does_not_walk_its_type_origins() {
         assert_eq!(evidence, reversed);
         let word = crate::kernel::eval::cast_program_value_to_type(
             ProgramValue::typed_pointer(
-                Pointer::symbolic(Variable(930_444)),
+                Address::symbolic(Variable(930_444)),
                 ProgramType::Int32Pointer,
             )
             .with_pointer_object_type_evidence(Some(evidence)),

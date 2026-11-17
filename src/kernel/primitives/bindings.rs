@@ -820,7 +820,7 @@ mod tests {
         assert_ne!(first, Memory::frame_local_pointer(1, referent));
         assert_ne!(first, Memory::frame_local_pointer(1, "&x"));
         assert_ne!(first, Memory::frame_local_pointer(2, carrier.clone()));
-        assert!(first.block.is_local_block());
+        assert!(first.base.is_local_block());
         assert!(first.blocks_proven_distinct(&Memory::frame_local_pointer(2, carrier)));
     }
 
@@ -844,8 +844,8 @@ mod tests {
         let carrier = BindingName::reference_carrier("x");
         let variable = ProgramExpression::Variable(carrier);
         let fake = ProgramExpression::Variable("&x".into());
-        let pointer = ProgramValue::pointer(Pointer::symbolic(Variable(71)));
-        let other = ProgramValue::pointer(Pointer::symbolic(Variable(72)));
+        let pointer = ProgramValue::pointer(Address::symbolic(Variable(71)));
+        let other = ProgramValue::pointer(Address::symbolic(Variable(72)));
         let spec = ResourceSpec::declared_with_argument_states(
             ResourceFamily::Composite,
             ResourceAccessMode::Own,
@@ -905,8 +905,8 @@ mod tests {
             assert_eq!(locals.get(&temporary).unwrap().native().as_ref(), &int32(7));
             assert!(
                 Memory::local_pointer(&temporary)
-                    .block
-                    .proven_distinct(&Memory::local_pointer(binding).block)
+                    .base
+                    .proven_distinct(&Memory::local_pointer(binding).base)
             );
         }
         assert_eq!(temporary.source_spelling(), None);
@@ -950,7 +950,7 @@ mod tests {
         assert_eq!(CONTRACT_RESULT.named(), None);
         assert_eq!(CONTRACT_RESULT.to_string(), "result");
         let result_slot = Memory::local_pointer(CONTRACT_RESULT);
-        assert_eq!(result_slot.block, PointerBlock::ContractResult);
+        assert_eq!(result_slot.base, AddressBase::ContractResult);
         for binding in [
             source,
             BindingName::from("result"),
@@ -958,8 +958,8 @@ mod tests {
         ] {
             assert!(
                 result_slot
-                    .block
-                    .proven_distinct(&Memory::local_pointer(binding).block)
+                    .base
+                    .proven_distinct(&Memory::local_pointer(binding).base)
             );
         }
     }
@@ -989,11 +989,11 @@ mod tests {
         assert_eq!(CONTRACT_EXCEPTION.named(), None);
         assert_eq!(CONTRACT_EXCEPTION.to_string(), "exception");
         let result_slot = Memory::local_pointer(CONTRACT_EXCEPTION);
-        assert_eq!(result_slot.block, PointerBlock::ContractException);
+        assert_eq!(result_slot.base, AddressBase::ContractException);
         assert!(
             result_slot
-                .block
-                .proven_distinct(&PointerBlock::ContractResult)
+                .base
+                .proven_distinct(&AddressBase::ContractResult)
         );
         for binding in [
             source,
@@ -1002,8 +1002,8 @@ mod tests {
         ] {
             assert!(
                 result_slot
-                    .block
-                    .proven_distinct(&Memory::local_pointer(binding).block)
+                    .base
+                    .proven_distinct(&Memory::local_pointer(binding).base)
             );
         }
     }
@@ -1062,7 +1062,7 @@ mod tests {
         ];
         for (index, address) in addresses.iter().enumerate() {
             for other in &addresses[index + 1..] {
-                assert!(address.block.proven_distinct(&other.block));
+                assert!(address.base.proven_distinct(&other.base));
             }
         }
     }

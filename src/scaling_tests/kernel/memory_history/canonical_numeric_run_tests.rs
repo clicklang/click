@@ -7,7 +7,7 @@ use super::*;
 #[test]
 fn deep_canonicalization_preserves_numeric_load_and_copy_runs() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Pointer::symbolic(crate::kernel::Variable(7_629_000));
+    let base = Address::symbolic(crate::kernel::Variable(7_629_000));
     for element_type in [
         ProgramType::Int8,
         ProgramType::UInt8,

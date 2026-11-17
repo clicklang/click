@@ -371,7 +371,7 @@ through two calls to a pointer-taking helper without resetting the state.
 - Named unions whose members are `int32`, `uint8`, or modeled pointer fields;
   they are embedded in structs and accessed through read-only member loads.
 
-Pointers are semantic objects with provenance blocks and pointer-offset terms.
+Pointers are semantic objects with address bases and address offsets.
 They are not modeled as `int32` values. The current target layout assumes
 8-byte pointer objects.
 

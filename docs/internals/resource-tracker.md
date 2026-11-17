@@ -229,7 +229,7 @@ established.
 
 | Recorded step | A cell | A block, as an array argument | A stated footprint |
 | --- | --- | --- | --- |
-| `Store` | separate on proven-distinct blocks, a common-base offset inequality, checked full-byte separation through a base alias, typed `separate(..)` evidence, an explicit range, general distinctness, or two owned members of one composition | separate **only** on `PointerBlock::proven_distinct` | separate when the written bytes miss every range |
+| `Store` | separate on proven-distinct blocks, a common-base offset inequality, checked full-byte separation through a base alias, typed `separate(..)` evidence, an explicit range, general distinctness, or two owned members of one composition | separate **only** on `AddressBase::proven_distinct` | separate when the written bytes miss every range |
 | `BlockDeclared` | separate under the extended-bridging gate: it writes nothing | separate when the declared object is proven distinct: it has its own `blocks` key, so this block's size is the entry it was | separate: it writes nothing |
 | `HeapAllocationPending` | separate under the extended-bridging gate | separate: a request with no address yet records nothing a read of a block consults | separate: it writes nothing |
 | `ContractAllocationClaimsChanged` | separate under the extended-bridging gate | **stops** | separate: it writes nothing |
@@ -333,7 +333,7 @@ use only the kernel's structural separation, because its answer is embedded in a
 name that is shared across proof paths, and the rule enforces that by handing
 the block arm no fact context at all. Where the cell column reads a stated
 `separate(..)`, an offset inequality or a resource composition, the block column
-reads only `PointerBlock::proven_distinct` and the checked write set the edge
+reads only `AddressBase::proven_distinct` and the checked write set the edge
 itself carries — which is path-independent, and so may be read off an interned
 edge.
 
@@ -577,7 +577,7 @@ that a fix lands in one of them rather than beside it.
 
 | Predicate | Home |
 | --- | --- |
-| `PointerBlock::proven_distinct`, `may_alias`, `observable_by_load`; `Pointer::blocks_proven_distinct`; `block_is_never_address_taken_local` | `src/kernel/primitives.rs` |
+| `AddressBase::proven_distinct`, `may_alias`, `observable_by_load`; `Address::blocks_proven_distinct`; `block_is_never_address_taken_local` | `src/kernel/primitives.rs` |
 | `pointers_proven_distinct_for_memory_resolution`, `pointers_distinct_through_one_exact_alias`, `never_address_taken_local_versus_pointer_value`, `pointer_offsets_with_common_base_proven_distinct` and its `_distinctness_condition`, `cell_disjoint_from_load_by_constant_offset`, `cell_is_observable_by_load`, `local_block_no_pointer_can_reach` | `src/kernel/reasoning/memory_resolution.rs` |
 | `range_proven_disjoint_from_pointer`, `ranges_proven_disjoint_from_pointer`, `ranges_directly_disjoint_from_pointer`, `pointers_directly_disjoint_by_range`, `pointers_proven_disjoint_by_explicit_range_for_memory_resolution`, `pointers_proven_disjoint_by_shallow_explicit_range` | `src/kernel/assumptions/memory_reasoning.rs` |
 | `typed_store_separated_ranges_evidence`, `typed_range_disjoint_from_pointer_evidence`, `typed_ranges_disjoint_from_pointer_evidence`, `heap_allocation_proven_separate_from_pointer`, `owned_composition_store_separated_evidence` | `src/kernel/memory_history.rs` |
@@ -725,7 +725,7 @@ The exception is gone, and `observable_by_load` is now `may_alias` for every
 load. Two things were `Symbolic` before, and only one of them still is:
 
 - an object the verifier introduced, today the temporary that holds an
-  aggregate a call returns by value, carries `PointerBlock::Temporary`. It is
+  aggregate a call returns by value, carries `AddressBase::Temporary`. It is
   fresh — the program has no prior pointer into it and C gives it no way to
   take its address — so `proven_distinct` separates it from every other block,
   as it does `Heap`. Its loads keep the structural frame they had, which is why

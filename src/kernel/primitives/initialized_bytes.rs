@@ -21,7 +21,7 @@
 //! Every operation touches the entries of the one block it names (O(log n)
 //! to position plus the entries it merges or visits), never unrelated blocks.
 
-use super::{AliasCandidates, HashedOrdMap, Pointer, PointerBlock, PointerOffsetTerm};
+use super::{Address, AddressBase, AddressOffset, AliasCandidates, HashedOrdMap};
 
 /// See the module comment.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -29,13 +29,13 @@ pub(crate) struct InitializedBytes {
     /// Start pointer to byte length. Invariant: within one block, the
     /// constant-offset entries are pairwise disjoint and non-adjacent, and
     /// every length is nonzero.
-    entries: HashedOrdMap<Pointer, u32>,
+    entries: HashedOrdMap<Address, u32>,
 }
 
-fn constant_start(block: &PointerBlock, offset: i64) -> Pointer {
-    Pointer {
-        block: block.clone(),
-        offset: PointerOffsetTerm::Constant(offset),
+fn constant_start(block: &AddressBase, offset: i64) -> Address {
+    Address {
+        base: block.clone(),
+        offset: AddressOffset::Constant(offset),
     }
 }
 
@@ -47,7 +47,7 @@ impl InitializedBytes {
 
     /// The entries as a state map, for the generic observable-entry and
     /// relative-equality comparisons.
-    pub(crate) fn as_map(&self) -> &HashedOrdMap<Pointer, u32> {
+    pub(crate) fn as_map(&self) -> &HashedOrdMap<Address, u32> {
         &self.entries
     }
 
@@ -59,7 +59,7 @@ impl InitializedBytes {
 
     /// The run of constant offsets in `block` that starts at or before
     /// `offset`, nearest first: the only run that can contain it.
-    fn run_at_or_before(&self, block: &PointerBlock, offset: i64) -> Option<(i64, i64)> {
+    fn run_at_or_before(&self, block: &AddressBase, offset: i64) -> Option<(i64, i64)> {
         self.entries
             .range(constant_start(block, i64::MIN)..=constant_start(block, offset))
             .next_back()
@@ -71,11 +71,11 @@ impl InitializedBytes {
 
     /// Whether every one of the `byte_width` bytes at `pointer` is recorded
     /// as initialized.
-    pub(crate) fn covers(&self, pointer: &Pointer, byte_width: u32) -> bool {
+    pub(crate) fn covers(&self, pointer: &Address, byte_width: u32) -> bool {
         crate::instrumentation::record_deterministic_work(1);
         match pointer.offset.as_const() {
             Some(offset) => self
-                .run_at_or_before(&pointer.block, offset)
+                .run_at_or_before(&pointer.base, offset)
                 .is_some_and(|(_, end)| end >= offset + i64::from(byte_width)),
             None => self
                 .entries
@@ -86,7 +86,7 @@ impl InitializedBytes {
 
     /// The end of the run of `block` holding the byte at `offset`, if one
     /// does: one predecessor lookup.
-    pub(crate) fn run_end_holding(&self, block: &PointerBlock, offset: i64) -> Option<i64> {
+    pub(crate) fn run_end_holding(&self, block: &AddressBase, offset: i64) -> Option<i64> {
         crate::instrumentation::record_deterministic_work(1);
         self.run_at_or_before(block, offset)
             .map(|(_, end)| end)
@@ -94,14 +94,14 @@ impl InitializedBytes {
     }
 
     /// Whether one run of `block` holds every byte in `start..end`.
-    pub(crate) fn covers_interval(&self, block: &PointerBlock, start: i64, end: i64) -> bool {
+    pub(crate) fn covers_interval(&self, block: &AddressBase, start: i64, end: i64) -> bool {
         crate::instrumentation::record_deterministic_work(1);
         self.run_at_or_before(block, start)
             .is_some_and(|(_, run_end)| run_end >= end)
     }
 
     /// The constant-offset runs of `block`, ascending, as start and length.
-    pub(crate) fn constant_runs_in_block(&self, block: &PointerBlock) -> Vec<(i64, u32)> {
+    pub(crate) fn constant_runs_in_block(&self, block: &AddressBase) -> Vec<(i64, u32)> {
         let runs = AliasCandidates::only_block(block)
             .entries(&self.entries)
             .filter_map(|(start, length)| Some((start.offset.as_const()?, *length)))
@@ -113,7 +113,7 @@ impl InitializedBytes {
     /// Records that the `byte_width` bytes at `pointer` are initialized.
     /// Returns whether the record changed: recording bytes it already covers
     /// leaves it (and so the state's content) exactly as it was.
-    pub(crate) fn record(&mut self, pointer: &Pointer, byte_width: u32) -> bool {
+    pub(crate) fn record(&mut self, pointer: &Address, byte_width: u32) -> bool {
         if byte_width == 0 {
             return false;
         }
@@ -128,7 +128,7 @@ impl InitializedBytes {
             self.entries.insert(pointer.clone(), byte_width);
             return true;
         };
-        let block = &pointer.block;
+        let block = &pointer.base;
         let mut start = offset;
         let mut end = offset + i64::from(byte_width);
         if let Some((before_start, before_end)) = self.run_at_or_before(block, offset)
@@ -166,14 +166,14 @@ impl InitializedBytes {
     /// part of every run that holds them, splitting a run that straddles
     /// either end; at a symbolic offset, the entry of that exact spelling.
     /// Returns whether the record changed.
-    pub(crate) fn forget(&mut self, pointer: &Pointer, byte_width: u32) -> bool {
+    pub(crate) fn forget(&mut self, pointer: &Address, byte_width: u32) -> bool {
         let Some(start) = pointer.offset.as_const() else {
             return self.entries.remove(pointer).is_some();
         };
         if byte_width == 0 {
             return false;
         }
-        let block = &pointer.block;
+        let block = &pointer.base;
         let end = start + i64::from(byte_width);
         let first = self
             .run_at_or_before(block, start)
@@ -212,7 +212,7 @@ impl InitializedBytes {
 
     /// Forgets every entry of `block`: its object's lifetime ended, so a
     /// later object must start uninitialized.
-    pub(crate) fn forget_block(&mut self, block: &PointerBlock) {
+    pub(crate) fn forget_block(&mut self, block: &AddressBase) {
         AliasCandidates::only_block(block).retain_map(&mut self.entries, |_, _| false);
     }
 
@@ -222,7 +222,7 @@ impl InitializedBytes {
     pub(crate) fn retain_candidates(
         &mut self,
         candidates: &AliasCandidates,
-        keep: impl FnMut(&Pointer, &u32) -> bool,
+        keep: impl FnMut(&Address, &u32) -> bool,
     ) {
         candidates.retain_map(&mut self.entries, keep);
     }
@@ -249,11 +249,11 @@ impl InitializedBytes {
             };
             let end = start + i64::from(*length);
             let first = other
-                .run_at_or_before(&pointer.block, start)
+                .run_at_or_before(&pointer.base, start)
                 .map_or(start, |(other_start, _)| other_start);
             for (other_pointer, other_length) in other
                 .entries
-                .range(constant_start(&pointer.block, first)..constant_start(&pointer.block, end))
+                .range(constant_start(&pointer.base, first)..constant_start(&pointer.base, end))
             {
                 visited += 1;
                 let Some(other_start) = other_pointer.offset.as_const() else {
@@ -264,7 +264,7 @@ impl InitializedBytes {
                 let piece_end = end.min(other_end);
                 if piece_start < piece_end {
                     result.insert(
-                        constant_start(&pointer.block, piece_start),
+                        constant_start(&pointer.base, piece_start),
                         u32::try_from(piece_end - piece_start).expect("a piece of a run"),
                     );
                 }
@@ -277,7 +277,7 @@ impl InitializedBytes {
     /// The same record with every start pointer rewritten, re-merged so the
     /// run invariant holds even where the rewrite made a symbolic start
     /// constant.
-    pub(crate) fn map_pointers(&self, mut rewrite: impl FnMut(&Pointer) -> Pointer) -> Self {
+    pub(crate) fn map_pointers(&self, mut rewrite: impl FnMut(&Address) -> Address) -> Self {
         let mut result = Self::default();
         for (pointer, length) in self.entries.iter() {
             result.record(&rewrite(pointer), *length);
@@ -290,8 +290,8 @@ impl InitializedBytes {
 mod tests {
     use super::*;
 
-    fn at(block: &str, offset: i64) -> Pointer {
-        constant_start(&PointerBlock::from(block), offset)
+    fn at(block: &str, offset: i64) -> Address {
+        constant_start(&AddressBase::from(block), offset)
     }
 
     #[test]

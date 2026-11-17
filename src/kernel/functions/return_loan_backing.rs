@@ -153,7 +153,7 @@ mod tests {
         ledger: &LoanLedger,
         owner: super::super::super::loans::LoanParticipantId,
         reader: super::super::super::loans::LoanParticipantId,
-        p: Pointer,
+        p: Address,
     ) -> (LoanLedger, SelectedBacking) {
         let fact = ResourceFact::own_memory(MemoryRange::new(p, 0u32.into(), 1u32.into()));
         let (_, inserted) =
@@ -175,8 +175,8 @@ mod tests {
         let ledger = LoanLedger::new();
         let owner = ledger.fresh_participant().unwrap();
         let reader = ledger.fresh_participant().unwrap();
-        let p = Pointer::symbolic(Variable(8_912_000));
-        let q = Pointer::symbolic(Variable(8_912_001));
+        let p = Address::symbolic(Variable(8_912_000));
+        let q = Address::symbolic(Variable(8_912_001));
         let (ledger, a) = source(&ledger, owner, reader, p.clone());
         let (ledger, b) = source(&ledger, owner, reader, q.clone());
         let facts = PureFactContext::new();
@@ -210,8 +210,8 @@ mod coverage_tests {
     use super::*;
     #[test]
     fn a_selected_whole_view_backs_separate_translated_pieces() {
-        let p = Pointer::symbolic(Variable(8_915_000));
-        let q = Pointer::symbolic(Variable(8_915_001));
+        let p = Address::symbolic(Variable(8_915_000));
+        let q = Address::symbolic(Variable(8_915_001));
         let facts = PureFactContext::new().assume_condition(
             ConditionTerm::pointer_equal(q.clone(), p.offset_by_bytes(4)),
             true,

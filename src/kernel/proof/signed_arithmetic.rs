@@ -1134,7 +1134,7 @@ fn affine_difference(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{Pointer, Variable};
+    use crate::kernel::{Address, Variable};
 
     #[test]
     fn remainder_add_requires_nonnegative_bounded_dividends_and_single_residue_interval() {
@@ -1170,7 +1170,7 @@ mod tests {
         use crate::kernel::{KernelTermExport, KernelTermImport, LoadKind, VerificationSession};
         let _session = VerificationSession::enter();
         let memory = crate::kernel::intern_memory(crate::kernel::Memory::new());
-        let address = Pointer::symbolic(Variable(997151));
+        let address = Address::symbolic(Variable(997151));
         let read = |offset, kind| {
             MachineTerm::MemoryLoad(
                 crate::kernel::ProgramPoint::at(&memory),

@@ -1,9 +1,9 @@
 use super::*;
 
-fn local_pointer() -> Pointer {
-    Pointer {
-        block: PointerBlock::Concrete("local:caller:x".to_string()),
-        offset: PointerOffsetTerm::Constant(0),
+fn local_pointer() -> Address {
+    Address {
+        base: AddressBase::Concrete("local:caller:x".to_string()),
+        offset: AddressOffset::Constant(0),
     }
 }
 
@@ -26,7 +26,7 @@ fn uninitialized_cell_spec() -> ResourceSpec {
     )
 }
 
-fn caller_state(pointer: &Pointer) -> ExecutionState {
+fn caller_state(pointer: &Address) -> ExecutionState {
     let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own(
         Resource::Memory(MemoryRange::new(
             pointer.clone(),
@@ -36,14 +36,14 @@ fn caller_state(pointer: &Pointer) -> ExecutionState {
     ));
     ExecutionState::new()
         .with_population_creation_tracking()
-        .with_memory(Memory::new().with_block(pointer.block.clone(), 4))
+        .with_memory(Memory::new().with_block(pointer.base.clone(), 4))
         .with_resource_context(resources)
 }
 
 fn apply(
     function: ProgramFunction,
     state: &ExecutionState,
-    pointer: &Pointer,
+    pointer: &Address,
 ) -> Vec<FunctionPath> {
     let environment =
         ExecutionEnvironment::new().with_verified_function_rule(VerifiedFunctionRule {
@@ -131,15 +131,15 @@ fn owned_write_keeps_an_uninitialized_output_writable() {
 fn aliased_byte_output_fixture(
     size: u32,
     initialized_output: bool,
-) -> (ExecutionState, ProgramFunction, PureFactContext, Pointer) {
+) -> (ExecutionState, ProgramFunction, PureFactContext, Address) {
     let word = Memory::local_pointer("output-word");
-    let alias = Pointer::symbolic(Variable(987_000));
+    let alias = Address::symbolic(Variable(987_000));
     let mut memory =
-        Memory::new().with_declared_scalar_block(word.block.clone(), 4, ProgramType::UInt32);
+        Memory::new().with_declared_scalar_block(word.base.clone(), 4, ProgramType::UInt32);
     let mut assumptions = PureFactContext::new();
     let mut previous = alias.clone();
     for i in 0..size {
-        let next = Pointer::symbolic(Variable(987_001 + u64::from(i)));
+        let next = Address::symbolic(Variable(987_001 + u64::from(i)));
         assumptions = assumptions
             .assume_condition(ConditionTerm::pointer_equal(previous, next.clone()), true);
         previous = next;

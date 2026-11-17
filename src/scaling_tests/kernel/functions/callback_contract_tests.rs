@@ -6,13 +6,13 @@ use super::*;
 
 #[test]
 fn authoritative_memory_projection_scales_with_used_members_not_unrelated_frames() {
-    let pointer = Pointer {
-        block: PointerBlock::Concrete("local:projection:data".to_string()),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::Concrete("local:projection:data".to_string()),
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(pointer.clone()))
-        .with_memory(Memory::new().with_block(pointer.block.clone(), 512));
+        .with_memory(Memory::new().with_block(pointer.base.clone(), 512));
     let mut samples = Vec::new();
     for used_members in [1usize, 4, 16, 64] {
         let mut memory = state.memory.clone();
@@ -104,9 +104,9 @@ fn authoritative_memory_projection_scales_with_used_members_not_unrelated_frames
 #[test]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn checked_transition_projection_ignores_unrelated_caller_frame() {
-    let pointer = Pointer {
-        block: PointerBlock::Concrete("local:transition:data".to_string()),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::Concrete("local:transition:data".to_string()),
+        offset: AddressOffset::Constant(0),
     };
     let mut samples = Vec::new();
     for used_members in [1usize, 4, 16, 64] {
@@ -136,7 +136,7 @@ fn checked_transition_projection_ignores_unrelated_caller_frame() {
                 .collect::<Vec<_>>();
             let state = ExecutionState::new()
                 .with_local("p", ProgramValue::pointer(pointer.clone()))
-                .with_memory(Memory::new().with_block(pointer.block.clone(), 512))
+                .with_memory(Memory::new().with_block(pointer.base.clone(), 512))
                 .with_resource_context(ResourceContext::new().unchecked_with_facts(owned));
             let function = program_function(
                 ProgramType::Void,
@@ -198,9 +198,9 @@ fn checked_transition_projection_ignores_unrelated_caller_frame() {
 
 #[test]
 fn checked_wrapper_projection_scales_with_used_members() {
-    let pointer = Pointer {
-        block: PointerBlock::Concrete("local:wrapper:data".to_string()),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::Concrete("local:wrapper:data".to_string()),
+        offset: AddressOffset::Constant(0),
     };
     let mut samples = Vec::new();
     for used_members in [1usize, 4, 16, 64] {
@@ -229,7 +229,7 @@ fn checked_wrapper_projection_scales_with_used_members() {
         );
         let state = ExecutionState::new()
             .with_local("p", ProgramValue::pointer(pointer.clone()))
-            .with_memory(Memory::new().with_block(pointer.block.clone(), 512))
+            .with_memory(Memory::new().with_block(pointer.base.clone(), 512))
             .with_resource_context(ResourceContext::new().unchecked_with_fact(
                 ResourceFact::own_composite(
                     "TransitionWrapper".into(),
@@ -285,7 +285,7 @@ fn checked_wrapper_projection_scales_with_used_members() {
 #[test]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn callback_fact_lookup_scales_with_calls_not_unrelated_supported_facts() {
-    fn callback_fact(name: &str, pointer: Pointer, state: ExecutionState) -> Proposition {
+    fn callback_fact(name: &str, pointer: Address, state: ExecutionState) -> Proposition {
         Proposition::Predicate {
             name: FunctionContract::predicate_name_for(name),
             arguments: vec![
@@ -298,7 +298,7 @@ fn callback_fact_lookup_scales_with_calls_not_unrelated_supported_facts() {
         }
     }
 
-    let target = Pointer::symbolic_function(Variable(92_000));
+    let target = Address::symbolic_function(Variable(92_000));
     let mut samples = Vec::new();
     for calls in [1usize, 2, 4, 8, 16] {
         for unrelated in [4usize, 16, 64, 256, 1024] {
@@ -310,7 +310,7 @@ fn callback_fact_lookup_scales_with_calls_not_unrelated_supported_facts() {
             for index in 0..unrelated {
                 assumptions = assumptions.assume_proposition(callback_fact(
                     "Unrelated",
-                    Pointer::symbolic_function(Variable(93_000 + index as u64)),
+                    Address::symbolic_function(Variable(93_000 + index as u64)),
                     ExecutionState::new(),
                 ));
             }

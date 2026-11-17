@@ -7,9 +7,9 @@ fn retained_rewritten_loads_share_syntax_but_recheck_authority() {
                 let _session = VerificationSession::enter();
                 let format = MachineIntegerType::Int32;
                 let memory = intern_memory(Memory::new());
-                let pointer = Pointer {
-                    block: PointerBlock::Symbolic(Variable(1005500)),
-                    offset: PointerOffsetTerm::Constant(0),
+                let pointer = Address {
+                    base: AddressBase::Symbolic(Variable(1005500)),
+                    offset: AddressOffset::Constant(0),
                 };
                 let variable =
                     crate::kernel::eval::load_variable_for_cell(&memory, &pointer, LoadKind::Int32);

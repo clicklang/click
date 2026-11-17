@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn implicit_void_pointer_coercions_preserve_complete_views_in_both_evaluators() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Pointer::symbolic(Variable(998_803));
+    let base = Address::symbolic(Variable(998_803));
     let class = crate::kernel::effective_type::CAccessClass::Struct(
         crate::kernel::effective_type::CStructClass::opaque("pair"),
     );
@@ -99,7 +99,7 @@ fn implicit_void_pointer_coercions_preserve_complete_views_in_both_evaluators() 
 fn implicit_void_pointer_coercion_rejects_function_pointers() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = ProgramValue::typed_pointer(
-        Pointer::symbolic(Variable(998_804)),
+        Address::symbolic(Variable(998_804)),
         ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
     );
     let spec = SpecExpression::PointerCoercion(
@@ -151,7 +151,7 @@ fn native_pointer_word_round_trip_does_not_promote_declared_class_to_evidence() 
         crate::kernel::effective_type::CStructClass::opaque("node"),
     );
     let source = PointerValue::new(
-        Pointer::symbolic(Variable(998_805)),
+        Address::symbolic(Variable(998_805)),
         ProgramType::Int32Pointer,
     )
     .with_declared_object_class(Some(class.clone()));

@@ -36,7 +36,7 @@ pub(crate) use undefined_site::{
 fn volatile_access_fact(
     budget: &mut ExecutionBudget,
     kind: VolatileAccessKind,
-    pointer: Pointer,
+    pointer: Address,
     value_type: ProgramType,
     value: ProgramValue,
 ) -> ExecutionResult<ExecutionPureFact> {

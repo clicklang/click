@@ -5,7 +5,7 @@ use crate::kernel::BooleanOperandView as B;
 pub(in crate::kernel) fn substitute_pointer_boolean_value(
     root: &KernelTerm,
     from: Variable,
-    to: &Pointer,
+    to: &Address,
 ) -> Option<KernelTerm> {
     let mut rewrite = TermRewrite::for_pointer_variable(from, to);
     let mut variables = rewrite.new_carrier_variables();
@@ -27,12 +27,12 @@ pub(in crate::kernel) fn substitute_pointer_boolean_value(
                 collect_common_address_carriers(&address, &mut variables);
             }
         } else if let Some(offsets) = leaf.pointer_offsets() {
-            crate::kernel::SharedPointerOffset::visit_pair(&offsets, |node| {
+            crate::kernel::SharedAddressOffset::visit_pair(&offsets, |node| {
                 if !variables.visit() {
                     return;
                 }
                 match node {
-                    crate::kernel::KernelPointerOffset::Variable(variable) => {
+                    crate::kernel::KernelAddressOffset::Variable(variable) => {
                         variables.program_values.insert(*variable);
                         collect_registered_load_carriers(*variable, &mut variables);
                     }
@@ -88,7 +88,7 @@ pub(in crate::kernel) fn substitute_pointer_boolean_value(
             ]));
         }
         if let KernelTermNode::PointerOffsetEqual { arguments } = leaf.node() {
-            use crate::kernel::{KernelPointerOffset as O, SharedPointerOffset as S};
+            use crate::kernel::{KernelAddressOffset as O, SharedAddressOffset as S};
             let offsets = S::try_map_pair(arguments, |_, node| {
                 // This entry point is pointer-variable substitution only:
                 // offsets retain their raw shape; registered loads stay closed.
@@ -142,7 +142,7 @@ pub(in crate::kernel) fn substitute_pointer_boolean_value(
 }
 
 fn collect_common_address_carriers(
-    address: &crate::kernel::SharedPointerAddress,
+    address: &crate::kernel::SharedAddress,
     variables: &mut CarrierVariables,
 ) {
     if !variables.visit() {
@@ -150,13 +150,13 @@ fn collect_common_address_carriers(
     }
     // These entry points substitute variables, not exact pointer terms.
     debug_assert!(variables.pointer_terms.is_none());
-    collect_pointer_block_carriers(address.node().block.native_atom(), variables);
+    collect_address_base_carriers(address.node().base.native_atom(), variables);
     address.node().offset.visit_root_in_order(false, |node| {
         if !variables.visit() {
             return;
         }
         match node {
-            crate::kernel::KernelPointerOffset::Variable(variable) => {
+            crate::kernel::KernelAddressOffset::Variable(variable) => {
                 variables.program_values.insert(*variable);
                 collect_registered_load_carriers(*variable, variables);
             }
@@ -175,11 +175,11 @@ impl TermRewrite<'_> {
     /// this outer entry has no fact-driven or registered-load normalization.
     fn boolean_address(
         &mut self,
-        source: &crate::kernel::SharedPointerAddress,
-    ) -> Option<crate::kernel::SharedPointerAddress> {
+        source: &crate::kernel::SharedAddress,
+    ) -> Option<crate::kernel::SharedAddress> {
         use crate::kernel::{
-            KernelPointerOffset as O, SharedPointerAddress as A, SharedPointerBlock,
-            SharedPointerOffset as S,
+            KernelAddressOffset as O, SharedAddress as A, SharedAddressBase,
+            SharedAddressOffset as S,
         };
         debug_assert!(!self.resolve_registered_loads && self.conditions.is_none());
         let original = &source.node().offset;
@@ -201,14 +201,14 @@ impl TermRewrite<'_> {
         })
         .ok()?;
         let offset = offsets[0].clone();
-        let block = source.node().block.native_atom();
+        let block = source.node().base.native_atom();
         let replacement = self.pointer_variable.and_then(|(from, to)| match block {
-            PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable)
+            AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable)
                 if *variable == from =>
             {
                 Some(to.clone())
             }
-            PointerBlock::ExternalObject(variable) if *variable == from => {
+            AddressBase::ExternalObject(variable) if *variable == from => {
                 Some(to.object_identity())
             }
             _ => None,
@@ -216,27 +216,27 @@ impl TermRewrite<'_> {
         let result = if let Some(replacement) = replacement {
             self.changed = true;
             A::new(
-                SharedPointerBlock::import(&replacement.block),
+                SharedAddressBase::import(&replacement.base),
                 S::add(O::import(&replacement.offset), offset),
             )
         } else {
             // Only the opaque block atom crosses its existing native rewrite
             // boundary. The original shared displacement is handled above.
-            let atom = self.pointer(&Pointer {
-                block: block.clone(),
-                offset: PointerOffsetTerm::Constant(0),
+            let atom = self.pointer(&Address {
+                base: block.clone(),
+                offset: AddressOffset::Constant(0),
             });
-            A::new(SharedPointerBlock::import(&atom.block), offset)
+            A::new(SharedAddressBase::import(&atom.base), offset)
         };
         self.refusal().is_none().then_some(result)
     }
 }
 
 pub(in crate::kernel) fn substitute_application_address_bits(
-    source: &crate::kernel::SharedPointerAddress,
+    source: &crate::kernel::SharedAddress,
     from: Variable,
     to: &MachineTerm,
-) -> Option<crate::kernel::SharedPointerAddress> {
+) -> Option<crate::kernel::SharedAddress> {
     let from = MachineTerm::Variable(from);
     let mut rewrite = TermRewrite::for_bits(&from, to);
     let mut variables = rewrite.new_carrier_variables();
@@ -246,10 +246,10 @@ pub(in crate::kernel) fn substitute_application_address_bits(
 }
 
 pub(in crate::kernel) fn substitute_application_address_pointer(
-    source: &crate::kernel::SharedPointerAddress,
+    source: &crate::kernel::SharedAddress,
     from: Variable,
-    to: &Pointer,
-) -> Option<crate::kernel::SharedPointerAddress> {
+    to: &Address,
+) -> Option<crate::kernel::SharedAddress> {
     let mut rewrite = TermRewrite::for_pointer_variable(from, to);
     let mut variables = rewrite.new_carrier_variables();
     collect_common_address_carriers(source, &mut variables);
@@ -265,7 +265,7 @@ impl TermRewrite<'_> {
         source: &crate::kernel::SharedPointerValue,
     ) -> Option<crate::kernel::SharedPointerValue> {
         use crate::kernel::{
-            KernelPointerOffset as O, SharedPointerAddress as A, SharedPointerOffset as S,
+            KernelAddressOffset as O, SharedAddress as A, SharedAddressOffset as S,
             SharedPointerValue as V,
         };
         let (from, to) = self.pointer_variable?;
@@ -275,11 +275,11 @@ impl TermRewrite<'_> {
                 && !self.pointer_addresses_only
         );
         let p = source.node();
-        let base = A::import(&Pointer {
-            block: p.address.node().block.native_atom().clone(),
-            offset: PointerOffsetTerm::Constant(0),
+        let base = A::import(&Address {
+            base: p.address.node().base.native_atom().clone(),
+            offset: AddressOffset::Constant(0),
         });
-        let selected = |address: &A| matches!(address.node().block.native_atom(),PointerBlock::Symbolic(v)|PointerBlock::FunctionSymbolic(v) if *v == from);
+        let selected = |address: &A| matches!(address.node().base.native_atom(),AddressBase::Symbolic(v)|AddressBase::FunctionSymbolic(v) if *v == from);
         let replacement = (selected(&p.address) && p.provenance.syntax_equal(&base))
             .then(|| V::import(&PointerValue::new(to.clone(), p.program_type)));
         let target_identity = A::import(&to.object_identity());
@@ -330,7 +330,7 @@ impl TermRewrite<'_> {
                             O::Int32Scaled { value, byte_width } => {
                                 let index = S::exact_index(&value);
                                 if let Some(written) = index.retained_written_operand() {
-                                    return Ok(O::import(&PointerOffsetTerm::scale_int32(
+                                    return Ok(O::import(&AddressOffset::scale_int32(
                                         crate::kernel::eval::canonical_term(written),
                                         byte_width,
                                     )));
@@ -344,7 +344,7 @@ impl TermRewrite<'_> {
                             } => {
                                 let index = S::exact_index(&value);
                                 if let Some(written) = index.retained_written_operand() {
-                                    return Ok(O::import(&PointerOffsetTerm::scale_int64(
+                                    return Ok(O::import(&AddressOffset::scale_int64(
                                         crate::kernel::eval::canonical_term(written),
                                         byte_width,
                                         unsigned,
@@ -361,7 +361,7 @@ impl TermRewrite<'_> {
                         mapped.into_shared().map_err(|_| ())
                     },
                 )?;
-                Ok::<_, ()>(A::new(address.node().block.clone(), offsets[0].clone()))
+                Ok::<_, ()>(A::new(address.node().base.clone(), offsets[0].clone()))
             })
             .ok()
             .filter(|_| self.refusal().is_none())

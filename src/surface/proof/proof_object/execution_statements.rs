@@ -1026,7 +1026,7 @@ impl<'a> Proof<'a> {
                 && matches!(&argument, ContractExpression::IntegerLiteral(text) if text == "0")
             {
                 arguments.push(ProgramValue::typed_pointer(
-                    crate::kernel::Pointer::null(),
+                    crate::kernel::Address::null(),
                     parameter.program_type(),
                 ));
                 continue;

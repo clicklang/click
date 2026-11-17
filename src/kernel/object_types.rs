@@ -161,7 +161,7 @@ fn pointer_result_from_outcomes<'a>(
             continue;
         }
         let evidence = pointer.object_origin_evidence().cloned().or_else(|| {
-            (pointer.offset == PointerOffsetTerm::Constant(0))
+            (pointer.offset == AddressOffset::Constant(0))
                 .then(|| {
                     state
                         .memory()
@@ -262,14 +262,14 @@ mod tests {
     }
     #[test]
     fn declared_provenance_supply_type_evidence_without_changing_pointer_views() {
-        let object = Pointer {
-            block: "declared_node".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let object = Address {
+            base: "declared_node".into(),
+            offset: AddressOffset::Constant(0),
         };
-        let memory = Memory::new().with_classed_block(object.block.clone(), Some(class()), 8);
+        let memory = Memory::new().with_classed_block(object.base.clone(), Some(class()), 8);
         let make = |provenance| {
             let ProgramValue::Pointer(pointer) = ProgramValue::typed_pointer(
-                Pointer::symbolic(Variable(900_010)),
+                Address::symbolic(Variable(900_010)),
                 ProgramType::Int32Pointer,
             ) else {
                 unreachable!()
@@ -299,8 +299,8 @@ mod tests {
         for (mut value, declared) in [
             (original.clone(), Memory::new()),
             (
-                make(Pointer {
-                    offset: PointerOffsetTerm::Constant(4),
+                make(Address {
+                    offset: AddressOffset::Constant(4),
                     ..object
                 }),
                 memory.clone(),
@@ -322,7 +322,7 @@ mod tests {
     #[test]
     fn unrequired_formal_origins_survive_pointer_words_without_becoming_type_evidence() {
         let value = ProgramValue::typed_pointer(
-            Pointer::symbolic(Variable(900_001)),
+            Address::symbolic(Variable(900_001)),
             ProgramType::Int32Pointer,
         )
         .with_contract_pointer_object_class(Some(class()), None, 0, 42);
@@ -361,7 +361,7 @@ mod tests {
     fn numeric_address_annotations_cannot_manufacture_nominal_type_evidence() {
         let _session = crate::kernel::VerificationSession::enter();
         let original = ProgramValue::typed_pointer(
-            Pointer::symbolic(Variable(900_002)),
+            Address::symbolic(Variable(900_002)),
             ProgramType::Int32Pointer,
         )
         .with_pointer_object_class(Some(class()));
@@ -418,7 +418,7 @@ mod tests {
             .map(|index| {
                 PureFunctionArgument::Value(
                     ProgramValue::typed_pointer(
-                        Pointer::symbolic(Variable(900_002 + index as u64)),
+                        Address::symbolic(Variable(900_002 + index as u64)),
                         ProgramType::Int32Pointer,
                     )
                     .with_contract_pointer_object_class(

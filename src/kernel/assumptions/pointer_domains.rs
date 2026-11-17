@@ -23,7 +23,7 @@ impl PointerDomain {
 /// the full value. Neither entry point reconstructs a synthetic pointer.
 pub(in crate::kernel) enum PointerDomainSource<'a> {
     Value(&'a PointerValue),
-    BoundsOwner(&'a Pointer),
+    BoundsOwner(&'a Address),
 }
 
 impl<'a> From<&'a PointerValue> for PointerDomainSource<'a> {
@@ -60,7 +60,7 @@ impl PureFactContext {
     /// larger domain; per-access bounds checking remains a separate consumer.
     pub(super) fn selected_domain_access_matches(
         &self,
-        required: (&Pointer, Option<&Pointer>),
+        required: (&Address, Option<&Address>),
         available: &MemoryRange,
     ) -> bool {
         let Some(origin) = required.1 else {
@@ -108,7 +108,7 @@ mod tests {
     use super::*;
 
     fn pointer(id: u64) -> PointerValue {
-        PointerValue::new(Pointer::symbolic(Variable(id)), ProgramType::Int32Pointer)
+        PointerValue::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
     }
     fn equal(facts: PureFactContext, a: &PointerValue, b: &PointerValue) -> PureFactContext {
         facts.assume_condition(
@@ -191,12 +191,12 @@ mod tests {
     fn pointer_domain_reads_only_admitted_metadata_for_a_stored_pointer() {
         let _session = crate::kernel::VerificationSession::enter();
         let selected = member(&pointer(997_041));
-        let cell = Pointer::symbolic(Variable(997_042));
+        let cell = Address::symbolic(Variable(997_042));
         let memory = crate::kernel::intern_memory(
             Memory::new().store(cell.clone(), ProgramValue::Pointer(selected.clone())),
         );
         let read = PointerValue::from_read(
-            Pointer::loaded_value(&memory, &cell),
+            Address::loaded_value(&memory, &cell),
             ProgramType::Int32Pointer,
             &memory,
             &cell,

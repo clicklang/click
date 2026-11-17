@@ -144,9 +144,9 @@ fn exact_propagation_keeps_condition_polarity_and_restriction_support() {
 #[test]
 fn exact_propagation_does_not_match_different_memory_states_or_types() {
     use crate::kernel::*;
-    let pointer = Pointer {
-        block: "propagation-cell".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "propagation-cell".into(),
+        offset: AddressOffset::Constant(0),
     };
     let before = Memory::new().with_block("propagation-cell", 4).store(
         pointer.clone(),

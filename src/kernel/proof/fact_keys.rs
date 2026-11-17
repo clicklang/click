@@ -10,14 +10,14 @@ use crate::kernel::LoadKind;
 use crate::kernel::MachineUnaryOp;
 use crate::kernel::unary_term;
 use crate::kernel::{
+    Address, AddressBase, AddressOffset, BitvectorBinaryOp, BitvectorComparisonOp,
+    BitvectorUnaryOp, ComparisonOperator, ConditionTerm, FloatClassification, FloatCondition,
+    MachineTerm, MemoryRange, Proposition, Variable,
+};
+use crate::kernel::{
     AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, IntegerComparisonOperator, IntegerTerm,
     MachineIntegerType, PointerValue, ProgramType, ProgramValue, PureFunctionArgument,
     SharedIntegerTerm, SharedMemory, Sort, Term,
-};
-use crate::kernel::{
-    BitvectorBinaryOp, BitvectorComparisonOp, BitvectorUnaryOp, ComparisonOperator, ConditionTerm,
-    FloatClassification, FloatCondition, MachineTerm, MemoryRange, Pointer, PointerBlock,
-    PointerOffsetTerm, Proposition, Variable,
 };
 use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{
@@ -65,7 +65,7 @@ pub(crate) enum MemoryErasedPropositionKey {
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) struct MemoryErasedMemoryRangeKey {
-    block: PointerBlock,
+    block: AddressBase,
     offset: MemoryErasedPointerOffsetKey,
     start: MemoryErasedBitvectorKey,
     end: MemoryErasedBitvectorKey,
@@ -160,13 +160,13 @@ fn memory_erased_pointer_value_key(pointer: &PointerValue) -> MemoryErasedPointe
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) struct MemoryErasedPointerKey {
-    block: MemoryErasedPointerBlockKey,
+    block: MemoryErasedAddressBaseKey,
     offset: Box<MemoryErasedPointerOffsetKey>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-enum MemoryErasedPointerBlockKey {
-    Exact(PointerBlock),
+enum MemoryErasedAddressBaseKey {
+    Exact(AddressBase),
     Read(Box<MemoryErasedPointerKey>),
 }
 
@@ -182,7 +182,7 @@ pub(crate) enum MemoryErasedPointerOffsetNode {
         byte_width: i64,
         unsigned: bool,
     },
-    Exact(PointerOffsetTerm),
+    Exact(AddressOffset),
 }
 
 impl MemoryErasedPropositionKey {
@@ -246,7 +246,7 @@ impl MemoryErasedFloatConditionKey {
 
 impl MemoryErasedPointerKey {
     fn requires_checked_match(&self) -> bool {
-        matches!(self.block, MemoryErasedPointerBlockKey::Read(_))
+        matches!(self.block, MemoryErasedAddressBaseKey::Read(_))
             || self.offset.requires_checked_match()
     }
 }
@@ -394,7 +394,7 @@ fn memory_erased_proposition_key_one(proposition: &Proposition) -> MemoryErasedP
 
 fn memory_erased_memory_range_key(range: &MemoryRange) -> Box<MemoryErasedMemoryRangeKey> {
     Box::new(MemoryErasedMemoryRangeKey {
-        block: range.base().block.clone(),
+        block: range.base().base.clone(),
         offset: memory_erased_pointer_offset_key(&range.base().offset),
         start: memory_erased_bitvector_key(range.bound_terms().0),
         end: memory_erased_bitvector_key(range.bound_terms().1),
@@ -595,16 +595,16 @@ impl Drop for PointerReadKeyDepth {
     }
 }
 
-fn memory_erased_pointer_key(pointer: &Pointer) -> MemoryErasedPointerKey {
+fn memory_erased_pointer_key(pointer: &Address) -> MemoryErasedPointerKey {
     let depth = POINTER_READ_KEY_DEPTH.with(|depth| depth.replace(depth.get() + 1));
     let _restore = PointerReadKeyDepth(depth);
     // This candidate key forgets states, never proof authority. Bound
     // registry expansion across both defining addresses and their offsets.
-    let read = match &pointer.block {
-        PointerBlock::LoadedPointer(_) if depth < 3 => {
+    let read = match &pointer.base {
+        AddressBase::LoadedPointer(_) if depth < 3 => {
             pointer.as_loaded_value().map(|read| read.defining_address)
         }
-        PointerBlock::Symbolic(variable) if depth < 3 => {
+        AddressBase::Symbolic(variable) if depth < 3 => {
             crate::kernel::registered_load_for_variable(variable).map(|(_, source)| source)
         }
         _ => None,
@@ -612,26 +612,26 @@ fn memory_erased_pointer_key(pointer: &Pointer) -> MemoryErasedPointerKey {
     MemoryErasedPointerKey {
         block: read
             .map(|source| {
-                MemoryErasedPointerBlockKey::Read(Box::new(memory_erased_pointer_key(&source)))
+                MemoryErasedAddressBaseKey::Read(Box::new(memory_erased_pointer_key(&source)))
             })
-            .unwrap_or_else(|| MemoryErasedPointerBlockKey::Exact(pointer.block.clone())),
+            .unwrap_or_else(|| MemoryErasedAddressBaseKey::Exact(pointer.base.clone())),
         offset: Box::new(memory_erased_pointer_offset_key(&pointer.offset)),
     }
 }
 
-fn memory_erased_pointer_offset_key(offset: &PointerOffsetTerm) -> MemoryErasedPointerOffsetKey {
+fn memory_erased_pointer_offset_key(offset: &AddressOffset) -> MemoryErasedPointerOffsetKey {
     Canonical::new(match offset {
-        PointerOffsetTerm::Add(left, right) => MemoryErasedPointerOffsetNode::Add(
+        AddressOffset::Add(left, right) => MemoryErasedPointerOffsetNode::Add(
             memory_erased_pointer_offset_key(left),
             memory_erased_pointer_offset_key(right),
         ),
-        PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+        AddressOffset::Int32Scaled { value, byte_width } => {
             MemoryErasedPointerOffsetNode::Int32Scaled {
                 value: memory_operands::operand(value.operand_view()),
                 byte_width: *byte_width,
             }
         }
-        PointerOffsetTerm::Int64Scaled {
+        AddressOffset::Int64Scaled {
             value,
             byte_width,
             unsigned,
@@ -676,7 +676,7 @@ pub(in crate::kernel) fn pointer_predicate_selector(proposition: &Proposition) -
         .iter()
         .map(|argument| match argument {
             Term::ProgramValue(ProgramValue::Pointer(pointer)) => Term::ProgramValue(
-                ProgramValue::typed_pointer(crate::kernel::Pointer::null(), pointer.program_type()),
+                ProgramValue::typed_pointer(crate::kernel::Address::null(), pointer.program_type()),
             ),
             other => other.clone(),
         })
@@ -1037,7 +1037,7 @@ enum AlphaPointerOffsetNode {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-enum AlphaPointerBlockKey {
+enum AlphaAddressBaseKey {
     ReferenceCarrier(
         std::sync::Arc<crate::kernel::BindingName>,
         crate::kernel::LocalStorageInstance,
@@ -1082,7 +1082,7 @@ enum AlphaPointerBlockKey {
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 struct AlphaPointerKey {
-    block: AlphaPointerBlockKey,
+    block: AlphaAddressBaseKey,
     offset: AlphaPointerOffsetKey,
 }
 
@@ -1996,7 +1996,7 @@ fn alpha_variable_key_with_bindings<const ALLOW_LOADS: bool>(
     }
     if bindings.state_aware && crate::kernel::is_load_variable(&variable) {
         // An unbound registered load is represented by its state-bearing
-        // load node at bitvector/pointer-offset positions.  Pointer blocks
+        // load node at bitvector/pointer-offset positions.  Address bases
         // and logical variables have no load form, so reject them here and
         // let the ordinary checked path decide the fact.
         return None;
@@ -2097,14 +2097,14 @@ fn alpha_pointer_load_with_bindings<const ALLOW_LOADS: bool>(
 }
 
 fn alpha_pointer_offset_key_with_bindings<const ALLOW_LOADS: bool>(
-    offset: &PointerOffsetTerm,
+    offset: &AddressOffset,
     bindings: &mut AlphaBindings,
     next_binder: &mut usize,
 ) -> Option<AlphaPointerOffsetKey> {
     alpha_work_checkpoint(bindings, 1)?;
     Some(Canonical::new(match offset {
-        PointerOffsetTerm::Constant(value) => AlphaPointerOffsetNode::Constant(*value),
-        PointerOffsetTerm::Variable(variable)
+        AddressOffset::Constant(value) => AlphaPointerOffsetNode::Constant(*value),
+        AddressOffset::Variable(variable)
             if bindings.state_aware
                 && crate::kernel::is_load_variable(variable)
                 && !bindings.bitvector.contains_key(variable) =>
@@ -2116,28 +2116,26 @@ fn alpha_pointer_offset_key_with_bindings<const ALLOW_LOADS: bool>(
             )?;
             AlphaPointerOffsetNode::RegisteredLoad(load_id)
         }
-        PointerOffsetTerm::Variable(variable) => {
+        AddressOffset::Variable(variable) => {
             AlphaPointerOffsetNode::Variable(alpha_variable_key_with_bindings::<ALLOW_LOADS>(
                 *variable,
                 bindings,
                 &bindings.bitvector,
             )?)
         }
-        PointerOffsetTerm::Add(left, right) => AlphaPointerOffsetNode::Add(
+        AddressOffset::Add(left, right) => AlphaPointerOffsetNode::Add(
             alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(left, bindings, next_binder)?,
             alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(right, bindings, next_binder)?,
         ),
-        PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-            AlphaPointerOffsetNode::Int32Scaled {
-                value: Canonical::new(alpha_machine_key::<ALLOW_LOADS>(
-                    value.operand_view(),
-                    bindings,
-                    next_binder,
-                )?),
-                byte_width: *byte_width,
-            }
-        }
-        PointerOffsetTerm::Int64Scaled {
+        AddressOffset::Int32Scaled { value, byte_width } => AlphaPointerOffsetNode::Int32Scaled {
+            value: Canonical::new(alpha_machine_key::<ALLOW_LOADS>(
+                value.operand_view(),
+                bindings,
+                next_binder,
+            )?),
+            byte_width: *byte_width,
+        },
+        AddressOffset::Int64Scaled {
             value,
             byte_width,
             unsigned,
@@ -2153,23 +2151,23 @@ fn alpha_pointer_offset_key_with_bindings<const ALLOW_LOADS: bool>(
     }))
 }
 
-fn alpha_pointer_block_key<const ALLOW_LOADS: bool>(
-    block: &PointerBlock,
+fn alpha_address_base_key<const ALLOW_LOADS: bool>(
+    block: &AddressBase,
     bindings: &mut AlphaBindings,
     next_binder: &mut usize,
-) -> Option<AlphaPointerBlockKey> {
+) -> Option<AlphaAddressBaseKey> {
     Some(match block {
-        PointerBlock::ReferenceCarrier { referent, instance } => {
-            AlphaPointerBlockKey::ReferenceCarrier(referent.clone(), instance.clone())
+        AddressBase::ReferenceCarrier { referent, instance } => {
+            AlphaAddressBaseKey::ReferenceCarrier(referent.clone(), instance.clone())
         }
-        PointerBlock::AggregateReturn { frame } => AlphaPointerBlockKey::AggregateReturn(*frame),
-        PointerBlock::ContractResult => AlphaPointerBlockKey::ContractResult,
-        PointerBlock::ContractException => AlphaPointerBlockKey::ContractException,
+        AddressBase::AggregateReturn { frame } => AlphaAddressBaseKey::AggregateReturn(*frame),
+        AddressBase::ContractResult => AlphaAddressBaseKey::ContractResult,
+        AddressBase::ContractException => AlphaAddressBaseKey::ContractException,
         // Keyed as the scalar and algebraic applications are, argument by
         // argument: a quantified fact is found only by its key, so a block
         // with none would hide every universal over a pointer result.
-        PointerBlock::PureFunctionApplication(application) => {
-            AlphaPointerBlockKey::PureFunctionApplication {
+        AddressBase::PureFunctionApplication(application) => {
+            AlphaAddressBaseKey::PureFunctionApplication {
                 name: application.name().to_string(),
                 arguments: application
                     .arguments()
@@ -2184,69 +2182,67 @@ fn alpha_pointer_block_key<const ALLOW_LOADS: bool>(
                     .collect::<Option<Vec<_>>>()?,
             }
         }
-        PointerBlock::StaticObject { binding } => {
-            AlphaPointerBlockKey::StaticObject(binding.clone())
+        AddressBase::StaticObject { binding } => AlphaAddressBaseKey::StaticObject(binding.clone()),
+        AddressBase::AutomaticLocal { binding, instance } => {
+            AlphaAddressBaseKey::AutomaticLocal(binding.clone(), instance.clone())
         }
-        PointerBlock::AutomaticLocal { binding, instance } => {
-            AlphaPointerBlockKey::AutomaticLocal(binding.clone(), instance.clone())
-        }
-        PointerBlock::Concrete(name) => AlphaPointerBlockKey::Concrete(name.clone()),
-        PointerBlock::StringLiteral { identity, bytes } => AlphaPointerBlockKey::StringLiteral {
+        AddressBase::Concrete(name) => AlphaAddressBaseKey::Concrete(name.clone()),
+        AddressBase::StringLiteral { identity, bytes } => AlphaAddressBaseKey::StringLiteral {
             identity: identity.clone(),
             bytes: bytes.clone(),
         },
-        PointerBlock::Function(name) => AlphaPointerBlockKey::Function(name.clone()),
-        PointerBlock::FunctionSymbolic(variable) => {
-            AlphaPointerBlockKey::FunctionSymbolic(alpha_variable_key_with_bindings::<ALLOW_LOADS>(
+        AddressBase::Function(name) => AlphaAddressBaseKey::Function(name.clone()),
+        AddressBase::FunctionSymbolic(variable) => {
+            AlphaAddressBaseKey::FunctionSymbolic(alpha_variable_key_with_bindings::<ALLOW_LOADS>(
                 *variable,
                 bindings,
                 &bindings.bitvector,
             )?)
         }
-        PointerBlock::ExternalArgument => AlphaPointerBlockKey::ExternalArgument,
-        PointerBlock::ExternalObject(variable) => {
-            AlphaPointerBlockKey::ExternalObject(alpha_variable_key_with_bindings::<ALLOW_LOADS>(
+        AddressBase::ExternalArgument => AlphaAddressBaseKey::ExternalArgument,
+        AddressBase::ExternalObject(variable) => {
+            AlphaAddressBaseKey::ExternalObject(alpha_variable_key_with_bindings::<ALLOW_LOADS>(
                 *variable,
                 bindings,
                 &bindings.bitvector,
             )?)
         }
-        PointerBlock::Symbolic(variable)
+        AddressBase::Symbolic(variable)
             if bindings.state_aware
                 && crate::kernel::is_load_variable(variable)
                 && !bindings.bitvector.contains_key(variable) =>
         {
-            AlphaPointerBlockKey::RegisteredLoad(alpha_registered_load_pointer_with_bindings::<
+            AlphaAddressBaseKey::RegisteredLoad(alpha_registered_load_pointer_with_bindings::<
                 ALLOW_LOADS,
             >(*variable, bindings, next_binder)?)
         }
-        PointerBlock::Symbolic(variable) => {
-            AlphaPointerBlockKey::Symbolic(alpha_variable_key_with_bindings::<ALLOW_LOADS>(
+        AddressBase::Symbolic(variable) => {
+            AlphaAddressBaseKey::Symbolic(alpha_variable_key_with_bindings::<ALLOW_LOADS>(
                 *variable,
                 bindings,
                 &bindings.bitvector,
             )?)
         }
-        PointerBlock::LoadedPointer(identity) if bindings.state_aware => {
-            AlphaPointerBlockKey::LoadedRead(alpha_pointer_load_with_bindings::<ALLOW_LOADS>(
+        AddressBase::LoadedPointer(identity) if bindings.state_aware => {
+            AlphaAddressBaseKey::LoadedRead(alpha_pointer_load_with_bindings::<ALLOW_LOADS>(
                 *identity,
                 bindings,
                 next_binder,
             )?)
         }
-        PointerBlock::LoadedPointer(identity) => AlphaPointerBlockKey::LoadedPointer(*identity),
-        PointerBlock::Heap(identity) => AlphaPointerBlockKey::Heap(*identity),
-        PointerBlock::Temporary(identity) => AlphaPointerBlockKey::Temporary(*identity),
+        AddressBase::LoadedPointer(identity) => AlphaAddressBaseKey::LoadedPointer(*identity),
+        AddressBase::Heap(identity) => AlphaAddressBaseKey::Heap(*identity),
+        AddressBase::Temporary(identity) => AlphaAddressBaseKey::Temporary(*identity),
     })
 }
 
 fn alpha_pointer_key_with_bindings<const ALLOW_LOADS: bool>(
-    pointer: &Pointer,
+    pointer: &Address,
     bindings: &mut AlphaBindings,
     next_binder: &mut usize,
 ) -> Option<AlphaPointerKey> {
     alpha_work_checkpoint(bindings, 1)?;
-    let block = alpha_pointer_block_key::<ALLOW_LOADS>(&pointer.block, bindings, next_binder)?;
+    let block = alpha_address_base_key::<ALLOW_LOADS>(&pointer.base, bindings, next_binder)?;
     Some(AlphaPointerKey {
         block,
         offset: alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(
@@ -3185,9 +3181,9 @@ mod proposition_identity_tests {
             variable,
             Proposition::MemoryReadDefined {
                 memory: memory.clone(),
-                pointer: Pointer {
-                    block: "local:defined-array".into(),
-                    offset: PointerOffsetTerm::scale_int32(
+                pointer: Address {
+                    base: "local:defined-array".into(),
+                    offset: AddressOffset::scale_int32(
                         MachineTerm::Variable(Variable(variable)),
                         1,
                     ),
@@ -3200,17 +3196,17 @@ mod proposition_identity_tests {
     #[test]
     fn definedness_identity_keeps_object_and_lifetime_boundaries() {
         let _session = crate::kernel::VerificationSession::enter();
-        let array = Pointer {
-            block: "local:defined-array".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let array = Address {
+            base: "local:defined-array".into(),
+            offset: AddressOffset::Constant(0),
         };
-        let other = Pointer {
-            block: "local:defined-other".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let other = Address {
+            base: "local:defined-other".into(),
+            offset: AddressOffset::Constant(0),
         };
         let before = Memory::new()
-            .with_uninitialized_block(array.block.clone(), 4)
-            .with_uninitialized_block(other.block.clone(), 4)
+            .with_uninitialized_block(array.base.clone(), 4)
+            .with_uninitialized_block(other.base.clone(), 4)
             .store(array.clone(), crate::kernel::uint8(7u32));
         let key = proposition_identity_key(&local_definedness_fact(&before, 81_001)).unwrap();
         let disjoint = before
@@ -3223,10 +3219,10 @@ mod proposition_identity_tests {
         let affected = before
             .clone()
             .store(array.clone(), crate::kernel::uint8(8u32));
-        let retired = before.without_local_block(&array.block);
-        let resized = before.clone().with_block(array.block.clone(), 8);
+        let retired = before.without_local_block(&array.base);
+        let resized = before.clone().with_block(array.base.clone(), 8);
         let unknown_write = before.clone().store(
-            Pointer::symbolic(Variable(81_003)),
+            Address::symbolic(Variable(81_003)),
             ProgramValue::Int32(1u32.into()),
         );
         for changed in [affected, retired, resized, unknown_write] {
@@ -3236,7 +3232,7 @@ mod proposition_identity_tests {
             );
         }
         // An independently constructed unwritten object is not the old one.
-        let uninitialized = Memory::new().with_uninitialized_block(array.block, 4);
+        let uninitialized = Memory::new().with_uninitialized_block(array.base, 4);
         assert_ne!(
             Some(key),
             proposition_identity_key(&local_definedness_fact(&uninitialized, 81_001))
@@ -3270,9 +3266,9 @@ mod proposition_identity_tests {
     #[test]
     fn array_dependent_algebraic_existential_keeps_state_and_binding_identity() {
         let ty = crate::kernel::AlgebraicType::parameter("Fuel".into());
-        let pointer = Pointer {
-            block: "alpha-array".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "alpha-array".into(),
+            offset: AddressOffset::Constant(0),
         };
         let before = Memory::new().with_block("alpha-array", 8);
         let after = before.clone().store(
@@ -3493,9 +3489,9 @@ mod proposition_identity_tests {
 
     #[test]
     fn alpha_identity_keeps_memory_versions_distinct() {
-        let pointer = Pointer {
-            block: "identity-version".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "identity-version".into(),
+            offset: AddressOffset::Constant(0),
         };
         let left_memory = Memory::new().with_block("identity-version", 8);
         let right_memory = left_memory.clone().store(
@@ -3526,9 +3522,9 @@ mod proposition_identity_tests {
 
     #[test]
     fn alpha_identity_matches_registered_and_spelled_load_at_one_version() {
-        let pointer = Pointer {
-            block: "identity-registered-load".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "identity-registered-load".into(),
+            offset: AddressOffset::Constant(0),
         };
         let memory = Memory::new().with_block("identity-registered-load", 8);
         let shared_memory = crate::kernel::intern_memory_ref(&memory);
@@ -4434,9 +4430,9 @@ mod memory_state_alpha_tests {
             MachineIntegerType::Int32,
             MachineTerm::MemoryLoad(
                 crate::kernel::ProgramPoint::at(memory),
-                Box::new(Pointer {
-                    block: "retained_state-alpha".into(),
-                    offset: PointerOffsetTerm::Variable(item),
+                Box::new(Address {
+                    base: "retained_state-alpha".into(),
+                    offset: AddressOffset::Variable(item),
                 }),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -4499,9 +4495,9 @@ mod memory_state_alpha_tests {
 
     #[test]
     fn state_alpha_fold_loads_require_exact_state_identity() {
-        let pointer = Pointer {
-            block: "retained_state-alpha".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "retained_state-alpha".into(),
+            offset: AddressOffset::Constant(0),
         };
         let before =
             crate::kernel::intern_memory(Memory::new().with_block("retained_state-alpha", 8));
@@ -4549,9 +4545,9 @@ mod memory_state_alpha_tests {
                 MachineIntegerType::Int32,
                 MachineTerm::MemoryLoad(
                     crate::kernel::ProgramPoint::at(&memory),
-                    Box::new(Pointer {
-                        block: "retained_state-alpha".into(),
-                        offset: PointerOffsetTerm::Variable(unknown_load),
+                    Box::new(Address {
+                        base: "retained_state-alpha".into(),
+                        offset: AddressOffset::Variable(unknown_load),
                     }),
                     crate::kernel::LoadKind::Int32,
                 ),
@@ -4563,9 +4559,9 @@ mod memory_state_alpha_tests {
 
     #[test]
     fn state_alpha_registered_loads_keep_their_state_identity() {
-        let pointer = Pointer {
-            block: "retained_state-alpha".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "retained_state-alpha".into(),
+            offset: AddressOffset::Constant(0),
         };
         let before =
             crate::kernel::intern_memory(Memory::new().with_block("retained_state-alpha", 8));
@@ -4629,12 +4625,12 @@ mod memory_state_alpha_tests {
     /// cell's load, and the key must follow it there as it does at an
     /// offset position; the load naming the block keeps its identity.
     #[test]
-    fn state_alpha_renames_a_binder_under_a_loaded_pointer_block() {
-        let block = "loaded-pointer-block-alpha";
+    fn state_alpha_renames_a_binder_under_a_loaded_address_base() {
+        let block = "loaded-address-base-alpha";
         let memory = crate::kernel::intern_memory(Memory::new().with_block(block, 16));
-        let field = |offset: i64| Pointer {
-            block: block.into(),
-            offset: PointerOffsetTerm::Constant(offset),
+        let field = |offset: i64| Address {
+            base: block.into(),
+            offset: AddressOffset::Constant(offset),
         };
         let loaded = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
@@ -4651,9 +4647,9 @@ mod memory_state_alpha_tests {
             &memory,
         );
         let every_element_is_one = |base: Variable, binder: Variable| {
-            let element = Pointer {
-                block: PointerBlock::Symbolic(base),
-                offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(binder), 4),
+            let element = Address {
+                base: AddressBase::Symbolic(base),
+                offset: AddressOffset::scale_int32(MachineTerm::Variable(binder), 4),
             };
             let element_load = crate::kernel::load_variable_for_cell_with_origin(
                 &memory,
@@ -4679,7 +4675,7 @@ mod memory_state_alpha_tests {
         };
 
         let key = proposition_identity_key(&every_element_is_one(loaded, Variable(315_000)))
-            .expect("a loaded pointer block should resolve to an exact key");
+            .expect("a loaded address base should resolve to an exact key");
         let renamed = proposition_identity_key(&every_element_is_one(loaded, Variable(315_001)))
             .expect("a renamed binder should resolve to an exact key");
         let other_base = proposition_identity_key(&every_element_is_one(other, Variable(315_001)))
@@ -4693,9 +4689,9 @@ mod memory_state_alpha_tests {
     fn state_alpha_explicit_and_registered_loads_share_nested_identity() {
         let block = "retained_state-alpha-equivalent-loads";
         let memory = crate::kernel::intern_memory(Memory::new().with_block(block, 64));
-        let first_pointer = Pointer {
-            block: block.into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let first_pointer = Address {
+            base: block.into(),
+            offset: AddressOffset::Constant(0),
         };
         let first_load = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
@@ -4704,9 +4700,9 @@ mod memory_state_alpha_tests {
             4,
             &memory,
         );
-        let nested_pointer = Pointer {
-            block: block.into(),
-            offset: PointerOffsetTerm::Variable(first_load),
+        let nested_pointer = Address {
+            base: block.into(),
+            offset: AddressOffset::Variable(first_load),
         };
         let nested_load = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
@@ -4804,9 +4800,9 @@ mod memory_state_alpha_tests {
 
     #[test]
     fn state_alpha_fold_comparison_uses_exact_state_identity() {
-        let pointer = Pointer {
-            block: "retained_state-alpha".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "retained_state-alpha".into(),
+            offset: AddressOffset::Constant(0),
         };
         let before =
             crate::kernel::intern_memory(Memory::new().with_block("retained_state-alpha", 8));
@@ -4845,9 +4841,9 @@ mod memory_state_alpha_tests {
 
     #[test]
     fn state_alpha_nested_folds_canonicalize_load_pointers() {
-        let pointer = Pointer {
-            block: "retained_state-alpha".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "retained_state-alpha".into(),
+            offset: AddressOffset::Constant(0),
         };
         let before =
             crate::kernel::intern_memory(Memory::new().with_block("retained_state-alpha", 8));
@@ -4891,9 +4887,9 @@ mod memory_state_alpha_tests {
     fn registered_load_chain(depth: usize) -> (SharedMemory, Variable) {
         let block = format!("retained_state-alpha-registry-{depth}");
         let memory = crate::kernel::intern_memory(Memory::new().with_block(block.clone(), 4096));
-        let mut pointer = Pointer {
-            block: block.into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let mut pointer = Address {
+            base: block.into(),
+            offset: AddressOffset::Constant(0),
         };
         let mut load = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
@@ -4903,9 +4899,9 @@ mod memory_state_alpha_tests {
             &memory,
         );
         for _ in 0..depth {
-            pointer = Pointer {
-                block: pointer.block.clone(),
-                offset: PointerOffsetTerm::Variable(load),
+            pointer = Address {
+                base: pointer.base.clone(),
+                offset: AddressOffset::Variable(load),
             };
             load = crate::kernel::load_variable_for_cell_with_origin(
                 &memory,
@@ -4921,9 +4917,9 @@ mod memory_state_alpha_tests {
     fn registered_load_branching_chain(depth: usize) -> (SharedMemory, Variable) {
         let block = format!("retained_state-alpha-registry-branch-{depth}");
         let memory = crate::kernel::intern_memory(Memory::new().with_block(block.clone(), 4096));
-        let mut pointer = Pointer {
-            block: block.into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let mut pointer = Address {
+            base: block.into(),
+            offset: AddressOffset::Constant(0),
         };
         let mut load = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
@@ -4933,11 +4929,11 @@ mod memory_state_alpha_tests {
             &memory,
         );
         for _ in 0..depth {
-            pointer = Pointer {
-                block: pointer.block.clone(),
-                offset: PointerOffsetTerm::Add(
-                    Box::new(PointerOffsetTerm::Variable(load)),
-                    Box::new(PointerOffsetTerm::Variable(load)),
+            pointer = Address {
+                base: pointer.base.clone(),
+                offset: AddressOffset::Add(
+                    Box::new(AddressOffset::Variable(load)),
+                    Box::new(AddressOffset::Variable(load)),
                 ),
             };
             load = crate::kernel::load_variable_for_cell_with_origin(
@@ -5024,9 +5020,9 @@ mod memory_state_alpha_tests {
                     MachineIntegerType::Int32,
                     MachineTerm::MemoryLoad(
                         crate::kernel::ProgramPoint::at(&memory),
-                        Box::new(Pointer {
-                            block: block.into(),
-                            offset: PointerOffsetTerm::Constant(0),
+                        Box::new(Address {
+                            base: block.into(),
+                            offset: AddressOffset::Constant(0),
                         }),
                         crate::kernel::LoadKind::Int32,
                     ),
@@ -5058,9 +5054,9 @@ mod memory_state_alpha_tests {
                     MachineIntegerType::Int32,
                     MachineTerm::MemoryLoad(
                         crate::kernel::ProgramPoint::at(&memory),
-                        Box::new(Pointer {
-                            block: block.into(),
-                            offset: PointerOffsetTerm::Constant(0),
+                        Box::new(Address {
+                            base: block.into(),
+                            offset: AddressOffset::Constant(0),
                         }),
                         crate::kernel::LoadKind::Int32,
                     ),
@@ -5213,15 +5209,15 @@ mod offset_condition_tests {
         for width in [1, 8] {
             for unsigned in [false, true] {
                 let source = ConditionTerm::PointerOffsetEqual(
-                    Box::new(PointerOffsetTerm::Add(
-                        Box::new(PointerOffsetTerm::Constant(0)),
-                        Box::new(PointerOffsetTerm::scaled_int64_node(
+                    Box::new(AddressOffset::Add(
+                        Box::new(AddressOffset::Constant(0)),
+                        Box::new(AddressOffset::scaled_int64_node(
                             MachineTerm::Variable(Variable(998600)),
                             width,
                             unsigned,
                         )),
                     )),
-                    Box::new(PointerOffsetTerm::Constant(0)),
+                    Box::new(AddressOffset::Constant(0)),
                 );
                 let root = crate::kernel::KernelTermImport::default().condition(&source);
                 let expected = memory_erased_condition_key(&source);
@@ -5244,20 +5240,20 @@ mod raw_pointer_condition_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let mut keys = Vec::new();
         for block in [
-            PointerBlock::Symbolic(Variable(998610)),
-            PointerBlock::ExternalObject(Variable(998610)),
-            PointerBlock::FunctionSymbolic(Variable(998610)),
+            AddressBase::Symbolic(Variable(998610)),
+            AddressBase::ExternalObject(Variable(998610)),
+            AddressBase::FunctionSymbolic(Variable(998610)),
         ] {
             let source = ConditionTerm::PointerEqual(
-                Box::new(Pointer {
-                    block,
-                    offset: PointerOffsetTerm::scaled_int64_node(
+                Box::new(Address {
+                    base: block,
+                    offset: AddressOffset::scaled_int64_node(
                         MachineTerm::Variable(Variable(998611)),
                         8,
                         true,
                     ),
                 }),
-                Box::new(Pointer::null()),
+                Box::new(Address::null()),
             );
             let root = crate::kernel::KernelTermImport::default().condition(&source);
             let actual =
@@ -5277,7 +5273,7 @@ mod complete_pointer_condition_tests {
     fn complete_pointer_conditions_keep_state_domain_keys() {
         let _session = crate::kernel::VerificationSession::enter();
         let a = PointerValue::new(
-            Pointer::symbolic(Variable(998620)),
+            Address::symbolic(Variable(998620)),
             ProgramType::Int32Pointer,
         );
         let mut keys = Vec::new();
@@ -5285,7 +5281,7 @@ mod complete_pointer_condition_tests {
             a.clone(),
             a.clone().with_root_bounds(),
             a.clone().with_bounds(Some(SubobjectBounds {
-                start: Pointer::null(),
+                start: Address::null(),
                 width: MachineTerm::constant(4),
             })),
         ] {

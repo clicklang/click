@@ -14,7 +14,7 @@ impl KernelTerm {
     pub(crate) fn float_read(
         format: KernelFloatType,
         memory: SharedMemory,
-        address: SharedPointerAddress,
+        address: SharedAddress,
     ) -> Self {
         Self::intern(
             KernelType::Program(format.program_type()),
@@ -51,14 +51,11 @@ mod tests {
         };
         let _session = crate::kernel::VerificationSession::enter();
         let second = intern_memory(Memory::new());
-        let pointer = Pointer {
-            block: PointerBlock::Symbolic(Variable(999814)),
-            offset: PointerOffsetTerm::scaled_int32_node(
-                MachineTerm::Variable(Variable(999815)),
-                4,
-            ),
+        let pointer = Address {
+            base: AddressBase::Symbolic(Variable(999814)),
+            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(999815)), 4),
         };
-        let address = SharedPointerAddress::import(&pointer);
+        let address = SharedAddress::import(&pointer);
         let mut identities = std::collections::HashSet::new();
         for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
             for memory in [&first, &second] {

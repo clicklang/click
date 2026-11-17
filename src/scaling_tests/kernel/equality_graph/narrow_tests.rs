@@ -131,9 +131,9 @@ fn narrow_store_equation_queries_do_not_walk_alias_classes_or_unrelated_cells() 
             let mut samples = Vec::new();
             for size in [16_u64, 64, 256, 1024] {
                 let _session = crate::kernel::VerificationSession::enter();
-                let cell = |i| Pointer {
-                    block: "narrow".into(),
-                    offset: PointerOffsetTerm::Constant(i * 4),
+                let cell = |i| Address {
+                    base: "narrow".into(),
+                    offset: AddressOffset::Constant(i * 4),
                 };
                 let stored = narrow_stored_value(format, 7);
                 let mut memory = Memory::new().with_block("narrow", (size as u32 + 1) * 4);
@@ -142,14 +142,14 @@ fn narrow_store_equation_queries_do_not_walk_alias_classes_or_unrelated_cells() 
                     memory = memory.store(cell(i as i64), narrow_stored_value(format, 3));
                     facts = facts.assume_condition(
                         ConditionTerm::pointer_equal(
-                            Pointer::symbolic(Variable(995000 + i)),
+                            Address::symbolic(Variable(995000 + i)),
                             if related { cell(0) } else { cell(i as i64) },
                         ),
                         true,
                     );
                 }
                 memory = memory.store(cell(0), stored.clone());
-                let query = Pointer::symbolic(Variable(999999));
+                let query = Address::symbolic(Variable(999999));
                 facts = facts
                     .assume_condition(ConditionTerm::pointer_equal(query.clone(), cell(0)), true);
                 facts = facts.assume_proposition(

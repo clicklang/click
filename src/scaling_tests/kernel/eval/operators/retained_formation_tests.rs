@@ -19,12 +19,12 @@ fn growing_coordinate_guards_retain_shared_indices_without_exports() {
                     );
                     let value = MachineOperandView::Shared(&index).retain(ty);
                     let offset = if ty == T::Int32 {
-                        PointerOffsetTerm::Int32Scaled {
+                        AddressOffset::Int32Scaled {
                             value,
                             byte_width: 4,
                         }
                     } else {
-                        PointerOffsetTerm::Int64Scaled {
+                        AddressOffset::Int64Scaled {
                             value,
                             byte_width: 4,
                             unsigned: ty == T::UInt64,

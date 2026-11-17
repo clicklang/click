@@ -3519,7 +3519,7 @@ pub(in crate::surface) fn pure_function_parameter_argument(
             })
     {
         return ContractExpression::ProgramExpression(ProgramExpression::Value(
-            ProgramValue::typed_pointer(Pointer::null(), target_type),
+            ProgramValue::typed_pointer(Address::null(), target_type),
         ));
     }
     ContractExpression::CUnary {

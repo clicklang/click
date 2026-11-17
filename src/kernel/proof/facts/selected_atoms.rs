@@ -310,9 +310,9 @@ mod tests {
     #[test]
     fn selected_shared_atoms_preserve_literal_conversion_and_load_rules() {
         let _session = VerificationSession::enter();
-        let pointer = Pointer {
-            block: PointerBlock::Symbolic(Variable(1005300)),
-            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(1005301)), 4),
+        let pointer = Address {
+            base: AddressBase::Symbolic(Variable(1005300)),
+            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(1005301)), 4),
         };
         let memory = intern_memory(Memory::new());
         let load = crate::kernel::eval::load_variable_for_cell(&memory, &pointer, LoadKind::Int32);
