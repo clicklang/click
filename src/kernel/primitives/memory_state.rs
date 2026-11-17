@@ -1407,12 +1407,6 @@ impl LocalEnvironment {
         Self::default()
     }
 
-    pub fn with(mut self, name: impl Into<BindingName>, value: ProgramValue) -> Self {
-        let name = self.resolve_binding(&name.into());
-        self.set(name, value);
-        self
-    }
-
     pub fn set(&mut self, name: impl Into<BindingName>, value: ProgramValue) {
         let name = self.resolve_binding(&name.into());
         let program_type = value.program_type();

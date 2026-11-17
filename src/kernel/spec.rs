@@ -2952,15 +2952,12 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
             Term::Sequence(sequence) => sequence_contains_integer_variable(sequence, variable),
             Term::PointerOffset(offset) => integer_carrier_in_pointer_offset(offset, variable),
             Term::Algebraic(value) => integer_carrier_in_algebraic(value, variable),
-            Term::ExpressionOutcome(ExpressionOutcome::Value(value)) => {
-                integer_carrier_in_program_value(value, variable)
-            }
-            // A state or an execution outcome may carry a mathematical
-            // machine conversion in a nested local.  Keep this conservative
+            // A state may carry a mathematical machine conversion in a
+            // nested local.  Keep this conservative
             // rather than silently dropping the accumulator scope; memory
             // states themselves remain opaque below.
-            Term::StatementOutcome(_) | Term::FunctionOutcome(_) | Term::ExecutionState(_) => true,
-            Term::ExpressionOutcome(_) | Term::Memory(_) => false,
+            Term::ExecutionState(_) => true,
+            Term::Memory(_) => false,
         }
     }
 

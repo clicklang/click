@@ -136,3 +136,98 @@ fn newly_closed_word32_rewrite_ignores_unrelated_facts() {
         }
     }
 }
+
+#[test]
+fn selected_word32_literal_comparisons_ignore_unrelated_facts() {
+    for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
+        let mut baseline = None;
+        for unrelated in [0usize, 16, 64, 256] {
+            let _session = VerificationSession::enter();
+            let equality = selected_word32_literal_equality(format);
+            let mut premises = vec![equality.clone()];
+            premises.extend((0..unrelated).map(|i| Proposition::Predicate {
+                name: format!("unused_literal_{i}"),
+                arguments: vec![],
+            }));
+            let facts = PureFactStore::from_ordered(&premises);
+            let goal = selected_word32_literal_goal(format, 3);
+            let exports = KernelTermExport::machine_export_count();
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.check_equality_rewrite(&goal, &equality).unwrap()
+            });
+            assert_eq!(
+                result.proposition(),
+                &Proposition::ConditionIs(
+                    if format == MachineIntegerType::Int32 {
+                        // The existing signed rewrite folds closed comparisons.
+                        ConditionTerm::Constant(true)
+                    } else {
+                        ConditionTerm::Compare {
+                            format,
+                            relation: CompareRelation::LessEqual,
+                            left: Box::new(MachineTerm::constant(3)),
+                            right: Box::new(MachineTerm::constant(100)),
+                        }
+                    },
+                    true
+                )
+            );
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert!(work > 0);
+            let expected = *baseline.get_or_insert(work);
+            assert_eq!(work, expected, "{format:?}, unrelated={unrelated}");
+        }
+    }
+}
+
+#[test]
+fn selected_word32_literal_comparisons_scale_with_selected_source() {
+    for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
+        let mut samples = Vec::new();
+        for size in [8u32, 32, 128, 512] {
+            let _session = VerificationSession::enter();
+            let equality = selected_word32_literal_equality(format);
+            let facts = PureFactStore::from_ordered(std::slice::from_ref(&equality));
+            let goals: Vec<_> = (0..size)
+                .map(|i| selected_word32_literal_goal(format, i))
+                .collect();
+            let exports = KernelTermExport::machine_export_count();
+            let (results, work) = crate::instrumentation::measure_deterministic_work(|| {
+                goals
+                    .iter()
+                    .map(|goal| {
+                        facts
+                            .check_equality_rewrite(goal, &equality)
+                            .unwrap()
+                            .proposition()
+                            .clone()
+                    })
+                    .collect::<Vec<_>>()
+            });
+            for (i, result) in results.iter().enumerate() {
+                assert_eq!(
+                    result,
+                    &Proposition::ConditionIs(
+                        if format == MachineIntegerType::Int32 {
+                            ConditionTerm::Constant(i <= 100)
+                        } else {
+                            ConditionTerm::Compare {
+                                format,
+                                relation: CompareRelation::LessEqual,
+                                left: Box::new(MachineTerm::constant(i as u32)),
+                                right: Box::new(MachineTerm::constant(100)),
+                            }
+                        },
+                        true
+                    )
+                );
+            }
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert!(work > 0);
+            samples.push(work);
+        }
+        for pair in samples.windows(2) {
+            assert!(pair[1] <= pair[0] * 4 + 64, "{format:?}: {samples:?}");
+        }
+    }
+}

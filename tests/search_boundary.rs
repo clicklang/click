@@ -1733,3 +1733,33 @@ fn ownership_endpoint_checks_cannot_reconstruct_order_paths() {
         .is_err()
     );
 }
+
+#[test]
+fn returned_family_consumers_cannot_reconstruct_bodies() {
+    for (path, consumer) in [
+        (
+            "src/kernel/functions/mixed_return_resources.rs",
+            "project_return_resource_cores",
+        ),
+        (
+            "src/kernel/functions.rs",
+            "produced_composite_frontier_conflict",
+        ),
+    ] {
+        for producer in [
+            "expand_composite_resource_fact_with_children",
+            "expand_all_composite_resource_facts_at_state",
+            "construct_composite_resource_body",
+            "try_construct",
+        ] {
+            for statement in [
+                format!("c.{producer}();"),
+                format!("hidden!(c.{producer}());"),
+                format!("let f = C::{producer}; f(c);"),
+            ] {
+                let source = format!("fn {consumer}(c:C) {{ {statement} }}");
+                assert!(boundary::check_source(path, &source).is_err(), "{source}");
+            }
+        }
+    }
+}

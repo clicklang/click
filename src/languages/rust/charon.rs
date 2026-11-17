@@ -3768,6 +3768,7 @@ pub(super) fn decode_crate(
         temporaries::collapse_iterator_moves(&mut locals, &mut blocks, &temporaries);
         temporaries::bind_range_payloads(&mut locals, &mut blocks, &temporaries);
         temporaries::return_values(&mut locals, &mut blocks, &return_place);
+        temporaries::remove_unused(&mut locals, &mut blocks, &temporaries);
         functions.push(out::Function {
             sites: source_statements
                 .iter()

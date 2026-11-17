@@ -7713,3 +7713,17 @@ fn mixed_format_integer_comparisons_of_bitwise_values_round_trip() {
         }
     }
 }
+
+#[test]
+fn closed_word32_equality_guards_with_selected_literal_arms_round_trip() {
+    use crate::kernel::MachineIntegerType as T;
+    for (format, spelling) in [(T::Int32, "int32"), (T::UInt32, "uint32")] {
+        for guard in ["x == 9", "x != 9"] {
+            for replacement in [9, 10] {
+                for reverse in [false, true] {
+                    check_conditional_round_trip(format, spelling, guard, reverse, replacement);
+                }
+            }
+        }
+    }
+}

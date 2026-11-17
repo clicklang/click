@@ -172,62 +172,6 @@ mod wide_multiply_tests;
 mod wide_scalar_tests;
 mod wide_storage_tests;
 
-/// Certifies a contract from the kernel's own checked executions of the
-/// function, one per resource-guard case, the way the surface certifies a
-/// proof's artifacts: certification itself never executes a body.
-/// The supplied state and arguments come from the test, not Surface entry
-/// lowering. This helper does not establish that they represent the complete
-/// input domain needed when packaging a reusable function rule.
-fn certify_contract_with_kernel_artifacts(
-    state: ExecutionState,
-    function: ProgramFunction,
-    arguments: Vec<ProgramExpression>,
-    derived_entry_facts: Vec<Proposition>,
-    environment: ExecutionEnvironment,
-    execution_semantics: ExecutionSemantics,
-    mode: FunctionContractExecutionMode,
-) -> FunctionContractExecution {
-    let assume_all = |facts: &[Proposition]| {
-        facts
-            .iter()
-            .fold(PureFactContext::new(), |assumptions, fact| {
-                assumptions.assume_proposition(fact.clone())
-            })
-    };
-    let cases = crate::kernel::api::contract_certification::contract_resource_condition_cases(
-        &state,
-        &function,
-        &arguments,
-        &assume_all(&derived_entry_facts),
-    )
-    .unwrap_or_else(|| vec![Vec::new()]);
-    let artifacts = cases
-        .iter()
-        .map(|case_facts| {
-            let mut facts = derived_entry_facts.clone();
-            facts.extend(case_facts.iter().cloned());
-            prove_checked_program_function_execution_with_environment(
-                state.clone(),
-                function.clone(),
-                arguments.clone(),
-                assume_all(&facts),
-                environment.clone(),
-                execution_semantics,
-                mode,
-            )
-        })
-        .collect::<Vec<_>>();
-    prove_program_function_contract_execution_paths_with_checked_artifacts(
-        state,
-        function,
-        arguments,
-        environment,
-        execution_semantics,
-        mode,
-        &artifacts,
-    )
-}
-
 /// Contract certification calls no general prover: every proposition it
 /// certifies is decided by an exact rule of its own, a completion match,
 /// or a kind-specific bounded rule, never by handing the question to

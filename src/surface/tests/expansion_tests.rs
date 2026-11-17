@@ -17080,6 +17080,42 @@ fn local_job_views_expand_and_reverify_without_ownership_annotations() {
 }
 
 #[test]
+#[ignore = "nightly: two-hop loop frame verification, expansion and cold replay"]
+fn two_hop_loop_frame_expands_and_cold_replays() {
+    let (source, sources) =
+        mdtest_sources("mdtests/loop_frame_keeps_a_two_hop_map_beside_a_written_array.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    with_proof_trace("clear_data", || {
+        verify_c_sources(&source, &sources).unwrap_or_else(|error| {
+            panic!(
+                "{}\n{}",
+                error.report(),
+                error.trace_context_report().unwrap_or_default()
+            )
+        });
+    });
+    assert!(!source.contains("transport("), "{source}");
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "clear_data.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("preserve("), "{expanded}");
+    without_implicit_solve_for_claim("clear_data.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+
+    // Writing the framed map instead of the owned data array must be refused.
+    let bad_c = sources[0]
+        .1
+        .replace("arena->data[i] = 0;", "arena->occupied[i] = 0;");
+    assert_ne!(bad_c, sources[0].1);
+    assert!(verify_c_sources(&source, &[(sources[0].0, bad_c.as_str())]).is_err());
+}
+
+#[test]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn an_unfold_bound_scalar_field_expands_and_reverifies() {
     // `let { prefix: p } = unfold(before)` names the folded field value that
@@ -19306,6 +19342,41 @@ fn unfolding_proof_bound_integer_arguments_expands_and_rechecks() {
         let expanded = expand_c_claim_source_by_label(&source, &[], label).unwrap();
         verify_c_sources(&expanded, &[]).unwrap();
     }
+}
+
+/// Distinct literal bounds can match the same closed obligation during
+/// replay. Expansion must emit a proof that replays without a duplicate
+/// `requires` entry, while a false bound must still be refused.
+#[test]
+#[ignore = "nightly: literal call expansion and cold replay"]
+fn literal_call_bounds_expand_without_duplicate_obligation_entries() {
+    let source = r#"
+verifying "bounds.c";
+void bounded(int32 color) {
+    requires 0 <= color;
+    requires color <= 1;
+    ensures 1 == 1;
+}
+void caller() { ensures 1 == 1; }
+"#;
+    for value in [0, 1] {
+        let program =
+            format!("void bounded(int color) {{}} void caller(void) {{ bounded({value}); }}");
+        let sources = [("bounds.c", program.as_str())];
+        verify_c_sources(source, &sources).expect("both bounds hold");
+        let expanded =
+            expand_c_claim_source(source, &sources, "caller", ContractProofClaim::Ensure(0))
+                .expect("literal bounds must expand without duplicate obligation entries");
+        without_implicit_solve_for_claim("caller.ensures_0", || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+    let sources = [(
+        "bounds.c",
+        "void bounded(int color) {} void caller(void) { bounded(2); }",
+    )];
+    verify_c_sources(source, &sources).expect_err("a false upper bound must be refused");
 }
 
 /// A step's written obligation proofs expand in place: each `requires` entry

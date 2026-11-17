@@ -154,10 +154,6 @@ impl Type {
         )
     }
 
-    pub fn is_unsigned_integer(&self) -> bool {
-        self.is_integer() && !self.is_signed_integer()
-    }
-
     /// Whether every value of this integer type is a value of `target`, as
     /// a core `From` conversion between them requires.
     pub fn converts_losslessly_to(&self, target: &Type) -> bool {
