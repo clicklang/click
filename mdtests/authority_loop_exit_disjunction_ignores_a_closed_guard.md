@@ -12,6 +12,10 @@ drops a conjunct an earlier disjunct contradicts. The extra fact reordered
 the exits, so the exported disjunction was not the one the proof names. A
 closed true conjunct says nothing about its path and is no longer counted.
 
+The proof opens the joined resource in each model case to obtain its current
+cell-value fact, then exports the full disjunction explicitly. It does not
+recover that fact by registering a read against the joined memory cache.
+
 ```c filename=paint_or_leave.c
 struct node { int32 shade; };
 
@@ -65,7 +69,33 @@ void paint(struct node* p, int32 flag) {
             }
         }
     }
-    step();
+    have flag == 0 or c.color == Color::Black by {
+        cases {
+            (flag == 0 and c.color == Color::Red) => { solve(); }
+            (c.color == Color::Black) => { solve(); }
+        }
+    }
+    match c.color ensuring {
+        owns c: painted(p);
+        fact (flag == 0 and c.color == Color::Red and p->shade == 0) or (p->shade == 1 and c.color == Color::Black);
+    } {
+        Color::Red => {
+            have flag == 0 by {
+                cases {
+                    (flag == 0) => { known(); }
+                    (c.color == Color::Black) => { solve(); }
+                }
+            }
+            unfold(c);
+            let c = fold(painted(p), { color: Color::Red });
+            have (flag == 0 and c.color == Color::Red and p->shade == 0) or (p->shade == 1 and c.color == Color::Black);
+        },
+        Color::Black => {
+            unfold(c);
+            let c = fold(painted(p), { color: Color::Black });
+            have (flag == 0 and c.color == Color::Red and p->shade == 0) or (p->shade == 1 and c.color == Color::Black);
+        },
+    }
     have c.color == Color::Red or c.color == Color::Black by {
         cases {
             (flag == 0 and c.color == Color::Red and p->shade == 0) => {
@@ -76,6 +106,7 @@ void paint(struct node* p, int32 flag) {
             }
         }
     }
+    step();
     solve();
 }
 ```

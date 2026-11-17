@@ -1,6 +1,48 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: negated resource-field expansion and cold replay"]
+fn negated_resource_fields_expand_and_cold_replay() {
+    let sources = [(
+        "probe.c",
+        "struct pair { int start; int end; }; void probe(struct pair *p, int index) {}",
+    )];
+    let source = r#"
+        verifying "probe.c";
+        resource saved(p: struct pair*) {
+            field start: int32;
+            field end: int32;
+            owns *p;
+            fact p->start == start;
+            fact p->end == end;
+        }
+        void probe(struct pair* p, int32 index) {
+            owns r: saved(p);
+            requires 0 <= r.start;
+            requires defined(r.start + index);
+            requires to_integer(r.start + index) < to_integer(r.end);
+        } by {
+            have -to_integer(r.start) == 0 - to_integer(r.start) by { normalize(); }
+            have -(-to_integer(r.start)) == to_integer(r.start) by { normalize(); }
+            let { start: s, end: e } = unfold(r);
+            have to_integer(s + index + 1) <= to_integer(e);
+            let r = fold(saved(p), { start: s, end: e });
+            step();
+            step();
+            solve();
+        }
+    "#;
+    verify_c_sources(source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    // The successor-bound proof also generates negated entry-state field
+    // expressions after `r` has been unfolded. They must elaborate on replay.
+    let expanded = expand_c_claim_source_by_label(source, &sources, "probe.contract").unwrap();
+    without_implicit_solve_for_claim("probe.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 fn computational_solve_expansions_use_known_without_implicit_search() {
     for (parameters, requirement, goal, tactic) in [
         ("x: Integer", "", "x + 1 > x", "solve()"),
@@ -1923,15 +1965,15 @@ fn int64_guarded_postcondition_expands_to_int64_defined_and_reverifies() {
     assert!(!claim.contains("execute()"), "{expanded}");
     assert!(!claim.contains("solve()"), "{expanded}");
     assert!(
-        claim.contains("implies (let integer_value: Integer = to_integer(old((st.total as "),
+        claim.contains("implies ((to_integer(old((st.total as "),
         "{expanded}"
     );
     assert!(
-        claim.contains("integer_value) <= 9223372036854775807"),
+        claim.contains(": Integer) <= 9223372036854775807"),
         "{expanded}"
     );
     assert!(
-        claim.contains("integer_value) >= -9223372036854775808"),
+        claim.contains(": Integer) >= -9223372036854775808"),
         "{expanded}"
     );
     if let Err(error) = verify_c_sources(&expanded, &c_sources) {
@@ -1960,7 +2002,7 @@ fn int32_guarded_postcondition_expands_to_int32_defined_and_reverifies() {
     assert!(!claim.contains("execute()"), "{expanded}");
     assert!(!claim.contains("solve()"), "{expanded}");
     assert!(
-        claim.contains("implies (let integer_value: Integer = to_integer(old((st.total as "),
+        claim.contains("implies ((to_integer(old((st.total as "),
         "{expanded}"
     );
     if let Err(error) = verify_c_sources(&expanded, &c_sources) {
@@ -21217,11 +21259,14 @@ fn compact_store_proof_repairs_expand_and_replay() {
             .iter()
             .map(|(name, text)| (name.as_str(), text.as_str()))
             .collect::<Vec<_>>();
+        if function == "arena_write" {
+            assert!(!source.contains("transport("), "{fixture}: {source}");
+        }
         verify_c_sources(&source, &sources).unwrap_or_else(|error| panic!("{fixture}: {error}"));
         let claim = format!("{function}.contract");
         let expanded = expand_c_claim_source_by_label(&source, &sources, &claim)
             .unwrap_or_else(|error| panic!("{fixture}: {error}"));
-        if function == "release_run" {
+        if matches!(function, "arena_write" | "release_run") {
             assert!(!expanded.contains("transport("), "{fixture}: {expanded}");
         }
         without_implicit_solve_for_claim(&claim, || {

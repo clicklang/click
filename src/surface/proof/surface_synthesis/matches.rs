@@ -8,7 +8,7 @@ pub(super) fn raise_match(
     matched: &KernelMatch,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SurfaceTerm> {
     folds::scope(|| {
         let KernelType::Algebraic(ty) = matched.arguments[0].ty() else {
@@ -175,7 +175,7 @@ pub(super) fn raise_machine_match(
     term: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SurfaceTerm> {
     let MachineTerm::AlgebraicMatch { scrutinee, arms } = term else {
         return None;
@@ -272,7 +272,7 @@ mod tests {
     }
 
     #[test]
-    fn common_match_surface_retains_each_result_carrier_and_written_name() {
+    fn common_match_surface_retains_each_result_carrier_and_typed_binding() {
         let variable = Variable(991950);
         let algebraic = AlgebraicTerm {
             algebraic_type: AlgebraicType::parameter("Payload".into()),
@@ -351,10 +351,11 @@ mod tests {
                 panic!()
             };
             assert_eq!(*scrutinee, SurfaceTerm::Binding("payload".into()));
-            assert_eq!(arms[0].bindings, vec!["item"]);
-            assert!(
-                matches!(&arms[0].body, SurfaceTerm::Binding(name) | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(crate::kernel::BindingName::Named(name))) if name == "item")
-            );
+            assert!(matches!(
+                arms[0].bindings.as_slice(),
+                [SurfaceBinder::Generated(_)]
+            ));
+            assert_eq!(arms[0].body, arms[0].bindings[0].reference());
             assert!(folds::scoped_binder_name(folds::BinderCarrier::Algebraic, variable).is_none());
             assert!(folds::binder_name(true, variable).is_none());
             assert!(folds::binder_name(false, variable).is_none());
@@ -414,13 +415,19 @@ mod tests {
         let SurfaceTerm::AlgebraicMatch { arms, .. } = &result else {
             panic!()
         };
-        assert_eq!(arms[0].bindings, vec!["__click_binder_0", "integer_item"]);
+        assert!(
+            arms[0]
+                .bindings
+                .iter()
+                .all(|name| matches!(name, SurfaceBinder::Generated(_)))
+        );
+        assert_ne!(arms[0].bindings[0], arms[0].bindings[1]);
         let text = crate::surface::diagnostics::describe_contract_expression(&result);
         assert!(
-            text.contains("to_integer((__click_binder_0 as int32))"),
+            text.contains(&format!("to_integer(({} as int32))", arms[0].bindings[0])),
             "{text}"
         );
-        assert!(text.contains("integer_item"), "{text}");
+        assert!(text.contains(&arms[0].bindings[1].to_string()), "{text}");
         assert!(text.contains(" + item"), "{text}");
     }
 }

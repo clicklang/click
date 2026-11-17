@@ -569,6 +569,21 @@ impl ResourceContextIndex {
                     insert_resource_index_entry(&result.observed_publications, (), entry);
             }
         }
+        if let Resource::ConditionalMutexGuard(carrier) = fact.resource() {
+            result.instances =
+                insert_resource_index_entry(&result.instances, carrier.identity, entry);
+            if !fact.has_valid_exclusive_access() {
+                let count = result
+                    .invalid_instance_access
+                    .get(&carrier.identity)
+                    .copied()
+                    .unwrap_or(0);
+                result.invalid_instance_access = result
+                    .invalid_instance_access
+                    .with_inserted(carrier.identity, count + 1);
+            }
+            result.refresh_suspect_instance(carrier.identity);
+        }
         if let Resource::Instance(instance) = fact.resource() {
             result.instances =
                 insert_resource_index_entry(&result.instances, instance.identity, entry);
@@ -852,6 +867,26 @@ impl ResourceContextIndex {
                 result.observed_publications =
                     remove_resource_index_entry(&result.observed_publications, &(), entry);
             }
+        }
+        if let Resource::ConditionalMutexGuard(carrier) = fact.resource() {
+            result.instances =
+                remove_resource_index_entry(&result.instances, &carrier.identity, entry);
+            if !fact.has_valid_exclusive_access() {
+                let count = *result
+                    .invalid_instance_access
+                    .get(&carrier.identity)
+                    .expect("indexed invalid access");
+                result.invalid_instance_access = if count == 1 {
+                    result
+                        .invalid_instance_access
+                        .without_key(&carrier.identity)
+                } else {
+                    result
+                        .invalid_instance_access
+                        .with_inserted(carrier.identity, count - 1)
+                };
+            }
+            result.refresh_suspect_instance(carrier.identity);
         }
         if let Resource::Instance(instance) = fact.resource() {
             result.instances =
@@ -1375,6 +1410,7 @@ fn collect_memory_load_work<'a>(
                     continue;
                 }
                 match term {
+                    MachineTerm::ThreadHandle(_) => {}
                     MachineTerm::MemoryLoad(memory, pointer, kind) => {
                         // The checked source state's cell gives the loaded
                         // scalar's ABI width, and the read is never narrower
@@ -1440,6 +1476,37 @@ impl MemorySplitOrigins {
 }
 
 impl ResourceContext {
+    /// Install transferred guard custody using its exact authority key.
+    /// The owning rule has consumed its supplier; this checks exclusivity
+    /// before updating the normal resource indexes.
+    pub(in crate::kernel) fn insert_transferred_mutex_guard(
+        mut self,
+        guard: MutexIdentity,
+    ) -> Result<Self, ResourceContextValidityError> {
+        let fact = ResourceFact::own(Resource::MutexGuard(guard));
+        if self.storage.index.by_resource.contains_key(fact.resource()) {
+            return Err(ResourceContextValidityError::DuplicateOwnedResourceFact(
+                fact,
+            ));
+        }
+        self.insert_fact(fact);
+        Ok(self)
+    }
+
+    /// Restore one checked loop occurrence, selecting by its nominal identity.
+    pub(in crate::kernel) fn insert_transferred_conditional_guard(
+        mut self,
+        guard: Arc<ConditionalMutexGuard>,
+    ) -> Result<Self, ResourceContextValidityError> {
+        if self.storage.index.instances.contains_key(&guard.identity) {
+            return Err(ResourceContextValidityError::DuplicateOwnedResourceFact(
+                ResourceFact::own(Resource::ConditionalMutexGuard(guard)),
+            ));
+        }
+        self.insert_fact(ResourceFact::own(Resource::ConditionalMutexGuard(guard)));
+        Ok(self)
+    }
+
     fn exclusive_validity_error(
         &self,
         fact: &ResourceFact,
@@ -1465,6 +1532,7 @@ impl ResourceContext {
         }
         let identity = match fact.resource() {
             Resource::Instance(instance) => instance.identity,
+            Resource::ConditionalMutexGuard(carrier) => carrier.identity,
             _ => return None,
         };
         if !fact.has_valid_exclusive_access() {
@@ -8281,6 +8349,9 @@ impl ResourceNormalizationIndex {
             Resource::Instance(instance) => {
                 keys.push(ResourceNormalizationKey::Instance(instance.identity))
             }
+            Resource::ConditionalMutexGuard(carrier) => {
+                keys.push(ResourceNormalizationKey::Instance(carrier.identity))
+            }
             Resource::PopulationAuthority(_)
             | Resource::Iterated(_)
             | Resource::MutexGuard(_)
@@ -8467,6 +8538,9 @@ impl ResourceNormalizationIndex {
             }
             Resource::Instance(instance) => {
                 keys.push(ResourceNormalizationKey::Instance(instance.identity))
+            }
+            Resource::ConditionalMutexGuard(carrier) => {
+                keys.push(ResourceNormalizationKey::Instance(carrier.identity))
             }
             Resource::PopulationAuthority(_)
             | Resource::Iterated(_)
@@ -8700,6 +8774,7 @@ impl OwnedMemberKey {
             | Resource::Star(_)) => Self::TrackedResource(resource.clone()),
             Resource::Memory(_) => return None,
             resource @ (Resource::PopulationAuthority(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_)
@@ -9800,6 +9875,13 @@ impl ResourceFamilyAlgebra for MutexGuardResourceAlgebra {
         _: &PureFactContext,
     ) -> Option<ResourceContextValidityError> {
         match (left.resource(), right.resource()) {
+            (Resource::ConditionalMutexGuard(a), Resource::ConditionalMutexGuard(b))
+                if a.identity == b.identity =>
+            {
+                Some(ResourceContextValidityError::DuplicateOwnedResourceFact(
+                    right.clone(),
+                ))
+            }
             (Resource::MutexGuard(a), Resource::MutexGuard(b)) if a == b => Some(
                 ResourceContextValidityError::DuplicateOwnedResourceFact(right.clone()),
             ),
@@ -10099,6 +10181,7 @@ pub(super) fn resource_fact_read_core_range(resource: &ResourceFact) -> Option<M
             | Resource::Token { .. }
             | Resource::PopulationAuthority(_)
             | Resource::Instance(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_)
@@ -10161,6 +10244,7 @@ fn memory_resource_fact_permits_write(
             | Resource::Token { .. }
             | Resource::PopulationAuthority(_)
             | Resource::Instance(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_)
@@ -11158,6 +11242,7 @@ fn memory_resource_fact_range(fact: &ResourceFact) -> Option<&MemoryRange> {
             | Resource::Token { .. }
             | Resource::PopulationAuthority(_)
             | Resource::Instance(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_)
@@ -11170,6 +11255,7 @@ fn memory_resource_fact_range(fact: &ResourceFact) -> Option<&MemoryRange> {
             | Resource::Token { .. }
             | Resource::PopulationAuthority(_)
             | Resource::Instance(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_)
@@ -12009,7 +12095,7 @@ impl Resource {
             Self::Token { .. } => ResourceFamily::Token,
             Self::Instance(_) => ResourceFamily::Instance,
 
-            Self::MutexGuard(_) => ResourceFamily::MutexGuard,
+            Self::ConditionalMutexGuard(_) | Self::MutexGuard(_) => ResourceFamily::MutexGuard,
             Self::MutexLive(_) => ResourceFamily::MutexLive,
             Self::MutexUse(_) => ResourceFamily::MutexUse,
             Self::Iterated(_) => ResourceFamily::Iterated,
@@ -12036,6 +12122,7 @@ impl ResourceFact {
             self.resource(),
             Resource::PopulationAuthority(_)
                 | Resource::Instance(_)
+                | Resource::ConditionalMutexGuard(_)
                 | Resource::MutexGuard(_)
                 | Resource::MutexLive(_)
                 | Resource::MutexUse(_)
@@ -12185,7 +12272,7 @@ impl ResourceFact {
             ),
             Resource::Iterated(iterated) => iterated.blocks().contains(&block),
             Resource::Token { .. } | Resource::PopulationAuthority(_)
-            | Resource::Instance(_) | Resource::MutexGuard(_) | Resource::MutexLive(_) | Resource::MutexUse(_) | Resource::Publication(_) => false,
+            | Resource::Instance(_) | Resource::ConditionalMutexGuard(_) | Resource::MutexGuard(_) | Resource::MutexLive(_) | Resource::MutexUse(_) | Resource::Publication(_) => false,
         }
     }
 
@@ -12261,6 +12348,7 @@ impl ResourceFact {
             self.resource(),
             Resource::PopulationAuthority(_)
                 | Resource::Instance(_)
+                | Resource::ConditionalMutexGuard(_)
                 | Resource::MutexGuard(_)
                 | Resource::MutexLive(_)
                 | Resource::MutexUse(_)
@@ -12290,6 +12378,7 @@ impl ResourceFact {
                 | Resource::Token { .. }
                 | Resource::PopulationAuthority(_)
                 | Resource::Instance(_)
+                | Resource::ConditionalMutexGuard(_)
                 | Resource::MutexGuard(_)
                 | Resource::MutexLive(_)
                 | Resource::MutexUse(_)
@@ -12312,6 +12401,7 @@ impl ResourceFact {
                 | Resource::Token { .. }
                 | Resource::PopulationAuthority(_)
                 | Resource::Instance(_)
+                | Resource::ConditionalMutexGuard(_)
                 | Resource::MutexGuard(_)
                 | Resource::MutexLive(_)
                 | Resource::MutexUse(_)
@@ -12339,6 +12429,7 @@ impl ResourceFact {
                 | Resource::Token { .. }
                 | Resource::PopulationAuthority(_)
                 | Resource::Instance(_)
+                | Resource::ConditionalMutexGuard(_)
                 | Resource::MutexGuard(_)
                 | Resource::MutexLive(_)
                 | Resource::MutexUse(_)
@@ -12351,6 +12442,7 @@ impl ResourceFact {
                 | Resource::Token { .. }
                 | Resource::PopulationAuthority(_)
                 | Resource::Instance(_)
+                | Resource::ConditionalMutexGuard(_)
                 | Resource::MutexGuard(_)
                 | Resource::MutexLive(_)
                 | Resource::MutexUse(_)

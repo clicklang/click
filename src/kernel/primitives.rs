@@ -15,9 +15,14 @@ use std::sync::{Arc, OnceLock};
 
 mod bindings;
 pub use bindings::{
-    BindingDeclaration, BindingName, LocalBindingId, LocalFunctionId, LocalStorageInstance,
-    StaticBindingId, StaticBindingMetadata, StaticBindingOwner,
+    BindingDeclaration, BindingName, GeneratedBinderId, LocalBindingId, LocalFunctionId,
+    LocalStorageInstance, StaticBindingId, StaticBindingMetadata, StaticBindingOwner,
 };
+
+/// Opaque creation identity carried by a modeled `pthread_t` word. Its ID is
+/// not the numeric C representation and carries no completion authority.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct ThreadHandleId(pub(crate) u64);
 
 pub(crate) const LITTLE_ENDIAN_PREDICATE_NAME: &str = "__click_little_endian";
 
@@ -26,15 +31,13 @@ pub(crate) const SAME_OBJECT_PREDICATE_NAME: &str = "__click_same_object";
 /// `element_width`-byte elements: `{prefix}{element_width}(start, from, to)`
 /// (`design/pointer-subobject-extents.md`, Phase C).
 pub(crate) const SUBOBJECT_COVERS_PREDICATE_PREFIX: &str = "__click_subobject_covers_";
-pub(crate) const MUTEX_HELD_PREDICATE_NAME: &str = "__click_mutex_held";
 
-/// The Click spelling of the kernel predicate `name`: `held` and
-/// `same_object` for the built-ins, the declared name for a contract or a
+/// The Click spelling of the kernel predicate `name`: `same_object`
+/// for the built-in, the declared name for a contract or a
 /// user predicate. `None` marks verifier bookkeeping under the reserved
 /// `__click_` prefix, which no Click proposition lowers to.
 pub(crate) fn predicate_source_name(name: &str) -> Option<&str> {
     match name {
-        MUTEX_HELD_PREDICATE_NAME => Some("held"),
         SAME_OBJECT_PREDICATE_NAME => Some("same_object"),
         LITTLE_ENDIAN_PREDICATE_NAME => Some("little_endian"),
         _ => FunctionContract::surface_name_from_predicate(name)
@@ -869,12 +872,14 @@ pub enum MachineTerm {
     /// travels in a `ProgramValue::Bool` as its cast to `uint8`, the byte a `bool`
     /// cell holds; its truth is `value`. Built by
     /// [`MachineTerm::bool_cast`], which folds a constant. It follows
-    /// every other variant, so the derived order of the terms before it is
+    /// the preexisting variants, so the derived order of the terms before it is
     /// unchanged.
     BoolCast {
         to: MachineIntegerType,
         value: Box<ConditionTerm>,
     },
+    /// An opaque pthread word; never a symbolic variable or numeric literal.
+    ThreadHandle(ThreadHandleId),
 }
 
 /// The derived `Debug` spelling of every variant, except that a constant
@@ -885,6 +890,7 @@ pub enum MachineTerm {
 impl std::fmt::Debug for MachineTerm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::ThreadHandle(id) => f.debug_tuple("ThreadHandle").field(id).finish(),
             int32_constant!(bits) => f
                 .debug_tuple("Constant")
                 .field(&constant_u32(*bits))
@@ -3680,16 +3686,15 @@ impl std::fmt::Debug for CallbackSignature {
 
 /// The exceptional result channel declared by a function signature.
 ///
-/// This is deliberately kernel-internal until the surface language has a
-/// settled way to spell exceptional contracts.  The closed representation
-/// prevents body execution from silently inventing new exceptional payload
-/// types in the meantime.
+/// The declared, exact exceptional channel. Surface contracts currently spell
+/// the scalar channel and the pinned opaque standard exception class; source
+/// execution cannot silently invent another payload type.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub(crate) enum ExceptionalSignature {
     #[default]
     None,
-    // Staged for kernel callers before any source importer can construct it.
     Int32,
+    Opaque(TypeParameterName),
 }
 
 impl ExceptionalSignature {
@@ -3698,7 +3703,15 @@ impl ExceptionalSignature {
     }
 
     pub(crate) fn permits(self, value: &ProgramValue) -> bool {
-        matches!((self, value), (Self::Int32, ProgramValue::Int32(_)))
+        self.payload_type() == Some(value.program_type())
+    }
+
+    pub(crate) fn payload_type(self) -> Option<ProgramType> {
+        match self {
+            Self::None => None,
+            Self::Int32 => Some(ProgramType::Int32),
+            Self::Opaque(name) => Some(ProgramType::Parameter(name)),
+        }
     }
 }
 
@@ -4141,12 +4154,12 @@ pub enum SpecExpression {
         start: Box<SpecExpression>,
         end: Box<SpecExpression>,
         initial: Box<SpecExpression>,
-        accumulator: String,
-        item: String,
+        accumulator: BindingName,
+        item: BindingName,
         body: Box<SpecExpression>,
     },
     Let {
-        name: String,
+        name: BindingName,
         value: Box<SpecExpression>,
         body: Box<SpecExpression>,
     },
@@ -4398,7 +4411,7 @@ pub enum SpecIntegerRangeFoldIndex {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SpecAlgebraicExpressionNode {
     Variable(Variable),
-    Binding(String),
+    Binding(BindingName),
     ResourceField(ResourceFieldProjection),
     Constructor {
         variant: String,
@@ -4460,7 +4473,7 @@ pub enum SpecAlgebraicValue {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct SpecAlgebraicMatchArm {
     pub variant: String,
-    pub bindings: Vec<String>,
+    pub bindings: Vec<BindingName>,
     pub binding_types: Vec<AlgebraicValueType>,
     pub body: SpecExpression,
 }
@@ -4468,7 +4481,7 @@ pub struct SpecAlgebraicMatchArm {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct SpecAlgebraicResultMatchArm {
     pub variant: String,
-    pub bindings: Vec<String>,
+    pub bindings: Vec<BindingName>,
     pub binding_types: Vec<AlgebraicValueType>,
     /// Kernel identities of Integer fields in the lowered arm body.
     /// Other carriers are bound through their typed environments.
@@ -4500,7 +4513,7 @@ impl SpecAlgebraicResultMatchArm {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct SpecIntegerMatchArm {
     pub variant: String,
-    pub bindings: Vec<String>,
+    pub bindings: Vec<BindingName>,
     pub binding_types: Vec<AlgebraicValueType>,
     /// Kernel identities used by Integer binders in the lowered arm body.
     /// C and algebraic binders are represented by their typed environments.
@@ -5373,61 +5386,63 @@ pub enum SpecProposition {
     Not(Box<SpecProposition>),
     Implies(Box<SpecProposition>, Box<SpecProposition>),
     ForAllInt32 {
-        name: String,
+        name: BindingName,
         variable: Variable,
         body: Box<SpecProposition>,
     },
     ForAllMachineInteger {
-        name: String,
+        name: BindingName,
         variable: Variable,
         integer_type: MachineIntegerType,
         body: Box<SpecProposition>,
     },
     ForAllInteger {
-        name: String,
+        name: BindingName,
         variable: Variable,
         body: Box<SpecProposition>,
     },
     ForAllAlgebraic {
-        name: String,
+        name: BindingName,
         variable: Variable,
         algebraic_type: AlgebraicType,
         body: Box<SpecProposition>,
     },
     ForAllPointer {
-        name: String,
+        name: BindingName,
         variable: Variable,
         program_type: ProgramType,
         body: Box<SpecProposition>,
     },
     ExistsInt32 {
-        name: String,
+        name: BindingName,
         variable: Variable,
         body: Box<SpecProposition>,
     },
     ExistsMachineInteger {
-        name: String,
+        name: BindingName,
         variable: Variable,
         integer_type: MachineIntegerType,
         body: Box<SpecProposition>,
     },
     ExistsInteger {
-        name: String,
+        name: BindingName,
         variable: Variable,
         body: Box<SpecProposition>,
     },
     ExistsAlgebraic {
-        name: String,
+        name: BindingName,
         variable: Variable,
         algebraic_type: AlgebraicType,
         body: Box<SpecProposition>,
     },
     ExistsPointer {
-        name: String,
+        name: BindingName,
         variable: Variable,
         program_type: ProgramType,
         body: Box<SpecProposition>,
     },
+    /// Observe this state's mutex protocol without conferring ownership.
+    MutexHeld(Box<SpecExpression>),
     Predicate {
         name: String,
         arguments: Vec<SpecPredicateArgument>,
@@ -5677,11 +5692,14 @@ pub enum ProgramStatement {
     /// Produce a checked exceptional outcome. The first internal slice carries
     /// one int32 payload; source-language handler matching lands separately.
     Throw(ProgramExpression),
+    /// Throw a fresh opaque value of a nominal type. The frontend has checked
+    /// construction and trivial destruction; the outcome names it `exception`.
+    ThrowOpaque(TypeParameterName),
     /// Catch an int32 exceptional outcome from `try_body` and bind its payload
     /// for the handler. Other outcomes retain their original path and state.
     TryCatchInt32 {
         try_body: Box<ProgramStatement>,
-        binding: String,
+        binding: BindingName,
         handler: Box<ProgramStatement>,
         /// This is an implementation cleanup edge inserted by a frontend,
         /// rather than a source-level handler. Its handler runs cleanup and
@@ -5728,11 +5746,10 @@ pub enum ProgramStatement {
     },
     /// Shared loop form for structured loops and checked natural cycles.
     Loop {
-        /// The loop's shared effectful test, outside the body scope.
-        test: Option<LoopTestRegion>,
+        /// The loop's one test region, outside the body scope.
+        test: LoopTestRegion,
         /// Shared update region, entered after leaving the body scope.
         update: Option<std::sync::Arc<ProgramStatement>>,
-        condition: ProgramExpression,
         invariant: Vec<Proposition>,
         invariant_checks: Vec<LoopInvariantCheck>,
         effect_checks: Vec<LoopEffectCheck>,
@@ -5754,9 +5771,6 @@ pub enum ProgramStatement {
         /// a direct contained child, in the exact resource definition, of the
         /// instance it held at the loop head.
         structural_measure: Option<String>,
-        /// Whether the body runs before the first condition check, as in C's
-        /// `do ... while` statement.
-        do_while: bool,
         /// When present, this is a proof-only natural cycle whose source body
         /// retains a checked `goto` to the target. The matching jump is the
         /// back edge; ordinary completion of the body is the cycle exit.
@@ -5786,7 +5800,7 @@ pub enum LoopTestPosition {
     AfterBody,
 }
 
-/// The one shared source region that prepares and decides an effectful test.
+/// Every loop has one test region: optional preparation, a decision and cleanup.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct LoopTestRegion {
     pub statement: std::sync::Arc<ProgramStatement>,
@@ -11014,6 +11028,8 @@ pub(super) struct ResourceContextIndex {
     pub(super) owned_memory_range_counts: PersistentMap<MemoryRange, usize>,
     owned_count: usize,
     owned_composite_count: usize,
+    /// Exclusive occurrence identities: named instances and conditional loop
+    /// guard custody. Shape/pointer indexes below contain only named instances.
     pub(super) instances: PersistentMap<Variable, ResourceEntryIds>,
     /// Only duplicated or malformed mutex authority atoms need a validity check.
     pub(super) suspect_mutex_authorities: PersistentMap<Resource, ()>,
@@ -11473,6 +11489,8 @@ pub enum Resource {
     Instance(ResourceInstance),
     /// Opaque exclusive authority for one acquisition of a modeled mutex.
     MutexGuard(MutexIdentity),
+    /// Exclusive custody of a loop guard, conditional on its frozen head condition.
+    ConditionalMutexGuard(Arc<ConditionalMutexGuard>),
     /// Exclusive lifecycle authority for one initialized mutex.
     MutexLive(MutexIdentity),
     /// Owned permission to use one checked loan share of an initialized mutex.
@@ -11563,6 +11581,25 @@ pub struct MutexIdentity {
     pub(in crate::kernel) mutex: Pointer,
 }
 
+/// A loop-owned occurrence. Protocol metadata and the condition never create
+/// this resource: only checked entry/backedge ownership exchanges do.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct ConditionalMutexGuard {
+    pub(in crate::kernel) identity: Variable,
+    pub(in crate::kernel) guard: MutexIdentity,
+    pub(in crate::kernel) initialization: MutexIdentity,
+    pub(in crate::kernel) held: ConditionTerm,
+}
+
+impl ConditionalMutexGuard {
+    pub(crate) fn mutex(&self) -> &Pointer {
+        self.guard.mutex()
+    }
+    pub(crate) fn condition(&self) -> &ConditionTerm {
+        &self.held
+    }
+}
+
 /// Opaque identity of one use-share resource occurrence. The pointer is
 /// diagnostic provenance, not a constructor for loan authority. Substitution
 /// must preserve this identity just as it preserves a concrete acquisition.
@@ -11605,6 +11642,7 @@ impl Resource {
             Resource::Memory(_) => "memory",
             Resource::PopulationAuthority(_) => "population authority",
             Resource::MutexGuard(_) => "mutex guard",
+            Resource::ConditionalMutexGuard(_) => "conditional mutex guard",
             Resource::MutexLive(_) => "mutex lifetime",
             Resource::MutexUse(_) => "mutex use",
             Resource::Publication(_) => "publication right",
@@ -13060,6 +13098,9 @@ pub enum Term {
 pub struct BinderName(Option<std::sync::Arc<str>>);
 
 impl BinderName {
+    pub fn binding(name: &BindingName) -> Self {
+        name.named().map(Self::written).unwrap_or_default()
+    }
     pub fn written(name: &str) -> Self {
         Self((!name.is_empty()).then(|| name.into()))
     }
@@ -13075,6 +13116,9 @@ impl BinderName {
 pub struct BindingNames(Option<std::sync::Arc<[BinderName]>>);
 
 impl BindingNames {
+    pub fn bindings(names: &[BindingName]) -> Self {
+        Self((!names.is_empty()).then(|| names.iter().map(BinderName::binding).collect()))
+    }
     pub fn written(names: &[String]) -> Self {
         Self(
             (!names.is_empty())
@@ -14874,7 +14918,7 @@ impl PartialOrd for ProofObligation {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct ExecutionPureFact {
-    pub(super) proposition: Proposition,
+    pub(super) proposition: Arc<Proposition>,
     pub(super) public: bool,
     pub(super) certified: bool,
     /// A value equation derived by a logical read, not a condition selecting
@@ -15877,8 +15921,17 @@ mod representation_size_tests {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct TypeParameterName(u32);
 
-static TYPE_PARAMETER_NAMES: std::sync::Mutex<Vec<&'static AlgebraicType>> =
-    std::sync::Mutex::new(Vec::new());
+struct TypeParameterNames {
+    types: Vec<&'static AlgebraicType>,
+    // Rigid values use only their name, never the unrelated enum definitions.
+    rigid: std::collections::BTreeMap<String, TypeParameterName>,
+}
+
+static TYPE_PARAMETER_NAMES: std::sync::Mutex<TypeParameterNames> =
+    std::sync::Mutex::new(TypeParameterNames {
+        types: Vec::new(),
+        rigid: std::collections::BTreeMap::new(),
+    });
 
 impl TypeParameterName {
     /// The abstract type parameter of this name.
@@ -15888,37 +15941,75 @@ impl TypeParameterName {
 
     /// The type a value of `algebraic_type` has.
     pub fn of(algebraic_type: &AlgebraicType) -> Self {
-        let mut types = TYPE_PARAMETER_NAMES.lock().expect("type parameter names");
-        if let Some(index) = types.iter().position(|known| *known == algebraic_type) {
+        let mut names = TYPE_PARAMETER_NAMES.lock().expect("type parameter names");
+        let rigid = algebraic_type.rigid
+            && algebraic_type.arguments.is_empty()
+            && algebraic_type.variants.is_empty();
+        if rigid {
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some(known) = names.rigid.get(&algebraic_type.name) {
+                return *known;
+            }
+        } else if let Some(index) = names.types.iter().position(|known| {
+            crate::instrumentation::record_deterministic_work(1);
+            *known == algebraic_type
+        }) {
             return Self(index as u32);
         }
-        types.push(Box::leak(Box::new(algebraic_type.clone())));
-        Self(types.len() as u32 - 1)
+        let id = Self(names.types.len() as u32);
+        names
+            .types
+            .push(Box::leak(Box::new(algebraic_type.clone())));
+        if rigid {
+            names.rigid.insert(algebraic_type.name.clone(), id);
+        }
+        id
     }
 
     pub fn name(self) -> &'static str {
-        &TYPE_PARAMETER_NAMES.lock().expect("type parameter names")[self.0 as usize].name
+        &TYPE_PARAMETER_NAMES
+            .lock()
+            .expect("type parameter names")
+            .types[self.0 as usize]
+            .name
     }
 
     /// The algebraic type a value of this type is: rigid for a type
     /// parameter, with its variants for an enum.
     pub fn algebraic_type(self) -> AlgebraicType {
-        TYPE_PARAMETER_NAMES.lock().expect("type parameter names")[self.0 as usize].clone()
+        TYPE_PARAMETER_NAMES
+            .lock()
+            .expect("type parameter names")
+            .types[self.0 as usize]
+            .clone()
     }
 
     /// Whether `algebraic_type` is the type of a C carrier already named,
     /// so a memory cell can hold its values. Nothing is registered.
     pub(crate) fn carries(algebraic_type: &AlgebraicType) -> bool {
-        TYPE_PARAMETER_NAMES
-            .lock()
-            .expect("type parameter names")
-            .contains(&algebraic_type)
+        let names = TYPE_PARAMETER_NAMES.lock().expect("type parameter names");
+        if algebraic_type.rigid
+            && algebraic_type.arguments.is_empty()
+            && algebraic_type.variants.is_empty()
+        {
+            crate::instrumentation::record_deterministic_work(1);
+            names.rigid.contains_key(&algebraic_type.name)
+        } else {
+            names.types.iter().any(|known| {
+                crate::instrumentation::record_deterministic_work(1);
+                *known == algebraic_type
+            })
+        }
     }
 
     /// Whether values of this type are an enum's, which the program
     /// constructs and matches, rather than an abstract type parameter's.
     pub fn is_enum(self) -> bool {
-        !TYPE_PARAMETER_NAMES.lock().expect("type parameter names")[self.0 as usize].rigid
+        !TYPE_PARAMETER_NAMES
+            .lock()
+            .expect("type parameter names")
+            .types[self.0 as usize]
+            .rigid
     }
 }
 
@@ -15926,3 +16017,5 @@ impl TypeParameterName {
 mod scaling_tests {
     include!("../scaling_tests/kernel/primitives.rs");
 }
+
+pub(crate) use bindings::NamedBindingMap;

@@ -524,7 +524,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                             ),
                         )
                         .map(Arc::new),
-                        surface_bindings: PersistentMap::default(),
+                        surface_bindings: PersistentBinderMap::default(),
                         both_children,
                     ..PropositionPresentation::default()
                     };
@@ -797,13 +797,15 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     /// where the scope closes; `close` closes it from this Proof or from one
     /// that has proved the fact. A close that leaves several facts open, or
     /// one that cannot be spelled or that `solve` does not prove, is refused
-    /// with the fold's own diagnostic.
+    /// with the fold's own diagnostic. Without a written `by`, a close that
+    /// leaves several facts open has the implicit `solve` prove each as a
+    /// `have` at the end of the block, the form a written proof uses.
     pub(in crate::surface::proof) fn close_scope_with_body_fact_proof<T>(
         &self,
         resource: &ResourceClause,
         written: Option<&[ProofTactic]>,
         close: &dyn Fn(&Proof<'a>) -> Result<T, ClickError>,
-    ) -> Result<(T, Option<Box<ProofCertificate>>), ClickError> {
+    ) -> Result<(T, Option<crate::surface::proof::ScopeCloseProof>), ClickError> {
         let driver_proof = self.proof;
         if written.is_none() && implicit_solve_disabled() {
             return Ok((close(driver_proof)?, None));
@@ -854,6 +856,26 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 }
             }
         };
+        // The implicit `solve` proved every open fact; with several, each is
+        // a `have` at the end of the block, the form the refusal below asks
+        // a written proof for, and the scope closes after them.
+        if let Some((proved, entries)) = &proved_by_solve
+            && entries.len() > 1
+        {
+            let haves = entries
+                .iter()
+                .map(|entry| ProofStep::Have {
+                    proposition: entry.proposition.clone(),
+                    proof: Box::new(entry.proof.clone()),
+                })
+                .collect();
+            return Ok((
+                close(proved)?,
+                Some(crate::surface::proof::ScopeCloseProof::BlockTail(Box::new(
+                    ProofCertificate::from_steps(haves)?,
+                ))),
+            ));
+        }
         let [requirement] = open.as_slice() else {
             let facts = open
                 .iter()
@@ -901,7 +923,10 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 (proved, entries.pop().expect("one entry").proof)
             }
         };
-        Ok((close(&proved)?, Some(Box::new(body))))
+        Ok((
+            close(&proved)?,
+            Some(crate::surface::proof::ScopeCloseProof::By(Box::new(body))),
+        ))
     }
 
     /// Discharge a theorem's retained entry requirements before its main

@@ -5,39 +5,42 @@ pub(in crate::surface) fn unfold_available_predicate_facts(
     unfolded_predicates: &[String],
     available_pure_facts: &[Proposition],
 ) -> Result<Vec<Proposition>, String> {
+    let mut facts = available_pure_facts.to_vec();
+    facts.extend(unfold_available_predicate_fact_delta(
+        spec_definitions,
+        unfolded_predicates,
+        available_pure_facts,
+    )?);
+    Ok(facts)
+}
+
+pub(in crate::surface) fn unfold_available_predicate_fact_delta(
+    spec_definitions: SpecDefinitions<'_>,
+    unfolded_predicates: &[String],
+    available: &(impl crate::kernel::proof::PropositionSource + ?Sized),
+) -> Result<Vec<Proposition>, String> {
     if unfolded_predicates.is_empty() {
-        return Ok(available_pure_facts.to_vec());
+        return Ok(Vec::new());
     }
-
-    // SourceProof contexts can contain large execution propositions whose trees do
-    // not mention a Click predicate at all. Rebuilding every one of those
-    // trees for each `unfold` made this otherwise structural tactic scale with
-    // the entire execution history. Predicate applications only occur at the
-    // proposition level, so select the small relevant subset first.
-    let to_unfold = available_pure_facts
-        .iter()
-        .filter(|proposition| {
-            proposition_contains_named_predicate(proposition, unfolded_predicates)
-        })
-        .collect::<Vec<_>>();
-    if to_unfold.is_empty() {
-        return Ok(available_pure_facts.to_vec());
-    }
-
-    let assumptions = assumptions_from_propositions(available_pure_facts);
-    let mut propositions = available_pure_facts.to_vec();
-    for proposition in to_unfold {
+    let facts = available.ordered_proof_facts();
+    let mut delta = Vec::new();
+    for proposition in facts.propositions().filter(|proposition| {
+        proposition_contains_named_predicate(proposition, unfolded_predicates)
+    }) {
         let unfolded = unfold_predicates_in_proposition(
             spec_definitions,
             unfolded_predicates,
             proposition,
-            &assumptions,
+            facts.assumptions(),
         )?;
-        if &unfolded != proposition && !propositions.contains(&unfolded) {
-            propositions.push(unfolded);
+        if &unfolded != proposition
+            && !facts.contains_presented(&unfolded)
+            && !delta.contains(&unfolded)
+        {
+            delta.push(unfolded);
         }
     }
-    Ok(propositions)
+    Ok(delta)
 }
 
 fn proposition_contains_named_predicate(proposition: &Proposition, names: &[String]) -> bool {

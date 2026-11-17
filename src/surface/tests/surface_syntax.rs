@@ -1990,22 +1990,6 @@ fn surface_synthesis_spells_reserved_predicates_by_their_click_names() {
         )
     };
     let state = Term::ExecutionState(Box::new(ExecutionState::new()));
-    let m = vec![ContractExpression::ProgramExpression(
-        ProgramExpression::Variable(("m".to_string()).into()),
-    )];
-    assert_eq!(
-        synthesize(
-            crate::kernel::MUTEX_HELD_PREDICATE_NAME.to_string(),
-            vec![
-                state.clone(),
-                Term::ProgramValue(ProgramValue::pointer(mutex.clone()))
-            ],
-        ),
-        Some(ClickProposition::PredicateCall {
-            name: "held".to_string(),
-            arguments: m
-        })
-    );
     assert_eq!(
         synthesize(
             crate::kernel::FunctionContract::predicate_name_for("ordered"),
@@ -2150,7 +2134,7 @@ fn proof_source_printing_preserves_proposition_precedence() {
 
     let quantified = ClickProposition::ForAll {
         click_type: ClickType::Program(InterfaceType::Int32),
-        name: "k".to_string(),
+        name: "k".to_string().into(),
         written_name: None,
         body: Box::new(ClickProposition::Implies(
             Box::new(ClickProposition::And(

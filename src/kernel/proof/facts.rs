@@ -1,5 +1,7 @@
 //! Persistent semantic fact state for checked proofs.
 
+mod presentation;
+use presentation::FactPresentation;
 mod rewritten_loads;
 mod selected_atoms;
 pub(in crate::kernel) use rewritten_loads::clear_rewritten_load_syntax_cache;
@@ -314,11 +316,10 @@ pub(crate) struct PureFactStore {
     /// holds, so a fact naming one again, or naming a state derived from
     /// one, reserves only what differs (`proposition_variables_reserving`).
     reserved_states: crate::kernel::reasoning::variable_collection::ReservedStates,
-    prioritized: Option<Arc<PrioritizedProofFacts>>,
+    statement_batches: Option<Arc<StatementFactBatch>>,
     top_level_exact: PersistentSet<Arc<Proposition>>,
-    /// Exact written conjunction nodes, without comparison or observation aliases.
-    /// Enabled for statement-local views; general proof stores do not build it.
-    stated_conjuncts: Option<PersistentSet<Arc<Proposition>>>,
+    /// Shared occurrence and unique-order indexes, with strict syntax selection.
+    presentation: FactPresentation,
     exact: PersistentSet<Arc<Proposition>>,
     /// Exact typed call payloads ignore only the native/shared argument
     /// carrier choice; they retain state, argument order and type keys.
@@ -408,6 +409,9 @@ impl PropositionSource for ProofFacts {
     fn propositions(&self) -> impl Iterator<Item = &Proposition> {
         self.store.propositions()
     }
+    fn ordered_proof_facts(&self) -> ProofFacts {
+        self.with_store(self.store.unique_presentation())
+    }
     fn pure_context(&self) -> PureFactContext {
         self.store.pure_context()
     }
@@ -420,6 +424,17 @@ impl PropositionSource for ProofFacts {
 }
 
 impl ProofFacts {
+    pub(crate) fn with_list_fact(&self, fact: Proposition) -> Self {
+        self.with_store(self.store.with_list_fact(fact))
+    }
+    pub(crate) fn retaining(&self, keep: impl FnMut(&Proposition) -> bool) -> Self {
+        let store = self.store.retaining(keep);
+        if store.shares_premises_with(&self.store) {
+            self.clone()
+        } else {
+            Self::from_store(store)
+        }
+    }
     pub(crate) fn store(&self) -> &PureFactStore {
         &self.store
     }
@@ -433,7 +448,7 @@ impl ProofFacts {
         Self::from_store(PureFactStore::from_ordered(facts))
     }
     pub(crate) fn from_source(facts: &(impl PropositionSource + ?Sized)) -> Self {
-        Self::from_store(PureFactStore::from_source(facts))
+        facts.indexed_proof_facts()
     }
     fn with_store(&self, store: PureFactStore) -> Self {
         Self {
@@ -929,26 +944,11 @@ impl ProofFacts {
     }
 }
 
-/// A statement transition places its explicitly transported successor facts
-/// before the ambient facts retained at their original states. Prefix
-/// batches preserve that semantic order without copying the ambient sequence.
-struct PrioritizedProofFacts {
-    parent: Option<Arc<PrioritizedProofFacts>>,
-    facts: PrioritizedStatementFacts,
-    introduced: Arc<Vec<Proposition>>,
-}
-
-struct PrioritizedStatementFacts {
-    prefix: ExecutionFacts,
-    suffix: Arc<Vec<Proposition>>,
-}
-impl PrioritizedStatementFacts {
-    fn iter(&self) -> impl Iterator<Item = &Proposition> {
-        self.prefix
-            .iter()
-            .map(ExecutionPureFact::proposition)
-            .chain(self.suffix.iter())
-    }
+/// An introduction log for statement ancestry and explicit-delta queries.
+/// Presentation order and proposition ownership stay in the store's indexes.
+struct StatementFactBatch {
+    parent: Option<Arc<StatementFactBatch>>,
+    introduced: Arc<Vec<Arc<Proposition>>>,
 }
 
 /// One indexed prefix of an available implication chain. The consequent key
@@ -1092,10 +1092,49 @@ pub(crate) trait PropositionSource {
         self.propositions()
             .any(|fact| exact_fact_contains_conjunct(fact, required))
     }
+    fn ordered_proof_facts(&self) -> ProofFacts {
+        self.indexed_proof_facts()
+    }
     /// Fresh proof facts indexing these propositions in order. A source
     /// that keeps indexed facts for them extends those instead.
     fn indexed_proof_facts(&self) -> ProofFacts {
-        ProofFacts::from_source(self)
+        ProofFacts::from_store(PureFactStore::from_source_retaining_reservations(
+            self, None,
+        ))
+    }
+}
+impl<T: PropositionSource + ?Sized> PropositionSource for &T {
+    fn propositions(&self) -> impl Iterator<Item = &Proposition> {
+        (**self).propositions()
+    }
+    fn pure_context(&self) -> PureFactContext {
+        (**self).pure_context()
+    }
+    fn exact_available(&self, required: &Proposition) -> bool {
+        (**self).exact_available(required)
+    }
+    fn indexed_proof_facts(&self) -> ProofFacts {
+        (**self).indexed_proof_facts()
+    }
+    fn ordered_proof_facts(&self) -> ProofFacts {
+        (**self).ordered_proof_facts()
+    }
+}
+impl<T: PropositionSource + ?Sized> PropositionSource for Arc<T> {
+    fn propositions(&self) -> impl Iterator<Item = &Proposition> {
+        (**self).propositions()
+    }
+    fn pure_context(&self) -> PureFactContext {
+        (**self).pure_context()
+    }
+    fn exact_available(&self, required: &Proposition) -> bool {
+        (**self).exact_available(required)
+    }
+    fn indexed_proof_facts(&self) -> ProofFacts {
+        (**self).indexed_proof_facts()
+    }
+    fn ordered_proof_facts(&self) -> ProofFacts {
+        (**self).ordered_proof_facts()
     }
 }
 impl PropositionSource for [Proposition] {
@@ -1115,11 +1154,10 @@ impl<const N: usize> PropositionSource for [Proposition; N] {
 }
 impl PropositionSource for PureFactStore {
     fn propositions(&self) -> impl Iterator<Item = &Proposition> {
-        let mut seen = BTreeSet::new();
-        std::iter::successors(self.prioritized.as_deref(), |batch| batch.parent.as_deref())
-            .flat_map(|batch| batch.facts.iter())
-            .chain(self.ordered.iter().map(Arc::as_ref))
-            .filter(move |fact| seen.insert(*fact))
+        self.presentation.unique_iter()
+    }
+    fn ordered_proof_facts(&self) -> ProofFacts {
+        ProofFacts::from_store(self.unique_presentation())
     }
     fn pure_context(&self) -> PureFactContext {
         self.assumptions().clone()
@@ -1179,41 +1217,60 @@ pub(crate) fn constructor_consequent_instances(proposition: &Proposition) -> Vec
         .collect()
 }
 
-fn index_stated_conjuncts(
-    mut index: PersistentSet<Arc<Proposition>>,
-    fact: &Arc<Proposition>,
-) -> PersistentSet<Arc<Proposition>> {
-    let mut pending = match fact.as_ref() {
-        Proposition::And(left, right) => vec![
-            Arc::new(left.as_ref().clone()),
-            Arc::new(right.as_ref().clone()),
-        ],
-        _ => return index,
-    };
-    while let Some(fact) = pending.pop() {
-        if let Proposition::And(left, right) = fact.as_ref() {
-            pending.push(Arc::new(left.as_ref().clone()));
-            pending.push(Arc::new(right.as_ref().clone()));
-        }
-        index = index.with_value(fact);
-    }
-    index
-}
-
 impl PureFactStore {
     pub(crate) fn len(&self) -> usize {
-        self.top_level_exact.len()
+        self.presentation.len()
     }
 
-    /// Strict written membership for statement-local publication. This does
-    /// not admit the comparison aliases used by checked proof queries.
+    /// Strict written membership, independent of the comparison aliases
+    /// admitted by checked proof queries.
     pub(crate) fn has_stated_conjunct(&self, fact: &Proposition) -> bool {
-        self.top_level_exact.contains(fact)
-            || self
-                .stated_conjuncts
-                .as_ref()
-                .expect("strict syntax membership requires a statement-local index")
-                .contains(fact)
+        self.presentation.has_conjunct(fact)
+    }
+
+    pub(crate) fn contains_presented(&self, fact: &Proposition) -> bool {
+        self.presentation.contains(fact)
+    }
+
+    pub(crate) fn occurrences(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = &Proposition> + ExactSizeIterator {
+        self.presentation.iter()
+    }
+
+    pub(crate) fn occurrence(&self, index: usize) -> Option<&Proposition> {
+        self.presentation.get(index)
+    }
+    pub(crate) fn unique_presentation(&self) -> Self {
+        Self {
+            presentation: self.presentation.unique(),
+            ..self.clone()
+        }
+    }
+
+    pub(crate) fn with_list_fact(&self, fact: Proposition) -> Self {
+        if let Some(shared) = self.top_level_exact.get(&fact) {
+            let mut successor = self.clone();
+            successor.presentation.append(shared.clone());
+            successor
+        } else {
+            self.with_fact(fact)
+        }
+    }
+
+    /// Explicitly restrict the available scope. An unchanged selection keeps
+    /// context lineage; a changed selection constructs a new root, never an
+    /// in-place withdrawal from a branch's reasoning graph.
+    pub(crate) fn retaining(&self, mut keep: impl FnMut(&Proposition) -> bool) -> Self {
+        let selected = self
+            .occurrences()
+            .filter(|fact| keep(fact))
+            .cloned()
+            .collect::<Vec<_>>();
+        if selected.len() == self.len() {
+            return self.clone();
+        }
+        Self::from_statement_facts(&selected, None, Some(self))
     }
 
     pub(crate) fn from_statement_facts(
@@ -1235,7 +1292,7 @@ impl PureFactStore {
                     .unwrap_or_else(|| self.facts.pure_context())
             }
         }
-        Self::from_source_indexing_syntax(&Selected { facts, context }, true, reservations)
+        Self::from_source_retaining_reservations(&Selected { facts, context }, reservations)
     }
 
     /// Bounded newest-first view for diagnostics. This deliberately exposes
@@ -1259,8 +1316,13 @@ impl PureFactStore {
             .shares_root_with(&other.top_level_exact)
     }
 
+    pub(crate) fn shared_presented_propositions(
+        &self,
+    ) -> impl Iterator<Item = Arc<Proposition>> + '_ {
+        self.presentation.shared_unique_iter()
+    }
     pub(crate) fn is_empty(&self) -> bool {
-        self.ordered.len() == 0
+        self.presentation.len() == 0
     }
     /// Search candidates from the ordinary quantified-fact index, independent
     /// of which proof operation introduced them. Explicit instantiation uses
@@ -1284,12 +1346,11 @@ impl PureFactStore {
     /// with entry resources; rebuilding it would disconnect that publication.
     /// Uncached sources build their context once through PropositionSource.
     pub(crate) fn from_source(facts: &(impl PropositionSource + ?Sized)) -> Self {
-        Self::from_source_indexing_syntax(facts, false, None)
+        facts.indexed_proof_facts().store().clone()
     }
 
-    fn from_source_indexing_syntax(
+    fn from_source_retaining_reservations(
         facts: &(impl PropositionSource + ?Sized),
-        syntax_index: bool,
         reservations: Option<&Self>,
     ) -> Self {
         let mut ordered = PersistentSequence::default();
@@ -1304,7 +1365,7 @@ impl PureFactStore {
             |base| base.reserved_states.clone(),
         );
         let mut top_level_exact = PersistentSet::default();
-        let mut stated_conjuncts = syntax_index.then(PersistentSet::default);
+        let mut presentation = FactPresentation::default();
         let mut exact = PersistentSet::default();
         let mut call_payloads = PersistentSet::default();
         let mut proper_conjuncts = PersistentSet::default();
@@ -1332,16 +1393,17 @@ impl PureFactStore {
                 &mut pending_variables,
                 &mut reserved_states,
             );
-            if top_level_exact.contains(fact) {
+            if let Some(shared) = top_level_exact.get(fact) {
+                presentation.append(Arc::clone(shared));
                 continue;
             }
             #[cfg(test)]
             INDEXED_FACT_ENTRIES.with(|count| count.set(count.get() + 1));
             // The one copy of this fact. Every index below shares it.
-            let fact = &Arc::new(crate::kernel::clone_proposition_iteratively(fact));
-            if let Some(index) = &mut stated_conjuncts {
-                *index = index_stated_conjuncts(std::mem::take(index), fact);
-            }
+            let fact = &assumptions
+                .shared_assumed_proposition(fact)
+                .unwrap_or_else(|| Arc::new(crate::kernel::clone_proposition_iteratively(fact)));
+            presentation.append(Arc::clone(fact));
             ordered.push(Arc::clone(fact));
             top_level_exact = top_level_exact.with_value(Arc::clone(fact));
             by_quantified_equivalence = index_quantified_fact(by_quantified_equivalence, fact);
@@ -1408,9 +1470,9 @@ impl PureFactStore {
             ordered,
             reserved_variables,
             reserved_states,
-            prioritized: None,
+            statement_batches: None,
             top_level_exact,
-            stated_conjuncts,
+            presentation,
             exact,
             call_payloads,
             proper_conjuncts,
@@ -1604,12 +1666,13 @@ impl PureFactStore {
             ordered,
             reserved_variables,
             reserved_states,
-            prioritized: self.prioritized.clone(),
+            statement_batches: self.statement_batches.clone(),
             top_level_exact: self.top_level_exact.with_value(Arc::clone(&fact)),
-            stated_conjuncts: self
-                .stated_conjuncts
-                .as_ref()
-                .map(|index| index_stated_conjuncts(index.clone(), &fact)),
+            presentation: {
+                let mut presentation = self.presentation.clone();
+                presentation.append(fact.clone());
+                presentation
+            },
             exact,
             call_payloads,
             proper_conjuncts,
@@ -1627,43 +1690,10 @@ impl PureFactStore {
             assumptions: self
                 .assumptions
                 .clone()
-                .assume_proposition(fact.as_ref().clone()),
+                .assume_shared_proposition(fact.clone()),
             implicit_transport_assumptions,
             by_predicate: index_predicate_fact(self.by_predicate.clone(), &fact),
         }
-    }
-
-    /// How `propositions` changed since `ancestor`, when these facts are
-    /// `ancestor`'s with further statement batches and ordered facts added:
-    /// the facts of the new batches, newest batch first, which
-    /// `propositions` yields before everything `ancestor` yields, and the
-    /// ordered facts appended since, which it yields after. Like
-    /// `propositions`, a reader keeps only the first copy of a fact. Visits
-    /// only what was added; `None` when `ancestor` is not an ancestor.
-    pub(crate) fn propositions_since(
-        &self,
-        ancestor: &Self,
-    ) -> Option<(Vec<Proposition>, Vec<Arc<Proposition>>)> {
-        let mut batches = Vec::new();
-        let mut current = self.prioritized.as_ref();
-        loop {
-            match (current, &ancestor.prioritized) {
-                (Some(node), Some(head)) if Arc::ptr_eq(node, head) => break,
-                (None, None) => break,
-                (Some(node), _) => {
-                    batches.push(node);
-                    current = node.parent.as_ref();
-                }
-                (None, Some(_)) => return None,
-            }
-        }
-        let appended = self.ordered.suffix_since(&ancestor.ordered)?;
-        let front = batches
-            .iter()
-            .flat_map(|batch| batch.facts.iter())
-            .map(crate::kernel::clone_proposition_iteratively)
-            .collect();
-        Some((front, appended))
     }
 
     /// A free logical-witness identity, from the range
@@ -2183,16 +2213,16 @@ impl PureFactStore {
         self.with_statement_facts_retaining_prefix(facts, &ExecutionFacts::new())
     }
 
-    /// Retain the checked ordered case prefix only when it is literally the
-    /// prefix of this statement's selected fact list. Other selections keep
-    /// the original batch; semantic priority and admission remain unchanged.
+    /// Publish a statement batch. Its order indexes share canonical stored
+    /// propositions, including the checked case prefix. The prefix parameter
+    /// also distinguishes local suffix work in the test instrumentation.
     pub(crate) fn with_statement_facts_retaining_prefix(
         &self,
-        mut facts: Vec<Proposition>,
-        prefix: &ExecutionFacts,
+        facts: Vec<Proposition>,
+        _prefix: &ExecutionFacts,
     ) -> Self {
         let ordered = self.ordered.clone();
-        let parent = self.prioritized.clone();
+        let parent = self.statement_batches.clone();
         let mut successor = self.clone();
         let mut introduced = Vec::new();
         for fact in &facts {
@@ -2215,33 +2245,46 @@ impl PureFactStore {
             }
         }
         successor.ordered = ordered;
-        let retained_prefix = if facts.len() >= prefix.len()
-            && facts
-                .iter()
-                .zip(prefix)
-                .all(|(fact, retained)| fact == retained.proposition())
-        {
-            let suffix = facts.split_off(prefix.len());
-            facts = suffix;
-            prefix.clone()
-        } else {
-            ExecutionFacts::new()
-        };
+        successor.presentation = self.presentation.unique();
+        let displayed = facts
+            .iter()
+            .map(|fact| {
+                successor
+                    .top_level_exact
+                    .get(fact)
+                    .expect("admitted statement fact")
+                    .clone()
+            })
+            .collect::<Vec<_>>();
+        successor.presentation.prioritize(displayed);
         #[cfg(test)]
         {
-            STATEMENT_PRIORITY_ENTRIES.with(|count| count.set(count.get() + facts.len()));
-            STATEMENT_PRIORITY_MAX_SUFFIX.with(|count| count.set(count.get().max(facts.len())));
-            if facts.len() > 1 {
+            let shared_prefix = facts.len() >= _prefix.len()
+                && facts
+                    .iter()
+                    .zip(_prefix)
+                    .all(|(fact, retained)| fact == retained.proposition());
+            let suffix_len = facts.len() - if shared_prefix { _prefix.len() } else { 0 };
+            STATEMENT_PRIORITY_ENTRIES.with(|count| count.set(count.get() + suffix_len));
+            STATEMENT_PRIORITY_MAX_SUFFIX.with(|count| count.set(count.get().max(suffix_len)));
+            if suffix_len > 1 {
                 STATEMENT_PRIORITY_NONLOCAL_BATCHES.with(|count| count.set(count.get() + 1));
             }
         }
-        successor.prioritized = Some(Arc::new(PrioritizedProofFacts {
+        successor.statement_batches = Some(Arc::new(StatementFactBatch {
             parent,
-            facts: PrioritizedStatementFacts {
-                prefix: retained_prefix,
-                suffix: Arc::new(facts),
-            },
-            introduced: Arc::new(introduced),
+            introduced: Arc::new(
+                introduced
+                    .iter()
+                    .map(|fact| {
+                        successor
+                            .top_level_exact
+                            .get(fact)
+                            .expect("introduced statement fact")
+                            .clone()
+                    })
+                    .collect(),
+            ),
         }));
         successor
     }
@@ -2830,8 +2873,8 @@ impl PureFactStore {
     /// The facts this context introduced after `ancestor`, oldest first.
     ///
     /// Both fact stores are parent-linked and append-only, so the delta is
-    /// recovered by walking only the appended suffixes — prioritized
-    /// statement batches first, then ordinary insertions — and pointer
+    /// recovered by walking only the appended suffixes — statement
+    /// batches first, then ordinary insertions — and pointer
     /// identity proves the shared history. Returns `None` when `ancestor`
     /// is not this context's ancestor. This is the output-sensitive
     /// introduction delta the execution sibling-split joins consume.
@@ -2850,9 +2893,9 @@ impl PureFactStore {
         let mut remaining =
             limit.checked_sub(self.ordered.len().checked_sub(ancestor.ordered.len())?)?;
         let mut new_batches = Vec::new();
-        let mut current = self.prioritized.clone();
+        let mut current = self.statement_batches.clone();
         loop {
-            match (&current, &ancestor.prioritized) {
+            match (&current, &ancestor.statement_batches) {
                 (Some(node), Some(ancestor_head)) if Arc::ptr_eq(node, ancestor_head) => break,
                 (None, None) => break,
                 (Some(node), _) => {
@@ -2867,29 +2910,17 @@ impl PureFactStore {
         let ordered_suffix = self.ordered.suffix_since(&ancestor.ordered)?;
         let mut introduced = Vec::new();
         for batch in new_batches.iter().rev() {
-            introduced.extend(batch.iter().cloned());
+            introduced.extend(batch.iter().map(|fact| fact.as_ref().clone()));
         }
         introduced.extend(ordered_suffix.iter().map(|fact| fact.as_ref().clone()));
         Some(introduced)
     }
 
     pub(crate) fn to_vec(&self) -> Vec<Proposition> {
-        let mut ordered = Vec::new();
-        let mut seen = BTreeSet::new();
-        let mut batch = self.prioritized.as_deref();
-        while let Some(current) = batch {
-            for fact in current.facts.iter() {
-                if seen.insert(fact) {
-                    ordered.push(crate::kernel::clone_proposition_iteratively(fact));
-                }
-            }
-            batch = current.parent.as_deref();
-        }
-        for fact in self.ordered.iter() {
-            if seen.insert(fact) {
-                ordered.push(crate::kernel::clone_proposition_iteratively(fact));
-            }
-        }
+        let ordered = self
+            .propositions()
+            .map(crate::kernel::clone_proposition_iteratively)
+            .collect::<Vec<_>>();
         #[cfg(test)]
         MATERIALIZED_FACT_ENTRIES.with(|count| count.set(count.get() + ordered.len()));
         ordered
@@ -3690,6 +3721,7 @@ fn collect_bitvector_atoms(term: &MachineTerm, atoms: &mut BTreeSet<BitvectorEqu
         atoms.insert(atom);
     }
     match term {
+        MachineTerm::ThreadHandle(_) => {}
         crate::kernel::binary_machine_term!(left, right) => {
             collect_bitvector_atoms(left, atoms);
             collect_bitvector_atoms(right, atoms);
@@ -5412,7 +5444,7 @@ mod statement_publication_delta_tests {
     use super::*;
     // Repeated statement premises keep their priority but must not become a new introduction delta.
     #[test]
-    fn prioritized_statement_batches_publish_only_new_facts_and_preserve_order() {
+    fn statement_batches_publish_only_new_facts_and_preserve_order() {
         let fact = |index| Proposition::Predicate {
             name: format!("priority_{index}"),
             arguments: vec![],
@@ -5434,9 +5466,9 @@ mod statement_publication_delta_tests {
             assert_eq!(repeated.to_vec()[0], prefix[0]);
         }
     }
-    // Borrowing a case prefix must preserve the exact selected order, including reordered fallbacks.
+    // Original and reordered case prefixes preserve the selected order and canonical values.
     #[test]
-    fn statement_priority_retains_only_an_identical_checked_prefix() {
+    fn statement_priority_shares_values_for_original_and_reordered_prefixes() {
         let fact = |index| Proposition::Predicate {
             name: format!("case_{index}"),
             arguments: vec![],
@@ -5453,16 +5485,22 @@ mod statement_publication_delta_tests {
             let mut selected = prefix_facts.clone();
             selected.push(fresh.clone());
             let successor = root.with_statement_facts_retaining_prefix(selected.clone(), &prefix);
-            let batch = &successor.prioritized.as_ref().unwrap().facts;
-            assert!(batch.prefix.shares_storage_with(&prefix));
-            assert_eq!(batch.suffix.as_ref(), std::slice::from_ref(&fresh));
+            for proposition in &prefix_facts {
+                assert!(Arc::ptr_eq(
+                    root.top_level_exact.get(proposition).unwrap(),
+                    successor.top_level_exact.get(proposition).unwrap(),
+                ));
+            }
             assert_eq!(successor.to_vec(), selected);
             assert_eq!(successor.introduced_since(&root), Some(vec![fresh]));
             selected.swap(0, 1);
             let reordered = root.with_statement_facts_retaining_prefix(selected.clone(), &prefix);
-            let batch = &reordered.prioritized.as_ref().unwrap().facts;
-            assert!(batch.prefix.is_empty());
-            assert_eq!(batch.suffix.as_ref(), &selected);
+            for proposition in &prefix_facts {
+                assert!(Arc::ptr_eq(
+                    root.top_level_exact.get(proposition).unwrap(),
+                    reordered.top_level_exact.get(proposition).unwrap(),
+                ));
+            }
             assert_eq!(reordered.to_vec(), selected);
             assert_eq!(root.to_vec(), prefix_facts);
         }
@@ -5678,5 +5716,64 @@ mod retained_match_root_tests {
             crate::kernel::KernelTermExport::machine_export_count(),
             exports
         );
+    }
+}
+
+#[cfg(test)]
+mod unified_store_tests {
+    use super::*;
+    fn fact(name: &str) -> Proposition {
+        Proposition::Predicate {
+            name: name.to_string(),
+            arguments: Vec::new(),
+        }
+    }
+    #[test]
+    fn restriction_builds_a_new_scope_without_mutating_parent() {
+        let (a, b) = (fact("scope_a"), fact("scope_b"));
+        let root = ProofFacts::from_ordered(&[a.clone(), b.clone(), a.clone()]);
+        let unchanged = root.retaining(|_| true);
+        assert!(unchanged.shares_assumptions_with(&root));
+        let restricted = root.retaining(|prop| prop != &b);
+        assert_eq!(restricted.occurrences().collect::<Vec<_>>(), vec![&a, &a]);
+        assert!(!restricted.contains(&b));
+        assert!(!restricted.assumptions().contains_assumed_exact(&b));
+        assert!(root.assumptions().contains_assumed_exact(&b));
+    }
+    #[test]
+    fn publication_and_membership_share_the_stored_proposition() {
+        let a = fact("shared_at_root");
+        let b = fact("shared_after_append");
+        let condition = Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(MachineTerm::Variable(Variable(901_091))),
+                right: Box::new(MachineTerm::constant(7)),
+            },
+            true,
+        );
+        let store =
+            PureFactStore::from_ordered(&[a.clone(), condition.clone()]).with_fact(b.clone());
+        let mut published = ExecutionFacts::new();
+        published.append_context(&store.assumptions.execution_fact_projection);
+        for proposition in [&a, &b, &condition] {
+            let stored = store.top_level_exact.get(proposition).unwrap();
+            let emitted = published
+                .iter()
+                .find(|fact| fact.proposition() == proposition)
+                .unwrap();
+            assert!(Arc::ptr_eq(stored, &emitted.shared_proposition()));
+            assert!(published.contains_proposition(proposition));
+        }
+        let producer = ExecutionPureFact::new(fact("producer")).into_certified();
+        let context = PureFactContext::new().assume_execution_pure_fact(&producer);
+        assert!(Arc::ptr_eq(
+            &producer.shared_proposition(),
+            &context
+                .shared_assumed_proposition(producer.proposition())
+                .unwrap()
+        ));
+        assert!(producer.is_certified());
     }
 }

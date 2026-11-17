@@ -220,7 +220,8 @@ fn collect_goal_field_accesses(
                 pending_expressions.push(left);
                 pending_expressions.push(right);
             }
-            ContractExpression::Negate(inner)
+            ContractExpression::IntegerContext(inner)
+            | ContractExpression::Negate(inner)
             | ContractExpression::Old(inner)
             | ContractExpression::At {
                 expression: inner, ..
@@ -239,7 +240,7 @@ struct GuardedTermSpeller<'v, 'p> {
     accesses: &'v [ResourceFieldAccess],
     retained_states: Vec<(&'p ProgramPointSelector, &'p ExecutionState)>,
     /// Binders an enclosing `intro` named, by their kernel variables.
-    bound: BTreeMap<Variable, String>,
+    bound: BTreeMap<Variable, SurfaceBinder>,
 }
 
 impl GuardedTermSpeller<'_, '_> {

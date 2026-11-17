@@ -971,7 +971,8 @@ pub(in crate::kernel) fn collect_execution_statement_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match statement {
-        ProgramStatement::Skip
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -1056,9 +1057,8 @@ pub(in crate::kernel) fn collect_execution_statement_bitvector_variables(
             collect_execution_statement_bitvector_variables(else_branch, variables);
         }
         ProgramStatement::Loop {
-            test,
+            test: loop_test,
             update,
-            condition,
             invariant,
             invariant_checks,
             effect_checks,
@@ -1066,6 +1066,7 @@ pub(in crate::kernel) fn collect_execution_statement_bitvector_variables(
             body,
             ..
         } => {
+            let (condition, _, test) = loop_test.execution_parts();
             collect_program_expression_bitvector_variables(condition, variables);
             for proposition in invariant {
                 collect_proposition_bitvector_variables(proposition, variables);
@@ -1678,6 +1679,9 @@ pub(in crate::kernel) fn collect_resource_bitvector_variables(
             if identity.binding.is_none() {
                 collect_pointer_bitvector_variables(&identity.mutex, variables);
             }
+        }
+        Resource::ConditionalMutexGuard(carrier) => {
+            collect_condition_bitvector_variables(&carrier.held, variables)
         }
         Resource::MutexGuard(identity) | Resource::MutexLive(identity) => {
             if identity.epoch.is_none() {
@@ -2407,6 +2411,7 @@ fn collect_bitvector_integer_variables_seen(
         return;
     }
     match term {
+        MachineTerm::ThreadHandle(_) => {}
         MachineTerm::Constant { .. } | MachineTerm::Variable(_) => {}
         MachineTerm::MemoryLoad(_, pointer, _) | MachineTerm::PointerAddress(pointer, _) => {
             collect_pointer_integer_variables(pointer, variables, seen)
@@ -3245,6 +3250,7 @@ fn collect_stored_load_connection_variables(
 
 pub(crate) fn collect_bitvector_variables(term: &MachineTerm, variables: &mut BTreeSet<Variable>) {
     match term {
+        MachineTerm::ThreadHandle(_) => {}
         MachineTerm::Constant { .. } => {}
         MachineTerm::Variable(variable) => {
             let newly_seen = variables.insert(*variable);
@@ -3363,6 +3369,7 @@ fn collect_bitvector_capture_variables_seen(
         return;
     }
     match term {
+        MachineTerm::ThreadHandle(_) => {}
         MachineTerm::Constant { .. } => {}
         MachineTerm::Variable(variable) => {
             variables.insert(*variable);
@@ -4332,6 +4339,7 @@ fn collect_bitvector_scope_summary(
         return IntegerScopeSummary::default();
     }
     match term {
+        MachineTerm::ThreadHandle(_) => IntegerScopeSummary::default(),
         MachineTerm::Constant { .. } => IntegerScopeSummary::default(),
         MachineTerm::Variable(variable) => {
             let mut summary = IntegerScopeSummary::bitvector_variable(*variable);
@@ -4966,6 +4974,7 @@ fn collect_bitvector_binder_variables_seen(
         return;
     }
     match term {
+        MachineTerm::ThreadHandle(_) => {}
         MachineTerm::Constant { .. }
         | MachineTerm::Variable(_)
         | MachineTerm::MemoryLoad(_, _, _)

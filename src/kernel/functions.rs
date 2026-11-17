@@ -1456,6 +1456,9 @@ fn canonical_memory_range(range: MemoryRange) -> MemoryRange {
 
 fn function_needs_outcome_resource_transfer(function: &ProgramFunction) -> bool {
     !function.resource_constructors().is_empty()
+        || (!function.exceptional_signature().is_empty()
+            && (!function.resource_requires().is_empty()
+                || !function.resource_ensures().is_empty()))
         || function
             .composite_resource_definitions()
             .iter()
@@ -2315,7 +2318,6 @@ pub(super) fn execute_program_function_call_paths(
                     outcome,
                     facts,
                     obligations,
-
                     loan_evidence: body_path.loan_evidence,
                 });
             }
@@ -3384,24 +3386,6 @@ fn execute_verified_function_applications_with_suspension(
             ));
             continue;
         }
-        let exceptional_path = if let Some(payload_identity) = exceptional_payload_identity {
-            Some(exceptional_direct_function_path(
-                caller_state,
-                interface,
-                evidence.or(storage),
-                &argument_values,
-                &entry_state,
-                &entry_contract_state,
-                &transfer,
-                facts.clone(),
-                obligations.clone(),
-                &effective_assumptions,
-                payload_identity,
-                budget,
-            )?)
-        } else {
-            None
-        };
         let memory = if transfer.memory_effects.is_empty() {
             entry_state.memory.clone()
         } else {
@@ -3428,6 +3412,25 @@ fn execute_verified_function_applications_with_suspension(
                 &effective_assumptions,
                 Some(&kept),
             )
+        };
+        let exceptional_path = if let Some(payload_identity) = exceptional_payload_identity {
+            Some(exceptional_direct_function_path(
+                caller_state,
+                interface,
+                evidence.or(storage),
+                &argument_values,
+                &entry_state,
+                &entry_contract_state,
+                &transfer,
+                memory.clone(),
+                facts.clone(),
+                obligations.clone(),
+                &effective_assumptions,
+                payload_identity,
+                budget,
+            )?)
+        } else {
+            None
         };
         // A recognized byte-copy declaration transfers initialized typed
         // cells across the copy. It runs after the external contract's havoc,
@@ -4712,30 +4715,11 @@ fn execute_verified_function_applications_with_suspension(
 
         let mut return_state = caller_state.clone();
         return_state.set_memory(post_state.memory.clone());
-        // A modular write changes address-backed scalar bindings as well as
-        // memory. Visit only blocks named by this effect or its checked alias
-        // class, never the caller's unrelated local environment.
-        let mut refreshed_blocks = BTreeSet::new();
-        for range in &transfer.memory_effects {
-            for block in std::iter::once(range.base().block.clone()).chain(
-                effective_assumptions
-                    .equality_graph
-                    .local_slot_alias_blocks(range.base()),
-            ) {
-                if !refreshed_blocks.insert(block.clone()) {
-                    continue;
-                }
-                let slot = Pointer {
-                    block,
-                    offset: PointerOffsetTerm::Constant(0),
-                };
-                crate::kernel::eval::refresh_scalar_local_from_memory(
-                    &mut return_state,
-                    &slot,
-                    &effective_assumptions,
-                );
-            }
-        }
+        refresh_call_written_locals(
+            &mut return_state,
+            &transfer.memory_effects,
+            &effective_assumptions,
+        );
         return_state.resources = return_resources;
         return_state.loan_ledger = return_ledger;
         return_state.loan_participant = return_participant;
@@ -4978,12 +4962,39 @@ fn execute_verified_function_applications_with_suspension(
     Ok(paths)
 }
 
+fn refresh_call_written_locals(
+    state: &mut ExecutionState,
+    effects: &[MemoryRange],
+    assumptions: &PureFactContext,
+) {
+    // A modular write changes address-backed scalar bindings as well as
+    // memory. Visit only blocks named by this effect or its checked alias
+    // class, never the caller's unrelated local environment.
+    let mut refreshed_blocks = BTreeSet::new();
+    for range in effects {
+        for block in std::iter::once(range.base().block.clone()).chain(
+            assumptions
+                .equality_graph
+                .local_slot_alias_blocks(range.base()),
+        ) {
+            if !refreshed_blocks.insert(block.clone()) {
+                continue;
+            }
+            let slot = Pointer {
+                block,
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            crate::kernel::eval::refresh_scalar_local_from_memory(state, &slot, assumptions);
+        }
+    }
+}
+
 /// Builds the exceptional successor of a modular call: a direct call, whose
 /// function declaration supplies storage identity (not necessarily body
 /// evidence: targeted proofs may assume an unselected callee's checked
 /// interface), or a call through a pointer under a named contract, which has
 /// no declaration.
-/// Entry checking and the unchanged post-memory are shared with the
+/// Entry checking and footprint-bounded memory havoc are shared with the
 /// normal application, but the payload and certified facts are specific to
 /// this outcome. Keeping this path separate is what prevents ordinary
 /// `ensures` from becoming exceptional facts (and vice versa).
@@ -4995,6 +5006,7 @@ fn exceptional_direct_function_path(
     entry_state: &ExecutionState,
     entry_contract_state: &ExecutionState,
     transfer: &FunctionResourceTransfer,
+    memory: Memory,
     mut facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     effective_assumptions: &PureFactContext,
@@ -5002,18 +5014,16 @@ fn exceptional_direct_function_path(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<FunctionPath> {
     debug_assert!(interface.verified_direct_contract_supported());
-    debug_assert!(interface.resource_requires().is_empty());
-    debug_assert!(interface.resource_ensures().is_empty());
     debug_assert!(interface.resource_constructors().is_empty());
-    debug_assert!(transfer.memory_effects.is_empty());
-
-    let memory = entry_state.memory.clone();
-
-    let payload = symbolic_call_result(ProgramType::Int32, payload_identity);
+    let payload_type = interface
+        .exceptional_signature()
+        .payload_type()
+        .expect("exceptional interface");
+    let payload = symbolic_call_result(payload_type, payload_identity);
     let mut post_state = entry_state.clone().with_memory(memory.clone());
     post_state
         .locals
-        .set_typed(CONTRACT_EXCEPTION, payload.clone(), ProgramType::Int32);
+        .set_typed(CONTRACT_EXCEPTION, payload.clone(), payload_type);
     let post_contract_state =
         with_contract_interface_argument_views(&post_state, interface, argument_values);
     add_verified_function_ensure_facts_selected_with_interface(
@@ -5027,8 +5037,80 @@ fn exceptional_direct_function_path(
         budget,
     )?;
 
+    if !transfer.memory_effects.is_empty() {
+        facts.push(
+            ExecutionPureFact::internal(Proposition::MemoryEffectSummary {
+                before: entry_state.memory.clone(),
+                after: memory.clone(),
+                mutable_ranges: transfer.memory_effects.clone(),
+            })
+            .into_certified(),
+        );
+    }
+    let post_assumptions = assumptions_with_path_context(effective_assumptions, &facts, &[]);
+    let ContractReturnResources {
+        return_resources,
+        ensured_views,
+        produced_borrowing_pieces,
+        ..
+    } = match evaluate_contract_return_resources(
+        &transfer.caller_resources_after_requirements,
+        escrowed_owners(transfer),
+        &transfer.canonical_borrowed_owners,
+        &transfer.borrowed_inputs,
+        &transfer_entry_clauses(transfer),
+        entry_contract_state,
+        &post_contract_state,
+        evidence.map_or("exceptional call", |function| function.name()),
+        interface,
+        &[],
+        ReturnResourceComposition::ApplyTransfers(&transfer.consumed_cell_returns),
+        &post_assumptions,
+        budget,
+    )? {
+        Ok(resources) => resources,
+        Err(error) => {
+            return Ok(FunctionPath::new(
+                FunctionOutcome::RuntimeError(error),
+                facts,
+                obligations,
+            ));
+        }
+    };
+    let mut transfer = transfer.clone();
+    transfer.candidate_output_views = ensured_views;
+    transfer.produced_borrowing_pieces = produced_borrowing_pieces;
+    post_state.resources = return_resources.clone();
+    let (resources, ledger, participant, bindings, loan_evidence) =
+        match recover_candidate_stable_view_resources(
+            caller_state,
+            &post_state,
+            &transfer,
+            return_resources,
+            effective_assumptions,
+            &post_assumptions,
+            &obligations,
+        ) {
+            Ok(recovered) => recovered,
+            Err(error) => {
+                return Ok(FunctionPath::new(
+                    FunctionOutcome::RuntimeError(error),
+                    facts,
+                    obligations,
+                ));
+            }
+        };
     let mut throw_state = caller_state.clone();
     throw_state.set_memory(memory);
+    refresh_call_written_locals(
+        &mut throw_state,
+        &transfer.memory_effects,
+        &post_assumptions,
+    );
+    throw_state.resources = resources;
+    throw_state.loan_ledger = ledger;
+    throw_state.loan_participant = participant;
+    throw_state = throw_state.with_loan_view_bindings(bindings);
     throw_state.next_local_frame = post_state.next_local_frame;
     throw_state.next_local_lifetime = post_state.next_local_lifetime;
     throw_state.restore_population_creation_after_call(
@@ -5042,7 +5124,13 @@ fn exceptional_direct_function_path(
     if let Some(evidence) = evidence {
         append_string_literal_loadable_facts(evidence, &outcome, &mut facts);
     }
-    Ok(FunctionPath::new(outcome, facts, obligations))
+    let mut path = FunctionPath::new(outcome, facts, obligations);
+    path.loan_evidence = loan_evidence
+        .map(|evidence| {
+            append_checked_loan_evidence(&empty_checked_loan_evidence_sequence(), Some(evidence))
+        })
+        .unwrap_or_else(empty_checked_loan_evidence_sequence);
+    Ok(path)
 }
 
 struct PreparedVerifiedFunctionCall<'a> {
@@ -8189,6 +8277,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
                     ));
                 }
             }
+            Resource::ConditionalMutexGuard(_) => {}
             Resource::MutexGuard(identity) => {
                 if let Some(bytes) = self.mutex_storage_bytes {
                     self.ranges.push(MemoryRange::new_with_element_width(
@@ -8494,7 +8583,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
             {
                 match (variable, value) {
                     (None, AlgebraicValue::Algebraic(value)) => {
-                        algebraic_bindings.insert(name.clone(), value.clone());
+                        algebraic_bindings.insert(name.clone().into(), value.clone());
                     }
                     (Some(variable), AlgebraicValue::Integer(value)) => {
                         integer_bindings.insert(*variable, value.clone());
@@ -8734,7 +8823,7 @@ pub(crate) fn establish_resource_derived_loop_frames(
                 rewrite(else_branch, ranges);
             }
             ProgramStatement::Loop {
-                test,
+                test: loop_test,
                 update,
                 effect_checks,
                 body,
@@ -8746,9 +8835,7 @@ pub(crate) fn establish_resource_derived_loop_frames(
                     }
                 }
                 rewrite(body, ranges);
-                if let Some(test) = test {
-                    rewrite(std::sync::Arc::make_mut(&mut test.statement), ranges);
-                }
+                rewrite(std::sync::Arc::make_mut(&mut loop_test.statement), ranges);
                 if let Some(update) = update {
                     rewrite(std::sync::Arc::make_mut(update), ranges);
                 }
@@ -8788,12 +8875,13 @@ pub(crate) fn validate_resource_derived_loop_frames(
                 ..
             } => has_inherited_loop_frame(then_branch) || has_inherited_loop_frame(else_branch),
             ProgramStatement::Loop {
-                test,
+                test: loop_test,
                 update,
                 effect_checks,
                 body,
                 ..
             } => {
+                let (_, _, test) = loop_test.execution_parts();
                 effect_checks
                     .iter()
                     .any(|check| check.origin() == LoopEffectOrigin::InheritedResourceDerived)
@@ -8853,12 +8941,13 @@ pub(crate) fn validate_resource_derived_loop_frames(
                 check_statement(else_branch)
             }
             ProgramStatement::Loop {
-                test,
+                test: loop_test,
                 update,
                 effect_checks,
                 body,
                 ..
             } => {
+                let (_, _, test) = loop_test.execution_parts();
                 if let Err(error) = check(effect_checks)? {
                     return Ok(Err(error));
                 }
@@ -10114,6 +10203,7 @@ fn evaluate_resource_population_body_resources(
             Resource::Memory(_)
             | Resource::PopulationAuthority(_)
             | Resource::Instance(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_)
@@ -14115,7 +14205,7 @@ fn lower_selected_resource_body_clauses(
     source: &[SpecProposition],
     arm: Option<&str>,
     integer_bindings: &BTreeMap<Variable, IntegerTerm>,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
+    algebraic_bindings: &BTreeMap<BindingName, AlgebraicTerm>,
     body_assumptions: &PureFactContext,
     established_assumptions: Option<&PureFactContext>,
     budget: &mut ExecutionBudget,
@@ -14772,7 +14862,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                     }
                 }
                 (AlgebraicValueType::Algebraic { .. }, None, AlgebraicValue::Algebraic(value)) => {
-                    algebraic_bindings.insert(name.clone(), value.clone());
+                    algebraic_bindings.insert(name.clone().into(), value.clone());
                 }
                 _ => return Err("resource match constructor binding type mismatch".into()),
             }
@@ -16346,12 +16436,10 @@ pub(super) fn function_return_resources_definitionally_established(
     outcome: &FunctionOutcome,
     assumptions: &PureFactContext,
 ) -> bool {
-    let FunctionOutcome::Return {
-        value,
-        state: return_state,
-    } = outcome
-    else {
-        return false;
+    let (value, return_state, exceptional) = match outcome {
+        FunctionOutcome::Return { value, state } => (value, state, false),
+        FunctionOutcome::Throw { value, state } => (value, state, true),
+        _ => return false,
     };
     let Some(argument_values) = arguments
         .iter()
@@ -16368,7 +16456,11 @@ pub(super) fn function_return_resources_definitionally_established(
     else {
         return false;
     };
-    let exit_memory = function_exit_memory(caller_state, return_state, value, function);
+    let exit_memory = if exceptional {
+        return_state.memory().clone()
+    } else {
+        function_exit_memory(caller_state, return_state, value, function)
+    };
     let mut claim_return_state = return_state.clone();
     claim_return_state.set_memory(exit_memory.clone());
     let definitions = function.composite_resource_definitions();
@@ -16393,7 +16485,13 @@ pub(super) fn function_return_resources_definitionally_established(
     post_state.observed_population_families = return_state.observed_population_families.clone();
     // Preserve checked body consumption evidence when reconstructing the exit.
     post_state.population_effects = return_state.population_effects.clone();
-    if function.return_type() != ProgramType::Void {
+    if exceptional {
+        post_state.locals.set_typed(
+            CONTRACT_EXCEPTION,
+            value.clone().into_native(),
+            value.native().program_type(),
+        );
+    } else if function.return_type() != ProgramType::Void {
         post_state.locals.set_typed(
             CONTRACT_RESULT,
             value.clone().into_native(),
@@ -18567,6 +18665,7 @@ fn resource_clause_supply_with_fact(
                 Resource::Token { .. }
                 | Resource::PopulationAuthority(_)
                 | Resource::Instance(_)
+                | Resource::ConditionalMutexGuard(_)
                 | Resource::MutexGuard(_)
                 | Resource::MutexLive(_)
                 | Resource::MutexUse(_)
@@ -19975,6 +20074,7 @@ fn resource_fact_transfer_priority(resource: &ResourceFact) -> u8 {
             | Resource::Token { .. }
             | Resource::PopulationAuthority(_)
             | Resource::Instance(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_)
@@ -20698,57 +20798,74 @@ fn function_outcome_from_body_with_resource_transfer(
     if let Some(error) = exceptional_outcome_declaration_error(function, &outcome) {
         return Ok((FunctionOutcome::RuntimeError(error), obligations, None));
     }
-    if matches!(&outcome, StatementOutcome::Throw { .. })
-        && (!function.resource_requires().is_empty()
-            || !function.resource_ensures().is_empty()
-            || !function.resource_constructors().is_empty())
-    {
-        return Ok((
-            FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
-                "exceptional outcomes with resource transitions require an exceptional contract interface"
-                    .to_string(),
-            )),
-            obligations,
-            None,
-        ));
-    }
-    let StatementOutcome::Return { value, mut state } = outcome else {
-        let (outcome, obligations) = function_outcome_from_body(
-            caller_state,
-            function,
-            outcome,
-            obligations,
-            assumptions,
-            None,
-        );
-        return Ok((outcome, obligations, None));
+    let (exceptional, value, mut state) = match outcome {
+        StatementOutcome::Return { value, state } => (false, value, state),
+        StatementOutcome::Throw { value, state } => {
+            if !function.resource_constructors().is_empty()
+                || function
+                    .resource_requires()
+                    .iter()
+                    .chain(function.resource_ensures())
+                    .any(|resource| {
+                        resource.role() != ResourceTransferRole::Borrow
+                            || !matches!(resource.term(), ResourceTerm::Memory(_))
+                    })
+            {
+                return Ok((
+                    FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
+                        "exceptional exits support borrowed resources only".into(),
+                    )),
+                    obligations,
+                    None,
+                ));
+            }
+            (true, value, state)
+        }
+        other => {
+            let (outcome, obligations) = function_outcome_from_body(
+                caller_state,
+                function,
+                other,
+                obligations,
+                assumptions,
+                None,
+            );
+            return Ok((outcome, obligations, None));
+        }
     };
-    if let Some(undefined_behavior) =
-        freed_pointer_return_conversion(&state, function, &value, assumptions)
-    {
-        return Ok((
-            FunctionOutcome::UndefinedBehavior(undefined_behavior),
-            obligations,
-            None,
-        ));
-    }
-    if let Some(refusal) = incompatible_pointer_return(&state, function, &value, assumptions) {
-        return Ok((FunctionOutcome::RuntimeError(refusal), obligations, None));
-    }
-    let Some(value) =
-        coerce_retained_function_return_value(value, function, &mut obligations, assumptions)
-    else {
-        return Ok((
-            FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(format!(
-                "{} {RETURN_TYPE_MISMATCH}",
-                function.name()
-            ))),
-            obligations,
-            None,
-        ));
+    let value = if exceptional {
+        value
+    } else {
+        if let Some(undefined_behavior) =
+            freed_pointer_return_conversion(&state, function, &value, assumptions)
+        {
+            return Ok((
+                FunctionOutcome::UndefinedBehavior(undefined_behavior),
+                obligations,
+                None,
+            ));
+        }
+        if let Some(refusal) = incompatible_pointer_return(&state, function, &value, assumptions) {
+            return Ok((FunctionOutcome::RuntimeError(refusal), obligations, None));
+        }
+        let Some(value) =
+            coerce_retained_function_return_value(value, function, &mut obligations, assumptions)
+        else {
+            return Ok((
+                FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(format!(
+                    "{} {RETURN_TYPE_MISMATCH}",
+                    function.name()
+                ))),
+                obligations,
+                None,
+            ));
+        };
+
+        value
     };
 
-    if reestablish_population_invariants
+    if !exceptional
+        && reestablish_population_invariants
         && let Some(error) =
             construction_return::complete_parameter(&state, function.contract_interface())
     {
@@ -20758,7 +20875,9 @@ fn function_outcome_from_body_with_resource_transfer(
     // A body return still names its aggregate source; copy it to the
     // caller-visible result object before retiring the source's activation.
     // Resource completion over an already completed outcome keeps its result.
-    let value = if reestablish_population_invariants && function.return_aggregate_layout().is_some()
+    let value = if !exceptional
+        && reestablish_population_invariants
+        && function.return_aggregate_layout().is_some()
     {
         match complete_aggregate_return(&mut state, function, value.into_native()) {
             Ok(value) => value.into(),
@@ -20781,7 +20900,13 @@ fn function_outcome_from_body_with_resource_transfer(
         value
     };
 
-    if function.return_type() != ProgramType::Void {
+    if exceptional {
+        state.locals.set_typed(
+            CONTRACT_EXCEPTION,
+            value.clone().into_native(),
+            value.native().program_type(),
+        );
+    } else if function.return_type() != ProgramType::Void {
         set_function_result(&mut state, function, value.clone());
     }
     let retired_memory = match end_function_body_automatic_lifetimes(
@@ -20968,14 +21093,18 @@ fn function_outcome_from_body_with_resource_transfer(
     };
     return_state.next_local_frame = state.next_local_frame;
     return_state.next_local_lifetime = state.next_local_lifetime;
-    Ok((
+    let outcome = if exceptional {
+        FunctionOutcome::Throw {
+            value,
+            state: Box::new(return_state),
+        }
+    } else {
         FunctionOutcome::Return {
             value,
             state: Box::new(return_state),
-        },
-        obligations,
-        loan_evidence,
-    ))
+        }
+    };
+    Ok((outcome, obligations, loan_evidence))
 }
 
 fn without_loan_evidence(
@@ -21208,8 +21337,10 @@ fn contract_exit_outcome_with_boundary_transfer(
     // (one owned token twice rather than a quantity of two). Execution
     // composes its resources as it goes; compose the retained ones the same
     // way so the completed outcome is the canonical one certification compares.
+    let exceptional = matches!(&outcome, StatementOutcome::Throw { .. });
     let outcome = match outcome {
-        StatementOutcome::Return { value, mut state } => {
+        StatementOutcome::Return { value, mut state }
+        | StatementOutcome::Throw { value, mut state } => {
             if state.loan_view_bindings().iter().next().is_none() {
                 // Validate the retained partition, then normalize its representation.
                 // Re-inserting every fact into an empty context repeated all
@@ -21226,7 +21357,11 @@ fn contract_exit_outcome_with_boundary_transfer(
                     "stable-view return resources are not a valid bound context".to_string(),
                 )));
             }
-            StatementOutcome::Return { value, state }
+            if exceptional {
+                StatementOutcome::Throw { value, state }
+            } else {
+                StatementOutcome::Return { value, state }
+            }
         }
         other => other,
     };
@@ -21691,11 +21826,7 @@ pub(super) fn apply_verified_contract_resource_transition(
     };
     let statement_outcome = match outcome {
         FunctionOutcome::Return { value, state } => StatementOutcome::Return { value, state },
-        FunctionOutcome::Throw { .. } => {
-            return Ok(Err(RuntimeError::FunctionContract(
-                "exceptional outcomes require an exceptional contract interface".to_string(),
-            )));
-        }
+        FunctionOutcome::Throw { value, state } => StatementOutcome::Throw { value, state },
         FunctionOutcome::VerificationDiverges => {
             return Ok(Ok((FunctionOutcome::VerificationDiverges, Vec::new())));
         }

@@ -854,6 +854,7 @@ enum AlphaVariableKey {
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum AlphaBitvectorKey {
+    ThreadHandle(crate::kernel::ThreadHandleId),
     AlgebraicMatch(Box<AlphaAlgebraicKey>, Vec<match_keys::Arm>),
     Constant(u32),
     Int64Constant(i64),
@@ -2465,6 +2466,7 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
         return None;
     }
     Some(match term {
+        MachineTerm::ThreadHandle(id) => AlphaBitvectorKey::ThreadHandle(*id),
         MachineTerm::BoolCast { to, value } => AlphaBitvectorKey::BoolCast(
             *to,
             Box::new(alpha_condition_key_with_bindings::<ALLOW_LOADS>(

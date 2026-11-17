@@ -2230,6 +2230,9 @@ impl Printer<'_> {
         if !self.source_mode() {
             return super::render_resource_fact_labeled(fact, self.labels);
         }
+        if matches!(fact.resource(), Resource::ConditionalMutexGuard(_)) {
+            return self.resource(fact.resource());
+        }
         let text = self.resource(fact.resource());
         match fact {
             ResourceFact::View(_) => format!("views {text}"),
@@ -2341,6 +2344,15 @@ impl Printer<'_> {
             }
             Resource::Composite { name, arguments } | Resource::Token { name, arguments } => {
                 self.resource_arguments(name, arguments)
+            }
+            Resource::ConditionalMutexGuard(carrier) => {
+                let condition = self
+                    .condition(carrier.condition(), true, 0)
+                    .expect("scalar loop condition has source syntax")
+                    .text;
+                let mutex =
+                    crate::surface::diagnostics::describe_mutex_pointer(carrier.mutex(), binding);
+                format!("if {condition} {{ owns mutex_guard({mutex}); }}")
             }
             Resource::MutexGuard(identity) => format!(
                 "mutex_guard({})",
@@ -3279,14 +3291,6 @@ mod tests {
             .with_memory(Memory::new().with_block("global:m", 4));
         let mut labels = MemoryStateLabels::with_state(ParameterBinding::default(), &state);
         let fact = |name: String, arguments: Vec<Term>| Proposition::Predicate { name, arguments };
-        let held = fact(
-            crate::kernel::MUTEX_HELD_PREDICATE_NAME.into(),
-            vec![
-                Term::ExecutionState(Box::new(state.clone())),
-                Term::ProgramValue(cell("m")),
-            ],
-        );
-        assert_eq!(source(&held, &mut labels), "held(m)");
         let same = fact(
             crate::kernel::SAME_OBJECT_PREDICATE_NAME.into(),
             vec![Term::ProgramValue(cell("m")), Term::ProgramValue(cell("p"))],
@@ -3300,7 +3304,7 @@ mod tests {
             ],
         );
         assert_eq!(source(&contract, &mut labels), "ordered(p)");
-        for (premise, internal) in [(&held, false), (&same, false), (&contract, false)] {
+        for (premise, internal) in [(&same, false), (&contract, false)] {
             assert_eq!(
                 crate::surface::proof_diagnostics::is_internal_premise(premise),
                 internal

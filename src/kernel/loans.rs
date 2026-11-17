@@ -3248,6 +3248,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             }
             Resource::PopulationAuthority(_)
             | Resource::Instance(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_)
@@ -6193,6 +6194,7 @@ impl LoanLedger {
                     Resource::Composite { .. }
                     | Resource::PopulationAuthority(_)
                     | Resource::Instance(_)
+                    | Resource::ConditionalMutexGuard(_)
                     | Resource::MutexGuard(_)
                     | Resource::MutexUse(_)
                     | Resource::Publication(_)

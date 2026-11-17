@@ -188,23 +188,23 @@ pub(crate) fn literal_native_comparison_value(condition: &ConditionTerm) -> Opti
     }
 }
 
-/// Preserve a closed native order comparison during logical lowering. Inspect
+/// Preserve closed orders and wide equalities during logical lowering. Inspect
 /// only the two literal roots; deciding their truth belongs to checking.
 pub(crate) fn logical_condition_for_operand_views(
     format: MachineIntegerType,
     relation: crate::kernel::CompareRelation,
     operands: [crate::kernel::MachineOperandView<'_>; 2],
 ) -> ConditionTerm {
-    closed_order_for_operand_views(format, relation, operands)
+    closed_comparison_for_operand_views(format, relation, operands)
         .unwrap_or_else(|| condition_for_operand_views(format, relation, operands))
 }
 
-fn closed_order_for_operand_views(
+fn closed_comparison_for_operand_views(
     format: MachineIntegerType,
     relation: crate::kernel::CompareRelation,
     operands: [crate::kernel::MachineOperandView<'_>; 2],
 ) -> Option<ConditionTerm> {
-    if relation == crate::kernel::CompareRelation::Equal {
+    if relation == crate::kernel::CompareRelation::Equal && format.format().bits() != 64 {
         return None;
     }
     let [Some(left), Some(right)] = operands.map(|operand| operand.literal()) else {
@@ -217,6 +217,13 @@ fn closed_order_for_operand_views(
     } else {
         [left, right]
     };
+    // Wide equality compares words, and its established native filing format
+    // is Int64 even when the literal operands are unsigned.
+    let format = if relation == crate::kernel::CompareRelation::Equal {
+        MachineIntegerType::Int64
+    } else {
+        format
+    };
     Some(ConditionTerm::Compare {
         format,
         relation,
@@ -225,9 +232,9 @@ fn closed_order_for_operand_views(
     })
 }
 
-/// An order-guard conditional over literal or variable roots is a fixed-size
+/// An order guard or closed wide equality over fixed-size roots is a fixed-size
 /// native comparison atom. Read only these roots, never an arithmetic DAG.
-fn order_conditional_atom(root: &crate::kernel::KernelTerm) -> Option<MachineTerm> {
+fn comparison_conditional_atom(root: &crate::kernel::KernelTerm) -> Option<MachineTerm> {
     use crate::kernel::{KernelTermNode as N, MachineOperandView as V};
     let N::MachineIf { arguments } = root.node() else {
         return None;
@@ -252,8 +259,11 @@ fn order_conditional_atom(root: &crate::kernel::KernelTerm) -> Option<MachineTer
     else {
         return None;
     };
-    if *relation == crate::kernel::CompareRelation::Equal
-        || !matches!(format.format().bits(), 32 | 64)
+    if !matches!(format.format().bits(), 32 | 64)
+        || (*relation == crate::kernel::CompareRelation::Equal
+            && (format.format().bits() != 64
+                || V::Shared(&guard[0]).literal().is_none()
+                || V::Shared(&guard[1]).literal().is_none()))
     {
         return None;
     }
@@ -369,7 +379,7 @@ pub(crate) fn condition_for_operand_views(
                     MachineTerm::Variable(*variable),
                 ))
             })
-            .or_else(|| order_conditional_atom(root)),
+            .or_else(|| comparison_conditional_atom(root)),
         V::Legacy(_) => None,
     });
     let operands: [V<'_>; 2] = std::array::from_fn(|index| {

@@ -164,7 +164,7 @@ pub(in crate::surface) struct ClaimProofResult {
 type PendingPostExecutionTactic<'a> = (
     &'a DeferredPostExecutionTactic,
     usize,
-    Option<PersistentMap<String, ContractExpression>>,
+    Option<PersistentBinderMap<ContractExpression>>,
 );
 
 /// Visit one leaf at a time so each control node sees the checked facts left
@@ -179,7 +179,7 @@ fn next_checked_post_execution_tactic<'a>(
 ) -> Result<
     Option<(
         &'a DeferredPostExecutionTactic,
-        Option<PersistentMap<String, ContractExpression>>,
+        Option<PersistentBinderMap<ContractExpression>>,
     )>,
     ClickError,
 > {
@@ -1521,7 +1521,7 @@ fn close_claim_directly_from_outcome<'a>(
     unfolded_predicates: &[String],
     claim_label: &str,
     path_index: usize,
-    entry_facts: &[Proposition],
+    entry_facts: &(impl PropositionSource + ?Sized),
     execution_paths: &[crate::kernel::FunctionExecutionCandidate],
     parameter_binding: ParameterBinding<'_>,
     spec_definitions: SpecDefinitions<'_>,
@@ -1871,7 +1871,7 @@ fn close_claim_directly_from_outcome<'a>(
 /// started from -- an entry `requires`, or a `have` before the first step --
 /// is never among them: every path has it.
 fn path_case_facts(
-    entry_facts: &[Proposition],
+    entry_facts: &(impl PropositionSource + ?Sized),
     paths: &[crate::kernel::FunctionExecutionCandidate],
     path_index: usize,
 ) -> Vec<Proposition> {
@@ -1891,7 +1891,7 @@ fn path_case_facts(
     };
     // An entry conjunction is assumed conjunct by conjunct.
     let mut entry = BTreeSet::new();
-    let mut pending = entry_facts.iter().collect::<Vec<_>>();
+    let mut pending = entry_facts.propositions().collect::<Vec<_>>();
     while let Some(fact) = pending.pop() {
         if let Proposition::And(left, right) = fact {
             pending.push(left);
@@ -2273,7 +2273,10 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
     // (an open composite still to fold) leaves the
     // body's own context in place.
     if !*resource_transition_applied
-        && matches!(outcome, FunctionOutcome::Return { .. })
+        && matches!(
+            outcome,
+            FunctionOutcome::Return { .. } | FunctionOutcome::Throw { .. }
+        )
         && !crate::kernel::program_function_return_resources_definitionally_established(
             pre_state,
             function,
@@ -2288,7 +2291,12 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
         *pending_resource_transition_error = Some(
             "the body outcome does not establish the contract's returned resources".to_string(),
         );
-    } else if !*resource_transition_applied && matches!(outcome, FunctionOutcome::Return { .. }) {
+    } else if !*resource_transition_applied
+        && matches!(
+            outcome,
+            FunctionOutcome::Return { .. } | FunctionOutcome::Throw { .. }
+        )
+    {
         match required_outcome(outcome_proof)?.apply_outcome_contract_resources(pre_state, function)
         {
             Ok(transitioned) => {
@@ -2464,9 +2472,6 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
             }
         }
         if !direct_resource_claims.is_empty() {
-            let FunctionOutcome::Return { .. } = &outcome else {
-                unreachable!("gated on a return outcome above");
-            };
             for (claim_index, _, _) in &direct_resource_claims {
                 let claim_label = function_claim_label(function_block, &claims[*claim_index]);
                 let checked = required_outcome(outcome_proof)?.check_outcome_resource_claim(completed_execution, claims[*claim_index]).map_err(|error| {
@@ -2635,7 +2640,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                                 unfolded_predicates,
                                 &claim_label,
                                 path_index,
-                                entry_pure_facts.as_slice(),
+                                &*entry_pure_facts,
                                 execution.paths(),
                                 parameter_binding,
                                 spec_definitions,
@@ -2715,7 +2720,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                             unfolded_predicates,
                             &claim_label,
                             path_index,
-                            entry_pure_facts.as_slice(),
+                            &*entry_pure_facts,
                             execution.paths(),
                             parameter_binding,
                             spec_definitions,
@@ -2940,7 +2945,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                 unfolded_predicates,
                 &claim_label,
                 path_index,
-                entry_pure_facts.as_slice(),
+                &*entry_pure_facts,
                 execution.paths(),
                 parameter_binding,
                 spec_definitions,
@@ -3007,7 +3012,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
             unfolded_predicates,
             &claim_label,
             path_index,
-            entry_pure_facts.as_slice(),
+            &*entry_pure_facts,
             execution.paths(),
             ParameterBinding::new(parsed_function.parameters(), arguments),
             spec_definitions,
@@ -3168,6 +3173,7 @@ fn opens_outcome_existence_proof(tactic: &ProofTactic) -> bool {
             | ProofTactic::Witness(_)
             | ProofTactic::Intro
             | ProofTactic::IntroAs(_)
+            | ProofTactic::IntroBinder(_)
     )
 }
 
@@ -3263,7 +3269,7 @@ pub(super) fn finish_ordered_proof<'a>(
                 spec_definitions,
                 resource_environment,
                 Some(ResourceFrameEntry {
-                    assumptions: &assumptions_from_propositions(entry_pure_facts.as_slice()),
+                    assumptions: &assumptions_from_propositions(&*entry_pure_facts),
                     checked_entry_state: proof_context.constants.function_entry_state.as_ref(),
                 }),
                 None,
@@ -3823,7 +3829,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         // context. A body that still has to fold an open composite
                         // does not satisfy the guard here; the closing `solve` runs
                         // the same transition once that fold has happened.
-                        if matches!(outcome, FunctionOutcome::Return { .. })
+                        if matches!(outcome, FunctionOutcome::Return { .. } | FunctionOutcome::Throw { .. })
                             && crate::kernel::program_function_return_resources_definitionally_established(
                                 pre_state,
                                 function,
@@ -4141,7 +4147,9 @@ pub(super) fn finish_ordered_proof<'a>(
                                 let introduces_scope = opened.introduces_scope
                                     || matches!(
                                         tactic,
-                                        ProofTactic::Intro | ProofTactic::IntroAs(_)
+                                        ProofTactic::Intro
+                                            | ProofTactic::IntroAs(_)
+                                            | ProofTactic::IntroBinder(_)
                                     );
                                 opened_claim = Some(OpenedClaimProof {
                                     introduces_scope,
@@ -4182,17 +4190,31 @@ pub(super) fn finish_ordered_proof<'a>(
                                 outcome_proof = Some(closed);
                                 // The scope was recorded when its body ended;
                                 // its close's proof joins it as its `by`.
-                                if let Some(close_proof) = close_proof {
+                                // Several facts, proved by `have`s, extend
+                                // its block instead.
+                                let deferred = match close_proof {
+                                    None => None,
+                                    Some(crate::surface::proof::ScopeCloseProof::By(
+                                        close_proof,
+                                    )) => Some(ProofOpen::deferred_close_proof(
+                                        resource.clone(),
+                                        close_proof.to_proof_tactics(),
+                                    )),
+                                    Some(crate::surface::proof::ScopeCloseProof::BlockTail(
+                                        haves,
+                                    )) => Some(ProofOpen::deferred_block_tail(
+                                        resource.clone(),
+                                        haves.to_proof_tactics(),
+                                    )),
+                                };
+                                if let Some(deferred) = deferred {
                                     record_post_execution_surface_tactic(
                                         &mut path_surface_post_tactics,
                                         &mut path_deferred_capture_tactics,
                                         path_capture,
                                         post_execution_index,
                                         *tactic_index,
-                                        ProofTactic::Open(ProofOpen::deferred_close_proof(
-                                            resource.clone(),
-                                            close_proof.to_proof_tactics(),
-                                        )),
+                                        ProofTactic::Open(deferred),
                                     );
                                 }
                             }
@@ -4279,7 +4301,11 @@ pub(super) fn finish_ordered_proof<'a>(
                                     .as_ref()
                                     .is_some_and(|opened| opened.introduces_scope)
                                     && !resource_transition_applied
-                                    && matches!(outcome, FunctionOutcome::Return { .. })
+                                    && matches!(
+                                        outcome,
+                                        FunctionOutcome::Return { .. }
+                                            | FunctionOutcome::Throw { .. }
+                                    )
                                     && claims.iter().enumerate().any(|(index, claim)| {
                                         !closures[index].is_closed()
                                             && matches!(
@@ -4582,7 +4608,11 @@ pub(super) fn finish_ordered_proof<'a>(
                                 if is_known
                                     && !resource_transition_applied
                                     && !known_transition_attempted
-                                    && matches!(outcome, FunctionOutcome::Return { .. })
+                                    && matches!(
+                                        outcome,
+                                        FunctionOutcome::Return { .. }
+                                            | FunctionOutcome::Throw { .. }
+                                    )
                                     && claims.iter().enumerate().any(|(index, claim)| {
                                         let clause = claim.clause();
                                         !closures[index].is_closed()
@@ -5230,7 +5260,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     &unfolded_predicates,
                                     &claim_label,
                                     path_index,
-                                    entry_pure_facts.as_slice(),
+                                    &*entry_pure_facts,
                                     execution.paths(),
                                     parameter_binding,
                                     spec_definitions,

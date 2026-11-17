@@ -3362,6 +3362,7 @@ fn collect_scope_declared_names(statement: &ProgramStatement, names: &mut Vec<Bi
         | ProgramStatement::Switch { .. }
         | ProgramStatement::TryCatchInt32 { .. }
         // Everything else declares nothing.
+        | ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -3798,7 +3799,9 @@ fn verification_operation_name(statement: &ProgramStatement) -> &'static str {
         ProgramStatement::Assert { .. } => "verification statement: assert",
         ProgramStatement::StepValue { .. } => "verification statement: step value",
         ProgramStatement::Return(_) => "verification statement: return",
-        ProgramStatement::Throw(_) => "verification statement: throw",
+        ProgramStatement::Throw(_) | ProgramStatement::ThrowOpaque(_) => {
+            "verification statement: throw"
+        }
         ProgramStatement::TryCatchInt32 { .. } => "verification statement: int32 handler",
         ProgramStatement::Store { .. } => "verification statement: store",
         ProgramStatement::TypedStore { .. } => "verification statement: typed store",
@@ -4565,12 +4568,37 @@ fn execute_execution_statement_leaf_paths(
         ProgramStatement::Return(expression) => {
             execute_program_return_expression_paths(state, expression, assumptions, budget)?
         }
+        ProgramStatement::ThrowOpaque(payload_type) => {
+            let outcome = if payload_type.is_enum() {
+                StatementOutcome::RuntimeError(RuntimeError::TypeMismatch)
+            } else if let Some(refusal) = return_authority_refusal(state) {
+                refusal
+            } else {
+                let variable = budget.allocate_kernel_variable()?;
+                StatementOutcome::Throw {
+                    value: crate::kernel::functions::symbolic_call_result(
+                        ProgramType::Parameter(*payload_type),
+                        variable,
+                    )
+                    .into(),
+                    state: Box::new(state.clone()),
+                }
+            };
+            vec![StatementExecutionPath::new(
+                outcome,
+                Vec::new().into(),
+                Vec::new(),
+            )]
+        }
         ProgramStatement::Throw(expression) => {
             let mut paths = Vec::new();
             for path in evaluate_expression_value_paths(state, expression, assumptions, budget)? {
                 let outcome = match path.outcome {
                     ExpressionOutcome::Value(value)
-                        if value.program_type() == ProgramType::Int32 =>
+                        if matches!(
+                            value.program_type(),
+                            ProgramType::Int32 | ProgramType::Parameter(_)
+                        ) =>
                     {
                         if let Some(refusal) = return_authority_refusal(state) {
                             refusal
@@ -4794,19 +4822,18 @@ fn execute_execution_statement_leaf_paths(
             paths
         }
         ProgramStatement::Loop {
-            test,
+            test: loop_test,
             update,
-            condition,
             invariant,
             invariant_checks: _,
             effect_checks: _,
             resource_specs: _,
             ranking_measures: _,
             structural_measure: _,
-            do_while,
             body,
             ..
         } => {
+            let (condition, direct_post_test, test) = loop_test.execution_parts();
             // The one judgment-specific step: verification takes an
             // annotated loop, or one an environment rule covers, as its
             // checked abstraction. Execution, and verification of a loop
@@ -4830,10 +4857,10 @@ fn execute_execution_statement_leaf_paths(
                     state,
                     condition,
                     invariant,
-                    *do_while,
+                    direct_post_test,
                     body,
                     update.as_deref(),
-                    test.as_ref(),
+                    test,
                     assumptions,
                     execution_context,
                     budget,
@@ -5203,7 +5230,7 @@ pub(in crate::kernel) fn execute_program_loop_paths(
     state: &ExecutionState,
     condition: &ProgramExpression,
     invariant: &[Proposition],
-    do_while: bool,
+    direct_post_test: bool,
     body: &ProgramStatement,
     update: Option<&ProgramStatement>,
     test: Option<&LoopTestRegion>,
@@ -5228,7 +5255,7 @@ pub(in crate::kernel) fn execute_program_loop_paths(
         state: state.clone(),
         facts: Vec::new().into(),
         obligations: Vec::new(),
-        check_condition: !do_while,
+        check_condition: !direct_post_test,
     }];
     let mut paths = Vec::new();
 

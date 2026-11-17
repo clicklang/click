@@ -1993,7 +1993,8 @@ fn execution_statement_source_cost(statement: &ProgramStatement) -> ProgramSourc
             cost.statement_steps = cost.statement_steps.saturating_add(1);
         }
         match statement {
-            ProgramStatement::Skip
+            ProgramStatement::ThrowOpaque(_)
+            | ProgramStatement::Skip
             | ProgramStatement::EndAutomaticLifetimes { .. }
             | ProgramStatement::Break
             | ProgramStatement::Continue
@@ -2080,12 +2081,12 @@ fn execution_statement_source_cost(statement: &ProgramStatement) -> ProgramSourc
                 pending.push(else_branch);
             }
             ProgramStatement::Loop {
-                test,
+                test: loop_test,
                 update,
-                condition,
                 body,
                 ..
             } => {
+                let (condition, _, test) = loop_test.execution_parts();
                 cost.add_expression(program_expression_source_steps(condition));
                 pending.push(body);
                 if let Some(test) = test {

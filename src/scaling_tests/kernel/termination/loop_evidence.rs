@@ -23,10 +23,13 @@ fn selected_loop_opening_does_not_scan_unrelated_statements_or_loops() {
             );
         }
         let mut wrong = selected.clone();
-        let ProgramStatement::Loop { condition, .. } = &mut wrong else {
+        let ProgramStatement::Loop {
+            test: loop_test, ..
+        } = &mut wrong
+        else {
             unreachable!()
         };
-        *condition = int32_literal(1);
+        *loop_test = LoopTestRegion::expression(int32_literal(1), loop_test.position);
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             function.open_loop_proof(size, wrong)
         });

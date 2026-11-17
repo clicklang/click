@@ -3848,6 +3848,7 @@ fn select_scalar_reads(term: &MachineTerm) -> MachineTerm {
                 #[cfg(test)]
                 LOAD_SUBSTITUTION_TERM_VISITS.with(|visits| visits.set(visits.get() + 1));
                 match term {
+                    MachineTerm::ThreadHandle(_) => term_results.push(term.clone()),
                     bits32_constant!(_)
                     | int64_constant!(_)
                     | uint64_constant!(_)
@@ -4291,6 +4292,7 @@ fn common_float_conversion_mentions_load(root: &KernelTerm) -> bool {
 
 pub(in crate::kernel) fn term_mentions_a_memory_load(term: &MachineTerm) -> bool {
     match term {
+        MachineTerm::ThreadHandle(_) => false,
         bits32_constant!(_)
         | MachineTerm::Variable(_)
         | int64_constant!(_)
@@ -4945,7 +4947,7 @@ fn record_load_variable_defining_fact_with_source_and_pointer(
         source.and_then(|source| GeneratedLoadSourceEvent::new(source.clone(), binding.clone()));
     let existing_index = facts
         .iter()
-        .position(|fact| fact.proposition == defining_proposition);
+        .position(|fact| fact.proposition() == &defining_proposition);
     if let Some(index) = existing_index {
         let existing = facts.get_mut(index);
         if existing.generated_load_binding.is_none() || typed_pointer_value.is_some() {

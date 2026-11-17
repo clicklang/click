@@ -423,6 +423,23 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             return driver_proof.driver().apply_bare_statement_step(step);
         }
 
+        // Expansion must retain the name chosen for an implicit binder. A cold
+        // parse can then rename a newly desugared goal before referring to it.
+        let step = if matches!(step, ProofStep::Intro)
+            && matches!(driver_proof.goal(), Some(Proposition::ForAll { .. }))
+        {
+            match driver_proof.surface_goal() {
+                Some(ClickProposition::ForAll { name, .. })
+                | Some(ClickProposition::RangeAll { item: name, .. })
+                    if matches!(name, SurfaceBinder::Generated(_)) =>
+                {
+                    ProofStep::IntroBinder(name.clone())
+                }
+                _ => step,
+            }
+        } else {
+            step
+        };
         let provenance_step = step.clone();
         let checked_proposition_successor = match &step {
             ProofStep::CheckTerminationLocal(function) => Some(
@@ -451,7 +468,8 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             ProofStep::Preserve(separation) => Some(driver_proof.apply_preserve(separation)),
 
             ProofStep::Intro => Some(driver_proof.apply_intro(None)),
-            ProofStep::IntroAs(name) => Some(driver_proof.apply_intro(Some(name))),
+            ProofStep::IntroAs(name) => Some(driver_proof.apply_intro(Some(name.into()))),
+            ProofStep::IntroBinder(name) => Some(driver_proof.apply_intro(Some(name.clone()))),
             ProofStep::Enumerate => Some(driver_proof.apply_enumerate()),
             ProofStep::Contradiction(surface) => Some(driver_proof.apply_contradiction(surface)),
             ProofStep::Extract(proposition) => Some(driver_proof.apply_extract(proposition)),

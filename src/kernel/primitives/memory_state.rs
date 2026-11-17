@@ -314,6 +314,9 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
             HavocIdentityTask::Bitvector(term) => {
                 crate::instrumentation::record_deterministic_work(1);
                 match term {
+                    MachineTerm::ThreadHandle(id) => {
+                        let _ = write!(identity, "thread-handle:{id:?};");
+                    }
                     MachineTerm::Cast {
                         spelling: MachineCastSpelling::Generic,
                         value,
@@ -1341,7 +1344,8 @@ impl LocalEnvironment {
             BindingName::Local(_)
             | BindingName::Static(_)
             | BindingName::ContractResult
-            | BindingName::ContractException => name.clone(),
+            | BindingName::ContractException
+            | BindingName::Generated(_) => name.clone(),
         }
     }
     /// The source spelling of this active lexical binding, for source-name
@@ -1351,7 +1355,9 @@ impl LocalEnvironment {
             BindingName::Local(id) => id.spelling()?,
             BindingName::Static(id) => id.spelling(),
             BindingName::Named(name) => name,
-            BindingName::ContractResult | BindingName::ContractException => return None,
+            BindingName::ContractResult
+            | BindingName::ContractException
+            | BindingName::Generated(_) => return None,
         };
         (self.resolve_binding(&BindingName::from(source)) == *name).then_some(source)
     }
@@ -2150,6 +2156,7 @@ fn held_term_atom(term: &MachineTerm, hasher: &mut impl std::hash::Hasher) {
         spelling.hash(hasher);
     }
     match term {
+        MachineTerm::ThreadHandle(id) => id.hash(hasher),
         MachineTerm::Variable(variable) => variable.hash(hasher),
         bits32_constant!(value) => constant_u32(*value).hash(hasher),
         MachineTerm::Binary { format, op, .. } => (format, op).hash(hasher),
@@ -2159,7 +2166,7 @@ fn held_term_atom(term: &MachineTerm, hasher: &mut impl std::hash::Hasher) {
 }
 
 /// A constant-time fingerprint of a term: its root's variant and, for a
-/// variable or constant, its payload, and for a format-carrying operator its
+/// variable, constant or opaque handle, its payload, and for a format-carrying operator its
 /// format and operator, and the same of a binary node's two
 /// operands. Equal terms share a fingerprint; a lookup compares the terms
 /// it finds, so a shared fingerprint costs only a comparison.
@@ -2191,6 +2198,7 @@ fn held_kernel_term_fingerprint(term: &KernelTerm) -> Option<u64> {
         use KernelTermNode as N;
         let zero = || Box::new(MachineTerm::constant(0));
         let shape = match term.node() {
+            N::ThreadHandle(id) => MachineTerm::ThreadHandle(*id),
             N::MachineLiteral(value) => value.legacy_term(),
             N::Variable(value) => MachineTerm::Variable(*value),
             N::MachineBinary {
@@ -7581,7 +7589,9 @@ impl Memory {
             },
             BindingName::Static(binding) => PointerBlock::StaticObject { binding },
             BindingName::Named(name) => format!("local:value-parameter:{name}").into(),
-            BindingName::ContractResult | BindingName::ContractException => {
+            BindingName::ContractResult
+            | BindingName::ContractException
+            | BindingName::Generated(_) => {
                 unreachable!("contract outcome is not an automatic declaration")
             }
         };
@@ -7600,6 +7610,7 @@ impl Memory {
             },
             BindingName::Static(binding) => PointerBlock::StaticObject { binding },
             BindingName::Named(name) => format!("local:{name}").into(),
+            BindingName::Generated(_) => unreachable!("a logical binder has no storage"),
             BindingName::ContractResult => PointerBlock::ContractResult,
             BindingName::ContractException => PointerBlock::ContractException,
         };
@@ -7621,7 +7632,9 @@ impl Memory {
             },
             BindingName::Static(binding) => PointerBlock::StaticObject { binding },
             BindingName::Named(name) => format!("local:lifetime:{lifetime}:{name}").into(),
-            BindingName::ContractResult | BindingName::ContractException => {
+            BindingName::ContractResult
+            | BindingName::ContractException
+            | BindingName::Generated(_) => {
                 unreachable!("contract outcome is not an automatic declaration")
             }
         };
@@ -7637,7 +7650,8 @@ impl Memory {
             BindingName::Named(name) => format!("global:{name}").into(),
             BindingName::Local(_)
             | BindingName::ContractResult
-            | BindingName::ContractException => {
+            | BindingName::ContractException
+            | BindingName::Generated(_) => {
                 unreachable!("non-global binding used as a global")
             }
         };
@@ -7663,7 +7677,8 @@ impl Memory {
             BindingName::Named(name) => format!("static:{function}:{name}").into(),
             BindingName::Local(_)
             | BindingName::ContractResult
-            | BindingName::ContractException => {
+            | BindingName::ContractException
+            | BindingName::Generated(_) => {
                 unreachable!("non-static binding used as a static")
             }
         };
@@ -7697,7 +7712,9 @@ impl Memory {
                 block: PointerBlock::StaticObject { binding },
                 offset: PointerOffsetTerm::Constant(0),
             },
-            BindingName::ContractResult | BindingName::ContractException => {
+            BindingName::ContractResult
+            | BindingName::ContractException
+            | BindingName::Generated(_) => {
                 unreachable!("contract outcome is not a frame-local declaration")
             }
             BindingName::Named(name) => Pointer {

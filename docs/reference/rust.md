@@ -190,7 +190,7 @@ implementation, signature, and associated-item checks across module paths.
 Crate units support by-value returns of supported flat records, including owned
 array fields and records with `Drop`. The concrete return layout enters the
 kernel's aggregate-return interface: field values copy into fresh caller
-storage, and Rust live flags transfer ownership once. Reference, array, and
+storage. Reference, array, and
 nested-record returns remain unsupported. By-value flat-record parameters use
 the kernel aggregate-parameter interface: each callee receives independent
 storage. Compiler moves consume the caller’s live value; compiler copies
@@ -1580,12 +1580,14 @@ implementation. The compiler selects drop order and drop flags through its
 ULLBC control flow; Click does not reconstruct cleanup
 from source scopes. Destructor bodies require verified sidecar contracts.
 
-Private checked live flags require a live source and dead destination for a
-move, and consume the source. Reads and drops require a live value. Cleanup
-must consume every destructor-bearing local before return. The flags prevent
-stale struct bytes from justifying duplicate moves, duplicate drops, or omitted
-cleanup. Struct storage uses existing checked stack allocation and typed field
-loads/stores. Moving a reference field carries the same borrowed address; it
+The imported MIR is drop-elaborated, so rustc has already decided which
+values are live at each move, read and drop. A move copies the struct's fields
+into its destination and a drop runs its destructor; Click adds no live flags
+of its own, so no generated name appears in a proof's state or a step's
+frontier. The compiler places each drop on the paths where its value is
+still live, as in a branch that moves a guard and one that keeps it.
+Struct storage uses
+existing checked stack allocation and typed field loads/stores. Moving a reference field carries the same borrowed address; it
 does not create allocation or deallocation authority.
 
 Borrowing fields of local owned structs is supported. In

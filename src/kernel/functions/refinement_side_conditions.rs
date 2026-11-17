@@ -315,7 +315,8 @@ pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
             | SpecProposition::ExistsAlgebraic { .. }
             | SpecProposition::ExistsPointer { .. }
             | SpecProposition::IntegerComparison { .. } => Visit::Descend,
-            SpecProposition::Predicate { .. }
+            SpecProposition::MutexHeld(_)
+            | SpecProposition::Predicate { .. }
             | SpecProposition::ResourceSeparate { .. }
             | SpecProposition::ResourceViewable { .. }
             | SpecProposition::ResourceContains { .. }
@@ -1033,8 +1034,12 @@ pub(super) fn statement_writes_aggregate_parameter(
         }
 
         ProgramStatement::Loop {
-            test, update, body, ..
+            test: loop_test,
+            update,
+            body,
+            ..
         } => {
+            let (_, _, test) = loop_test.execution_parts();
             statement_writes_aggregate_parameter(body, parameter_name, writes, unknown_write);
             if let Some(test) = test {
                 statement_writes_aggregate_parameter(
@@ -1058,7 +1063,8 @@ pub(super) fn statement_writes_aggregate_parameter(
                 );
             }
         }
-        ProgramStatement::Skip
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue
