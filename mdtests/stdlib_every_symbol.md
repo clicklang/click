@@ -64,6 +64,26 @@ The modeled-runtime resource `mutex_use` is verified in
 The modeled-runtime resources `publisher` and `subscriber` are verified in
 [`publication_one_shot_handoff.md`](publication_one_shot_handoff.md).
 
+The unsigned address-word laws are checked in
+[`aligned_address_word_library.md`](aligned_address_word_library.md):
+`integer::uint64_and_commute`, `integer::uint64_and_associate`,
+`integer::uint64_or_commute`, `integer::uint64_and_or`, `integer::uint64_and_zero`,
+`integer::uint64_or_zero`, `integer::uint64_or_disjoint`, `integer::uint64_mask_add_low`,
+`integer::uint64_mask_add_high`, `integer::uint64_mask_multiple`,
+`integer::uint64_mask_keep`, `integer::uint64_mask_add_clear`,
+`integer::uint64_add_distinct`, `integer::uint64_or_add_low`, `integer::uint64_mask_subset`,
+`integer::uint64_or_masked`, `integer::uint8_pointer_add_address_int32`,
+`integer::uint8_pointer_add_address_int64`, `integer::int8_pointer_add_address_int32`,
+`integer::int8_pointer_add_address_int64`, `integer::uint16_pointer_add_address_int32`,
+`integer::uint16_pointer_add_address_int64`, `integer::int16_pointer_add_address_int32`,
+`integer::int16_pointer_add_address_int64`, `integer::uint32_pointer_add_address_int32`,
+`integer::uint32_pointer_add_address_int64`, `integer::int32_pointer_add_address_int32`,
+`integer::int32_pointer_add_address_int64`, `integer::uint64_pointer_add_address_int32`,
+`integer::uint64_pointer_add_address_int64`, `integer::int64_pointer_add_address_int32`,
+`integer::int64_pointer_add_address_int64`, `integer::float32_pointer_add_address_int32`,
+`integer::float32_pointer_add_address_int64`, `integer::float64_pointer_add_address_int32`,
+`integer::float64_pointer_add_address_int64`.
+
 ```c filename=stdlib_every_symbol.c
 int32 docs_identity(int32 value) {
     return value;
