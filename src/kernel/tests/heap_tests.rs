@@ -1407,11 +1407,83 @@ fn heap_storage_becomes_readable_only_after_a_store() {
     ));
 }
 
+fn free_test_pointer(state: &ExecutionState, pointer: ProgramExpression) -> StatementExecutionPath {
+    let mut paths = execute_execution_statement_paths(
+        state,
+        &program_heap_free(pointer),
+        &PureFactContext::new(),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
+        &mut ExecutionBudget::default(),
+    )
+    .expect("free should have one checked path");
+    assert_eq!(paths.len(), 1);
+    paths.pop().unwrap()
+}
+
 #[test]
-fn active_stable_loan_rejects_overlapping_heap_free_and_realloc() {
+fn heap_free_requires_separation_from_an_interior_loan_until_it_ends() {
     let state = successful_heap_allocation_state();
-    let local_native_output_1341 = state.locals().get_native("p");
-    let Some(ProgramValue::Pointer(pointer)) = local_native_output_1341.as_deref() else {
+    let local = state.locals().get_native("p");
+    let Some(ProgramValue::Pointer(pointer)) = local.as_deref() else {
+        panic!("allocation should assign a pointer");
+    };
+    let base = pointer.pointer().clone();
+    let interior = MemoryRange::new(base.offset_by_bytes(4), 0.into(), 1.into());
+    let backing = ResourceFact::own_memory(interior.clone());
+    let occurrence = ResourceContext::new()
+        .unchecked_with_fact(backing.clone())
+        .unique_owned_occurrence_for_fact(&backing)
+        .unwrap()
+        .0;
+    let ledger = LoanLedger::new();
+    let owner = ledger.fresh_participant().unwrap();
+    let reader = ledger.fresh_participant().unwrap();
+    let opening = ledger.lend(owner, reader, occurrence, backing).unwrap();
+    let ledger = ledger.apply(&opening.transition).unwrap();
+    let state = state.with_loan_ledger(Some(ledger.clone()));
+
+    let null = free_test_pointer(&state, crate::kernel::program_expression::int32_literal(0));
+    assert!(null.obligations.is_empty());
+    let StatementOutcome::Normal(after_null) = null.outcome else {
+        panic!("free(NULL) must be a no-op");
+    };
+    assert_eq!(*after_null, state);
+
+    let free = |state: &ExecutionState| {
+        free_test_pointer(state, crate::kernel::program_expression::variable("p"))
+    };
+    let path = free(&state);
+    let [obligation] = path.obligations.as_slice() else {
+        panic!("expected one complete-allocation separation obligation");
+    };
+    let Proposition::ResourceSeparate { left, right } = obligation.proposition() else {
+        panic!("expected separation");
+    };
+    assert_eq!(right.as_ref(), &Resource::Memory(interior));
+    assert!(!PureFactContext::new().proves_resource_separate(left, right));
+    assert!(state.memory().live_heap_block_size(&base).is_some());
+
+    let transfer = ledger.transfer(opening.root_share, reader, owner).unwrap();
+    let ledger = ledger.apply(&transfer).unwrap();
+    let ended = ledger.end(opening.scope, owner).unwrap();
+    let state = state.with_loan_ledger(Some(ledger.apply(&ended).unwrap()));
+    let path = free(&state);
+    assert!(path.obligations.is_empty());
+    let StatementOutcome::Normal(freed) = path.outcome else {
+        panic!("ending the loan must allow retirement");
+    };
+    assert!(
+        freed
+            .memory()
+            .is_deallocated_heap_address(&base, &PureFactContext::new())
+    );
+}
+
+#[test]
+fn active_stable_loan_rejects_overlapping_heap_realloc() {
+    let state = successful_heap_allocation_state();
+    let local = state.locals().get_native("p");
+    let Some(ProgramValue::Pointer(pointer)) = local.as_deref() else {
         panic!("allocation should assign a pointer");
     };
     // The second int32 cell is a strict subrange of the 16-byte allocation.
@@ -1421,16 +1493,6 @@ fn active_stable_loan_rejects_overlapping_heap_free_and_realloc() {
         MachineTerm::constant(2),
     ));
     let state = state.with_loan_ledger(Some(loan));
-    let freed = execute_execution_statement_paths(
-        &state,
-        &program_heap_free(crate::kernel::program_expression::variable("p")),
-        &PureFactContext::new(),
-        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
-        &mut ExecutionBudget::default(),
-    )
-    .expect("free should return a checked refusal");
-    assert_heap_loan_write_rejected(&freed[0].outcome);
-
     let state = state.with_local("q", ProgramValue::pointer(Address::null()));
     let realloc = execute_execution_statement_paths(
         &state,
