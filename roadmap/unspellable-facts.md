@@ -622,6 +622,22 @@ selected API/proof/specification/execution/scaling checks and quality checks
 passed. Three exact regular Integer/return fixtures passed with zero
 fact-stability differences.
 
+### 10d Shared Boolean connective storage keys
+
+Local/outcome Boolean key operations retain raw C-word distinctions and project
+logical connective keys from common children instead of caching an enclosing
+native Bool value tree. Cached fingerprints make repeated hashing constant;
+comparison, construction and disposal handle deep/shared key structure without
+recursive prefix copies. Scalar condition leaves keep their selected native
+descriptor readers for the later proposition/argument-storage slices. Memory
+structural hashes and exact outcome refresh retain their separate contracts.
+
+All 24 focused tests and all 3,224 selected API/proof/specification/execution/
+scaling checks passed. Growing keys cause zero machine exports, leave the native
+argument cache empty and have constant warm hash work. A 4,096-deep key constructs
+and drops on a 256 KiB stack. Five exact regular Boolean fixtures passed with
+zero fact-stability differences; quality checks passed.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential
