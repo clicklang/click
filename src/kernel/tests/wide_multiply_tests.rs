@@ -274,7 +274,7 @@ fn wide_multiply_calls_keep_wide_result_and_caller_storage() {
         PureFactContext::new(),
     )
     .unwrap();
-    let Proposition::ProgramFunctionExecutes {
+    let Proposition::ProgramFunctionVerifies {
         outcome: FunctionOutcome::Return {
             state: returned,
             value,

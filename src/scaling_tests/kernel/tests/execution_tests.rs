@@ -217,7 +217,7 @@ fn statement_theorems_do_not_list_the_context_they_executed_under() {
             statement.clone(),
             assumptions,
             ExecutionEnvironment::new(),
-            ExecutionSemantics::EXECUTE_BODIES,
+            ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         );
         let path = &execution.paths()[0];
         let mut premises = 0;

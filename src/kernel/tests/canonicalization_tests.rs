@@ -278,7 +278,7 @@ fn index_loaded_from_an_opaque_cell_takes_a_canonical_offset() {
     assert!(!execution.paths().is_empty());
     let mut saw_a_canonical_offset = false;
     for path in execution.paths() {
-        let Proposition::ProgramStatementExecutes { outcome, .. } =
+        let Proposition::ProgramStatementVerifies { outcome, .. } =
             path.theorem().proposition().peel_implications()
         else {
             panic!("execution should prove a statement judgment");
@@ -325,7 +325,7 @@ fn pointer_loaded_from_an_opaque_cell_is_named_by_its_read() {
     assert!(!execution.paths().is_empty());
     let mut saw_a_named_read = false;
     for path in execution.paths() {
-        let Proposition::ProgramStatementExecutes { outcome, .. } = path.theorem().proposition()
+        let Proposition::ProgramStatementVerifies { outcome, .. } = path.theorem().proposition()
         else {
             panic!("execution should prove a statement judgment");
         };

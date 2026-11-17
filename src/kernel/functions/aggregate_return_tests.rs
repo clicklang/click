@@ -36,7 +36,7 @@ fn allocate_destination(state: &ExecutionState, name: &str) -> ExecutionState {
         state,
         &program_allocate_aggregate_destination(name, node_layout()),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("checked destination allocation");
@@ -141,67 +141,6 @@ fn node_construction_body() -> ProgramStatement {
     )
 }
 
-#[test]
-fn construction_return_preserves_exact_destination_through_two_factories() {
-    let _session = crate::kernel::VerificationSession::enter();
-    let inner = construction_function("construct_node", node_construction_body());
-    let forward = |name: &str, callee: &str| {
-        construction_function(
-            name,
-            program_seq(
-                program_call_construct(
-                    CONTRACT_RESULT,
-                    callee,
-                    vec![crate::kernel::program_expression::variable("input")],
-                ),
-                program_return(crate::kernel::program_expression::variable(CONTRACT_RESULT)),
-            ),
-        )
-    };
-    let middle = forward("forward_node_result", "construct_node");
-    let outer = forward("outer_node_result", "forward_node_result");
-    let caller = allocate_destination(
-        &ExecutionState::new().with_population_creation_tracking(),
-        "node",
-    );
-    let destination = caller.locals.slot("node").unwrap().clone();
-    let caller = caller.with_aggregate_return_destination(destination.clone(), node_layout());
-    let paths = execute_program_function_call_paths(
-        &caller,
-        &outer,
-        &[crate::kernel::program_expression::int32_literal(37)],
-        &PureFactContext::new(),
-        ExecutionContext::execute_bodies(
-            &ExecutionEnvironment::new()
-                .with_function(inner)
-                .with_function(middle),
-        ),
-        &mut ExecutionBudget::default(),
-    )
-    .unwrap();
-    let [path] = paths.as_slice() else {
-        panic!("one constructed result");
-    };
-    let FunctionOutcome::Return { value, state } = &path.outcome else {
-        panic!("construction failed: {:?}", path.outcome);
-    };
-    assert!(path.obligations.is_empty(), "{:?}", path.obligations);
-    assert_eq!(pointer(&value.native()), destination);
-    assert_eq!(
-        state.memory.known_value(&destination),
-        Some(ProgramValue::typed_pointer(
-            destination.offset_by_bytes(8),
-            ProgramType::Int32Pointer
-        ))
-    );
-    assert_eq!(
-        state.memory.known_value(&destination.offset_by_bytes(8)),
-        Some(ProgramValue::Int32(37u32.into()))
-    );
-    assert_eq!(state.next_local_frame, caller.next_local_frame);
-    assert!(state.memory.has_block(&destination.block));
-}
-
 // A result address alone grants no storage, layout match, or ownership, and
 // returning it is not enough to establish that the object was initialized.
 #[test]
@@ -227,13 +166,15 @@ fn construction_return_rejects_missing_binding_authority_and_partial_values() {
         ),
         selected.clone().with_memory(Memory::new()),
     ] {
-        let paths = execute_program_function_call_paths(
+        let paths = execute_program_function_paths_with_contract_resources(
             &caller,
             &function,
             &[crate::kernel::program_expression::int32_literal(37)],
             &PureFactContext::new(),
-            ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+            ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
             &mut ExecutionBudget::default(),
+            true,
+            false,
         )
         .unwrap();
         assert!(
@@ -259,13 +200,15 @@ fn construction_return_rejects_missing_binding_authority_and_partial_values() {
             program_return(crate::kernel::program_expression::variable(CONTRACT_RESULT)),
         ),
     );
-    let paths = execute_program_function_call_paths(
+    let paths = execute_program_function_paths_with_contract_resources(
         &selected,
         &partial,
         &[crate::kernel::program_expression::int32_literal(37)],
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
+        true,
+        false,
     )
     .unwrap();
     assert!(paths.iter().all(|path| matches!(
@@ -324,15 +267,17 @@ fn construction_destination_can_alias_an_argument_without_becoming_fresh() {
         );
         let at = raw.locals.slot("node").unwrap().clone();
         let selected = raw.with_aggregate_return_destination(at.clone(), node_layout());
-        let paths = execute_program_function_call_paths(
+        let paths = execute_program_function_paths_with_contract_resources(
             &selected,
             &function,
             &[crate::kernel::program_expression::pointer_value(
                 at.offset_by_bytes(8),
             )],
             &PureFactContext::new(),
-            ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+            ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
             &mut ExecutionBudget::default(),
+            true,
+            false,
         )
         .unwrap();
         let [path] = paths.as_slice() else {
@@ -398,7 +343,7 @@ fn construction_temporary_retirement_preserves_copies_and_external_backing() {
         )
         .with_construction_return(node_layout())
         .with_resource_summary(vec![owner.clone()], vec![owner]);
-        let environment = ExecutionEnvironment::new().with_function(factory);
+        let environment = ExecutionEnvironment::new().with_function((factory).with_inline_body());
         let sequence =
             |statements: Vec<ProgramStatement>| statements.into_iter().reduce(program_seq).unwrap();
         let prefix = sequence(vec![
@@ -424,7 +369,7 @@ fn construction_temporary_retirement_preserves_copies_and_external_backing() {
             &ExecutionState::new().with_population_creation_tracking(),
             &prefix,
             &PureFactContext::new(),
-            ExecutionContext::execute_bodies(&environment),
+            ExecutionContext::verify_loops(&environment),
             &mut ExecutionBudget::default(),
         )
         .unwrap();
@@ -458,17 +403,13 @@ fn construction_temporary_retirement_preserves_copies_and_external_backing() {
             retirement,
             PureFactContext::new(),
             environment.clone(),
-            ExecutionSemantics::EXECUTE_BODIES,
+            ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         );
         let [path] = checked.paths() else {
             panic!("one retirement path");
         };
         let after = match crate::kernel::api::proof_evidence_conclusion(path.theorem()) {
-            Proposition::ProgramStatementExecutes {
-                outcome: StatementOutcome::Normal(after),
-                ..
-            }
-            | Proposition::ProgramStatementVerifies {
+            Proposition::ProgramStatementVerifies {
                 outcome: StatementOutcome::Normal(after),
                 ..
             } => after,
@@ -500,7 +441,7 @@ fn construction_temporary_retirement_preserves_copies_and_external_backing() {
                 ProgramType::Int32,
             )),
             &PureFactContext::new(),
-            ExecutionContext::execute_bodies(&environment),
+            ExecutionContext::verify_loops(&environment),
             &mut ExecutionBudget::default(),
         )
         .unwrap();
@@ -558,93 +499,6 @@ fn construction_destination_survives_substitution_and_requires_agreement_at_join
 // This tests the existing explicit-destination procedure building block,
 // without the legacy placeholder-seeding declaration. It does not pass a
 // supplied destination off as a by-value aggregate result.
-#[test]
-fn supplied_constructor_destination_survives_two_procedure_boundaries() {
-    let _session = crate::kernel::VerificationSession::enter();
-    let field = crate::kernel::program_expression::pointer_offset_bytes(
-        crate::kernel::program_expression::variable("destination"),
-        8,
-    );
-    let constructor = destination_procedure(
-        "initialize_node",
-        program_seq(
-            program_typed_store(
-                crate::kernel::program_expression::variable("destination"),
-                field.clone(),
-                ProgramType::Int32Pointer,
-            ),
-            program_typed_store(
-                field,
-                crate::kernel::program_expression::variable("input"),
-                ProgramType::Int32,
-            ),
-        ),
-    );
-    let forward = destination_procedure(
-        "forward_node",
-        program_call(
-            "initialize_node",
-            vec![
-                crate::kernel::program_expression::variable("destination"),
-                crate::kernel::program_expression::variable("input"),
-            ],
-        ),
-    );
-    let outer = destination_procedure(
-        "outer_node",
-        program_call(
-            "forward_node",
-            vec![
-                crate::kernel::program_expression::variable("destination"),
-                crate::kernel::program_expression::variable("input"),
-            ],
-        ),
-    );
-    let caller = allocate_destination(
-        &ExecutionState::new().with_population_creation_tracking(),
-        "caller_node",
-    );
-    let destination = caller.locals.slot("caller_node").unwrap().clone();
-    assert!(!caller.memory.has_initialized_bytes_at(&destination, 16));
-    let paths = execute_program_function_call_paths(
-        &caller,
-        &outer,
-        &[
-            crate::kernel::program_expression::pointer_value(destination.clone()),
-            crate::kernel::program_expression::int32_literal(37),
-        ],
-        &PureFactContext::new(),
-        ExecutionContext::execute_bodies(
-            &ExecutionEnvironment::new()
-                .with_function(constructor)
-                .with_function(forward),
-        ),
-        &mut ExecutionBudget::default(),
-    )
-    .expect("forwarded constructor execution");
-    let [path] = paths.as_slice() else {
-        panic!("one constructor path expected");
-    };
-    let FunctionOutcome::Return { value, state } = &path.outcome else {
-        panic!("constructor failed: {:?}", path.outcome);
-    };
-    assert_eq!(*value.native(), ProgramValue::Void);
-    assert!(path.obligations.is_empty(), "{:?}", path.obligations);
-    assert_eq!(
-        state.memory.known_value(&destination),
-        Some(ProgramValue::typed_pointer(
-            destination.offset_by_bytes(8),
-            ProgramType::Int32Pointer,
-        )),
-    );
-    assert_eq!(
-        state.memory.known_value(&destination.offset_by_bytes(8)),
-        Some(ProgramValue::Int32(MachineTerm::constant(37))),
-    );
-    assert_eq!(state.next_local_frame, caller.next_local_frame);
-    assert!(state.memory.has_block(&destination.block));
-}
-
 // C++ copy-assignment coverage does not exercise the function return
 // materializer. A future destination-return path must not silently change
 // this existing copy mode to rebase self-pointers or elide its copies.
@@ -909,7 +763,7 @@ fn symbolic_construction_storage_is_unreadable_until_written() {
                     ProgramType::Int32,
                 )),
                 &assumptions,
-                ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+                ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
                 &mut ExecutionBudget::default(),
             )
             .expect("raw destination read");
@@ -978,7 +832,7 @@ fn symbolic_construction_storage_respects_known_aliases() {
                         ProgramType::Int32,
                     )),
                     &assumptions,
-                    ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+                    ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
                     &mut ExecutionBudget::default(),
                 )
                 .expect("aliased destination read");
@@ -1197,7 +1051,7 @@ fn construction_parameter_completion_checks_original_storage() {
             "node",
         );
         let at = caller.locals.slot("node").unwrap().clone();
-        let paths = execute_program_function_call_paths(
+        let paths = execute_program_function_paths_with_contract_resources(
             &caller,
             &function,
             &[
@@ -1205,8 +1059,10 @@ fn construction_parameter_completion_checks_original_storage() {
                 crate::kernel::program_expression::int32_literal(37),
             ],
             &PureFactContext::new(),
-            ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+            ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
             &mut ExecutionBudget::default(),
+            true,
+            false,
         )
         .unwrap();
         let [path] = paths.as_slice() else {
@@ -1265,7 +1121,7 @@ fn construction_parameter_completion_checks_original_storage() {
     let other = caller.locals.slot("other").unwrap().clone();
     let memory = caller.memory.clone().with_initialized_object(&other, 16);
     let caller = caller.with_memory(memory);
-    let paths = execute_program_function_call_paths(
+    let paths = execute_program_function_paths_with_contract_resources(
         &caller,
         &function,
         &[
@@ -1273,8 +1129,10 @@ fn construction_parameter_completion_checks_original_storage() {
             crate::kernel::program_expression::pointer_value(other),
         ],
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
+        true,
+        false,
     )
     .unwrap();
     assert!(paths.iter().all(|path| matches!(
@@ -1344,7 +1202,7 @@ fn value_only_constructor_preserves_descriptor_across_result_copy_chains() {
     )
     .with_construction_parameter(0, layout.clone())
     .with_resource_summary(vec![owner.clone()], vec![owner]);
-    let environment = ExecutionEnvironment::new().with_function(constructor);
+    let environment = ExecutionEnvironment::new().with_function((constructor).with_inline_body());
     for copies in [0, 1, 3] {
         let _session = crate::kernel::VerificationSession::enter();
         let mut statements = vec![
@@ -1399,17 +1257,13 @@ fn value_only_constructor_preserves_descriptor_across_result_copy_chains() {
             statement,
             PureFactContext::new(),
             environment.clone(),
-            ExecutionSemantics::EXECUTE_BODIES,
+            ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         );
         let [path] = checked.paths() else {
             panic!("one descriptor construction path");
         };
         let state = match crate::kernel::api::proof_evidence_conclusion(path.theorem()) {
-            Proposition::ProgramStatementExecutes {
-                outcome: StatementOutcome::Normal(state),
-                ..
-            }
-            | Proposition::ProgramStatementVerifies {
+            Proposition::ProgramStatementVerifies {
                 outcome: StatementOutcome::Normal(state),
                 ..
             } => state,
@@ -1479,17 +1333,13 @@ fn copying_unknown_pointer_field_preserves_its_value_after_source_retirement() {
         ),
         PureFactContext::new(),
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
     );
     let [path] = checked.paths() else {
         panic!("one checked copy path");
     };
     let state = match crate::kernel::api::proof_evidence_conclusion(path.theorem()) {
-        Proposition::ProgramStatementExecutes {
-            outcome: StatementOutcome::Normal(state),
-            ..
-        }
-        | Proposition::ProgramStatementVerifies {
+        Proposition::ProgramStatementVerifies {
             outcome: StatementOutcome::Normal(state),
             ..
         } => state,

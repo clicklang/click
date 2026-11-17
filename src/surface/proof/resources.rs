@@ -570,7 +570,6 @@ fn dynamic_body_fact_dependency(
             Proposition::MemoryCanStore { .. }
             | Proposition::MemoryMutatesOnly { .. }
             | Proposition::MemoryEffectSummary { .. }
-            | Proposition::ProgramFunctionSatisfiesSpecification { .. }
             | Proposition::ProgramFunctionPartiallySatisfiesSpecification { .. } => Ok(()),
             _ => Err("unsupported opaque proposition in current-load dependency".into()),
         }

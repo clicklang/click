@@ -5437,7 +5437,7 @@ fn local_storage_and_resource_stars_have_round_tripping_spellings() {
         },
     )
     .unwrap();
-    let Proposition::ProgramStatementExecutes {
+    let Proposition::ProgramStatementVerifies {
         outcome: crate::kernel::StatementOutcome::Normal(state),
         ..
     } = declaration.proposition()

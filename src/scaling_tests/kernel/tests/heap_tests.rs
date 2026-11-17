@@ -232,7 +232,7 @@ fn free_allocation_discovery_ignores_unrelated_resource_tokens() {
                 &state,
                 &program_heap_free(crate::kernel::program_expression::variable("p")),
                 &PureFactContext::new(),
-                ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+                ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
                 &mut ExecutionBudget::default(),
             )
             .expect("selected declared allocation should free")
@@ -292,7 +292,7 @@ fn realloc_reference_check_ignores_unrelated_resource_tokens() {
                     ],
                 ),
                 &PureFactContext::new(),
-                ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+                ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
                 &mut ExecutionBudget::default(),
             )
             .expect("reallocation should produce a pending result")
@@ -473,7 +473,7 @@ fn sequential_free_pointer_frames_stay_near_linear() {
                     &state,
                     &program_heap_free(crate::kernel::program_expression::variable("p")),
                     &assumptions,
-                    ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+                    ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
                     &mut ExecutionBudget::default(),
                 )
                 .unwrap();
