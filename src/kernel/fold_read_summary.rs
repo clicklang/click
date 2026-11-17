@@ -543,7 +543,7 @@ impl BodyChecker<'_> {
                 if scope != Scope::Body {
                     return Err(FoldReadDecline::ReadOutsideFoldIndex);
                 }
-                if *memory != SpecMemory::Current {
+                if *memory != SpecPoint::Current {
                     return Err(Self::unsupported("a read at another program point"));
                 }
                 if *value_type != self.element_type || !self.is_exact_array_cell(pointer) {

@@ -77,7 +77,7 @@ fn worker() -> (VerifiedFunctionRule, VerifiedFunctionTerminationRule) {
         vec![],
         vec![SpecProposition::Comparison {
             left: SpecExpression::MemoryLoad {
-                memory: SpecMemory::Current,
+                memory: SpecPoint::Current,
                 pointer: Box::new(SpecExpression::ProgramExpression(
                     crate::kernel::program_expression::variable("p"),
                 )),

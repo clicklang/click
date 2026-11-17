@@ -2022,12 +2022,12 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
         }
         SpecProposition::ResourceViewable { memory, resource } => {
             let memory = match memory {
-                SpecMemory::Current => scope.state.memory(),
-                SpecMemory::FunctionEntry | SpecMemory::LoopEntry => match scope.loop_entry_state {
+                SpecPoint::Current => scope.state.memory(),
+                SpecPoint::FunctionEntry | SpecPoint::LoopEntry => match scope.loop_entry_state {
                     Some(entry) => entry.memory(),
                     None => return Ok(Vec::new()),
                 },
-                SpecMemory::Fixed(memory) => memory,
+                SpecPoint::At(point) => point.memory(),
             };
             let mut paths = Vec::new();
             for (resource, facts, obligations) in
@@ -5220,7 +5220,7 @@ fn lower_spec_resource_relation_at_state_in(
 #[allow(clippy::too_many_arguments)]
 fn lower_spec_memory_loadable_at_state_in(
     scope: SpecScope<'_>,
-    memory: &SpecMemory,
+    memory: &SpecPoint,
     base: &SpecExpression,
     start: &SpecExpression,
     end: &SpecExpression,
@@ -5232,12 +5232,12 @@ fn lower_spec_memory_loadable_at_state_in(
     let state = scope.state;
     let loop_entry_state = scope.loop_entry_state;
     let memory = match memory {
-        SpecMemory::Current => state.memory(),
-        SpecMemory::FunctionEntry | SpecMemory::LoopEntry => match loop_entry_state {
+        SpecPoint::Current => state.memory(),
+        SpecPoint::FunctionEntry | SpecPoint::LoopEntry => match loop_entry_state {
             Some(entry) => entry.memory(),
             None => return Ok(Vec::new()),
         },
-        SpecMemory::Fixed(memory) => memory,
+        SpecPoint::At(point) => point.memory(),
     };
     Ok(evaluate_spec_values_at_state_in(
         scope,
@@ -5846,14 +5846,14 @@ fn lower_spec_predicate_proposition_at_state_in(
                 };
                 if let Some(memory) = memory {
                     let memory = match memory {
-                        SpecMemory::Current => state.memory(),
-                        SpecMemory::FunctionEntry | SpecMemory::LoopEntry => {
+                        SpecPoint::Current => state.memory(),
+                        SpecPoint::FunctionEntry | SpecPoint::LoopEntry => {
                             let Some(entry_state) = loop_entry_state else {
                                 continue;
                             };
                             entry_state.memory()
                         }
-                        SpecMemory::Fixed(memory) => memory,
+                        SpecPoint::At(point) => point.memory(),
                     };
                     arguments.push(Term::Memory(memory.clone()));
                 }
@@ -6645,7 +6645,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 return evaluate_spec_expression_paths_with_algebraic_bindings_in(
                     SpecScope { state, ..scope },
                     &SpecExpression::MemoryLoad {
-                        memory: SpecMemory::Current,
+                        memory: SpecPoint::Current,
                         pointer: pointer.clone(),
                         value_type: *value_type,
                     },
@@ -6668,7 +6668,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             evaluate_spec_expression_paths_with_algebraic_bindings_in(
                 SpecScope { state, ..scope },
                 &SpecExpression::MemoryLoad {
-                    memory: SpecMemory::Fixed(memory.clone()),
+                    memory: SpecPoint::At(ProgramPoint::of_memory(memory)),
                     pointer: Box::new(pointer),
                     value_type: *value_type,
                 },
@@ -7048,7 +7048,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             evaluate_spec_expression_paths_with_algebraic_bindings_in(
                 SpecScope { state, ..scope },
                 &SpecExpression::MemoryLoad {
-                    memory: SpecMemory::Current,
+                    memory: SpecPoint::Current,
                     pointer: Box::new(SpecExpression::Value(ProgramValue::typed_pointer(
                         slot.clone(),
                         ProgramType::ParameterPointer(parameter),
@@ -7686,7 +7686,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
         } => {
             let mut paths = Vec::new();
             let entry_projection =
-                if matches!(memory, SpecMemory::FunctionEntry | SpecMemory::LoopEntry) {
+                if matches!(memory, SpecPoint::FunctionEntry | SpecPoint::LoopEntry) {
                     fn root(expression: &SpecExpression) -> Option<&BindingName> {
                         match expression {
                             SpecExpression::ProgramExpression(ProgramExpression::Variable(
@@ -7719,16 +7719,16 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 };
                 let pointer = pointer.into_pointer();
                 let memory = match memory {
-                    SpecMemory::Current => state.memory(),
-                    SpecMemory::FunctionEntry => match loop_entry_state {
+                    SpecPoint::Current => state.memory(),
+                    SpecPoint::FunctionEntry => match loop_entry_state {
                         Some(entry_state) => entry_state.memory(),
                         None => continue,
                     },
-                    SpecMemory::LoopEntry => match loop_entry_state {
+                    SpecPoint::LoopEntry => match loop_entry_state {
                         Some(loop_entry_state) => loop_entry_state.memory(),
                         None => continue,
                     },
-                    SpecMemory::Fixed(memory) => memory,
+                    SpecPoint::At(point) => point.memory(),
                 };
                 let mut obligations = pointer_path.obligations;
                 // A written definedness claim must retain the typed premise,
@@ -8269,14 +8269,14 @@ fn evaluate_spec_pure_function_argument_paths_in(
             element_type,
         } => {
             let memory = match memory {
-                SpecMemory::Current => state.memory(),
-                SpecMemory::FunctionEntry | SpecMemory::LoopEntry => {
+                SpecPoint::Current => state.memory(),
+                SpecPoint::FunctionEntry | SpecPoint::LoopEntry => {
                     let Some(entry) = loop_entry_state else {
                         return Ok(Vec::new());
                     };
                     entry.memory()
                 }
-                SpecMemory::Fixed(memory) => memory,
+                SpecPoint::At(point) => point.memory(),
             };
             Ok(evaluate_spec_expression_paths_with_algebraic_bindings_in(
                 scope,

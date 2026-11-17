@@ -9015,7 +9015,7 @@ impl ExecutionState {
             let is_parameter = |expression: &SpecExpression| matches!(expression, SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) if name.is_named(parameter));
             let is_counter_load = |expression: &SpecExpression| {
                 let SpecExpression::MemoryLoad {
-                    memory: SpecMemory::Current,
+                    memory: SpecPoint::Current,
                     pointer,
                     value_type: ProgramType::Int32,
                 } = expression

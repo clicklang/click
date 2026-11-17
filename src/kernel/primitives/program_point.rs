@@ -334,6 +334,15 @@ impl ProgramPoint {
         &self.memory
     }
 
+    /// This point with its memory's values renamed: the same place on the
+    /// path, its memory spelled with substituted variables.
+    pub(crate) fn with_renamed_memory(&self, memory: Memory) -> Self {
+        Self {
+            memory: intern_memory(memory),
+            path: self.path.clone(),
+        }
+    }
+
     /// Where on its path this point is.
     pub(super) fn path_link(&self) -> &PathLink {
         &self.path

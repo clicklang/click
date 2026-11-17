@@ -4115,12 +4115,19 @@ pub enum UpdateOperator {
     BitwiseXor,
 }
 
+/// The point a specification read reads at. A specification is lowered once
+/// and checked later, against different states, so most reads name a point
+/// relative to the state they are checked in.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum SpecMemory {
+pub enum SpecPoint {
+    /// The state being checked.
     Current,
+    /// Its function's entry: `old(...)` in a contract.
     FunctionEntry,
+    /// The enclosing loop's entry.
     LoopEntry,
-    Fixed(Memory),
+    /// One fixed point: `old(...)` in a proof, `at(label, ...)`.
+    At(ProgramPoint),
 }
 
 /// Body-derived origins of a pure function's pointer result. Null branches
@@ -4219,7 +4226,7 @@ pub enum SpecExpression {
         byte_width: u32,
     },
     MemoryLoad {
-        memory: SpecMemory,
+        memory: SpecPoint,
         pointer: Box<SpecExpression>,
         value_type: ProgramType,
     },
@@ -4493,7 +4500,7 @@ pub enum SpecPureFunctionArgument {
     Integer(SpecIntegerExpression),
     Algebraic(SpecAlgebraicExpression),
     ArrayRef {
-        memory: SpecMemory,
+        memory: SpecPoint,
         pointer: SpecExpression,
         element_type: ProgramType,
     },
@@ -5382,7 +5389,7 @@ pub enum SpecSequenceExpression {
 pub enum SpecPredicateArgument {
     Value(SpecExpression),
     ArrayRef {
-        memory: SpecMemory,
+        memory: SpecPoint,
         pointer: SpecExpression,
     },
 }
@@ -5494,7 +5501,7 @@ pub enum SpecProposition {
         right: SpecResource,
     },
     ResourceViewable {
-        memory: SpecMemory,
+        memory: SpecPoint,
         resource: SpecResource,
     },
     ResourceContains {
@@ -5502,7 +5509,7 @@ pub enum SpecProposition {
         child: SpecResource,
     },
     MemoryLoadable {
-        memory: SpecMemory,
+        memory: SpecPoint,
         base: SpecExpression,
         start: SpecExpression,
         end: SpecExpression,

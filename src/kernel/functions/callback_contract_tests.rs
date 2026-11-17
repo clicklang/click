@@ -1499,7 +1499,7 @@ fn requirement_capability_describes_the_complete_source_tree() {
         name: "len".to_string().into(),
         variable: Variable(900),
         body: Box::new(SpecProposition::MemoryLoadable {
-            memory: SpecMemory::Current,
+            memory: SpecPoint::Current,
             base: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
                 "p",
             )),

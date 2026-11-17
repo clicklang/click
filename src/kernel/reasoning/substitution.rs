@@ -7280,17 +7280,17 @@ fn substitute_pointer_variable_in_block(
 }
 
 fn substitute_pointer_variable_in_spec_memory(
-    memory: &SpecMemory,
+    memory: &SpecPoint,
     from: Variable,
     to: &Pointer,
-) -> SpecMemory {
+) -> SpecPoint {
     match memory {
-        SpecMemory::Current => SpecMemory::Current,
-        SpecMemory::FunctionEntry => SpecMemory::FunctionEntry,
-        SpecMemory::LoopEntry => SpecMemory::LoopEntry,
-        SpecMemory::Fixed(memory) => {
-            SpecMemory::Fixed(substitute_pointer_variable_in_memory(memory, from, to))
-        }
+        SpecPoint::Current => SpecPoint::Current,
+        SpecPoint::FunctionEntry => SpecPoint::FunctionEntry,
+        SpecPoint::LoopEntry => SpecPoint::LoopEntry,
+        SpecPoint::At(point) => SpecPoint::At(point.with_renamed_memory(
+            substitute_pointer_variable_in_memory(point.memory(), from, to),
+        )),
     }
 }
 
