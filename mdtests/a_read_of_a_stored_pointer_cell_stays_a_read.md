@@ -3,7 +3,7 @@
 The pointer counterpart of `a_read_of_a_stored_cell_stays_a_read.md`. After
 `a[i] = q`, the Click expression `a[i]` lowers to the read of that cell at the
 store's version, not to the stored pointer `q`
-(`docs/internals/spellability.md`). The read-over-write authority relates the
+(`docs/internals/raise-lower.md`). The read-over-write authority relates the
 read to the pointer the store wrote, so `a[i] == q` holds by evaluation, and a
 rewrite that moves the read to an equal index keeps it a read: with `i == j`,
 `rewrite(j, i)` turns the postcondition `a[j] == q` into `a[i] == q`, which

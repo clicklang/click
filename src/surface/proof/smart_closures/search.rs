@@ -5515,7 +5515,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // written through one alias of a cell whose fact was stated through
         // another, before a store the alias shows separate, is carried here
         // rather than renamed by lowering (lowering is fact-stable,
-        // `docs/internals/spellability.md`). Other goals keep their more
+        // `docs/internals/raise-lower.md`). Other goals keep their more
         // local rewrite plans.
         if search_input.outcome_fixed_state_view().is_none() {
             let mut calls = BTreeSet::new();

@@ -1,7 +1,7 @@
 //! A check that lowering undoes raising.
 //!
 //! Every kernel term a proof state holds must satisfy `lower(raise(x)) == x`
-//! (`docs/internals/spellability.md#the-raise-lower-principle`). Setting
+//! (`docs/internals/raise-lower.md#the-raise-lower-principle`). Setting
 //! `CLICK_RAISE_LOWER=<path>` raises each fact a checked step adds, and the
 //! goal it leaves focused, with the canonical raiser
 //! (`synthesize_surface_proposition`) at the step's fixed state. It lowers

@@ -3,7 +3,7 @@
 //! Every fact a proof state holds, and every goal it focuses, must have a
 //! Click spelling that lowers back to it: expansion writes the proof out as
 //! steps a person could have written, so whatever those steps cite or prove
-//! must be writable (`docs/internals/spellability.md`). Setting
+//! must be writable (`docs/internals/raise-lower.md`). Setting
 //! `CLICK_SPELLABILITY_CENSUS=<path>` appends one line per fact a checked
 //! step adds, and per goal it leaves focused, saying whether the premise
 //! speller found a spelling. `scripts/spellability-census.sh` runs the

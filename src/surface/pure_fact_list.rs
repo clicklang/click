@@ -259,7 +259,7 @@ impl std::ops::Deref for PureFactList {
         self.flat.get_or_init(|| {
             count_flat_fact_copies(self.len());
             self.iter()
-                .map(|fact| crate::kernel::clone_proposition_iteratively(fact))
+                .map(crate::kernel::clone_proposition_iteratively)
                 .collect()
         })
     }
@@ -462,7 +462,7 @@ impl PureFactList {
     pub(crate) fn to_vec(&self) -> Vec<Proposition> {
         count_flat_fact_copies(self.len());
         self.iter()
-            .map(|fact| crate::kernel::clone_proposition_iteratively(fact))
+            .map(crate::kernel::clone_proposition_iteratively)
             .collect()
     }
 

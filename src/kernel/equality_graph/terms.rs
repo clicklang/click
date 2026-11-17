@@ -2113,7 +2113,7 @@ impl TermClasses {
     /// stores at an equal address under another spelling: a store through
     /// `p` read through `id` once `p == id`. The read keeps its own term,
     /// fact-free; the equality of the two addresses is this context's, so
-    /// the union is too (`docs/internals/spellability.md`). The spellings
+    /// the union is too (`docs/internals/raise-lower.md`). The spellings
     /// are the read's address in each member of its block class, one cell
     /// lookup each, as `EqualityGraph::pointer_spellings` spells them.
     fn equate_read_with_aliased_cell(&mut self, pending: PendingCellRead) {

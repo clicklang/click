@@ -116,7 +116,7 @@ pub(in crate::kernel) struct MachineAtom(crate::kernel::SharedMachineIntegerTerm
 ///
 /// Both offsets sign-extend before scaling, so they differ only where the
 /// `int32` product wraps. `(char *)p + i * 4` keeps that byte offset when it
-/// is formed (`docs/internals/spellability.md#lowering-is-fact-stable`); this
+/// is formed (`docs/internals/raise-lower.md#lowering-is-fact-stable`); this
 /// is the relation that names it as element `i`. The terms are imported as
 /// shared terms, so naming them attaches no spelling to an operand another
 /// check holds in shared form. A constant-size match on the condition;

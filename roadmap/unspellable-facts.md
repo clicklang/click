@@ -21,7 +21,7 @@ identity: `lower(raise(x)) == x`. The reverse direction preserves a canonical
 spelling, not every detail of the original source text.
 
 The broader requirement that every proof-state fact and goal has an exact
-spelling remains in [Spellability](../docs/internals/spellability.md). Closing
+spelling remains in [Raise and lower](../docs/internals/raise-lower.md). Closing
 this migration does not declare that broader project complete.
 
 Preserve these rules throughout the migration:

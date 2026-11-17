@@ -3072,7 +3072,7 @@ impl<'a> Proof<'a> {
     /// The fixed state premises are spelled against. Every proof state has
     /// one: an outcome, a proposition judged mid-execution, the execution
     /// frontier itself, or a fixed-state proof
-    /// (`docs/internals/spellability.md`).
+    /// (`docs/internals/raise-lower.md`).
     pub(super) fn premise_fixed_state_view(&self) -> Option<FixedStateOperationView<'_>> {
         self.outcome_fixed_state_view()
             .or_else(|| self.execution_proposition_fixed_state_view())

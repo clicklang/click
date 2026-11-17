@@ -4,7 +4,7 @@
 #
 #   scripts/spellability-census.sh [MDTEST_FILTER] [OUTPUT]
 #
-# See docs/internals/spellability.md. The census observes only; the run's
+# See docs/internals/raise-lower.md. The census observes only; the run's
 # own test outcome is reported but does not decide the summary.
 set -euo pipefail
 
