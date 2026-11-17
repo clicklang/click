@@ -1,7 +1,9 @@
-# A wide viewable range does not carry an element outside it
+# A wide viewable range does not cover an element outside it
 
-The guard `k < n + 2u64` admits `k == n + 1`, one past the viewable range
-`bytes[0..n + 1u64]`, so the transport is refused.
+The guard `k < n + 2u64` admits `k == n + 1`, just past the end of
+`bytes[0..n + 1u64]`. The proof stops at the strict upper bound required
+for element containment. A separate initializedness premise would still
+be needed for an element inside the range.
 
 ```c filename=wide_viewable_element_outside.c
 uint64 f(uint8 bytes[], uint64 n) {
@@ -18,22 +20,24 @@ uint64 f(uint8 bytes[], uint64 n) {
     requires n < 18446744073709551615u64;
     requires viewable(bytes[0..n + 1u64]);
     ensures result == 0u64 by {
-        step_until(region(1));
+        step();
         have forall (k: uint64) { k < n + 2u64 implies defined(bytes[k]) } by {
             intro();
             intro();
-            transport(
-                at(function.entry, viewable(bytes[0..n + 1u64])),
-                defined(bytes[k])
-            ) using {
-                k < n + 2u64;
-                at(function.entry, viewable(bytes[0..n + 1u64]));
-            };
+            have 0u64 <= k by { normalize(); }
+            have to_integer(k) < to_integer(n + 1u64) by { known(); }
+            have contains(memory(bytes[0u64..n + 1u64]), memory(bytes[k])) by {
+                apply(click::separation::contains_element(bytes, 0u64, n + 1u64, k)) using {
+                    0u64 <= k;
+                    to_integer(k) < to_integer(n + 1u64);
+                };
+            }
+            known();
         }
     }
 }
 ```
 
 ```expect
-fail: so the target must follow from the source and the listed premises alone
+fail: `known` requires the current goal as an available semantic fact
 ```

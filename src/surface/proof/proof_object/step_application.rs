@@ -486,7 +486,7 @@ impl<'a> Proof<'a> {
         let call = match step {
             ProofStep::StepCall(transport) => transport.to_string(),
             ProofStep::StepContract(application) => format!("step({})", application.name),
-            ProofStep::Step => {
+            ProofStep::Step | ProofStep::StepBind(_) => {
                 let execution = self.execution()?;
                 let (_, _, statement, _) = next_top_level_statement_from_frontier_position(
                     execution.view(context),

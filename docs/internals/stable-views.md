@@ -408,7 +408,7 @@ between compiler-checked borrow legality and Click's functional claims.
 
 | Rule | Tests |
 | --- | --- |
-| Lend, read, close, recover, write; same-value store refused | `checked_two_reader_lifecycle_recovers_exact_escrow_once`, `owner_authorized_write_into_a_lent_range_is_refused`, `owner_authorized_same_value_store_into_a_lent_range_is_refused`, `owner_authorized_aggregate_copy_into_a_lent_range_is_refused` |
+| Lend, read, close, recover, write; same-value store refused | `checked_two_reader_lifecycle_recovers_exact_escrow_once`, `owner_authorized_write_into_a_lent_range_is_refused`, `owner_authorized_same_value_store_into_a_lent_range_is_refused`, `owner_authorized_aggregate_copy_into_a_lent_range_requires_separation` |
 | Shares and scopes | `splitting_and_joining_require_exact_linear_siblings`, `shared_reader_recovery_rejects_wrong_sibling_reuse_and_stale_branch`, `nested_reborrow_must_rejoin_each_parent_before_scope_end`, `an_old_descriptor_is_refused_after_a_fresh_scope_over_the_same_resource`, `checked_call_evidence_rejects_stale_or_swapped_recovery` |
 | Aliased views and nested readers | `candidate_joint_planner_reuses_one_escrow_for_two_aliases`, `candidate_rejects_new_output_view`, `mdtests/stable_view_nested_reader.md` |
 | Partial borrows and widths | `mdtests/stable_view_partial_borrow.md`, `bytewise_overlap_is_decided_across_mismatched_element_widths`, `memory_entailment_relates_two_spellings_of_one_byte_footprint` |
