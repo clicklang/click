@@ -4159,45 +4159,26 @@ pub(super) fn finish_ordered_proof<'a>(
                             PostExecutionTactic::CloseOpen {
                                 resource,
                                 preserve_exposed_body,
-                                written_close_proof,
                             } => {
                                 let evolving = outcome_proof.take().ok_or_else(|| ClickError::new(
                                     format!("`{proof_label}` path {path_index}: resource scope has no outcome Proof")
                                 ))?;
-                                let (closed, close_proof) =
-                                    evolving.driver().close_scope_with_body_fact_proof(
-                                        resource,
-                                        written_close_proof.as_deref(),
-                                        &|proof| {
-                                            proof.close_outcome_resource_scope(
-                                                resource,
-                                                *preserve_exposed_body,
-                                                resource_transition_applied,
-                                            )
-                                        },
-                                    )?;
+                                let (closed, tail) = evolving
+                                    .driver()
+                                    .close_scope_with_body_fact_proof(resource, &|proof| {
+                                        proof.close_outcome_resource_scope(
+                                            resource,
+                                            *preserve_exposed_body,
+                                            resource_transition_applied,
+                                        )
+                                    })?;
                                 outcome = closed.focused_outcome_state()?;
                                 outcome_proof = Some(closed);
-                                // The scope was recorded when its body ended;
-                                // its close's proof joins it as its `by`.
-                                // Several facts, proved by `have`s, extend
-                                // its block instead.
-                                let deferred = match close_proof {
-                                    None => None,
-                                    Some(crate::surface::proof::ScopeCloseProof::By(
-                                        close_proof,
-                                    )) => Some(ProofOpen::deferred_close_proof(
+                                if let Some(tail) = tail {
+                                    let deferred = ProofOpen::deferred_block_tail(
                                         resource.clone(),
-                                        close_proof.to_proof_tactics(),
-                                    )),
-                                    Some(crate::surface::proof::ScopeCloseProof::BlockTail(
-                                        haves,
-                                    )) => Some(ProofOpen::deferred_block_tail(
-                                        resource.clone(),
-                                        haves.to_proof_tactics(),
-                                    )),
-                                };
-                                if let Some(deferred) = deferred {
+                                        tail.to_proof_tactics(),
+                                    );
                                     record_post_execution_surface_tactic(
                                         &mut path_surface_post_tactics,
                                         &mut path_deferred_capture_tactics,

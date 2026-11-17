@@ -7664,3 +7664,35 @@ fn old_read_shortcut_identifies_points_instead_of_equal_snapshots() {
     let unnamed = ExecutionState::new();
     assert!(synthesis_states_share_program_point(&unnamed, &unnamed));
 }
+
+#[test]
+fn a_non_null_pointer_equality_spells_each_address_by_its_parameter() {
+    use crate::kernel::PointerValue;
+    let _session = crate::kernel::VerificationSession::enter();
+    let node = PointerValue::new(
+        Address::symbolic(Variable(999977)),
+        ProgramType::Int32Pointer,
+    );
+    let parameters = [crate::languages::interface::ImportedParameter::new(
+        InterfaceType::Int32Pointer,
+        "node".into(),
+        None,
+    )];
+    let arguments = [ProgramExpression::Value(ProgramValue::Pointer(
+        node.clone(),
+    ))];
+    let binding = ParameterBinding::new(&parameters, &arguments);
+    let state = ExecutionState::new();
+    let equality = Proposition::ConditionIs(
+        ConditionTerm::PointerEqual(
+            Box::new(node.pointer().clone()),
+            Box::new(node.pointer().clone()),
+        ),
+        true,
+    );
+    let surface = synthesize_surface_proposition(&equality, binding, &state).unwrap();
+    assert_eq!(
+        crate::surface::printing::source_click_proposition(&surface),
+        "address(node) == address(node)"
+    );
+}

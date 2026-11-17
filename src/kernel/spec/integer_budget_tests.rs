@@ -252,10 +252,11 @@ fn bitvector_substitution_reaches_machine_integer_proposition() {
 #[test]
 fn integer_fold_loadable_obligation_keeps_carriers_separate() {
     let shared_id = Variable(71_100);
-    let index = IntegerRangeFoldIndex::Int32 {
+    let index: IntegerFoldIndexResult = IntegerRangeFoldIndex::Int32 {
         start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
         end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(4)),
-    };
+    }
+    .into();
     let integer_address = MachineTerm::IntegerToMachine {
         value: IntegerTerm::var(shared_id).into(),
         destination: MachineIntegerType::Int32,
@@ -345,10 +346,11 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
         bytes: MachineTerm::constant(4),
         wide: false,
     };
-    let index = IntegerRangeFoldIndex::Int32 {
+    let index: IntegerFoldIndexResult = IntegerRangeFoldIndex::Int32 {
         start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
         end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(4)),
-    };
+    }
+    .into();
     let wrapped = integer_range_fold_body_obligation(requirement, &index, accumulator, item);
     assert!(matches!(
         wrapped,
@@ -419,10 +421,11 @@ fn integer_fold_loadable_obligation_keeps_accumulator_for_two_hop_direct_offset(
         bytes: MachineTerm::constant(4),
         wide: false,
     };
-    let index = IntegerRangeFoldIndex::Int32 {
+    let index: IntegerFoldIndexResult = IntegerRangeFoldIndex::Int32 {
         start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
         end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(4)),
-    };
+    }
+    .into();
     let wrapped = integer_range_fold_body_obligation(requirement, &index, accumulator, item);
     assert!(matches!(
         wrapped,

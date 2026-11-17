@@ -135,7 +135,7 @@ pub enum ProofStep {
         resource: ResourceClause,
         proof: Box<ProofCertificate>,
         /// The closing fold's proof of its one open body fact.
-        close_proof: Option<Box<ProofCertificate>>,
+        deferred_tail: bool,
     },
     If {
         condition: ClickProposition,
@@ -408,19 +408,7 @@ pub(crate) fn proof_step_contains_arithmetic_using(step: &ProofStep) -> bool {
                 }
                 ProofStep::CloseInvariantsBy(proof)
                 | ProofStep::Have { proof, .. }
-                | ProofStep::Open {
-                    proof,
-                    close_proof: None,
-                    ..
-                } => pending.extend(proof.steps.iter()),
-                ProofStep::Open {
-                    proof,
-                    close_proof: Some(close_proof),
-                    ..
-                } => {
-                    pending.extend(proof.steps.iter());
-                    pending.extend(close_proof.steps.iter());
-                }
+                | ProofStep::Open { proof, .. } => pending.extend(proof.steps.iter()),
                 ProofStep::StepProved { step, proof } => {
                     pending.push(step);
                     match proof {
@@ -576,11 +564,7 @@ impl ProofStep {
                         .map(Self::from_validated_tactic)
                         .collect(),
                 )),
-                close_proof: proof_open.close_proof.as_ref().map(|body| {
-                    Box::new(ProofCertificate::from_validated_steps(
-                        body.iter().map(Self::from_validated_tactic).collect(),
-                    ))
-                }),
+                deferred_tail: proof_open.deferred_tail,
             },
             ProofTactic::If(proof_if) => Self::If {
                 condition: proof_if.condition.clone(),
@@ -918,11 +902,11 @@ impl ProofStep {
             Self::Open {
                 resource,
                 proof,
-                close_proof,
+                deferred_tail,
             } => ProofTactic::Open(ProofOpen {
                 resource: resource.clone(),
                 tactics: proof.to_proof_tactics(),
-                close_proof: close_proof.as_ref().map(|body| body.to_proof_tactics()),
+                deferred_tail: *deferred_tail,
             }),
             Self::If {
                 condition,
@@ -1277,17 +1261,9 @@ pub(super) fn validate_certificate_tactics(
                         unreachable!("tactic class and variant must agree")
                     };
                     path.push(CertificatePathSegment::OpenBody);
-                    validate_certificate_tactics(&proof_open.tactics, path)?;
+                    let result = validate_certificate_tactics(&proof_open.tactics, path);
                     path.pop();
-                    match &proof_open.close_proof {
-                        Some(close_proof) => {
-                            path.push(CertificatePathSegment::StepBody);
-                            let result = validate_certificate_tactics(close_proof, path);
-                            path.pop();
-                            result
-                        }
-                        None => Ok(()),
-                    }
+                    result
                 }
                 TacticClass::Control(ControlTactic::If) => {
                     let ProofTactic::If(proof_if) = tactic else {
