@@ -1786,8 +1786,12 @@ pub(super) fn declared_pointer_locals(
                 pending.push(else_branch);
             }
             ProgramStatement::Loop {
-                test, update, body, ..
+                test: loop_test,
+                update,
+                body,
+                ..
             } => {
+                let (_, _, test) = loop_test.execution_parts();
                 pending.push(body);
                 if let Some(test) = test {
                     pending.push(&test.statement);

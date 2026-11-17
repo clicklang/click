@@ -931,7 +931,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     body: &ProgramStatement,
     update: Option<&Arc<ProgramStatement>>,
     test: Option<&crate::kernel::LoopTestRegion>,
-    do_while: bool,
+    direct_post_test: bool,
     environment: &ExecutionProofEnvironment<'_>,
 ) -> Result<LoopPreservationProofResult, ClickError> {
     // A `cases` that rejoins its arms is noted for the rest of this proof's
@@ -1089,7 +1089,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         preservation,
         loop_body_statement_index,
     )?);
-    if !do_while
+    if !direct_post_test
         && let Ok(lowered) = lower_fixed_state_proposition(
             &loop_condition,
             pure_facts,
@@ -1419,7 +1419,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                     &invariant_surfaces,
                     preservation.binders(),
                     environment.function.composite_resource_definitions(),
-                    do_while,
+                    direct_post_test,
                 )
                 .and_then(|prepared| match prepared {
                     Some(proof) => {
@@ -1615,7 +1615,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             // it only when the back edge fails to close exported no exit at
             // all for a body that does close it, and every claim after the
             // loop was then vacuous.
-            if do_while || back_edge_fails {
+            if direct_post_test || back_edge_fails {
                 // The guard-false exit exports the loop's named instances at
                 // their final arguments, just as the checked kernel back edge
                 // does. Keeping a body-local fold name here loses the binder's

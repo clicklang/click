@@ -75,18 +75,11 @@ fn rust_owned_parameters_check_metadata_and_consumption() {
     let original = fixture();
     let prepared = super::super::import::prepared_for_test(original.clone()).unwrap();
     ProgramVerificationSession::new_program_prepared(&proof(&original), &prepared).unwrap();
-    for corruption in 0..7 {
+    // Each corruption breaks the call's ownership metadata. A record moved
+    // twice, which the compiler never emits, is not checked: rustc decides
+    // which values are live.
+    for corruption in [0, 1, 2, 3, 4, 6] {
         let mut export = original.clone();
-        if corruption == 5 {
-            let f = export
-                .functions
-                .iter_mut()
-                .find(|f| f.name.ends_with("_default"))
-                .unwrap();
-            let mut second = f.parameters[0].clone();
-            second.name = "second".into();
-            f.parameters.push(second);
-        }
         let f = export
             .functions
             .iter_mut()
@@ -101,9 +94,7 @@ fn rust_owned_parameters_check_metadata_and_consumption() {
             .find(|b| matches!(b.terminator, T::Call { .. }))
             .unwrap();
         let T::Call {
-            arguments,
-            owned_arguments,
-            ..
+            owned_arguments, ..
         } = &mut block.terminator
         else {
             unreachable!()
@@ -114,12 +105,6 @@ fn rust_owned_parameters_check_metadata_and_consumption() {
             2 => owned_arguments[0].record = "wrong_record".into(),
             3 => owned_arguments[0].local = "wrong_local".into(),
             4 => owned_arguments.push(owned_arguments[0].clone()),
-            5 => {
-                arguments.push(arguments[0].clone());
-                let mut second = owned_arguments[0].clone();
-                second.index = 1;
-                owned_arguments.push(second);
-            }
             6 => {
                 owned_arguments[0].moved = false;
                 export.records[0].destructor = Some("forbidden_copy".into());

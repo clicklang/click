@@ -2794,7 +2794,9 @@ impl<'a> Proof<'a> {
             context.claim_label,
             context.tactic_index,
         )?;
-        let mut transition = self.apply_execution_resource_unfold(resource, resource)?;
+        let mut transition = super::super::resources::with_unfold_witness_names(names, || {
+            self.apply_execution_resource_unfold(resource, resource)
+        })?;
         for (slot, name) in names {
             let Some((_, value)) = witnesses.iter().find(|(witness, _)| witness == slot) else {
                 let known = witnesses
