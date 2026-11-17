@@ -4284,3 +4284,39 @@ fn exact_proposition_propagation_replays_without_search() {
         assert!(without_implicit_solve(|| verify_click_theorems(&invalid)).is_err());
     }
 }
+
+#[test]
+fn aggregate_copy_loan_separation_expands_and_rechecks() {
+    let c = r#"
+union Payload { int32 value; };
+struct Packet { int32 tag; union Payload payload; };
+void copy(struct Packet *dst, struct Packet *src, int32 *q) {
+    *dst = *src;
+}
+"#;
+    let proof = r#"
+verifying "copy_loan.c";
+void copy(struct Packet* dst, struct Packet* src, int32* q) {
+    owns dst->tag;
+    owns dst->payload.value;
+    owns src->tag;
+    owns src->payload.value;
+    views *q;
+    requires separate(memory((dst as (uint8*))[0..8]), memory(*q));
+} by { step() by { known(); } }
+"#;
+    let sources = [("copy_loan.c", c)];
+    verify_c_sources(proof, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_c_claim_source_by_label(proof, &sources, "copy.contract").unwrap();
+    without_implicit_solve_for_claim("copy.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+
+    // The loan can alias the second member when the separation is absent.
+    let missing = proof.replace(
+        "requires separate(memory((dst as (uint8*))[0..8]), memory(*q));",
+        "",
+    );
+    assert!(verify_c_sources(&missing, &sources).is_err());
+}

@@ -8171,7 +8171,7 @@ int32 reader(int32 p[]) {
     /// write-authority check that precedes the ledger names the missing
     /// owner exactly. The ledger-level aggregate witness, an owner-authorized
     /// copy over a lent field, is
-    /// `owner_authorized_aggregate_copy_into_a_lent_range_is_refused`.
+    /// `owner_authorized_aggregate_copy_into_a_lent_range_requires_separation`.
     #[test]
     fn root_view_refuses_an_aggregate_copy_into_it() {
         let click = r#"
