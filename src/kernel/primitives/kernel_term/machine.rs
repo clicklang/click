@@ -1033,7 +1033,7 @@ mod tests {
     #[test]
     fn machine_import_keeps_complete_pointer_integer_metadata() {
         let value = ProgramValue::UInt64(MachineTerm::Variable(Variable(991101)))
-            .complete_word(Pointer::symbolic(Variable(991102)));
+            .complete_word(Address::symbolic(Variable(991102)));
         let source = PureFunctionArgument::Value(value);
         let term = KernelTermImport::default().argument(&source);
         assert!(matches!(term.node(), KernelTermNode::Legacy(_)));

@@ -13,10 +13,10 @@ range itself, so `apply(ih(hi - 1))` names it as `viewable(v[lo..hi - 1])` —
 the fact form, which is how a `views` premise is named in a `using` list —
 instead of rebuilding `hi - 1 >= 0 and viewable(v[lo..hi - 1])` with `known()`.
 
-Everything else is unchanged, including why the extent facts are there. The
+Everything else is unchanged, including why the span facts are there. The
 theorem carries `hi <= 1073741823`, which with `0 <= lo` bounds the range's
 element count by the largest count a four-byte range can have and still be a
-valid 32-bit byte extent. The induction hypothesis owes that bound at the
+valid 32-bit byte span. The induction hypothesis owes that bound at the
 smaller endpoint like every other precondition, and the narrowing step needs the
 count itself pinned to `0..=1073741823`, which the two `have`s state.
 

@@ -12,12 +12,9 @@ use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 /// symbolic: the shape a pure theorem's parameters reach a lowering in.
 fn indexed_pointer_site() -> (BTreeMap<String, ProgramValue>, ExecutionState) {
     let pointer = ProgramValue::typed_pointer(
-        Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scaled_int32_node(
-                MachineTerm::Variable(Variable(100_000)),
-                4,
-            ),
+        Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(100_000)), 4),
         },
         ProgramType::Int32Pointer,
     );
@@ -32,7 +29,7 @@ fn indexed_pointer_site() -> (BTreeMap<String, ProgramValue>, ExecutionState) {
 }
 
 /// The pointer `p` was passed, as the kernel holds it.
-fn pointer_base(values: &BTreeMap<String, ProgramValue>) -> Pointer {
+fn pointer_base(values: &BTreeMap<String, ProgramValue>) -> Address {
     let ProgramValue::Pointer(pointer) = &values["p"] else {
         unreachable!("the probe binds `p` to a pointer");
     };
@@ -40,15 +37,15 @@ fn pointer_base(values: &BTreeMap<String, ProgramValue>) -> Pointer {
 }
 
 /// The cell `(p + index) as (int32 *)[0]`, as the kernel indexes it.
-fn indexed_cell(values: &BTreeMap<String, ProgramValue>) -> Pointer {
-    Pointer {
-        block: pointer_base(values).block,
-        offset: PointerOffsetTerm::Add(
-            Box::new(PointerOffsetTerm::scaled_int32_node(
+fn indexed_cell(values: &BTreeMap<String, ProgramValue>) -> Address {
+    Address {
+        base: pointer_base(values).base,
+        offset: AddressOffset::Add(
+            Box::new(AddressOffset::scaled_int32_node(
                 MachineTerm::Variable(Variable(100_000)),
                 4,
             )),
-            Box::new(PointerOffsetTerm::scaled_int32_node(
+            Box::new(AddressOffset::scaled_int32_node(
                 MachineTerm::Variable(Variable(1)),
                 4,
             )),

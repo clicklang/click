@@ -353,7 +353,7 @@ pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
             | SpecExpression::Subobject { .. }
             | SpecExpression::PointerOffset { .. }
             | SpecExpression::MemoryLoad {
-                memory: SpecMemory::Current | SpecMemory::FunctionEntry,
+                memory: SpecPoint::Current | SpecPoint::FunctionEntry,
                 ..
             }
             | SpecExpression::AlgebraicMatch { .. } => Visit::Descend,
@@ -617,7 +617,7 @@ pub(in crate::kernel) fn program_expression_is_state_independent(
 
 /// Whether a specification subtree reads a by-value aggregate parameter
 /// from the current callee state. Entry-state reads (`old(...)`) use
-/// `SpecMemory::FunctionEntry` and are intentionally ignored: they describe
+/// `SpecPoint::FunctionEntry` and are intentionally ignored: they describe
 /// the caller's argument image, which is stable across the call.
 pub(super) fn spec_reads_current_parameter(
     node: SpecNode<'_>,
@@ -634,7 +634,7 @@ pub(super) fn spec_reads_current_parameter(
         | SpecNode::Proposition(SpecProposition::ResourceViewable { memory, .. })
         | SpecNode::PredicateArgument(SpecPredicateArgument::ArrayRef { memory, .. })
         | SpecNode::Argument(SpecPureFunctionArgument::ArrayRef { memory, .. })
-            if matches!(memory, SpecMemory::FunctionEntry | SpecMemory::Fixed(_)) =>
+            if matches!(memory, SpecPoint::FunctionEntry | SpecPoint::At(_)) =>
         {
             Visit::Skip
         }
@@ -1045,7 +1045,7 @@ pub(super) fn statement_writes_aggregate_parameter(
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             statement_writes_aggregate_parameter(body, parameter_name, writes, unknown_write);
             if let Some(test) = test {
                 statement_writes_aggregate_parameter(
@@ -1107,7 +1107,7 @@ pub(super) fn spec_proposition_current_parameter_accesses(
                     ..
                 }
                 | SpecExpression::MemoryLoad {
-                    memory: SpecMemory::Current,
+                    memory: SpecPoint::Current,
                     pointer,
                     value_type,
                 },
@@ -1215,7 +1215,7 @@ pub(super) fn aggregate_parameter_copy_changed(
         .differing_cell_pointers(&exit_state.memory)
         .into_iter()
         .any(|pointer| {
-            pointer.block == slot.block
+            pointer.base == slot.base
                 && pointer
                     .offset
                     .as_const()

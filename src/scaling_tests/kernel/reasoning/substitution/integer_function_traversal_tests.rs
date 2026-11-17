@@ -46,20 +46,20 @@ fn shared_integer_application_substitution_scales_with_dag_size() {
 fn public_integer_substitution_keeps_array_ref_states_opaque() {
     let source = Variable(840);
     let pointer = ProgramValue::Pointer(PointerValue::new(
-        Pointer {
-            block: PointerBlock::Symbolic(Variable(841)),
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: AddressBase::Symbolic(Variable(841)),
+            offset: AddressOffset::Constant(0),
         },
         ProgramType::VoidPointer,
     ));
     let make_memory = |count: u64| {
-        let mut memory = Memory::new().with_block("array", 8);
+        let mut memory = SymbolicMemory::new().with_block("array", 8);
         for index in 0..count {
-            memory = memory.with_block(PointerBlock::Heap(index + 1), 8);
+            memory = memory.with_block(AddressBase::Heap(index + 1), 8);
         }
         memory
     };
-    let make = |memory: Memory| {
+    let make = |memory: SymbolicMemory| {
         Proposition::Equal(
             Term::Integer(IntegerTerm::PureFunctionApplication(
                 SharedPureApplication::intern(

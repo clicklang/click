@@ -101,7 +101,7 @@ requires aligned(&holder->mu, 8);
 
 `owns holder->mu` now supports an opaque union field as byte storage; this is
 an extension of an existing resource form, not a new resource kind. Its
-extent comes from the C layout, including the field's storage padding, so the
+size comes from the C layout, including the field's storage padding, so the
 contract does not hard-code the 40-byte size. It does not provide typed union
 copying. `views` never supplies initialization ownership. A local automatic
 object has implicit storage ownership; a sufficiently large allocation supplies

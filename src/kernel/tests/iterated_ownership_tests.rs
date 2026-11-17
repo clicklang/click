@@ -21,14 +21,14 @@ const DATA: u64 = 7_000_001;
 const OCCUPIED: u64 = 7_000_002;
 const UNRELATED: u64 = 7_000_003;
 
-fn heap_base(identity: u64) -> Pointer {
-    Pointer {
-        block: PointerBlock::Heap(identity),
-        offset: PointerOffsetTerm::Constant(0),
+fn heap_base(identity: u64) -> Address {
+    Address {
+        base: AddressBase::Heap(identity),
+        offset: AddressOffset::Constant(0),
     }
 }
 
-fn cell(base: u64, index: u32) -> Pointer {
+fn cell(base: u64, index: u32) -> Address {
     heap_base(base).offset_by_elements(MachineTerm::constant(index), 4)
 }
 
@@ -66,7 +66,7 @@ fn cells_fact(capacity: u32) -> IteratedMemory {
 /// first `free` guard cells known to be zero, the next two known to be one,
 /// and the rest unknown.
 fn cells_state(capacity: u32, free: u32) -> ExecutionState {
-    let mut memory = Memory::new();
+    let mut memory = SymbolicMemory::new();
     for index in 0..capacity.min(free + 2) {
         memory = memory.store(cell(OCCUPIED, index), int32(u32::from(index >= free)));
     }
@@ -266,17 +266,17 @@ mod scaling_tests {
 
 #[test]
 fn iterated_element_selection_checks_pointer_reads_across_states() {
-    let source = Pointer {
-        block: "iterated-pointer-slot".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let source = Address {
+        base: "iterated-pointer-slot".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let before = Memory::new()
+    let before = SymbolicMemory::new()
         .with_block("iterated-pointer-slot", 8)
         .store(cell(OCCUPIED, 0), int32(0));
     let after = before.clone().store(cell(UNRELATED, 0), int32(1));
-    let read = |memory: &Memory, address: &Pointer| Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scaled_int32_node(
+    let read = |memory: &SymbolicMemory, address: &Address| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scaled_int32_node(
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
                 Box::new(address.clone()),

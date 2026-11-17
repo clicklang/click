@@ -71,11 +71,11 @@ int32 check_update(int32 (*callback)(int32*, int32), int32* cell, int32 value) {
     fold(Cell(cell));
     step(Buffered);
     unfold(Cell(cell));
-    if c(status) != 0 {
+    if program::status != 0 {
         have cell[0] == value by solve();
         step_until(function.exit); fold(Cell(cell));
     } else {
-        have cell[0] == c(before) by solve();
+        have cell[0] == program::before by solve();
         step_until(function.exit); fold(Cell(cell));
     }
 }

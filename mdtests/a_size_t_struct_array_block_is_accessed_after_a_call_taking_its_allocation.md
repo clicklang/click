@@ -1,7 +1,7 @@
 # A `size_t` struct-array block is accessed after a call taking its allocation
 
 The callee borrows the block's `allocation(p, n * 8u64)` token and gives it
-back; its entry assumes the token's extent. After the call the caller writes
+back; its entry assumes the token's size. After the call the caller writes
 and reads a field of the last element and frees the block.
 
 ```c filename=a_size_t_struct_array_block_is_accessed_after_a_call_taking_its_allocation.c

@@ -3,14 +3,14 @@ use crate::kernel::functions::{
     representation_copy_cell_moves, transfer_representation_copy_cells,
 };
 
-fn heap_pointer(block: &str) -> Pointer {
-    Pointer {
-        block: PointerBlock::from(block),
-        offset: PointerOffsetTerm::Constant(0),
+fn heap_pointer(block: &str) -> Address {
+    Address {
+        base: AddressBase::from(block),
+        offset: AddressOffset::Constant(0),
     }
 }
 
-fn copy_arguments(destination: &Pointer, source: &Pointer, bytes: u32) -> Vec<ProgramValue> {
+fn copy_arguments(destination: &Address, source: &Address, bytes: u32) -> Vec<ProgramValue> {
     vec![
         ProgramValue::typed_pointer(destination.clone(), ProgramType::UInt8Pointer),
         ProgramValue::typed_pointer(source.clone(), ProgramType::UInt8Pointer),
@@ -30,7 +30,7 @@ fn effect() -> RepresentationCopyEffect {
 fn representation_copy_transfers_a_fully_covered_cell() {
     let source = heap_pointer("copy-source");
     let destination = heap_pointer("copy-destination");
-    let entry = Memory::new().store(
+    let entry = SymbolicMemory::new().store(
         source.clone(),
         ProgramValue::UInt32(MachineTerm::constant(7)),
     );
@@ -38,7 +38,7 @@ fn representation_copy_transfers_a_fully_covered_cell() {
     let result = transfer_representation_copy_cells(
         &entry,
         &copy_arguments(&destination, &source, 4),
-        Memory::new(),
+        SymbolicMemory::new(),
         effect(),
     );
 
@@ -52,7 +52,7 @@ fn representation_copy_transfers_a_fully_covered_cell() {
 fn representation_copy_leaves_a_split_cell_unestablished() {
     let source = heap_pointer("split-source");
     let destination = heap_pointer("split-destination");
-    let entry = Memory::new().store(
+    let entry = SymbolicMemory::new().store(
         source.clone(),
         ProgramValue::UInt32(MachineTerm::constant(7)),
     );
@@ -60,7 +60,7 @@ fn representation_copy_leaves_a_split_cell_unestablished() {
     let result = transfer_representation_copy_cells(
         &entry,
         &copy_arguments(&destination, &source, 2),
-        Memory::new(),
+        SymbolicMemory::new(),
         effect(),
     );
 
@@ -73,19 +73,19 @@ fn representation_copy_leaves_an_untyped_source_unestablished() {
     let destination = heap_pointer("untyped-destination");
 
     let result = transfer_representation_copy_cells(
-        &Memory::new(),
+        &SymbolicMemory::new(),
         &copy_arguments(&destination, &source, 4),
-        Memory::new(),
+        SymbolicMemory::new(),
         effect(),
     );
 
     assert_eq!(result.known_value(&destination), None);
 }
 
-fn cell(block: &str, index: u32) -> Pointer {
-    Pointer {
-        block: PointerBlock::from(block),
-        offset: PointerOffsetTerm::Constant(4 * i64::from(index)),
+fn cell(block: &str, index: u32) -> Address {
+    Address {
+        base: AddressBase::from(block),
+        offset: AddressOffset::Constant(4 * i64::from(index)),
     }
 }
 
@@ -93,7 +93,7 @@ fn cell_value(index: u32) -> ProgramValue {
     ProgramValue::UInt32(MachineTerm::constant(index))
 }
 
-fn source_with_cells(memory: Memory, block: &str, cells: u32) -> Memory {
+fn source_with_cells(memory: SymbolicMemory, block: &str, cells: u32) -> SymbolicMemory {
     (0..cells).fold(memory, |memory, index| {
         memory.store(cell(block, index), cell_value(index))
     })
@@ -103,12 +103,12 @@ fn source_with_cells(memory: Memory, block: &str, cells: u32) -> Memory {
 /// checks that the complete transfer plants every copied cell.
 ///
 /// The lookup is the transfer's own work. Planting each result is an ordinary
-/// `Memory::store`, whose cost belongs to the store primitive and has its
+/// `SymbolicMemory::store`, whose cost belongs to the store primitive and has its
 /// own regressions in `memory_scaling_tests`; the whole transfer's work is
 /// reported in the failure messages.
 fn copy_lookup_work(
-    entry: &Memory,
-    memory: &Memory,
+    entry: &SymbolicMemory,
+    memory: &SymbolicMemory,
     source: &str,
     destination: &str,
     cells: u32,

@@ -96,8 +96,8 @@ fn common_fold_scope_summaries_share_growing_variable_sets_between_initial_and_b
 }
 
 use crate::kernel::{
-    KernelPointerOffset, LoadKind, MachineBinaryOp, MachineIntegerType, PointerBlock, ProgramType,
-    SharedPointerAddress, SharedPointerBlock, VerificationSession,
+    AddressBase, KernelAddressOffset, LoadKind, MachineBinaryOp, MachineIntegerType, ProgramType,
+    SharedAddress, SharedAddressBase, VerificationSession,
 };
 
 #[test]
@@ -112,21 +112,21 @@ fn shared_read_capture_visits_address_dags_and_nested_read_prefixes_once() {
                 )
             })
             .collect::<Vec<_>>();
-        let memory = crate::kernel::intern_memory(crate::kernel::Memory::new());
+        let memory = crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new());
         let blocks = [1016100, 1016101]
-            .map(|id| SharedPointerBlock::import(&PointerBlock::Symbolic(Variable(id))));
+            .map(|id| SharedAddressBase::import(&AddressBase::Symbolic(Variable(id))));
         for size in [16, 64, 256] {
             let variable = Variable(1016102);
             let mut root = KernelTerm::variable(KernelType::Program(ProgramType::Int32), variable);
             for _ in 0..size {
-                let offset = KernelPointerOffset::Int32Scaled {
+                let offset = KernelAddressOffset::Int32Scaled {
                     value: root,
                     byte_width: 4,
                 }
                 .into_shared()
                 .unwrap();
                 let children = blocks.each_ref().map(|block| {
-                    let address = SharedPointerAddress::new(block.clone(), offset.clone());
+                    let address = SharedAddress::new(block.clone(), offset.clone());
                     KernelTerm::shared_scalar_read_descriptor(
                         MachineIntegerType::Int32,
                         &memory,

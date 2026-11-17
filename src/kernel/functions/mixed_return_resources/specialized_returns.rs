@@ -237,7 +237,7 @@ pub(super) fn construct(
         .clone()
         .allow_symbolic_contract_loads()
         .prefer_symbolic_external_loads()
-        .assume_entry_clause_extents()
+        .assume_entry_clause_spans()
         .assume_held_resource_domains();
     let mut budget = ExecutionBudget::beside_live_state();
     let active = match evaluate_composite_resource_body_condition(

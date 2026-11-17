@@ -47,7 +47,7 @@ pub(super) fn native_name(value: &ProgramValue) -> Option<SurfaceBinder> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{KernelTermExport, PointerValue, SubobjectExtent, VerificationSession};
+    use crate::kernel::{KernelTermExport, PointerValue, SubobjectBounds, VerificationSession};
 
     fn check_names(values: Vec<(&str, PointerValue)>) {
         let state = ExecutionState::new();
@@ -178,7 +178,7 @@ mod tests {
         };
         let _session = VerificationSession::enter();
         let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(1024950)),
+            Address::symbolic(Variable(1024950)),
             ProgramType::Int32Pointer,
         );
         let state = ExecutionState::new().with_local("p", ProgramValue::Pointer(pointer.clone()));
@@ -225,7 +225,7 @@ mod tests {
     fn pointer_proof_names_preserve_qualifiers_instead_of_address_equality() {
         let _session = VerificationSession::enter();
         let plain = PointerValue::new(
-            Pointer::symbolic(Variable(1015000)),
+            Address::symbolic(Variable(1015000)),
             ProgramType::Int32Pointer,
         );
         let qualified = plain.clone().with_pointee_constant(true);
@@ -237,18 +237,18 @@ mod tests {
     }
 
     #[test]
-    fn pointer_proof_names_keep_historical_extent_reads() {
+    fn pointer_proof_names_keep_historical_bounds_reads() {
         let _session = VerificationSession::enter();
-        let address = crate::kernel::Memory::global_pointer("pointer-name-width");
-        let before = Memory::new().with_block("pointer-name-width", 4);
+        let address = crate::kernel::SymbolicMemory::global_pointer("pointer-name-width");
+        let before = SymbolicMemory::new().with_block("pointer-name-width", 4);
         let after = before.clone().store(
             address.clone(),
             ProgramValue::Int32(MachineTerm::constant(12)),
         );
-        let pointer = Pointer::symbolic(Variable(1015010));
+        let pointer = Address::symbolic(Variable(1015010));
         let make = |memory| {
-            PointerValue::new(pointer.clone(), ProgramType::Int32Pointer).with_extent(Some(
-                SubobjectExtent {
+            PointerValue::new(pointer.clone(), ProgramType::Int32Pointer).with_bounds(Some(
+                SubobjectBounds {
                     start: pointer.clone(),
                     width: MachineTerm::MemoryLoad(
                         crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
@@ -264,8 +264,8 @@ mod tests {
     #[test]
     fn pointer_read_roots_raise_through_exact_complete_names() {
         let _session = VerificationSession::enter();
-        let memory = Memory::new();
-        let address = Pointer::symbolic(Variable(1018010));
+        let memory = SymbolicMemory::new();
+        let address = Address::symbolic(Variable(1018010));
         let seeded = memory.clone().with_seeded_cells(
             address.clone(),
             8,
@@ -290,7 +290,7 @@ mod tests {
     fn pointer_proof_name_scopes_restore_exact_payload_bindings() {
         let _session = VerificationSession::enter();
         let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(1015020)),
+            Address::symbolic(Variable(1015020)),
             ProgramType::Int32Pointer,
         );
         let shared = SharedPointerValue::import(&pointer);

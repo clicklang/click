@@ -1003,7 +1003,7 @@ pub(super) fn unit_qualified_objects(
     let mut objects = BTreeMap::new();
     for (name, global) in &unit.globals {
         if let Some(pointer_type) = global.interface_type().pointer_type() {
-            let pointer = Memory::global_pointer(global.kernel_name());
+            let pointer = SymbolicMemory::global_pointer(global.kernel_name());
             let address = ProgramValue::typed_pointer(pointer, pointer_type.to_kernel_type())
                 .with_pointer_pointee_constant(global.is_constant())
                 .with_pointer_pointee_volatile(global.is_volatile());
@@ -1018,7 +1018,7 @@ pub(super) fn unit_qualified_objects(
                 parser::QualifiedCObject {
                     expression,
                     address: Some(ProgramExpression::Value(ProgramValue::typed_pointer(
-                        Memory::global_pointer(global.kernel_name()),
+                        SymbolicMemory::global_pointer(global.kernel_name()),
                         pointer_type.to_kernel_type(),
                     ))),
                     struct_name: global.struct_name().map(str::to_owned),
@@ -1035,7 +1035,7 @@ pub(super) fn unit_qualified_objects(
                 parser::QualifiedCObject {
                     expression: ProgramExpression::Value(
                         ProgramValue::typed_pointer_with_pointee_constant(
-                            Memory::global_pointer(array.kernel_name()),
+                            SymbolicMemory::global_pointer(array.kernel_name()),
                             pointer_type.to_kernel_type(),
                             array.is_constant(),
                         ),
@@ -1054,7 +1054,7 @@ pub(super) fn unit_qualified_objects(
             parser::QualifiedCObject {
                 expression: ProgramExpression::Value(
                     ProgramValue::typed_pointer_with_pointee_constant(
-                        Memory::global_pointer(aggregate.kernel_name()),
+                        SymbolicMemory::global_pointer(aggregate.kernel_name()),
                         ProgramType::Int32Pointer,
                         aggregate.is_constant(),
                     ),
@@ -1073,7 +1073,7 @@ pub(super) fn unit_qualified_objects(
                 parser::QualifiedCObject {
                     expression: ProgramExpression::Value(
                         ProgramValue::typed_pointer_with_pointee_constant(
-                            Memory::global_pointer(aggregate_array.kernel_name()),
+                            SymbolicMemory::global_pointer(aggregate_array.kernel_name()),
                             ProgramType::Int32Pointer,
                             aggregate_array.is_constant(),
                         ),
@@ -1115,7 +1115,7 @@ pub(super) fn unit_qualified_objects(
         }
         for local in function.static_locals().values() {
             if let Some(pointer_type) = local.interface_type().pointer_type() {
-                let pointer = Memory::static_pointer(function.name(), local.kernel_name());
+                let pointer = SymbolicMemory::static_pointer(function.name(), local.kernel_name());
                 let address = ProgramValue::typed_pointer(pointer, pointer_type.to_kernel_type())
                     .with_pointer_pointee_constant(local.is_constant())
                     .with_pointer_pointee_volatile(local.is_volatile());
@@ -1130,7 +1130,7 @@ pub(super) fn unit_qualified_objects(
                     parser::QualifiedCObject {
                         expression,
                         address: Some(ProgramExpression::Value(ProgramValue::typed_pointer(
-                            Memory::static_pointer(function.name(), local.kernel_name()),
+                            SymbolicMemory::static_pointer(function.name(), local.kernel_name()),
                             pointer_type.to_kernel_type(),
                         ))),
                         struct_name: None,
@@ -1147,7 +1147,10 @@ pub(super) fn unit_qualified_objects(
                     parser::QualifiedCObject {
                         expression: ProgramExpression::Value(
                             ProgramValue::typed_pointer_with_pointee_constant(
-                                Memory::static_pointer(function.name(), array.kernel_name()),
+                                SymbolicMemory::static_pointer(
+                                    function.name(),
+                                    array.kernel_name(),
+                                ),
                                 pointer_type.to_kernel_type(),
                                 array.is_constant(),
                             ),
@@ -1166,7 +1169,10 @@ pub(super) fn unit_qualified_objects(
                 parser::QualifiedCObject {
                     expression: ProgramExpression::Value(
                         ProgramValue::typed_pointer_with_pointee_constant(
-                            Memory::static_pointer(function.name(), aggregate.kernel_name()),
+                            SymbolicMemory::static_pointer(
+                                function.name(),
+                                aggregate.kernel_name(),
+                            ),
                             ProgramType::Int32Pointer,
                             aggregate.is_constant(),
                         ),
@@ -1184,7 +1190,10 @@ pub(super) fn unit_qualified_objects(
                 parser::QualifiedCObject {
                     expression: ProgramExpression::Value(
                         ProgramValue::typed_pointer_with_pointee_constant(
-                            Memory::static_pointer(function.name(), aggregate_array.kernel_name()),
+                            SymbolicMemory::static_pointer(
+                                function.name(),
+                                aggregate_array.kernel_name(),
+                            ),
                             ProgramType::Int32Pointer,
                             aggregate_array.is_constant(),
                         ),

@@ -547,9 +547,9 @@ fn pointer_call_producers_retain_nested_arguments_and_native_metadata() {
     {
         let pointer = PointerValue::new(
             if null {
-                Pointer::null()
+                Address::null()
             } else {
-                Pointer::symbolic(Variable(1025100))
+                Address::symbolic(Variable(1025100))
             },
             ProgramType::Int32Pointer,
         )
@@ -562,7 +562,7 @@ fn pointer_call_producers_retain_nested_arguments_and_native_metadata() {
                     SpecPureFunctionArgument::Value(argument)
                 } else {
                     SpecPureFunctionArgument::ArrayRef {
-                        memory: SpecMemory::Current,
+                        memory: SpecPoint::Current,
                         pointer: argument,
                         element_type: ProgramType::Int32,
                     }

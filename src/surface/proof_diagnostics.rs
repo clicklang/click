@@ -742,7 +742,7 @@ mod tests {
 
     #[test]
     fn rejected_read_prerequisite_uses_the_shared_state_legend() {
-        use crate::kernel::{Memory, Pointer, ProgramType, Variable};
+        use crate::kernel::{Address, ProgramType, SymbolicMemory, Variable};
         struct Rejected(Proposition);
         impl ProofDiagnosticState for Rejected {
             fn failed_requirement(&self) -> Option<(&str, &Proposition)> {
@@ -759,8 +759,8 @@ mod tests {
             }
         }
         let state = Rejected(Proposition::MemoryReadDefined {
-            memory: Memory::new(),
-            pointer: Pointer::symbolic(Variable(987_001)),
+            memory: SymbolicMemory::new(),
+            pointer: Address::symbolic(Variable(987_001)),
             value_type: ProgramType::Int32,
         });
         let mut labels = render::MemoryStateLabels::default();
@@ -781,7 +781,7 @@ mod tests {
     #[test]
     fn rejected_resource_fact_uses_one_printer_and_state_legend() {
         let _typed = render::TypedNotationScope::enter();
-        use crate::kernel::{Memory, Pointer, ProgramType, Variable};
+        use crate::kernel::{Address, ProgramType, SymbolicMemory, Variable};
         struct Rejected(crate::kernel::proof::RejectedResourceRewriteFact);
         impl ProofDiagnosticState for Rejected {
             fn rejected_resource_fact(
@@ -801,11 +801,11 @@ mod tests {
         }
         let read = |memory| Proposition::MemoryReadDefined {
             memory,
-            pointer: Pointer::symbolic(Variable(987_002)),
+            pointer: Address::symbolic(Variable(987_002)),
             value_type: ProgramType::Int32,
         };
-        let rejected = read(Memory::new());
-        let allowed = read(Memory::new().with_block("changed", 4));
+        let rejected = read(SymbolicMemory::new());
+        let allowed = read(SymbolicMemory::new().with_block("changed", 4));
         let state = Rejected(crate::kernel::proof::RejectedResourceRewriteFact {
             rejected: rejected.clone(),
             allowed: vec![allowed.clone(); 13].into(),
@@ -951,7 +951,7 @@ mod tests {
 
     #[test]
     fn reported_trace_uses_the_goals_state_labels() {
-        use crate::kernel::{MachineTerm, Memory, Pointer, PointerBlock, PointerOffsetTerm};
+        use crate::kernel::{Address, AddressBase, AddressOffset, MachineTerm, SymbolicMemory};
 
         struct TracedState(Proposition);
         impl ProofDiagnosticState for TracedState {
@@ -994,15 +994,15 @@ mod tests {
         }
         let at = |memory| Proposition::MemoryLoadable {
             memory,
-            base: Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Constant(0),
+            base: Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Constant(0),
             },
             bytes: MachineTerm::constant(1),
             wide: false,
         };
         crate::surface::with_proof_trace("f", || {
-            let memory = Memory::new().with_block("shared", 1);
+            let memory = SymbolicMemory::new().with_block("shared", 1);
             crate::surface::proof_trace::record(
                 1,
                 crate::surface::proof_trace::TraceStep {
@@ -1145,7 +1145,9 @@ mod tests {
 
     #[test]
     fn unspelled_premises_keep_entry_names_after_the_session_unwinds() {
-        use crate::kernel::{MachineTerm, Memory, ProgramExpression, ProgramValue, Variable};
+        use crate::kernel::{
+            MachineTerm, ProgramExpression, ProgramValue, SymbolicMemory, Variable,
+        };
         use crate::languages::interface::{ImportedParameter, InterfaceType};
 
         let variable = Variable(786_901);
@@ -1159,7 +1161,7 @@ mod tests {
         ))];
         render::enter_ambient_naming(
             crate::surface::ParameterBinding::new(&parameters, &arguments),
-            &Memory::new(),
+            &SymbolicMemory::new(),
         );
         let failure = unspelled_test_failure(&[unspelled_test_fact(variable)]);
         render::clear_ambient_naming();

@@ -118,8 +118,8 @@ impl RelativeIntervals {
 /// the input or enumerates facts to discover its object footprint.
 #[derive(Clone, Debug, Default)]
 pub(in crate::kernel::primitives) struct ObjectSuppliers {
-    nonempty: PersistentMap<Pointer, ResourceEntryIds>,
-    symbolic: PersistentMap<Pointer, ResourceEntryIds>,
+    nonempty: PersistentMap<Address, ResourceEntryIds>,
+    symbolic: PersistentMap<Address, ResourceEntryIds>,
 }
 impl ObjectSuppliers {
     pub(in crate::kernel::primitives) fn update(
@@ -131,7 +131,7 @@ impl ObjectSuppliers {
         let Some(range) = fact.memory_range() else {
             return;
         };
-        let suppliers = if read_extent(fact).is_some() {
+        let suppliers = if read_span(fact).is_some() {
             &mut self.nonempty
         } else if RangeSupports::symbolic(range)
             && fact.owned_quantity_term().and_then(MachineTerm::as_const) != Some(0)
@@ -155,7 +155,7 @@ impl ObjectSuppliers {
     }
     pub(in crate::kernel::primitives) fn supplier(
         &self,
-        object: &Pointer,
+        object: &Address,
     ) -> Option<ResourceEntryId> {
         self.nonempty
             .get(object)
@@ -182,7 +182,7 @@ pub(super) struct RangeSupports {
     owned_starts: Suppliers,
     nonempty_objects: Suppliers,
     symbolic_objects: Suppliers,
-    object_classes: PersistentMap<Pointer, u64>,
+    object_classes: PersistentMap<Address, u64>,
 }
 impl RangeSupports {
     pub(super) fn register(range: &MemoryRange, graph: &EqualityGraph) {
@@ -219,7 +219,7 @@ impl RangeSupports {
             .copied()
         {
             let class = graph.address_class_root(class);
-            if read_extent(fact).is_some() {
+            if read_span(fact).is_some() {
                 self.nonempty_objects.update(entry, insert, class, graph);
             } else if Self::symbolic(range)
                 && fact.owned_quantity_term().and_then(MachineTerm::as_const) != Some(0)
@@ -284,7 +284,7 @@ impl RangeSupports {
     }
     pub(super) fn relative_byte_entries(
         &self,
-        base: &Pointer,
+        base: &Address,
         start: AddressCoordinate,
         end: AddressCoordinate,
         owned: bool,
@@ -473,7 +473,7 @@ impl ResourceContext {
         } else {
             let Some(base) = paired
                 .graph
-                .pointer_in_block(required.base(), &available.base().block)
+                .pointer_in_block(required.base(), &available.base().base)
             else {
                 return Some(false);
             };
@@ -487,14 +487,14 @@ impl ResourceContext {
 mod tests {
     use super::*;
 
-    fn range(base: &Pointer, start: MachineTerm, end: MachineTerm) -> MemoryRange {
+    fn range(base: &Address, start: MachineTerm, end: MachineTerm) -> MemoryRange {
         MemoryRange::new_with_element_width(base.clone(), start, end, 1)
     }
 
     #[test]
     fn symbolic_support_selects_exact_footprints_and_checks_selected_bounds() {
-        let base = Pointer::symbolic(Variable(910_000));
-        let alias = Pointer::symbolic(Variable(910_001));
+        let base = Address::symbolic(Variable(910_000));
+        let alias = Address::symbolic(Variable(910_001));
         let n = MachineTerm::Variable(Variable(910_002));
         let k = MachineTerm::Variable(Variable(910_003));
         let empty = PureFactContext::new();
@@ -563,8 +563,8 @@ mod tests {
 
     #[test]
     fn symbolic_byte_read_consumer_preserves_width_bounds_and_authority() {
-        let base = Pointer::symbolic(Variable(962_000));
-        let alias = Pointer::symbolic(Variable(962_001));
+        let base = Address::symbolic(Variable(962_000));
+        let alias = Address::symbolic(Variable(962_001));
         let n = MachineTerm::Variable(Variable(962_002));
         let k = MachineTerm::Variable(Variable(962_003));
         let empty = PureFactContext::new();
@@ -629,7 +629,7 @@ mod tests {
 
     #[test]
     fn symbolic_supplier_access_modes_remain_separate() {
-        let base = Pointer::symbolic(Variable(930_000));
+        let base = Address::symbolic(Variable(930_000));
         let n = MachineTerm::Variable(Variable(930_001));
         let facts = PureFactContext::new();
         let required = range(&base, 0u32.into(), n);
@@ -657,7 +657,7 @@ mod tests {
             zeros.symbolic_range_read_supported(&required, &facts, Some(zero_id)),
             Some(false)
         );
-        let wrong = Pointer::symbolic(Variable(930_002));
+        let wrong = Address::symbolic(Variable(930_002));
         assert_eq!(
             resources.symbolic_range_read_supported(
                 &range(&wrong, 0u32.into(), 1u32.into()),
@@ -674,13 +674,13 @@ mod tests {
     }
     #[test]
     fn symbolic_footprints_follow_endpoint_equalities_and_state_origins() {
-        let slot = Pointer::symbolic(Variable(940_000));
-        let alias = Pointer::symbolic(Variable(940_001));
+        let slot = Address::symbolic(Variable(940_000));
+        let alias = Address::symbolic(Variable(940_001));
         let n = MachineTerm::Variable(Variable(940_002));
         let m = MachineTerm::Variable(Variable(940_003));
-        let retained_state = crate::kernel::intern_memory(Memory::new());
-        let loaded = Pointer::loaded_value(&retained_state, &slot);
-        let loaded_alias = Pointer::loaded_value(&retained_state, &alias);
+        let retained_state = crate::kernel::intern_memory(SymbolicMemory::new());
+        let loaded = Address::loaded_value(&retained_state, &slot);
+        let loaded_alias = Address::loaded_value(&retained_state, &alias);
         let empty = PureFactContext::new();
         let equal_base = empty.clone().assume_condition(
             ConditionTerm::pointer_equal(slot.clone(), alias.clone()),
@@ -711,9 +711,9 @@ mod tests {
             resources.symbolic_range_read_supported(&required, &empty, None),
             None
         );
-        let declared = crate::kernel::intern_memory(Memory::new().with_block("later", 8));
+        let declared = crate::kernel::intern_memory(SymbolicMemory::new().with_block("later", 8));
         let declared_range = range(
-            &Pointer::loaded_value(&declared, &alias),
+            &Address::loaded_value(&declared, &alias),
             0u32.into(),
             n.clone(),
         );
@@ -727,7 +727,7 @@ mod tests {
                 .clone()
                 .store(slot.offset_by_bytes(4), crate::kernel::uint8(1u32)),
         );
-        let required = range(&Pointer::loaded_value(&later, &alias), 0u32.into(), n);
+        let required = range(&Address::loaded_value(&later, &alias), 0u32.into(), n);
         assert_eq!(
             resources.symbolic_range_read_supported(&required, &facts, None),
             None
@@ -749,8 +749,8 @@ mod wide_range_reader_tests {
     #[test]
     fn wide_symbolic_supplier_alignment_keeps_native_bounds() {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Pointer::symbolic(Variable(985_200));
-        let alias = Pointer::symbolic(Variable(985_201));
+        let base = Address::symbolic(Variable(985_200));
+        let alias = Address::symbolic(Variable(985_201));
         let wide = MemoryRange::new_wide(
             base.clone(),
             MachineTerm::uint64_constant(0),

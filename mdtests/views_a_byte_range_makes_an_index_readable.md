@@ -9,11 +9,11 @@ so a contract that held the range and dropped its redundant
 
 The certification rule that answers "does a held resource cover this
 viewability fact" recovered the range's element width from the *shape of the
-byte extent*: it wanted the product `count * 4`. A range of one-byte elements
+byte span*: it wanted the product `count * 4`. A range of one-byte elements
 has no product left to read. `memory_range_byte_count` folds a factor of one
-away, so `s[0..n]` lowers its extent to the bare count `n`, which is
+away, so `s[0..n]` lowers its span to the bare count `n`, which is
 indistinguishable from a byte count that is no element range at all. The width
-now comes from the held range, which carries it, and the extent is read back at
+now comes from the held range, which carries it, and the span is read back at
 that width — an identity at width one, where a byte count already *is* its own
 element count.
 

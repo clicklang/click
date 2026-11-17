@@ -1,6 +1,94 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: C string viewability and call authority"]
+fn cstr_viewability_without_transport_does_not_supply_call_authority() {
+    let (source, sources) = mdtest_sources("mdtests/cstr_dynamic_invalidated_transport.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    assert!(!source.contains("transport("));
+    with_proof_trace("read_terminator", || {
+        let error = verify_c_sources(&source, &sources).unwrap_err();
+        assert!(
+            error
+                .message()
+                .contains("call to `strlen` needs a held `cstr_at` instance to give `n` its value"),
+            "{}\n{}",
+            error.report(),
+            error.trace_context_report().unwrap_or_default()
+        );
+    });
+
+    // Use the caller's length directly in the control so the whole proof,
+    // including witness construction and the self-assignment, can finish.
+    let stripped_call = sources[0]
+        .1
+        .replace("length = strlen(bytes);", "length = known_len;");
+    assert_ne!(sources[0].1, stripped_call);
+    let control = [(sources[0].0, stripped_call.as_str())];
+    verify_c_sources(&source, &control).unwrap_or_else(|error| panic!("{}", error.report()));
+    let label = "read_terminator.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &control, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &control).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+#[ignore = "nightly: viewability restriction expansion and cold replay"]
+fn viewable_requirement_supports_a_narrower_span_without_transport() {
+    let (source, sources) =
+        mdtest_sources("mdtests/viewable_requirement_supports_a_narrower_span.md");
+    assert!(sources.is_empty());
+    assert!(!source.contains("transport("));
+    verify_c_sources(&source, &[]).unwrap_or_else(|error| panic!("{}", error.report()));
+    let label = "narrow_viewable_requirement.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&source, &[], label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &[]).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+
+    // With these endpoints the source spans 2^32 bytes, which wraps to zero.
+    // Prove that empty view locally so it carries no contract extent guards.
+    let wrapped = source
+        .replace(
+            "requires hi >= 0 and viewable(v[lo..hi]);",
+            "requires lo == 0;\n    requires hi == 1073741824;",
+        )
+        .replace(
+            "        have 0 < hi",
+            concat!(
+                "        have viewable(v[lo..hi]);\n",
+                "        have 0 <= to_integer(hi - lo) by {\n",
+                "            solve() using { lo == 0; hi == 1073741824; };\n",
+                "        }\n",
+                "        have 0 < hi",
+            ),
+        )
+        .replace(
+            "            viewable(v[lo..hi]);",
+            "            viewable(v[lo..hi]);\n            0 <= to_integer(hi - lo);",
+        );
+    let report = verify_c_sources(&wrapped, &[]).unwrap_err().report();
+    assert!(
+        report.contains("needs that range to be a valid 32-bit byte span"),
+        "{report}"
+    );
+    assert!(
+        report.contains("to_integer(hi - lo) <= 1073741823"),
+        "{report}"
+    );
+}
+
+#[test]
 fn named_contract_output_frame_rule_expands_and_replays() {
     let (source, sources) =
         mdtest_sources("mdtests/named_contract_outputs_retain_the_callers_frame.md");
@@ -102,7 +190,7 @@ fn symbolic_return_boundary_expands_and_replays_its_explicit_frame_proof() {
 
 #[test]
 #[ignore = "nightly: repeated entry guard provenance"]
-fn entry_requirement_provenance_survives_repeated_extent_guards() {
+fn entry_requirement_provenance_survives_repeated_span_guards() {
     let sources = [("entry.c", "int32 entry(int32 a[], int32 n) { return 0; }")];
     let source = r#"
         verifying "entry.c";
@@ -982,7 +1070,7 @@ fn check_member_pointer_address_expansion(fixture: &str, function: &str) {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_05")]
-fn member_pointer_addresses_retain_subobject_extents_through_expansion() {
+fn member_pointer_addresses_retain_subobject_bounds_through_expansion() {
     check_member_pointer_address_expansion("egraph_resource_pointer_load_alias", "check");
 }
 
@@ -994,7 +1082,7 @@ fn member_pointer_addresses_with_equal_numeric_addresses_expand() {
 
 #[test]
 #[ignore = "nightly: 0.63s after reducing duplicate verification"]
-fn nonzero_member_pointer_addresses_retain_subobject_extents_through_expansion() {
+fn nonzero_member_pointer_addresses_retain_subobject_bounds_through_expansion() {
     check_member_pointer_address_expansion("model_pointer_alias_nonzero_field_load", "probe");
 }
 
@@ -2600,7 +2688,7 @@ fn shared_initialize_closer_expansion_replaces_the_script_before_it() {
 }
 
 /// An invariant owes its side conditions as entry goals of their own beside
-/// its body: a quantified `viewable` invariant owes the extent bound too.
+/// its body: a quantified `viewable` invariant owes the span bound too.
 /// The closer's expansion states one `have` per owed goal, so that
 /// invariant is named twice. The script layout used to accept only one
 /// `have` per invariant, fell back to running the whole script against
@@ -2879,7 +2967,7 @@ theorem integer_forall_logical_solve() {
 theorem integer_exists_choose() {
     requires exists (z: Integer) { z == z };
     ensures chosen: exists (k: Integer) { k == k } by {
-        obtain (candidate: Integer) { candidate == candidate };
+        let candidate = obtain(exists (candidate: Integer) { candidate == candidate });
         witness(candidate);
         known();
     }
@@ -2905,7 +2993,7 @@ theorem integer_exists_choose() {
             // directly. The expanded claim must still verify below.
         } else {
             assert!(
-                expanded.contains("obtain (candidate: Integer) { candidate == candidate }"),
+                expanded.contains("let candidate = obtain(exists (candidate: Integer) { candidate == candidate });"),
                 "{label}: {expanded}"
             );
             assert!(
@@ -2931,9 +3019,9 @@ theorem guarded_integer_exists(value: int32) {
     ensures branched: exists (k: Integer) {
         k == to_integer(if value > 0 { value } else { value + 1 })
     } by {
-        obtain (candidate: Integer) {
+        let candidate = obtain(exists (candidate: Integer) {
             candidate == to_integer(if value > 0 { value } else { value + 1 })
-        };
+        });
         witness(candidate);
         known();
     }
@@ -5948,7 +6036,7 @@ fn post_execution_choose_and_witness_share_the_retained_outcome_proof() {
             requires exists (k: int32) { k == x };
             ensures exists (j: int32) { j == result } by {
                 step_until(function.exit);
-                obtain (k: int32) { k == x };
+                let k = obtain(exists (k: int32) { k == x });
                 witness(k);
                 solve();
             }
@@ -5971,7 +6059,7 @@ fn post_execution_choose_and_witness_share_the_retained_outcome_proof() {
     )
     .expect("the retained choose/witness Proof should serialize");
     assert!(
-        expanded.contains("obtain (k: int32) { k == x };"),
+        expanded.contains("let k = obtain(exists (k: int32) { k == x });"),
         "{expanded}"
     );
     assert!(expanded.contains("witness(k);"), "{expanded}");
@@ -13896,7 +13984,7 @@ const RESOURCE_EXAMPLE_PIPELINE_CASES: &[(&str, &str, &str, &str)] = &[
 // Compare both surrounding byte ranges so scoped checking cannot silently
 // omit a rewrite to a helper, contract, import, or another declaration.
 pub(super) fn only_function_proof_changed(before: &str, after: &str, function: &str) -> bool {
-    let extent = |text: &str| {
+    let text_span = |text: &str| {
         let signature = format!(" {function}(");
         assert_eq!(
             text.matches(&signature).count(),
@@ -13912,10 +14000,10 @@ pub(super) fn only_function_proof_changed(before: &str, after: &str, function: &
         let end = body + text[body..].find("\n}")? + "\n}".len();
         Some((body, end))
     };
-    let Some((before_start, before_end)) = extent(before) else {
+    let Some((before_start, before_end)) = text_span(before) else {
         return false;
     };
-    let Some((after_start, after_end)) = extent(after) else {
+    let Some((after_start, after_end)) = text_span(after) else {
         return false;
     };
     before[..before_start] == after[..after_start] && before[before_end..] == after[after_end..]
@@ -15577,9 +15665,9 @@ fn qualified_static_struct_startup_and_expansion() {
     let parsed = super::super::verification::parse_verified_sources(&file, &map).unwrap();
     let state = parsed["main"].1.program_entry_state.as_ref().unwrap();
     assert_eq!(
-        state
-            .memory()
-            .load(&Memory::global_pointer("state#file-static:counter.c")),
+        state.memory().load(&SymbolicMemory::global_pointer(
+            "state#file-static:counter.c"
+        )),
         ExpressionOutcome::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(7)))
     );
     let verified_for_expansion = verify_c_sources(source, &sources).unwrap();
@@ -17141,6 +17229,42 @@ fn local_job_views_expand_and_reverify_without_ownership_annotations() {
     assert!(!click.contains("step_until(function.exit);"), "{click}");
     assert!(!click.contains("solve();"), "{click}");
     verify_c_sources(&click, &sources).expect("expanded local job must independently reverify");
+}
+
+#[test]
+#[ignore = "nightly: two-hop loop frame verification, expansion and cold replay"]
+fn two_hop_loop_frame_expands_and_cold_replays() {
+    let (source, sources) =
+        mdtest_sources("mdtests/loop_frame_keeps_a_two_hop_map_beside_a_written_array.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    with_proof_trace("clear_data", || {
+        verify_c_sources(&source, &sources).unwrap_or_else(|error| {
+            panic!(
+                "{}\n{}",
+                error.report(),
+                error.trace_context_report().unwrap_or_default()
+            )
+        });
+    });
+    assert!(!source.contains("transport("), "{source}");
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "clear_data.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("preserve("), "{expanded}");
+    without_implicit_solve_for_claim("clear_data.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+
+    // Writing the framed map instead of the owned data array must be refused.
+    let bad_c = sources[0]
+        .1
+        .replace("arena->data[i] = 0;", "arena->occupied[i] = 0;");
+    assert_ne!(bad_c, sources[0].1);
+    assert!(verify_c_sources(&source, &[(sources[0].0, bad_c.as_str())]).is_err());
 }
 
 #[test]
@@ -19372,6 +19496,41 @@ fn unfolding_proof_bound_integer_arguments_expands_and_rechecks() {
     }
 }
 
+/// Distinct literal bounds can match the same closed obligation during
+/// replay. Expansion must emit a proof that replays without a duplicate
+/// `requires` entry, while a false bound must still be refused.
+#[test]
+#[ignore = "nightly: literal call expansion and cold replay"]
+fn literal_call_bounds_expand_without_duplicate_obligation_entries() {
+    let source = r#"
+verifying "bounds.c";
+void bounded(int32 color) {
+    requires 0 <= color;
+    requires color <= 1;
+    ensures 1 == 1;
+}
+void caller() { ensures 1 == 1; }
+"#;
+    for value in [0, 1] {
+        let program =
+            format!("void bounded(int color) {{}} void caller(void) {{ bounded({value}); }}");
+        let sources = [("bounds.c", program.as_str())];
+        verify_c_sources(source, &sources).expect("both bounds hold");
+        let expanded =
+            expand_c_claim_source(source, &sources, "caller", ContractProofClaim::Ensure(0))
+                .expect("literal bounds must expand without duplicate obligation entries");
+        without_implicit_solve_for_claim("caller.ensures_0", || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+    let sources = [(
+        "bounds.c",
+        "void bounded(int color) {} void caller(void) { bounded(2); }",
+    )];
+    verify_c_sources(source, &sources).expect_err("a false upper bound must be refused");
+}
+
 /// A step's written obligation proofs expand in place: each `requires` entry
 /// keeps its proposition and prints its body's checked steps, the expansion
 /// reverifies, and deleting an entry leaves its obligation unproved.
@@ -19588,7 +19747,7 @@ fn without_first_step_obligation_proofs(expanded: &str) -> String {
 
 #[test]
 #[ignore = "nightly: checks whole global object ownership through expansion and retained verification"]
-fn whole_global_objects_keep_their_extent_and_field_types() {
+fn whole_global_objects_keep_their_size_and_field_types() {
     let (source, sources) =
         mdtest_sources("mdtests/whole_global_struct_covers_addressed_object.md");
     let sources = sources
@@ -21818,7 +21977,7 @@ test_batches! {
     ],
     expansion_batch_05: [
         integer_equality_does_not_identify_signed_and_unsigned_observations,
-        member_pointer_addresses_retain_subobject_extents_through_expansion,
+        member_pointer_addresses_retain_subobject_bounds_through_expansion,
         member_pointer_addresses_with_equal_numeric_addresses_expand,
     ],
     expansion_batch_06: [
@@ -23223,4 +23382,25 @@ fn consumed_field_refusal_keeps_an_ordinary_preservation_repair() {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })
     .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+#[ignore = "nightly: fold model expansion and replay"]
+fn integer_fold_zero_contribution_expansion_replays_without_search() {
+    use crate::surface::{verify_c_sources, without_implicit_solve};
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/fold_read_solve_extends_endpoint_with_zero_contribution.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let crate::cli::VerificationInput::Bundle(sources) =
+        crate::cli::prepare_mdtest_inputs(&fixture).unwrap()
+    else {
+        panic!("C bundle")
+    };
+    let source = fixture.click_source.as_ref().unwrap();
+    let refs = crate::cli::source_refs(&sources);
+    let verified = verify_c_sources(source, &refs).unwrap();
+    let expanded = verified[0].expanded_proof_source().unwrap();
+    let start = source.find("} by {").unwrap() + 2;
+    let replay = format!("{}{}", &source[..start], expanded);
+    without_implicit_solve(|| verify_c_sources(&replay, &refs)).unwrap();
 }

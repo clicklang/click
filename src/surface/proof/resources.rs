@@ -181,7 +181,7 @@ fn project_children_into_ledger(
     state: ExecutionState,
     binding: &crate::kernel::LoanViewBinding,
     children: impl IntoIterator<Item = ResourceFact>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
     definitions: &[CompositeResourceDefinition],
     context_label: &str,
@@ -302,7 +302,7 @@ fn dynamic_body_fact_dependency(
     temporary_views: &DynamicViewDependencyIndex,
 ) -> Result<Option<crate::kernel::LoanViewBinding>, String> {
     fn check_load(
-        pointer: Pointer,
+        pointer: Address,
         width: u32,
         state: &ExecutionState,
         assumptions: &PureFactContext,
@@ -611,7 +611,7 @@ fn materialize_folded_composite_resource_memory(
     state: &ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
     assumptions: &PureFactContext,
-) -> Result<Memory, String> {
+) -> Result<SymbolicMemory, String> {
     let mut memory = state.memory().clone();
     for resource in state.resources().facts() {
         let (name, resource_arguments) = match resource.resource() {
@@ -1233,7 +1233,7 @@ pub(super) fn project_initial_composite_resource_cores(
             &substitutions,
             parameter_binding,
             state.memory().clone(),
-            &assumptions.clone().assume_entry_clause_extents().assume_held_resource_domains(),
+            &assumptions.clone().assume_entry_clause_spans().assume_held_resource_domains(),
     )
         .map_err(|message| {
             ClickError::new(format!(
@@ -1329,7 +1329,7 @@ fn project_selected_instance_arm_cells(
         state.memory().clone(),
         &assumptions
             .clone()
-            .assume_entry_clause_extents()
+            .assume_entry_clause_spans()
             .assume_held_resource_domains(),
     ) else {
         return state;
@@ -1440,12 +1440,7 @@ pub(super) fn project_initial_resource_facts(
 ) -> Result<PureFactList, ClickError> {
     let result = ProgramValue::Int32(MachineTerm::constant(0));
     let mut facts = ProofResourcePureFacts::new(available_pure_facts.fact_store());
-    append_state_resource_context_observable_facts_with_store(
-        parameter_binding,
-        state,
-        &mut facts,
-        &format!("`{claim_label}` setup"),
-    )?;
+    append_state_resource_context_observable_facts_with_store(state, &mut facts);
     project_folded_resource_observable_facts_with_store(
         resource_environment,
         parameter_binding,
@@ -1476,12 +1471,7 @@ pub(super) fn project_outcome_resource_facts(
         return Ok(available_pure_facts);
     };
     let mut facts = ProofResourcePureFacts::new(available_pure_facts);
-    append_state_resource_context_observable_facts_with_store(
-        parameter_binding,
-        state,
-        &mut facts,
-        &format!("`{claim_label}` path {path_index}"),
-    )?;
+    append_state_resource_context_observable_facts_with_store(state, &mut facts);
     project_folded_resource_observable_facts_with_store(
         resource_environment,
         parameter_binding,
@@ -1500,24 +1490,16 @@ pub(super) fn project_outcome_resource_facts(
 }
 
 fn append_state_resource_context_observable_facts_with_store<F: ResourcePureFacts>(
-    parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     available_pure_facts: &mut F,
-    context: &str,
-) -> Result<(), ClickError> {
-    let facts = state
+) {
+    // The state producer retained the resource partition and its custody.
+    for fact in state
         .resources()
-        .observable_facts(available_pure_facts.assumptions())
-        .map_err(|error| {
-            ClickError::new(format!(
-                "{context}: {}",
-                describe_resource_context_validity_error(error, parameter_binding)
-            ))
-        })?;
-    for fact in facts {
+        .observable_facts_assuming_valid(available_pure_facts.assumptions())
+    {
         available_pure_facts.insert(fact);
     }
-    Ok(())
 }
 
 fn project_folded_resource_observable_facts_with_store(
@@ -2330,7 +2312,7 @@ fn project_held_resource_observable_facts(
     result: &ProgramValue,
     available_pure_facts: &mut ProofResourcePureFacts,
     spec_definitions: SpecDefinitions<'_>,
-) -> Result<Memory, String> {
+) -> Result<SymbolicMemory, String> {
     let (name, resource_arguments) = match resource.resource() {
         Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_) => {
             return Ok(state.memory().clone());
@@ -2525,7 +2507,7 @@ fn apply_composite_observation_law_with_facts<F: ResourcePureFacts>(
     spec_definitions: SpecDefinitions<'_>,
     lower_declared_source_facts: bool,
     compiled_definitions: Option<&[CompositeResourceDefinition]>,
-) -> Result<(Memory, ResourceContext, bool), String> {
+) -> Result<(SymbolicMemory, ResourceContext, bool), String> {
     let Some(composite_body) = definition.composite_body() else {
         return Ok((state.memory().clone(), ResourceContext::new(), false));
     };
@@ -2571,7 +2553,7 @@ fn apply_composite_observation_law_with_facts<F: ResourcePureFacts>(
         &available_pure_facts
             .assumptions()
             .clone()
-            .assume_entry_clause_extents()
+            .assume_entry_clause_spans()
             .assume_held_resource_domains(),
     )?;
     let owned_body_resources = contained_resources
@@ -2717,7 +2699,7 @@ fn append_composite_resource_loadable_facts<F: ResourcePureFacts>(
     composite_body: &CompositeResourceBody,
     substitutions: &BTreeMap<String, ContractExpression>,
     parameter_binding: ParameterBinding<'_>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     propositions: &mut F,
 ) -> Result<(), String> {
     for contained in composite_body.contains() {
@@ -2748,7 +2730,7 @@ fn append_composite_resource_loadable_facts<F: ResourcePureFacts>(
 fn append_resource_clause_loadable_fact_with_store<F: ResourcePureFacts>(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     propositions: &mut F,
 ) -> Result<(), ClickError> {
     let state = ExecutionState::new().with_memory(memory.clone());
@@ -2757,7 +2739,7 @@ fn append_resource_clause_loadable_fact_with_store<F: ResourcePureFacts>(
         return Ok(());
     };
     for range in ranges {
-        for guard in crate::kernel::admitted_memory_range_extent_facts(&range) {
+        for guard in crate::kernel::admitted_memory_range_span_facts(&range) {
             propositions.insert(guard);
         }
     }
@@ -2893,9 +2875,9 @@ fn materialize_composite_resource_memory(
     composite_body: &CompositeResourceBody,
     substitutions: &BTreeMap<String, ContractExpression>,
     parameter_binding: ParameterBinding<'_>,
-    memory: Memory,
+    memory: SymbolicMemory,
     assumptions: &PureFactContext,
-) -> Result<Memory, String> {
+) -> Result<SymbolicMemory, String> {
     // This pass names cells only. Tokens and nested resource heads cannot
     // materialize a cell, and their formation belongs to resource admission,
     // not to preparing the memory in which that admission will be checked.
@@ -2944,9 +2926,9 @@ pub(in crate::surface) fn instantiate_composite_resource_body_resources(
     composite_body: &CompositeResourceBody,
     substitutions: &BTreeMap<String, ContractExpression>,
     parameter_binding: ParameterBinding<'_>,
-    mut memory: Memory,
+    mut memory: SymbolicMemory,
     assumptions: &PureFactContext,
-) -> Result<(Memory, ResourceContext), String> {
+) -> Result<(SymbolicMemory, ResourceContext), String> {
     let mut resources = ResourceContext::new();
     // Every cell exposed by this one body expansion names the value it had
     // in the state before the expansion began.  Lower clauses against the
@@ -3025,7 +3007,7 @@ fn resource_value_substitutions(
 fn resource_value_substitutions_with_witnesses(
     definition: &ResourceDefinition,
     arguments: &[AlgebraicValue],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     resources: &ResourceContext,
     assumptions: &PureFactContext,
     resource_environment: &ResourceEnvironment,
@@ -3619,7 +3601,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
     } else {
         assumptions
             .clone()
-            .assume_entry_clause_extents()
+            .assume_entry_clause_spans()
             .assume_held_resource_domains()
     };
     let mut unfolded_facts = Vec::new();
@@ -3986,15 +3968,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         available_pure_facts,
     );
 
-    append_state_resource_context_observable_facts_with_store(
-        parameter_binding,
-        &state,
-        available_pure_facts,
-        &format!(
-            "`{claim_label}` tactic {tactic_index}: `unfold({})`",
-            describe_resource_clause(resource)
-        ),
-    )?;
+    append_state_resource_context_observable_facts_with_store(&state, available_pure_facts);
 
     // `unfold` changes the proof representation of the final visible unit;
     // it does not itself perform the function contract's logical consumption.
@@ -5544,12 +5518,12 @@ fn instantiate_contract_segment(
 }
 
 fn materialize_composite_resource_cells_from_state(
-    mut memory: Memory,
-    naming_memory: &Memory,
+    mut memory: SymbolicMemory,
+    naming_memory: &SymbolicMemory,
     resource_clause: &ResourceClause,
     lowered: &ResourceFact,
     parameters: &[crate::languages::interface::ImportedParameter],
-) -> Memory {
+) -> SymbolicMemory {
     let Some((segment, range)) = (match resource_clause {
         ResourceClause::Conditional { .. } => None,
         ResourceClause::Named { .. } => None,
@@ -5861,11 +5835,11 @@ void child_release(struct child* obj) {
     /// admits, not on the one symbolic cell `p[k]`, which no view contains.
     #[test]
     fn dynamic_quantified_definedness_depends_on_the_guarded_range() {
-        let base = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(0),
+        let base = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
         };
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let index = Variable(2_000_000);
         let index_term = || Box::new(MachineTerm::Variable(index));
         let below = |end: u32| {
@@ -5896,9 +5870,9 @@ void child_release(struct child* obj) {
                 Box::new(guard),
                 Box::new(Proposition::MemoryReadDefined {
                     memory: memory.clone(),
-                    pointer: Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: PointerOffsetTerm::Int32Scaled {
+                    pointer: Address {
+                        base: AddressBase::ExternalArgument,
+                        offset: AddressOffset::Int32Scaled {
                             value: crate::kernel::SharedMachineIntegerTerm::index(
                                 crate::kernel::MachineIntegerType::Int32,
                                 *index_term(),
@@ -5969,11 +5943,11 @@ void child_release(struct child* obj) {
     }
 
     fn check_dynamic_current_fact_dependencies(definedness: bool, symbolic_range: bool) {
-        let pointer = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
         };
-        let memory = Memory::new().store(
+        let memory = SymbolicMemory::new().store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(0)),
         );
@@ -5997,7 +5971,7 @@ void child_release(struct child* obj) {
         } else {
             Proposition::ConditionIs(condition, true)
         };
-        let extent = if symbolic_range {
+        let span = if symbolic_range {
             MachineTerm::Variable(Variable(2_000_017))
         } else {
             MachineTerm::constant(1)
@@ -6006,12 +5980,12 @@ void child_release(struct child* obj) {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(extent.clone()),
+                left: Box::new(span.clone()),
                 right: Box::new(MachineTerm::constant(1)),
             },
             true,
         ));
-        let range = MemoryRange::new(pointer, MachineTerm::constant(0), extent);
+        let range = MemoryRange::new(pointer, MachineTerm::constant(0), span);
         let own = ResourceFact::own_memory(range.clone());
         let view = ResourceFact::view_memory(range.clone());
         let support_resources = ResourceContext::new().unchecked_with_fact(own.clone());
@@ -6186,7 +6160,7 @@ mod wide_range_reader_tests {
     // A wide composite span must not be enumerated as signed constant cells.
     #[test]
     fn wide_composite_materialization_keeps_the_state_without_enumerating_cells() {
-        let base = Pointer::symbolic(Variable(985_600));
+        let base = Address::symbolic(Variable(985_600));
         let wide = MemoryRange::new_wide(
             base.clone(),
             MachineTerm::uint64_constant(0),
@@ -6206,7 +6180,7 @@ mod wide_range_reader_tests {
                 end: literal(),
             },
         };
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let result = materialize_composite_resource_cells_from_state(
             memory.clone(),
             &memory,
@@ -6268,15 +6242,15 @@ resource cell(p: int32*) {
         )])
         .unwrap();
         for (pointer, active) in [
-            (crate::kernel::Pointer::null(), false),
+            (crate::kernel::Address::null(), false),
             (
-                crate::kernel::Pointer::symbolic(crate::kernel::Variable(88_001)),
+                crate::kernel::Address::symbolic(crate::kernel::Variable(88_001)),
                 false,
             ),
             (
-                crate::kernel::Pointer {
-                    block: "object".into(),
-                    offset: crate::kernel::PointerOffsetTerm::Constant(0),
+                crate::kernel::Address {
+                    base: "object".into(),
+                    offset: crate::kernel::AddressOffset::Constant(0),
                 },
                 true,
             ),
@@ -6412,7 +6386,7 @@ mod declared_scalar_field_observation_tests {
 
     #[test]
     fn scalar_field_observations_do_not_initialize_owned_padding() {
-        let base = Pointer::symbolic(Variable(985_801));
+        let base = Address::symbolic(Variable(985_801));
         for viewed in [false, true] {
             let mut samples = Vec::new();
             for padding in [0u32, 16, 64, 256] {
@@ -6432,7 +6406,7 @@ mod declared_scalar_field_observation_tests {
                         ResourceFact::own_memory(range),
                     )
                 };
-                let memory = Memory::new();
+                let memory = SymbolicMemory::new();
                 let (named, work) = crate::instrumentation::measure_deterministic_work(|| {
                     materialize_composite_resource_cells_from_state(
                         memory.clone(),
@@ -6465,8 +6439,8 @@ mod declared_scalar_field_observation_tests {
     #[test]
     fn pointer_field_observation_is_one_complete_typed_read() {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Pointer::symbolic(Variable(985_803));
-        let memory = Memory::new();
+        let base = Address::symbolic(Variable(985_803));
+        let memory = SymbolicMemory::new();
         let segment = field(
             ProgramExpression::Value(ProgramValue::pointer(base.clone())),
             ProgramType::Int32Pointer,
@@ -6485,7 +6459,7 @@ mod declared_scalar_field_observation_tests {
             matches!(value, ProgramValue::Pointer(_)),
             "a pointer field must not be cached as an integer prefix"
         );
-        let expected = Pointer::loaded(&MachineTerm::MemoryLoad(
+        let expected = Address::loaded(&MachineTerm::MemoryLoad(
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
             Box::new(base.clone()),
             crate::kernel::LoadKind::Int32,
@@ -6504,7 +6478,7 @@ mod declared_scalar_field_observation_tests {
 
     #[test]
     fn declared_array_elements_exclude_trailing_padding() {
-        let base = Pointer::symbolic(Variable(985_802));
+        let base = Address::symbolic(Variable(985_802));
         for count in [0, 16, 64, 256] {
             let segment = field(
                 crate::kernel::program_expression::typed_load(
@@ -6514,7 +6488,7 @@ mod declared_scalar_field_observation_tests {
                 ProgramType::Int32,
             );
             let range = MemoryRange::new(base.clone(), 0.into(), (count + 4).into());
-            let memory = Memory::new();
+            let memory = SymbolicMemory::new();
             let named = materialize_composite_resource_cells_from_state(
                 memory.clone(),
                 &memory,

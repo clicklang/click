@@ -64,7 +64,7 @@ fn machine_call_roots_preserve_types_arguments_and_native_roundtrips() {
 #[test]
 fn machine_call_roots_preserve_opaque_producer_payloads() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = PointerValue::new(Pointer::symbolic(Variable(995801)), ProgramType::VoidPointer);
+    let pointer = PointerValue::new(Address::symbolic(Variable(995801)), ProgramType::VoidPointer);
     let application = SharedPureApplication::intern(
         "pointer_arg".into(),
         vec![PureFunctionArgument::Value(ProgramValue::Pointer(
@@ -127,10 +127,10 @@ fn machine_call_roots_preserve_opaque_producer_payloads() {
 #[test]
 fn machine_call_argument_order_and_read_states_remain_distinct() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = Pointer::symbolic(Variable(995802));
-    let before = crate::kernel::intern_memory(Memory::new());
+    let pointer = Address::symbolic(Variable(995802));
+    let before = crate::kernel::intern_memory(SymbolicMemory::new());
     let after = crate::kernel::intern_memory(
-        Memory::new().store(pointer.clone(), ProgramValue::Int32(7u32.into())),
+        SymbolicMemory::new().store(pointer.clone(), ProgramValue::Int32(7u32.into())),
     );
     let calls = [before, after].map(|memory| {
         SharedPureApplication::intern(

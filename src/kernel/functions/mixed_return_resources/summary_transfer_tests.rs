@@ -23,7 +23,7 @@ pub(super) fn symbolic_contract() -> ProgramFunction {
 }
 
 pub(super) fn symbolic_state() -> (ExecutionState, PureFactContext, ResourceFact) {
-    let pointer = Pointer::symbolic(Variable(8_940_000));
+    let pointer = Address::symbolic(Variable(8_940_000));
     let end = MachineTerm::Variable(Variable(8_940_001));
     let facts = PureFactContext::new()
         .assume_condition(
@@ -38,7 +38,7 @@ pub(super) fn symbolic_state() -> (ExecutionState, PureFactContext, ResourceFact
         ResourceFact::own_memory(MemoryRange::new(pointer.clone(), 0u32.into(), end.clone()));
     let state = ExecutionState::new()
         .with_population_creation_tracking()
-        .with_memory(Memory::new().with_block(pointer.block.clone(), 1024))
+        .with_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 1024))
         .with_local("p", ProgramValue::pointer(pointer.clone()))
         .with_local("q", ProgramValue::pointer(pointer))
         .with_local("n", ProgramValue::Int32(end))
@@ -329,13 +329,13 @@ fn verified_pointer_output_frames_without_a_geometric_recipe() {
     let owner = |pointer, start: u32, end: u32| {
         ResourceFact::own_memory(MemoryRange::new(pointer, start.into(), end.into()))
     };
-    let p = Pointer::symbolic(Variable(8_944_000));
-    let held = owner(Pointer::symbolic(Variable(8_944_001)), 0, 1);
+    let p = Address::symbolic(Variable(8_944_000));
+    let held = owner(Address::symbolic(Variable(8_944_001)), 0, 1);
     let resources =
         ResourceContext::new().unchecked_with_facts([owner(p.clone(), 0, 1), held.clone()]);
     let state = ExecutionState::new()
         .with_population_creation_tracking()
-        .with_memory(Memory::new().with_block(p.block.clone(), 4))
+        .with_memory(SymbolicMemory::new().with_block(p.base.clone(), 4))
         .with_resource_context(resources);
     let function = rule.function.clone();
     let env = ExecutionEnvironment::new().with_verified_function_rule(rule);
@@ -410,12 +410,12 @@ pub(super) fn partitioned_input_contract(count: u32, duplicate: bool) -> Program
 #[test]
 fn constant_consumed_footprint_supplies_disjoint_fields_once() {
     let _session = crate::kernel::VerificationSession::enter();
-    let p = Pointer::symbolic(Variable(8_945_000));
+    let p = Address::symbolic(Variable(8_945_000));
     let facts = PureFactContext::new();
     let original = ResourceFact::own_memory(MemoryRange::new(p.clone(), 0u32.into(), 4u32.into()));
     let state = ExecutionState::new()
         .with_population_creation_tracking()
-        .with_memory(Memory::new().with_block(p.block.clone(), 16))
+        .with_memory(SymbolicMemory::new().with_block(p.base.clone(), 16))
         .with_local("p", ProgramValue::pointer(p))
         .with_resource_context(
             ResourceContext::new_with_equalities(&facts).unchecked_with_fact(original.clone()),

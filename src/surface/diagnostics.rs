@@ -696,9 +696,9 @@ pub(super) fn concrete_named_contract_fact(fact: &Proposition) -> Option<(&str, 
     let [_, Term::ProgramValue(ProgramValue::Pointer(pointer))] = arguments.as_slice() else {
         return None;
     };
-    let Pointer {
-        block: PointerBlock::Function(target),
-        offset: PointerOffsetTerm::Constant(0),
+    let Address {
+        base: AddressBase::Function(target),
+        offset: AddressOffset::Constant(0),
     } = pointer.pointer()
     else {
         return None;
@@ -1788,7 +1788,7 @@ pub(super) fn describe_runtime_error(
             }
         }
         crate::kernel::RuntimeError::MutexStorageInUse { mutex, .. } => {
-            let subject = if matches!(mutex.block, crate::kernel::PointerBlock::Heap(_)) {
+            let subject = if matches!(mutex.base, crate::kernel::AddressBase::Heap(_)) {
                 "a mutex in this allocation".to_string()
             } else {
                 format!("mutex {}", describe_mutex_pointer(mutex, parameter_binding))
@@ -2475,23 +2475,23 @@ fn struct_byte_bounds(
 
 /// A pointer offset as a byte count: `i * 4 + 8` for `Int32Scaled(i, 4) +
 /// 8`. Display only; a 64-bit scaled index is not narrowed.
-fn pointer_offset_bytes(offset: &PointerOffsetTerm) -> Option<MachineTerm> {
+fn pointer_offset_bytes(offset: &AddressOffset) -> Option<MachineTerm> {
     match offset {
-        PointerOffsetTerm::Constant(bytes) => {
+        AddressOffset::Constant(bytes) => {
             Some(MachineTerm::constant(i32::try_from(*bytes).ok()? as u32))
         }
-        PointerOffsetTerm::Int32Scaled { value, byte_width } => Some(match byte_width {
+        AddressOffset::Int32Scaled { value, byte_width } => Some(match byte_width {
             1 => value.structural_value().clone(),
             width => super::lowering::bitvector32_multiply(
                 value.structural_value().clone(),
                 MachineTerm::constant(i32::try_from(*width).ok()? as u32),
             ),
         }),
-        PointerOffsetTerm::Add(left, right) => Some(bitvector32_add(
+        AddressOffset::Add(left, right) => Some(bitvector32_add(
             pointer_offset_bytes(left)?,
             pointer_offset_bytes(right)?,
         )),
-        PointerOffsetTerm::Int64Scaled { .. } | PointerOffsetTerm::Variable(_) => None,
+        AddressOffset::Int64Scaled { .. } | AddressOffset::Variable(_) => None,
     }
 }
 
@@ -2714,8 +2714,8 @@ pub(super) fn describe_memory_range(
     }
     // A range over a named object starts at the object itself (`g[0..4]`),
     // not at a pointer to it.
-    let base = match named_object_block(&range.base().block, parameter_binding) {
-        Some(name) if range.base().offset == PointerOffsetTerm::Constant(0) => name,
+    let base = match named_object_block(&range.base().base, parameter_binding) {
+        Some(name) if range.base().offset == AddressOffset::Constant(0) => name,
         _ => {
             let cell = describe_pointer(range.base(), parameter_binding);
             // One element at an address spelled as a member or a byte offset
@@ -2760,22 +2760,22 @@ fn describe_indexed_base_range(
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
     let width = i64::from(range.element_width());
-    let PointerOffsetTerm::Add(rest, last) = &range.base().offset else {
+    let AddressOffset::Add(rest, last) = &range.base().offset else {
         return None;
     };
     let index = match last.as_ref() {
-        PointerOffsetTerm::Int64Scaled {
+        AddressOffset::Int64Scaled {
             value, byte_width, ..
         }
-        | PointerOffsetTerm::Int32Scaled { value, byte_width }
+        | AddressOffset::Int32Scaled { value, byte_width }
             if *byte_width == width =>
         {
             value.structural_value()
         }
         _ => return None,
     };
-    let root = Pointer {
-        block: range.base().block.clone(),
+    let root = Address {
+        base: range.base().base.clone(),
         offset: rest.as_ref().clone(),
     };
     let base = describe_pointer(&root, parameter_binding);
@@ -2796,10 +2796,10 @@ fn describe_indexed_base_range(
 /// verifier introduced (heap allocations, temporaries, symbolic pointers),
 /// which no source text names.
 fn named_object_block(
-    block: &PointerBlock,
+    block: &AddressBase,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
-    if matches!(block, PointerBlock::Concrete(name) if name == "null") {
+    if matches!(block, AddressBase::Concrete(name) if name == "null") {
         return Some("NULL".to_string());
     }
     describe_memory_block(block, parameter_binding)
@@ -2835,7 +2835,7 @@ pub(super) fn describe_parameter_relative_range(
         && low.checked_add(1) == Some(high)
     {
         // A whole element behind a reference parameter is its referent.
-        // An explicit byte slice keeps its exact extent and cast spelling.
+        // An explicit byte slice keeps its exact span and cast spelling.
         if low == 0
             && name
                 == crate::surface::surface_parameter_binding(parameter.binding_name()).to_string()
@@ -3371,7 +3371,7 @@ fn widened_word(term: &MachineTerm) -> &MachineTerm {
     }
 }
 
-pub(super) fn unresolved_load(value: &ProgramValue) -> Option<(SharedMemory, Pointer)> {
+pub(super) fn unresolved_load(value: &ProgramValue) -> Option<(SharedMemory, Address)> {
     let term = match value.numeric_value() {
         // A signed byte read is the conversion of the byte's unsigned read,
         // so it reads that read's address.
@@ -3787,7 +3787,7 @@ pub(in crate::surface) fn describe_store_separation_miss(
 /// pointer local `q`), the way a memory-history explanation spells a cell
 /// through the function's parameters.
 pub(in crate::surface) fn describe_source_cell_at_state(
-    pointer: &Pointer,
+    pointer: &Address,
     state: &ExecutionState,
 ) -> Option<String> {
     let (parameters, arguments) = local_naming_tables(state);
@@ -3989,7 +3989,7 @@ fn describe_model_field_version_stop(
 /// so this case has no `separate(..)` to offer and says so rather than
 /// sending the reader to write one.
 fn describe_block_fact_stop(
-    block: &PointerBlock,
+    block: &AddressBase,
     change: &resource_tracker::Change,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
@@ -4036,7 +4036,7 @@ fn recorded_store_byte_width(at: Option<&resource_tracker::ProgramPoint>) -> Opt
 
 /// One cell, and the step that ended the stretch its version was known over.
 fn describe_cell_version_stop(
-    pointer: &Pointer,
+    pointer: &Address,
     widths: AccessWidths,
     stop: &resource_tracker::Stop,
     since: &str,
@@ -4110,7 +4110,7 @@ fn describe_cell_cause(
                 .to_string()
         }
         resource_tracker::Change::Free { allocation } => {
-            match describe_memory_block(&allocation.block, parameter_binding) {
+            match describe_memory_block(&allocation.base, parameter_binding) {
                 Some(freed) => format!(
                     "the allocation at `{freed}` was released in between, and nothing shows it \
                      separate from this cell."
@@ -4123,7 +4123,7 @@ fn describe_cell_cause(
             }
         }
         resource_tracker::Change::ContractRetirement { allocation } => {
-            match describe_memory_block(&allocation.block, parameter_binding) {
+            match describe_memory_block(&allocation.base, parameter_binding) {
                 Some(retired) => format!(
                     "the contract in between may have released the allocation at `{retired}`."
                 ),
@@ -4181,7 +4181,7 @@ fn describe_cell_cause(
 /// [`describe_wide_store_byte_reach`] instead.
 fn describe_store_cause(
     cell: Option<&SourceCell>,
-    written: &Pointer,
+    written: &Address,
     widths: AccessWidths,
     certain: bool,
     stated: &[&Proposition],
@@ -4312,7 +4312,7 @@ fn states_terms_differ(stated: &[&Proposition], left: &MachineTerm, right: &Mach
 /// Exact named cell for a diagnostic. Never offer a verifier-owned index as
 /// a source expression.
 pub(in crate::surface) fn diagnostic_source_cell(
-    pointer: &Pointer,
+    pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
     let cell = describe_source_cell(pointer, parameter_binding)?;
@@ -4321,7 +4321,7 @@ pub(in crate::surface) fn diagnostic_source_cell(
 }
 
 pub(in crate::surface) fn diagnostic_model_load_cell(
-    pointer: &Pointer,
+    pointer: &Address,
     kind: crate::kernel::LoadKind,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
@@ -4337,7 +4337,7 @@ pub(in crate::surface) fn diagnostic_model_load_cell(
 /// byte-typed, so its field layout, rather than its pointee type, determines
 /// which source place the read names.
 pub(in crate::surface) fn diagnostic_aggregate_parameter_load_cell(
-    pointer: &Pointer,
+    pointer: &Address,
     kind: crate::kernel::LoadKind,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
@@ -4373,16 +4373,16 @@ pub(in crate::surface) fn diagnostic_aggregate_parameter_load_cell(
 }
 
 pub(in crate::surface) fn diagnostic_source_load_cell(
-    pointer: &Pointer,
+    pointer: &Address,
     kind: crate::kernel::LoadKind,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
     // A read of exactly one scalar field of a struct-typed global or local
     // is that field, `g.b`.
-    if let PointerOffsetTerm::Constant(offset) = &pointer.offset
+    if let AddressOffset::Constant(offset) = &pointer.offset
         && let Ok(offset) = u32::try_from(*offset)
         && let Some(field) =
-            object_fields::object_field_surface(&pointer.block, offset, kind.byte_width())
+            object_fields::object_field_surface(&pointer.base, offset, kind.byte_width())
     {
         return Some(field);
     }
@@ -4395,7 +4395,7 @@ pub(in crate::surface) fn diagnostic_source_load_cell(
 /// check here: the internal pointer-read registry uses a scalar carrier whose
 /// load kind alone does not describe the source C type.
 pub(in crate::surface) fn diagnostic_source_pointer_cell(
-    pointer: &Pointer,
+    pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
     base_point: Option<&str>,
 ) -> Option<String> {
@@ -4420,7 +4420,7 @@ pub(in crate::surface) fn diagnostic_source_pointer_cell(
         };
         let mut fields = layout.fields().iter().filter(|(_, field)| {
             let expected = base.pointer().offset_by_bytes(field.offset_bytes());
-            expected.block == pointer.block
+            expected.base == pointer.base
                 && crate::kernel::offsets_have_same_canonical_form(
                     &expected.offset,
                     &pointer.offset,
@@ -4443,7 +4443,7 @@ pub(in crate::surface) fn diagnostic_source_pointer_cell(
 /// surface tests.
 #[cfg(test)]
 pub(in crate::surface) fn source_cell_text_for_tests(
-    pointer: &Pointer,
+    pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
     describe_source_cell(pointer, parameter_binding).map(|cell| cell.text())
@@ -4654,13 +4654,13 @@ fn describe_step(
         resource_tracker::Change::Call { .. } => "the call".to_string(),
         resource_tracker::Change::Loop { .. } => "the loop".to_string(),
         resource_tracker::Change::Free { allocation } => {
-            match describe_memory_block(&allocation.block, parameter_binding) {
+            match describe_memory_block(&allocation.base, parameter_binding) {
                 Some(freed) => format!("the release of `{freed}`"),
                 None => "a released allocation".to_string(),
             }
         }
         resource_tracker::Change::ContractRetirement { allocation } => {
-            match describe_memory_block(&allocation.block, parameter_binding) {
+            match describe_memory_block(&allocation.base, parameter_binding) {
                 Some(retired) => format!("the contract possibly releasing `{retired}`"),
                 None => "a contract possibly releasing an allocation".to_string(),
             }
@@ -4768,7 +4768,7 @@ impl SourceCell {
 /// and a name that could only be a verifier-owned one is refused instead of
 /// shown.
 fn describe_source_cell(
-    pointer: &Pointer,
+    pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<SourceCell> {
     describe_source_cell_of_width(pointer, None, parameter_binding)
@@ -4778,7 +4778,7 @@ fn describe_source_cell(
 /// known: a constant offset into a struct-typed global is then the field
 /// that occupies exactly those bytes, where exactly one does.
 fn describe_source_cell_of_width(
-    pointer: &Pointer,
+    pointer: &Address,
     width: Option<u32>,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<SourceCell> {
@@ -4849,10 +4849,10 @@ fn describe_source_cell_of_width(
     if let Some((best, _)) = best {
         return Some(best);
     }
-    let declared = describe_memory_block(&pointer.block, parameter_binding)?;
-    if let (Some(width), PointerOffsetTerm::Constant(offset)) = (width, &pointer.offset)
+    let declared = describe_memory_block(&pointer.base, parameter_binding)?;
+    if let (Some(width), AddressOffset::Constant(offset)) = (width, &pointer.offset)
         && let Ok(offset) = u32::try_from(*offset)
-        && let Some(field) = object_fields::object_field_surface(&pointer.block, offset, width)
+        && let Some(field) = object_fields::object_field_surface(&pointer.base, offset, width)
     {
         return Some(SourceCell {
             object: field,
@@ -4868,19 +4868,19 @@ fn describe_source_cell_of_width(
         // loses its index this way, which costs an index-inequality repair the
         // reader could not have used anyway -- the array is one object, so the
         // two spellings name the same storage either way.
-        PointerOffsetTerm::Constant(0) if pointer.block.is_local_block() => Some(SourceCell {
+        AddressOffset::Constant(0) if pointer.base.is_local_block() => Some(SourceCell {
             object: declared,
             index: CellIndex::Whole,
             element_bytes: None,
             index_term: None,
         }),
-        PointerOffsetTerm::Constant(0) => Some(SourceCell {
+        AddressOffset::Constant(0) => Some(SourceCell {
             object: declared,
             index: CellIndex::Named("0".to_string()),
             element_bytes: None,
             index_term: None,
         }),
-        PointerOffsetTerm::Constant(_) => Some(SourceCell {
+        AddressOffset::Constant(_) => Some(SourceCell {
             object: format!("{declared}+{}", describe_pointer_offset(&pointer.offset)),
             index: CellIndex::Whole,
             element_bytes: None,
@@ -4934,13 +4934,13 @@ fn describe_source_range(
             return Some(describe_memory_range(range, parameter_binding));
         }
     }
-    if range.base().offset != PointerOffsetTerm::Constant(0)
+    if range.base().offset != AddressOffset::Constant(0)
         || !bitvector_is_source_spelled(range.bound_terms().0, parameter_binding)
         || !bitvector_is_source_spelled(range.bound_terms().1, parameter_binding)
     {
         return None;
     }
-    let declared = describe_memory_block(&range.base().block, parameter_binding)?;
+    let declared = describe_memory_block(&range.base().base, parameter_binding)?;
     Some(format!(
         "{declared}[{}..{}]",
         describe_bitvector_with_context(range.bound_terms().0, parameter_binding),
@@ -4966,7 +4966,7 @@ fn bitvector_is_source_spelled(
 /// The whole object a block names, spelled as the source declares it: a
 /// parameter whose argument points into it, or a file-scope declaration.
 pub(super) fn describe_memory_block(
-    block: &PointerBlock,
+    block: &AddressBase,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
     for (parameter, argument) in parameter_binding
@@ -4975,23 +4975,23 @@ pub(super) fn describe_memory_block(
         .zip(parameter_binding.arguments)
     {
         if let ProgramExpression::Value(ProgramValue::Pointer(base)) = argument
-            && &base.pointer().block == block
+            && &base.pointer().base == block
         {
             return Some(parameter.name().to_string());
         }
     }
     match block {
-        PointerBlock::StaticObject { binding } => Some(binding.spelling().to_owned()),
-        PointerBlock::AutomaticLocal { binding, .. } => binding.spelling().map(str::to_owned),
+        AddressBase::StaticObject { binding } => Some(binding.spelling().to_owned()),
+        AddressBase::AutomaticLocal { binding, .. } => binding.spelling().map(str::to_owned),
         // A block's spelling carries where the storage lives, which is the
         // verifier's business; the reader wrote only the name. `local:` covers
         // the re-declaration and call-frame forms too (`local:lifetime:2:q`,
         // `local:frame:3:parameter`), whose last segment is that name.
-        PointerBlock::Concrete(name) => Some(
+        AddressBase::Concrete(name) => Some(
             name.strip_prefix("global:")
                 .or_else(|| {
                     name.rsplit(':').next().filter(|_| {
-                        PointerBlock::is_static_name(name) || PointerBlock::is_local_name(name)
+                        AddressBase::is_static_name(name) || AddressBase::is_local_name(name)
                     })
                 })
                 .unwrap_or(name)
@@ -5006,7 +5006,7 @@ pub(super) fn describe_memory_block(
 /// Spell mutex storage as an address, including a field at offset zero, rather
 /// than rendering the containing object or an array-element value.
 pub(in crate::surface) fn describe_mutex_pointer(
-    pointer: &Pointer,
+    pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
     for (parameter, argument) in parameter_binding
@@ -5107,30 +5107,30 @@ fn describe_address_index(index: &MachineTerm, parameter_binding: ParameterBindi
 }
 
 pub(in crate::surface) fn describe_pointer(
-    pointer: &Pointer,
+    pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
     if matches!(
-        pointer.block,
-        PointerBlock::ContractResult
-            | PointerBlock::ContractException
-            | PointerBlock::AggregateReturn { .. }
-            | PointerBlock::AutomaticLocal { .. }
-            | PointerBlock::ReferenceCarrier { .. }
-            | PointerBlock::StaticObject { .. }
+        pointer.base,
+        AddressBase::ContractResult
+            | AddressBase::ContractException
+            | AddressBase::AggregateReturn { .. }
+            | AddressBase::AutomaticLocal { .. }
+            | AddressBase::ReferenceCarrier { .. }
+            | AddressBase::StaticObject { .. }
     ) {
-        return if pointer.offset == PointerOffsetTerm::Constant(0) {
-            pointer.block.to_string()
+        return if pointer.offset == AddressOffset::Constant(0) {
+            pointer.base.to_string()
         } else {
             format!(
                 "byte_offset({}, {})",
-                pointer.block,
+                pointer.base,
                 describe_pointer_offset_with_context(&pointer.offset, parameter_binding)
             )
         };
     }
-    if let PointerBlock::StringLiteral { identity, .. } = &pointer.block {
-        return if pointer.offset == PointerOffsetTerm::Constant(0) {
+    if let AddressBase::StringLiteral { identity, .. } = &pointer.base {
+        return if pointer.offset == AddressOffset::Constant(0) {
             identity.to_string()
         } else {
             format!(
@@ -5146,7 +5146,7 @@ pub(in crate::surface) fn describe_pointer(
     // deterministic.
     // A pointer a load read is the place it was read from.
     if let Some(read) = pointer.as_loaded_value()
-        && read.displacement == PointerOffsetTerm::Constant(0)
+        && read.displacement == AddressOffset::Constant(0)
     {
         let place = describe_load_at(&read.defining_address, parameter_binding);
         if is_place_spelling(&place) {
@@ -5222,7 +5222,7 @@ pub(in crate::surface) fn describe_pointer(
         let ProgramExpression::Value(ProgramValue::Pointer(copy)) = argument else {
             continue;
         };
-        let Some(source) = crate::kernel::registered_aggregate_argument_source(&copy.block) else {
+        let Some(source) = crate::kernel::registered_aggregate_argument_source(&copy.base) else {
             continue;
         };
         // A pointer the argument holds in a field is that field's value,
@@ -5240,20 +5240,20 @@ pub(in crate::surface) fn describe_pointer(
             return name;
         }
     }
-    match &pointer.block {
+    match &pointer.base {
         // External argument blocks are verifier-owned lowering artifacts. Do
         // not expose their block names or offsets in user-facing diagnostics.
-        PointerBlock::ExternalArgument => "the pointer value at this program point".to_string(),
+        AddressBase::ExternalArgument => "the pointer value at this program point".to_string(),
         // A named object (a local, global or static, or the object a
         // parameter points into) is spelled by the name the source gave it,
         // never by the block's internal spelling (`local:frame:3:x@0`).
-        PointerBlock::Concrete(name)
-            if name == "null" && pointer.offset == PointerOffsetTerm::Constant(0) =>
+        AddressBase::Concrete(name)
+            if name == "null" && pointer.offset == AddressOffset::Constant(0) =>
         {
             "NULL".to_string()
         }
         block => match named_object_block(block, parameter_binding) {
-            Some(name) if pointer.offset == PointerOffsetTerm::Constant(0) => format!("&{name}"),
+            Some(name) if pointer.offset == AddressOffset::Constant(0) => format!("&{name}"),
             Some(name) => format!(
                 "(char *)&{name} + {}",
                 describe_pointer_offset_with_context(&pointer.offset, parameter_binding)
@@ -5271,21 +5271,21 @@ pub(in crate::surface) fn describe_pointer(
 /// source-level metadata needed to recover that spelling without printing the
 /// lowered block, load, or version terms.
 fn describe_parameter_struct_field_pointer(
-    pointer: &Pointer,
+    pointer: &Address,
     parameter: &crate::languages::interface::ImportedParameter,
-    base: &Pointer,
+    base: &Address,
 ) -> Option<String> {
     let layout = parameter
         .pointee_struct_layout()
         .or_else(|| parameter.struct_layout())?;
     // The value a load of the field read, or its storage-relative encoding.
     let (loaded_at, byte_width) = match pointer.as_loaded_value() {
-        Some(read) if read.displacement == PointerOffsetTerm::Constant(0) => {
+        Some(read) if read.displacement == AddressOffset::Constant(0) => {
             (read.defining_address, None)
         }
         Some(_) => return None,
         None => {
-            let PointerOffsetTerm::Int32Scaled { value, byte_width } = &pointer.offset else {
+            let AddressOffset::Int32Scaled { value, byte_width } = &pointer.offset else {
                 return None;
             };
             let loaded_at = match value.structural_value() {
@@ -5295,7 +5295,7 @@ fn describe_parameter_struct_field_pointer(
                 }
                 _ => return None,
             };
-            if pointer.block != base.block {
+            if pointer.base != base.base {
                 return None;
             }
             (loaded_at, Some(*byte_width))
@@ -5328,9 +5328,9 @@ fn describe_parameter_struct_field_pointer(
 ///
 /// The index is spelled by [`describe_address_index`].
 fn describe_parameter_struct_member(
-    pointer: &Pointer,
+    pointer: &Address,
     parameter: &crate::languages::interface::ImportedParameter,
-    base: &Pointer,
+    base: &Address,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
     describe_struct_member_from(
@@ -5347,9 +5347,9 @@ fn describe_parameter_struct_member(
 /// whose members are selected with `select` (`->` through a pointer, `.` on
 /// a value).
 fn describe_struct_member_from(
-    pointer: &Pointer,
+    pointer: &Address,
     parameter: &crate::languages::interface::ImportedParameter,
-    base: &Pointer,
+    base: &Address,
     name: &str,
     select: &str,
     parameter_binding: ParameterBinding<'_>,
@@ -5367,13 +5367,13 @@ fn describe_struct_member_from(
     let mut pending = vec![&rest];
     while let Some(term) = pending.pop() {
         match term {
-            PointerOffsetTerm::Add(left, right) => {
+            AddressOffset::Add(left, right) => {
                 pending.push(left);
                 pending.push(right);
             }
-            PointerOffsetTerm::Constant(bytes) => constant = constant.checked_add(*bytes)?,
-            PointerOffsetTerm::Int32Scaled { value, byte_width }
-            | PointerOffsetTerm::Int64Scaled {
+            AddressOffset::Constant(bytes) => constant = constant.checked_add(*bytes)?,
+            AddressOffset::Int32Scaled { value, byte_width }
+            | AddressOffset::Int64Scaled {
                 value, byte_width, ..
             } if *byte_width == size && element.is_none() => {
                 element = Some(value.structural_value())
@@ -5513,11 +5513,11 @@ pub(super) fn diagnostic_parameter_element_width(
 }
 
 pub(super) fn diagnostic_pointer_element_index_from_base(
-    pointer: &Pointer,
-    base: &Pointer,
+    pointer: &Address,
+    base: &Address,
     byte_width: i64,
 ) -> Option<MachineTerm> {
-    if pointer.block != base.block {
+    if pointer.base != base.base {
         return None;
     }
 
@@ -5525,15 +5525,15 @@ pub(super) fn diagnostic_pointer_element_index_from_base(
         return Some(MachineTerm::constant(0));
     }
 
-    if base.offset == PointerOffsetTerm::Constant(0) {
+    if base.offset == AddressOffset::Constant(0) {
         return diagnostic_element_index_from_pointer_offset(&pointer.offset, byte_width);
     }
 
     match &pointer.offset {
-        PointerOffsetTerm::Add(left, right) if left.as_ref() == &base.offset => {
+        AddressOffset::Add(left, right) if left.as_ref() == &base.offset => {
             diagnostic_element_index_from_pointer_offset(right, byte_width)
         }
-        PointerOffsetTerm::Add(left, right) if right.as_ref() == &base.offset => {
+        AddressOffset::Add(left, right) if right.as_ref() == &base.offset => {
             diagnostic_element_index_from_pointer_offset(left, byte_width)
         }
         _ => {
@@ -5558,24 +5558,24 @@ pub(super) fn diagnostic_pointer_element_index_from_base(
 }
 
 pub(super) fn diagnostic_element_index_from_pointer_offset(
-    offset: &PointerOffsetTerm,
+    offset: &AddressOffset,
     byte_width: i64,
 ) -> Option<MachineTerm> {
     match offset {
-        PointerOffsetTerm::Constant(offset) if offset % byte_width == 0 => {
+        AddressOffset::Constant(offset) if offset % byte_width == 0 => {
             let index = offset / byte_width;
             (i32::MIN as i64..=i32::MAX as i64)
                 .contains(&index)
                 .then_some(MachineTerm::constant((index as i32) as u32))
         }
-        PointerOffsetTerm::Int32Scaled {
+        AddressOffset::Int32Scaled {
             value,
             byte_width: actual_width,
         } if *actual_width == byte_width => Some(value.structural_value().clone()),
         // An index widened to 64 bits before scaling (a `uint32` index, or
         // an `int32` one on a wide address) is still the index the source
         // wrote. The widening decides the address, not the element's name.
-        PointerOffsetTerm::Int64Scaled {
+        AddressOffset::Int64Scaled {
             value,
             byte_width: actual_width,
             ..
@@ -5587,15 +5587,13 @@ pub(super) fn diagnostic_element_index_from_pointer_offset(
             | cast_term!(Int64FromUInt32, narrow) => narrow.as_ref().clone(),
             wide => wide.clone(),
         }),
-        PointerOffsetTerm::Add(left, right) if left.as_ref() == &PointerOffsetTerm::Constant(0) => {
+        AddressOffset::Add(left, right) if left.as_ref() == &AddressOffset::Constant(0) => {
             diagnostic_element_index_from_pointer_offset(right, byte_width)
         }
-        PointerOffsetTerm::Add(left, right)
-            if right.as_ref() == &PointerOffsetTerm::Constant(0) =>
-        {
+        AddressOffset::Add(left, right) if right.as_ref() == &AddressOffset::Constant(0) => {
             diagnostic_element_index_from_pointer_offset(left, byte_width)
         }
-        PointerOffsetTerm::Add(left, right) => Some(bitvector32_add(
+        AddressOffset::Add(left, right) => Some(bitvector32_add(
             diagnostic_element_index_from_pointer_offset(left, byte_width)?,
             diagnostic_element_index_from_pointer_offset(right, byte_width)?,
         )),
@@ -5746,14 +5744,14 @@ pub(super) fn describe_program_value(
         ),
         ProgramValue::Pointer(pointer)
             if matches!(
-                pointer.pointer().block,
-                PointerBlock::ContractResult
-                    | PointerBlock::ContractException
-                    | PointerBlock::AggregateReturn { .. }
-                    | PointerBlock::StringLiteral { .. }
-                    | PointerBlock::AutomaticLocal { .. }
-                    | PointerBlock::ReferenceCarrier { .. }
-                    | PointerBlock::StaticObject { .. }
+                pointer.pointer().base,
+                AddressBase::ContractResult
+                    | AddressBase::ContractException
+                    | AddressBase::AggregateReturn { .. }
+                    | AddressBase::StringLiteral { .. }
+                    | AddressBase::AutomaticLocal { .. }
+                    | AddressBase::ReferenceCarrier { .. }
+                    | AddressBase::StaticObject { .. }
             ) =>
         {
             let base = describe_pointer(pointer, parameter_binding);
@@ -5839,7 +5837,7 @@ pub(super) fn describe_contract_segment(segment: &ContractSegment) -> String {
             && !matches!(
                 operand.as_ref(),
                 ContractExpression::Binding(_)
-                    | ContractExpression::CBinding(_)
+                    | ContractExpression::ProgramBinding(_)
                     | ContractExpression::ProgramExpression(ProgramExpression::Variable(
                         crate::kernel::BindingName::Named(_)
                     ))
@@ -6398,7 +6396,7 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
 /// `o->b->len`, where `o->b` is that load. The field's declared type must
 /// be read with exactly this kind.
 pub(in crate::surface) fn diagnostic_loaded_field_load_cell(
-    pointer: &Pointer,
+    pointer: &Address,
     kind: crate::kernel::LoadKind,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
@@ -6415,9 +6413,9 @@ pub(in crate::surface) fn diagnostic_loaded_field_load_cell(
         return None;
     };
     let base = describe_pointer(
-        &Pointer {
-            block: pointer.block.clone(),
-            offset: PointerOffsetTerm::Constant(0),
+        &Address {
+            base: pointer.base.clone(),
+            offset: AddressOffset::Constant(0),
         },
         parameter_binding,
     );
@@ -6426,14 +6424,14 @@ pub(in crate::surface) fn diagnostic_loaded_field_load_cell(
 
 /// The place a load of `pointer` reads, when it has a source spelling.
 pub(in crate::surface) fn diagnostic_load_place(
-    pointer: &Pointer,
+    pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
     let place = describe_load_at(pointer, parameter_binding);
     is_place_spelling(&place).then_some(place)
 }
 
-fn describe_load_at(pointer: &Pointer, parameter_binding: ParameterBinding<'_>) -> String {
+fn describe_load_at(pointer: &Address, parameter_binding: ParameterBinding<'_>) -> String {
     if let Some(field) = describe_struct_field_load(pointer, parameter_binding) {
         return field;
     }
@@ -6494,7 +6492,7 @@ fn is_cell_spelling(text: &str) -> bool {
 /// field of its layout starts there. The load carries no width here, so a
 /// nested struct or a union whose members share that offset stays a load.
 fn describe_struct_field_load(
-    pointer: &Pointer,
+    pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
     for (parameter, argument) in parameter_binding
@@ -6545,36 +6543,36 @@ fn describe_struct_field_load(
 }
 
 /// `(a, c)` for the address `c` bytes past the pointer a load of `a` read.
-fn loaded_pointer_base(address: &Pointer) -> Option<(Pointer, u64)> {
+fn loaded_pointer_base(address: &Address) -> Option<(Address, u64)> {
     let (loaded_from, bytes) = loaded_pointer_split(address)?;
     Some((loaded_from, u64::from(bytes.as_const()?)))
 }
 
 /// `(a, bytes)` for an address past the pointer a load of `a` read, with
 /// the rest of its offset as a byte count, which may be symbolic.
-fn loaded_pointer_split(address: &Pointer) -> Option<(Pointer, MachineTerm)> {
+fn loaded_pointer_split(address: &Address) -> Option<(Address, MachineTerm)> {
     if let Some(read) = address.as_loaded_value() {
         return Some((
             read.defining_address,
             pointer_offset_bytes(&read.displacement)?,
         ));
     }
-    if address.block != PointerBlock::ExternalArgument {
+    if address.base != AddressBase::ExternalArgument {
         return None;
     }
     let mut summands = Vec::new();
     let mut pending = vec![&address.offset];
     while let Some(offset) = pending.pop() {
         match offset {
-            PointerOffsetTerm::Add(left, right) => {
+            AddressOffset::Add(left, right) => {
                 pending.push(right);
                 pending.push(left);
             }
             summand => summands.push(summand),
         }
     }
-    let loaded = |summand: &PointerOffsetTerm| match summand {
-        PointerOffsetTerm::Int32Scaled { value, .. } => match value.structural_value() {
+    let loaded = |summand: &AddressOffset| match summand {
+        AddressOffset::Int32Scaled { value, .. } => match value.structural_value() {
             MachineTerm::Variable(variable)
                 if crate::kernel::is_load_variable(variable)
                     && crate::kernel::registered_load_for_variable(variable).is_some() =>
@@ -6602,12 +6600,12 @@ fn loaded_pointer_split(address: &Pointer) -> Option<(Pointer, MachineTerm)> {
 /// The struct a pointer field at `address` points at, by name: a pointer
 /// field of the struct a parameter points at, or of a struct reached
 /// through such a field. Display only.
-fn pointee_struct_at(address: &Pointer, parameter_binding: ParameterBinding<'_>) -> Option<String> {
+fn pointee_struct_at(address: &Address, parameter_binding: ParameterBinding<'_>) -> Option<String> {
     pointee_struct_at_depth(address, parameter_binding, 0)
 }
 
 fn pointee_struct_at_depth(
-    address: &Pointer,
+    address: &Address,
     parameter_binding: ParameterBinding<'_>,
     depth: usize,
 ) -> Option<String> {
@@ -6664,7 +6662,7 @@ fn describe_loaded_pointer_range(
     range.int32_bounds()?;
     // One element at a wide index past a loaded pointer: `s->data[s->len]`.
     if let Some(read) = range.base().as_loaded_value()
-        && let PointerOffsetTerm::Int64Scaled {
+        && let AddressOffset::Int64Scaled {
             value, byte_width, ..
         } = &read.displacement
         && *byte_width == i64::from(range.element_width())
@@ -7000,14 +6998,13 @@ pub(super) fn describe_execution_statement_head(statement: &ProgramStatement) ->
         }
         ProgramStatement::Loop {
             test: loop_test, ..
-        } => {
-            let (condition, direct_post_test, _) = loop_test.execution_parts();
-            if direct_post_test {
+        } => match loop_test.source_condition() {
+            Some(condition) if loop_test.position == crate::kernel::LoopTestPosition::AfterBody => {
                 format!("do ... while ({})", describe_c_guard(condition))
-            } else {
-                format!("while ({})", describe_c_guard(condition))
             }
-        }
+            Some(condition) => format!("while ({})", describe_c_guard(condition)),
+            None => "loop with test preparation".to_owned(),
+        },
         ProgramStatement::Switch { expression, .. } => {
             format!("switch ({})", describe_c_guard(expression))
         }
@@ -7404,8 +7401,7 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                 field,
             ),
         },
-        ContractExpression::CBinding(name) if rust_spelling() => format!("rust({name})"),
-        ContractExpression::CBinding(name) => format!("c({name})"),
+        ContractExpression::ProgramBinding(name) => format!("program::{name}"),
         ContractExpression::ResourceWildcard => "_".to_string(),
         ContractExpression::ResourceCount(resource) => {
             // Population patterns name the resource, not the permission of
@@ -8218,20 +8214,20 @@ pub(super) fn describe_binary_bitvector_with_context(
 /// [`describe_pointer_offset`] with each scaled index spelled in the
 /// caller's names where it has them (`j * 4` rather than `… * 4`).
 fn describe_pointer_offset_with_context(
-    offset: &PointerOffsetTerm,
+    offset: &AddressOffset,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
     match offset {
-        PointerOffsetTerm::Add(left, right) => format!(
+        AddressOffset::Add(left, right) => format!(
             "({} + {})",
             describe_pointer_offset_with_context(left, parameter_binding),
             describe_pointer_offset_with_context(right, parameter_binding)
         ),
-        PointerOffsetTerm::Int32Scaled { value, byte_width } => format!(
+        AddressOffset::Int32Scaled { value, byte_width } => format!(
             "{} * {byte_width}",
             describe_bitvector_with_context(value.structural_value(), parameter_binding)
         ),
-        PointerOffsetTerm::Int64Scaled {
+        AddressOffset::Int64Scaled {
             value,
             byte_width,
             unsigned,
@@ -8242,9 +8238,7 @@ fn describe_pointer_offset_with_context(
                 describe_bitvector_with_context(value.structural_value(), parameter_binding)
             )
         }
-        PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => {
-            describe_pointer_offset(offset)
-        }
+        AddressOffset::Constant(_) | AddressOffset::Variable(_) => describe_pointer_offset(offset),
     }
 }
 
@@ -8275,10 +8269,10 @@ fn describe_storage_write_outside_footprint(
         crate::kernel::StorageWriteOutsideFootprint::Write { pointer, bytes } => {
             // A store that fills exactly one scalar field of a struct-typed
             // global names that field (`shared.first`), not its address.
-            if let PointerOffsetTerm::Constant(offset) = &pointer.offset
+            if let AddressOffset::Constant(offset) = &pointer.offset
                 && let Ok(offset) = u32::try_from(*offset)
                 && let Some(field) =
-                    object_fields::object_field_surface(&pointer.block, offset, *bytes)
+                    object_fields::object_field_surface(&pointer.base, offset, *bytes)
             {
                 return format!("the {bytes}-byte store to `{field}`");
             }
@@ -8294,22 +8288,22 @@ fn describe_storage_write_outside_footprint(
     }
 }
 
-pub(super) fn describe_pointer_offset(offset: &PointerOffsetTerm) -> String {
+pub(super) fn describe_pointer_offset(offset: &AddressOffset) -> String {
     match offset {
-        PointerOffsetTerm::Constant(value) => value.to_string(),
-        PointerOffsetTerm::Variable(variable) => lowering_only_variable("off", variable.0),
-        PointerOffsetTerm::Add(left, right) => format!(
+        AddressOffset::Constant(value) => value.to_string(),
+        AddressOffset::Variable(variable) => lowering_only_variable("off", variable.0),
+        AddressOffset::Add(left, right) => format!(
             "({} + {})",
             describe_pointer_offset(left),
             describe_pointer_offset(right)
         ),
-        PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+        AddressOffset::Int32Scaled { value, byte_width } => {
             format!(
                 "{} * {byte_width}",
                 describe_bitvector(value.structural_value())
             )
         }
-        PointerOffsetTerm::Int64Scaled {
+        AddressOffset::Int64Scaled {
             value,
             byte_width,
             unsigned,
@@ -8644,7 +8638,7 @@ mod wide_range_reader_tests {
     // Native missing resources can reach both source-spelling and repair hints.
     #[test]
     fn wide_missing_ranges_are_rendered_or_omitted_without_signed_readers() {
-        let base = Pointer::symbolic(Variable(985_400));
+        let base = Address::symbolic(Variable(985_400));
         let wide = MemoryRange::new_wide(
             base,
             MachineTerm::uint64_constant(0),
@@ -8670,7 +8664,7 @@ mod assembly_fact_tests {
     #[test]
     fn a_folded_false_body_fact_keeps_its_clause_and_call_bindings() {
         let parsed = syntax::parse_function("void caller(int32* actual) {}").unwrap();
-        let pointer = ProgramValue::pointer(Pointer::symbolic(Variable(985_410)));
+        let pointer = ProgramValue::pointer(Address::symbolic(Variable(985_410)));
         let arguments = vec![ProgramExpression::Value(pointer.clone())];
         let binding = ParameterBinding::new(parsed.parameters(), &arguments);
         let mut error = crate::kernel::RuntimeError::UnestablishedAssemblyFact {

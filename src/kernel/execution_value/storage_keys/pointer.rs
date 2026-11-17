@@ -1,7 +1,7 @@
 //! Complete pointer identity without exporting the enclosing descriptor.
-//! Offset indices keep exactly the handles used by native PointerOffsetTerm.
+//! Offset indices keep exactly the handles used by native AddressOffset.
 use super::*;
-use crate::kernel::{KernelPointerOffset, SharedPointerAddress, SharedPointerOffset};
+use crate::kernel::{KernelAddressOffset, SharedAddress, SharedAddressOffset};
 
 #[derive(Clone, Debug)]
 pub(in crate::kernel) struct PointerStorageKey(Arc<PointerData>);
@@ -17,25 +17,25 @@ struct PointerIdentity {
     provenance: AddressKey,
     program_type: ProgramType,
     volatile: bool,
-    extent_known: bool,
-    opaque_extent: Option<AddressKey>,
-    extent: Option<(AddressKey, MachineTerm)>,
+    bounds_known: bool,
+    bounds_owner: Option<AddressKey>,
+    bounds: Option<(AddressKey, MachineTerm)>,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 struct AddressKey {
-    block: PointerBlock,
+    block: AddressBase,
     offset: OffsetKey,
 }
 impl AddressKey {
-    fn native(pointer: &Pointer) -> Self {
+    fn native(pointer: &Address) -> Self {
         Self {
-            block: pointer.block.clone(),
+            block: pointer.base.clone(),
             offset: OffsetKey::native(&pointer.offset),
         }
     }
-    fn shared(pointer: &SharedPointerAddress) -> Self {
+    fn shared(pointer: &SharedAddress) -> Self {
         Self {
-            block: pointer.node().block.native_atom().clone(),
+            block: pointer.node().base.native_atom().clone(),
             offset: offset_for_root(&pointer.node().offset),
         }
     }
@@ -56,31 +56,31 @@ impl PointerStorageKey {
             provenance: AddressKey::native(value.provenance()),
             program_type: value.program_type(),
             volatile: value.pointee_volatile(),
-            extent_known: value.extent_is_known(),
-            opaque_extent: (!value.extent_is_known())
-                .then(|| value.opaque_extent().map(AddressKey::native))
+            bounds_known: value.bounds_are_known(),
+            bounds_owner: (!value.bounds_are_known())
+                .then(|| value.bounds_owner().map(AddressKey::native))
                 .flatten(),
-            extent: value
-                .extent()
+            bounds: value
+                .bounds()
                 .map(|e| (AddressKey::native(&e.start), e.width.clone())),
         })
     }
     fn shared(value: &SharedPointerValue) -> Self {
         let value = value.node();
         let q = value.qualifiers.as_deref();
-        let extent_known = q.is_some_and(|q| q.extent_known);
+        let bounds_known = q.is_some_and(|q| q.bounds_known);
         Self::new(PointerIdentity {
             address: AddressKey::shared(&value.address),
             provenance: AddressKey::shared(&value.provenance),
             program_type: value.program_type,
             volatile: q.is_some_and(|q| q.volatile),
-            extent_known,
-            opaque_extent: (!extent_known)
-                .then(|| value.opaque_extent.as_ref().map(AddressKey::shared))
+            bounds_known,
+            bounds_owner: (!bounds_known)
+                .then(|| value.bounds_owner.as_ref().map(AddressKey::shared))
                 .flatten(),
             // Widths have native MachineTerm structural identity, unlike offset
             // index handles. Keep this selected scalar adapter explicit.
-            extent: q.and_then(|q| q.extent.as_ref()).map(|e| {
+            bounds: q.and_then(|q| q.bounds.as_ref()).map(|e| {
                 (
                     AddressKey::shared(&e.start),
                     KernelTermExport::machine(&e.width).expect("selected subobject width"),
@@ -151,25 +151,25 @@ impl OffsetKey {
             fingerprint: hash.finish(),
         }))
     }
-    fn native(source: &PointerOffsetTerm) -> Self {
+    fn native(source: &AddressOffset) -> Self {
         enum Task<'a> {
-            Enter(&'a PointerOffsetTerm),
+            Enter(&'a AddressOffset),
             Add,
         }
         let mut pending = vec![Task::Enter(source)];
         let mut values = Vec::new();
         while let Some(task) = pending.pop() {
             let shape = match task {
-                Task::Enter(PointerOffsetTerm::Constant(v)) => OffsetShape::Constant(*v),
-                Task::Enter(PointerOffsetTerm::Variable(v)) => OffsetShape::Variable(*v),
-                Task::Enter(PointerOffsetTerm::Add(a, b)) => {
+                Task::Enter(AddressOffset::Constant(v)) => OffsetShape::Constant(*v),
+                Task::Enter(AddressOffset::Variable(v)) => OffsetShape::Variable(*v),
+                Task::Enter(AddressOffset::Add(a, b)) => {
                     pending.extend([Task::Add, Task::Enter(b), Task::Enter(a)]);
                     continue;
                 }
-                Task::Enter(PointerOffsetTerm::Int32Scaled { value, byte_width }) => {
+                Task::Enter(AddressOffset::Int32Scaled { value, byte_width }) => {
                     OffsetShape::Int32Scaled(value.clone(), *byte_width)
                 }
-                Task::Enter(PointerOffsetTerm::Int64Scaled {
+                Task::Enter(AddressOffset::Int64Scaled {
                     value,
                     byte_width,
                     unsigned,
@@ -184,20 +184,20 @@ impl OffsetKey {
         }
         values.pop().expect("offset key")
     }
-    fn shared(source: &SharedPointerOffset) -> Self {
+    fn shared(source: &SharedAddressOffset) -> Self {
         let index = |root: &KernelTerm| {
-            KernelPointerOffset::index_key(root).expect("selected offset index key")
+            KernelAddressOffset::index_key(root).expect("selected offset index key")
         };
         Self::new(match source.node() {
-            KernelPointerOffset::Constant(v) => OffsetShape::Constant(*v),
-            KernelPointerOffset::Variable(v) => OffsetShape::Variable(*v),
-            KernelPointerOffset::Add(children) => {
+            KernelAddressOffset::Constant(v) => OffsetShape::Constant(*v),
+            KernelAddressOffset::Variable(v) => OffsetShape::Variable(*v),
+            KernelAddressOffset::Add(children) => {
                 OffsetShape::Add(children.each_ref().map(offset_for_root))
             }
-            KernelPointerOffset::Int32Scaled { value, byte_width } => {
+            KernelAddressOffset::Int32Scaled { value, byte_width } => {
                 OffsetShape::Int32Scaled(index(value), *byte_width)
             }
-            KernelPointerOffset::Int64Scaled {
+            KernelAddressOffset::Int64Scaled {
                 value,
                 byte_width,
                 unsigned,
@@ -275,17 +275,17 @@ impl Drop for OffsetKey {
     }
 }
 thread_local! {
-    static OFFSETS: std::cell::RefCell<std::collections::HashMap<SharedPointerOffset, OffsetKey>> = Default::default();
+    static OFFSETS: std::cell::RefCell<std::collections::HashMap<SharedAddressOffset, OffsetKey>> = Default::default();
     static POINTERS: std::cell::RefCell<crate::id_hash::U64Map<PointerStorageKey>> = Default::default();
 }
-fn offset_for_root(source: &SharedPointerOffset) -> OffsetKey {
+fn offset_for_root(source: &SharedAddressOffset) -> OffsetKey {
     OFFSETS.with(|keys| {
         let mut pending = vec![(source, false)];
         while let Some((root, finish)) = pending.pop() {
             if keys.borrow().contains_key(root) {
                 continue;
             }
-            if !finish && let KernelPointerOffset::Add(children) = root.node() {
+            if !finish && let KernelAddressOffset::Add(children) = root.node() {
                 pending.push((root, true));
                 pending.extend(children.iter().rev().map(|child| (child, false)));
                 continue;

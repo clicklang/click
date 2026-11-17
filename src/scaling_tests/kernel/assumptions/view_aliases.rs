@@ -3,14 +3,14 @@ fn view_misses_do_not_enumerate_pointer_alias_classes() {
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Pointer::symbolic(Variable(810_000));
+        let base = Address::symbolic(Variable(810_000));
         let mut context = PureFactContext::new();
         for index in 0..size {
             context
                 .equality_graph
-                .add_equality(&base, &Pointer::symbolic(Variable(810_001 + index)));
+                .add_equality(&base, &Address::symbolic(Variable(810_001 + index)));
         }
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let goal = Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
@@ -38,11 +38,11 @@ fn selected_view_checks_alias_coordinates_without_enumerating_the_class() {
         let mut misses = Vec::new();
         for size in [8u64, 32, 128] {
             let _session = crate::kernel::VerificationSession::enter();
-            let memory = Memory::new();
-            let root = Pointer::symbolic(Variable(820_000));
-            let source = Pointer::symbolic(Variable(820_001));
-            let query = Pointer::symbolic(Variable(820_002));
-            let extent = |n| {
+            let memory = SymbolicMemory::new();
+            let root = Address::symbolic(Variable(820_000));
+            let source = Address::symbolic(Variable(820_001));
+            let query = Address::symbolic(Variable(820_002));
+            let span = |n| {
                 if wide {
                     MachineTerm::uint64_constant(n)
                 } else {
@@ -52,7 +52,7 @@ fn selected_view_checks_alias_coordinates_without_enumerating_the_class() {
             let fact = Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: source.clone(),
-                bytes: extent(16),
+                bytes: span(16),
                 wide,
             };
             let mut context = PureFactContext::new().assume_proposition(fact);
@@ -61,13 +61,13 @@ fn selected_view_checks_alias_coordinates_without_enumerating_the_class() {
             for index in 0..size {
                 context
                     .equality_graph
-                    .add_equality(&root, &Pointer::symbolic(Variable(821_000 + index)));
+                    .add_equality(&root, &Address::symbolic(Variable(821_000 + index)));
             }
-            let prove = |pointer: &Pointer, bytes| {
+            let prove = |pointer: &Address, bytes| {
                 context.proves_atomic_without_search(&Proposition::MemoryLoadable {
                     memory: memory.clone(),
                     base: pointer.clone(),
-                    bytes: extent(bytes),
+                    bytes: span(bytes),
                     wide,
                 })
             };
@@ -83,7 +83,7 @@ fn selected_view_checks_alias_coordinates_without_enumerating_the_class() {
                 }
             });
             misses.push(work);
-            assert!(!prove(&Pointer::symbolic(Variable(829_000)), 8));
+            assert!(!prove(&Address::symbolic(Variable(829_000)), 8));
             assert!(!prove(&query.offset_by_bytes(16), 4));
         }
         eprintln!("selected alias view wide={wide}: hits={hits:?}, misses={misses:?}");
@@ -101,14 +101,14 @@ fn view_misses_ignore_a_growing_exact_alias_star_in_one_block() {
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = |id| Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Variable(Variable(id)),
+        let pointer = |id| Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Variable(Variable(id)),
         };
         let base = pointer(830_000);
         let mut context = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
-            memory: Memory::new(),
-            base: Pointer::symbolic(Variable(839_000)),
+            memory: SymbolicMemory::new(),
+            base: Address::symbolic(Variable(839_000)),
             bytes: 16.into(),
             wide: false,
         });
@@ -119,7 +119,7 @@ fn view_misses_ignore_a_growing_exact_alias_star_in_one_block() {
             );
         }
         let goal = Proposition::MemoryLoadable {
-            memory: Memory::new(),
+            memory: SymbolicMemory::new(),
             base: base.clone(),
             bytes: 4096.into(),
             wide: false,
@@ -143,12 +143,12 @@ fn indexed_storage_source_handles_displaced_aliases_beside_other_views() {
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let source = Pointer {
-            block: "global:view-alias-source".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let source = Address {
+            base: "global:view-alias-source".into(),
+            offset: AddressOffset::Constant(0),
         };
         let mut query = source.clone();
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let mut context = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: source.clone(),
@@ -156,14 +156,14 @@ fn indexed_storage_source_handles_displaced_aliases_beside_other_views() {
             wide: false,
         });
         for index in 0..size {
-            let next = Pointer::symbolic(Variable(840_001 + index));
+            let next = Address::symbolic(Variable(840_001 + index));
             context
                 .equality_graph
                 .add_equality(&query.offset_by_bytes(4), &next);
             query = next;
             context = context.assume_proposition(Proposition::MemoryLoadable {
                 memory: memory.clone(),
-                base: Pointer::symbolic(Variable(850_000 + index)),
+                base: Address::symbolic(Variable(850_000 + index)),
                 bytes: 4.into(),
                 wide: false,
             });
@@ -186,15 +186,15 @@ fn indexed_storage_source_handles_displaced_aliases_beside_other_views() {
 #[test]
 fn selected_alias_view_cannot_cross_distinct_allocations() {
     let _session = crate::kernel::VerificationSession::enter();
-    let source = Pointer {
-        block: PointerBlock::Heap(860_000),
-        offset: PointerOffsetTerm::Constant(0),
+    let source = Address {
+        base: AddressBase::Heap(860_000),
+        offset: AddressOffset::Constant(0),
     };
-    let other = Pointer {
-        block: PointerBlock::Heap(860_001),
-        offset: PointerOffsetTerm::Constant(0),
+    let other = Address {
+        base: AddressBase::Heap(860_001),
+        offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     // Even an inconsistent graph edge cannot turn a different allocation
     // into this source's storage during a memory query.
     let mut context = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
@@ -213,13 +213,13 @@ fn selected_views_follow_same_block_aliases_without_walking_the_star() {
         let mut samples = Vec::new();
         for size in [8u64, 32, 128] {
             let _session = crate::kernel::VerificationSession::enter();
-            let pointer = |id| Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Variable(Variable(id)),
+            let pointer = |id| Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Variable(Variable(id)),
             };
             let source = pointer(870_000);
-            let memory = Memory::new();
-            let extent = |n| {
+            let memory = SymbolicMemory::new();
+            let span = |n| {
                 if wide {
                     MachineTerm::uint64_constant(n)
                 } else {
@@ -230,7 +230,7 @@ fn selected_views_follow_same_block_aliases_without_walking_the_star() {
                 PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
                     memory: memory.clone(),
                     base: source.clone(),
-                    bytes: extent(16),
+                    bytes: span(16),
                     wide,
                 });
             for index in 0..size {
@@ -247,7 +247,7 @@ fn selected_views_follow_same_block_aliases_without_walking_the_star() {
                             context.proves_atomic_without_search(&Proposition::MemoryLoadable {
                                 memory: memory.clone(),
                                 base: query.clone(),
-                                bytes: extent(bytes),
+                                bytes: span(bytes),
                                 wide,
                             }),
                             expected

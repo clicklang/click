@@ -14,35 +14,6 @@ impl Theorem {
 }
 
 impl PropositionDerivation {
-    /// The name of this derivation's top rule, for censuses.
-    pub fn rule_name(&self) -> &'static str {
-        match &self.rule {
-            PropositionDerivationRule::ContextFree => "ContextFree",
-            PropositionDerivationRule::ContextualAtomic { .. } => "ContextualAtomic",
-            PropositionDerivationRule::Explosion { .. } => "Explosion",
-            PropositionDerivationRule::And { .. } => "And",
-            PropositionDerivationRule::AlgebraicConstructorCongruence { .. } => {
-                "AlgebraicConstructorCongruence"
-            }
-            PropositionDerivationRule::AlgebraicConstructorInjectivity { .. } => {
-                "AlgebraicConstructorInjectivity"
-            }
-            PropositionDerivationRule::OrLeft(_) => "OrLeft",
-            PropositionDerivationRule::OrRight(_) => "OrRight",
-            PropositionDerivationRule::DoubleNegation(_) => "DoubleNegation",
-            PropositionDerivationRule::Implies { .. } => "Implies",
-            PropositionDerivationRule::ImpliesFalseAntecedent(_) => "ImpliesFalseAntecedent",
-            PropositionDerivationRule::ForAllBody(_) => "ForAllBody",
-            PropositionDerivationRule::ExistsFromFact { .. } => "ExistsFromFact",
-            PropositionDerivationRule::ExistsFromWitness { .. } => "ExistsFromWitness",
-            PropositionDerivationRule::ForAllLoadableRange { .. } => "ForAllLoadableRange",
-            PropositionDerivationRule::FiniteForAll { .. } => "FiniteForAll",
-            PropositionDerivationRule::SingletonSubstitution { .. } => "SingletonSubstitution",
-            PropositionDerivationRule::DisjunctionCases { .. } => "DisjunctionCases",
-            PropositionDerivationRule::RefutedDisjunction { .. } => "RefutedDisjunction",
-        }
-    }
-
     /// Whether this equality retained exact constants and singleton bounds.
     /// Surface transcription uses only the retained context premises to emit
     /// an ordinary explicit arithmetic proof.
@@ -795,8 +766,8 @@ impl PointerOffsetCongruenceEvidence {
 
     pub(in crate::kernel) fn checks(
         &self,
-        left: &PointerOffsetTerm,
-        right: &PointerOffsetTerm,
+        left: &AddressOffset,
+        right: &AddressOffset,
         assumptions: &PureFactContext,
     ) -> bool {
         match self {
@@ -825,10 +796,8 @@ impl PointerOffsetCongruenceEvidence {
                 second,
                 swapped,
             } => {
-                let (
-                    PointerOffsetTerm::Add(left_a, left_b),
-                    PointerOffsetTerm::Add(right_a, right_b),
-                ) = (left, right)
+                let (AddressOffset::Add(left_a, left_b), AddressOffset::Add(right_a, right_b)) =
+                    (left, right)
                 else {
                     return false;
                 };
@@ -842,11 +811,11 @@ impl PointerOffsetCongruenceEvidence {
             }
             Self::Int32Scaled { byte_width, path } => {
                 let (
-                    PointerOffsetTerm::Int32Scaled {
+                    AddressOffset::Int32Scaled {
                         value: left,
                         byte_width: left_width,
                     },
-                    PointerOffsetTerm::Int32Scaled {
+                    AddressOffset::Int32Scaled {
                         value: right,
                         byte_width: right_width,
                     },
@@ -867,11 +836,11 @@ impl PointerOffsetCongruenceEvidence {
                 equality,
             } => {
                 let (
-                    PointerOffsetTerm::Int32Scaled {
+                    AddressOffset::Int32Scaled {
                         value: left,
                         byte_width: left_width,
                     },
-                    PointerOffsetTerm::Int32Scaled {
+                    AddressOffset::Int32Scaled {
                         value: right,
                         byte_width: right_width,
                     },
@@ -889,12 +858,12 @@ impl PointerOffsetCongruenceEvidence {
                 path,
             } => {
                 let (
-                    PointerOffsetTerm::Int64Scaled {
+                    AddressOffset::Int64Scaled {
                         value: left,
                         byte_width: left_width,
                         unsigned: left_unsigned,
                     },
-                    PointerOffsetTerm::Int64Scaled {
+                    AddressOffset::Int64Scaled {
                         value: right,
                         byte_width: right_width,
                         unsigned: right_unsigned,
@@ -1221,7 +1190,7 @@ impl LoadAddressCongruenceEvidence {
             && left.kind == right.kind
             && *left_pointer == self.left_pointer
             && *right_pointer == self.right_pointer
-            && left_pointer.block == right_pointer.block
+            && left_pointer.base == right_pointer.base
             && self
                 .offset
                 .checks(&left_pointer.offset, &right_pointer.offset, assumptions)
@@ -1431,7 +1400,7 @@ impl ExecutionBudget {
     ///
     /// The range overlaps none of the reserved ones: the execution counter
     /// runs `1_000_000 .. 2_000_000`, quantifiers stop at `4_000_000`,
-    /// algebraic binders stop at `4_000_000_000`, symbolic pointer blocks span
+    /// algebraic binders stop at `4_000_000_000`, symbolic address bases span
     /// `4_000_000_000 .. 8_000_000_000`, load variables span
     /// `1 << 40 .. 1 << 41`, and spec fold binders span
     /// `1 << 43 .. 1 << 44`. The kernel test
@@ -1470,7 +1439,7 @@ impl ExecutionBudget {
     /// The range overlaps none of the reserved ones: the C identities run
     /// below `1_000_000`, the execution counter runs
     /// `1_000_000 .. 2_000_000`, surface quantifiers run below `4_000_000`,
-    /// algebraic binders stop at `4_000_000_000`, symbolic pointer blocks span
+    /// algebraic binders stop at `4_000_000_000`, symbolic address bases span
     /// `4_000_000_000 .. 8_000_000_000`, load variables span
     /// `1 << 40 .. 1 << 41`, match binders span `1 << 41 .. 1 << 42`, and
     /// spec fold binders span `1 << 43 .. 1 << 44`. The
@@ -1499,32 +1468,32 @@ impl ExecutionBudget {
     }
 
     /// The first constant element range this budget's lowering refused as a
-    /// 32-bit byte extent, for the message a caller writes when the lowering
+    /// 32-bit byte span, for the message a caller writes when the lowering
     /// produced no path at all.
-    pub fn dropped_range_extent(&self) -> Option<&super::DroppedRangeExtent> {
-        self.dropped_range_extent.as_ref()
+    pub fn dropped_range_span(&self) -> Option<&super::DroppedRangeSpan> {
+        self.dropped_range_span.as_ref()
     }
 
     /// Whether a stated memory range was dropped because this context
-    /// refutes one of its extent guards, and whether that guard ordered the
+    /// refutes one of its span guards, and whether that guard ordered the
     /// range's endpoints (`true`) or bounded its byte count (`false`).
-    pub fn dropped_refuted_range_extent(&self) -> Option<bool> {
-        self.dropped_refuted_range_extent
+    pub fn dropped_refuted_range_span(&self) -> Option<bool> {
+        self.dropped_refuted_range_span
     }
 
     /// Records such a refusal. Diagnostic only; it decides nothing.
-    pub(in crate::kernel) fn record_dropped_refuted_range_extent(&mut self, reversed: bool) {
-        self.dropped_refuted_range_extent.get_or_insert(reversed);
+    pub(in crate::kernel) fn record_dropped_refuted_range_span(&mut self, reversed: bool) {
+        self.dropped_refuted_range_span.get_or_insert(reversed);
     }
 
-    pub(in crate::kernel) fn record_dropped_range_extent(
+    pub(in crate::kernel) fn record_dropped_range_span(
         &mut self,
         element_count: i64,
         element_width: u32,
         byte_limit: u32,
     ) {
-        self.dropped_range_extent
-            .get_or_insert(super::DroppedRangeExtent {
+        self.dropped_range_span
+            .get_or_insert(super::DroppedRangeSpan {
                 element_count,
                 element_width,
                 byte_limit,
@@ -1570,8 +1539,8 @@ impl ExecutionBudget {
             next_match_binder_variable: Self::MATCH_BINDER_VARIABLE_BASE,
             refuses_execution_identities: false,
             dropped_runtime_error: None,
-            dropped_range_extent: None,
-            dropped_refuted_range_extent: None,
+            dropped_range_span: None,
+            dropped_refuted_range_span: None,
             dropped_fold_body: None,
             dropped_comparison: None,
             program_byte_order: None,
@@ -1710,6 +1679,7 @@ impl ExecutionBudget {
     }
 
     /// Adds the evaluator work inherent in one selected C statement tree.
+    #[cfg(test)]
     pub(crate) fn with_execution_statement_cost(self, statement: &ProgramStatement) -> Self {
         self.with_program_source_cost(execution_statement_source_cost(statement))
     }
@@ -2090,8 +2060,11 @@ fn execution_statement_source_cost(statement: &ProgramStatement) -> ProgramSourc
                 body,
                 ..
             } => {
-                let (condition, _, test) = loop_test.execution_parts();
-                cost.add_expression(program_expression_source_steps(condition));
+                let condition = loop_test.source_condition();
+                let test = loop_test.source_region();
+                if let Some(condition) = condition {
+                    cost.add_expression(program_expression_source_steps(condition));
+                }
                 pending.push(body);
                 if let Some(test) = test {
                     pending.push(&test.statement);

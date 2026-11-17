@@ -130,9 +130,7 @@ use surface_construction::*;
 pub(super) use surface_synthesis::synthesize_surface_proposition_at_entry_and_post;
 #[cfg(test)]
 use surface_synthesis::{SURFACE_SYNTHESIS_DEPTH_LIMIT, bitvector_term_is_load_free};
-pub(super) use surface_synthesis::{
-    callback_source_name, synthesize_surface_equality_across_points, synthesize_surface_proposition,
-};
+pub(super) use surface_synthesis::{callback_source_name, synthesize_surface_proposition};
 use surface_synthesis::{
     surface_synthesis_exhaustion_description, surface_synthesis_failure,
     synthesize_surface_machine_expression,
@@ -213,12 +211,12 @@ mod certificate_tests {
 
     #[test]
     fn local_index_surface_candidates_reject_nested_loads() {
-        let pointer = Pointer {
-            block: "data".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "data".into(),
+            offset: AddressOffset::Constant(0),
         };
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
+            crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,
         );
@@ -274,7 +272,7 @@ mod certificate_tests {
     #[test]
     fn state_annotation_rejects_deep_logic_without_using_the_native_stack() {
         let mut surface = ClickProposition::Comparison {
-            left: ContractExpression::CBinding("value".to_string()),
+            left: ContractExpression::ProgramBinding("value".to_string()),
             operator: ComparisonOperator::Equal,
             right: ContractExpression::ProgramExpression(ProgramExpression::Value(
                 ProgramValue::Int32(MachineTerm::constant(0)),
@@ -298,11 +296,11 @@ mod certificate_tests {
 
     #[test]
     fn state_index_finds_a_late_exact_selector_inside_a_quantifier() {
-        let early_memory = Memory::new().with_block("early", 4);
-        let target_memory = Memory::new().with_block("target", 4);
-        let pointer = Pointer {
-            block: "target".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let early_memory = SymbolicMemory::new().with_block("early", 4);
+        let target_memory = SymbolicMemory::new().with_block("target", 4);
+        let pointer = Address {
+            base: "target".into(),
+            offset: AddressOffset::Constant(0),
         };
         let kernel = Proposition::ForAll {
             name: Default::default(),
@@ -352,10 +350,10 @@ mod certificate_tests {
 
     #[test]
     fn missing_state_form_reports_a_concise_indexed_failure() {
-        let target_memory = Memory::new().with_block("target", 4);
-        let pointer = Pointer {
-            block: "target".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let target_memory = SymbolicMemory::new().with_block("target", 4);
+        let pointer = Address {
+            base: "target".into(),
+            offset: AddressOffset::Constant(0),
         };
         let kernel = Proposition::ConditionIs(
             ConditionTerm::Compare {
@@ -370,7 +368,8 @@ mod certificate_tests {
             },
             true,
         );
-        let state = ExecutionState::new().with_memory(Memory::new().with_block("current", 4));
+        let state =
+            ExecutionState::new().with_memory(SymbolicMemory::new().with_block("current", 4));
 
         let facts = PureFactStore::from_ordered(&[]);
         let error = checked_surface_comparison_fact_in_state_with_indexed_facts(
@@ -399,13 +398,13 @@ mod certificate_tests {
                 .contains("0 exact and 0 compatible recorded states"),
             "{error}"
         );
-        assert!(!error.message().contains("Memory"), "{error}");
+        assert!(!error.message().contains("SymbolicMemory"), "{error}");
     }
 
     #[test]
     fn state_variant_search_reaches_a_candidate_after_eight() {
         let base = ClickProposition::Comparison {
-            left: ContractExpression::CBinding("value".to_string()),
+            left: ContractExpression::ProgramBinding("value".to_string()),
             operator: ComparisonOperator::Equal,
             right: ContractExpression::ProgramExpression(ProgramExpression::Value(
                 ProgramValue::Int32(MachineTerm::constant(0)),
@@ -1915,7 +1914,7 @@ pub(super) fn initial_claim_context(
 /// `bool` parameter's range entry fact (rule C1).
 fn bool_range_surface(name: &str) -> ClickProposition {
     let cast = ContractExpression::CUnary {
-        operand: Box::new(ContractExpression::CBinding(name.to_string())),
+        operand: Box::new(ContractExpression::ProgramBinding(name.to_string())),
         lowered: ProgramExpression::Cast {
             expression: Box::new(ProgramExpression::Variable(name.into())),
             target_type: crate::kernel::ProgramType::Int32,
@@ -2722,7 +2721,7 @@ fn evaluate_entry_resource_context(
     include_owned_composite_cores: Option<resources::OwnedCores>,
     claim_label: &str,
     entry_resources: &ResourceContext,
-    entry_memory: &Memory,
+    entry_memory: &SymbolicMemory,
 ) -> Result<(ExecutionState, Vec<Proposition>, Vec<Proposition>), ClickError> {
     let parameter_binding = ParameterBinding::new(parsed_function.parameters(), arguments);
     let (resource_specs, _) = crate::surface::verification::function_resource_summary(
@@ -2858,7 +2857,7 @@ fn evaluate_entry_resource_context(
             &evaluation_state,
             &resource_specs,
             &definitions,
-            &assumptions.clone().assume_entry_clause_extents(),
+            &assumptions.clone().assume_entry_clause_spans(),
             &mut budget,
         ) {
             Ok(Ok(evaluated)) => evaluated,

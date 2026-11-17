@@ -394,13 +394,13 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
     let loop_exit_condition = match &current_loop {
         ProgramStatement::Loop {
             test: loop_test, ..
-        } => {
-            let (condition, _, _) = loop_test.execution_parts();
-            Some(ClickProposition::Not(Box::new(surface_program_condition(
-                condition,
-                &execution.core.state,
-            )?)))
-        }
+        } => loop_test
+            .entry_condition()
+            .map(|condition| {
+                surface_program_condition(condition, &execution.core.state)
+                    .map(|condition| ClickProposition::Not(Box::new(condition)))
+            })
+            .transpose()?,
         _ => None,
     };
     let certificates = loop_certificates.borrow().clone();

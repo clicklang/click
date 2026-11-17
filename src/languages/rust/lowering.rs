@@ -305,7 +305,7 @@ fn fn_pointer_signature(t: &Type) -> Result<CallbackInterface, String> {
     }
     Ok(CallbackInterface::new(result, None, parameters, false))
 }
-// Embedded arrays retain one ABI field and their concrete extent. Never
+// Embedded arrays retain one ABI field and their concrete length. Never
 // flatten a field into one layout entry per element.
 fn record_field_type(t: &Type) -> Result<InterfaceType, String> {
     let Type::Array { element, length } = t else {
@@ -690,9 +690,9 @@ fn lower_function(
             .with_pointee_constant(constant);
         if let Some((length, element, _)) = arrays.get(&p.name) {
             let bytes = u32::try_from(*length * u64::from(element.byte_width()))
-                .expect("validated fixed array extent");
-            parameter = parameter.with_fixed_reference_extent(bytes);
-            kernel_parameter = kernel_parameter.with_fixed_reference_extent(bytes);
+                .expect("validated fixed array length");
+            parameter = parameter.with_fixed_reference_bounds(bytes);
+            kernel_parameter = kernel_parameter.with_fixed_reference_bounds(bytes);
         }
         parameters.push(parameter);
         kernel_parameters.push(kernel_parameter);

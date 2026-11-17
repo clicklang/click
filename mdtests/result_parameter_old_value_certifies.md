@@ -10,8 +10,8 @@ int32 bump(int32 result) {
 verifying "bump.c";
 
 int32 bump(int32 result) {
-    requires 0 <= c(result) and c(result) <= 100;
-    ensures result == old(c(result)) + 1;
+    requires 0 <= program::result and program::result <= 100;
+    ensures result == old(program::result) + 1;
 }
 ```
 

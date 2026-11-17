@@ -5531,7 +5531,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 crate::kernel::proposition_mentions_load_variable(goal)
                     || crate::kernel::proof::term_rewrite::proposition_pointer_terms(goal)
                         .iter()
-                        .any(|pointer| matches!(pointer.block, PointerBlock::LoadedPointer(_)))
+                        .any(|pointer| matches!(pointer.base, AddressBase::LoadedPointer(_)))
             });
             if calls.is_empty() && !reads_memory {
                 return Ok(None);
@@ -7704,70 +7704,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 return surface;
             }
         }
-        // Before accepting an unanchored recorded form, which may have been
-        // stated at an earlier value of a variable that later changed,
-        // spell the fact against the recorded state where it was read.
-        if let Some(anchor) = premise_anchor
-            && let Some((parameters, arguments, recorded_states)) = match search_input
-                .context
-                .as_ref()
-            {
-                ProofContext::Pure(_) => None,
-                ProofContext::FixedState(context) => Some((
-                    context.parameter_binding.parameters,
-                    context.parameter_binding.arguments,
-                    context.fixed_state.recorded_states,
-                )),
-                ProofContext::Execution(_) => search_input.premise_fixed_state_view().map(|view| {
-                    (
-                        view.parameter_binding.parameters,
-                        view.parameter_binding.arguments,
-                        view.fixed_state.recorded_states,
-                    )
-                }),
-            }
-            && let Some(anchored) = crate::instrumentation::measure_operation(
-                "surface",
-                "solve premise",
-                "solve premise surface at recorded states",
-                || {
-                    synthesize_surface_at_recorded_states(
-                        kernel,
-                        ParameterBinding::new(parameters, arguments),
-                        recorded_states,
-                        anchor,
-                    )
-                    .find(|surface| matches_kernel(surface, true).is_some())
-                },
-            )
-        {
-            return Some(anchored);
-        }
-        // A fact can mix states: a call's `ensures` that names its own
-        // `old(..)` value holds a value only that call's entry state reads,
-        // beside values the current state names. Spell it at the current
-        // state with one recorded statement entry as the further state.
-        if let Some(anchor) = premise_anchor
-            && let Some(view) = search_input.premise_fixed_state_view()
-            && let Some(mixed) = crate::instrumentation::measure_operation(
-                "surface",
-                "solve premise",
-                "solve premise surface across recorded states",
-                || {
-                    synthesize_surface_with_recorded_state(
-                        kernel,
-                        view.parameter_binding,
-                        view.fixed_state.pre_state,
-                        view.fixed_state.state,
-                        view.fixed_state.recorded_states,
-                        anchor,
-                    )
-                    .find(|surface| matches_kernel(surface, true).is_some())
-                },
-            )
-        {
-            return Some(mixed);
-        }
         if crate::instrumentation::deadline_exceeded() {
             return None;
         }
@@ -8167,26 +8103,26 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // none mentions an offset operand of this comparison.
         let equality_candidates = match &goal {
             Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), value)
-                if left.block == right.block =>
+                if left.base == right.base =>
             {
                 // External arguments share a block and carry the
                 // actual base as an offset prefix: `(base + i) == base`
                 // needs facts about `i`, not old reads through `base`.
-                let zero = crate::kernel::PointerOffsetTerm::Constant(0);
+                let zero = crate::kernel::AddressOffset::Constant(0);
                 let (left, right) = match (&left.offset, &right.offset) {
-                    (crate::kernel::PointerOffsetTerm::Add(base, index), right)
+                    (crate::kernel::AddressOffset::Add(base, index), right)
                         if base.as_ref() == right =>
                     {
                         (index.as_ref(), &zero)
                     }
-                    (left, crate::kernel::PointerOffsetTerm::Add(base, index))
+                    (left, crate::kernel::AddressOffset::Add(base, index))
                         if left == base.as_ref() =>
                     {
                         (&zero, index.as_ref())
                     }
                     (
-                        crate::kernel::PointerOffsetTerm::Add(left_base, left_index),
-                        crate::kernel::PointerOffsetTerm::Add(right_base, right_index),
+                        crate::kernel::AddressOffset::Add(left_base, left_index),
+                        crate::kernel::AddressOffset::Add(right_base, right_index),
                     ) if left_base == right_base => (left_index.as_ref(), right_index.as_ref()),
                     (left, right) => (left, right),
                 };

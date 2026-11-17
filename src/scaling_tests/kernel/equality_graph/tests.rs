@@ -9,13 +9,13 @@ fn wide_borrow_alignment_retains_both_index_widths_without_alias_scans() {
     let mut samples = Vec::new();
     for size in [16_u64, 64, 256, 1024] {
         let mut graph = EqualityGraph::default();
-        let bytes = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(index(999_200), 1),
+        let bytes = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::scale_int32(index(999_200), 1),
         };
-        let base = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(index(999_201), 1),
+        let base = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::scale_int32(index(999_201), 1),
         };
         let computed = base.offset_by_elements(index(999_202), 1);
         let wide = bytes.offset_by_typed_elements(index(999_203), 1, true, true);
@@ -23,10 +23,10 @@ fn wide_borrow_alignment_retains_both_index_widths_without_alias_scans() {
         assert_eq!(graph.additive_address(&computed), Some(computed.clone()));
         assert_eq!(graph.wide_additive_address(&computed), Some(wide.clone()));
         for item in 0..size {
-            let alias = Pointer::symbolic(Variable(1_100_000 + item));
+            let alias = Address::symbolic(Variable(1_100_000 + item));
             assert!(graph.add_equality(&alias, &computed));
         }
-        let cursor = Pointer::symbolic(Variable(1_100_000 + size - 1));
+        let cursor = Address::symbolic(Variable(1_100_000 + size - 1));
         let (((aligned, lane), work), map_work) =
             crate::persistent::measure_persistent_work(|| {
                 crate::instrumentation::measure_deterministic_work(|| {
@@ -66,19 +66,19 @@ fn repeated_address_queries_reuse_registered_addresses() {
         // query reaches address registration, whose normal form of each
         // offset is a fresh flattened term.
         let offset = |first: u64| {
-            (0..size).fold(PointerOffsetTerm::Constant(0), |sum, item| {
-                PointerOffsetTerm::Add(
+            (0..size).fold(AddressOffset::Constant(0), |sum, item| {
+                AddressOffset::Add(
                     Box::new(sum),
-                    Box::new(PointerOffsetTerm::scaled_int32_node(index(first + item), 4)),
+                    Box::new(AddressOffset::scaled_int32_node(index(first + item), 4)),
                 )
             })
         };
-        let left = Pointer {
-            block: symbolic(1),
+        let left = Address {
+            base: symbolic(1),
             offset: offset(1_000),
         };
-        let right = Pointer {
-            block: symbolic(2),
+        let right = Address {
+            base: symbolic(2),
             offset: offset(5_000),
         };
         let (first, first_work) =
@@ -157,7 +157,7 @@ fn reading_one_class_merge_does_not_walk_the_shared_history() {
 fn same_block_pointer_premise_chains_have_indexed_work() {
     for size in [16u64, 64, 256, 1024] {
         let block = symbolic(11_030);
-        let offset = |i| PointerOffsetTerm::Variable(Variable(20_000 + i));
+        let offset = |i| AddressOffset::Variable(Variable(20_000 + i));
         let mut graph = EqualityGraph::default();
         let (_, insertion_work) = crate::instrumentation::measure_deterministic_work(|| {
             for i in 0..size {
@@ -182,8 +182,8 @@ fn same_block_pointer_premise_chains_have_indexed_work() {
 #[test]
 fn equal_base_offset_queries_ignore_unrelated_class_members() {
     for size in [16u64, 64, 256, 1024] {
-        let x = PointerOffsetTerm::Variable(Variable(11_050));
-        let y = PointerOffsetTerm::Variable(Variable(11_051));
+        let x = AddressOffset::Variable(Variable(11_050));
+        let y = AddressOffset::Variable(Variable(11_051));
         let mut graph = EqualityGraph::default();
         for i in 0..size {
             graph.add_equality(&at(symbolic(30_000 + i), 0), &at(symbolic(30_001 + i), 0));
@@ -207,19 +207,19 @@ fn equal_base_offset_queries_ignore_unrelated_class_members() {
 
 #[test]
 fn pointer_transitivity_recovers_same_block_offsets() {
-    let offset = |id| PointerOffsetTerm::scaled_int32_node(index(id), 4);
+    let offset = |id| AddressOffset::scaled_int32_node(index(id), 4);
     for reverse in [false, true] {
         let mut samples = Vec::new();
         for size in [8u64, 32, 128, 512] {
-            let x = at_offset(PointerBlock::ExternalArgument, offset(960_000));
-            let y = at_offset(PointerBlock::ExternalArgument, offset(960_001));
+            let x = at_offset(AddressBase::ExternalArgument, offset(960_000));
+            let y = at_offset(AddressBase::ExternalArgument, offset(960_001));
             let z = at(symbolic(960_002), 0);
             let mut graph = EqualityGraph::default();
             for id in 0..size {
                 graph.add_equality(
                     &at_offset(
                         symbolic(961_000 + id),
-                        PointerOffsetTerm::Variable(Variable(963_000 + id)),
+                        AddressOffset::Variable(Variable(963_000 + id)),
                     ),
                     &z,
                 );
@@ -257,18 +257,15 @@ fn pointer_transitivity_recovers_same_block_offsets() {
     // Equal addresses from different blocks do not equate their offsets.
     let mut graph = EqualityGraph::default();
     graph.add_equality(&at(symbolic(962_000), 4), &at(symbolic(962_001), 8));
-    assert!(!graph.are_offsets_equal(
-        &PointerOffsetTerm::Constant(4),
-        &PointerOffsetTerm::Constant(8)
-    ));
+    assert!(!graph.are_offsets_equal(&AddressOffset::Constant(4), &AddressOffset::Constant(8)));
 }
 
 #[test]
 fn mixed_pointer_queries_do_not_walk_growing_offset_classes() {
     for size in [8u64, 32, 128, 512] {
-        let offset = |i| PointerOffsetTerm::Variable(Variable(940_000 + i));
-        let x = at_offset(PointerBlock::ExternalArgument, offset(0));
-        let y = at_offset(PointerBlock::ExternalArgument, offset(size));
+        let offset = |i| AddressOffset::Variable(Variable(940_000 + i));
+        let x = at_offset(AddressBase::ExternalArgument, offset(0));
+        let y = at_offset(AddressBase::ExternalArgument, offset(size));
         let z = at(symbolic(950_000), 0);
         let mut graph = EqualityGraph::default();
         let (_, construction) = crate::instrumentation::measure_deterministic_work(|| {
@@ -276,23 +273,23 @@ fn mixed_pointer_queries_do_not_walk_growing_offset_classes() {
                 graph.add_offset_equality(&offset(i), &offset(i + 1));
             }
             graph.add_equality(&y, &z);
-            graph.add_equality(&z, &Pointer::null());
+            graph.add_equality(&z, &Address::null());
         });
         assert!(
             construction < 128 * size as usize,
             "size={size}, work={construction}"
         );
-        assert!(!graph.are_equal(&x, &Pointer::null()));
+        assert!(!graph.are_equal(&x, &Address::null()));
         let sibling = graph.clone();
         let mut branch = graph.clone();
         let (_, query) = crate::instrumentation::measure_deterministic_work(|| {
             branch.add_offset_equality(&offset(0), &offset(1));
-            assert!(branch.are_equal(&x, &Pointer::null()));
-            assert!(branch.are_equal(&Pointer::null(), &x));
+            assert!(branch.are_equal(&x, &Address::null()));
+            assert!(branch.are_equal(&Address::null(), &x));
         });
         assert!(query < 128, "size={size}, work={query}");
-        assert!(!graph.are_equal(&x, &Pointer::null()));
-        assert!(!sibling.are_equal(&x, &Pointer::null()));
+        assert!(!graph.are_equal(&x, &Address::null()));
+        assert!(!sibling.are_equal(&x, &Address::null()));
     }
 }
 
@@ -301,15 +298,15 @@ fn constant_displacement_queries_ignore_unrelated_class_members() {
     for size in [16u64, 64, 256, 1024] {
         let a = symbolic(40_000);
         let b = symbolic(40_001);
-        let x = PointerOffsetTerm::Variable(Variable(11_070));
-        let y = PointerOffsetTerm::Variable(Variable(11_071));
+        let x = AddressOffset::Variable(Variable(11_070));
+        let y = AddressOffset::Variable(Variable(11_071));
         let mut graph = EqualityGraph::default();
         graph.add_equality(&at(a.clone(), 0), &at(b.clone(), 8));
         for i in 1..size {
             graph.add_equality(&at(symbolic(40_000 + i), 0), &at(symbolic(40_001 + i), 0));
         }
         graph.add_offset_equality(
-            &PointerOffsetTerm::add(x.clone(), PointerOffsetTerm::Constant(8)),
+            &AddressOffset::add(x.clone(), AddressOffset::Constant(8)),
             &y,
         );
         let left = at_offset(a, x);
@@ -336,10 +333,10 @@ fn same_block_pointer_queries_scale_with_registered_offset_classes() {
         for id in 0..size {
             graph.add_int32_equality(&index(id), &index(id + 1));
         }
-        let first = at_offset(base.clone(), PointerOffsetTerm::scale_int32(index(0), 4));
+        let first = at_offset(base.clone(), AddressOffset::scale_int32(index(0), 4));
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             for id in 1..=size {
-                let other = at_offset(base.clone(), PointerOffsetTerm::scale_int32(index(id), 4));
+                let other = at_offset(base.clone(), AddressOffset::scale_int32(index(id), 4));
                 assert!(graph.are_equal(&first, &other));
             }
         });
@@ -352,7 +349,7 @@ fn local_slot_alias_lookup_skips_unrelated_opaque_class_members() {
     let mut work = Vec::new();
     for size in [4u64, 16, 64] {
         let mut graph = EqualityGraph::default();
-        let base = at(PointerBlock::ExternalArgument, 0);
+        let base = at(AddressBase::ExternalArgument, 0);
         for id in 0..size {
             graph.add_equality(&base, &at(symbolic(10_000 + id), 0));
         }
@@ -363,7 +360,7 @@ fn local_slot_alias_lookup_skips_unrelated_opaque_class_members() {
             let mut expected = graph
                 .pointer_spellings(&query)
                 .into_iter()
-                .map(|pointer| pointer.block)
+                .map(|pointer| pointer.base)
                 .filter(|block| block.starts_with("local:"))
                 .collect::<Vec<_>>();
             let (mut actual, units) = crate::instrumentation::measure_deterministic_work(|| {
@@ -385,10 +382,10 @@ fn local_slot_alias_lookup_skips_unrelated_opaque_class_members() {
 // earlier misses.
 #[test]
 fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
-    let memory = crate::kernel::intern_memory(Memory::new());
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let p = at(symbolic(919_001), 0);
     let q = at(symbolic(919_002), 0);
-    let variable = |address: &Pointer| {
+    let variable = |address: &Address| {
         crate::kernel::load_variable_for_cell_with_origin(
             &memory,
             address,
@@ -399,15 +396,15 @@ fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
     };
     let xv = variable(&p);
     let yv = variable(&q);
-    let x = Pointer::loaded(&MachineTerm::Variable(xv)).unwrap();
-    let y = Pointer::loaded(&MachineTerm::Variable(yv)).unwrap();
+    let x = Address::loaded(&MachineTerm::Variable(xv)).unwrap();
+    let y = Address::loaded(&MachineTerm::Variable(yv)).unwrap();
     // A typed read is named by its defining state and address, not by
     // its storage block or a scaled offset.
     for (value, address) in [(&x, &p), (&y, &q)] {
         let read = value.as_loaded_value().expect("a typed pointer read");
         assert_eq!(&read.defining_address, address);
         assert_eq!(read.defining_memory.arena_id(), memory.arena_id());
-        assert_eq!(read.displacement, PointerOffsetTerm::Constant(0));
+        assert_eq!(read.displacement, AddressOffset::Constant(0));
     }
     let mut graph = EqualityGraph::default();
     let sibling = graph.clone();
@@ -426,9 +423,9 @@ fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
     // A scalar-indexed address beside the same load is not the read.
     assert!(!graph.are_equal(
         &x,
-        &Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(yv), 4),
+        &Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::scale_int32(MachineTerm::Variable(yv), 4),
         }
     ));
     // New unrelated definitions must not make rediscovery visit more than
@@ -436,7 +433,7 @@ fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
     for size in [16u64, 64, 256, 1024] {
         for i in 0..size {
             let address = at(symbolic(920_000 + i), 0);
-            let value = Pointer::loaded_value(&memory, &address);
+            let value = Address::loaded_value(&memory, &address);
             graph.register_pointer_read_definition(&value, &memory, &address);
         }
         let ((equal, work), map_work) = crate::persistent::measure_persistent_work(|| {
@@ -463,8 +460,8 @@ fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
 /// classed loads read from other states.
 #[test]
 fn load_congruence_work_ignores_classed_loads_of_other_states() {
-    let name = |memory: &crate::kernel::SharedMemory, address: Pointer| {
-        PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
+    let name = |memory: &crate::kernel::SharedMemory, address: Address| {
+        AddressBase::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
             memory,
             &address,
             crate::kernel::LoadKind::Int32,
@@ -477,7 +474,7 @@ fn load_congruence_work_ignores_classed_loads_of_other_states() {
         let mut classes = EqualityGraph::default();
         for index in 0..unrelated {
             let memory = crate::kernel::intern_memory(
-                crate::kernel::Memory::new()
+                crate::kernel::SymbolicMemory::new()
                     .with_block(symbolic(70_000 + index), 16)
                     .store(
                         at(symbolic(70_000 + index), 0),
@@ -488,7 +485,7 @@ fn load_congruence_work_ignores_classed_loads_of_other_states() {
             classes.add_equality(&at(loaded, 0), &at(symbolic(80_000 + index), 0));
         }
         let memory = crate::kernel::intern_memory(
-            crate::kernel::Memory::new().with_block(symbolic(90_000), 16),
+            crate::kernel::SymbolicMemory::new().with_block(symbolic(90_000), 16),
         );
         classes.add_equality(&at(symbolic(90_001), 0), &at(symbolic(90_002), 0));
         let left = name(&memory, at(symbolic(90_001), 0));
@@ -504,7 +501,7 @@ fn load_congruence_work_ignores_classed_loads_of_other_states() {
 
 #[test]
 fn same_state_load_queries_ignore_unrelated_applications() {
-    let memory = crate::kernel::intern_memory(Memory::new().with_block(symbolic(501), 16));
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block(symbolic(501), 16));
     let p = at(symbolic(502), 0);
     let q = at(symbolic(503), 0);
     let left = named_load(&memory, &p);
@@ -534,7 +531,7 @@ fn same_state_load_queries_ignore_unrelated_applications() {
 
 #[test]
 fn late_merges_and_repeated_queries_have_near_linear_total_work() {
-    let memory = crate::kernel::intern_memory(Memory::new().with_block(symbolic(601), 16));
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block(symbolic(601), 16));
     for size in [16u64, 64, 256, 1024] {
         let left = at(symbolic(602), 0);
         let right = at(symbolic(603), 0);
@@ -542,8 +539,8 @@ fn late_merges_and_repeated_queries_have_near_linear_total_work() {
         let mut pairs = Vec::new();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for i in 0..size {
-                let a = named_load(&memory, &at(left.block.clone(), i as i64 * 8));
-                let b = named_load(&memory, &at(right.block.clone(), i as i64 * 8));
+                let a = named_load(&memory, &at(left.base.clone(), i as i64 * 8));
+                let b = named_load(&memory, &at(right.base.clone(), i as i64 * 8));
                 assert!(!classes.are_equal(&a, &b));
                 pairs.push((a, b));
             }
@@ -562,7 +559,7 @@ fn late_merges_and_repeated_queries_have_near_linear_total_work() {
 #[test]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn late_typed_load_merges_scale_with_existing_storage_relative_bridges() {
-    let memory = crate::kernel::intern_memory(Memory::new());
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let mut costs = Vec::new();
     for size in [4u64, 16, 64, 256] {
         let mut graph = EqualityGraph::default();
@@ -571,8 +568,8 @@ fn late_typed_load_merges_scale_with_existing_storage_relative_bridges() {
             for i in 0..size {
                 let p = at(symbolic(810_000 + i), 0);
                 let q = at(symbolic(820_000 + i), 0);
-                let old_value = |address: &Pointer| {
-                    Pointer::loaded(&MachineTerm::Variable(
+                let old_value = |address: &Address| {
+                    Address::loaded(&MachineTerm::Variable(
                         crate::kernel::load_variable_for_cell_with_origin(
                             &memory,
                             address,
@@ -585,8 +582,8 @@ fn late_typed_load_merges_scale_with_existing_storage_relative_bridges() {
                 };
                 let left = old_value(&p);
                 let right = old_value(&q);
-                graph.add_equality(&left, &Pointer::loaded_value(&memory, &p));
-                graph.add_equality(&right, &Pointer::loaded_value(&memory, &q));
+                graph.add_equality(&left, &Address::loaded_value(&memory, &p));
+                graph.add_equality(&right, &Address::loaded_value(&memory, &q));
                 graph.add_equality(&p, &q);
                 pairs.push((left, right));
             }
@@ -606,13 +603,13 @@ fn late_typed_load_merges_scale_with_existing_storage_relative_bridges() {
 
 #[test]
 fn branch_merges_do_not_reindex_the_large_shared_prefix() {
-    let memory = crate::kernel::intern_memory(Memory::new().with_block(symbolic(701), 16));
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block(symbolic(701), 16));
     let root = at(symbolic(702), 0);
     let mut costs = Vec::new();
     for size in [16u64, 64, 256, 1024] {
         let mut trunk = EqualityGraph::default();
         for i in 0..size {
-            let load = named_load(&memory, &at(root.block.clone(), i as i64 * 8));
+            let load = named_load(&memory, &at(root.base.clone(), i as i64 * 8));
             trunk.add_equality(&load, &at(symbolic(300_000 + i), 0));
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -631,7 +628,7 @@ fn branch_merges_do_not_reindex_the_large_shared_prefix() {
 #[test]
 fn separation_equality_query_uses_offset_classes_without_walking_aliases() {
     for size in [16u64, 64, 256, 1024] {
-        let offset = |i| PointerOffsetTerm::Variable(Variable(500_000 + i));
+        let offset = |i| AddressOffset::Variable(Variable(500_000 + i));
         let mut context = PureFactContext::new();
         for i in 0..size {
             context = context.assume_condition(
@@ -652,11 +649,11 @@ fn separation_equality_query_uses_offset_classes_without_walking_aliases() {
 #[test]
 fn affine_input_normalization_is_linear_in_its_explicit_syntax() {
     for size in [16u64, 64, 256, 1024] {
-        let mut input = PointerOffsetTerm::Constant(0);
+        let mut input = AddressOffset::Constant(0);
         for i in 0..size {
-            input = PointerOffsetTerm::Add(
+            input = AddressOffset::Add(
                 Box::new(input),
-                Box::new(PointerOffsetTerm::Variable(Variable(900_000 + i))),
+                Box::new(AddressOffset::Variable(Variable(900_000 + i))),
             );
         }
         let (form, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -704,28 +701,28 @@ fn shifted_raw_read_dependency_lookup_ignores_unrelated_definitions() {
     let mut samples = Vec::new();
     for size in [16_u64, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let mut graph = EqualityGraph::default();
         for item in 0..size {
-            let address = Pointer::symbolic(Variable(1_200_000 + item));
+            let address = Address::symbolic(Variable(1_200_000 + item));
             let _ = memory
                 .memory()
                 .symbolic_pointer_load(&address, ProgramType::Int32Pointer);
             graph.add_equality(
-                &Pointer::symbolic(Variable(1_300_000 + item)),
-                &Pointer::symbolic(Variable(1_400_000 + item)),
+                &Address::symbolic(Variable(1_300_000 + item)),
+                &Address::symbolic(Variable(1_400_000 + item)),
             );
         }
-        let address = Pointer::symbolic(Variable(1_500_000));
-        let model = Pointer::symbolic(Variable(1_500_001));
+        let address = Address::symbolic(Variable(1_500_000));
+        let model = Address::symbolic(Variable(1_500_001));
         let ProgramValue::Pointer(raw) = memory
             .memory()
             .symbolic_pointer_load(&address, ProgramType::Int32Pointer)
         else {
             panic!("typed pointer read");
         };
-        graph.add_equality(&Pointer::loaded_value(&memory, &address), &model);
-        let read = |pointer: &Pointer| {
+        graph.add_equality(&Address::loaded_value(&memory, &address), &model);
+        let read = |pointer: &Address| {
             MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,
                 pointer,
@@ -757,7 +754,7 @@ fn pointer_fact_source_order_queries_ignore_unrelated_admissions() {
         let mut target = None;
         for id in 0..size {
             let domain = crate::kernel::PointerValue::new(
-                Pointer::symbolic(Variable(9_000_000 + id)),
+                Address::symbolic(Variable(9_000_000 + id)),
                 crate::kernel::ProgramType::Int32Pointer,
             );
             let fact = std::sync::Arc::new(crate::kernel::ExecutionPureFact::certified(
@@ -771,7 +768,7 @@ fn pointer_fact_source_order_queries_ignore_unrelated_admissions() {
             ));
             graph.adjust_pointer_fact(&fact, true);
             if id == 0 {
-                target = Some((domain.opaque_extent().unwrap().clone(), fact));
+                target = Some((domain.bounds_owner().unwrap().clone(), fact));
             }
         }
         let (origin, fact) = target.unwrap();
@@ -799,15 +796,16 @@ fn pointer_fact_source_order_queries_ignore_unrelated_admissions() {
 
 #[test]
 fn wide_read_metadata_does_not_publish_a_value_without_an_equation() {
-    use crate::kernel::{LoadKind, Memory, ProgramValue, intern_memory};
+    use crate::kernel::{LoadKind, ProgramValue, SymbolicMemory, intern_memory};
     for size in [8_u64, 32, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
         let mut graph = EqualityGraph::default();
         let mut reads = Vec::new();
         let ((), production) = crate::instrumentation::measure_deterministic_work(|| {
             for item in 0..size {
-                let address = Pointer::symbolic(Variable(9_800_000 + item));
-                let named = intern_memory(Memory::new().with_block(format!("word-{item}"), 8));
+                let address = Address::symbolic(Variable(9_800_000 + item));
+                let named =
+                    intern_memory(SymbolicMemory::new().with_block(format!("word-{item}"), 8));
                 let variable = crate::kernel::load_variable_for_cell_with_origin(
                     &named,
                     &address,

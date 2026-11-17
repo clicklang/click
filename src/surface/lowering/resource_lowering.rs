@@ -36,7 +36,7 @@ pub(in crate::surface) fn construction_result_resource(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface) struct ConcreteMemoryRangeSeed {
-    pub(in crate::surface) base: Pointer,
+    pub(in crate::surface) base: Address,
     pub(in crate::surface) bytes: u32,
     pub(in crate::surface) element_width: u32,
     /// `None` denotes a range whose logical elements are aggregates, such as
@@ -194,11 +194,11 @@ pub(in crate::surface) fn input_pointer_parameter(
 }
 
 fn input_pointer_identity(pointer: &crate::kernel::PointerValue) -> Option<Variable> {
-    if pointer.pointer().block != PointerBlock::ExternalArgument {
+    if pointer.pointer().base != AddressBase::ExternalArgument {
         return None;
     }
     match &pointer.pointer().offset {
-        PointerOffsetTerm::Int32Scaled { value, .. } => value.operand_view().variable().copied(),
+        AddressOffset::Int32Scaled { value, .. } => value.operand_view().variable().copied(),
         _ => None,
     }
 }
@@ -207,7 +207,7 @@ fn input_pointer_identity(pointer: &crate::kernel::PointerValue) -> Option<Varia
 /// on the checked callee binding. Contract evaluation still needs that
 /// information after the callee frame has been popped.
 fn initial_pointer_argument(
-    pointer: Pointer,
+    pointer: Address,
     parameter: &crate::languages::interface::ImportedParameter,
     index: usize,
     scope: u64,
@@ -236,8 +236,8 @@ fn input_arguments(
     for (index, parameter) in parameters.iter().enumerate() {
         if parameter.is_struct_value() {
             arguments.push(initial_pointer_argument(
-                Pointer {
-                    block: PointerBlock::ExternalArgument,
+                Address {
+                    base: AddressBase::ExternalArgument,
                     offset: scale_int32_offset(
                         MachineTerm::Variable(input_pointer_variable(scope, index)?),
                         1,
@@ -285,8 +285,8 @@ fn input_arguments(
             }
             InterfaceType::VoidPointer | InterfaceType::VoidPointerPointer => {
                 arguments.push(initial_pointer_argument(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
+                    Address {
+                        base: AddressBase::ExternalArgument,
                         offset: scale_int32_offset(
                             MachineTerm::Variable(input_pointer_variable(scope, index)?),
                             1,
@@ -299,7 +299,7 @@ fn input_arguments(
             }
             InterfaceType::FunctionPointer(_) => {
                 arguments.push(initial_pointer_argument(
-                    Pointer::symbolic_function(input_pointer_variable(scope, index)?),
+                    Address::symbolic_function(input_pointer_variable(scope, index)?),
                     parameter,
                     index,
                     scope,
@@ -323,8 +323,8 @@ fn input_arguments(
                     |_| 1,
                 );
                 arguments.push(initial_pointer_argument(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
+                    Address {
+                        base: AddressBase::ExternalArgument,
                         offset: scale_int32_offset(
                             MachineTerm::Variable(input_pointer_variable(scope, index)?),
                             i64::from(element_width),
@@ -376,8 +376,8 @@ fn input_arguments(
                     },
                     |_| 1,
                 );
-                let pointer = Pointer {
-                    block: PointerBlock::ExternalArgument,
+                let pointer = Address {
+                    base: AddressBase::ExternalArgument,
                     offset: scale_int32_offset(
                         MachineTerm::Variable(input_pointer_variable(scope, index)?),
                         i64::from(element_width),
@@ -424,13 +424,13 @@ fn input_arguments(
             InterfaceType::Int64(_) => {
                 arguments.push(ProgramExpression::Value(
                     ProgramValue::Int64(MachineTerm::Variable(Variable(arguments.len() as u64)))
-                        .complete_word(Pointer::symbolic(input_pointer_variable(scope, index)?)),
+                        .complete_word(Address::symbolic(input_pointer_variable(scope, index)?)),
                 ));
             }
             InterfaceType::UInt64(_) => {
                 arguments.push(ProgramExpression::Value(
                     ProgramValue::UInt64(MachineTerm::Variable(Variable(arguments.len() as u64)))
-                        .complete_word(Pointer::symbolic(input_pointer_variable(scope, index)?)),
+                        .complete_word(Address::symbolic(input_pointer_variable(scope, index)?)),
                 ));
             }
             InterfaceType::Float32 => {
@@ -525,12 +525,12 @@ pub(in crate::surface) fn initial_call_state(
             .return_aggregate_layout()
             .ok_or_else(|| ClickError::new("construction result has no layout"))?
             .clone();
-        let destination = Pointer::symbolic(input_pointer_variable(scope, parameters.len())?);
-        crate::kernel::register_block_alignment(&destination.block, layout.alignment_bytes());
+        let destination = Address::symbolic(input_pointer_variable(scope, parameters.len())?);
+        crate::kernel::register_block_alignment(&destination.base, layout.alignment_bytes());
         let memory = state
             .memory()
             .clone()
-            .with_uninitialized_block(destination.block.clone(), layout.size_bytes());
+            .with_uninitialized_block(destination.base.clone(), layout.size_bytes());
         state = state.with_memory(memory);
         state = state.with_aggregate_return_destination(destination.clone(), layout.clone());
         // Resource preparation evaluates the implicit contract segment before
@@ -559,9 +559,9 @@ pub(in crate::surface) fn initial_call_state(
         // A symbolic block is an arbitrary input identity, not a fresh local.
         // Record the raw footprint before resource naming can seed typed cells.
         // The constructor can target a subobject, so do not fix its containing
-        // allocation's extent. Field liveness comes from the entry contract.
-        let destination = Pointer::symbolic(input_pointer_variable(scope, index)?);
-        crate::kernel::register_block_alignment(&destination.block, layout.alignment_bytes());
+        // allocation's size. Field liveness comes from the entry contract.
+        let destination = Address::symbolic(input_pointer_variable(scope, index)?);
+        crate::kernel::register_block_alignment(&destination.base, layout.alignment_bytes());
         arguments[index] = initial_pointer_argument(destination.clone(), parameter, index, scope);
         let memory = state
             .memory()
@@ -800,9 +800,9 @@ fn reject_aggregate_parameter_storage_resource(
 }
 
 pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
-    mut memory: Memory,
+    mut memory: SymbolicMemory,
     loadable_ranges: &BTreeMap<String, ConcreteMemoryRangeSeed>,
-) -> Memory {
+) -> SymbolicMemory {
     let base_memory = memory.clone();
     for range in loadable_ranges.values() {
         if let Some(layout) = &range.struct_layout {
@@ -874,10 +874,10 @@ pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
 
 pub(in crate::surface) fn visit_struct_field_cells(
     field: &crate::languages::interface::RecordField,
-    element_pointer: &Pointer,
-    mut memory: Memory,
-    mut visit: impl FnMut(Memory, Pointer, ProgramType) -> Memory,
-) -> Memory {
+    element_pointer: &Address,
+    mut memory: SymbolicMemory,
+    mut visit: impl FnMut(SymbolicMemory, Address, ProgramType) -> SymbolicMemory,
+) -> SymbolicMemory {
     let field_pointer = element_pointer.offset_by_bytes(field.offset_bytes());
     let field_type = field.interface_type().to_kernel_type();
     let Some((element_type, length)) = array_field_elements(field_type) else {
@@ -927,15 +927,15 @@ fn seeds_symbolic_field_cell(element_type: ProgramType) -> bool {
 }
 
 fn materialize_symbolic_access_resource_cells(
-    mut memory: Memory,
+    mut memory: SymbolicMemory,
     state: &ExecutionState,
     requires: &[Requirement],
     parameter_binding: ParameterBinding<'_>,
-) -> Result<Memory, ClickError> {
+) -> Result<SymbolicMemory, ClickError> {
     // A segment based at a static pointer reads it before seeding the cells
     // it points at; keep that read so a later read of the pointer is the
     // same value rather than a question of whether those cells alias it.
-    let seed = |memory: Memory, segment: &ContractSegment| {
+    let seed = |memory: SymbolicMemory, segment: &ContractSegment| {
         let memory = match &segment.base {
             ProgramExpression::Variable(name) => {
                 crate::kernel::with_static_pointer_read_cached(state, memory, name)
@@ -980,10 +980,10 @@ fn materialize_symbolic_access_resource_cells(
 /// initialized, so the proof starts with them unwritten: a read needs a store
 /// or `defined` evidence first, as for a fresh local.
 fn mark_uninitialized_resource_memory(
-    mut memory: Memory,
+    mut memory: SymbolicMemory,
     requires: &[Requirement],
     parameter_binding: ParameterBinding<'_>,
-) -> Result<Memory, ClickError> {
+) -> Result<SymbolicMemory, ClickError> {
     for requirement in requires {
         let Requirement::Resource(resource) = requirement else {
             continue;
@@ -997,10 +997,10 @@ fn mark_uninitialized_resource_memory(
             let state = ExecutionState::new().with_memory(memory.clone());
             let element_width =
                 contract_segment_element_width(parameter_binding.parameters, segment);
-            let (start, extent) =
+            let (start, span) =
                 match evaluate_requirement_segment(parameter_binding, &state, segment) {
                     Ok(evaluated) => {
-                        let extent = match (&evaluated.start, &evaluated.end) {
+                        let span = match (&evaluated.start, &evaluated.end) {
                             (bits32_constant!(start), bits32_constant!(end)) => {
                                 if constant_u32(*end) <= constant_u32(*start) {
                                     continue;
@@ -1013,14 +1013,14 @@ fn mark_uninitialized_resource_memory(
                                         )
                                     })?
                             }
-                            _ => Memory::UNBOUNDED_UNWRITTEN_EXTENT,
+                            _ => SymbolicMemory::UNBOUNDED_UNWRITTEN_SPAN,
                         };
                         let start = offset_pointer_by_elements(
                             evaluated.base,
                             evaluated.start,
                             element_width,
                         );
-                        (start, extent)
+                        (start, span)
                     }
                     // Wide bounds, such as `buffer[0..size]` with a `uint64`
                     // size: mark from the base, which covers the segment.
@@ -1033,10 +1033,10 @@ fn mark_uninitialized_resource_memory(
                                     crate::surface::diagnostics::describe_contract_segment(segment)
                                 ))
                             })?;
-                        (base, Memory::UNBOUNDED_UNWRITTEN_EXTENT)
+                        (base, SymbolicMemory::UNBOUNDED_UNWRITTEN_SPAN)
                     }
                 };
-            memory = memory.with_uninitialized_object(start, extent);
+            memory = memory.with_uninitialized_object(start, span);
         }
     }
     Ok(memory)
@@ -1296,10 +1296,10 @@ pub(in crate::surface) fn folded_matched_instance_note(
 }
 
 fn materialize_access_segment_cells(
-    mut memory: Memory,
+    mut memory: SymbolicMemory,
     segment: &ContractSegment,
     parameter_binding: ParameterBinding<'_>,
-) -> Result<Memory, ClickError> {
+) -> Result<SymbolicMemory, ClickError> {
     let state = ExecutionState::new().with_memory(memory.clone());
     let source_segment = segment;
     let Ok(segment) = evaluate_requirement_segment(parameter_binding, &state, source_segment)
@@ -1508,8 +1508,8 @@ pub(in crate::surface) fn requirement_propositions_sharing_lowering_state(
     let mut pending = (0..requires.len()).collect::<Vec<_>>();
     // These are the function's own entry requirements: a member selected
     // through a pointer argument was checked by the caller, so it is
-    // assumed and recorded (`PureFactContext::assume_entry_clause_extents`).
-    let mut assumptions = initial_assumptions.clone().assume_entry_clause_extents();
+    // assumed and recorded (`PureFactContext::assume_entry_clause_spans`).
+    let mut assumptions = initial_assumptions.clone().assume_entry_clause_spans();
 
     // Requirements may be written in either order, so use one retry pass
     // after the first pass has published the facts it could lower. A bounded
@@ -1788,7 +1788,7 @@ pub(in crate::surface) fn resource_context_from_requirements(
 pub(in crate::surface) fn lower_resource_clause(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
 ) -> Result<ResourceFact, ClickError> {
     if matches!(resource, ResourceClause::MemoryAggregate { .. }) {
         let mut facts = lower_resource_clause_facts(resource, parameter_binding, memory)?;
@@ -1809,7 +1809,7 @@ pub(in crate::surface) fn lower_resource_clause(
 pub(in crate::surface) fn lower_resource_clause_facts(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
 ) -> Result<Vec<ResourceFact>, ClickError> {
     let values = resource_clause_parameter_values(resource, parameter_binding)?;
     let state = ExecutionState::new().with_memory(memory.clone());
@@ -2011,7 +2011,7 @@ pub(in crate::surface) fn lower_resource_clause_facts_at_state_with_result_and_e
 struct ClauseParameters<'a> {
     parameters: &'a [crate::languages::interface::ImportedParameter],
     values: &'a BTreeMap<String, ProgramValue>,
-    memory: &'a Memory,
+    memory: &'a SymbolicMemory,
     index: Option<&'a crate::surface::ParameterIndex>,
     array_refs: std::cell::OnceCell<ClickArrayRefs>,
 }
@@ -2020,7 +2020,7 @@ impl<'a> ClauseParameters<'a> {
     fn new(
         parameters: &'a [crate::languages::interface::ImportedParameter],
         values: &'a BTreeMap<String, ProgramValue>,
-        memory: &'a Memory,
+        memory: &'a SymbolicMemory,
     ) -> Self {
         Self {
             parameters,
@@ -2327,7 +2327,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                 let matches_type = if name == ResourceFact::ALLOCATION_RESOURCE_NAME && index == 0 {
                     program_value_matches_allocation_pointer(&value)
                 } else if name == ResourceFact::ALLOCATION_RESOURCE_NAME && index == 1 {
-                    program_value_matches_allocation_extent(&value)
+                    program_value_matches_allocation_size(&value)
                 } else {
                     program_value_matches_click_type(&value, *parameter_type)
                 };
@@ -2760,7 +2760,7 @@ pub(in crate::surface) fn resource_argument_to_typed_program_expression(
 ) -> Result<ProgramExpression, ClickError> {
     if argument_is_null_pointer_constant(argument, parameter_type) {
         return Ok(crate::kernel::program_expression::typed_pointer_value(
-            Pointer::null(),
+            Address::null(),
             parameter_type.to_kernel_type(),
         ));
     }
@@ -2854,11 +2854,11 @@ pub(in crate::surface) fn resource_argument_to_program_expression(
         ContractExpression::Field { lowered, .. } => Ok(lowered.clone()),
         ContractExpression::ArrayIndex { lowered, .. } => Ok(lowered.clone()),
         // A loop's pass count is a Click Integer, never a C value; a program
-        // variable of that name is `c(iterations)`.
+        // variable of that name is `program::iterations`.
         ContractExpression::Binding(name) if name == crate::surface::LOOP_ITERATIONS_NAME => Err(
             ClickError::new("a loop's `iterations` is an Integer, not a C value"),
         ),
-        ContractExpression::Binding(name) | ContractExpression::CBinding(name) => {
+        ContractExpression::Binding(name) | ContractExpression::ProgramBinding(name) => {
             Ok(ProgramExpression::Variable((name.clone()).into()))
         }
         ContractExpression::Add(left, right) => Ok(ProgramExpression::Add(
@@ -2961,7 +2961,7 @@ fn lower_resource_segment_with_values(
         .prefer_symbolic_external_loads()
         // This pass names a clause; the kernel checks its establishment
         // against the actual pointer and resources at a call or fold.
-        .assume_entry_clause_extents();
+        .assume_entry_clause_spans();
     let (surface_base, surface_start, surface_end) = match &segment.surface {
         ContractSegmentSurface::Range { base, start, end }
         | ContractSegmentSurface::StructRange {
@@ -3024,10 +3024,10 @@ fn lower_resource_segment_with_values(
     };
     let base_value = base;
     // A clause through a member pointer may not claim past the member
-    // (`design/pointer-subobject-extents.md`, D1). Constant bounds are
+    // (`design/pointer-subobject-bounds.md`, D1). Constant bounds are
     // refused here by name; the kernel decides the rest when it checks
     // the step.
-    let refuse_past_extent = |range: MemoryRange| {
+    let refuse_past_bounds = |range: MemoryRange| {
         let (start, end) = match range.wide_bounds() {
             Some(bounds) => bounds,
             None => (range.start(), range.end()),
@@ -3035,7 +3035,7 @@ fn lower_resource_segment_with_values(
         if start.as_const().is_none() || end.as_const().is_none() {
             return Ok(range);
         }
-        match crate::kernel::memory_range_extent_refusal(
+        match crate::kernel::memory_range_bounds_refusal(
             &base_value,
             &range,
             &crate::kernel::PureFactContext::new(),
@@ -3070,7 +3070,7 @@ fn lower_resource_segment_with_values(
     };
     // The same rule as the kernel's resource and proposition lowering.
     if let Some((start, end)) = crate::kernel::wide_range_bounds(&start_value, &end_value) {
-        return refuse_past_extent(MemoryRange::from_pointer_value_wide(
+        return refuse_past_bounds(MemoryRange::from_pointer_value_wide(
             &base_value,
             start,
             end,
@@ -3088,7 +3088,7 @@ fn lower_resource_segment_with_values(
             end = constant_u32(*end)
         )));
     }
-    refuse_past_extent(MemoryRange::from_pointer_value(
+    refuse_past_bounds(MemoryRange::from_pointer_value(
         &base_value,
         start,
         end,
@@ -3099,7 +3099,7 @@ fn lower_resource_segment_with_values(
 fn loadable_requirement_props(
     requirement: &Requirement,
     parameter_binding: ParameterBinding<'_>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> Result<Vec<Proposition>, ClickError> {
     if let Requirement::LoadableSegment { segment } = requirement
@@ -3153,7 +3153,7 @@ fn loadable_requirement_props(
 pub(in crate::surface) fn resource_clause_loadable_prop(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
 ) -> Result<Option<Proposition>, ClickError> {
     resource_clause_loadable_prop_at_state(
         resource,
@@ -3273,14 +3273,14 @@ pub(in crate::surface) fn resource_clause_memory_ranges_at_state(
 }
 
 pub(in crate::surface) fn memory_range_loadable_prop(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     range: &MemoryRange,
 ) -> Proposition {
     memory_range_loadable_atom_prop(memory, range)
 }
 
 pub(in crate::surface) fn memory_range_loadable_atom_prop(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     range: &MemoryRange,
 ) -> Proposition {
     if range.wide_bounds().is_some() {
@@ -3296,7 +3296,7 @@ pub(in crate::surface) fn memory_range_loadable_atom_prop(
 }
 
 pub(in crate::surface) fn memory_range_loadable_guards(range: &MemoryRange) -> Vec<Proposition> {
-    crate::kernel::memory_range_extent_guard_spellings(range)
+    crate::kernel::memory_range_span_guard_spellings(range)
 }
 
 pub(in crate::surface) fn concrete_loadable_block(
@@ -3312,7 +3312,7 @@ pub(in crate::surface) fn concrete_loadable_block(
             else {
                 return Ok(None);
             };
-            if segment.base.offset != PointerOffsetTerm::Constant(0)
+            if segment.base.offset != AddressOffset::Constant(0)
                 || segment.start != MachineTerm::constant(0)
             {
                 return Ok(None);
@@ -3441,7 +3441,7 @@ pub(in crate::surface) fn concrete_access_resource_blocks(
 pub(in crate::surface) fn loadable_base_and_bytes(
     requirement: &Requirement,
     parameter_binding: ParameterBinding<'_>,
-) -> Result<(Pointer, MachineTerm, Vec<Proposition>), ClickError> {
+) -> Result<(Address, MachineTerm, Vec<Proposition>), ClickError> {
     match requirement {
         Requirement::LoadableSegment { segment } => {
             let state = ExecutionState::new();
@@ -3571,7 +3571,7 @@ pub(in crate::surface) fn object_segment_layout<'a>(
 /// One complete struct object as a memory range seed: a single element of
 /// the layout's size, materialized field by field.
 fn object_range_seed(
-    base: Pointer,
+    base: Address,
     layout: &crate::languages::interface::RecordLayout,
 ) -> ConcreteMemoryRangeSeed {
     ConcreteMemoryRangeSeed {
@@ -3607,7 +3607,7 @@ pub(in crate::surface) fn contract_segment_element_width_for_result_type(
     if matches!(&segment.base, ProgramExpression::Variable(name)
         if name == &crate::kernel::CONTRACT_RESULT
             || (name.is_named("result") && !matches!(&segment.surface,
-                ContractSegmentSurface::Range { base: ContractExpression::CBinding(_), .. })))
+                ContractSegmentSurface::Range { base: ContractExpression::ProgramBinding(_), .. })))
         && let Some(element_width) = result_type
             .and_then(ProgramType::pointee_type)
             .map(ProgramType::byte_width)
@@ -3649,7 +3649,7 @@ pub(in crate::surface) fn contract_segment_element_width_with_pointer_types(
         || matches!(&segment.base, ProgramExpression::Variable(name)
             if name == &crate::kernel::CONTRACT_RESULT
                 || (name.is_named("result") && !matches!(&segment.surface,
-                    ContractSegmentSurface::Range { base: ContractExpression::CBinding(_), .. })))
+                    ContractSegmentSurface::Range { base: ContractExpression::ProgramBinding(_), .. })))
     {
         return contract_segment_element_width_for_result_type(parameters, segment, result_type);
     }
@@ -4041,7 +4041,7 @@ pub(in crate::surface) fn parameter_values_named(
 pub(in crate::surface) fn array_refs_for_values(
     parameter_binding: ParameterBinding<'_>,
     values: &BTreeMap<String, ProgramValue>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
 ) -> ClickArrayRefs {
     let Some(index) = parameter_binding.index else {
         return array_refs_for_parameters(parameter_binding.parameters, values, memory);
@@ -4117,7 +4117,7 @@ fn resource_clause_parameter_values(
 pub(in crate::surface) fn array_refs_for_parameters(
     parameters: &[crate::languages::interface::ImportedParameter],
     values: &BTreeMap<String, ProgramValue>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
 ) -> ClickArrayRefs {
     crate::instrumentation::record_deterministic_work(parameters.len());
     parameters

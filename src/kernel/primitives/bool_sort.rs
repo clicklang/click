@@ -27,7 +27,7 @@
 //! termination is checked where it is declared. No rule here reads an
 //! integer value of a `Bool`: the sort has none.
 
-use super::{ConditionTerm, Pointer, Proposition, PureFunctionArgument, SharedMemory};
+use super::{Address, ConditionTerm, Proposition, PureFunctionArgument, SharedMemory};
 use crate::kernel::SharedPureApplication;
 
 impl ConditionTerm {
@@ -90,7 +90,7 @@ impl ConditionTerm {
     // Built by the kernel's tests until a front end reads `bool` cells
     // (Stage 5, PR5) or a proof step asks for them.
     #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) fn bool_load(memory: SharedMemory, pointer: Pointer) -> Self {
+    pub(crate) fn bool_load(memory: SharedMemory, pointer: Address) -> Self {
         Self::BoolLoad(memory, Box::new(pointer))
     }
 
@@ -168,7 +168,7 @@ impl ConditionTerm {
         &self,
         mut child: impl FnMut(&ConditionTerm) -> ConditionTerm,
         mut argument: impl FnMut(&PureFunctionArgument) -> PureFunctionArgument,
-        read: impl FnOnce(&SharedMemory, &Pointer) -> (SharedMemory, Pointer),
+        read: impl FnOnce(&SharedMemory, &Address) -> (SharedMemory, Address),
     ) -> Option<ConditionTerm> {
         Some(match self {
             Self::BoolApplication(application) => {

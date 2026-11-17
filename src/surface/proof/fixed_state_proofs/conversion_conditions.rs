@@ -431,7 +431,7 @@ fn overflowing_operation(condition: &ConditionTerm) -> Option<MachineTerm> {
 
 /// The cell read by the equation naming one memory read, when this condition
 /// is such an equation.
-fn load_definition_cell(condition: &Proposition) -> Option<&Pointer> {
+fn load_definition_cell(condition: &Proposition) -> Option<&Address> {
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
@@ -500,7 +500,7 @@ fn loadability_explanation(
                 base: range_base,
                 bytes: range_bytes,
                 ..
-            } => range_base.block == base.block && range_bytes != bytes,
+            } => range_base.base == base.base && range_bytes != bytes,
             _ => false,
         })?;
     let spelled = site.spell_proposition(covering).map_or_else(
@@ -508,21 +508,21 @@ fn loadability_explanation(
         |surface| crate::surface::diagnostics::describe_click_proposition(&surface),
     );
     // Reading that range at element granularity needs it to be a valid 32-bit
-    // byte extent. A range stated in this scope carries that; one this proof
+    // byte span. A range stated in this scope carries that; one this proof
     // established itself does not, and saying which fact is missing is the
     // difference between a usable refusal and "not true".
-    let missing_extent = crate::kernel::stated_loadable_extent_guards(covering)
+    let missing_span = crate::kernel::stated_loadable_span_guards(covering)
         .into_iter()
         .find(|guard| !established_condition(assumptions, guard));
-    if let Some(guard) = missing_extent {
+    if let Some(guard) = missing_span {
         let guard = site.spell_proposition(&guard).map_or_else(
             || render::render_proposition_labeled(&guard, labels),
             |surface| crate::surface::diagnostics::describe_click_proposition(&surface),
         );
         return Some(format!(
             "`{spelled}` is a premise here and was consulted, but it is not a valid 32-bit byte \
-             extent in this scope: `{guard}` is not an established fact. A range's extent is \
-             `(end - start) * width` in 32-bit arithmetic, so without that bound the extent can \
+             span in this scope: `{guard}` is not an established fact. A range's span is \
+             `(end - start) * width` in 32-bit arithmetic, so without that bound the span can \
              wrap to fewer bytes than its element count names — a count of `1 << 30` four-byte \
              elements scales to `0` — and the range would not cover the cell it appears to. \
              State that bound where the range is stated"
@@ -883,7 +883,7 @@ pub(in crate::surface) fn walk_written_expressions(
         | ContractExpression::Binding(_)
         | ContractExpression::QualifiedC { .. }
         | ContractExpression::ProgramExpression(_)
-        | ContractExpression::CBinding(_)
+        | ContractExpression::ProgramBinding(_)
         | ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. }

@@ -42,7 +42,7 @@ pub(crate) use execution::{
     CheckedCallOutcomeSplit, CheckedExecutionEvent, CheckedProofCasePartition,
     CompletedExecutionFacts, ContractEntryAuthority, EvidenceRefusal, ExceptionalContinuation,
     ExceptionalEntry, ExecutionEvidence, ExecutionFrontier, ExecutionProofCore,
-    ExecutionRegionKind, FrontierPosition, LoopControlExit, OpenedContractEntry,
+    ExecutionRegionKind, FrontierPosition, LoopControlExit, LoopPhaseSource, OpenedContractEntry,
     OpenedEntryFactSource, OutcomeEvidenceFork, ProofExecutionContinuation, ProofExecutionState,
     RejectedResourceRewriteFact, ResourceRewriteCheckError, UnestablishedInterfaceGoal,
     checked_branch_fact_is_available, exceptional_region, old_reference_state,

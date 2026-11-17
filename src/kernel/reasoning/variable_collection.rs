@@ -322,7 +322,7 @@ impl SeenTerms {
 }
 
 thread_local! {
-    static CONNECTION_BLOCKS: std::cell::RefCell<Option<BTreeSet<PointerBlock>>> = const { std::cell::RefCell::new(None) };
+    static CONNECTION_BLOCKS: std::cell::RefCell<Option<BTreeSet<AddressBase>>> = const { std::cell::RefCell::new(None) };
 }
 
 /// Explicit values and addresses a fact names; state contents are not
@@ -330,7 +330,7 @@ thread_local! {
 pub(crate) fn collect_atomic_connection_keys(
     proposition: &Proposition,
 ) -> BTreeSet<AtomicConnectionKey> {
-    struct Scope(Option<BTreeSet<PointerBlock>>);
+    struct Scope(Option<BTreeSet<AddressBase>>);
     impl Drop for Scope {
         fn drop(&mut self) {
             CONNECTION_BLOCKS.with(|blocks| *blocks.borrow_mut() = self.0.take());
@@ -747,15 +747,6 @@ pub(in crate::kernel) fn collect_term_bitvector_variables(
         Term::ProgramValue(value) => collect_program_value_bitvector_variables(value, variables),
         Term::Sequence(sequence) => collect_sequence_bitvector_variables(sequence, variables),
         Term::Algebraic(term) => collect_algebraic_term_bitvector_variables(term, variables),
-        Term::ExpressionOutcome(outcome) => {
-            collect_program_expression_outcome_bitvector_variables(outcome, variables);
-        }
-        Term::StatementOutcome(outcome) => {
-            collect_execution_statement_outcome_bitvector_variables(outcome, variables);
-        }
-        Term::FunctionOutcome(outcome) => {
-            collect_program_function_outcome_bitvector_variables(outcome, variables);
-        }
         Term::Memory(memory) => collect_memory_bitvector_variables(memory, variables),
         Term::ExecutionState(state) => {
             collect_execution_state_bitvector_variables(state, variables)
@@ -778,7 +769,7 @@ fn condition_carrier(condition: &ConditionTerm) -> AlgebraicValue {
 /// load at them: a walker reaches them as it reaches a scalar load's.
 fn load_carrier(
     memory: &crate::kernel::SharedMemory,
-    pointer: &crate::kernel::Pointer,
+    pointer: &crate::kernel::Address,
 ) -> AlgebraicValue {
     AlgebraicValue::Program(ProgramValue::UInt64(
         AlgebraicTermNode::memory_load_carrier(memory, pointer),
@@ -1045,8 +1036,11 @@ pub(in crate::kernel) fn collect_execution_statement_bitvector_variables(
             body,
             ..
         } => {
-            let (condition, _, test) = loop_test.execution_parts();
-            collect_program_expression_bitvector_variables(condition, variables);
+            let condition = loop_test.source_condition();
+            let test = loop_test.source_region();
+            if let Some(condition) = condition {
+                collect_program_expression_bitvector_variables(condition, variables);
+            }
             for proposition in invariant {
                 collect_proposition_bitvector_variables(proposition, variables);
             }
@@ -1375,7 +1369,7 @@ fn collect_program_value_bound_identities(
         ProgramValue::Void => {}
         ProgramValue::Pointer(pointer) => {
             for address in pointer.pointers() {
-                if let PointerBlock::PureFunctionApplication(application) = &address.block
+                if let AddressBase::PureFunctionApplication(application) = &address.base
                     && _integer_seen.pointers.insert(application.id())
                 {
                     for argument in application.arguments() {
@@ -1530,7 +1524,6 @@ pub(in crate::kernel) fn collect_loop_effect_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match effect {
-        LoopEffect::Immutable => {}
         LoopEffect::Mutable(segments) => {
             for segment in segments {
                 collect_program_expression_bitvector_variables(&segment.base, variables);
@@ -1875,6 +1868,7 @@ pub(in crate::kernel) fn collect_assumption_variables(
     }
 }
 
+#[cfg(test)]
 pub(in crate::kernel) fn collect_execution_environment_variables(
     environment: &ExecutionEnvironment,
     variables: &mut BTreeSet<Variable>,
@@ -2054,7 +2048,7 @@ pub(in crate::kernel) fn collect_memory_range_bitvector_variables(
 
 pub(crate) fn resource_context_has_read(
     resources: &ResourceContext,
-    pointer: &Pointer,
+    pointer: &Address,
     byte_width: u32,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -2370,7 +2364,7 @@ fn collect_shared_integer_carrier_variables_seen(
     }
 }
 
-/// Collect mathematical Integer variables nested in a machine term.  Memory
+/// Collect mathematical Integer variables nested in a machine term.  SymbolicMemory
 /// states are intentionally opaque here: only the address payload of a
 /// load can carry a variable relevant to a lexical substitution, and that
 /// payload is a machine term with no Integer carrier.
@@ -2497,14 +2491,14 @@ fn collect_bitvector_integer_variables_seen(
 }
 
 fn collect_pointer_integer_variables(
-    pointer: &Pointer,
+    pointer: &Address,
     variables: &mut BTreeSet<Variable>,
     seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
     }
-    if let PointerBlock::PureFunctionApplication(application) = &pointer.block
+    if let AddressBase::PureFunctionApplication(application) = &pointer.base
         && seen.pointers.insert(application.id())
     {
         for argument in application.arguments() {
@@ -2515,7 +2509,7 @@ fn collect_pointer_integer_variables(
 }
 
 fn collect_pointer_offset_integer_variables(
-    offset: &PointerOffsetTerm,
+    offset: &AddressOffset,
     variables: &mut BTreeSet<Variable>,
     seen: &mut SeenTerms,
 ) {
@@ -2523,16 +2517,15 @@ fn collect_pointer_offset_integer_variables(
         return;
     }
     match offset {
-        PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => {}
-        PointerOffsetTerm::Add(left, right) => {
+        AddressOffset::Constant(_) | AddressOffset::Variable(_) => {}
+        AddressOffset::Add(left, right) => {
             collect_pointer_offset_integer_variables(left, variables, seen);
             if crate::instrumentation::checked_collection_exhausted() {
                 return;
             }
             collect_pointer_offset_integer_variables(right, variables, seen);
         }
-        PointerOffsetTerm::Int32Scaled { value, .. }
-        | PointerOffsetTerm::Int64Scaled { value, .. } => {
+        AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
             visit_machine_carrier_leaves(value, |leaf| {
                 collect_operand_integer_variables_seen(leaf, variables, seen)
             });
@@ -3204,7 +3197,7 @@ fn collect_shared_integer_variables(
 
 fn collect_stored_load_connection_variables(
     memory: &SharedMemory,
-    pointer: &Pointer,
+    pointer: &Address,
     variables: &mut BTreeSet<Variable>,
 ) {
     if collecting_connection_variables() {
@@ -3469,7 +3462,7 @@ fn collect_bitvector_capture_variables_seen(
     }
 }
 
-/// The pointer-block and bitvector variables a proposition captures,
+/// The address-base and bitvector variables a proposition captures,
 /// including the pointers inside pure-function arguments, which the plain
 /// bitvector collection does not descend into. Conditions and their
 /// connectives are traversed with the capture walk; any other proposition
@@ -3581,7 +3574,7 @@ fn collect_condition_capture_variables(
 }
 
 fn collect_pointer_offset_capture_variables(
-    offset: &PointerOffsetTerm,
+    offset: &AddressOffset,
     variables: &mut BTreeSet<Variable>,
     integer_seen: &mut SeenTerms,
 ) {
@@ -3589,16 +3582,15 @@ fn collect_pointer_offset_capture_variables(
         return;
     }
     match offset {
-        PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => {}
-        PointerOffsetTerm::Add(left, right) => {
+        AddressOffset::Constant(_) | AddressOffset::Variable(_) => {}
+        AddressOffset::Add(left, right) => {
             collect_pointer_offset_capture_variables(left, variables, integer_seen);
             if crate::instrumentation::checked_collection_exhausted() {
                 return;
             }
             collect_pointer_offset_capture_variables(right, variables, integer_seen);
         }
-        PointerOffsetTerm::Int32Scaled { value, .. }
-        | PointerOffsetTerm::Int64Scaled { value, .. } => {
+        AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
             visit_machine_carrier_leaves(value, |leaf| {
                 if let Some((_, pointer, _)) = leaf.read() {
                     collect_pointer_capture_variables(pointer, variables, integer_seen);
@@ -3611,35 +3603,35 @@ fn collect_pointer_offset_capture_variables(
 }
 
 fn collect_pointer_capture_variables(
-    pointer: &Pointer,
+    pointer: &Address,
     variables: &mut BTreeSet<Variable>,
     integer_seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
     }
-    match &pointer.block {
-        PointerBlock::PureFunctionApplication(application) => {
+    match &pointer.base {
+        AddressBase::PureFunctionApplication(application) => {
             if integer_seen.pointers.insert(application.id()) {
                 for argument in application.arguments() {
                     collect_capture_variables_in_pure_argument(argument, variables, integer_seen);
                 }
             }
         }
-        PointerBlock::Symbolic(variable)
-        | PointerBlock::FunctionSymbolic(variable)
-        | PointerBlock::ExternalObject(variable) => {
+        AddressBase::Symbolic(variable)
+        | AddressBase::FunctionSymbolic(variable)
+        | AddressBase::ExternalObject(variable) => {
             variables.insert(*variable);
         }
-        PointerBlock::ContractResult | PointerBlock::ContractException | PointerBlock::AggregateReturn { .. } | PointerBlock::StaticObject { .. } | PointerBlock::AutomaticLocal { .. } | PointerBlock::ReferenceCarrier { .. } | PointerBlock::Concrete(_)
-        | PointerBlock::StringLiteral { .. }
-        | PointerBlock::Function(_)
-        | PointerBlock::ExternalArgument
+        AddressBase::ContractResult | AddressBase::ContractException | AddressBase::AggregateReturn { .. } | AddressBase::StaticObject { .. } | AddressBase::AutomaticLocal { .. } | AddressBase::ReferenceCarrier { .. } | AddressBase::Concrete(_)
+        | AddressBase::StringLiteral { .. }
+        | AddressBase::Function(_)
+        | AddressBase::ExternalArgument
         // The identity is opaque here, like a scalar load name. The equality
         // graph separately indexes its defining address exactly once.
-        | PointerBlock::LoadedPointer(_)
-        | PointerBlock::Heap(_)
-        | PointerBlock::Temporary(_) => {}
+        | AddressBase::LoadedPointer(_)
+        | AddressBase::Heap(_)
+        | AddressBase::Temporary(_) => {}
     }
     if crate::instrumentation::checked_collection_exhausted() {
         return;
@@ -4438,16 +4430,16 @@ fn collect_bitvector_scope_summary(
 }
 
 fn collect_pointer_scope_summary(
-    pointer: &Pointer,
+    pointer: &Address,
     summaries: &mut std::collections::HashMap<u64, IntegerScopeSummary>,
 ) -> IntegerScopeSummary {
     if checked_collection_checkpoint() {
         return IntegerScopeSummary::default();
     }
-    let mut summary = match &pointer.block {
-        PointerBlock::Symbolic(variable)
-        | PointerBlock::FunctionSymbolic(variable)
-        | PointerBlock::ExternalObject(variable) => {
+    let mut summary = match &pointer.base {
+        AddressBase::Symbolic(variable)
+        | AddressBase::FunctionSymbolic(variable)
+        | AddressBase::ExternalObject(variable) => {
             IntegerScopeSummary::bitvector_variable(*variable)
         }
         _ => IntegerScopeSummary::default(),
@@ -4460,17 +4452,15 @@ fn collect_pointer_scope_summary(
 }
 
 fn collect_pointer_offset_scope_summary(
-    offset: &PointerOffsetTerm,
+    offset: &AddressOffset,
     summaries: &mut std::collections::HashMap<u64, IntegerScopeSummary>,
 ) -> IntegerScopeSummary {
     if checked_collection_checkpoint() {
         return IntegerScopeSummary::default();
     }
     match offset {
-        PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => {
-            IntegerScopeSummary::default()
-        }
-        PointerOffsetTerm::Add(left, right) => {
+        AddressOffset::Constant(_) | AddressOffset::Variable(_) => IntegerScopeSummary::default(),
+        AddressOffset::Add(left, right) => {
             let mut summary = collect_pointer_offset_scope_summary(left, summaries);
             if crate::instrumentation::checked_collection_exhausted() {
                 return IntegerScopeSummary::default();
@@ -4478,8 +4468,7 @@ fn collect_pointer_offset_scope_summary(
             summary.merge(collect_pointer_offset_scope_summary(right, summaries));
             summary
         }
-        PointerOffsetTerm::Int32Scaled { value, .. }
-        | PointerOffsetTerm::Int64Scaled { value, .. } => {
+        AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
             collect_machine_scope_summary(value, summaries)
         }
     }
@@ -5290,7 +5279,7 @@ fn collect_condition_binder_variables(
 }
 
 fn collect_pointer_offset_binder_variables(
-    offset: &PointerOffsetTerm,
+    offset: &AddressOffset,
     integer_variables: &mut BTreeSet<Variable>,
     bitvector_variables: &mut BTreeSet<Variable>,
     integer_seen: &mut SeenTerms,
@@ -5299,8 +5288,8 @@ fn collect_pointer_offset_binder_variables(
         return;
     }
     match offset {
-        PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => {}
-        PointerOffsetTerm::Add(left, right) => {
+        AddressOffset::Constant(_) | AddressOffset::Variable(_) => {}
+        AddressOffset::Add(left, right) => {
             collect_pointer_offset_binder_variables(
                 left,
                 integer_variables,
@@ -5317,8 +5306,7 @@ fn collect_pointer_offset_binder_variables(
                 integer_seen,
             );
         }
-        PointerOffsetTerm::Int32Scaled { value, .. }
-        | PointerOffsetTerm::Int64Scaled { value, .. } => {
+        AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
             visit_machine_carrier_leaves(value, |leaf| {
                 collect_operand_binder_variables_seen(
                     leaf,
@@ -5332,7 +5320,7 @@ fn collect_pointer_offset_binder_variables(
 }
 
 fn collect_pointer_binder_variables(
-    pointer: &Pointer,
+    pointer: &Address,
     integer_variables: &mut BTreeSet<Variable>,
     bitvector_variables: &mut BTreeSet<Variable>,
     integer_seen: &mut SeenTerms,
@@ -5340,7 +5328,7 @@ fn collect_pointer_binder_variables(
     if checked_collection_checkpoint() {
         return;
     }
-    if let PointerBlock::PureFunctionApplication(application) = &pointer.block
+    if let AddressBase::PureFunctionApplication(application) = &pointer.base
         && integer_seen.pointers.insert(application.id())
     {
         for argument in application.arguments() {
@@ -5614,38 +5602,37 @@ fn collect_binder_variables_in_algebraic_value(
 }
 
 pub(in crate::kernel) fn collect_pointer_offset_bitvector_variables(
-    offset: &PointerOffsetTerm,
+    offset: &AddressOffset,
     variables: &mut BTreeSet<Variable>,
 ) {
     match offset {
-        PointerOffsetTerm::Constant(_) => {}
-        PointerOffsetTerm::Variable(variable) => {
+        AddressOffset::Constant(_) => {}
+        AddressOffset::Variable(variable) => {
             if collecting_connection_variables() || COORDINATE_VARIABLES.with(std::cell::Cell::get)
             {
                 variables.insert(*variable);
             }
         }
-        PointerOffsetTerm::Add(left, right) => {
+        AddressOffset::Add(left, right) => {
             collect_pointer_offset_bitvector_variables(left, variables);
             collect_pointer_offset_bitvector_variables(right, variables);
         }
-        PointerOffsetTerm::Int32Scaled { value, .. }
-        | PointerOffsetTerm::Int64Scaled { value, .. } => {
+        AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
             collect_machine_bitvector_variables(value, variables);
         }
     }
 }
 
 pub(in crate::kernel) fn collect_pointer_bitvector_variables(
-    pointer: &Pointer,
+    pointer: &Address,
     variables: &mut BTreeSet<Variable>,
 ) {
-    collect_pointer_block_bitvector_variables(&pointer.block, variables);
+    collect_address_base_bitvector_variables(&pointer.base, variables);
     collect_pointer_offset_bitvector_variables(&pointer.offset, variables);
 }
 
-fn collect_pointer_block_bitvector_variables(
-    block: &PointerBlock,
+fn collect_address_base_bitvector_variables(
+    block: &AddressBase,
     variables: &mut BTreeSet<Variable>,
 ) {
     CONNECTION_BLOCKS.with(|blocks| {
@@ -5657,18 +5644,18 @@ fn collect_pointer_block_bitvector_variables(
         if let Some(blocks) = blocks.borrow_mut().as_mut()
             && !matches!(
                 *block,
-                PointerBlock::ExternalArgument
-                    | PointerBlock::Symbolic(_)
-                    | PointerBlock::FunctionSymbolic(_)
-                    | PointerBlock::ExternalObject(_)
+                AddressBase::ExternalArgument
+                    | AddressBase::Symbolic(_)
+                    | AddressBase::FunctionSymbolic(_)
+                    | AddressBase::ExternalObject(_)
             )
-            && !matches!(block, PointerBlock::Concrete(name) if name == "null")
+            && !matches!(block, AddressBase::Concrete(name) if name == "null")
         {
             blocks.insert(block.clone());
         }
     });
     match block {
-        PointerBlock::PureFunctionApplication(application) => {
+        AddressBase::PureFunctionApplication(application) => {
             for argument in application.arguments() {
                 collect_capture_variables_in_pure_argument(
                     argument,
@@ -5677,31 +5664,31 @@ fn collect_pointer_block_bitvector_variables(
                 );
             }
         }
-        PointerBlock::Symbolic(variable)
-        | PointerBlock::FunctionSymbolic(variable)
-        | PointerBlock::ExternalObject(variable) => {
+        AddressBase::Symbolic(variable)
+        | AddressBase::FunctionSymbolic(variable)
+        | AddressBase::ExternalObject(variable) => {
             variables.insert(*variable);
         }
         // A pointer read has no variable of its own, but it is the value at
         // the address it was read from, so it depends on that address's
         // variables, as a load term depends on its address's.
-        PointerBlock::LoadedPointer(identity) => {
+        AddressBase::LoadedPointer(identity) => {
             if let Some((_, address)) = crate::kernel::eval::registered_pointer_load(*identity) {
                 collect_pointer_bitvector_variables(&address, variables);
             }
         }
-        PointerBlock::ContractResult
-        | PointerBlock::ContractException
-        | PointerBlock::AggregateReturn { .. }
-        | PointerBlock::StaticObject { .. }
-        | PointerBlock::AutomaticLocal { .. }
-        | PointerBlock::ReferenceCarrier { .. }
-        | PointerBlock::Concrete(_)
-        | PointerBlock::StringLiteral { .. }
-        | PointerBlock::Function(_)
-        | PointerBlock::ExternalArgument
-        | PointerBlock::Heap(_)
-        | PointerBlock::Temporary(_) => {}
+        AddressBase::ContractResult
+        | AddressBase::ContractException
+        | AddressBase::AggregateReturn { .. }
+        | AddressBase::StaticObject { .. }
+        | AddressBase::AutomaticLocal { .. }
+        | AddressBase::ReferenceCarrier { .. }
+        | AddressBase::Concrete(_)
+        | AddressBase::StringLiteral { .. }
+        | AddressBase::Function(_)
+        | AddressBase::ExternalArgument
+        | AddressBase::Heap(_)
+        | AddressBase::Temporary(_) => {}
     }
 }
 
@@ -5901,7 +5888,7 @@ pub(in crate::kernel) fn indexed_memory_contains_variable(
 }
 
 /// Establish the input state's index once, before individual C steps.
-pub(in crate::kernel) fn prepare_memory_variable_index(memory: &Memory) {
+pub(in crate::kernel) fn prepare_memory_variable_index(memory: &SymbolicMemory) {
     let shared = crate::kernel::intern_memory_ref(memory);
     shared_memory_variable_counts(&shared, WholeCount::Charged);
 }
@@ -6133,7 +6120,7 @@ pub(in crate::kernel) fn bound_reserved_base(
 /// The variables of every entry `memory` holds that `base` does not hold
 /// the same, by the diffs `counts_from_base` reads: together with `base`'s
 /// variables they include all of `memory`'s, and each is one of `memory`'s.
-fn variables_entering(base: &Memory, memory: &Memory) -> BTreeSet<Variable> {
+fn variables_entering(base: &SymbolicMemory, memory: &SymbolicMemory) -> BTreeSet<Variable> {
     let mut variables = BTreeSet::new();
     for change in base.blocks.diff(&memory.blocks) {
         let block = change.key();
@@ -6281,7 +6268,7 @@ fn shared_memory_variable_counts(memory: &SharedMemory, whole: WholeCount) -> Va
     previous.expect("the chain counts at least the state").1
 }
 
-fn memory_entry_count(memory: &Memory) -> usize {
+fn memory_entry_count(memory: &SymbolicMemory) -> usize {
     memory.blocks.len()
         + memory.cells.representation_len()
         + memory.union_cells.len()
@@ -6308,10 +6295,10 @@ fn add_counts(counts: &mut VariableCounts, mentioned: BTreeSet<Variable>, sign: 
     }
 }
 
-fn block_variables(block: &PointerBlock, contents: &MemoryBlock) -> BTreeSet<Variable> {
+fn block_variables(block: &AddressBase, contents: &MemoryBlock) -> BTreeSet<Variable> {
     let mut variables = BTreeSet::new();
     match block {
-        PointerBlock::PureFunctionApplication(application) => {
+        AddressBase::PureFunctionApplication(application) => {
             for argument in application.arguments() {
                 collect_capture_variables_in_pure_argument(
                     argument,
@@ -6320,24 +6307,24 @@ fn block_variables(block: &PointerBlock, contents: &MemoryBlock) -> BTreeSet<Var
                 );
             }
         }
-        PointerBlock::Symbolic(variable)
-        | PointerBlock::FunctionSymbolic(variable)
-        | PointerBlock::ExternalObject(variable) => {
+        AddressBase::Symbolic(variable)
+        | AddressBase::FunctionSymbolic(variable)
+        | AddressBase::ExternalObject(variable) => {
             variables.insert(*variable);
         }
-        PointerBlock::ContractResult
-        | PointerBlock::ContractException
-        | PointerBlock::AggregateReturn { .. }
-        | PointerBlock::StaticObject { .. }
-        | PointerBlock::AutomaticLocal { .. }
-        | PointerBlock::ReferenceCarrier { .. }
-        | PointerBlock::Concrete(_)
-        | PointerBlock::StringLiteral { .. }
-        | PointerBlock::Function(_)
-        | PointerBlock::ExternalArgument
-        | PointerBlock::LoadedPointer(_)
-        | PointerBlock::Heap(_)
-        | PointerBlock::Temporary(_) => {}
+        AddressBase::ContractResult
+        | AddressBase::ContractException
+        | AddressBase::AggregateReturn { .. }
+        | AddressBase::StaticObject { .. }
+        | AddressBase::AutomaticLocal { .. }
+        | AddressBase::ReferenceCarrier { .. }
+        | AddressBase::Concrete(_)
+        | AddressBase::StringLiteral { .. }
+        | AddressBase::Function(_)
+        | AddressBase::ExternalArgument
+        | AddressBase::LoadedPointer(_)
+        | AddressBase::Heap(_)
+        | AddressBase::Temporary(_) => {}
     }
     // A memory-havoc marker spells the identity it was minted with in its
     // block name instead of carrying it in a term, so a scan of the
@@ -6357,13 +6344,13 @@ fn block_variables(block: &PointerBlock, contents: &MemoryBlock) -> BTreeSet<Var
     variables
 }
 
-fn object_address_variables(pointer: &Pointer) -> BTreeSet<Variable> {
+fn object_address_variables(pointer: &Address) -> BTreeSet<Variable> {
     let mut variables = BTreeSet::new();
     collect_pointer_bitvector_variables(pointer, &mut variables);
     variables
 }
 
-fn cell_variables(pointer: &Pointer, value: &ProgramValue) -> BTreeSet<Variable> {
+fn cell_variables(pointer: &Address, value: &ProgramValue) -> BTreeSet<Variable> {
     #[cfg(test)]
     CELLS_COLLECTED.with(|visited| visited.set(visited.get() + 1));
     let mut variables = BTreeSet::new();
@@ -6473,7 +6460,7 @@ fn heap_variable_counts(
     counts
 }
 
-fn counts_whole(memory: &Memory, whole: WholeCount) -> VariableCounts {
+fn counts_whole(memory: &SymbolicMemory, whole: WholeCount) -> VariableCounts {
     if whole == WholeCount::Charged {
         crate::instrumentation::record_deterministic_work(
             memory.blocks.len() + memory.cells.representation_len() + memory.union_cells.len(),
@@ -6500,7 +6487,11 @@ fn counts_whole(memory: &Memory, whole: WholeCount) -> VariableCounts {
 /// `memory`'s counts from `base`'s: each entry the two differ on leaves with
 /// its old variables and arrives with its new ones. The diffs charge one unit
 /// per difference.
-fn counts_from_base(mut counts: VariableCounts, base: &Memory, memory: &Memory) -> VariableCounts {
+fn counts_from_base(
+    mut counts: VariableCounts,
+    base: &SymbolicMemory,
+    memory: &SymbolicMemory,
+) -> VariableCounts {
     for change in base.blocks.diff(&memory.blocks) {
         let block = change.key();
         if let Some(contents) = base.blocks.get(block) {
@@ -6567,7 +6558,7 @@ fn counts_from_base(mut counts: VariableCounts, base: &Memory, memory: &Memory) 
 /// An interned state a cell's load reaches is walked through
 /// [`collect_shared_memory_bitvector_variables`], once per session.
 pub(in crate::kernel) fn collect_memory_bitvector_variables(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     variables: &mut BTreeSet<Variable>,
 ) {
     if collecting_connection_variables() {
@@ -6609,7 +6600,7 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables(
 /// [`shared_memory_variable_counts`] are built from the same per-entry
 /// collectors, so the two agree on every state.
 pub(in crate::kernel) fn collect_memory_bitvector_variables_whole(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     variables: &mut BTreeSet<Variable>,
 ) {
     if collecting_connection_variables() {
@@ -6621,7 +6612,7 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables_whole(
 
     for (block, contents) in memory.blocks.iter() {
         match block {
-            PointerBlock::PureFunctionApplication(application) => {
+            AddressBase::PureFunctionApplication(application) => {
                 for argument in application.arguments() {
                     collect_capture_variables_in_pure_argument(
                         argument,
@@ -6630,24 +6621,24 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables_whole(
                     );
                 }
             }
-            PointerBlock::Symbolic(variable)
-            | PointerBlock::FunctionSymbolic(variable)
-            | PointerBlock::ExternalObject(variable) => {
+            AddressBase::Symbolic(variable)
+            | AddressBase::FunctionSymbolic(variable)
+            | AddressBase::ExternalObject(variable) => {
                 variables.insert(*variable);
             }
-            PointerBlock::ContractResult
-            | PointerBlock::ContractException
-            | PointerBlock::AggregateReturn { .. }
-            | PointerBlock::StaticObject { .. }
-            | PointerBlock::AutomaticLocal { .. }
-            | PointerBlock::ReferenceCarrier { .. }
-            | PointerBlock::Concrete(_)
-            | PointerBlock::StringLiteral { .. }
-            | PointerBlock::Function(_)
-            | PointerBlock::ExternalArgument
-            | PointerBlock::LoadedPointer(_)
-            | PointerBlock::Heap(_)
-            | PointerBlock::Temporary(_) => {}
+            AddressBase::ContractResult
+            | AddressBase::ContractException
+            | AddressBase::AggregateReturn { .. }
+            | AddressBase::StaticObject { .. }
+            | AddressBase::AutomaticLocal { .. }
+            | AddressBase::ReferenceCarrier { .. }
+            | AddressBase::Concrete(_)
+            | AddressBase::StringLiteral { .. }
+            | AddressBase::Function(_)
+            | AddressBase::ExternalArgument
+            | AddressBase::LoadedPointer(_)
+            | AddressBase::Heap(_)
+            | AddressBase::Temporary(_) => {}
         }
         // A memory-havoc marker spells the identity it was minted with in its
         // block name instead of carrying it in a term, so a scan of the
@@ -6823,17 +6814,17 @@ mod shared_read_walker_tests {
     #[test]
     fn shared_read_integer_carriers_remain_visible_inside_pointer_calls() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer {
-            block: PointerBlock::PureFunctionApplication(SharedPureApplication::intern(
+        let pointer = Address {
+            base: AddressBase::PureFunctionApplication(SharedPureApplication::intern(
                 "read_address".into(),
                 vec![PureFunctionArgument::Integer(
                     IntegerTerm::Variable(Variable(994120)).into(),
                 )],
             )),
-            offset: PointerOffsetTerm::Constant(0),
+            offset: AddressOffset::Constant(0),
         };
         let native = MachineTerm::MemoryLoad(
-            ProgramPoint::at(&(intern_memory(Memory::new()))),
+            ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             Box::new(pointer),
             LoadKind::Int32,
         );
@@ -6853,15 +6844,12 @@ mod shared_read_walker_tests {
     #[test]
     fn shared_read_carriers_match_native_addresses_without_export_or_registry() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer {
-            block: PointerBlock::Symbolic(Variable(994100)),
-            offset: PointerOffsetTerm::scaled_int32_node(
-                MachineTerm::Variable(Variable(994101)),
-                4,
-            ),
+        let pointer = Address {
+            base: AddressBase::Symbolic(Variable(994100)),
+            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(994101)), 4),
         };
         let raw = MachineTerm::MemoryLoad(
-            ProgramPoint::at(&(intern_memory(Memory::new()))),
+            ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             Box::new(pointer),
             LoadKind::Int32,
         );

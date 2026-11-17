@@ -1076,7 +1076,7 @@ impl<'a> Proof<'a> {
             )));
         }
         let replacement = match (c_typed, name.written()) {
-            (true, Some(name)) => ContractExpression::CBinding(name.into()),
+            (true, Some(name)) => ContractExpression::ProgramBinding(name.into()),
             _ => name.reference(),
         };
         let renaming = BTreeMap::from([(binder.clone(), replacement)]);
@@ -1284,7 +1284,7 @@ impl<'a> Proof<'a> {
                         // ambient facts.
                         let value = match (pointer, introduced_pointer) {
                             (true, Some(interface_type)) => {
-                                ProgramValue::typed_pointer(Pointer::symbolic(variable), interface_type).with_pointer_object_class(object_class)
+                                ProgramValue::typed_pointer(Address::symbolic(variable), interface_type).with_pointer_object_class(object_class)
                             }
                             _ => match self.proposition_goal("`intro` requires a proposition goal").expect("intro checked its goal") {
                                 Proposition::ForAll { sort, .. } if sort.machine_integer_type().is_some() => sort.machine_integer_type().unwrap().symbolic_value(variable),
@@ -1582,11 +1582,11 @@ impl<'a> Proof<'a> {
             .map(|premise| self.lower_surface_proposition(premise, "induction premise"))
             .collect::<Result<Vec<_>, _>>()?;
         // The hypothesis is the theorem's own statement, so a range premise
-        // owes its extent halves beside it. Citing a stated range cites both
+        // owes its span halves beside it. Citing a stated range cites both
         // halves, by the one rule every `apply using` shares.
         let mut explicit_premises = Vec::with_capacity(lowered_premises.len());
         for premise in lowered_premises {
-            crate::surface::proof::theorem_application::cite_range_extent_guards(
+            crate::surface::proof::theorem_application::cite_range_span_guards(
                 &premise,
                 &mut explicit_premises,
                 |guard| self.facts().exact_available_across_effects(guard, &[]),

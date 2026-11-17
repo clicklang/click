@@ -179,12 +179,12 @@ int32 id(int32 x) {
             var,
             sort: crate::kernel::Sort::ProgramInt32,
             body: Box::new(Proposition::MemoryLoadable {
-                memory: crate::kernel::Memory::new().with_declared_scalar_block(
+                memory: crate::kernel::SymbolicMemory::new().with_declared_scalar_block(
                     "local:word".into(),
                     4,
                     crate::kernel::ProgramType::Int32,
                 ),
-                base: crate::kernel::Pointer::symbolic(Variable(700)),
+                base: crate::kernel::Address::symbolic(Variable(700)),
                 bytes: MachineTerm::Variable(var),
                 wide: false,
             }),

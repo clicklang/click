@@ -5,8 +5,8 @@ use crate::kernel::{KernelMatch, KernelType};
 
 pub(super) fn collect_match_memory_loads(
     matched: &KernelMatch,
-    current_memory: &Memory,
-    loads: &mut Vec<(Pointer, u32)>,
+    current_memory: &SymbolicMemory,
+    loads: &mut Vec<(Address, u32)>,
     width: Option<u32>,
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
@@ -41,11 +41,11 @@ mod tests {
         for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
             for opaque in [false, true] {
                 let _session = crate::kernel::VerificationSession::enter();
-                let current = Memory::new();
+                let current = SymbolicMemory::new();
                 let memory = intern_memory_ref(&current);
                 let read = MachineTerm::MemoryLoad(
                     ProgramPoint::at(&memory),
-                    Box::new(Pointer::symbolic(Variable(991901))),
+                    Box::new(Address::symbolic(Variable(991901))),
                     LoadKind::Bits64,
                 );
                 let body = if opaque {

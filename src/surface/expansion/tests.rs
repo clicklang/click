@@ -1768,17 +1768,17 @@ int32 caller() {
     ensures result == 0;
 } by {
     step_until(function.exit);
-    have at(statement(2).entry, c(result)) == 0 by {
+    have at(statement(2).entry, program::result) == 0 by {
         known();
     }
-    have result == at(statement(2).entry, c(result)) by {
+    have result == at(statement(2).entry, program::result) by {
         normalize();
     }
     known();
 }
 "#;
     verify_c_sources(explicit_source, &sources)
-        .expect("`c(result)` should denote the C local rather than contract result");
+        .expect("`program::result` should denote the C local rather than contract result");
 }
 
 #[test]
@@ -2071,9 +2071,9 @@ int32 contains(uint8 p[], int32 n) {
     ensures bytes::contains(p, 0, n as uint64, 'x') by {
         step_until(function.exit);
         unfold(bytes::contains(p, 0, n as uint64, 'x'));
-        obtain (found: uint64) {
+        let found = obtain(exists (found: uint64) {
             0u64 <= found and found < n as uint64 and p[found] == 'x'
-        };
+        });
         witness(found);
         solve();
     }
@@ -3100,17 +3100,14 @@ theorem ordinary(x: int32) {
     ensures x == x by { solve(); }
 }
 "#;
-    verify_click_theorems_with_program_sources(source, &[]).unwrap();
+    verify_click_theorems(source).unwrap();
     let sites = c_smart_tactic_source_sites(source, &[]).unwrap();
     assert_eq!(sites.len(), 1);
     assert_eq!(sites[0].claim_label, "ordinary.ensures_0");
     assert_eq!(sites[0].tactic_name, "solve");
     assert!(
-        verify_click_theorems_with_program_sources(
-            &source.replace("ensures left == right", "ensures left != right"),
-            &[]
-        )
-        .is_err(),
+        verify_click_theorems(&source.replace("ensures left == right", "ensures left != right"))
+            .is_err(),
         "kernel axiom declarations must still be checked"
     );
 }
@@ -4286,4 +4283,31 @@ fn exact_proposition_propagation_replays_without_search() {
     ] {
         assert!(without_implicit_solve(|| verify_click_theorems(&invalid)).is_err());
     }
+}
+
+#[test]
+fn heap_free_loan_separation_expands_and_rechecks() {
+    let c = r#"
+void release(unsigned char *p, unsigned long n, int32 *q) {
+    free(p);
+}
+"#;
+    let proof = r#"
+verifying "free_loan.c";
+
+void release(uint8* p, uint64 n, int32* q) {
+    requires p != 0;
+    requires 1u64 <= n and n <= 1000u64;
+    consumes allocation(p, n);
+    consumes p[0..n];
+    views *q;
+} by { step() by { known(); } }
+"#;
+    let sources = [("free_loan.c", c)];
+    verify_c_sources(proof, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_c_claim_source_by_label(proof, &sources, "release.contract").unwrap();
+    without_implicit_solve_for_claim("release.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
 }

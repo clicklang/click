@@ -705,7 +705,7 @@ fn integer_expression_kind(
         ContractExpression::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         ))
-        | ContractExpression::CBinding(name) => {
+        | ContractExpression::ProgramBinding(name) => {
             (locals.contains(name) || integer_bindings.contains(name)).then_some(true)
         }
         ContractExpression::Negate(inner)
@@ -983,7 +983,7 @@ fn contains_scoped_expression_shape(
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_)
         | ContractExpression::ProgramExpression(_)
-        | ContractExpression::CBinding(_)
+        | ContractExpression::ProgramBinding(_)
         | ContractExpression::ResourceCount(_)
         | ContractExpression::ResourceWildcard => false,
     }
@@ -1025,7 +1025,7 @@ fn contains_integer_expression_signal(
         ContractExpression::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         ))
-        | ContractExpression::CBinding(name) => {
+        | ContractExpression::ProgramBinding(name) => {
             locals.contains(name) || integer_bindings.contains(name)
         }
         ContractExpression::Negate(inner)
@@ -1514,7 +1514,7 @@ pub(super) fn infer_scoped_spec_value_type(
         ContractExpression::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         ))
-        | ContractExpression::CBinding(name)
+        | ContractExpression::ProgramBinding(name)
             if integer_bindings.contains(name) =>
         {
             Ok(SpecValueType::Integer)
@@ -3761,7 +3761,7 @@ pub(in crate::surface) fn click_types_compatible(
 /// A resource argument follows the predicate rule,
 /// [`click_argument_types_compatible`]: a character pointer is passed as
 /// `uint8` bytes, so `cstr_at(s, n)` takes a C `char *s`.
-/// A resource argument of the wrong type. The heap `allocation` extent
+/// A resource argument of the wrong type. The heap `allocation` size
 /// names the two byte-count formats it takes.
 fn resource_argument_type_message(
     name: &str,
@@ -3773,7 +3773,7 @@ fn resource_argument_type_message(
     if name == ResourceFact::ALLOCATION_RESOURCE_NAME && index == 1 {
         return format!(
             "resource `{name}` argument {index} expects int32 or uint64, got {} in {context}: \
-             the byte count is a heap block's extent, a 32-bit `int32` or a 64-bit `uint64` \
+             the byte count is a heap block's size, a 32-bit `int32` or a 64-bit `uint64` \
              (`size_t`) one; a signed 64-bit size is stated through its `size_t` conversion, \
              such as `allocation(result, bytes as uint64)`",
             describe_interface_type(actual)
@@ -3786,9 +3786,9 @@ fn resource_argument_type_message(
     )
 }
 
-/// Argument 1 of `allocation` is the heap block's extent: declared `int32`,
-/// it also takes a 64-bit `uint64` (`size_t`) byte count, the extent of a
-/// block whose size is a symbolic `size_t` (`design/heap-extents.md`, D4).
+/// Argument 1 of `allocation` is the heap block's size: declared `int32`,
+/// it also takes a 64-bit `uint64` (`size_t`) byte count, the size of a
+/// block whose size is a symbolic `size_t` (`design/heap-allocation-sizes.md`, D4).
 fn resource_types_compatible(
     name: &str,
     index: usize,
@@ -3983,9 +3983,9 @@ pub(super) fn infer_contract_expression_type(
         ContractExpression::Binding(name) => Ok(variables.get(name).copied()),
         // C locals are resolved against the concrete program state during
         // lowering, not against the contract namespace used here. In
-        // particular, `c(result)` must not inherit the type of built-in
+        // particular, `program::result` must not inherit the type of built-in
         // contract `result`.
-        ContractExpression::CBinding(_) => Ok(None),
+        ContractExpression::ProgramBinding(_) => Ok(None),
         ContractExpression::ResourceCount(_) => Ok(Some(InterfaceType::Int32)),
         ContractExpression::ResourceWildcard => Err(ClickError::new(
             "`_` is only valid inside a `count(...)` resource pattern",
@@ -5322,7 +5322,7 @@ fn validate_contract_expression_calls(
         }
         ContractExpression::QualifiedC { .. }
         | ContractExpression::ProgramExpression(_)
-        | ContractExpression::CBinding(_) => Ok(()),
+        | ContractExpression::ProgramBinding(_) => Ok(()),
         ContractExpression::ResourceCount(resource) => match resource.as_ref() {
             ResourceClause::Declared { arguments, .. } => {
                 for argument in arguments {

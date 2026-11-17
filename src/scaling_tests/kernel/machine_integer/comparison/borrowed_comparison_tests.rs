@@ -216,3 +216,92 @@ fn bitwise_conditional_arms_read_only_fixed_roots() {
         }
     }
 }
+
+#[test]
+fn bitwise_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
+    use crate::kernel::{
+        KernelTerm, KernelTermExport, KernelType, MachineBinaryOp as O, MachineOperandView as V,
+    };
+    for format in [
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int64,
+        MachineIntegerType::UInt64,
+    ] {
+        let mut baseline = None;
+        for size in [16, 64, 256, 1024] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let variable =
+                KernelTerm::variable(KernelType::Program(format.program_type()), Variable(999980));
+            let other =
+                KernelTerm::variable(KernelType::Program(format.program_type()), Variable(999981));
+            let literal = |n: u64| {
+                KernelTerm::retained_native_machine_operand(
+                    format,
+                    &crate::kernel::machine_integer::range::constant_word(format, &n.into())
+                        .unwrap(),
+                )
+            };
+            let mut arithmetic = variable.clone();
+            for _ in 0..size {
+                arithmetic =
+                    KernelTerm::machine_binary_shared(format, O::Add, [arithmetic, literal(1)]);
+            }
+            let binary_cases = [O::BitwiseAnd, O::BitwiseOr, O::BitwiseXor].map(|op| {
+                (
+                    KernelTerm::machine_binary_shared(format, op, [variable.clone(), literal(7)]),
+                    KernelTerm::machine_binary_shared(format, op, [arithmetic.clone(), literal(7)]),
+                    KernelTerm::machine_binary_shared(format, op, [literal(7), arithmetic.clone()]),
+                )
+            });
+            let complement = |child| {
+                KernelTerm::machine_unary_shared(
+                    format,
+                    crate::kernel::MachineUnaryOp::BitwiseNot,
+                    child,
+                )
+            };
+            let unary_case = (
+                complement(variable.clone()),
+                complement(arithmetic.clone()),
+                complement(complement(variable.clone())),
+            );
+            let exports = KernelTermExport::machine_export_count();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                for (hit, left_miss, right_miss) in
+                    binary_cases.iter().chain(std::iter::once(&unary_case))
+                {
+                    for operands in [
+                        [V::Shared(hit), V::Shared(&other)],
+                        [V::Shared(&other), V::Shared(hit)],
+                    ] {
+                        let condition =
+                            logical_condition_for_operand_views(format, R::Equal, operands);
+                        assert!(is_simple_bitwise_comparison(&condition));
+                        let guard =
+                            crate::kernel::KernelTermImport::default().condition(&condition);
+                        let conditional = KernelTerm::machine_if_shared(
+                            format,
+                            [guard, variable.clone(), literal(3)],
+                        );
+                        assert!(conditional_atom(&conditional).is_some());
+                    }
+                    for miss in [left_miss, right_miss] {
+                        let condition = logical_condition_for_operand_views(
+                            format,
+                            R::Equal,
+                            [V::Shared(miss), V::Shared(&other)],
+                        );
+                        assert!(!is_simple_bitwise_comparison(&condition));
+                    }
+                }
+            });
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert_eq!(
+                work,
+                *baseline.get_or_insert(work),
+                "{format:?}, {size} nested arithmetic nodes"
+            );
+        }
+    }
+}

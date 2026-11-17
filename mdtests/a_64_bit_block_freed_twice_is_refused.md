@@ -1,6 +1,6 @@
 # A 64-bit block freed twice is refused
 
-Freeing a block with a 64-bit extent ends its lifetime as for any block, so
+Freeing a block with a 64-bit size ends its lifetime as for any block, so
 a second `free` is refused.
 
 ```c filename=a_64_bit_block_freed_twice_is_refused.c

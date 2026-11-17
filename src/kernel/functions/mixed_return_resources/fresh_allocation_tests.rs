@@ -3,13 +3,13 @@ use crate::kernel::program_expression::{int32_literal, variable};
 
 pub(super) fn allocated_call(
     bytes: u32,
-) -> (ExecutionState, ExecutionState, ExecutionState, Pointer) {
-    let held = Pointer::symbolic(Variable(8_930_000));
+) -> (ExecutionState, ExecutionState, ExecutionState, Address) {
+    let held = Address::symbolic(Variable(8_930_000));
     let caller = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
-            Memory::new()
-                .with_block(held.block.clone(), 4)
+            SymbolicMemory::new()
+                .with_block(held.base.clone(), 4)
                 .store(held.clone(), int32(17)),
         )
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
@@ -17,7 +17,7 @@ pub(super) fn allocated_call(
         ));
     let mut entry = caller
         .clone()
-        .with_local("p", ProgramValue::pointer(Pointer::null()))
+        .with_local("p", ProgramValue::pointer(Address::null()))
         .with_resource_context(ResourceContext::new());
     Arc::make_mut(&mut entry.population_effects).creation = caller
         .population_effects
@@ -80,7 +80,7 @@ fn returned_specs(base: impl Into<BindingName>, cells: u32) -> Vec<ResourceSpec>
     ]
 }
 
-pub(super) fn fresh_return_facts(pointer: &Pointer, cells: u32) -> [ResourceFact; 2] {
+pub(super) fn fresh_return_facts(pointer: &Address, cells: u32) -> [ResourceFact; 2] {
     [
         ResourceFact::own_memory(MemoryRange::new(pointer.clone(), 0u32.into(), cells.into())),
         ResourceFact::own_allocation(pointer.clone(), 16),
@@ -251,7 +251,7 @@ fn allocator_origin_is_attached_to_each_emitted_ownership_occurrence() {
     )
     .unwrap()
     .unwrap();
-    let PointerBlock::Heap(identity) = pointer.block else {
+    let AddressBase::Heap(identity) = pointer.base else {
         panic!("not a resolved allocation")
     };
     assert!(evaluated.occurrences.iter().all(|entry| entry.origin
@@ -313,14 +313,14 @@ fn an_allocation_claim_pending_result_and_an_older_call_are_not_fresh_returns() 
             FreshAllocationReturn::from_created_owner(&fact, &later_call, &returned_events)
                 .is_none()
         );
-        let retired = events.retired(&pointer.block).unwrap();
+        let retired = events.retired(&pointer.base).unwrap();
         assert!(FreshAllocationReturn::from_created_owner(&fact, &creator, &retired).is_none());
     }
-    let pending = Pointer::symbolic(Variable(8_930_010));
-    let pending_events = creator.pending_creation(pending.block.clone());
-    let predicted = Pointer {
-        block: PointerBlock::Heap(8_930_010),
-        offset: PointerOffsetTerm::Constant(0),
+    let pending = Address::symbolic(Variable(8_930_010));
+    let pending_events = creator.pending_creation(pending.base.clone());
+    let predicted = Address {
+        base: AddressBase::Heap(8_930_010),
+        offset: AddressOffset::Constant(0),
     };
     assert!(
         FreshAllocationReturn::from_created_owner(
@@ -420,7 +420,7 @@ fn composite_children_use_only_actual_allocation_origin() {
 fn one_composite_can_mix_selected_consumed_and_fresh_children() {
     let facts = PureFactContext::new();
     let (_, entry, post, fresh) = allocated_call(16);
-    let old = Pointer::symbolic(Variable(8_819_300));
+    let old = Address::symbolic(Variable(8_819_300));
     let mut definition = super::tests::nested_transfer_function(1)
         .contract_interface()
         .composite_resource_definitions()[0]

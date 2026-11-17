@@ -1,10 +1,10 @@
 use super::*;
 use crate::kernel::mutexes::MutexContext;
 
-fn address(index: usize) -> Pointer {
-    Pointer {
-        block: format!("typed-held-{index}").into(),
-        offset: PointerOffsetTerm::Constant(0),
+fn address(index: usize) -> Address {
+    Address {
+        base: format!("typed-held-{index}").into(),
+        offset: AddressOffset::Constant(0),
     }
 }
 fn observe(state: &ExecutionState, assumptions: &PureFactContext) -> SpecPropositionPath {

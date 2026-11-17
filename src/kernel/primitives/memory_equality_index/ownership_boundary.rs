@@ -10,11 +10,11 @@ impl ResourceContext {
     ) -> ConstantOwnedOverlap {
         use ConstantOwnedOverlap::*;
         if let Some(range) = fact.memory_own_range() {
-            if matches!(range.base().block, PointerBlock::StringLiteral { .. })
+            if matches!(range.base().base, AddressBase::StringLiteral { .. })
                 && let Resource::Memory(held) = self.storage.index.boundary_memory.footprint()
                 && super::super::resource_algebra::string_literal_blocks_may_alias(
-                    &range.base().block,
-                    &held.base().block,
+                    &range.base().base,
+                    &held.base().base,
                 )
             {
                 // Distinct equal-content literals are shared read-only storage,
@@ -74,12 +74,12 @@ impl ResourceContext {
                 .is_empty()
             && fact.memory_own_range().is_some_and(|range| {
                 matches!(
-                    range.base().block,
-                    PointerBlock::Symbolic(_)
-                        | PointerBlock::LoadedPointer(_)
-                        | PointerBlock::FunctionSymbolic(_)
-                        | PointerBlock::ExternalArgument
-                        | PointerBlock::ExternalObject(_)
+                    range.base().base,
+                    AddressBase::Symbolic(_)
+                        | AddressBase::LoadedPointer(_)
+                        | AddressBase::FunctionSymbolic(_)
+                        | AddressBase::ExternalArgument
+                        | AddressBase::ExternalObject(_)
                 )
             })
         {
@@ -87,24 +87,24 @@ impl ResourceContext {
         }
         if self.storage.index.boundary_non_nominal_count == 0
             && fact.memory_own_range().is_some_and(|range| {
-                super::super::resource_algebra::nominal_ownership_block(&range.base().block)
+                super::super::resource_algebra::nominal_ownership_block(&range.base().base)
                     && !self
                         .storage
                         .index
                         .owned_memory_by_block
-                        .contains_key(&range.base().block)
+                        .contains_key(&range.base().base)
             })
         {
             return Clear;
         }
         if let Some(range) = fact.memory_own_range() {
-            let block = &range.base().block;
+            let block = &range.base().base;
             // Allocation classes and counts are maintained at publication.
             // External argument objects predate the callee's automatic locals.
             if self.storage.index.boundary_may_alias_argument_count == 0
                 && matches!(
                     block,
-                    PointerBlock::ExternalArgument | PointerBlock::ExternalObject(_)
+                    AddressBase::ExternalArgument | AddressBase::ExternalObject(_)
                 )
                 || self.storage.index.boundary_non_argument_or_nominal_count == 0
                     && block.is_local_block()
@@ -137,7 +137,7 @@ impl ResourceContext {
                 .storage
                 .index
                 .owned_memory_by_block
-                .get(&held.base().block)
+                .get(&held.base().base)
                 .and_then(|entries| entries.iter().next())
                 .copied()
         {

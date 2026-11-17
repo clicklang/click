@@ -1,6 +1,6 @@
 use super::*;
 
-fn pointer_fact(left: &Pointer, right: &Pointer, equal: bool) -> Proposition {
+fn pointer_fact(left: &Address, right: &Address, equal: bool) -> Proposition {
     Proposition::ConditionIs(
         ConditionTerm::PointerEqual(Box::new(left.clone()), Box::new(right.clone())),
         equal,

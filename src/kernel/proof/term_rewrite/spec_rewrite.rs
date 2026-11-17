@@ -2173,10 +2173,10 @@ mod tests {
 
     #[test]
     fn checked_spec_rewrite_reserves_integer_ids_hidden_in_registered_load_offsets() {
-        let memory: SharedMemory = Memory::new().into();
-        let pointer = Pointer {
-            block: PointerBlock::Symbolic(Variable(101)),
-            offset: PointerOffsetTerm::scaled_int32_node(
+        let memory: SharedMemory = SymbolicMemory::new().into();
+        let pointer = Address {
+            base: AddressBase::Symbolic(Variable(101)),
+            offset: AddressOffset::scaled_int32_node(
                 MachineTerm::IntegerToMachine {
                     value: IntegerTerm::var(Variable(0)).into(),
                     destination: MachineIntegerType::Int32,

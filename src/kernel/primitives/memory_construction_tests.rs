@@ -1,6 +1,6 @@
 use super::*;
 
-fn assert_explained(memory: &Memory) {
+fn assert_explained(memory: &SymbolicMemory) {
     let mut pending = vec![memory.clone()];
     let mut seen = std::collections::HashSet::new();
     while let Some(memory) = pending.pop() {
@@ -27,16 +27,16 @@ fn assert_explained(memory: &Memory) {
 #[test]
 fn memory_constructions_cover_non_transition_producers() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = Pointer {
-        block: "local:construction".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "local:construction".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .with_block("local:construction", 16)
         .store(pointer.clone(), ProgramValue::Int32(7.into()));
     let projected = crate::kernel::memory_history::canonical_program_memory_for_pointer_load(
         &memory,
-        &Pointer::symbolic(Variable(990_810)),
+        &Address::symbolic(Variable(990_810)),
     );
     assert!(matches!(
         projected.diagnostic_construction(),
@@ -80,11 +80,15 @@ fn memory_constructions_cover_non_transition_producers() {
 #[test]
 fn construction_metadata_does_not_change_memory_identity_or_proof_edges() {
     let _session = crate::kernel::VerificationSession::enter();
-    let original = Memory::new().with_block("local:identity", 4);
+    let original = SymbolicMemory::new().with_block("local:identity", 4);
     let interned = intern_memory_ref(&original);
     let mut described = original.clone();
     // A distinct diagnostic path describes exactly the same semantic state.
-    described.record_diagnostic_transform("diagnostic test", vec![Memory::new()], Vec::new());
+    described.record_diagnostic_transform(
+        "diagnostic test",
+        vec![SymbolicMemory::new()],
+        Vec::new(),
+    );
     assert_eq!(original, described);
     assert_eq!(
         memory_content_hash(&original),
@@ -100,7 +104,7 @@ fn construction_metadata_does_not_change_memory_identity_or_proof_edges() {
 
 #[test]
 fn unrecorded_mutation_cannot_inherit_an_incorrect_origin() {
-    let original = Memory::new().with_block("local:changed", 4);
+    let original = SymbolicMemory::new().with_block("local:changed", 4);
     let mut changed = original.clone();
     Arc::make_mut(&mut changed.blocks).insert("local:extra".into(), MemoryBlock::new(4));
     assert!(changed.diagnostic_construction().is_none());
@@ -109,11 +113,11 @@ fn unrecorded_mutation_cannot_inherit_an_incorrect_origin() {
 
 #[test]
 fn construction_pins_detect_mutation_of_an_uninterned_state() {
-    let pointer = Pointer {
-        block: "local:unpinned".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "local:unpinned".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let mut memory = Memory::new().with_uninitialized_object(pointer.clone(), 4);
+    let mut memory = SymbolicMemory::new().with_uninitialized_object(pointer.clone(), 4);
     assert!(memory.diagnostic_construction().is_some());
     Arc::make_mut(&mut memory.heap)
         .uninitialized_objects
@@ -127,17 +131,17 @@ fn construction_pins_detect_mutation_of_an_uninterned_state() {
 #[test]
 fn allocation_lifetimes_up_to_ended_admit_only_new_tombstones() {
     let _session = crate::kernel::VerificationSession::enter();
-    let freed = Pointer::symbolic(Variable(990_901));
-    let live = Pointer::symbolic(Variable(990_902));
+    let freed = Address::symbolic(Variable(990_901));
+    let live = Address::symbolic(Variable(990_902));
     let size = MachineTerm::constant(8);
     let mut head = HeapMemory::default();
     head.live_allocations
-        .insert(live.clone(), HeapExtent::int32(size.clone()));
+        .insert(live.clone(), AllocationSize::int32(size.clone()));
 
     let mut ended_elsewhere = head.clone();
     ended_elsewhere
         .deallocated_allocations
-        .insert(freed.clone(), HeapExtent::int32(size.clone()));
+        .insert(freed.clone(), AllocationSize::int32(size.clone()));
     assert!(head.has_same_allocation_lifetimes_up_to_ended(&ended_elsewhere));
     assert!(!head.have_same_allocation_lifetimes(&ended_elsewhere));
     // The relation is not symmetric: a back edge cannot drop a tombstone
@@ -148,19 +152,19 @@ fn allocation_lifetimes_up_to_ended_admit_only_new_tombstones() {
     ended_live.live_allocations.remove(&live);
     ended_live
         .deallocated_allocations
-        .insert(live.clone(), HeapExtent::int32(size.clone()));
+        .insert(live.clone(), AllocationSize::int32(size.clone()));
     assert!(!head.has_same_allocation_lifetimes_up_to_ended(&ended_live));
 
     let mut tombstone_for_live = head.clone();
     tombstone_for_live
         .deallocated_allocations
-        .insert(live.clone(), HeapExtent::int32(size.clone()));
+        .insert(live.clone(), AllocationSize::int32(size.clone()));
     assert!(!head.has_same_allocation_lifetimes_up_to_ended(&tombstone_for_live));
 
     let mut allocated = head.clone();
     allocated
         .live_allocations
-        .insert(freed, HeapExtent::int32(size));
+        .insert(freed, AllocationSize::int32(size));
     assert!(!head.has_same_allocation_lifetimes_up_to_ended(&allocated));
 }
 

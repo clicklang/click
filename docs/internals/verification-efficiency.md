@@ -58,7 +58,7 @@ resources that the operation did not name.
 
 Work must also be deterministic. Candidate buckets and index reconstruction
 iterate in admission order (pointer-class fact sources, pointer provenances,
-and opaque-extent aliases each retain an admission ordinal); allocation
+and opaque-bounds aliases each retain an admission ordinal); allocation
 addresses and state hash order never decide which candidate a
 short-circuit search tries first, because that changes charged work between
 identical runs. Trace source locations are resolved together in one source
@@ -1002,7 +1002,7 @@ not enumerate all other ranges in the block. Adjacent-view checks select a
 suffix at the prefix's endpoint, including an exactly addressed materialized
 cell or dense run span ending at its next hole, instead of pairing ambient
 ranges or enumerating memory cells and runs.
-Candidate states, extents and pointer equality still pass the kernel checks.
+Candidate states, spans and pointer equality still pass the kernel checks.
 Read-defined goals use typed evidence, exact aliases and equality forms;
 memory separation uses the unordered block-pair bucket. Large buckets at the
 same address and long alias components still need separate growth audits.
@@ -1013,7 +1013,7 @@ bucket. A condition requiring a different form can be established explicitly
 before the checked operation. Compound-query and carrier/state controls remain.
 
 Atomic certificate planning keeps persistent syntax adjacency for condition
-and proposition facts, keyed by value variables and explicit pointer blocks;
+and proposition facts, keyed by value variables and explicit address bases;
 filing a fact adjusts only its keys. Each complete fact is
 shared across its buckets, so a wide premise costs its syntax once
 (`wide_atomic_premise_cloning_scales_with_its_syntax`). Candidate trials check

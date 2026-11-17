@@ -23,7 +23,7 @@ use crate::kernel::{CompareRelation, MachineIntegerType, MachineOperandView};
 
 #[derive(Clone)]
 pub(in crate::kernel) struct TaggedAddress {
-    pub(in crate::kernel) pointer: Pointer,
+    pub(in crate::kernel) pointer: Address,
     pub(in crate::kernel) tag: crate::kernel::SharedMachineIntegerTerm,
     pub(in crate::kernel) object_class: Option<crate::kernel::effective_type::CAccessClass>,
 }
@@ -869,8 +869,8 @@ mod exact_word_address_tests {
     fn direct_shared_read_tag_bound_cites_only_its_exact_state() {
         use crate::kernel::{KernelTermExport, KernelTermImport};
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer::symbolic(Variable(985_331));
-        let memory = Memory::new();
+        let pointer = Address::symbolic(Variable(985_331));
+        let memory = SymbolicMemory::new();
         let read = |memory| {
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
@@ -1013,14 +1013,14 @@ mod exact_word_address_tests {
     #[test]
     fn different_tags_on_aligned_addresses_need_no_pointer_inequality() {
         let _session = crate::kernel::VerificationSession::enter();
-        let p = Pointer::symbolic(Variable(980030));
-        let q = Pointer::symbolic(Variable(980031));
+        let p = Address::symbolic(Variable(980030));
+        let q = Address::symbolic(Variable(980031));
         let bare = PureFactContext::new();
         let aligned = bare
             .clone()
             .assume_condition(ConditionTerm::pointer_aligned(p.clone(), 8), true)
             .assume_condition(ConditionTerm::pointer_aligned(q.clone(), 8), true);
-        let word = |pointer: Pointer, tag| {
+        let word = |pointer: Address, tag| {
             MachineTerm::uint64_add(
                 MachineTerm::pointer_address(pointer),
                 MachineTerm::uint64_constant(tag),
@@ -1061,8 +1061,8 @@ mod exact_word_address_tests {
         use crate::kernel::effective_type::{CAccessClass, CStructClass};
         use std::hash::{Hash, Hasher};
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer::symbolic(Variable(980120));
-        let other = Pointer::symbolic(Variable(980121));
+        let pointer = Address::symbolic(Variable(980120));
+        let other = Address::symbolic(Variable(980121));
         let class = CAccessClass::Struct(CStructClass::opaque("node"));
         let classed = MachineTerm::object_pointer_address(pointer.clone(), Some(class.clone()));
         let bare = MachineTerm::pointer_address(pointer.clone());
@@ -1099,7 +1099,7 @@ mod exact_word_address_tests {
     fn an_alignment_premise_over_a_classed_address_is_cited_as_admitted() {
         use crate::kernel::effective_type::{CAccessClass, CStructClass};
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer::symbolic(Variable(980110));
+        let pointer = Address::symbolic(Variable(980110));
         let class = CAccessClass::Struct(CStructClass::opaque("node"));
         let premise = ConditionTerm::uint64_equal(
             MachineTerm::uint64_bitwise_and(
@@ -1130,7 +1130,7 @@ mod exact_word_address_tests {
     fn encoded_object_class_survives_tags_and_a_different_cast_type() {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer::symbolic(Variable(980010));
+        let pointer = Address::symbolic(Variable(980010));
         let class = CAccessClass::Scalar(CScalarClass::Int);
         let assumptions = PureFactContext::new()
             .assume_condition(ConditionTerm::pointer_aligned(pointer.clone(), 4), true);
@@ -1207,7 +1207,7 @@ mod exact_word_address_tests {
     fn object_class_recovery_uses_only_available_origin_evidence() {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer::symbolic(Variable(980020));
+        let pointer = Address::symbolic(Variable(980020));
         let class = CAccessClass::Scalar(CScalarClass::Int);
         let word = MachineTerm::Variable(Variable(980021));
         let premise = Proposition::ConditionIs(
@@ -1413,7 +1413,7 @@ mod exact_word_address_tests {
                 None
             );
         }
-        let pointer = Pointer::symbolic(Variable(980_012));
+        let pointer = Address::symbolic(Variable(980_012));
         let context = PureFactContext::new()
             .assume_condition(lower.clone(), true)
             .assume_condition(upper.clone(), true)
@@ -1451,8 +1451,8 @@ mod retained_tag_tests {
     fn mixed_tag_retains_native_payload_shared_suffix_and_exact_evidence() {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::UInt64;
-        let p = Pointer::symbolic(Variable(986001));
-        let q = Pointer::symbolic(Variable(986002));
+        let p = Address::symbolic(Variable(986001));
+        let q = Address::symbolic(Variable(986002));
         let x = MachineTerm::Variable(Variable(986003));
         let y = MachineTerm::Variable(Variable(986004));
         let opaque = MachineTerm::pointer_address(q);
@@ -1466,7 +1466,7 @@ mod retained_tag_tests {
         let parent = PureFactContext::new().assume_condition(
             ConditionTerm::uint64_equal(
                 MachineTerm::Variable(Variable(986005)),
-                MachineTerm::pointer_address(Pointer::symbolic(Variable(986006))),
+                MachineTerm::pointer_address(Address::symbolic(Variable(986006))),
             ),
             true,
         );
@@ -1512,9 +1512,9 @@ mod retained_tag_tests {
     fn equal_mixed_tags_preserve_pointer_equality_evidence() {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::UInt64;
-        let p = Pointer::symbolic(Variable(986040));
-        let q = Pointer::symbolic(Variable(986041));
-        let opaque = MachineTerm::pointer_address(Pointer::symbolic(Variable(986042)));
+        let p = Address::symbolic(Variable(986040));
+        let q = Address::symbolic(Variable(986041));
+        let opaque = MachineTerm::pointer_address(Address::symbolic(Variable(986042)));
         let x = MachineTerm::Variable(Variable(986043));
         let y = MachineTerm::Variable(Variable(986044));
         let suffix = MachineTerm::Variable(Variable(986045));
@@ -1565,7 +1565,7 @@ mod retained_tag_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::UInt64;
         let word = MachineTerm::Variable(Variable(992580));
-        let pointer = Pointer::symbolic(Variable(992581));
+        let pointer = Address::symbolic(Variable(992581));
         let tagged = MachineTerm::uint64_add(
             MachineTerm::pointer_address(pointer.clone()),
             MachineTerm::uint64_constant(1),
@@ -1603,12 +1603,12 @@ mod retained_tag_tests {
     #[test]
     fn shared_read_form_keeps_existing_state_transport() {
         let _session = crate::kernel::VerificationSession::enter();
-        let cell = Pointer {
-            block: "tag-cell".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let cell = Address {
+            base: "tag-cell".into(),
+            offset: AddressOffset::Constant(0),
         };
-        let pointer = Pointer::symbolic(Variable(986030));
-        let memory = Memory::new().with_block("tag-cell", 8);
+        let pointer = Address::symbolic(Variable(986030));
+        let memory = SymbolicMemory::new().with_block("tag-cell", 8);
         let read = |memory| {
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
@@ -1652,7 +1652,7 @@ mod retained_tag_tests {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::UInt64;
-        let p = Pointer::symbolic(Variable(986010));
+        let p = Address::symbolic(Variable(986010));
         let class = CAccessClass::Scalar(CScalarClass::Int);
         let address = MachineTerm::object_pointer_address(p.clone(), Some(class.clone()));
         let aligned = PureFactContext::new()

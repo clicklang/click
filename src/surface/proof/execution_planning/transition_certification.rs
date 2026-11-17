@@ -619,7 +619,7 @@ pub(in crate::surface::proof) fn statement_contains_call(statement: &ProgramStat
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             statement_contains_call(body)
                 || test
                     .as_ref()
@@ -1103,9 +1103,9 @@ mod condition_transition_tests {
     fn condition_transition_still_checks_execution_obligations() {
         let state = ExecutionState::new().with_local(
             "p",
-            ProgramValue::pointer(Pointer {
-                block: "havoc:condition-obligation".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            ProgramValue::pointer(Address {
+                base: "havoc:condition-obligation".into(),
+                offset: AddressOffset::Constant(0),
             }),
         );
         let condition = crate::kernel::program_expression::load(
@@ -1134,12 +1134,12 @@ mod condition_transition_tests {
 
     #[test]
     fn generated_load_binding_collection_tombstones_conflicting_keys() {
-        let memory = crate::kernel::intern_memory(Memory::new());
-        let pointer = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(0),
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
+        let pointer = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
         };
-        let load = |pointer: Pointer| {
+        let load = |pointer: Address| {
             MachineTerm::MemoryLoad(
                 crate::kernel::ProgramPoint::at(&memory),
                 Box::new(pointer),
@@ -1147,7 +1147,7 @@ mod condition_transition_tests {
             )
         };
         let variable = Variable(0xfeed);
-        let producer_fact = |pointer: Pointer| {
+        let producer_fact = |pointer: Address| {
             let mut facts = crate::kernel::ExecutionFacts::new();
             crate::kernel::record_load_variable_defining_fact(variable, load(pointer), &mut facts);
             facts.pop().expect("producer emits defining fact")
@@ -1162,13 +1162,13 @@ mod condition_transition_tests {
         ));
 
         let conflicting = generated_load_bindings_from_facts(&[
-            producer_fact(Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Constant(0),
+            producer_fact(Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Constant(0),
             }),
-            producer_fact(Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Constant(4),
+            producer_fact(Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Constant(4),
             }),
         ]);
         assert!(matches!(
@@ -1181,9 +1181,9 @@ mod condition_transition_tests {
 
     #[test]
     fn real_scalar_load_transition_retains_its_read_without_a_binding() {
-        let pointer = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
         };
         let parsed = crate::languages::c::syntax::parse_functions_for_source(
             r#"
@@ -1267,9 +1267,9 @@ mod condition_transition_tests {
 
     #[test]
     fn parsed_compound_field_update_retains_its_structural_read() {
-        let pointer = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
         };
         let parsed = crate::languages::c::syntax::parse_functions_for_source(
             r#"
@@ -1385,9 +1385,9 @@ mod condition_transition_tests {
     #[test]
     fn typed_load_source_metadata_is_semantically_neutral() {
         use std::collections::HashSet;
-        let pointer = ProgramExpression::Value(ProgramValue::pointer(Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(8),
+        let pointer = ProgramExpression::Value(ProgramValue::pointer(Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(8),
         }));
         let source = |occurrence| {
             crate::kernel::ExpressionLoadSource::new(crate::kernel::LoadSourceId {

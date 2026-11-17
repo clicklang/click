@@ -2,7 +2,7 @@ use super::tests::composite_spec;
 use super::*;
 use crate::kernel::program_expression::{cast, int32_literal, variable};
 
-fn owner(pointer: Pointer, start: u32, end: u32) -> ResourceFact {
+fn owner(pointer: Address, start: u32, end: u32) -> ResourceFact {
     ResourceFact::own_memory(MemoryRange::new(pointer, start.into(), end.into()))
 }
 
@@ -34,7 +34,7 @@ pub(super) fn existential_definition(count: u32) -> CompositeResourceDefinition 
 }
 
 pub(super) fn existential_outputs(
-    pointer: Pointer,
+    pointer: Address,
     count: u32,
     facts: &PureFactContext,
 ) -> EvaluatedReturnResources {
@@ -57,7 +57,7 @@ pub(super) fn existential_outputs(
 #[test]
 fn existential_returns_carry_the_producers_witness_and_independent_child_ids() {
     let facts = PureFactContext::new();
-    let evaluated = existential_outputs(Pointer::symbolic(Variable(8_850_000)), 2, &facts);
+    let evaluated = existential_outputs(Address::symbolic(Variable(8_850_000)), 2, &facts);
     let state = ExecutionState::new();
     let bodies = ConstructedReturnBodies::construct(
         &evaluated,
@@ -65,7 +65,7 @@ fn existential_returns_carry_the_producers_witness_and_independent_child_ids() {
         &state,
         &facts,
     );
-    assert!(bodies.1.is_empty());
+    assert!(!bodies.0.is_empty());
     let mut children = BTreeSet::new();
     for occurrence in &evaluated.occurrences {
         let body = bodies.get(occurrence.source).unwrap();
@@ -93,12 +93,9 @@ fn existential_returns_carry_the_producers_witness_and_independent_child_ids() {
         &evaluated.resources,
         &transfers,
         &bodies,
-        &[],
-        &state,
         &facts,
         &destination,
-    )
-    .unwrap();
+    );
     for (projection, occurrence) in projected.iter().zip(&evaluated.occurrences) {
         assert_eq!(
             projection.expansion,
@@ -110,7 +107,7 @@ fn existential_returns_carry_the_producers_witness_and_independent_child_ids() {
 #[test]
 fn existential_witness_memory_does_not_receive_parameter_borrow_custody() {
     let facts = PureFactContext::new();
-    let evaluated = existential_outputs(Pointer::symbolic(Variable(8_850_001)), 1, &facts);
+    let evaluated = existential_outputs(Address::symbolic(Variable(8_850_001)), 1, &facts);
     let source = evaluated.occurrences[0].source;
     let bodies = ConstructedReturnBodies::try_construct(
         &evaluated,
@@ -136,8 +133,6 @@ fn existential_witness_memory_does_not_receive_parameter_borrow_custody() {
                 .unwrap(),
             Some(body),
         )),
-        &[],
-        &Memory::new(),
         &facts,
     );
     let Some(RuntimeError::ProducedCompositeOverlapsHeldResource {
@@ -178,7 +173,7 @@ fn viewed_existential_children_keep_their_binding_and_never_gain_owned_custody()
             .admit(
                 ResourceFact::own_composite(
                     "wrapper".into(),
-                    vec![ProgramValue::pointer(Pointer::symbolic(Variable(
+                    vec![ProgramValue::pointer(Address::symbolic(Variable(
                         8_850_002,
                     )))],
                 ),
@@ -211,9 +206,9 @@ fn viewed_existential_children_keep_their_binding_and_never_gain_owned_custody()
 }
 
 #[test]
-fn unsupported_existentials_stay_legacy_and_migrated_failures_do_not_retry() {
+fn unsupported_existentials_refuse_and_migrated_failures_do_not_retry() {
     let facts = PureFactContext::new();
-    let evaluated = existential_outputs(Pointer::symbolic(Variable(8_850_003)), 1, &facts);
+    let evaluated = existential_outputs(Address::symbolic(Variable(8_850_003)), 1, &facts);
     let source = evaluated.occurrences[0].source;
     for variant in 0..3 {
         let mut definition = existential_definition(1);
@@ -228,20 +223,23 @@ fn unsupported_existentials_stay_legacy_and_migrated_failures_do_not_retry() {
             )),
             _ => definition.witnesses = vec![program_parameter("hidden", ProgramType::Int32)],
         }
-        let bodies = ConstructedReturnBodies::construct(
+        let bodies = ConstructedReturnBodies::try_construct(
             &evaluated,
             &[definition],
             &ExecutionState::new(),
+            ReturnResourceComposition::ValidateDescriptions,
             &facts,
         );
         if variant == 0 {
-            assert_eq!(bodies.get(source).unwrap().witnesses[&source].len(), 2);
-            assert!(bodies.1.is_empty());
+            assert_eq!(
+                bodies.unwrap().get(source).unwrap().witnesses[&source].len(),
+                2
+            );
         } else {
-            assert!(bodies.get(source).is_none());
-            assert!(bodies.1.contains(&source));
+            assert!(bodies.is_none());
         }
     }
+
     let mut invalid = existential_definition(1);
     invalid.contains.push(invalid.contains[1].clone());
     assert!(
@@ -259,8 +257,8 @@ fn unsupported_existentials_stay_legacy_and_migrated_failures_do_not_retry() {
 #[test]
 fn existential_binding_retains_the_recorded_word_origin() {
     let facts = PureFactContext::new();
-    let pointer = Pointer::symbolic(Variable(8_850_010));
-    let hidden = Pointer::symbolic(Variable(8_850_011));
+    let pointer = Address::symbolic(Variable(8_850_010));
+    let hidden = Address::symbolic(Variable(8_850_011));
     let mut definition = existential_definition(1);
     definition
         .parameters
@@ -301,7 +299,7 @@ fn existential_binding_retains_the_recorded_word_origin() {
 #[test]
 fn nested_existential_returns_keep_bindings_and_do_not_infer_them_from_siblings() {
     let facts = PureFactContext::new();
-    let pointer = Pointer::symbolic(Variable(8_850_030));
+    let pointer = Address::symbolic(Variable(8_850_030));
     let mut outer = existential_definition(0);
     outer
         .witnesses
@@ -338,7 +336,7 @@ fn nested_existential_returns_keep_bindings_and_do_not_infer_them_from_siblings(
         &ExecutionState::new(),
         &facts,
     );
-    assert!(bodies.1.is_empty());
+    assert!(!bodies.0.is_empty());
     let body = bodies.get(source).unwrap();
     let values = &body.witnesses[&source];
     assert_eq!(values.len(), 2);
@@ -365,7 +363,7 @@ fn nested_existential_returns_keep_bindings_and_do_not_infer_them_from_siblings(
 #[test]
 fn a_nested_witness_does_not_select_a_matching_sibling_description() {
     let facts = PureFactContext::new();
-    let pointer = Pointer::symbolic(Variable(8_850_050));
+    let pointer = Address::symbolic(Variable(8_850_050));
     let parent = CompositeResourceDefinition::new(
         "a_parent",
         vec![program_parameter("p", ProgramType::Int32Pointer)],

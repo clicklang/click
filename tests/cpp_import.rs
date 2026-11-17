@@ -7,9 +7,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use click::cli::{VerificationInput, parse_mdtest, read_click_project, read_verification_inputs};
 use click::kernel::{
-    ExecutionState, FunctionOutcome, MachineTerm, Memory, MemoryRange, Pointer, PointerOffsetTerm,
+    Address, AddressOffset, ExecutionState, FunctionOutcome, MachineTerm, MemoryRange,
     ProgramExpression, ProgramStatement, ProgramType, Proposition, PureFactContext,
-    ResourceContext, ResourceFact, UndefinedBehavior, int32,
+    ResourceContext, ResourceFact, SymbolicMemory, UndefinedBehavior, int32,
     prove_symbolic_program_function_execution,
 };
 use click::languages::cpp::{
@@ -6230,9 +6230,9 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
             ) }
     ));
 
-    let pointer = Pointer {
-        block: "cpp-reference".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "cpp-reference".into(),
+        offset: AddressOffset::Constant(0),
     };
     let resources =
         ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
@@ -6245,10 +6245,10 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
         ProgramType::Int32Pointer,
     )];
     let state = ExecutionState::new()
-        .with_memory(Memory::new().store(pointer.clone(), int32(41)))
+        .with_memory(SymbolicMemory::new().store(pointer.clone(), int32(41)))
         .with_resource_context(resources.clone());
     let expected_state = ExecutionState::new()
-        .with_memory(Memory::new().store(pointer.clone(), int32(42)))
+        .with_memory(SymbolicMemory::new().store(pointer.clone(), int32(42)))
         .with_resource_context(resources.clone());
     let theorem = prove_symbolic_program_function_execution(
         state.clone(),
@@ -6271,7 +6271,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
     );
 
     let max_state = ExecutionState::new()
-        .with_memory(Memory::new().store(pointer, int32(i32::MAX as u32)))
+        .with_memory(SymbolicMemory::new().store(pointer, int32(i32::MAX as u32)))
         .with_resource_context(resources);
     let overflow = prove_symbolic_program_function_execution(
         max_state.clone(),
@@ -14000,7 +14000,7 @@ fn nested_record_contracts_reject_missing_authority_false_frames_and_readonly_wr
 }
 
 #[test]
-fn nested_record_artifacts_reject_wrong_identity_extent_constness_and_cycles() {
+fn nested_record_artifacts_reject_wrong_identity_size_constness_and_cycles() {
     use sha2::{Digest, Sha256};
     let project = nested_record_project("FeeEnvelope::ReadStamp");
     refresh_import(&project.config()).unwrap();
@@ -16881,7 +16881,7 @@ fn cpp_bounded_native_descriptor_last_reference_verifies_offline() {
     let import = load_import(&project.config()).unwrap();
     // The bound is the code's `unsigned long`, uncast, and the last
     // element is at `size - 1` in that type. Nothing bounds `size` from
-    // above: the held range states its own extent limit.
+    // above: the held range states its own span limit.
     let source = r#"verifying "bounds.cpp";
 int32& run(const struct View& view) {
  views view.data;

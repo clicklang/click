@@ -1,4 +1,4 @@
-# A contract result cannot prove a false claim about `c(result)`
+# A contract result cannot prove a false claim about `program::result`
 
 The C parameter and the contract return value have separate bindings.
 Returning seven does not establish that the parameter was seven.
@@ -13,8 +13,8 @@ int32 seven(int32 result) {
 verifying "c_result_parameter_seven.c";
 
 int32 seven(int32 result) {
-    requires 0 <= c(result) and c(result) <= 100;
-    ensures c(result) == 7;
+    requires 0 <= program::result and program::result <= 100;
+    ensures program::result == 7;
 }
 ```
 

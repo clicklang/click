@@ -8,7 +8,7 @@ as unbound.
 theorem ob(x: int32) {
     requires exists (k: int32) { k > x };
     ensures 0 == 1 by {
-        obtain (k: int32) { k > x }
+        let k = obtain(exists (k: int32) { k > x });
         have z > x by known();
     }
 }

@@ -5,16 +5,16 @@
 use super::*;
 
 #[test]
-fn representation_copy_lookup_work_is_linear_in_the_copied_extent() {
+fn representation_copy_lookup_work_is_linear_in_the_copied_span() {
     let mut lookups = Vec::new();
     let mut transfers = Vec::new();
     for cells in [4_u32, 8, 16, 32, 64] {
-        let entry = source_with_cells(Memory::new(), "extent-source", cells);
+        let entry = source_with_cells(SymbolicMemory::new(), "span-source", cells);
         let (lookup, transfer) = copy_lookup_work(
             &entry,
-            &Memory::new(),
-            "extent-source",
-            "extent-destination",
+            &SymbolicMemory::new(),
+            "span-source",
+            "span-destination",
             cells,
         );
         lookups.push(lookup);
@@ -23,12 +23,12 @@ fn representation_copy_lookup_work_is_linear_in_the_copied_extent() {
         assert_eq!(
             lookup,
             1 + cells as usize,
-            "copied-extent lookup work: {lookups:?}; whole transfer: {transfers:?}"
+            "copied-span lookup work: {lookups:?}; whole transfer: {transfers:?}"
         );
     }
     assert!(
         lookups.windows(2).all(|pair| pair[1] <= 2 * pair[0]),
-        "copied-extent lookup work grew faster than the extent: {lookups:?}"
+        "copied-span lookup work grew faster than the span: {lookups:?}"
     );
 }
 
@@ -37,7 +37,7 @@ fn fixed_representation_copy_lookup_work_is_independent_of_unrelated_memory() {
     let mut lookups = Vec::new();
     let mut transfers = Vec::new();
     for unrelated in [8_u32, 32, 128, 512] {
-        let mut memory = source_with_cells(Memory::new(), "fixed-source", 4);
+        let mut memory = source_with_cells(SymbolicMemory::new(), "fixed-source", 4);
         for index in 0..unrelated {
             memory = memory.store(cell(&format!("unrelated-{index}"), 0), cell_value(index));
             // Source-block cells past the copied range are not visited either.

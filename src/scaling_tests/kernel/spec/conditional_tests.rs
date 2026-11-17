@@ -607,3 +607,181 @@ fn bitwise_arm_comparison_work_scales_with_explicit_source() {
         assert!(lw * small <= sw * large * 2, "{samples:?}");
     }
 }
+
+fn bitwise_guard_comparison(
+    format: MachineIntegerType,
+    op: MachineBinaryOp,
+    index: u64,
+) -> SpecProposition {
+    let mut proposition = bitwise_arm_comparison(format, op, index);
+    let SpecProposition::Comparison {
+        left:
+            SpecExpression::If {
+                condition,
+                then_branch,
+                ..
+            },
+        ..
+    } = &mut proposition
+    else {
+        unreachable!()
+    };
+    let bitwise = (**then_branch).clone();
+    let variable = SpecExpression::Value(
+        format.value_from_term(MachineTerm::Variable(Variable(1_040_000 + index))),
+    );
+    *condition = Box::new(SpecProposition::Comparison {
+        left: bitwise,
+        operator: ComparisonOperator::LessThan,
+        right: variable.clone(),
+    });
+    *then_branch = Box::new(variable);
+    proposition
+}
+
+#[test]
+fn bitwise_guard_comparisons_ignore_ambient_truth_and_operand_aliases() {
+    for format in [
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int64,
+        MachineIntegerType::UInt64,
+    ] {
+        for op in [
+            MachineBinaryOp::BitwiseAnd,
+            MachineBinaryOp::BitwiseOr,
+            MachineBinaryOp::BitwiseXor,
+        ] {
+            let mut expected = None;
+            let mut baseline = None;
+            for size in [0, 16, 64, 256] {
+                let _session = VerificationSession::enter();
+                let state = ExecutionState::new();
+                let proposition = bitwise_guard_comparison(format, op, 0);
+                let mut execution = ExecutionBudget::new();
+                let original = lower_spec_proposition_at_state_with_algebraic_bindings_in(
+                    SpecScope::unbound(&state, None),
+                    &proposition,
+                    &PureFactContext::new(),
+                    &mut SpecEvaluation::logical(&mut execution),
+                )
+                .unwrap();
+                let Proposition::ConditionIs(ConditionTerm::Compare { left, .. }, true) =
+                    &original[0].proposition
+                else {
+                    panic!("native comparison");
+                };
+                let MachineTerm::If { condition, .. } = left.as_ref() else {
+                    panic!("retained conditional");
+                };
+                let guard = condition.as_ref().clone();
+                let mut facts = PureFactContext::new();
+                for index in 0..size {
+                    facts = facts.assume_condition(
+                        ConditionTerm::Variable(Variable(1_050_000 + index)),
+                        true,
+                    );
+                }
+                for truth in [None, Some(true), Some(false)] {
+                    for alias in [false, true] {
+                        let mut selected = facts.clone();
+                        if let Some(truth) = truth {
+                            selected = selected.assume_condition(guard.clone(), truth);
+                        }
+                        if alias {
+                            selected = selected.assume_condition(
+                                ConditionTerm::Compare {
+                                    format: if format.format().bits() == 64 {
+                                        MachineIntegerType::Int64
+                                    } else {
+                                        format
+                                    },
+                                    relation: CompareRelation::Equal,
+                                    left: Box::new(MachineTerm::Variable(Variable(1_010_000))),
+                                    right: Box::new(
+                                        crate::kernel::machine_integer::range::constant_word(
+                                            format,
+                                            &0.into(),
+                                        )
+                                        .unwrap(),
+                                    ),
+                                },
+                                true,
+                            );
+                        }
+                        let exports = KernelTermExport::machine_export_count();
+                        let (paths, work) =
+                            crate::instrumentation::measure_deterministic_work(|| {
+                                let mut budget = ExecutionBudget::new();
+                                lower_spec_proposition_at_state_with_algebraic_bindings_in(
+                                    SpecScope::unbound(&state, None),
+                                    &proposition,
+                                    &selected,
+                                    &mut SpecEvaluation::logical(&mut budget),
+                                )
+                                .unwrap()
+                            });
+                        assert_eq!(paths.len(), 1);
+                        let actual = &paths[0].proposition;
+                        assert!(
+                            matches!(actual, Proposition::ConditionIs(ConditionTerm::Compare { left, .. },true)
+                            if matches!(left.as_ref(),MachineTerm::If { condition, .. } if matches!(condition.as_ref(), ConditionTerm::Compare { .. })))
+                        );
+                        assert_eq!(actual, expected.get_or_insert_with(|| actual.clone()));
+                        assert_eq!(KernelTermExport::machine_export_count(), exports);
+                        let first = *baseline.get_or_insert(work);
+                        assert!(
+                            work <= first + 64,
+                            "{format:?}, {op:?}, {size} facts, truth={truth:?}, alias={alias}: {work} vs {first}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn bitwise_guard_comparison_work_scales_with_written_source() {
+    let mut samples = Vec::new();
+    for size in [8, 32, 128, 512] {
+        let _session = VerificationSession::enter();
+        let state = ExecutionState::new();
+        let source = (0..size)
+            .map(|i| {
+                bitwise_guard_comparison(
+                    MachineIntegerType::UInt64,
+                    MachineBinaryOp::BitwiseAnd,
+                    i as u64,
+                )
+            })
+            .collect::<Vec<_>>();
+        let facts = PureFactContext::new();
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for proposition in &source {
+                let mut budget = ExecutionBudget::new();
+                let paths = lower_spec_proposition_at_state_with_algebraic_bindings_in(
+                    SpecScope::unbound(&state, None),
+                    proposition,
+                    &facts,
+                    &mut SpecEvaluation::logical(&mut budget),
+                )
+                .unwrap();
+                assert!(matches!(
+                    &paths[0].proposition,
+                    Proposition::ConditionIs(ConditionTerm::Compare { .. }, true)
+                ));
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(work < size * 512, "{size} guards: {work}");
+        samples.push((size, work));
+    }
+    for pair in samples.windows(2) {
+        let [(small, sw), (large, lw)] = pair else {
+            unreachable!()
+        };
+        assert!(lw * small <= sw * large * 2, "{samples:?}");
+    }
+}

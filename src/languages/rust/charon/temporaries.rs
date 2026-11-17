@@ -220,6 +220,333 @@ fn iterator_definition(statement: &mut S) -> Option<(IteratorKind, &mut String)>
     }
 }
 
+/// Puts each temporary that holds an unchanging value back where it is
+/// read. A temporary of `temporaries` assigned once holds the same value at
+/// every read, however many and in whichever block, when that value is a
+/// literal, as `x[0] = x[0] * k` reads its index twice, a copy of a
+/// parameter the body never writes, moves or borrows, as `t = x; ...; f(t)`
+/// passes `x`, or a reference borrowing a place rooted at a local, as
+/// `t = &mut w; f(t); g(t)` passes `&mut w` to both. Its assignment, storage
+/// markers and local go.
+pub(super) fn substitute_literals(
+    locals: &mut Vec<Place>,
+    blocks: &mut [MirBlock],
+    temporaries: &BTreeSet<String>,
+    parameters: &BTreeSet<String>,
+) {
+    let mut reads = BTreeMap::<String, usize>::new();
+    let mut named = BTreeSet::<String>::new();
+    let mut assignments = BTreeMap::<String, Vec<E>>::new();
+    for block in blocks.iter() {
+        for statement in &block.statements {
+            statement_uses(statement, &mut reads, &mut named);
+            if let S::Assign {
+                target: E::Local { name },
+                value,
+            } = statement
+            {
+                assignments
+                    .entry(name.clone())
+                    .or_default()
+                    .push(value.clone());
+            }
+        }
+        terminator_uses(&block.terminator, &mut reads, &mut named);
+        if let Some(destination) = call_destination(&block.terminator) {
+            named.insert(destination.clone());
+        }
+    }
+    let unchanged = unchanged_parameters(blocks, parameters, &named);
+    let references: BTreeSet<&String> = locals
+        .iter()
+        .filter(|local| {
+            matches!(
+                local.value_type,
+                super::super::schema::Type::Reference { .. }
+            )
+        })
+        .map(|local| &local.name)
+        .collect();
+    // Each temporary assigned once, by its one value.
+    let candidates: BTreeMap<String, E> = assignments
+        .into_iter()
+        .filter(|(name, values)| {
+            temporaries.contains(name) && !named.contains(name) && values.len() == 1
+        })
+        .filter_map(|(name, mut values)| Some((name, values.pop()?)))
+        .collect();
+    // A candidate's value with the unchanging candidates it reads put back,
+    // or `None` when it changes. A reborrow `t = &mut *u` of `u = &mut x` is
+    // `&mut x`, so a chain of borrows resolves link by link, each once.
+    let mut resolved = BTreeMap::<String, Option<E>>::new();
+    let names: Vec<String> = candidates.keys().cloned().collect();
+    for name in &names {
+        resolve(
+            name,
+            &candidates,
+            &unchanged,
+            &references,
+            &mut resolved,
+            &mut BTreeSet::new(),
+        );
+    }
+    let literals: BTreeMap<String, E> = resolved
+        .into_iter()
+        .filter_map(|(name, value)| Some((name, value?)))
+        .collect();
+    if literals.is_empty() {
+        return;
+    }
+    for block in blocks.iter_mut() {
+        block.statements.retain(|statement| match statement {
+            S::Assign {
+                target: E::Local { name },
+                ..
+            }
+            | S::BeginStorage { local: name }
+            | S::EndStorage { local: name } => !literals.contains_key(name),
+            _ => true,
+        });
+        for statement in &mut block.statements {
+            // A target reads its index and the reference it writes through;
+            // a local it writes is no read.
+            if let S::Assign { target, .. } = statement
+                && !matches!(target, E::Local { .. })
+            {
+                put_back(target, &literals);
+            }
+            for expression in statement_expressions_mut(statement) {
+                put_back(expression, &literals);
+            }
+        }
+        for expression in terminator_expressions_mut(&mut block.terminator) {
+            put_back(expression, &literals);
+        }
+    }
+    locals.retain(|local| !literals.contains_key(&local.name));
+}
+
+/// Replaces each read of a local of `values` in `expression` with its value,
+/// and `*&p` with `p`.
+fn put_back(expression: &mut E, values: &BTreeMap<String, E>) {
+    if let E::Local { name } = expression
+        && let Some(value) = values.get(name)
+    {
+        *expression = value.clone();
+        return;
+    }
+    for child in children_mut(expression) {
+        put_back(child, values);
+    }
+    if let E::Deref { reference, .. } = expression
+        && let E::Borrow { place, .. } = reference.as_mut()
+    {
+        *expression = std::mem::replace(place.as_mut(), E::NoneBox);
+    }
+}
+
+/// The unchanging value of candidate `name`, memoized in `resolved`: its one
+/// value with the unchanging candidates it reads put back, when that is a
+/// literal, a copy of an `unchanged` parameter, or, for a reference, a borrow
+/// of a place rooted at a local, whose address rustc keeps for the borrow's
+/// life. A slice is a pointer and a length its readers take apart, so a
+/// slice's borrow stays.
+fn resolve(
+    name: &str,
+    candidates: &BTreeMap<String, E>,
+    unchanged: &BTreeSet<String>,
+    references: &BTreeSet<&String>,
+    resolved: &mut BTreeMap<String, Option<E>>,
+    visiting: &mut BTreeSet<String>,
+) -> Option<E> {
+    if let Some(value) = resolved.get(name) {
+        return value.clone();
+    }
+    let value = candidates.get(name)?;
+    if !visiting.insert(name.to_string()) {
+        return None;
+    }
+    let mut reads = BTreeMap::new();
+    let mut named = BTreeSet::new();
+    expression_uses(value, &mut reads, &mut named);
+    let mut inner = BTreeMap::new();
+    for read in reads.keys() {
+        if let Some(read_value) =
+            resolve(read, candidates, unchanged, references, resolved, visiting)
+        {
+            inner.insert(read.clone(), read_value);
+        }
+    }
+    let mut value = value.clone();
+    put_back(&mut value, &inner);
+    visiting.remove(name);
+    let unchanging = match &value {
+        E::Integer { .. }
+        | E::UnsignedInteger { .. }
+        | E::SignedInteger { .. }
+        | E::UsizeInteger { .. }
+        | E::Boolean { .. }
+        | E::NoneBox => true,
+        E::Local { name } => unchanged.contains(name),
+        E::Borrow { place, .. } => {
+            place_root(place).is_some() && references.iter().any(|reference| *reference == name)
+        }
+        _ => false,
+    };
+    let result = unchanging.then_some(value);
+    resolved.insert(name.to_string(), result.clone());
+    result
+}
+
+/// The parameters the body never changes: none is assigned (other than
+/// through a reference it holds), named by a statement or terminator field
+/// (`named`, which covers moves, drops and partial writes), a call's
+/// destination, or borrowed.
+fn unchanged_parameters(
+    blocks: &[MirBlock],
+    parameters: &BTreeSet<String>,
+    named: &BTreeSet<String>,
+) -> BTreeSet<String> {
+    // The local a target writes, unless it writes through a reference.
+    fn written(target: &E) -> Option<&String> {
+        match target {
+            E::Local { name } => Some(name),
+            E::Field { base, .. } | E::EnumField { base, .. } => written(base),
+            E::Index { slice, .. } => written(slice),
+            _ => None,
+        }
+    }
+    fn borrowed(expression: &E, out: &mut BTreeSet<String>) {
+        if let E::Borrow { place, .. } = expression
+            && let Some(root) = written(place)
+        {
+            out.insert(root.clone());
+        }
+        for child in children(expression) {
+            borrowed(child, out);
+        }
+    }
+    let mut changed = named.clone();
+    for block in blocks {
+        for statement in &block.statements {
+            if let S::Assign { target, .. } = statement
+                && let Some(root) = written(target)
+            {
+                changed.insert(root.clone());
+            }
+            let mut statement = statement.clone();
+            for expression in statement_expressions_mut(&mut statement) {
+                borrowed(expression, &mut changed);
+            }
+        }
+        let mut terminator = block.terminator.clone();
+        for expression in terminator_expressions_mut(&mut terminator) {
+            borrowed(expression, &mut changed);
+        }
+        if let T::Call { destination, .. } | T::BoxNew { destination, .. } = &block.terminator {
+            changed.insert(destination.clone());
+        }
+    }
+    parameters
+        .iter()
+        .filter(|name| !changed.contains(*name))
+        .cloned()
+        .collect()
+}
+
+/// Removes the temporaries of `temporaries` the body never uses: those no
+/// statement or terminator names apart from their storage markers and their
+/// writes of pure values, and a `()` temporary that is only a call's
+/// destination, which the call never writes. Their storage markers and
+/// writes go with them.
+pub(super) fn remove_unused(
+    locals: &mut Vec<Place>,
+    blocks: &mut [MirBlock],
+    temporaries: &BTreeSet<String>,
+) {
+    let mut used = BTreeSet::new();
+    for block in blocks.iter() {
+        for statement in &block.statements {
+            match statement {
+                S::BeginStorage { .. } | S::EndStorage { .. } => {}
+                // Writing a pure value to a local no one reads uses only
+                // what the value reads.
+                S::Assign {
+                    target: E::Local { .. },
+                    value,
+                } if pure(value) => {
+                    let mut reads = BTreeMap::new();
+                    let mut named = BTreeSet::new();
+                    expression_uses(value, &mut reads, &mut named);
+                    used.extend(reads.into_keys());
+                    used.extend(named);
+                }
+                statement => used.extend(mentioned_locals(statement)),
+            }
+        }
+        let mut reads = BTreeMap::new();
+        let mut named = BTreeSet::new();
+        terminator_uses(&block.terminator, &mut reads, &mut named);
+        used.extend(reads.into_keys());
+        used.extend(named);
+        if let T::Call { destination, .. } = &block.terminator {
+            used.insert(destination.clone());
+        }
+        if let T::BoxNew {
+            source,
+            destination,
+            ..
+        } = &block.terminator
+        {
+            used.insert(source.clone());
+            used.insert(destination.clone());
+        }
+    }
+    // A `()` call result holds nothing, so being a destination is no use.
+    let unit: BTreeSet<&String> = locals
+        .iter()
+        .filter(|local| local.value_type == super::super::schema::Type::Unit)
+        .map(|local| &local.name)
+        .collect();
+    let unused: BTreeSet<String> = locals
+        .iter()
+        .map(|local| &local.name)
+        .filter(|name| temporaries.contains(*name))
+        .filter(|name| {
+            !used.contains(*name) || (unit.contains(name) && only_destination(blocks, name))
+        })
+        .cloned()
+        .collect();
+    if unused.is_empty() {
+        return;
+    }
+    for block in blocks.iter_mut() {
+        block.statements.retain(|statement| match statement {
+            S::BeginStorage { local } | S::EndStorage { local } => !unused.contains(local),
+            S::Assign {
+                target: E::Local { name },
+                ..
+            } => !unused.contains(name),
+            _ => true,
+        });
+    }
+    locals.retain(|local| !unused.contains(&local.name));
+}
+
+/// Whether `name` is named only as a call's destination.
+fn only_destination(blocks: &[MirBlock], name: &str) -> bool {
+    blocks.iter().all(|block| {
+        let statements = block.statements.iter().all(|statement| {
+            matches!(statement, S::BeginStorage { .. } | S::EndStorage { .. })
+                || !mentioned_locals(statement).contains(name)
+        });
+        let mut reads = BTreeMap::new();
+        let mut named = BTreeSet::new();
+        terminator_uses(&block.terminator, &mut reads, &mut named);
+        statements && !reads.contains_key(name) && !named.contains(name)
+    })
+}
+
 /// Returns the value MIR writes to the return place where nothing runs
 /// between the write and the return, as `return value` does in C.
 ///
@@ -1890,5 +2217,195 @@ mod tests {
         ]);
         assert_eq!(locals, ["__rust_mir_0", "x"]);
         assert!(matches!(blocks[3].terminator, T::Return));
+    }
+
+    #[test]
+    fn unused_temporaries_and_unit_call_results_are_removed() {
+        // `StorageLive(t1); StorageDead(t1); t2 = f(x) -> 1;  1: return`,
+        // with `t2: ()`: neither temporary holds anything a later step reads.
+        let mut locals = vec![
+            place("x"),
+            place("t1"),
+            Place {
+                value_type: Type::Unit,
+                ..place("t2")
+            },
+            place("t3"),
+        ];
+        let mut blocks = vec![
+            MirBlock {
+                terminator_site: None,
+                statements: vec![
+                    S::BeginStorage { local: "t1".into() },
+                    S::EndStorage { local: "t1".into() },
+                    assign("t3", local("x")),
+                ],
+                terminator: T::Call {
+                    function: "f".into(),
+                    arguments: vec![local("t3")],
+                    owned_arguments: vec![],
+                    destination: "t2".into(),
+                    target: 1,
+                    through_pointer: false,
+                    result: None,
+                },
+            },
+            MirBlock {
+                terminator_site: None,
+                statements: vec![],
+                terminator: T::Return,
+            },
+        ];
+        let temporaries = BTreeSet::from(["t1".into(), "t2".into(), "t3".into()]);
+        super::remove_unused(&mut locals, &mut blocks, &temporaries);
+        let names: Vec<_> = locals.iter().map(|local| local.name.as_str()).collect();
+        assert_eq!(names, ["x", "t3"]);
+        assert_eq!(blocks[0].statements.len(), 1);
+    }
+
+    /// Runs the unchanging-value pass with parameter `p` and temporaries
+    /// `t1` and `t2`.
+    fn substituted_everywhere(blocks: Vec<MirBlock>) -> (Vec<String>, Vec<MirBlock>) {
+        let mut locals = ["x", "t1", "t2"].map(place).to_vec();
+        let mut blocks = blocks;
+        let temporaries = BTreeSet::from(["t1".into(), "t2".into()]);
+        let parameters = BTreeSet::from(["p".into()]);
+        super::substitute_literals(&mut locals, &mut blocks, &temporaries, &parameters);
+        (locals.into_iter().map(|local| local.name).collect(), blocks)
+    }
+
+    #[test]
+    fn a_literal_temporary_is_read_as_its_literal_everywhere() {
+        // `t1 = 3; x = t1 + t1;` reads the literal twice.
+        let three = E::UnsignedInteger {
+            value: 3,
+            value_type: Type::U32,
+        };
+        let (locals, blocks) = substituted_everywhere(vec![block(
+            vec![
+                assign("t1", three),
+                assign("x", binary("add", local("t1"), local("t1"))),
+            ],
+            T::Return,
+        )]);
+        assert_eq!(locals, ["x", "t2"]);
+        assert!(matches!(
+            blocks[0].statements.as_slice(),
+            [S::Assign { value: E::Binary { left, right, .. }, .. }]
+                if matches!(left.as_ref(), E::UnsignedInteger { value: 3, .. })
+                    && matches!(right.as_ref(), E::UnsignedInteger { value: 3, .. })
+        ));
+    }
+
+    #[test]
+    fn a_copy_of_an_unchanged_parameter_is_read_in_a_later_block() {
+        // `t1 = p; goto 1;  1: x = t1;` is `x = p`; `t2 = x` copies a
+        // local the body writes, so it stays.
+        let (locals, blocks) = substituted_everywhere(vec![
+            block(
+                vec![assign("t1", local("p")), assign("t2", local("x"))],
+                T::Goto { target: 1 },
+            ),
+            block(
+                vec![assign("x", local("t1")), assign("x", local("t2"))],
+                T::Return,
+            ),
+        ]);
+        assert_eq!(locals, ["x", "t2"]);
+        assert!(matches!(
+            &blocks[1].statements[0],
+            S::Assign { value: E::Local { name }, .. } if name == "p"
+        ));
+    }
+
+    #[test]
+    fn a_reborrow_of_a_borrowed_local_is_that_borrow_at_every_read() {
+        // `t2 = &mut x; t1 = &mut *t2; f(t1) -> 1;  1: g(t1)` passes `&mut x`
+        // to both calls.
+        let reference = Type::Reference {
+            mutable: true,
+            pointee: Box::new(Type::U32),
+        };
+        let borrow = |place: E| E::Borrow {
+            place: Box::new(place),
+            value_type: reference.clone(),
+        };
+        let call = |function: &str, target| T::Call {
+            function: function.into(),
+            arguments: vec![local("t1")],
+            owned_arguments: vec![],
+            destination: "unit".into(),
+            target,
+            through_pointer: false,
+            result: None,
+        };
+        let mut locals = vec![
+            place("x"),
+            Place {
+                value_type: reference.clone(),
+                ..place("t1")
+            },
+            Place {
+                value_type: reference.clone(),
+                ..place("t2")
+            },
+        ];
+        let mut blocks = vec![
+            block(
+                vec![
+                    assign("t2", borrow(local("x"))),
+                    assign(
+                        "t1",
+                        borrow(E::Deref {
+                            reference: Box::new(local("t2")),
+                            value_type: Type::U32,
+                        }),
+                    ),
+                ],
+                call("f", 1),
+            ),
+            block(vec![], call("g", 2)),
+            block(vec![], T::Return),
+        ];
+        let temporaries = BTreeSet::from(["t1".into(), "t2".into()]);
+        super::substitute_literals(&mut locals, &mut blocks, &temporaries, &BTreeSet::new());
+        let names: Vec<_> = locals.iter().map(|local| local.name.as_str()).collect();
+        assert_eq!(names, ["x"]);
+        for block in &blocks[..2] {
+            assert!(matches!(
+                &block.terminator,
+                T::Call { arguments, .. } if matches!(
+                    arguments.as_slice(),
+                    [E::Borrow { place, .. }] if matches!(place.as_ref(), E::Local { name } if name == "x")
+                )
+            ));
+        }
+    }
+
+    #[test]
+    fn a_pure_value_written_to_a_temporary_no_one_reads_is_removed() {
+        // `t1 = x < 3; return`: the comparison is never read.
+        let mut locals = vec![place("x"), place("t1")];
+        let mut blocks = vec![block(
+            vec![
+                S::BeginStorage { local: "t1".into() },
+                assign(
+                    "t1",
+                    binary(
+                        "lt",
+                        local("x"),
+                        E::UnsignedInteger {
+                            value: 3,
+                            value_type: Type::U32,
+                        },
+                    ),
+                ),
+                S::EndStorage { local: "t1".into() },
+            ],
+            T::Return,
+        )];
+        super::remove_unused(&mut locals, &mut blocks, &BTreeSet::from(["t1".into()]));
+        assert_eq!(locals.len(), 1);
+        assert!(blocks[0].statements.is_empty());
     }
 }

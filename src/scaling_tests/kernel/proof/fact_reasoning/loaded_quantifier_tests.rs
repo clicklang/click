@@ -11,13 +11,13 @@ fn loaded_quantifier_matching_ignores_ambient_facts_and_retained_memory_size() {
         let mut costs = Vec::new();
         for size in [8, 16, 32, 64] {
             let _session = crate::kernel::VerificationSession::enter();
-            let mut memory = Memory::new().with_block("loaded-quantifier", 64);
+            let mut memory = SymbolicMemory::new().with_block("loaded-quantifier", 64);
             for index in 0..size {
                 let block = format!("unrelated-{index}");
                 memory = memory.with_block(block.clone(), 8).store(
-                    Pointer {
-                        block: block.into(),
-                        offset: PointerOffsetTerm::Constant(0),
+                    Address {
+                        base: block.into(),
+                        offset: AddressOffset::Constant(0),
                     },
                     ProgramValue::Int32(MachineTerm::constant(index as u32)),
                 );
@@ -40,9 +40,9 @@ fn loaded_quantifier_matching_ignores_ambient_facts_and_retained_memory_size() {
             });
             assert!(found.is_some());
             let changed = intern_memory(memory.as_ref().clone().store(
-                Pointer {
-                    block: "loaded-quantifier".into(),
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: "loaded-quantifier".into(),
+                    offset: AddressOffset::Constant(0),
                 },
                 ProgramValue::Int32(MachineTerm::constant(7)),
             ));
@@ -65,7 +65,7 @@ fn loaded_quantifier_matching_scales_with_selected_body() {
     let mut costs = Vec::new();
     for size in [8, 16, 32, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = intern_memory(Memory::new().with_block("loaded-quantifier", 64));
+        let memory = intern_memory(SymbolicMemory::new().with_block("loaded-quantifier", 64));
         let grow = |binder, shared| {
             let mut proposition = loaded_fact(&memory, binder, shared);
             let Proposition::ForAll { body, .. } = &mut proposition else {
@@ -96,7 +96,7 @@ fn substituted_retained_comparison_body_scales_with_selected_input() {
     let mut costs = Vec::new();
     for size in [8, 16, 32, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = intern_memory(Memory::new().with_block("loaded-quantifier", 64));
+        let memory = intern_memory(SymbolicMemory::new().with_block("loaded-quantifier", 64));
         let body = |shared| {
             let Proposition::ForAll { body, .. } = loaded_fact(&memory, Variable(960_001), shared)
             else {

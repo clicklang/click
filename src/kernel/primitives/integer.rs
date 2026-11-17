@@ -1515,71 +1515,6 @@ enum IntegerShallowKey {
 }
 
 impl IntegerTerm {
-    pub fn max_variable(&self) -> Option<Variable> {
-        let mut variables = BTreeSet::new();
-        fn visit(term: &IntegerTerm, variables: &mut BTreeSet<Variable>, seen: &mut BTreeSet<u64>) {
-            match term {
-                IntegerTerm::Constant(_) => {}
-                IntegerTerm::Variable(variable) => {
-                    variables.insert(*variable);
-                }
-                IntegerTerm::Machine(value) => {
-                    crate::kernel::reasoning::variable_collection::collect_bitvector_variables(
-                        value.value(),
-                        variables,
-                    )
-                }
-                IntegerTerm::PureFunctionApplication(_application) => {
-                    crate::kernel::reasoning::variable_collection::collect_integer_variables(
-                        term, variables,
-                    );
-                }
-                IntegerTerm::AlgebraicMatch { .. } | IntegerTerm::If { .. } => {
-                    crate::kernel::reasoning::variable_collection::collect_integer_variables(
-                        term, variables,
-                    );
-                }
-                IntegerTerm::RangeFold {
-                    index,
-                    initial,
-                    accumulator,
-                    item,
-                    body,
-                } => {
-                    variables.insert(*accumulator);
-                    variables.insert(*item);
-                    visit_shared(initial, variables, seen);
-                    visit_shared(body, variables, seen);
-                    if let IntegerRangeFoldIndex::Int32 { start, end } = index {
-                        crate::kernel::reasoning::variable_collection::collect_bitvector_variables(
-                            start.value(),
-                            variables,
-                        );
-                        crate::kernel::reasoning::variable_collection::collect_bitvector_variables(
-                            end.value(),
-                            variables,
-                        );
-                    }
-                }
-                IntegerTerm::Negate(value) => visit_shared(value, variables, seen),
-                crate::kernel::binary_integer_term!(left, right) => {
-                    visit_shared(left, variables, seen);
-                    visit_shared(right, variables, seen);
-                }
-            }
-        }
-        fn visit_shared(
-            term: &SharedIntegerTerm,
-            variables: &mut BTreeSet<Variable>,
-            seen: &mut BTreeSet<u64>,
-        ) {
-            if seen.insert(term.id()) {
-                visit(term.as_ref(), variables, seen);
-            }
-        }
-        visit(self, &mut variables, &mut BTreeSet::new());
-        variables.into_iter().next_back()
-    }
     /// This term read through its root observation's value relations
     /// (rule W, [`SharedMachineIntegerTerm::value_reading`]): the reading of
     /// a machine observation that has one, and the term itself otherwise.
@@ -1911,8 +1846,8 @@ impl IntegerTerm {
         let matched =
             crate::kernel::KernelMatch::import_integer(&mut KernelTermImport::default(), &native)
                 .expect("Integer match producer");
-        // The path result still has a shallow native Integer reading. Arm
-        // bodies retain their common handles across this explicit boundary.
+        // This native API returns a shallow Integer reading. Arm bodies retain
+        // their common handles across the explicit compatibility boundary.
         KernelTermExport::default()
             .integer(&matched.into_term())
             .expect("Integer match result reading")
@@ -1937,8 +1872,8 @@ impl IntegerTerm {
         let fold = KernelFold::import_integer(&mut KernelTermImport::default(), &native)
             .expect("Integer fold producer");
         let root = fold.into_term();
-        // SpecIntegerPath still returns the native Integer carrier. This is
-        // one shallow root reading; its children retain their common handles.
+        // This native API returns one shallow root reading; its children retain
+        // common handles. Common producers retain KernelFold directly.
         KernelTermExport::default()
             .integer(&root)
             .expect("Integer fold result reading")

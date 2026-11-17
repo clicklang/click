@@ -1,6 +1,6 @@
 # An `int` and a `size_t` index address a 64-bit block
 
-A block with a 64-bit extent is addressed like a `size_t` parameter range:
+A block with a 64-bit size is addressed like a `size_t` parameter range:
 an `int` index is compared with the block's element count at 64 bits, and a
 `size_t` index stays 64-bit.
 

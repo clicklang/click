@@ -9,9 +9,9 @@ fn automatic_lifetime_reuse_tracks_exact_memory_and_retired_blocks() {
     for size in [16usize, 32, 64, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         let blocks = (0..size)
-            .map(|i| PointerBlock::from(format!("local:lifetime:memo_{i}")))
+            .map(|i| AddressBase::from(format!("local:lifetime:memo_{i}")))
             .collect::<Vec<_>>();
-        let before = blocks.iter().fold(Memory::new(), |memory, block| {
+        let before = blocks.iter().fold(SymbolicMemory::new(), |memory, block| {
             memory.with_block(block.clone(), 4)
         });
         let after = retire_automatic_lifetime_blocks(&before, &blocks);
@@ -43,8 +43,8 @@ fn automatic_lifetime_reuse_tracks_exact_memory_and_retired_blocks() {
         assert!(partial.has_block(&blocks[size - 1]));
         let changed = before.clone().with_block("caller:preserved", 8);
         let changed_after = retire_automatic_lifetime_blocks(&changed, &blocks);
-        assert!(changed_after.has_block(&PointerBlock::from("caller:preserved")));
-        assert!(!after.has_block(&PointerBlock::from("caller:preserved")));
+        assert!(changed_after.has_block(&AddressBase::from("caller:preserved")));
+        assert!(!after.has_block(&AddressBase::from("caller:preserved")));
     }
 }
 
@@ -57,9 +57,9 @@ fn control_read_body_retains_its_held_frame_as_owners_and_aliases_grow() {
         let mut samples = Vec::new();
         for count in [4_u64, 16, 64] {
             let _session = crate::kernel::VerificationSession::enter();
-            let pointer = Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Variable(Variable(7_993_000)),
+            let pointer = Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Variable(Variable(7_993_000)),
             };
             let value = ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer);
             let member = ResourceSpec::composite(
@@ -123,7 +123,7 @@ fn control_read_body_retains_its_held_frame_as_owners_and_aliases_grow() {
                 ResourceContext::new().unchecked_with_facts([head.clone(), authority.clone()]);
             let mut retained = Vec::new();
             for index in 0..count {
-                let other = Pointer::symbolic(Variable(7_993_100 + index));
+                let other = Address::symbolic(Variable(7_993_100 + index));
                 if aliases {
                     facts = facts.assume_condition(
                         ConditionTerm::pointer_equal(pointer.clone(), other),

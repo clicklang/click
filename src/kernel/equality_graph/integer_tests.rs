@@ -122,9 +122,9 @@ fn integer_observations_keep_machine_types_and_read_states() {
     let unsigned = I::from_machine(M::UInt32, bits).unwrap();
     let graph = EqualityGraph::default();
     assert!(!graph.are_integer_equal(&signed, &unsigned));
-    let p = Pointer::symbolic(Variable(920_132));
+    let p = Address::symbolic(Variable(920_132));
     let before = intern_memory(
-        Memory::new().store(p.clone(), ProgramValue::Int32(MachineTerm::constant(7))),
+        SymbolicMemory::new().store(p.clone(), ProgramValue::Int32(MachineTerm::constant(7))),
     );
     let after = intern_memory(
         before

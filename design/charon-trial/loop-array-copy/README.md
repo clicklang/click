@@ -17,8 +17,8 @@ continues to use the existing conservative lowering; this increment does not
 claim general Rust reference-lifetime export.
 
 Normal tests reject missing storage starts, omitted initialization, a restart
-that loses initialized bytes, incorrect extents, false copied values, and
-missing input views. Layout/node counts stay independent of array extent at
+that loses initialized bytes, incorrect lengths, false copied values, and
+missing input views. Layout/node counts stay independent of array length at
 4, 1,024, and 1,000,000 elements. Nightly checks expand and reverify the checked
 certificate and run profiling. The original Adler trial exercises the related
 copy into its array-bearing vector temporary; full Adler induction is separate.

@@ -583,7 +583,7 @@ fn post_program_expression(expression: &SpecExpression) -> Option<ProgramExpress
             width: *width,
         },
         SpecExpression::MemoryLoad {
-            memory: SpecMemory::Current,
+            memory: SpecPoint::Current,
             pointer,
             value_type,
         } => ProgramExpression::TypedLoad {

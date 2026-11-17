@@ -4,7 +4,7 @@ The C companion of `mdtests/have_viewable_prefix_of_a_range.md`. The goal here
 is the single cell the function is about to read, written as the one-element
 range `p[hi - 1..hi - 1 + 1]`, and it is proved from the range the contract
 gives plus the two order facts that place that cell inside it, and the bound
-that makes that range a valid 32-bit byte extent.
+that makes that range a valid 32-bit byte span.
 
 This is the shape the kernel has always been willing to find on its own while
 lowering a read of `p[hi - 1]`. Writing it down as a goal now goes through the

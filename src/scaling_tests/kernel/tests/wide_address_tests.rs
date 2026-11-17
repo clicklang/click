@@ -10,7 +10,7 @@ fn wide_address_symbolic_arrays_keep_typed_loads_and_bounded_work() {
         let mut samples = Vec::new();
         for count in [16, 64, 256, 1024, 1_000_000] {
             let _session = crate::kernel::VerificationSession::enter();
-            let base = Memory::global_pointer("wide-run");
+            let base = SymbolicMemory::global_pointer("wide-run");
             let at = |index| base.offset_by_bytes(index * 16);
             let zero = value(
                 &ExecutionState::new(),

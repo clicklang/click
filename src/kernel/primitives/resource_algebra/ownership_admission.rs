@@ -28,52 +28,6 @@ pub(crate) enum FlatBodyAdmission {
 }
 
 impl ResourceContext {
-    /// Admit a returned composite's already-constructed flat body against
-    /// this frame. The body producer established its own composition; query
-    /// only cross-boundary memory overlap, without inserting temporary child
-    /// owners or validating either side again. Tokens add and views duplicate.
-    /// A finite recursive body's folded child stays opaque; this query checks
-    /// its explicitly exposed memory frontier and does not unfold that child.
-    pub(in crate::kernel) fn admit_returned_flat_body(
-        &self,
-        body: &crate::kernel::functions::ConstructedReturnBody,
-        assumptions: &PureFactContext,
-    ) -> FlatBodyAdmission {
-        #[cfg(test)]
-        let _fast =
-            crate::kernel::search::FastOperationScope::enter("returned flat body admission");
-        for piece in body.boundary() {
-            let _checking =
-                crate::instrumentation::CheckingWorkScope::new("admit returned ownership leaf", 1);
-            crate::instrumentation::record_deterministic_work(1);
-            if let Some(entry) = self.exclusive_boundary_owner(piece) {
-                return FlatBodyAdmission::Conflict {
-                    piece: Box::new(piece.clone()),
-                    held: Box::new(self.fact(entry).clone()),
-                };
-            }
-            if piece.memory_own_range().is_none() {
-                continue;
-            }
-            match self.owned_boundary_overlap(piece, assumptions) {
-                ConstantOwnedOverlap::Clear => {}
-                ConstantOwnedOverlap::Overlap(entry) => {
-                    return FlatBodyAdmission::Conflict {
-                        piece: Box::new(piece.clone()),
-                        held: Box::new(self.fact(entry).clone()),
-                    };
-                }
-                ConstantOwnedOverlap::Unsupported => {
-                    return FlatBodyAdmission::Unestablished(
-                        self.missing_ownership_boundary(piece)
-                            .expect("owned memory boundary"),
-                    );
-                }
-            }
-        }
-        FlatBodyAdmission::Admitted
-    }
-
     /// Select one retained exclusive owner by the explicit resource identity.
     pub(super) fn exclusive_boundary_owner(&self, piece: &ResourceFact) -> Option<ResourceEntryId> {
         let entries = match piece.resource() {

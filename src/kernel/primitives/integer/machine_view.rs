@@ -663,7 +663,7 @@ impl<'a> MachineOperandView<'a> {
 
     /// Native compatibility view of a selected read. Shared addresses are adapted
     /// once at the read leaf; surrounding arithmetic is never exported.
-    pub(crate) fn read(self) -> Option<(&'a SharedMemory, &'a Pointer, LoadKind)> {
+    pub(crate) fn read(self) -> Option<(&'a SharedMemory, &'a Address, LoadKind)> {
         if let Self::Shared(root) = self
             && let Some(value) = root.machine_conversion_leaf()
         {

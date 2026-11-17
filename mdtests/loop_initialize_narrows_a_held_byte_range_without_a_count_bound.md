@@ -3,7 +3,7 @@
 `mdtests/loop_initialize_narrows_a_held_byte_range_under_a_universal.md`
 without its `requires n <= 1073741823`. A range of one-byte elements has no
 count limit below `2147483647`, so that bound was never the byte range's
-extent half. Dropping it was reported to make the back edge's closer refuse
+span half. Dropping it was reported to make the back edge's closer refuse
 the ranking member `0 <= n - i`, which follows from `0 <= i <= n` alone. The
 same proof closes without it, and this file keeps it that way.
 

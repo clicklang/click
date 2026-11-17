@@ -6,7 +6,7 @@ impl crate::kernel::search::ProofSearch<ResourceContext> {
     pub(crate) fn ownership_validity_candidates(
         proof_input: &ResourceContext,
         range: &MemoryRange,
-        skip_block: Option<&PointerBlock>,
+        skip_block: Option<&AddressBase>,
         assumptions: &PureFactContext,
     ) -> BTreeSet<ResourceEntryId> {
         #[cfg(test)]
@@ -23,9 +23,9 @@ impl crate::kernel::search::ProofSearch<ResourceContext> {
         // there are fewer owned members than aliases, checking the complete
         // block is cheaper than expanding the aliases' equality classes.
         // Cross-block aliases retain the indexed path below.
-        if Some(&base.block) != skip_block
+        if Some(&base.base) != skip_block
             && assumptions.exact_pointer_aliases(base).next().is_none()
-            && let Some(entries) = index.owned_memory_by_block.get(&base.block)
+            && let Some(entries) = index.owned_memory_by_block.get(&base.base)
             && entries.len() <= assumptions.exact_pointer_offset_alias_count(base)
         {
             for entry in entries.iter() {
@@ -34,8 +34,8 @@ impl crate::kernel::search::ProofSearch<ResourceContext> {
             }
             return candidates;
         }
-        let add_owned_at_base = |candidates: &mut BTreeSet<ResourceEntryId>, at: &Pointer| {
-            if Some(&at.block) == skip_block {
+        let add_owned_at_base = |candidates: &mut BTreeSet<ResourceEntryId>, at: &Address| {
+            if Some(&at.base) == skip_block {
                 return;
             }
             crate::instrumentation::record_deterministic_work(1);
@@ -47,7 +47,7 @@ impl crate::kernel::search::ProofSearch<ResourceContext> {
             }
         };
         for alias in assumptions.exact_pointer_aliases(base) {
-            if Some(&alias.block) == skip_block {
+            if Some(&alias.base) == skip_block {
                 continue;
             }
             if let Some(neighbors) =
@@ -58,7 +58,7 @@ impl crate::kernel::search::ProofSearch<ResourceContext> {
                 add_owned_at_base(&mut candidates, alias);
             }
         }
-        if Some(&base.block) == skip_block {
+        if Some(&base.base) == skip_block {
             return candidates;
         }
         let mut roots = related_memory_base_roots(base, assumptions);
@@ -106,8 +106,8 @@ impl crate::kernel::search::ProofSearch<ResourceContext> {
             for aliased in assumptions.offsets_with_an_alias_at_root(&root.1) {
                 add_owned_at_base(
                     &mut candidates,
-                    &Pointer {
-                        block: root.0.clone(),
+                    &Address {
+                        base: root.0.clone(),
                         offset: aliased,
                     },
                 );

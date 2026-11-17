@@ -247,7 +247,7 @@ impl Analysis<'_> {
     ) -> Origins {
         match expression {
             ContractExpression::IntegerLiteral(value) if value == "0" => Some(null_origins()),
-            ContractExpression::Binding(name) | ContractExpression::CBinding(name) => {
+            ContractExpression::Binding(name) | ContractExpression::ProgramBinding(name) => {
                 bindings.get(name).cloned().flatten()
             }
             ContractExpression::ProgramExpression(expression) => {
@@ -588,7 +588,7 @@ impl Analysis<'_> {
             | ContractExpression::ResourceWildcard
             | ContractExpression::AlgebraicVariable { .. }
             | ContractExpression::Binding(_)
-            | ContractExpression::CBinding(_)
+            | ContractExpression::ProgramBinding(_)
             | ContractExpression::RegionResult(_)
             | ContractExpression::RegionAllocation(_)
             | ContractExpression::RegionParameter { .. }

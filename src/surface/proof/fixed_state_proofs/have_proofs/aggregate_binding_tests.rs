@@ -5,9 +5,9 @@ use crate::kernel::{
 };
 
 fn aggregate_entry(count: u32) -> (ExecutionState, BTreeMap<String, ProgramValue>) {
-    let source = Pointer {
-        block: "local:caller_packet".into(),
-        offset: crate::kernel::PointerOffsetTerm::Constant(0),
+    let source = Address {
+        base: "local:caller_packet".into(),
+        offset: crate::kernel::AddressOffset::Constant(0),
     };
     let layout = AggregateLayout::new(
         8,
@@ -33,7 +33,8 @@ fn aggregate_entry(count: u32) -> (ExecutionState, BTreeMap<String, ProgramValue
             .collect(),
         program_return(program_void_value()),
     );
-    let caller = ExecutionState::new().with_memory(Memory::new().with_block(source.block, 8));
+    let caller =
+        ExecutionState::new().with_memory(SymbolicMemory::new().with_block(source.base, 8));
     let arguments = values
         .values()
         .cloned()
@@ -123,7 +124,7 @@ fn proof_lowering_retains_each_selected_aggregate_copy() {
 fn retired_aggregate_copy_uses_the_contract_argument_image() {
     let _session = crate::kernel::VerificationSession::enter();
     let (entry, values) = aggregate_entry(1);
-    let retired = entry.clone().with_memory(Memory::new());
+    let retired = entry.clone().with_memory(SymbolicMemory::new());
     let arrays = ClickArrayRefs::new();
     let environment = ContractEnvironment::new(&values, &arrays);
     let selected = FixedStateLowering::for_names(

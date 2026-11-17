@@ -2,18 +2,18 @@ use super::*;
 use crate::kernel::loans::LoanRefusal;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
-fn pointer() -> Pointer {
-    Pointer {
-        block: PointerBlock::Concrete("local:candidate_view:data".to_string()),
-        offset: PointerOffsetTerm::Constant(0),
+fn pointer() -> Address {
+    Address {
+        base: AddressBase::Concrete("local:candidate_view:data".to_string()),
+        offset: AddressOffset::Constant(0),
     }
 }
 
-fn caller(pointer: &Pointer) -> ExecutionState {
+fn caller(pointer: &Address) -> ExecutionState {
     caller_with_owned_end(pointer, 1, 4)
 }
 
-fn caller_with_owned_end(pointer: &Pointer, owned_end: u32, bytes: u32) -> ExecutionState {
+fn caller_with_owned_end(pointer: &Address, owned_end: u32, bytes: u32) -> ExecutionState {
     let range = MemoryRange::new(
         pointer.clone(),
         MachineTerm::constant(0),
@@ -22,8 +22,8 @@ fn caller_with_owned_end(pointer: &Pointer, owned_end: u32, bytes: u32) -> Execu
     ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
-            Memory::new()
-                .with_block(pointer.block.clone(), bytes)
+            SymbolicMemory::new()
+                .with_block(pointer.base.clone(), bytes)
                 .store(pointer.clone(), int32(7)),
         )
         .with_resource_context(
@@ -58,7 +58,11 @@ fn reader_with_output(name: &str, output_start: u32, output_end: u32) -> Program
 
 /// `memory` with the first `cells` `int32` cells at `base` written, so a
 /// caller's automatic storage is initialized across a viewed range.
-fn with_initialized_cells(mut memory: Memory, base: &Pointer, cells: u32) -> Memory {
+fn with_initialized_cells(
+    mut memory: SymbolicMemory,
+    base: &Address,
+    cells: u32,
+) -> SymbolicMemory {
     for cell in 0..cells {
         memory = memory.store(base.offset_by_bytes(4 * cell), int32(7));
     }
@@ -197,7 +201,7 @@ fn conditional_owner(name: &str) -> (ProgramFunction, ExecutionEnvironment) {
                 "item",
             )),
             operator: ComparisonOperator::NotEqual,
-            right: SpecExpression::Value(ProgramValue::pointer(Pointer::null())),
+            right: SpecExpression::Value(ProgramValue::pointer(Address::null())),
         }),
         false,
         vec![ResourceSpec::owned_memory(MemorySegment::new(
@@ -303,9 +307,9 @@ fn candidate_reader_escrows_owner_until_return() {
     );
     assert!(transfer.callee_resources.satisfies_fact(
         &ResourceFact::view_memory(MemoryRange::new(
-            Pointer {
-                block: PointerBlock::Concrete("local:candidate_view:data".to_string()),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: AddressBase::Concrete("local:candidate_view:data".to_string()),
+                offset: AddressOffset::Constant(0),
             },
             MachineTerm::constant(0),
             MachineTerm::constant(1),
@@ -347,8 +351,8 @@ fn candidate_composite_call_lends_primitive_body_and_recovers_head() {
         ResourceFact::own_composite("cell".into(), vec![ProgramValue::pointer(pointer.clone())]);
     let caller = ExecutionState::new()
         .with_memory(
-            Memory::new()
-                .with_block(pointer.block.clone(), 4)
+            SymbolicMemory::new()
+                .with_block(pointer.base.clone(), 4)
                 .store(pointer.clone(), int32(7)),
         )
         .with_resource_context(ResourceContext::new().unchecked_with_fact(head.clone()));
@@ -456,8 +460,8 @@ fn plan_composite_lend(function: &ProgramFunction) -> Result<(), RuntimeError> {
         ResourceFact::own_composite("cell".into(), vec![ProgramValue::pointer(pointer.clone())]);
     let caller = ExecutionState::new()
         .with_memory(
-            Memory::new()
-                .with_block(pointer.block.clone(), 4)
+            SymbolicMemory::new()
+                .with_block(pointer.base.clone(), 4)
                 .store(pointer.clone(), int32(7)),
         )
         .with_resource_context(ResourceContext::new().unchecked_with_fact(head));
@@ -584,15 +588,15 @@ fn adapter_reader(
 }
 
 /// The caller owns `wide(p)` over an eight-byte block and nothing else.
-fn adapter_caller(pointer: &Pointer) -> ExecutionState {
-    let second = Pointer {
-        block: pointer.block.clone(),
-        offset: PointerOffsetTerm::Constant(4),
+fn adapter_caller(pointer: &Address) -> ExecutionState {
+    let second = Address {
+        base: pointer.base.clone(),
+        offset: AddressOffset::Constant(4),
     };
     ExecutionState::new()
         .with_memory(
-            Memory::new()
-                .with_block(pointer.block.clone(), 8)
+            SymbolicMemory::new()
+                .with_block(pointer.base.clone(), 8)
                 .store(pointer.clone(), int32(7))
                 .store(second, int32(9)),
         )
@@ -916,8 +920,8 @@ fn candidate_composite_reader_can_be_called_twice() {
     let caller = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
-            Memory::new()
-                .with_block(pointer.block.clone(), 4)
+            SymbolicMemory::new()
+                .with_block(pointer.base.clone(), 4)
                 .store(pointer.clone(), int32(7)),
         )
         .with_resource_context(ResourceContext::new().unchecked_with_fact(head.clone()));
@@ -1106,8 +1110,8 @@ fn candidate_local_array_view_uses_a_checked_loan_and_recovers() {
     let caller = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
-            Memory::new()
-                .with_block(pointer.block.clone(), 4)
+            SymbolicMemory::new()
+                .with_block(pointer.base.clone(), 4)
                 .store(pointer.clone(), int32(7)),
         );
     let paths = execute_program_function_call_paths(
@@ -1143,8 +1147,8 @@ fn candidate_local_array_view_out_of_bounds_is_refused() {
     let pointer = pointer();
     let function = reader_for_input("candidate_local_wide_reader", 4);
     let caller = ExecutionState::new().with_memory(
-        Memory::new()
-            .with_block(pointer.block.clone(), 4)
+        SymbolicMemory::new()
+            .with_block(pointer.base.clone(), 4)
             .store(pointer.clone(), int32(7)),
     );
     let paths = execute_program_function_call_paths(
@@ -1181,7 +1185,7 @@ fn candidate_conditional_composite_with_a_false_guard_needs_no_owned_entry() {
         &ExecutionState::new().with_population_creation_tracking(),
         &function,
         &[crate::kernel::program_expression::pointer_value(
-            Pointer::null(),
+            Address::null(),
         )],
         &PureFactContext::new(),
         ExecutionContext::verify_loops(&environment),
@@ -1206,9 +1210,9 @@ fn candidate_conditional_composite_with_a_false_guard_needs_no_owned_entry() {
 #[test]
 fn candidate_conditional_composite_with_an_undecided_guard_still_needs_its_entry() {
     let (function, environment) = conditional_owner("candidate_guarded_symbolic_free");
-    let symbolic = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(910_101)), 4),
+    let symbolic = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(910_101)), 4),
     };
     let paths = execute_program_function_call_paths(
         &ExecutionState::new(),
@@ -1793,9 +1797,9 @@ fn recover_with_a_carried_view_of_another_block(
     read_only: bool,
 ) -> Result<ResourceContext, RuntimeError> {
     let pointer = pointer();
-    let other = Pointer {
-        block: PointerBlock::Concrete("global:candidate_table#file-static:t.c".to_string()),
-        offset: PointerOffsetTerm::Constant(0),
+    let other = Address {
+        base: AddressBase::Concrete("global:candidate_table#file-static:t.c".to_string()),
+        offset: AddressOffset::Constant(0),
     };
     let function = reader("candidate_carried_view", false);
     let owned_caller = caller_with_owned_end(&pointer, 3, 12);
@@ -1803,7 +1807,7 @@ fn recover_with_a_carried_view_of_another_block(
         owned_caller
             .clone()
             .with_memory(owned_caller.memory().clone().with_block_or_read_only(
-                other.block.clone(),
+                other.base.clone(),
                 8,
                 read_only,
             ));
@@ -1850,9 +1854,9 @@ fn candidate_accepts_a_carried_view_of_read_only_storage() {
     let resources = recover_with_a_carried_view_of_another_block(true)
         .expect("a view of read-only storage is intrinsic read authority");
     let carried = ResourceFact::view_memory(MemoryRange::new(
-        Pointer {
-            block: PointerBlock::Concrete("global:candidate_table#file-static:t.c".to_string()),
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: AddressBase::Concrete("global:candidate_table#file-static:t.c".to_string()),
+            offset: AddressOffset::Constant(0),
         },
         MachineTerm::constant(0),
         MachineTerm::constant(2),
@@ -1867,9 +1871,9 @@ fn candidate_rejects_a_carried_view_of_mutable_storage() {
     // The refusal carries the carried view itself, so the surface can
     // name it rather than print a kernel dump of it.
     let carried = ResourceFact::view_memory(MemoryRange::new(
-        Pointer {
-            block: PointerBlock::Concrete("global:candidate_table#file-static:t.c".to_string()),
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: AddressBase::Concrete("global:candidate_table#file-static:t.c".to_string()),
+            offset: AddressOffset::Constant(0),
         },
         MachineTerm::constant(0),
         MachineTerm::constant(2),
@@ -1882,9 +1886,9 @@ fn candidate_rejects_a_carried_view_of_mutable_storage() {
 
 fn symbolic_bounded_range(start: MachineTerm, end: MachineTerm, element_width: u32) -> MemoryRange {
     MemoryRange::new_with_element_width(
-        Pointer {
-            block: PointerBlock::Concrete("candidate:separation".to_string()),
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: AddressBase::Concrete("candidate:separation".to_string()),
+            offset: AddressOffset::Constant(0),
         },
         start,
         end,
@@ -2043,9 +2047,9 @@ fn candidate_rejects_mutable_effect_overlapping_view() {
 /// concrete index and compared by offset arithmetic.
 #[test]
 fn candidate_rejects_symbolic_same_base_overlapping_effect() {
-    let pointer = Pointer {
-        block: PointerBlock::Concrete("local:candidate_view:data".to_string()),
-        offset: PointerOffsetTerm::Variable(Variable(700)),
+    let pointer = Address {
+        base: AddressBase::Concrete("local:candidate_view:data".to_string()),
+        offset: AddressOffset::Variable(Variable(700)),
     };
     let function = reader_with_mutable_range("candidate_symbolic_overlap_effect", 0, 1);
     let paths = execute_program_function_call_paths(
@@ -2072,13 +2076,13 @@ fn candidate_rejects_symbolic_same_base_overlapping_effect() {
 /// the call is refused as unproved rather than assumed disjoint.
 #[test]
 fn candidate_rejects_unproved_mutable_effect_separation() {
-    let viewed = Pointer {
-        block: PointerBlock::Concrete("local:candidate_view:data".to_string()),
-        offset: PointerOffsetTerm::Variable(Variable(700)),
+    let viewed = Address {
+        base: AddressBase::Concrete("local:candidate_view:data".to_string()),
+        offset: AddressOffset::Variable(Variable(700)),
     };
-    let mutated = Pointer {
-        block: PointerBlock::Concrete("local:candidate_view:data".to_string()),
-        offset: PointerOffsetTerm::Variable(Variable(701)),
+    let mutated = Address {
+        base: AddressBase::Concrete("local:candidate_view:data".to_string()),
+        offset: AddressOffset::Variable(Variable(701)),
     };
     let input = MemorySegment::new(
         crate::kernel::program_expression::variable("p"),
@@ -2177,15 +2181,15 @@ fn viewer_and_writer(name: &str) -> ProgramFunction {
 /// argument's child augmentation.
 #[test]
 fn candidate_allows_a_mutable_effect_reserved_from_another_owned_occurrence() {
-    let viewed = Pointer {
-        block: PointerBlock::Concrete("local:candidate_view:data".to_string()),
-        offset: PointerOffsetTerm::Variable(Variable(700)),
+    let viewed = Address {
+        base: AddressBase::Concrete("local:candidate_view:data".to_string()),
+        offset: AddressOffset::Variable(Variable(700)),
     };
-    let mutated = Pointer {
-        block: PointerBlock::Concrete("local:candidate_view:data".to_string()),
-        offset: PointerOffsetTerm::Variable(Variable(701)),
+    let mutated = Address {
+        base: AddressBase::Concrete("local:candidate_view:data".to_string()),
+        offset: AddressOffset::Variable(Variable(701)),
     };
-    let owned_range = |pointer: &Pointer| {
+    let owned_range = |pointer: &Address| {
         ResourceFact::own(Resource::Memory(MemoryRange::new(
             pointer.clone(),
             MachineTerm::constant(0),
@@ -2195,8 +2199,8 @@ fn candidate_allows_a_mutable_effect_reserved_from_another_owned_occurrence() {
     let caller = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
-            Memory::new()
-                .with_block(viewed.block.clone(), 8)
+            SymbolicMemory::new()
+                .with_block(viewed.base.clone(), 8)
                 .store(viewed.clone(), int32(7)),
         )
         .with_resource_context(
@@ -2376,8 +2380,8 @@ fn composite_mutable_effect_paths(
     let caller = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
-            Memory::new()
-                .with_block(pointer.block.clone(), 8)
+            SymbolicMemory::new()
+                .with_block(pointer.base.clone(), 8)
                 .store(pointer.clone(), int32(7)),
         )
         .with_resource_context(ResourceContext::new().unchecked_with_fact(head));
@@ -2432,8 +2436,8 @@ fn candidate_rejects_mutable_effect_overlapping_a_local_view() {
     let pointer = pointer();
     let function = reader_with_mutable_range("candidate_intrinsic_overlap_effect", 0, 1);
     let caller = ExecutionState::new().with_memory(
-        Memory::new()
-            .with_block(pointer.block.clone(), 8)
+        SymbolicMemory::new()
+            .with_block(pointer.base.clone(), 8)
             .store(pointer.clone(), int32(7)),
     );
     let paths = execute_program_function_call_paths(
@@ -2644,7 +2648,7 @@ fn nonnegative_quantity(quantity: Variable) -> PureFactContext {
     )
 }
 
-fn token_population_unit(population: &str, pointer: &Pointer) -> ResourceFact {
+fn token_population_unit(population: &str, pointer: &Address) -> ResourceFact {
     ResourceFact::own_composite(
         population.into(),
         vec![ProgramValue::pointer(pointer.clone())],
@@ -2869,11 +2873,11 @@ fn local_storage_classification_does_not_restore_partial_or_aliased_authority() 
             case,
             "aliased_partial" | "aliased_whole" | "unknown_pointer"
         ) {
-            Pointer::symbolic(Variable(941_001))
+            Address::symbolic(Variable(941_001))
         } else if case == "other_local" {
-            Pointer {
-                block: "local:other".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: "local:other".into(),
+                offset: AddressOffset::Constant(0),
             }
         } else {
             local.clone()
@@ -2884,7 +2888,7 @@ fn local_storage_classification_does_not_restore_partial_or_aliased_authority() 
             "aliased_partial" | "aliased_whole" | "owner_with_alias_fact"
         ) {
             facts = facts.assume_condition(
-                ConditionTerm::pointer_equal(local.clone(), Pointer::symbolic(Variable(941_001))),
+                ConditionTerm::pointer_equal(local.clone(), Address::symbolic(Variable(941_001))),
                 true,
             );
         }
@@ -2909,7 +2913,7 @@ fn local_storage_classification_does_not_restore_partial_or_aliased_authority() 
         let state = ExecutionState::new()
             .with_population_creation_tracking()
             .with_memory(with_initialized_cells(
-                Memory::new().with_block(local.block.clone(), 16),
+                SymbolicMemory::new().with_block(local.base.clone(), 16),
                 &local,
                 4,
             ))
@@ -2943,29 +2947,29 @@ fn local_storage_absence_summary_tracks_persistent_resource_edits() {
     let facts = PureFactContext::new();
     let local = pointer();
     let unknown = ResourceFact::own_memory(MemoryRange::new(
-        Pointer::symbolic(Variable(941_002)),
+        Address::symbolic(Variable(941_002)),
         0u32.into(),
         1u32.into(),
     ));
     let unrelated = ResourceFact::own_memory(MemoryRange::new(
-        Pointer {
-            block: "local:other".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: "local:other".into(),
+            offset: AddressOffset::Constant(0),
         },
         0u32.into(),
         1u32.into(),
     ));
     let clean = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(unrelated);
-    assert!(clean.has_no_explicit_memory_for_local_storage(&local.block, &facts));
+    assert!(clean.has_no_explicit_memory_for_local_storage(&local.base, &facts));
     let branch = clean.clone().unchecked_with_fact(unknown.clone());
-    assert!(!branch.has_no_explicit_memory_for_local_storage(&local.block, &facts));
+    assert!(!branch.has_no_explicit_memory_for_local_storage(&local.base, &facts));
     let consumed = branch
         .clone()
         .without_fact_incrementally(&unknown, &facts)
         .unwrap();
-    assert!(consumed.has_no_explicit_memory_for_local_storage(&local.block, &facts));
-    assert!(clean.has_no_explicit_memory_for_local_storage(&local.block, &facts));
-    assert!(!branch.has_no_explicit_memory_for_local_storage(&local.block, &facts));
+    assert!(consumed.has_no_explicit_memory_for_local_storage(&local.base, &facts));
+    assert!(clean.has_no_explicit_memory_for_local_storage(&local.base, &facts));
+    assert!(!branch.has_no_explicit_memory_for_local_storage(&local.base, &facts));
 }
 
 #[test]

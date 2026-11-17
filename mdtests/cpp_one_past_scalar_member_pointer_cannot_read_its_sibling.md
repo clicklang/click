@@ -2,7 +2,7 @@
 
 C++ [basic.compound] treats `pair.first` as an array of one element for
 pointer arithmetic, and [expr.add] permits forming the one-past pointer but
-not reading through it. The member address carries `first`'s extent, so the
+not reading through it. The member address carries `first`'s bounds, so the
 read at the address `second` occupies is refused.
 
 ```cpp filename=pair.cpp function=probe profile=normal_only

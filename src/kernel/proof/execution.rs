@@ -11,15 +11,14 @@ use super::{PersistentOrderedSet, PersistentSequence, PureFactStore, SharedValue
 use crate::kernel::population_authority::storage_creation::{
     CheckedPopulationAuthorityExchange, CheckedPopulationMemberExchange,
 };
-use crate::kernel::{BindingName, CompareRelation, MachineIntegerType};
 use crate::kernel::{
-    CompositeResourceDefinition, ConditionOutcome, ExecutionBudget, ExecutionLimit,
+    Address, CompositeResourceDefinition, ConditionOutcome, ExecutionBudget, ExecutionLimit,
     ExecutionPureFact, ExecutionState, FunctionExecutionCandidates, FunctionOutcome, MachineTerm,
-    Memory, MemoryRange, Pointer, ProgramExpression, ProgramFunction, ProgramStatement,
-    ProgramValue, Proposition, PureFactContext, Resource, ResourceContext, ResourceFact,
-    ResourceSpec, RuntimeError, SpecProposition, StatementOutcome, Theorem, Variable,
-    VerifiedLoopRule,
+    MemoryRange, ProgramExpression, ProgramFunction, ProgramStatement, ProgramValue, Proposition,
+    PureFactContext, Resource, ResourceContext, ResourceFact, ResourceSpec, RuntimeError,
+    SpecProposition, StatementOutcome, SymbolicMemory, Theorem, Variable, VerifiedLoopRule,
 };
+use crate::kernel::{BindingName, CompareRelation, MachineIntegerType};
 use crate::kernel::{ExecutionFactSource, ExecutionFacts};
 use crate::kernel::{LoadKind, StoredExecutionValue};
 use crate::persistent::PersistentSet;
@@ -84,6 +83,11 @@ impl LoopControlExit {
 #[derive(Clone)]
 pub(crate) enum CheckedExecutionEvent {
     Statement(Theorem),
+    /// Source navigation issued by entering a checked loop phase. It changes
+    /// neither the symbolic state nor the path's facts.
+    LoopEntry {
+        source_after: Arc<ProgramStatement>,
+    },
     /// One opaque call occurrence introduced by the preceding checked
     /// statement. Its registered states are exact recomputed views of that
     /// occurrence, not a structural claim that matching calls are equal.
@@ -357,25 +361,6 @@ impl crate::kernel::CheckedFunctionExecution {
     }
     pub(crate) fn open_outcome(&self, index: usize) -> Option<super::OutcomeProofCore> {
         self.published_outcome(index).open_core()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn with_closed_exit_obligations(
-        mut self,
-        completions: Vec<crate::kernel::ClosedContractExit>,
-    ) -> Result<Self, &'static str> {
-        for completion in completions {
-            let index = completion.path_index();
-            let path = self
-                .paths()
-                .get(index)
-                .ok_or("contract closing selected an unknown path")?;
-            if !completion.matches_path(path) {
-                return Err("contract closing belongs to a different producer path");
-            }
-            self.closed_exit_obligations[index] = Some(completion);
-        }
-        Ok(self)
     }
 }
 
@@ -673,17 +658,6 @@ impl CheckedCallEvents {
         events
     }
 
-    pub(crate) fn extend(&mut self, other: &Self) {
-        for group in &other.groups {
-            for id in group.active.iter() {
-                self.insert(&CheckedCallEvent {
-                    registry: group.registry.clone(),
-                    id: *id,
-                });
-            }
-        }
-    }
-
     pub(crate) fn contains(&self, event: &CheckedCallEvent) -> bool {
         self.groups.iter().any(|group| {
             group.registry.same_registry(&event.registry) && group.active.contains(&event.id)
@@ -868,7 +842,7 @@ fn checks_population_authority_exchange(
     };
     let anchor = pointer.pointer();
     let imported_retirement = !establish
-        && anchor.block == crate::kernel::PointerBlock::ExternalArgument
+        && anchor.base == crate::kernel::AddressBase::ExternalArgument
         && before
             .population_effects
             .creation
@@ -880,10 +854,10 @@ fn checks_population_authority_exchange(
             .map_err(|_| format!("Requires count({}(...)) == 0 and no outstanding member custody before authority retirement", description.family()))?;
     }
     if !imported_retirement
-        && (anchor.offset != crate::kernel::PointerOffsetTerm::Constant(0)
-            || !(matches!(&anchor.block, crate::kernel::PointerBlock::Heap(_))
-                && before.memory.live_heap_block_extent(anchor).is_some()
-                || anchor.block.is_local_block() && before.memory.has_block(&anchor.block)))
+        && (anchor.offset != crate::kernel::AddressOffset::Constant(0)
+            || !(matches!(&anchor.base, crate::kernel::AddressBase::Heap(_))
+                && before.memory.live_heap_block_size(anchor).is_some()
+                || anchor.base.is_local_block() && before.memory.has_block(&anchor.base)))
     {
         return Err("population authority rewrite requires live base storage".into());
     }
@@ -1095,10 +1069,10 @@ fn checks_population_member_exchange(
                 }
             });
     if !imported_member_exchange
-        && (anchor.offset != crate::kernel::PointerOffsetTerm::Constant(0)
-            || !(matches!(&anchor.block, crate::kernel::PointerBlock::Heap(_))
-                && before.memory.live_heap_block_extent(anchor).is_some()
-                || anchor.block.is_local_block() && before.memory.has_block(&anchor.block)))
+        && (anchor.offset != crate::kernel::AddressOffset::Constant(0)
+            || !(matches!(&anchor.base, crate::kernel::AddressBase::Heap(_))
+                && before.memory.live_heap_block_size(anchor).is_some()
+                || anchor.base.is_local_block() && before.memory.has_block(&anchor.base)))
     {
         return Err("population member rewrite requires live base storage".into());
     }
@@ -1263,8 +1237,8 @@ impl CheckedPopulationMemberRewrite {
 /// naming the offending cell, so the caller can report which cell or field a
 /// rejected rewrite changed.
 fn memory_only_adds_named_cells(
-    before: &crate::kernel::Memory,
-    after: &crate::kernel::Memory,
+    before: &crate::kernel::SymbolicMemory,
+    after: &crate::kernel::SymbolicMemory,
 ) -> Result<(), String> {
     let mut rebased = after.clone();
     rebased.cells = before.cells.clone();
@@ -1324,7 +1298,7 @@ fn memory_only_adds_named_cells(
 /// search or ambient-fact scan.
 fn describe_unnamed_cell_addition(
     base: &crate::kernel::SharedMemory,
-    pointer: &crate::kernel::Pointer,
+    pointer: &crate::kernel::Address,
     value: &ProgramValue,
     load: &MachineTerm,
 ) -> String {
@@ -1406,7 +1380,7 @@ fn describe_changed_state_field(
 /// Whether a materialized cell's value is exactly the given load of its own
 /// cell, in one of the representations resource projection writes: the scalar
 /// term itself, the `_Bool` normalization of it, or the complete typed pointer
-/// read (including its provenance and extent).
+/// read (including its provenance and bounds).
 fn cell_value_is_exactly_load(value: &ProgramValue, load: &MachineTerm) -> bool {
     match value {
         ProgramValue::Int8(term) => term == load,
@@ -1464,10 +1438,10 @@ impl From<&str> for ResourceRewriteCheckError {
 
 /// A checked body's identical readability range at a state differing only
 /// by caches of unchanged reads. This transports neither values nor ownership,
-/// and admits no different address, extent, or wide/narrow representation.
+/// and admits no different address, bounds, or wide/narrow representation.
 fn cached_body_loadability(
     fact: &Proposition,
-    body_memory: &Memory,
+    body_memory: &SymbolicMemory,
     allowed: &std::collections::BTreeSet<Proposition>,
     comparisons: &mut HashMap<((u32, u32), (u32, u32)), bool>,
 ) -> bool {
@@ -2312,7 +2286,7 @@ impl CheckedResourceRewrite {
                         .ok_or("member private body needs a positive bounded range")?;
                     let base = range.start_pointer();
                     if !before_state.memory().access_in_bounds(&base, bytes)
-                        && base.block != crate::kernel::PointerBlock::ExternalArgument
+                        && base.base != crate::kernel::AddressBase::ExternalArgument
                     {
                         return Err("member private body exceeds live storage".into());
                     }
@@ -3178,12 +3152,12 @@ impl CheckedFunctionEntry {
         let boundary_transfer = {
             Some(
                 // The function's own entry clauses; the proof keeps the
-                // unflagged assumptions (`assume_entry_clause_extents`).
+                // unflagged assumptions (`assume_entry_clause_spans`).
                 crate::kernel::functions::capture_checked_boundary_resource_transfer(
                     caller_state,
                     function.clone(),
                     arguments,
-                    &assumptions.clone().assume_entry_clause_extents(),
+                    &assumptions.clone().assume_entry_clause_spans(),
                     &mut ExecutionBudget::beside_live_state(),
                 )
                 .map_err(|limit| {
@@ -4326,7 +4300,7 @@ fn interface_join_resources(
         }
         if let Some(range) = fact.memory_range() {
             successor_interface_resource_facts
-                .extend(crate::kernel::admitted_memory_range_extent_facts(range));
+                .extend(crate::kernel::admitted_memory_range_span_facts(range));
         }
         successor_interface_resources.push(fact);
     }
@@ -5018,9 +4992,9 @@ fn arm_effect_deltas_are_exact(
 }
 
 fn memory_diff_is_covered_by_writes(
-    before: &Memory,
-    after: &Memory,
-    changed: &[(Pointer, u32)],
+    before: &SymbolicMemory,
+    after: &SymbolicMemory,
+    changed: &[(Address, u32)],
     assumptions: &PureFactContext,
     fact: &ExecutionPureFact,
 ) -> bool {
@@ -5038,7 +5012,7 @@ fn memory_diff_is_covered_by_writes(
     before
         .differing_cell_pointers(after)
         .into_iter()
-        .filter(|pointer| !pointer.block.is_local_block())
+        .filter(|pointer| !pointer.base.is_local_block())
         .all(|diff_pointer| {
             if !after.has_known_cell_at(&diff_pointer) {
                 return false;
@@ -5060,8 +5034,8 @@ fn memory_diff_is_covered_by_writes(
 }
 
 fn memory_diff_is_covered_by_ranges(
-    before: &Memory,
-    after: &Memory,
+    before: &SymbolicMemory,
+    after: &SymbolicMemory,
     mutable_ranges: &[MemoryRange],
     assumptions: &PureFactContext,
 ) -> bool {
@@ -5077,7 +5051,7 @@ fn memory_diff_is_covered_by_ranges(
     before
         .differing_cell_pointers(after)
         .into_iter()
-        .filter(|pointer| !pointer.block.is_local_block())
+        .filter(|pointer| !pointer.base.is_local_block())
         .all(|diff_pointer| {
             if !after.has_known_cell_at(&diff_pointer) {
                 return false;
@@ -5103,17 +5077,17 @@ fn memory_diff_is_covered_by_ranges(
 /// and leaves no effect, so the recorded memory may hold tombstones the
 /// effects do not produce. Those objects are ended here the same way before
 /// the comparison. The join carries every arm's tombstones on its own
-/// ([`Memory::with_interface_memory_havoc_preserving_loans`]), so this
+/// ([`SymbolicMemory::with_interface_memory_havoc_preserving_loans`]), so this
 /// admits no write the effects do not cover.
 fn interface_chain_memory_matches(
-    produced: &Memory,
-    recorded: &Memory,
+    produced: &SymbolicMemory,
+    recorded: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> bool {
     use crate::kernel::api::contract_certification::memories_definitionally_equal;
     // End the lifetimes first: with them the memories are usually the same
     // state, which the comparison answers without looking at a cell.
-    let mut ended: Option<Memory> = None;
+    let mut ended: Option<SymbolicMemory> = None;
     for block in recorded.ended_local_blocks() {
         if !produced.is_ended_local_block(block) {
             ended = Some(
@@ -5382,7 +5356,7 @@ fn checked_interface_effect_facts_along(
 
 fn conditional_heap_frees(
     arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
-) -> [Vec<(Pointer, crate::kernel::HeapExtent)>; 2] {
+) -> [Vec<(Address, crate::kernel::AllocationSize)>; 2] {
     std::array::from_fn(|arm_index| {
         arm_effect_facts[arm_index]
             .fact_iter()
@@ -5403,12 +5377,14 @@ fn interface_resources_guard_heap_frees(
     arm_resources: &[Vec<ResourceFact>; 2],
     arm_states: [&ExecutionState; 2],
     arm_facts: [&PureFactStore; 2],
-    heap_frees: &[Vec<(Pointer, crate::kernel::HeapExtent)>; 2],
+    heap_frees: &[Vec<(Address, crate::kernel::AllocationSize)>; 2],
 ) -> bool {
-    let has_allocation = |arm_index: usize, base: &Pointer, bytes: &crate::kernel::HeapExtent| {
+    let has_allocation = |arm_index: usize,
+                          base: &Address,
+                          bytes: &crate::kernel::AllocationSize| {
         arm_resources[arm_index].iter().any(|resource| {
             if resource
-                .allocation_extent()
+                .allocation_size()
                 .is_some_and(|(candidate_base, candidate_bytes)| {
                     candidate_base.pointer() == base && &candidate_bytes == bytes
                 })
@@ -5428,7 +5404,7 @@ fn interface_resources_guard_heap_frees(
             )
             .is_some_and(|expanded| {
                 expanded.facts().iter().any(|fact| {
-                    fact.allocation_extent()
+                    fact.allocation_size()
                         .is_some_and(|(candidate_base, candidate_bytes)| {
                             candidate_base.pointer() == base && &candidate_bytes == bytes
                         })
@@ -5717,11 +5693,11 @@ impl CheckedInterfaceLowering {
 
 /// An index over the explicitly exported, already ownership-checked resource
 /// clauses. Building it is output-sized; no ambient resource/fact scan occurs
-/// per interface judgment. Equal bases retain the largest constant extent.
+/// per interface judgment. Equal bases retain the largest constant span.
 #[derive(Default)]
 struct InterfaceReadPremises {
     by_base: std::collections::BTreeMap<
-        (crate::kernel::Memory, crate::kernel::Pointer),
+        (crate::kernel::SymbolicMemory, crate::kernel::Address),
         (u32, Proposition),
     >,
 }
@@ -6154,6 +6130,7 @@ pub(crate) struct ExecutionFrontier {
     pub(crate) loop_update: Option<(Arc<ProgramStatement>, usize)>,
     /// How this path reached the loop body's boundary, once it has.
     pub(crate) loop_control: LoopControlExit,
+    pub(crate) loop_phase_source: Option<LoopPhaseSource>,
     /// A proof-only natural cycle's source back edge, when this frontier is
     /// executing that loop body. Matching `goto` evidence reaches the typed
     /// body boundary instead of reopening the source target.
@@ -6164,6 +6141,18 @@ pub(crate) struct ExecutionFrontier {
 }
 
 impl ExecutionFrontier {
+    pub(crate) fn active_loop_phase_source(&self) -> Option<LoopPhaseSource> {
+        self.continuations
+            .last()
+            .and_then(|frame| {
+                frame
+                    .loop_control
+                    .as_ref()
+                    .map(|control| control.phase_source)
+            })
+            .or(self.loop_phase_source)
+    }
+
     /// Whether two frontiers that split from one stand at the same program
     /// point: the same statement to run next, in the same region, with the
     /// same enclosing continuations still owed.
@@ -6174,6 +6163,7 @@ impl ExecutionFrontier {
             && self.in_loop_body == other.in_loop_body
             && self.loop_update == other.loop_update
             && self.loop_control == other.loop_control
+            && self.loop_phase_source == other.loop_phase_source
             && self.natural_backedge_target == other.natural_backedge_target
             && self.natural_exit_target == other.natural_exit_target
             && self.continuations.len() == other.continuations.len()
@@ -6224,6 +6214,13 @@ pub(crate) struct EvidenceTryFrame {
     pub(crate) tail_after_try: Option<Arc<ProgramStatement>>,
 }
 
+/// Source coordinates for a semantic phase with no separate source statement.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct LoopPhaseSource {
+    pub(crate) header_index: usize,
+    pub(crate) test_position: crate::kernel::LoopTestPosition,
+}
+
 /// The complete evidence successors issued while entering a source loop.
 /// Unlike the driver's local remainder, these retain every enclosing source
 /// continuation. Only checked source navigation constructs them.
@@ -6232,6 +6229,7 @@ pub(crate) struct LoopControlSources {
     repeat: Arc<ProgramStatement>,
     exit: Option<Arc<ProgramStatement>>,
     continuation: Option<Arc<ProgramStatement>>,
+    test_position: crate::kernel::LoopTestPosition,
     try_depth: usize,
 }
 
@@ -6247,6 +6245,7 @@ pub(crate) struct LoopControlDestinations {
     continuing: LoopControlDestination,
     exiting: LoopControlDestination,
     continue_keeps_loop: bool,
+    phase_source: LoopPhaseSource,
     try_depth: usize,
 }
 
@@ -6293,6 +6292,10 @@ impl ProofExecutionContinuation {
                     evidence_source: sources.exit,
                 },
                 continue_keeps_loop,
+                phase_source: LoopPhaseSource {
+                    header_index: repeat_index,
+                    test_position: sources.test_position,
+                },
                 try_depth: sources.try_depth,
             }),
             remaining: Some(repeat),
@@ -6561,8 +6564,8 @@ fn statement_call_havoc_views(theorem: &Theorem) -> Vec<crate::kernel::SharedMem
 
 fn register_recomputed_call_views(
     events: &CheckedCallEvents,
-    running: &Memory,
-    recomputed: &Memory,
+    running: &SymbolicMemory,
+    recomputed: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) {
     let Some(pairs) =
@@ -6664,7 +6667,8 @@ fn collect_retained_call_events<'e>(
                     collect_retained_call_events(events, call_events);
                 }
             }
-            CheckedExecutionEvent::Statement(_)
+            CheckedExecutionEvent::LoopEntry { .. }
+            | CheckedExecutionEvent::Statement(_)
             | CheckedExecutionEvent::Condition(_)
             | CheckedExecutionEvent::Context(_)
             | CheckedExecutionEvent::CompletedContext(_)
@@ -6680,82 +6684,6 @@ fn collect_retained_call_events<'e>(
             | CheckedExecutionEvent::TacticApplication(_) => {}
         }
     }
-}
-
-/// Check only a literal int32 comparison, without folding expressions or
-/// consulting a context. Signed order interprets the stored bits as int32.
-#[cfg(test)]
-fn ground_comparison_premise_holds(premise: &Proposition) -> bool {
-    use crate::kernel::ConditionTerm;
-    let Proposition::ConditionIs(condition, expected) = premise else {
-        return false;
-    };
-    let (left, right) = match condition {
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessThan,
-            left,
-            right,
-        }
-        | ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessEqual,
-            left,
-            right,
-        }
-        | ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterThan,
-            left,
-            right,
-        }
-        | ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterEqual,
-            left,
-            right,
-        }
-        | ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-            relation: CompareRelation::Equal,
-            left,
-            right,
-        } => (left, right),
-        _ => return false,
-    };
-    let (Some(left), Some(right)) = (left.as_const(), right.as_const()) else {
-        return false;
-    };
-    let (left, right) = (left as i32, right as i32);
-    let actual = match condition {
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessThan,
-            ..
-        } => left < right,
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessEqual,
-            ..
-        } => left <= right,
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterThan,
-            ..
-        } => left > right,
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterEqual,
-            ..
-        } => left >= right,
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-            relation: CompareRelation::Equal,
-            ..
-        } => left == right,
-        _ => unreachable!("comparison shape was checked above"),
-    };
-    actual == *expected
 }
 
 /// Branch evidence names its exact arm context. Do not derive a missing
@@ -6796,23 +6724,6 @@ pub(super) fn checked_interface_pointer_equality(
             true
         )
     ) && super::fact_reasoning::normalize_using_conditions(goal, &[], facts).is_ok()
-}
-
-#[cfg(test)]
-fn checked_evidence_premises_hold(theorem: &Theorem, facts: &PureFactStore) -> bool {
-    checked_evidence_premises_hold_in(theorem, facts.assumptions())
-}
-
-#[cfg(test)]
-fn checked_evidence_premises_hold_in(theorem: &Theorem, context: &PureFactContext) -> bool {
-    let mut proposition = theorem.proposition();
-    while let Proposition::Implies(premise, body) = proposition {
-        if !context.proves_exact(premise) && !ground_comparison_premise_holds(premise) {
-            return false;
-        }
-        proposition = body;
-    }
-    true
 }
 
 fn split_checked_evidence_statement(
@@ -6936,7 +6847,7 @@ fn statements_have_same_source(left: &ProgramStatement, right: &ProgramStatement
                 ..
             },
         ) => {
-            left_loop_test.for_repeated_iteration() == right_loop_test.for_repeated_iteration()
+            left_loop_test == right_loop_test
                 && left_update == right_update
                 && statements_have_same_source(left_body, right_body)
         }
@@ -7102,41 +7013,6 @@ fn checked_condition_event(
                 *else_branch
             }
         }
-        ProgramStatement::Loop {
-            test: loop_test,
-            update,
-            invariant,
-            invariant_checks,
-            effect_checks,
-            resource_specs,
-            ranking_measures,
-            structural_measure,
-            body,
-            ..
-        } if loop_test.execution_parts().0 == proved_condition => {
-            let (_, _, test) = loop_test.execution_parts();
-            if value {
-                let loop_head = ProgramStatement::Loop {
-                    test: loop_test.for_repeated_iteration(),
-                    update: update.clone(),
-                    invariant,
-                    invariant_checks,
-                    effect_checks,
-                    resource_specs,
-                    ranking_measures,
-                    structural_measure,
-                    backedge_target: None,
-                    natural_exit_target: None,
-                    body: body.clone(),
-                };
-                prepend_checked_evidence_statement(
-                    crate::kernel::program_loop_pass(&body, update.as_deref(), test),
-                    Some(loop_head),
-                )
-            } else {
-                ProgramStatement::Skip
-            }
-        }
         _ => return None,
     };
     Some(if matches!(selected, ProgramStatement::Skip) {
@@ -7163,8 +7039,8 @@ struct CheckedEvidenceProgress {
 /// pointer can reach, and it leaves no effect fact.
 #[derive(Clone)]
 struct CheckedMemoryStep {
-    before: Memory,
-    after: Memory,
+    before: SymbolicMemory,
+    after: SymbolicMemory,
     may_write: bool,
     /// For a statement, how many memory effects its recorder appended.
     statement_effects: Option<usize>,
@@ -7274,6 +7150,10 @@ fn check_evidence_events(
             return None;
         }
         match event {
+            CheckedExecutionEvent::LoopEntry { source_after } => {
+                remaining = Some(source_after.as_ref().clone());
+                continue;
+            }
             CheckedExecutionEvent::ReturnProposition(_) => return None,
             CheckedExecutionEvent::ProofCase(_) => continue,
             CheckedExecutionEvent::ProofCaseJoin(join) => {
@@ -7386,7 +7266,9 @@ fn check_evidence_events(
             | CheckedExecutionEvent::StatementEffects(_) => {
                 unreachable!("handled before source advance")
             }
-            CheckedExecutionEvent::Call(_) => unreachable!("handled before source advance"),
+            CheckedExecutionEvent::LoopEntry { .. } | CheckedExecutionEvent::Call(_) => {
+                unreachable!("handled before source advance")
+            }
             CheckedExecutionEvent::AutomaticLifetimeEnd(_)
             | CheckedExecutionEvent::ResourceObservation(_) => {
                 unreachable!("handled before source advance")
@@ -7531,7 +7413,7 @@ fn retain_return_context(
                     crate::kernel::functions::evaluate_composite_resource_fact_propositions(
                         &authority,
                         definition,
-                        &Memory::new(),
+                        &SymbolicMemory::new(),
                         &ResourceContext::new(),
                         &PureFactContext::new().require_owned_expression_loads(),
                     )
@@ -7979,7 +7861,8 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
                     }
                 }
             }
-            CheckedExecutionEvent::Condition(_)
+            CheckedExecutionEvent::LoopEntry { .. }
+            | CheckedExecutionEvent::Condition(_)
             | CheckedExecutionEvent::ResourceObservation(_)
             | CheckedExecutionEvent::IteratedStep(_) => {
                 fallthrough = None;
@@ -8055,7 +7938,8 @@ fn events_use_the_function_definitions<E: std::borrow::Borrow<CheckedExecutionEv
                         .live_arm_events()
                         .all(|events| check(function, events, checked_entries))
             }
-            CheckedExecutionEvent::AutomaticLifetimeEnd(_)
+            CheckedExecutionEvent::LoopEntry { .. }
+            | CheckedExecutionEvent::AutomaticLifetimeEnd(_)
             | CheckedExecutionEvent::IteratedStep(_)
             | CheckedExecutionEvent::Statement(_)
             | CheckedExecutionEvent::Call(_)
@@ -8182,7 +8066,8 @@ fn validate_checked_event_shapes_after<'e>(
                 }
                 continue;
             }
-            CheckedExecutionEvent::AutomaticLifetimeEnd(_)
+            CheckedExecutionEvent::LoopEntry { .. }
+            | CheckedExecutionEvent::AutomaticLifetimeEnd(_)
             | CheckedExecutionEvent::ResourceObservation(_)
             | CheckedExecutionEvent::ReturnProposition(_)
             | CheckedExecutionEvent::ResourceRewrite(_)
@@ -9310,60 +9195,45 @@ impl ExecutionProofCore {
         Ok(())
     }
 
-    /// Enter the first body of a direct post-test loop. This is source
-    /// navigation, not another statement theorem: the same language rule is
-    /// used by evidence replay when its first body theorem is consumed.
-    pub(crate) fn enter_post_test_loop_body(
+    /// Enter the same test/body/update pass for every structured loop.
+    /// The retained loop node keeps its original phase placement at backedges.
+    pub(crate) fn enter_loop_phases(
         &mut self,
         function: &ProgramFunction,
+        arguments: &[ProgramExpression],
     ) -> Result<LoopControlSources, EvidenceRefusal> {
+        let state = self.running_state(function, arguments)?.into_owned();
         let Some((next, tail)) = self.next_source_statement_and_tail(function) else {
-            return Err("loop body entry has no source loop".into());
+            return Err("loop entry has no source loop".into());
         };
         let ProgramStatement::Loop {
             test,
             update,
-            invariant,
-            invariant_checks,
-            effect_checks,
-            resource_specs,
-            ranking_measures,
-            structural_measure,
             body,
             backedge_target: None,
             natural_exit_target: None,
+            ..
         } = next.as_ref()
         else {
-            return Err("loop body entry does not name a structured source loop".into());
+            return Err("loop entry does not name a structured source loop".into());
         };
-        let (_, post_test, prepared) = test.execution_parts();
-        if !post_test {
-            return Err("loop body entry requires a direct post-test".into());
-        }
-        let repeat_head = Arc::new(ProgramStatement::Loop {
-            test: test.for_repeated_iteration(),
-            update: update.clone(),
-            invariant: invariant.clone(),
-            invariant_checks: invariant_checks.clone(),
-            effect_checks: effect_checks.clone(),
-            resource_specs: resource_specs.clone(),
-            ranking_measures: ranking_measures.clone(),
-            structural_measure: structural_measure.clone(),
-            backedge_target: None,
-            natural_exit_target: None,
-            body: body.clone(),
-        });
-        let repeat = prepend_shared_source(repeat_head, tail.clone());
+        let repeat = prepend_shared_source(Arc::new(next.clone().into_owned()), tail.clone());
         let (pass, continuation) =
-            crate::kernel::program_loop_pass_and_continuation(body, update.as_deref(), prepared);
-        let pass = Arc::new(pass);
-        let entered = prepend_shared_source(pass, Some(repeat.clone()));
+            crate::kernel::program_loop_pass_and_continuation(body, update.as_deref(), Some(test));
+        let entered = prepend_shared_source(Arc::new(pass), Some(repeat.clone()));
         let sources = LoopControlSources {
             repeat,
             exit: tail,
             continuation,
+            test_position: test.position,
             try_depth: self.evidence_try_stack.len(),
         };
+        for trace in self.execution_evidence.iter_mut() {
+            trace.push(CheckedExecutionEvent::LoopEntry {
+                source_after: entered.clone(),
+            });
+        }
+        self.evidence_state = Some(state);
         self.evidence_source = Some(entered);
         Ok(sources)
     }
@@ -9636,60 +9506,7 @@ impl ExecutionProofCore {
                         "statement evidence was recorded with no source statement remaining".into(),
                     );
                 };
-                let do_while_initial_body = match &*next {
-                    ProgramStatement::Loop {
-                        test: loop_test,
-                        update,
-                        invariant,
-                        invariant_checks,
-                        effect_checks,
-                        resource_specs,
-                        ranking_measures,
-                        structural_measure,
-                        backedge_target: None,
-                        natural_exit_target: None,
-                        body,
-                    } if loop_test.execution_parts().1
-                        && !matches!(&**proved_statement, ProgramStatement::Loop { .. }) =>
-                    {
-                        let (_, _, test) = loop_test.execution_parts();
-                        let pass = crate::kernel::program_loop_pass(body, update.as_deref(), test);
-                        let (body_head, body_tail) = split_shared_source(&pass);
-                        if !statements_have_same_source(&body_head, proved_statement) {
-                            return Err(EvidenceRefusal {
-                                reason: "statement evidence does not prove the frontier's next source statement",
-                                expected: Some(next.into_owned()),
-                                proved: Some(*proved_statement.clone()),
-                                premise: None,
-                            });
-                        }
-                        let loop_head = ProgramStatement::Loop {
-                            test: loop_test.for_repeated_iteration(),
-                            update: update.clone(),
-                            invariant: invariant.clone(),
-                            invariant_checks: invariant_checks.clone(),
-                            effect_checks: effect_checks.clone(),
-                            resource_specs: resource_specs.clone(),
-                            ranking_measures: ranking_measures.clone(),
-                            structural_measure: structural_measure.clone(),
-                            backedge_target: None,
-                            natural_exit_target: None,
-                            body: body.clone(),
-                        };
-                        let loop_continuation =
-                            prepend_shared_source(Arc::new(loop_head), tail.clone());
-                        Some(match body_tail {
-                            Some(body_tail) => {
-                                prepend_shared_source(body_tail, Some(loop_continuation))
-                            }
-                            None => loop_continuation,
-                        })
-                    }
-                    _ => None,
-                };
-                if !statements_have_same_source(&next, proved_statement)
-                    && do_while_initial_body.is_none()
-                {
+                if !statements_have_same_source(&next, proved_statement) {
                     return Err(EvidenceRefusal {
                         reason: "statement evidence does not prove the frontier's next source statement",
                         expected: Some(next.into_owned()),
@@ -9697,7 +9514,7 @@ impl ExecutionProofCore {
                         premise: None,
                     });
                 }
-                do_while_initial_body.or(tail)
+                tail
             }
         };
         self.check_evidence_state(function, &running_state, context, proved_state)?;
@@ -9717,15 +9534,7 @@ impl ExecutionProofCore {
         context: &PureFactContext,
         path_facts: &[Proposition],
         obligations: &[crate::kernel::ProofObligation],
-        entering_loop: bool,
-    ) -> Result<
-        (
-            ExecutionState,
-            Option<Arc<ProgramStatement>>,
-            Option<LoopControlSources>,
-        ),
-        EvidenceRefusal,
-    > {
+    ) -> Result<(ExecutionState, Option<Arc<ProgramStatement>>), EvidenceRefusal> {
         let running_state = self.running_state(function, arguments)?;
         let (proved_state, proved_condition, value) =
             match crate::kernel::api::proof_evidence_conclusion(theorem) {
@@ -9736,83 +9545,13 @@ impl ExecutionProofCore {
                 } => (state, condition, *value),
                 _ => return Err("retained condition evidence has a non-value conclusion".into()),
             };
-        let Some((mut next, mut tail)) = self.next_source_statement_and_tail(function) else {
+        let Some((next, tail)) = self.next_source_statement_and_tail(function) else {
             return Err(
                 "condition evidence was recorded with no source statement remaining".into(),
             );
         };
-        if entering_loop
-            && matches!(next.as_ref(), ProgramStatement::Loop { test, .. } if test.execution_parts().1)
-        {
-            return Err("post-test loop entry must enter its body first".into());
-        }
-        if entering_loop && !matches!(next.as_ref(), ProgramStatement::Loop { .. }) {
-            return Err("loop entry evidence does not decide a source loop".into());
-        }
-        // A `do`-`while` runs its body before its condition is read, so a
-        // condition decided at its head belongs to the body's first
-        // statement, never to the loop: the source is the body followed by
-        // an ordinary loop head, as for a statement theorem.
-        while let ProgramStatement::Loop {
-            test: loop_test,
-            update,
-            invariant,
-            invariant_checks,
-            effect_checks,
-            resource_specs,
-            ranking_measures,
-            structural_measure,
-            backedge_target,
-            natural_exit_target,
-            body,
-        } = &*next
-            && loop_test.execution_parts().1
-        {
-            let (_, _, test) = loop_test.execution_parts();
-            if backedge_target.is_some() || natural_exit_target.is_some() {
-                return Err(EvidenceRefusal {
-                    reason: "condition evidence does not decide the frontier's next `if` or `while`",
-                    expected: Some(next.into_owned()),
-                    proved: None,
-                    premise: None,
-                });
-            }
-            let loop_head = ProgramStatement::Loop {
-                test: loop_test.for_repeated_iteration(),
-                update: update.clone(),
-                invariant: invariant.clone(),
-                invariant_checks: invariant_checks.clone(),
-                effect_checks: effect_checks.clone(),
-                resource_specs: resource_specs.clone(),
-                ranking_measures: ranking_measures.clone(),
-                structural_measure: structural_measure.clone(),
-                backedge_target: None,
-                natural_exit_target: None,
-                body: body.clone(),
-            };
-            let unrolled = prepend_shared_source(
-                Arc::new(crate::kernel::program_loop_pass(
-                    body,
-                    update.as_deref(),
-                    test,
-                )),
-                Some(prepend_shared_source(Arc::new(loop_head), tail)),
-            );
-            let (mut head, mut rest) = split_shared_source(&unrolled);
-            while matches!(*head, ProgramStatement::Skip) {
-                let Some(following) = rest else {
-                    break;
-                };
-                let (following_head, following_rest) = split_shared_source(&following);
-                head = std::borrow::Cow::Owned(following_head.into_owned());
-                rest = following_rest;
-            }
-            next = std::borrow::Cow::Owned(head.into_owned());
-            tail = rest;
-        }
         let decided = match &*next {
             ProgramStatement::If { condition, .. } => condition,
-            ProgramStatement::Loop { test, .. } => test.execution_parts().0,
             _ => {
                 return Err(EvidenceRefusal {
                     reason: "condition evidence does not decide the frontier's next `if` or `while`",
@@ -9832,7 +9571,6 @@ impl ExecutionProofCore {
         }
         // The source left after the decision: the selected arm, or the loop
         // body followed by the loop head again, before the tail.
-        let mut loop_sources = None;
         let source_after = match &*next {
             ProgramStatement::If {
                 then_branch,
@@ -9844,53 +9582,6 @@ impl ExecutionProofCore {
                     tail
                 } else {
                     Some(prepend_shared_source(Arc::new(selected.clone()), tail))
-                }
-            }
-            ProgramStatement::Loop {
-                test: loop_test,
-                update,
-                invariant,
-                invariant_checks,
-                effect_checks,
-                resource_specs,
-                ranking_measures,
-                structural_measure,
-                body,
-                ..
-            } => {
-                let (_, _, test) = loop_test.execution_parts();
-                if value {
-                    let loop_head = ProgramStatement::Loop {
-                        test: loop_test.for_repeated_iteration(),
-                        update: update.clone(),
-                        invariant: invariant.clone(),
-                        invariant_checks: invariant_checks.clone(),
-                        effect_checks: effect_checks.clone(),
-                        resource_specs: resource_specs.clone(),
-                        ranking_measures: ranking_measures.clone(),
-                        structural_measure: structural_measure.clone(),
-                        backedge_target: None,
-                        natural_exit_target: None,
-                        body: body.clone(),
-                    };
-                    let (pass, continuation) = crate::kernel::program_loop_pass_and_continuation(
-                        body,
-                        update.as_deref(),
-                        test,
-                    );
-                    let loop_head = Arc::new(loop_head);
-                    if entering_loop {
-                        loop_sources = Some(LoopControlSources {
-                            repeat: prepend_shared_source(loop_head.clone(), tail.clone()),
-                            exit: tail.clone(),
-                            continuation,
-                            try_depth: self.evidence_try_stack.len(),
-                        });
-                    }
-                    let body_then_head = Arc::new(ProgramStatement::seq(Arc::new(pass), loop_head));
-                    Some(prepend_shared_source(body_then_head, tail))
-                } else {
-                    tail
                 }
             }
             _ => tail,
@@ -9958,7 +9649,7 @@ impl ExecutionProofCore {
         }
         // The condition's call results end with it.
         let reached = crate::kernel::eval::without_read_step_results(*reached, decided);
-        Ok((reached, source_after, loop_sources))
+        Ok((reached, source_after))
     }
 
     /// The part of the evidence judgment shared by statement and condition
@@ -10038,57 +9729,14 @@ impl ExecutionProofCore {
         path_facts: &[Proposition],
         obligations: &[crate::kernel::ProofObligation],
     ) -> Result<(), EvidenceRefusal> {
-        self.record_condition_transition_with_loop_sources(
-            function,
-            arguments,
-            theorem,
-            context,
-            path_facts,
-            obligations,
-            false,
-        )
-        .map(|_| ())
-    }
-
-    pub(crate) fn record_loop_condition_transition(
-        &mut self,
-        function: &ProgramFunction,
-        arguments: &[ProgramExpression],
-        theorem: Theorem,
-        context: PureFactContext,
-        path_facts: &[Proposition],
-        obligations: &[crate::kernel::ProofObligation],
-    ) -> Result<Option<LoopControlSources>, EvidenceRefusal> {
-        self.record_condition_transition_with_loop_sources(
-            function,
-            arguments,
-            theorem,
-            context,
-            path_facts,
-            obligations,
-            true,
-        )
-    }
-
-    fn record_condition_transition_with_loop_sources(
-        &mut self,
-        function: &ProgramFunction,
-        arguments: &[ProgramExpression],
-        theorem: Theorem,
-        context: PureFactContext,
-        path_facts: &[Proposition],
-        obligations: &[crate::kernel::ProofObligation],
-        entering_loop: bool,
-    ) -> Result<Option<LoopControlSources>, EvidenceRefusal> {
         debug_assert_eq!(self.execution_evidence.len(), 1);
-        let (reached, source_after, loop_sources) = self.check_condition_evidence(
+        let (reached, source_after) = self.check_condition_evidence(
             function,
             arguments,
             &theorem,
             &context,
             path_facts,
             obligations,
-            entering_loop,
         )?;
         for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::Condition(theorem.clone()));
@@ -10104,7 +9752,7 @@ impl ExecutionProofCore {
         self.advance_path_context(&context);
         self.evidence_state = Some(reached);
         self.evidence_source = source_after;
-        Ok(loop_sources)
+        Ok(())
     }
 
     pub(crate) fn record_proof_case_arm(

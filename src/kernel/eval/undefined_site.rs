@@ -85,7 +85,11 @@ pub(super) fn statement_expressions<'a>(
         ProgramStatement::Assert { condition, .. }
         | ProgramStatement::LoopTest { condition, .. }
         | ProgramStatement::If { condition, .. } => expressions.push((condition, true)),
-        ProgramStatement::Loop { test, .. } => expressions.push((test.execution_parts().0, true)),
+        ProgramStatement::Loop { test, .. } => {
+            if let Some(condition) = test.source_condition() {
+                expressions.push((condition, true));
+            }
+        }
         ProgramStatement::CallConstruct { arguments, .. } => {
             expressions.extend(arguments.iter().map(|argument| (argument, false)));
         }

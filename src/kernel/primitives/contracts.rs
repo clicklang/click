@@ -18,7 +18,7 @@ impl ProgramParameter {
             pointee_constant: false,
             pointee_class: None,
             slice_length_parameter: None,
-            fixed_reference_extent: None,
+            fixed_reference_bounds: None,
         }
     }
 
@@ -34,8 +34,8 @@ impl ProgramParameter {
         self
     }
 
-    pub(crate) fn with_fixed_reference_extent(mut self, bytes: u32) -> Self {
-        self.fixed_reference_extent = Some(bytes);
+    pub(crate) fn with_fixed_reference_bounds(mut self, bytes: u32) -> Self {
+        self.fixed_reference_bounds = Some(bytes);
         self
     }
 
@@ -387,12 +387,6 @@ impl GlobalAggregate {
         self
     }
 
-    /// The class the object's block records: the frontend's, or what the
-    /// kernel type gives.
-    pub fn declared_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
-        self.declared_class.clone()
-    }
-
     pub fn source_name(&self) -> &str {
         &self.source_name
     }
@@ -457,12 +451,6 @@ impl GlobalAggregateArray {
     ) -> Self {
         self.declared_class = class;
         self
-    }
-
-    /// The class the object's block records: the frontend's, or what the
-    /// kernel type gives.
-    pub fn declared_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
-        self.declared_class.clone()
     }
 
     pub fn source_name(&self) -> &str {
@@ -2374,7 +2362,7 @@ impl MemoryRange {
         )
     }
 
-    pub fn new(base: Pointer, start: MachineTerm, end: MachineTerm) -> Self {
+    pub fn new(base: Address, start: MachineTerm, end: MachineTerm) -> Self {
         Self::new_with_element_width(base, start, end, 4)
     }
 
@@ -2384,7 +2372,7 @@ impl MemoryRange {
     /// int32-only kernel callers. New ranges produced from typed C input
     /// should use this constructor instead.
     pub(crate) fn new_with_element_width(
-        base: Pointer,
+        base: Address,
         start: MachineTerm,
         end: MachineTerm,
         element_width: u32,
@@ -2392,8 +2380,8 @@ impl MemoryRange {
         assert!(element_width > 0, "memory element width must be positive");
         let carrier = PointerValue::new(base.clone(), ProgramType::VoidPointer);
         Self {
-            opaque_extent: carrier.opaque_extent.clone(),
-            carrier_extent_known: carrier.extent_is_known(),
+            bounds_owner: carrier.bounds_owner.clone(),
+            carrier_bounds_known: carrier.bounds_are_known(),
             provenance: std::sync::Arc::new(base.object_identity()),
             typed_carrier: false,
             base,
@@ -2427,18 +2415,18 @@ impl MemoryRange {
             .with_pointer_carrier(value)
     }
 
-    /// The origin and extent ancestry retained by this admitted footprint.
+    /// The origin and bounds ancestry retained by this admitted footprint.
     /// Its own bounds describe the authorized bytes; this carrier is not a
-    /// new pointer access and does not infer a selected subobject extent.
+    /// new pointer access and does not infer a selected subobject bounds.
     pub(in crate::kernel) fn pointer_carrier(&self) -> PointerValue {
         PointerValue {
             pointer: self.base.clone(),
             provenance: self.provenance.clone(),
-            opaque_extent: self.opaque_extent.clone(),
+            bounds_owner: self.bounds_owner.clone(),
             program_type: ProgramType::VoidPointer,
-            qualifiers: self.carrier_extent_known.then(|| {
+            qualifiers: self.carrier_bounds_known.then(|| {
                 std::sync::Arc::new(PointerQualifiers {
-                    extent_known: true,
+                    bounds_known: true,
                     ..Default::default()
                 })
             }),
@@ -2447,25 +2435,25 @@ impl MemoryRange {
 
     pub(in crate::kernel) fn with_pointer_carrier(mut self, value: &PointerValue) -> Self {
         self.provenance = value.provenance.clone();
-        self.opaque_extent = value.opaque_extent.clone();
-        self.carrier_extent_known = value.extent_is_known();
+        self.bounds_owner = value.bounds_owner.clone();
+        self.carrier_bounds_known = value.bounds_are_known();
         self.typed_carrier = true;
         self
     }
 
-    pub(in crate::kernel) fn with_opaque_extent(
+    pub(in crate::kernel) fn with_bounds_owner(
         mut self,
-        origin: Option<std::sync::Arc<Pointer>>,
+        origin: Option<std::sync::Arc<Address>>,
         known: bool,
     ) -> Self {
-        self.opaque_extent = origin;
-        self.carrier_extent_known = known;
+        self.bounds_owner = origin;
+        self.carrier_bounds_known = known;
         self
     }
 
     pub(in crate::kernel) fn with_provenance(
         mut self,
-        provenance: std::sync::Arc<Pointer>,
+        provenance: std::sync::Arc<Address>,
     ) -> Self {
         self.provenance = provenance;
         self
@@ -2480,29 +2468,29 @@ impl MemoryRange {
         self.provenance = source.provenance.clone();
         self.formation_coverage = source.formation_coverage.clone();
         self.typed_carrier = source.typed_carrier;
-        self.opaque_extent = source.opaque_extent.clone();
-        self.carrier_extent_known = source.carrier_extent_known;
+        self.bounds_owner = source.bounds_owner.clone();
+        self.carrier_bounds_known = source.carrier_bounds_known;
         self
     }
 
-    pub(in crate::kernel) fn access_provenance(&self) -> (&Pointer, Option<&Pointer>) {
+    pub(in crate::kernel) fn access_provenance(&self) -> (&Address, Option<&Address>) {
         (
             &self.provenance,
-            if self.carrier_extent_known {
+            if self.carrier_bounds_known {
                 None
             } else {
-                self.opaque_extent.as_deref()
+                self.bounds_owner.as_deref()
             },
         )
     }
 
     /// Retained identity metadata for diagnostic rendering only. Reading this
     /// view performs no inference, normalization, or proof-state traversal.
-    pub(crate) fn diagnostic_pointer_metadata(&self) -> (&Pointer, Option<&Pointer>, bool) {
+    pub(crate) fn diagnostic_pointer_metadata(&self) -> (&Address, Option<&Address>, bool) {
         (
             &self.provenance,
-            self.opaque_extent.as_deref(),
-            self.carrier_extent_known,
+            self.bounds_owner.as_deref(),
+            self.carrier_bounds_known,
         )
     }
 
@@ -2543,7 +2531,7 @@ impl MemoryRange {
     }
 
     /// The address of the range's first element, in its own index kind.
-    pub(crate) fn start_pointer(&self) -> Pointer {
+    pub(crate) fn start_pointer(&self) -> Address {
         match self.kind {
             RangeIndexKind::Int32 => self
                 .base
@@ -2558,7 +2546,7 @@ impl MemoryRange {
     }
 
     /// The address one past the range's last element, in its own kind.
-    pub(crate) fn end_pointer(&self) -> Pointer {
+    pub(crate) fn end_pointer(&self) -> Address {
         match self.kind {
             RangeIndexKind::Int32 => self
                 .base
@@ -2583,7 +2571,7 @@ impl MemoryRange {
     /// count is the unsigned 64-bit `(end - start) * width`, written by
     /// [`wide_loadable_byte_count`] and read back by
     /// [`wide_loadable_element_count`].
-    pub(crate) fn loadable_fact(&self, memory: &Memory) -> Proposition {
+    pub(crate) fn loadable_fact(&self, memory: &SymbolicMemory) -> Proposition {
         match self.wide_bounds() {
             None => {
                 let (base, bytes) = self.byte_footprint();
@@ -2637,7 +2625,7 @@ impl MemoryRange {
     /// use this bounded, derived view without introducing a second resource
     /// representation. The returned pointer is the first byte of the range;
     /// the second value is its byte length.
-    pub(crate) fn byte_footprint(&self) -> (Pointer, MachineTerm) {
+    pub(crate) fn byte_footprint(&self) -> (Address, MachineTerm) {
         (
             self.start_pointer(),
             memory_range_byte_count(self.start().clone(), self.end().clone(), self.element_width),
@@ -2649,7 +2637,7 @@ impl MemoryRange {
     }
 
     /// Rebase a range without changing the domain of either endpoint.
-    pub(crate) fn with_base(&self, base: Pointer) -> Self {
+    pub(crate) fn with_base(&self, base: Address) -> Self {
         Self {
             base,
             ..self.clone()
@@ -2658,14 +2646,14 @@ impl MemoryRange {
 
     /// Rebuilds a range with different bounds while preserving its element
     /// coordinate system.
-    pub(crate) fn with_bounds(&self, base: Pointer, start: MachineTerm, end: MachineTerm) -> Self {
+    pub(crate) fn with_bounds(&self, base: Address, start: MachineTerm, end: MachineTerm) -> Self {
         Self {
             kind: self.kind,
             formation_coverage: self.formation_coverage.clone(),
             provenance: self.provenance.clone(),
             typed_carrier: self.typed_carrier,
-            opaque_extent: self.opaque_extent.clone(),
-            carrier_extent_known: self.carrier_extent_known,
+            bounds_owner: self.bounds_owner.clone(),
+            carrier_bounds_known: self.carrier_bounds_known,
             ..Self::new_with_element_width(base, start, end, self.element_width)
         }
     }
@@ -2687,7 +2675,7 @@ impl MemoryRange {
     /// Any other shape answers nothing, and the caller keeps its per-cell
     /// check. The work is proportional to the guard and the pointer.
     pub(crate) fn guarded_quantified_cells(
-        pointer: &Pointer,
+        pointer: &Address,
         variable: Variable,
         guard: &Proposition,
         element_width: u32,
@@ -2696,22 +2684,20 @@ impl MemoryRange {
             term.operand_view().variable() == Some(&variable)
         };
         let (base_offset, scaled) = match &pointer.offset {
-            PointerOffsetTerm::Add(base, scaled) => (base.as_ref().clone(), scaled.as_ref()),
-            scaled => (PointerOffsetTerm::Constant(0), scaled),
+            AddressOffset::Add(base, scaled) => (base.as_ref().clone(), scaled.as_ref()),
+            scaled => (AddressOffset::Constant(0), scaled),
         };
         let kind = match scaled {
-            PointerOffsetTerm::Int32Scaled { value, .. } if is_variable(value) => {
-                RangeIndexKind::Int32
-            }
-            PointerOffsetTerm::Int64Scaled {
+            AddressOffset::Int32Scaled { value, .. } if is_variable(value) => RangeIndexKind::Int32,
+            AddressOffset::Int64Scaled {
                 value,
                 unsigned: true,
                 ..
             } if is_variable(value) => RangeIndexKind::UInt64,
             _ => return None,
         };
-        let base = Pointer {
-            block: pointer.block.clone(),
+        let base = Address {
+            base: pointer.base.clone(),
             offset: base_offset,
         };
         let index = MachineTerm::Variable(variable);
@@ -2801,7 +2787,7 @@ impl MemoryRange {
 
     /// A range whose bounds are unsigned 64-bit element indices.
     pub(crate) fn new_wide(
-        base: Pointer,
+        base: Address,
         start: MachineTerm,
         end: MachineTerm,
         element_width: u32,
@@ -2812,7 +2798,7 @@ impl MemoryRange {
         }
     }
 
-    pub fn base(&self) -> &Pointer {
+    pub fn base(&self) -> &Address {
         &self.base
     }
 
@@ -2828,14 +2814,14 @@ impl MemoryRange {
         &self.end_bound
     }
 
-    /// The write set of memory no clause names: the largest valid extent at
+    /// The write set of memory no clause names: the largest valid span at
     /// an unconstrained symbolic address.
     ///
     /// A resource footprint that reaches memory the kernel cannot spell -- a
     /// recursive body's nodes past the arguments, an existential witness's
     /// object -- covers every block reachable from its arguments, and those
     /// blocks are unknown. A symbolic block is never proven distinct from
-    /// any block ([`super::PointerBlock::proven_distinct`]), no fact mentions
+    /// any block ([`super::AddressBase::proven_distinct`]), no fact mentions
     /// this reserved identity, so nothing places its base, and the range is
     /// not empty, so no separation rule can place a cell outside it: every
     /// havoc, effect summary and transport that reads the write set treats
@@ -2846,13 +2832,13 @@ impl MemoryRange {
     /// answer it through [`Self::is_unnamed_footprint`].
     pub(crate) fn unnamed_footprint() -> Self {
         Self::new_with_element_width(
-            Pointer {
-                block: super::PointerBlock::Symbolic(UNNAMED_FOOTPRINT_BLOCK),
-                offset: super::PointerOffsetTerm::Constant(0),
+            Address {
+                base: super::AddressBase::Symbolic(UNNAMED_FOOTPRINT_BLOCK),
+                offset: super::AddressOffset::Constant(0),
             },
             MachineTerm::constant(0),
-            // Endpoints are `int32` values: this is the largest extent whose
-            // guards hold, so no consumer that assumes a held range's extent
+            // Endpoints are `int32` values: this is the largest span whose
+            // guards hold, so no consumer that assumes a held range's span
             // guards can meet a false one here.
             MachineTerm::constant(i32::MAX as u32),
             1,
@@ -2868,8 +2854,8 @@ impl MemoryRange {
 /// Whether a range or segment based at `base` is
 /// [`MemoryRange::unnamed_footprint`]: the reserved block is spelled nowhere
 /// else.
-pub(crate) fn is_unnamed_footprint_base(base: &Pointer) -> bool {
-    base.block == super::PointerBlock::Symbolic(UNNAMED_FOOTPRINT_BLOCK)
+pub(crate) fn is_unnamed_footprint_base(base: &Address) -> bool {
+    base.base == super::AddressBase::Symbolic(UNNAMED_FOOTPRINT_BLOCK)
 }
 
 /// The reserved symbolic block of [`MemoryRange::unnamed_footprint`]. It is
@@ -2920,7 +2906,7 @@ fn canonical_multiply(left: MachineTerm, right: MachineTerm) -> MachineTerm {
 }
 
 /// The largest element count a range of `element_width`-byte elements may have
-/// and still name a valid 32-bit byte extent. This is the bound the `fits`
+/// and still name a valid 32-bit byte span. This is the bound the `fits`
 /// guard below states, and the one definition of it: a rule that needs the
 /// same bound reads it here rather than recomputing the division.
 pub(crate) fn memory_range_element_count_limit(element_width: u32) -> u32 {
@@ -2936,13 +2922,13 @@ pub(crate) fn memory_range_element_count(range: &MemoryRange) -> MachineTerm {
 
 /// Whether that limit constrains a nonnegative `int32` element count at all.
 /// For one- and two-byte elements it does not: `i32::MAX` elements of two
-/// bytes still fit a `u32` byte extent, so nonnegativity is the whole
+/// bytes still fit a `u32` byte span, so nonnegativity is the whole
 /// condition and a second guard would be a fact every count already has.
 pub(crate) fn element_count_limit_constrains_int32(element_width: u32) -> bool {
     memory_range_element_count_limit(element_width) < i32::MAX as u32
 }
 
-/// The valid-byte-extent condition written over a range's element count, in
+/// The valid-byte-span condition written over a range's element count, in
 /// the spelling a proof can state.
 ///
 /// This is [`memory_range_byte_count_guards`] for a caller that holds the
@@ -2955,7 +2941,7 @@ pub(crate) fn element_count_limit_constrains_int32(element_width: u32) -> bool {
 ///
 /// Click's surface has no unsigned comparison, so this is also the only form
 /// of the condition a user can write down, and the form every diagnostic about
-/// a missing extent should print.
+/// a missing span should print.
 pub(crate) fn memory_range_element_count_guards(
     element_count: MachineTerm,
     element_width: u32,
@@ -2978,46 +2964,46 @@ pub(crate) fn memory_range_element_count_guards(
 }
 
 /// Whether a logical element range is usable as a 32-bit physical byte
-/// extent, and what it takes.
+/// span, and what it takes.
 ///
 /// Constant endpoints are decided here. Symbolic ones carry the two side
 /// conditions a caller must establish. One definition, so a constant range and
 /// a symbolic one cannot disagree about what fits.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum MemoryRangeExtent {
+pub(crate) enum MemoryRangeSpan {
     /// Constant endpoints forming a forward range that fits: nothing to prove.
     ConstantValid,
     /// Constant endpoints that do not. `element_count` is the true difference
     /// `end - start` in `i64`, which is negative for a reversed range, and
-    /// `byte_limit` is the largest byte extent a `u32` count can name.
+    /// `byte_limit` is the largest byte span a `u32` count can name.
     ConstantInvalid { element_count: i64, byte_limit: u32 },
     /// Symbolic endpoints: these propositions are the side conditions.
     Guards(Vec<Proposition>),
 }
 
 /// The side conditions needed before a logical element range can be used as
-/// a 32-bit physical byte extent. Ranges must be forward and fit in `u32`
+/// a 32-bit physical byte span. Ranges must be forward and fit in `u32`
 /// bytes after scaling by their element width.
-pub(crate) fn memory_range_byte_count_extent(
+pub(crate) fn memory_range_byte_count_span(
     start: MachineTerm,
     end: MachineTerm,
     element_width: u32,
-) -> MemoryRangeExtent {
+) -> MemoryRangeSpan {
     assert!(element_width > 0, "memory element width must be positive");
     if let (Some(start), Some(end)) = (start.as_const(), end.as_const()) {
         // The endpoints are `int32` values held as `u32` bits. Take their true
         // difference in `i64`: subtracting the bit patterns underflows for a
         // negative start, which panicked here in debug and wrapped silently in
-        // release, admitting a range that does not fit as a valid extent. The
+        // release, admitting a range that does not fit as a valid span. The
         // bound below is the same one the symbolic `fits` guard states, since
         // `count <= u32::MAX / w` and `count * w <= u32::MAX` agree on
         // nonnegative integers.
         let element_count = i64::from(end as i32) - i64::from(start as i32);
         let byte_count = element_count.saturating_mul(i64::from(element_width));
         if element_count >= 0 && byte_count <= i64::from(u32::MAX) {
-            return MemoryRangeExtent::ConstantValid;
+            return MemoryRangeSpan::ConstantValid;
         }
-        return MemoryRangeExtent::ConstantInvalid {
+        return MemoryRangeSpan::ConstantInvalid {
             element_count,
             byte_limit: u32::MAX,
         };
@@ -3038,19 +3024,19 @@ pub(crate) fn memory_range_byte_count_extent(
         ),
         MachineTerm::constant(memory_range_element_count_limit(element_width)),
     );
-    MemoryRangeExtent::Guards(vec![
+    MemoryRangeSpan::Guards(vec![
         Proposition::ConditionIs(forward, true),
         Proposition::ConditionIs(fits, true),
     ])
 }
 
-/// The element width a byte extent was scaled by, when it is a product with a
+/// The element width a byte span was scaled by, when it is a product with a
 /// positive constant factor. A segment `p[x..y]` of `w`-byte elements lowers
-/// its extent to `(y - x) * w`, so recovering `w` is what lets an extent be
+/// its span to `(y - x) * w`, so recovering `w` is what lets a span be
 /// read back at element granularity. The inverse of
 /// [`memory_range_byte_count`], on the term only: it neither simplifies nor
 /// consults facts.
-pub(crate) fn scaled_extent_element_width(bytes: &MachineTerm) -> Option<u32> {
+pub(crate) fn scaled_span_element_width(bytes: &MachineTerm) -> Option<u32> {
     let binary_term!(Int32, Multiply, left, right) = bytes else {
         return None;
     };
@@ -3065,20 +3051,20 @@ pub(crate) fn scaled_extent_element_width(bytes: &MachineTerm) -> Option<u32> {
 /// The element width a stated range's byte count was lowered with, when the
 /// count reads as a range at all.
 ///
-/// A range of `w`-byte elements lowers its extent to `(y - x) * w`, except
+/// A range of `w`-byte elements lowers its span to `(y - x) * w`, except
 /// that a range of one-byte elements keeps it unscaled: `a[0..n]` over `uint8`
 /// is `n` bytes itself. So a scaled count gives its factor, and a symbolic
 /// unscaled one is a byte range. A constant count is neither: a cell's width
 /// or a constant range's size is already a true count of bytes, and its
 /// validity is decided where it was lowered.
-pub(crate) fn stated_extent_element_width(bytes: &MachineTerm) -> Option<u32> {
-    scaled_extent_element_width(bytes).or_else(|| bytes.as_const().is_none().then_some(1))
+pub(crate) fn stated_span_element_width(bytes: &MachineTerm) -> Option<u32> {
+    scaled_span_element_width(bytes).or_else(|| bytes.as_const().is_none().then_some(1))
 }
 
 /// The byte-count guards a stated range-loadable proposition carries.
 ///
 /// A surface `loadable(p[a..b])` means two things at once: that `a..b` is a
-/// valid 32-bit byte extent, and that those bytes are loadable. The kernel
+/// valid 32-bit byte span, and that those bytes are loadable. The kernel
 /// proposition holds only the second, as the byte count `(b - a) * w`, so the
 /// first has to travel beside it. Recovering it from the lowered proposition
 /// keeps one definition for both directions of that meaning: wherever such a
@@ -3087,7 +3073,7 @@ pub(crate) fn stated_extent_element_width(bytes: &MachineTerm) -> Option<u32> {
 /// from the proposition alone, is what makes the two sides agree without a
 /// per-site rule about where the proposition came from.
 ///
-/// The guards are stated over the extent's element count, which is the form
+/// The guards are stated over the span's element count, which is the form
 /// the loadability rules read it back in and the form a proof can write: for
 /// `p[a..b]` the count term is `b - a`, so `0 <= b - a` and
 /// `b - a <= u32::MAX / w` are the two facts, and for `p[0..n]` they are over
@@ -3097,14 +3083,14 @@ pub(crate) fn stated_extent_element_width(bytes: &MachineTerm) -> Option<u32> {
 /// A quantifier or an implication is not: a guard over a bound variable is not
 /// a fact about anything the surrounding scope can state. A byte range carries
 /// its guards like a wider one, over its unscaled count; a constant byte count
-/// carries nothing (see [`stated_extent_element_width`]).
-pub(crate) fn stated_loadable_extent_guards(proposition: &Proposition) -> Vec<Proposition> {
+/// carries nothing (see [`stated_span_element_width`]).
+pub(crate) fn stated_loadable_span_guards(proposition: &Proposition) -> Vec<Proposition> {
     let mut guards = Vec::new();
-    collect_stated_loadable_extent_guards(proposition, &mut guards, false);
+    collect_stated_loadable_span_guards(proposition, &mut guards, false);
     guards
 }
 
-/// [`stated_loadable_extent_guards`] in every spelling of the same condition.
+/// [`stated_loadable_span_guards`] in every spelling of the same condition.
 ///
 /// Contract and resource lowering states a stated range's guards over the
 /// range's two endpoints, where the `fits` half has to be an unsigned
@@ -3114,23 +3100,21 @@ pub(crate) fn stated_loadable_extent_guards(proposition: &Proposition) -> Vec<Pr
 /// on the lowering that installed the range, not on what the range means. A
 /// consumer asking a proof to *establish* the condition asks for the count
 /// form only, since that is the one the surface can spell.
-pub(crate) fn stated_loadable_extent_guard_spellings(
-    proposition: &Proposition,
-) -> Vec<Proposition> {
+pub(crate) fn stated_loadable_span_guard_spellings(proposition: &Proposition) -> Vec<Proposition> {
     let mut guards = Vec::new();
-    collect_stated_loadable_extent_guards(proposition, &mut guards, true);
+    collect_stated_loadable_span_guards(proposition, &mut guards, true);
     guards
 }
 
-fn collect_stated_loadable_extent_guards(
+fn collect_stated_loadable_span_guards(
     proposition: &Proposition,
     guards: &mut Vec<Proposition>,
     every_spelling: bool,
 ) {
     match proposition {
         Proposition::And(left, right) => {
-            collect_stated_loadable_extent_guards(left, guards, every_spelling);
-            collect_stated_loadable_extent_guards(right, guards, every_spelling);
+            collect_stated_loadable_span_guards(left, guards, every_spelling);
+            collect_stated_loadable_span_guards(right, guards, every_spelling);
         }
         // A wide range's object-size guard, in the element form its contract
         // states. Only a citation asks for it: a 32-bit-free count has no
@@ -3170,7 +3154,7 @@ fn collect_stated_loadable_extent_guards(
             }
         }
         Proposition::MemoryLoadable { bytes, .. } => {
-            let Some(element_width) = stated_extent_element_width(bytes) else {
+            let Some(element_width) = stated_span_element_width(bytes) else {
                 return;
             };
             let Some(element_count) =
@@ -3205,22 +3189,22 @@ fn collect_stated_loadable_extent_guards(
 /// bound is equivalent to these signed count guards plus forward endpoints.
 /// Byte ranges can span more than `i32::MAX` elements and retain the exact
 /// endpoint form instead.
-pub(crate) fn memory_range_extent_guards(range: &MemoryRange) -> Vec<Proposition> {
-    if let Some(guards) = wide_memory_range_extent_guards(range) {
+pub(crate) fn memory_range_span_guards(range: &MemoryRange) -> Vec<Proposition> {
+    if let Some(guards) = wide_memory_range_span_guards(range) {
         return guards;
     }
-    match memory_range_byte_count_extent(
+    match memory_range_byte_count_span(
         range.start().clone(),
         range.end().clone(),
         range.element_width(),
     ) {
-        MemoryRangeExtent::ConstantValid => Vec::new(),
-        MemoryRangeExtent::ConstantInvalid { .. } => vec![Proposition::ConditionIs(
+        MemoryRangeSpan::ConstantValid => Vec::new(),
+        MemoryRangeSpan::ConstantInvalid { .. } => vec![Proposition::ConditionIs(
             ConditionTerm::Constant(false),
             true,
         )],
-        MemoryRangeExtent::Guards(guards) if range.element_width() == 1 => guards,
-        MemoryRangeExtent::Guards(_) => {
+        MemoryRangeSpan::Guards(guards) if range.element_width() == 1 => guards,
+        MemoryRangeSpan::Guards(_) => {
             let mut guards = vec![Proposition::ConditionIs(
                 ConditionTerm::signed_less_equal(range.start().clone(), range.end().clone()),
                 true,
@@ -3273,7 +3257,7 @@ pub(crate) fn wide_range_bounds(
         ProgramValue::UInt64(term) => Some(term.clone()),
         // A signed bound is read as its sign extension, the same bits as an
         // unsigned 64-bit value. A negative one becomes larger than any
-        // extent the range's guards allow, so the range denotes memory only
+        // span the range's guards allow, so the range denotes memory only
         // when its bounds are nonnegative.
         ProgramValue::Int32(bits32_constant!(bits)) => Some(MachineTerm::uint64_constant(
             constant_u32(*bits) as i32 as i64 as u64,
@@ -3343,7 +3327,7 @@ pub(crate) fn wide_loadable_element_count(bytes: &MachineTerm, width: u32) -> Op
 /// the range an exact byte offset. A contract that holds the range on entry
 /// is given both, as it is given the 32-bit guards of an `Int32` range; a
 /// caller supplying the range proves them.
-fn wide_memory_range_extent_guards(range: &MemoryRange) -> Option<Vec<Proposition>> {
+fn wide_memory_range_span_guards(range: &MemoryRange) -> Option<Vec<Proposition>> {
     let (start, end) = range.wide_bounds()?;
     let limit = i64::MAX as u64 / u64::from(range.element_width());
     Some(vec![
@@ -3360,8 +3344,8 @@ fn wide_memory_range_extent_guards(range: &MemoryRange) -> Option<Vec<Propositio
 
 /// Equivalent forms retained with an actual held range. The original endpoint
 /// form serves memory reasoning; the signed form is available to proof text.
-pub(crate) fn memory_range_extent_guard_spellings(range: &MemoryRange) -> Vec<Proposition> {
-    if let Some(guards) = wide_memory_range_extent_guards(range) {
+pub(crate) fn memory_range_span_guard_spellings(range: &MemoryRange) -> Vec<Proposition> {
+    if let Some(guards) = wide_memory_range_span_guards(range) {
         return guards;
     }
     let mut guards = memory_range_byte_count_guards(
@@ -3369,7 +3353,7 @@ pub(crate) fn memory_range_extent_guard_spellings(range: &MemoryRange) -> Vec<Pr
         range.end().clone(),
         range.element_width(),
     );
-    for guard in memory_range_extent_guards(range) {
+    for guard in memory_range_span_guards(range) {
         if !guards.contains(&guard) {
             guards.push(guard);
         }
@@ -3379,8 +3363,8 @@ pub(crate) fn memory_range_extent_guard_spellings(range: &MemoryRange) -> Vec<Pr
 
 /// Intrinsic bounds of a resource footprint whose admission was established.
 /// A merely stated viewability/separation condition grants no domain evidence.
-pub(crate) fn admitted_memory_range_extent_facts(range: &MemoryRange) -> Vec<Proposition> {
-    let mut guards = memory_range_extent_guard_spellings(range);
+pub(crate) fn admitted_memory_range_span_facts(range: &MemoryRange) -> Vec<Proposition> {
+    let mut guards = memory_range_span_guard_spellings(range);
     guards.extend(range.formation_coverage.iter().cloned());
     if range.typed_carrier
         && let Some(coverage) = range.pointer_carrier().opaque_coverage_fact(range)
@@ -3390,7 +3374,7 @@ pub(crate) fn admitted_memory_range_extent_facts(range: &MemoryRange) -> Vec<Pro
     guards
 }
 
-/// [`memory_range_byte_count_extent`] as a flat guard list: an invalid
+/// [`memory_range_byte_count_span`] as a flat guard list: an invalid
 /// constant range becomes the impossible guard, which refuses wherever the
 /// caller discharges guards.
 pub(crate) fn memory_range_byte_count_guards(
@@ -3398,13 +3382,13 @@ pub(crate) fn memory_range_byte_count_guards(
     end: MachineTerm,
     element_width: u32,
 ) -> Vec<Proposition> {
-    match memory_range_byte_count_extent(start, end, element_width) {
-        MemoryRangeExtent::ConstantValid => Vec::new(),
-        MemoryRangeExtent::ConstantInvalid { .. } => vec![Proposition::ConditionIs(
+    match memory_range_byte_count_span(start, end, element_width) {
+        MemoryRangeSpan::ConstantValid => Vec::new(),
+        MemoryRangeSpan::ConstantInvalid { .. } => vec![Proposition::ConditionIs(
             ConditionTerm::Constant(false),
             true,
         )],
-        MemoryRangeExtent::Guards(guards) => guards,
+        MemoryRangeSpan::Guards(guards) => guards,
     }
 }
 
@@ -4068,12 +4052,6 @@ impl TerminationError {
     pub fn function(&self) -> Option<&str> {
         self.function.as_deref()
     }
-
-    /// Whether the check refused a function-level measure on a function
-    /// with no recursive edge to rank.
-    pub fn is_superfluous_recursive_measure(&self) -> bool {
-        self.superfluous_recursive_measure
-    }
 }
 
 impl std::fmt::Display for TerminationError {
@@ -4101,14 +4079,14 @@ mod guarded_quantified_cell_tests {
     }
 
     /// `p + v` for a byte array `p`, indexed by an unsigned 64-bit `v`.
-    fn wide_cell(base: &Pointer) -> Pointer {
+    fn wide_cell(base: &Address) -> Address {
         base.offset_by_typed_elements(MachineTerm::Variable(index()), 1, true, true)
     }
 
-    fn parameter() -> Pointer {
-        Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(7)), 1),
+    fn parameter() -> Address {
+        Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(7)), 1),
         }
     }
 
@@ -4177,9 +4155,9 @@ mod guarded_quantified_cell_tests {
             None
         );
         // A base that moves with the binder is not one fixed range.
-        let moving = wide_cell(&Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(index()), 1),
+        let moving = wide_cell(&Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::scale_int32(MachineTerm::Variable(index()), 1),
         });
         assert_eq!(
             MemoryRange::guarded_quantified_cells(&moving, index(), &bound, 1),

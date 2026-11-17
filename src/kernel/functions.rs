@@ -20,6 +20,8 @@ use std::sync::Arc;
 mod aggregate_return_tests;
 mod construction_return;
 #[cfg(test)]
+mod exit_partition_tests;
+#[cfg(test)]
 mod literal_objects;
 mod mixed_return_resources;
 pub(in crate::kernel) use mixed_return_resources::ReturnedEntryPartition;
@@ -32,8 +34,8 @@ use mixed_return_resources::{
     project_return_resource_cores,
 };
 pub(in crate::kernel) use mixed_return_resources::{
-    ConstructedReturnBody, EscrowRecoveryBoundary, FramedReturnPartition, ReturnResourceTransfer,
-    ReturnedConsumedCell, ReturnedFreshAllocation, ReturnedOwnershipPartition,
+    EscrowRecoveryBoundary, FramedReturnPartition, ReturnResourceTransfer, ReturnedConsumedCell,
+    ReturnedFreshAllocation, ReturnedOwnershipPartition,
 };
 pub(in crate::kernel) use summary_transfer::SummaryResourceTransferRule;
 #[cfg(test)]
@@ -516,7 +518,7 @@ fn bounded_contract_resource_frontier(resources: &ResourceContext) -> String {
 fn population_transfer_frontier<'a>(
     facts: impl Iterator<Item = &'a ResourceFact>,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> Result<Vec<ResourceFact>, RuntimeError> {
     enum Work {
@@ -626,11 +628,11 @@ pub(super) fn transfer_population_call_facts<'a>(
             // the checked equality index; this moves an existing anchor and
             // grants neither allocation nor creation authority.
             let base = assumptions.equality_graph.storage_address(base);
-            if events.tracks_storage_anchor(&base.block)
-                && transferred_anchors.insert(base.block.clone())
+            if events.tracks_storage_anchor(&base.base)
+                && transferred_anchors.insert(base.base.clone())
             {
                 events = events
-                    .transfer_call_anchor(from_events, to_events, &base.block)
+                    .transfer_call_anchor(from_events, to_events, &base.base)
                     .map_err(|refusal| {
                         RuntimeError::FunctionContract(format!(
                             "allocation companion transfer refused: {refusal}"
@@ -714,10 +716,10 @@ pub(super) fn transfer_population_call_facts<'a>(
                 // custody moved above; only real anchors have an additional
                 // creation-ledger capability to transfer.
                 if !events.recognizes_imported_population(description)
-                    && transferred_anchors.insert(base.block.clone())
+                    && transferred_anchors.insert(base.base.clone())
                 {
                     events = events
-                        .transfer_call_anchor(from_events, to_events, &base.block)
+                        .transfer_call_anchor(from_events, to_events, &base.base)
                         .map_err(|refusal| {
                             RuntimeError::FunctionContract(format!(
                                 "population call allocation transfer refused: {refusal}"
@@ -1050,7 +1052,7 @@ fn recover_candidate_stable_view_resources(
         let intrinsic_read_only = matches!(
             fact.resource(),
             Resource::Memory(range)
-                if caller_state.memory().is_read_only_block(&range.base().block)
+                if caller_state.memory().is_read_only_block(&range.base().base)
         );
         if !returned_input && !preserved_outer && !projected_from_owner && !intrinsic_read_only {
             return Err(RuntimeError::UnbackedReturnedView {
@@ -1450,7 +1452,7 @@ fn candidate_memory_ranges_relation_by_bounds(
     let Some(right_end) = right_start.checked_add(i64::from(right_length)) else {
         return CandidateMemoryRangeRelation::SeparationUnproved;
     };
-    if left_base.block != right_base.block {
+    if left_base.base != right_base.base {
         CandidateMemoryRangeRelation::SeparationUnproved
     } else if left_end <= right_start || right_end <= left_start {
         CandidateMemoryRangeRelation::Disjoint
@@ -1469,15 +1471,15 @@ enum VerifiedAllocationDeltaError {
 enum AllocationContinuity {
     Same,
     Distinct,
-    /// The blocks may be one, but the extents have different formats (D5).
+    /// The blocks may be one, but the sizes have different formats (D5).
     CrossKind,
     Undecided(ConditionTerm),
     Inconsistent,
 }
 
 fn canonical_memory_range(range: MemoryRange) -> MemoryRange {
-    let base = Pointer {
-        block: range.base().block.clone(),
+    let base = Address {
+        base: range.base().base.clone(),
         offset: crate::kernel::eval::canonical_offset_term(&range.base().offset),
     };
     let (start, end) = range.bound_terms();
@@ -1680,6 +1682,7 @@ fn refresh_returned_local_bindings_from_stores(
 }
 
 /// `ProgramFunctionVerifies` for `function` applied to `arguments`.
+#[cfg(test)]
 pub(super) fn execute_program_function_verification_paths(
     state: &ExecutionState,
     function: &ProgramFunction,
@@ -2071,7 +2074,7 @@ pub(super) fn execute_program_function_call_paths(
         .selected_call_contract
         .as_deref()
     {
-        let pointer = Pointer::function(function.name());
+        let pointer = Address::function(function.name());
         let owned = contracts_for_pointer(
             &pointer,
             assumptions,
@@ -2854,11 +2857,11 @@ struct FunctionContractApplication<'a> {
 /// copy's `click::bytes::equal` guarantee already justified. An untyped source has no
 /// cells, so a raw byte copy still establishes nothing typed.
 pub(in crate::kernel) fn transfer_representation_copy_cells(
-    entry_memory: &Memory,
+    entry_memory: &SymbolicMemory,
     argument_values: &[ProgramValue],
-    memory: Memory,
+    memory: SymbolicMemory,
     effect: RepresentationCopyEffect,
-) -> Memory {
+) -> SymbolicMemory {
     representation_copy_cell_moves(entry_memory, argument_values, effect)
         .into_iter()
         .fold(memory, |memory, (pointer, value)| {
@@ -2869,13 +2872,13 @@ pub(in crate::kernel) fn transfer_representation_copy_cells(
 /// The destination cells a recognized byte copy plants, in source order.
 ///
 /// The source cells are found with one bounded range query, so this work is
-/// the copied extent's cell count plus one, independent of every other cell
+/// the copied span's cell count plus one, independent of every other cell
 /// in memory.
 pub(in crate::kernel) fn representation_copy_cell_moves(
-    entry_memory: &Memory,
+    entry_memory: &SymbolicMemory,
     argument_values: &[ProgramValue],
     effect: RepresentationCopyEffect,
-) -> Vec<(Pointer, ProgramValue)> {
+) -> Vec<(Address, ProgramValue)> {
     let (Some(destination), Some(source), Some(bytes)) = (
         argument_values.get(effect.destination_argument),
         argument_values.get(effect.source_argument),
@@ -2906,8 +2909,8 @@ pub(in crate::kernel) fn representation_copy_cell_moves(
     if bytes <= 0 {
         return Vec::new();
     }
-    let source_block = source.pointer().block.clone();
-    let destination_block = destination.pointer().block.clone();
+    let source_block = source.pointer().base.clone();
+    let destination_block = destination.pointer().base.clone();
     // A checked byte copy requires the ranges be separate, so a self-copy in
     // one block is not the recognized effect.
     if source_block == destination_block {
@@ -2918,13 +2921,13 @@ pub(in crate::kernel) fn representation_copy_cell_moves(
     // `source_offset .. source_offset + bytes`. This range is therefore
     // exactly the candidate cells. A cell at `i64::MAX` cannot fit its
     // positive width, so saturating the end loses no candidate.
-    let start = Pointer {
-        block: source_block.clone(),
-        offset: PointerOffsetTerm::Constant(source_offset),
+    let start = Address {
+        base: source_block.clone(),
+        offset: AddressOffset::Constant(source_offset),
     };
-    let end = Pointer {
-        block: source_block,
-        offset: PointerOffsetTerm::Constant(source_offset.saturating_add(bytes)),
+    let end = Address {
+        base: source_block,
+        offset: AddressOffset::Constant(source_offset.saturating_add(bytes)),
     };
     crate::instrumentation::record_deterministic_work(1);
     let mut moves = Vec::new();
@@ -2948,9 +2951,9 @@ pub(in crate::kernel) fn representation_copy_cell_moves(
             continue;
         }
         moves.push((
-            Pointer {
-                block: destination_block.clone(),
-                offset: PointerOffsetTerm::Constant(destination_cell_offset),
+            Address {
+                base: destination_block.clone(),
+                offset: AddressOffset::Constant(destination_cell_offset),
             },
             value.clone(),
         ));
@@ -3478,7 +3481,7 @@ fn execute_verified_function_applications_with_suspension(
                 super::spec::pure_pointer_result_class(application.pointer_result, &arguments);
             if let ProgramValue::Pointer(mut pointer) = result {
                 if all_null {
-                    pointer.replace_pointer(Pointer::null());
+                    pointer.replace_pointer(Address::null());
                 }
                 ProgramValue::Pointer(pointer.with_object_type_evidence(evidence))
             } else {
@@ -4079,7 +4082,7 @@ fn execute_verified_function_applications_with_suspension(
                 *quantity
             };
             let (spent, _) = match events.checked_member_exchange_quantity(
-                &pointer.pointer().block,
+                &pointer.pointer().base,
                 &description,
                 false,
                 &exchange_quantity,
@@ -4131,7 +4134,7 @@ fn execute_verified_function_applications_with_suspension(
             let retirement = if spent.recognizes_imported_population(&description) {
                 spent.checked_retire_imported(&description, &effective_assumptions)
             } else {
-                spent.checked_retire(&pointer.pointer().block, &description)
+                spent.checked_retire(&pointer.pointer().base, &description)
             };
             let (retired, _) = match retirement {
                 Ok(exchange) => exchange,
@@ -4155,7 +4158,7 @@ fn execute_verified_function_applications_with_suspension(
                 } else if let Some(AlgebraicValue::Program(ProgramValue::Pointer(anchor))) =
                     additional.arguments().first()
                 {
-                    retired.checked_retire(&anchor.pointer().block, additional)
+                    retired.checked_retire(&anchor.pointer().base, additional)
                 } else {
                     paths.push(resource_call_failure(
                         "final release authority needs a pointer anchor",
@@ -4329,11 +4332,11 @@ fn execute_verified_function_applications_with_suspension(
                 let anchor = pointer.pointer();
                 if produce
                     && !events.recognizes_imported_population(&description)
-                    && (anchor.offset != PointerOffsetTerm::Constant(0)
-                        || !(matches!(&anchor.block, PointerBlock::Heap(_))
-                            && post_state.memory.live_heap_block_extent(anchor).is_some()
-                            || anchor.block.is_local_block()
-                                && post_state.memory.has_block(&anchor.block)))
+                    && (anchor.offset != AddressOffset::Constant(0)
+                        || !(matches!(&anchor.base, AddressBase::Heap(_))
+                            && post_state.memory.live_heap_block_size(anchor).is_some()
+                            || anchor.base.is_local_block()
+                                && post_state.memory.has_block(&anchor.base)))
                 {
                     paths.push(resource_call_failure("Requires live base storage for R(p)"));
                     continue 'arguments;
@@ -4343,7 +4346,7 @@ fn execute_verified_function_applications_with_suspension(
                     .is_some_and(CompositeResourceDefinition::has_fixed_exclusive_memory);
                 if defer_locked_exchange {
                     deferred_exchange.push(super::threads::DeferredMemberExchange {
-                        block: anchor.block.clone(),
+                        block: anchor.base.clone(),
                         description,
                         produce,
                         quantity: (**quantity).clone(),
@@ -4353,7 +4356,7 @@ fn execute_verified_function_applications_with_suspension(
                 }
                 let exchange = if exclusive {
                     events.checked_exclusive_member_exchange_quantity(
-                        &anchor.block,
+                        &anchor.base,
                         &description,
                         produce,
                         quantity,
@@ -4361,7 +4364,7 @@ fn execute_verified_function_applications_with_suspension(
                     )
                 } else {
                     events.checked_member_exchange_quantity(
-                        &anchor.block,
+                        &anchor.base,
                         &description,
                         produce,
                         quantity,
@@ -5001,7 +5004,7 @@ fn refresh_call_written_locals(
     // class, never the caller's unrelated local environment.
     let mut refreshed_blocks = BTreeSet::new();
     for range in effects {
-        for block in std::iter::once(range.base().block.clone()).chain(
+        for block in std::iter::once(range.base().base.clone()).chain(
             assumptions
                 .equality_graph
                 .local_slot_alias_blocks(range.base()),
@@ -5009,9 +5012,9 @@ fn refresh_call_written_locals(
             if !refreshed_blocks.insert(block.clone()) {
                 continue;
             }
-            let slot = Pointer {
-                block,
-                offset: PointerOffsetTerm::Constant(0),
+            let slot = Address {
+                base: block,
+                offset: AddressOffset::Constant(0),
             };
             crate::kernel::eval::refresh_scalar_local_from_memory(state, &slot, assumptions);
         }
@@ -5036,7 +5039,7 @@ fn exceptional_direct_function_path(
     entry_state: &ExecutionState,
     entry_contract_state: &ExecutionState,
     transfer: &FunctionResourceTransfer,
-    memory: Memory,
+    memory: SymbolicMemory,
     mut facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     effective_assumptions: &PureFactContext,
@@ -5584,7 +5587,7 @@ fn prepare_verified_function_call<'a>(
             parameter.binding_name().clone(),
             value.clone(),
             parameter.program_type(),
-            Memory::value_parameter_pointer(parameter.binding_name()),
+            SymbolicMemory::value_parameter_pointer(parameter.binding_name()),
             false,
             false,
             false,
@@ -6268,7 +6271,7 @@ fn prepare_verified_function_call<'a>(
     );
     drop(requirement_timing);
 
-    // The callee is given each of its ranges' extent guards on entry
+    // The callee is given each of its ranges' span guards on entry
     // (`program_function_contract_entry_facts`), among them `start <= end`. The
     // planner shows each range lies inside one the caller holds, which
     // gives every other guard from the held range's own, but not the order:
@@ -6715,12 +6718,12 @@ fn prepare_verified_function_call<'a>(
     // literal as an ordinary `uint8*` and no qualifier catches it.
     if let Some(range) = mutable_ranges
         .iter()
-        .find(|range| entry_state.memory.is_read_only_block(&range.base().block))
+        .find(|range| entry_state.memory.is_read_only_block(&range.base().base))
     {
         return Ok(Err(FunctionPath::new(
             FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(format!(
                 "mutable footprint covers read-only storage `{}`",
-                range.base().block
+                range.base().base
             ))),
             facts,
             obligations,
@@ -6779,7 +6782,7 @@ impl std::ops::Deref for NamedContractApplication<'_> {
 /// `function_type`. A fact whose values do not have its contract's value
 /// parameter types contributes nothing.
 pub(super) fn contracts_for_pointer(
-    pointer: &Pointer,
+    pointer: &Address,
     assumptions: &PureFactContext,
     environment: &ExecutionEnvironment,
     function_type: &ProgramType,
@@ -7298,13 +7301,13 @@ fn function_contract_requirement_is_proven(
                 .equality_graph
                 .pointer_value_representative(pointer);
             let target = match comparison_pointer.pointer() {
-                Pointer {
-                    block: PointerBlock::Function(target),
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: AddressBase::Function(target),
+                    offset: AddressOffset::Constant(0),
                 } => Some(target),
-                Pointer {
-                    block: PointerBlock::FunctionSymbolic(_) | PointerBlock::LoadedPointer(_),
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: AddressBase::FunctionSymbolic(_) | AddressBase::LoadedPointer(_),
+                    offset: AddressOffset::Constant(0),
                 } if matches!(pointer.program_type(), ProgramType::FunctionPointer(_)) => None,
                 _ => return Ok(false),
             };
@@ -7380,7 +7383,7 @@ pub(crate) use named_contract_refinement::*;
 /// The surface spells it in source terms.
 #[derive(Clone, Debug)]
 pub(crate) enum StorageWriteOutsideFootprint {
-    Write { pointer: Pointer, bytes: u32 },
+    Write { pointer: Address, bytes: u32 },
     Range(MemoryRange),
 }
 
@@ -7402,8 +7405,8 @@ pub(crate) fn storage_writes_outside_owned_footprint(
     transition_resources: Option<&[CheckedResourceFact]>,
     prepared_projection: Option<&FunctionMemoryEffectProjection>,
 ) -> ExecutionResult<Option<Vec<StorageWriteOutsideFootprint>>> {
-    let is_storage = |pointer: &Pointer| pointer.block.is_static_storage_block();
-    let storage_writes: Vec<(Pointer, u32)> =
+    let is_storage = |pointer: &Address| pointer.base.is_static_storage_block();
+    let storage_writes: Vec<(Address, u32)> =
         crate::kernel::reasoning::memory_effect_write_accesses(facts)
             .into_iter()
             .filter(|(pointer, _)| is_storage(pointer))
@@ -7470,7 +7473,7 @@ pub(crate) fn storage_writes_outside_owned_footprint(
 }
 
 fn storage_write_within_owned_footprint(
-    pointer: &Pointer,
+    pointer: &Address,
     write_bytes: u32,
     owned: &[MemoryRange],
     assumptions: &PureFactContext,
@@ -7516,7 +7519,7 @@ fn storage_write_within_owned_footprint(
 /// does not cover whole elements, or any other shape, is left to the byte
 /// comparison.
 fn storage_write_within_owned_elements(
-    pointer: &Pointer,
+    pointer: &Address,
     write_bytes: u32,
     range: &MemoryRange,
     assumptions: &PureFactContext,
@@ -7713,7 +7716,7 @@ fn project_explicit_memory_segments(
 /// from its definitions at `state` ([`OwnedFootprintDerivation`]), each once.
 /// This is the one derivation of a resource-derived write footprint, for a
 /// function's frame and a loop's declared frame alike; nothing lowered from
-/// source is a second source of it. Memory it cannot name is
+/// source is a second source of it. SymbolicMemory it cannot name is
 /// [`MemoryRange::unnamed_footprint`]; `None` only when a family the fact
 /// reaches has no definition at all.
 pub(super) fn checked_owned_memory_ranges(
@@ -7821,7 +7824,7 @@ pub(in crate::kernel) fn argument_direct_composite_ranges(
     expand_composites_for_frame(
         &ResourceContext::new_with_equalities(&assumptions).unchecked_with_fact(fact.clone()),
         definitions,
-        &Memory::new(),
+        &SymbolicMemory::new(),
         &assumptions,
     )
     .map(|expanded| owned_memory_ranges_of(&expanded))
@@ -7834,7 +7837,7 @@ pub(in crate::kernel) fn argument_direct_composite_ranges(
 fn expand_composites_for_frame(
     context: &ResourceContext,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
     enum Visit {
@@ -8036,7 +8039,7 @@ fn open_unmatched_instance_body(
         .allow_symbolic_contract_loads()
         .prefer_symbolic_external_loads()
         // This opens a held body's established footprint, as unfold does.
-        .assume_entry_clause_extents()
+        .assume_entry_clause_spans()
         .assume_held_resource_domains();
     let mut budget = ExecutionBudget::beside_live_state();
     let Ok(Ok(body_resources)) = evaluate_function_resource_context_with_normalization(
@@ -8096,7 +8099,7 @@ fn open_unmatched_instance_body(
 /// cell's base are never visited.
 ///
 /// The caller assumes the result before framing the store and records it as
-/// a path fact, so the producer (`Memory::without_possible_aliasing_cells`,
+/// a path fact, so the producer (`SymbolicMemory::without_possible_aliasing_cells`,
 /// through its ownership-first rung and the composition rung of its ladder)
 /// and every route that later re-asks the store-versus-load question (the
 /// memory-DAG `Store` hop and both transport sites, through
@@ -8104,7 +8107,7 @@ fn open_unmatched_instance_body(
 /// same composition and give the same answer.
 pub(in crate::kernel) fn store_opened_instance_composition(
     state: &ExecutionState,
-    write: &Pointer,
+    write: &Address,
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
@@ -8113,8 +8116,8 @@ pub(in crate::kernel) fn store_opened_instance_composition(
         return None;
     }
     let definitions = crate::kernel::assumptions::frame_composite_definitions()?;
-    let write = Pointer {
-        block: write.block.clone(),
+    let write = Address {
+        base: write.base.clone(),
         offset: crate::kernel::memory_history::normalize_exact_memory_loads_in_pointer_offset(
             &write.offset,
             assumptions,
@@ -8124,7 +8127,7 @@ pub(in crate::kernel) fn store_opened_instance_composition(
         .owned_member_holding_access(resources, &write, bytes)?
         .clone();
     let memory = state.memory();
-    let candidates = crate::kernel::primitives::AliasCandidates::of_block(&write.block);
+    let candidates = crate::kernel::primitives::AliasCandidates::of_block(&write.base);
     let mut instances = BTreeMap::new();
     for (pointer, _) in memory.cells.candidate_logical_entries(&candidates) {
         crate::kernel::assumptions::owned_instances_naming_access_base(
@@ -8975,132 +8978,6 @@ pub(crate) fn establish_resource_derived_loop_frames(
     Ok(Ok(function.with_body(body)))
 }
 
-/// Check that inherited loop-frame metadata was established from the checked
-/// entry transition before proof generation. This is an invariant check, not
-/// a second evaluator: source expressions are never re-evaluated here.
-#[cfg(test)]
-pub(crate) fn validate_resource_derived_loop_frames(
-    function: &ProgramFunction,
-    _entry: &ExecutionState,
-    _assumptions: &PureFactContext,
-    _budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<(), String>> {
-    fn has_inherited_loop_frame(statement: &ProgramStatement) -> bool {
-        match statement {
-            ProgramStatement::Seq(statements) => statements
-                .iter()
-                .any(|statement| has_inherited_loop_frame(statement)),
-            ProgramStatement::If {
-                then_branch,
-                else_branch,
-                ..
-            } => has_inherited_loop_frame(then_branch) || has_inherited_loop_frame(else_branch),
-            ProgramStatement::Loop {
-                test: loop_test,
-                update,
-                effect_checks,
-                body,
-                ..
-            } => {
-                let (_, _, test) = loop_test.execution_parts();
-                effect_checks
-                    .iter()
-                    .any(|check| check.origin() == LoopEffectOrigin::InheritedResourceDerived)
-                    || has_inherited_loop_frame(body)
-                    || update
-                        .as_ref()
-                        .is_some_and(|update| has_inherited_loop_frame(update))
-                    || test
-                        .as_ref()
-                        .is_some_and(|test| has_inherited_loop_frame(&test.statement))
-            }
-            ProgramStatement::Switch { cases, .. } => cases
-                .iter()
-                .any(|case| has_inherited_loop_frame(&case.body)),
-
-            _ => false,
-        }
-    }
-    if !function.resource_derived_mutable_frame() || !has_inherited_loop_frame(function.body()) {
-        return Ok(Ok(()));
-    }
-    fn check_statement(statement: &ProgramStatement) -> ExecutionResult<Result<(), String>> {
-        let check = |checks: &[LoopEffectCheck]| -> ExecutionResult<Result<(), String>> {
-            for effect_check in checks {
-                if effect_check.origin() != LoopEffectOrigin::InheritedResourceDerived {
-                    continue;
-                }
-                let Some(actual) = effect_check.validated_ranges() else {
-                    return Ok(Err(
-                        "resource-derived loop frame was not established at function entry"
-                            .to_string(),
-                    ));
-                };
-                if actual.windows(2).any(|pair| pair[1] <= pair[0]) {
-                    return Ok(Err(
-                        "inherited loop frame is not in canonical checked form".to_string()
-                    ));
-                }
-            }
-            Ok(Ok(()))
-        };
-        match statement {
-            ProgramStatement::Seq(statements) => {
-                if let Err(error) = check_statement(statements.first())? {
-                    return Ok(Err(error));
-                }
-                check_statement(&statements.rest())
-            }
-            ProgramStatement::If {
-                then_branch,
-                else_branch,
-                ..
-            } => {
-                if let Err(error) = check_statement(then_branch)? {
-                    return Ok(Err(error));
-                }
-                check_statement(else_branch)
-            }
-            ProgramStatement::Loop {
-                test: loop_test,
-                update,
-                effect_checks,
-                body,
-                ..
-            } => {
-                let (_, _, test) = loop_test.execution_parts();
-                if let Err(error) = check(effect_checks)? {
-                    return Ok(Err(error));
-                }
-                if let Err(error) = check_statement(body)? {
-                    return Ok(Err(error));
-                }
-                if let Some(update) = update
-                    && let Err(error) = check_statement(update)?
-                {
-                    return Ok(Err(error));
-                }
-                if let Some(test) = test {
-                    check_statement(&test.statement)
-                } else {
-                    Ok(Ok(()))
-                }
-            }
-            ProgramStatement::Switch { cases, .. } => {
-                for case in cases {
-                    if let Err(error) = check_statement(&case.body)? {
-                        return Ok(Err(error));
-                    }
-                }
-                Ok(Ok(()))
-            }
-
-            _ => Ok(Ok(())),
-        }
-    }
-    check_statement(function.body())
-}
-
 /// Whether an owned composite the interface requires has a guarded body
 /// anywhere under it. A resource-derived footprint used to be lowered from
 /// source with the enclosing conditions as guards on every segment beneath
@@ -9540,17 +9417,17 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
 /// test `continuity_requires_both_the_allocation_base_and_size` pins it, and
 /// fails when the route is denied.
 ///
-/// The two extents are compared in their common format. Extents of
+/// The two sizes are compared in their common format. Sizes of
 /// different formats are never the same allocation's (D5): a pair whose
 /// bases are not proven distinct is [`AllocationContinuity::CrossKind`].
 fn allocation_continuity(
-    input_base: &Pointer,
-    input_extent: &HeapExtent,
-    output_base: &Pointer,
-    output_extent: &HeapExtent,
+    input_base: &Address,
+    input_size: &AllocationSize,
+    output_base: &Address,
+    output_size: &AllocationSize,
     assumptions: &PureFactContext,
 ) -> AllocationContinuity {
-    if input_extent.kind() != output_extent.kind() {
+    if input_size.kind() != output_size.kind() {
         return if pointers_proven_distinct_for_memory_resolution(
             input_base,
             output_base,
@@ -9561,15 +9438,15 @@ fn allocation_continuity(
             AllocationContinuity::CrossKind
         };
     }
-    let (input_bytes, output_bytes) = (input_extent.bytes(), output_extent.bytes());
+    let (input_bytes, output_bytes) = (input_size.bytes(), output_size.bytes());
     if pointers_proven_equal_for_memory_resolution(input_base, output_base, assumptions) {
-        let format = match input_extent.kind() {
-            HeapExtentKind::Int32 => MachineIntegerType::Int32,
-            HeapExtentKind::UInt64 => MachineIntegerType::UInt64,
+        let format = match input_size.kind() {
+            AllocationSizeKind::Int32 => MachineIntegerType::Int32,
+            AllocationSizeKind::UInt64 => MachineIntegerType::UInt64,
         };
         if program_values_proven_equal_for_memory_resolution(
-            &input_extent.token_value(),
-            &output_extent.token_value(),
+            &input_size.token_value(),
+            &output_size.token_value(),
             assumptions,
         ) {
             return AllocationContinuity::Same;
@@ -9614,8 +9491,8 @@ mod allocation_continuity_tests;
 /// preserved caller residual.
 fn refuse_retiring_a_lent_allocation(
     ledger: Option<&LoanLedger>,
-    base: &Pointer,
-    bytes: &HeapExtent,
+    base: &Address,
+    bytes: &AllocationSize,
     assumptions: &PureFactContext,
 ) -> Result<(), VerifiedAllocationDeltaError> {
     let Some(ledger) = ledger else {
@@ -9664,12 +9541,12 @@ fn refuse_retiring_a_lent_allocation(
 pub(in crate::kernel) fn caller_resource_left_stale_by_retirement<'a>(
     lent: &ResourceContext,
     kept: &'a ResourceContext,
-    base: &Pointer,
-    bytes: &HeapExtent,
+    base: &Address,
+    bytes: &AllocationSize,
     assumptions: &PureFactContext,
 ) -> Option<&'a ResourceFact> {
     let mut lent_owners_cover_allocation = None;
-    for resource in kept.facts_that_may_refer_to_memory_block(&base.block) {
+    for resource in kept.facts_that_may_refer_to_memory_block(&base.base) {
         let owned_by_the_caller = resource.memory_own_range().is_some()
             && resource.has_proven_positive_quantity(assumptions)
             || resource.memory_view_range().is_some_and(|range| {
@@ -9699,8 +9576,8 @@ pub(in crate::kernel) fn caller_resource_left_stale_by_retirement<'a>(
 /// width or with provably equal endpoints.
 fn lent_owned_memory_covers_allocation(
     lent: &ResourceContext,
-    base: &Pointer,
-    bytes: &HeapExtent,
+    base: &Address,
+    bytes: &AllocationSize,
     assumptions: &PureFactContext,
 ) -> bool {
     if let Some(constant) = bytes.int32_bytes().and_then(MachineTerm::as_const)
@@ -9714,8 +9591,8 @@ fn lent_owned_memory_covers_allocation(
 }
 
 fn apply_verified_heap_allocation_delta(
-    mut memory: Memory,
-    entry_memory: &Memory,
+    mut memory: SymbolicMemory,
+    entry_memory: &SymbolicMemory,
     input_resources: &ResourceContext,
     preserved_caller_resources: &ResourceContext,
     output_resources: &ResourceContext,
@@ -9733,7 +9610,7 @@ fn apply_verified_heap_allocation_delta(
     // resources owned, so an allocation named through it at the post state
     // is not the allocation the caller handed over.
     let expand_allocations =
-        |resources: &ResourceContext, state: &ExecutionState, memory: &Memory| {
+        |resources: &ResourceContext, state: &ExecutionState, memory: &SymbolicMemory| {
             let projection_state = state
                 .clone()
                 .with_memory(memory.clone())
@@ -9766,7 +9643,7 @@ fn apply_verified_heap_allocation_delta(
         .facts()
         .iter()
         .filter_map(|fact| {
-            fact.allocation_extent()
+            fact.allocation_size()
                 .map(|(base, bytes)| (fact, base.pointer().clone(), bytes))
         })
         .collect::<Vec<_>>();
@@ -9806,7 +9683,7 @@ fn apply_verified_heap_allocation_delta(
         .iter()
         .chain(preserved.facts())
         .filter_map(|fact| {
-            fact.allocation_extent().map(|(base, bytes)| {
+            fact.allocation_size().map(|(base, bytes)| {
                 (
                     base.pointer().clone(),
                     bytes,
@@ -9839,7 +9716,7 @@ fn apply_verified_heap_allocation_delta(
             // call's own returned tokens are compared.
             for (output_base, output_bytes, returned) in &output_allocations {
                 if let Some(returned) = returned
-                    && output_base.block != base.block
+                    && output_base.base != base.base
                     && matches!(
                         allocation_continuity(
                             &base,
@@ -9877,7 +9754,7 @@ fn apply_verified_heap_allocation_delta(
                     AllocationContinuity::Same => {
                         retained = true;
                         if let Some(returned) = returned
-                            && output_base.block != base.block
+                            && output_base.base != base.base
                             && !continued_tokens.iter().any(|(token, _)| token == *returned)
                         {
                             continued_tokens.push(((*returned).clone(), fact.clone()));
@@ -9893,9 +9770,9 @@ fn apply_verified_heap_allocation_delta(
                             RuntimeError::FunctionContract(format!(
                                 "the call consumes an allocation with {} byte count and returns \
                                  one that may be the same block with {} byte count; a heap \
-                                 block's extent keeps one format",
-                                heap_extent_kind_spelling(bytes.kind()),
-                                heap_extent_kind_spelling(output_bytes.kind()),
+                                 block's size keeps one format",
+                                allocation_size_kind_spelling(bytes.kind()),
+                                allocation_size_kind_spelling(output_bytes.kind()),
                             )),
                         ));
                     }
@@ -9942,7 +9819,7 @@ fn apply_verified_heap_allocation_delta(
                     bytes.bytes(),
                     &allocation_assumptions,
                 );
-                retired_creations.push(base.block.clone());
+                retired_creations.push(base.base.clone());
                 continue;
             }
         }
@@ -9972,9 +9849,9 @@ fn apply_verified_heap_allocation_delta(
             return Err(VerifiedAllocationDeltaError::Runtime(error));
         }
 
-        retired_creations.push(base.block.clone());
+        retired_creations.push(base.base.clone());
         let before_free = memory.clone();
-        if memory.live_heap_block_extent(&base).is_none() {
+        if memory.live_heap_block_size(&base).is_none() {
             memory = memory
                 .with_heap_allocation_claim(base.clone(), bytes.clone())
                 .ok_or(VerifiedAllocationDeltaError::Runtime(
@@ -10007,13 +9884,13 @@ fn apply_verified_heap_allocation_delta(
             continue;
         };
         if input.satisfies_fact(fact, &allocation_assumptions)
-            || memory.live_heap_block_extent(base).is_some()
+            || memory.live_heap_block_size(base).is_some()
         {
             continue;
         }
         let (_, bytes) = fact
-            .allocation_extent()
-            .expect("an allocation token states its extent");
+            .allocation_size()
+            .expect("an allocation token states its size");
         memory = memory
             .with_heap_allocation_claim(base.clone(), bytes)
             .ok_or_else(|| {
@@ -10055,9 +9932,9 @@ fn with_continued_allocation_tokens(
 /// (`result` proven equal to `p`), that returned token and the consumed
 /// token it continues.
 struct VerifiedAllocationDelta {
-    memory: Memory,
+    memory: SymbolicMemory,
     effects: ExecutionFacts,
-    retired_creations: Vec<PointerBlock>,
+    retired_creations: Vec<AddressBase>,
     continued_tokens: Vec<(ResourceFact, ResourceFact)>,
 }
 
@@ -10088,9 +9965,9 @@ pub(crate) fn initialize_program_function_globals(
 /// already held, leave `memory` unchanged.
 pub(crate) fn with_static_pointer_read_cached(
     state: &ExecutionState,
-    memory: Memory,
+    memory: SymbolicMemory,
     name: impl Into<BindingName>,
-) -> Memory {
+) -> SymbolicMemory {
     let name = name.into();
     let locals = state.locals();
     let (Some(program_type), Some(slot)) = (locals.object_type(&name), locals.slot(&name)) else {
@@ -10098,8 +9975,8 @@ pub(crate) fn with_static_pointer_read_cached(
     };
     if !locals.is_global_object(&name)
         || !program_type.is_object_pointer()
-        || !slot.block.is_static_storage_block()
-        || !memory.has_block(&slot.block)
+        || !slot.base.is_static_storage_block()
+        || !memory.has_block(&slot.base)
         || memory.known_value(slot).is_some()
     {
         return memory;
@@ -10142,18 +10019,15 @@ pub(crate) fn initialize_program_program_storage(
 /// block is one range of `count` struct-sized elements. Costs the block's
 /// runs and concrete cells, not its elements.
 fn periodic_struct_array_blocks(
-    memory: &Memory,
-    constant_offset: impl Fn(&Pointer) -> u32,
-) -> BTreeMap<PointerBlock, (u32, u32)> {
+    memory: &SymbolicMemory,
+    constant_offset: impl Fn(&Address) -> u32,
+) -> BTreeMap<AddressBase, (u32, u32)> {
     // Each run and each concrete cell examined charges a unit. Nothing here
     // stops early: the caller's next checkpoint, one visit later, does.
-    let mut runs_by_block = BTreeMap::<&PointerBlock, Vec<&CellRun>>::new();
+    let mut runs_by_block = BTreeMap::<&AddressBase, Vec<&CellRun>>::new();
     for run in memory.cells.runs() {
         crate::instrumentation::record_deterministic_work(1);
-        runs_by_block
-            .entry(&run.base().block)
-            .or_default()
-            .push(run);
+        runs_by_block.entry(&run.base().base).or_default().push(run);
     }
     let mut periodic = BTreeMap::new();
     for (block, runs) in runs_by_block {
@@ -10210,21 +10084,21 @@ fn periodic_struct_array_blocks(
 /// Every visit charges one unit and is a checkpoint; `None` means a run
 /// limit stopped the partition.
 fn initial_static_resources(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     mut count_visit: impl FnMut(),
 ) -> Option<ResourceContext> {
     let mut visit = || {
         count_visit();
         crate::instrumentation::deadline_exceeded()
     };
-    let constant_offset = |pointer: &Pointer| {
-        let PointerOffsetTerm::Constant(offset) = pointer.offset else {
+    let constant_offset = |pointer: &Address| {
+        let AddressOffset::Constant(offset) = pointer.offset else {
             unreachable!("static initializers have constant cell offsets");
         };
         u32::try_from(offset).expect("static cell offset")
     };
     // Each block's initialized spans: start, end and cell width.
-    let mut spans_by_block = BTreeMap::<PointerBlock, Vec<(u32, u32, u32)>>::new();
+    let mut spans_by_block = BTreeMap::<AddressBase, Vec<(u32, u32, u32)>>::new();
     // An array of structs whose every element holds the same cells is one
     // range of struct-sized elements, however many there are.
     let periodic = periodic_struct_array_blocks(memory, constant_offset);
@@ -10241,20 +10115,20 @@ fn initial_static_resources(
         if visit() {
             return None;
         }
-        if periodic.contains_key(&pointer.block) {
+        if periodic.contains_key(&pointer.base) {
             continue;
         }
         let offset = constant_offset(pointer);
         spans_by_block
-            .entry(pointer.block.clone())
+            .entry(pointer.base.clone())
             .or_default()
             .push((offset, offset + value.byte_width(), value.byte_width()));
     }
     for run in memory.cells.runs() {
-        if periodic.contains_key(&run.base().block) {
+        if periodic.contains_key(&run.base().base) {
             continue;
         }
-        let spans = spans_by_block.entry(run.base().block.clone()).or_default();
+        let spans = spans_by_block.entry(run.base().base.clone()).or_default();
         let width = run.value_width();
         for (low, high) in run.holes().gap_intervals(run.count()) {
             if visit() {
@@ -10310,9 +10184,9 @@ fn initial_static_resources(
                 return None;
             }
             let range = MemoryRange::new_with_element_width(
-                Pointer {
-                    block: identity.clone(),
-                    offset: PointerOffsetTerm::Constant(i64::from(start)),
+                Address {
+                    base: identity.clone(),
+                    offset: AddressOffset::Constant(i64::from(start)),
                 },
                 MachineTerm::constant(0),
                 MachineTerm::constant((end - start) / width),
@@ -10486,7 +10360,7 @@ fn candidate_planning_resources(
     caller_resources: &ResourceContext,
     requirements: &[CheckedResourceFact],
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> ResourceContext {
     let supported = |resources: &ResourceContext, requirement: &CheckedResourceFact| {
@@ -10913,7 +10787,7 @@ fn string_literal_instance_values(
             return None;
         };
         let pointer = pointer.pointer();
-        let PointerBlock::StringLiteral { bytes, .. } = &pointer.block else {
+        let AddressBase::StringLiteral { bytes, .. } = &pointer.base else {
             return None;
         };
         let offset = usize::try_from(pointer.offset.as_const()?).ok()?;
@@ -10988,7 +10862,7 @@ fn string_literal_composite_holds(
     }
     let literal_pointer = |argument: &AlgebraicValue| {
         matches!(argument.as_program_value(), Some(ProgramValue::Pointer(pointer))
-            if matches!(pointer.pointer().block, PointerBlock::StringLiteral { .. }))
+            if matches!(pointer.pointer().base, AddressBase::StringLiteral { .. }))
     };
     let pointers_are_literal = arguments.iter().all(|argument| {
         !matches!(argument.as_program_value(), Some(ProgramValue::Pointer(_)))
@@ -11007,7 +10881,7 @@ fn string_literal_composite_holds(
                 return false;
             };
             let (base, bytes) = range.byte_footprint();
-            let PointerBlock::StringLiteral { bytes: literal, .. } = &base.block else {
+            let AddressBase::StringLiteral { bytes: literal, .. } = &base.base else {
                 return false;
             };
             match (base.offset.as_const(), bytes.as_const()) {
@@ -11062,7 +10936,7 @@ fn local_storage_composite_pieces(
         let Some(range) = piece.memory_range() else {
             return Ok(None);
         };
-        if !range.base().block.is_local_block() {
+        if !range.base().base.is_local_block() {
             return Ok(None);
         }
         pieces.push(ResourceFact::view_memory(range.clone()));
@@ -11166,13 +11040,13 @@ fn string_literal_fact_value(
         } => {
             let pointer = string_literal_pointer_with_bindings(pointer, bindings);
             let offset = pointer.offset.as_const()?;
-            let PointerBlock::StringLiteral { bytes, .. } = &pointer.block else {
+            let AddressBase::StringLiteral { bytes, .. } = &pointer.base else {
                 // Any other read is defined when the state holds a stored
                 // value of the read's width at that very cell, as a local
                 // array's bytes after their stores do.
-                let cell = Pointer {
-                    block: pointer.block.clone(),
-                    offset: PointerOffsetTerm::Constant(offset),
+                let cell = Address {
+                    base: pointer.base.clone(),
+                    offset: AddressOffset::Constant(offset),
                 };
                 return match memory.load(&cell) {
                     ExpressionOutcome::Value(value)
@@ -11206,9 +11080,9 @@ fn string_literal_fact_value(
 }
 
 fn string_literal_pointer_with_bindings(
-    pointer: &Pointer,
+    pointer: &Address,
     bindings: &[(Variable, MachineTerm)],
-) -> Pointer {
+) -> Address {
     let mut pointer = pointer.clone();
     for (bound, value) in bindings {
         pointer = crate::kernel::reasoning::substitute_bitvector_variable_in_pointer(
@@ -11240,7 +11114,7 @@ fn string_literal_reads_resolved(
             return None;
         };
         let pointer = string_literal_pointer_with_bindings(&pointer, bindings);
-        let PointerBlock::StringLiteral { bytes, .. } = &pointer.block else {
+        let AddressBase::StringLiteral { bytes, .. } = &pointer.base else {
             return None;
         };
         let offset = pointer.offset.as_const()?;
@@ -11340,7 +11214,7 @@ pub(crate) fn guard_contract_refusal(
         .then_some("mutex authority contracts currently require preserving owned inputs")
 }
 
-fn private_aggregate_storage_owner(slot: Pointer, layout: &AggregateLayout) -> ResourceFact {
+fn private_aggregate_storage_owner(slot: Address, layout: &AggregateLayout) -> ResourceFact {
     ResourceFact::own_memory(MemoryRange::new_with_element_width(
         slot,
         MachineTerm::constant(0),
@@ -11390,9 +11264,9 @@ fn prepare_contract_resource_transfer(
         preserve_explicit_representation,
         purpose,
     )?;
-    // Memory a live mutex's initialization consumed is missing because the
+    // SymbolicMemory a live mutex's initialization consumed is missing because the
     // mutex holds it; name the mutex rather than the bytes.
-    // An allocation the caller holds only in the other extent format is
+    // An allocation the caller holds only in the other size format is
     // named with both formats (D5). A wide range held in another element
     // width names the product that must not wrap.
     Ok(transfer.map_err(|error| match &error {
@@ -11410,7 +11284,7 @@ fn prepare_contract_resource_transfer(
                     .unwrap_or(error)
             }
             fact if fact.allocation().is_some() => {
-                allocation_extent_kind_refusal(&caller_state.resources, fact, assumptions)
+                allocation_size_kind_refusal(&caller_state.resources, fact, assumptions)
                     .unwrap_or(error)
             }
             _ => error,
@@ -11421,24 +11295,24 @@ fn prepare_contract_resource_transfer(
 
 /// The refusal for a required `allocation(base, bytes)` whose block the
 /// context holds with a byte count of the other format: a 32-bit (`int32`)
-/// spelling of a 64-bit (`uint64`) block's extent, or the reverse. Tokens of
-/// different formats never match (`design/heap-extents.md`, D5), so the
+/// spelling of a 64-bit (`uint64`) block's size, or the reverse. Tokens of
+/// different formats never match (`design/heap-allocation-sizes.md`, D5), so the
 /// ordinary refusal would only report the token missing. The held token is
 /// found by base through the context's argument index, as `free` finds it.
-pub(in crate::kernel) fn allocation_extent_kind_refusal(
+pub(in crate::kernel) fn allocation_size_kind_refusal(
     resources: &ResourceContext,
     required: &ResourceFact,
     assumptions: &PureFactContext,
 ) -> Option<RuntimeError> {
-    let (required_base, required_extent) = required.allocation_extent()?;
+    let (required_base, required_size) = required.allocation_size()?;
     let query =
-        ResourceFact::own_designated_allocation(required_base.clone(), &HeapExtent::int32(0));
+        ResourceFact::own_designated_allocation(required_base.clone(), &AllocationSize::int32(0));
     let held_kind = resources
         .direct_match_candidates_for(&query, assumptions)
         .into_iter()
-        .filter_map(ResourceFact::allocation_extent)
-        .find(|(base, extent)| {
-            extent.kind() != required_extent.kind()
+        .filter_map(ResourceFact::allocation_size)
+        .find(|(base, size)| {
+            size.kind() != required_size.kind()
                 && crate::kernel::resource_arguments_proven_equal(
                     &ProgramValue::Pointer((*base).clone().with_type(ProgramType::Int32Pointer))
                         .into(),
@@ -11449,21 +11323,21 @@ pub(in crate::kernel) fn allocation_extent_kind_refusal(
                     assumptions,
                 )
         })
-        .map(|(_, extent)| extent.kind())?;
+        .map(|(_, size)| size.kind())?;
     Some(RuntimeError::FunctionContract(format!(
         "`allocation` states {} byte count, but the block's allocation token holds {} one: \
-         a heap block's extent keeps the format of its size's C type, and an `allocation` of \
+         a heap block's size keeps the format of its size's C type, and an `allocation` of \
          the other format does not name it; state the byte count in the block's format",
-        heap_extent_kind_spelling(required_extent.kind()),
-        heap_extent_kind_spelling(held_kind),
+        allocation_size_kind_spelling(required_size.kind()),
+        allocation_size_kind_spelling(held_kind),
     )))
 }
 
-/// How a diagnostic names an extent format.
-pub(in crate::kernel) fn heap_extent_kind_spelling(kind: HeapExtentKind) -> &'static str {
+/// How a diagnostic names a size format.
+pub(in crate::kernel) fn allocation_size_kind_spelling(kind: AllocationSizeKind) -> &'static str {
     match kind {
-        HeapExtentKind::Int32 => "a 32-bit (`int32`)",
-        HeapExtentKind::UInt64 => "a 64-bit (`uint64`, `size_t`)",
+        AllocationSizeKind::Int32 => "a 32-bit (`int32`)",
+        AllocationSizeKind::UInt64 => "a 64-bit (`uint64`, `size_t`)",
     }
 }
 
@@ -11858,14 +11732,14 @@ fn prepare_contract_resource_transfer_unexplained(
     // retains intrinsic read authority. An explicitly supplied owner or view
     // takes the ordinary lend/reborrow route, including stale-binding checks.
     let unsupplied_local = |range: &MemoryRange| {
-        range.base().block.is_local_block()
-            && callee_state.memory().has_block(&range.base().block)
+        range.base().base.is_local_block()
+            && callee_state.memory().has_block(&range.base().base)
             && !callee_state
                 .memory()
                 .requires_explicit_scalar_ownership(range.base())
             && caller_state
                 .resources()
-                .has_no_explicit_memory_for_local_storage(&range.base().block, assumptions)
+                .has_no_explicit_memory_for_local_storage(&range.base().base, assumptions)
     };
     let implicit_read_views = checked_required_resources
         .iter()
@@ -11875,7 +11749,7 @@ fn prepare_contract_resource_transfer_unexplained(
                 Resource::Memory(range)
                     if requirement.fact.is_view()
                         && (unsupplied_local(range)
-                            || callee_state.memory().is_read_only_block(&range.base().block))
+                            || callee_state.memory().is_read_only_block(&range.base().base))
             )
         })
         .cloned()
@@ -11929,7 +11803,7 @@ fn prepare_contract_resource_transfer_unexplained(
                         // not implicit local storage.
                         && caller_state
                             .resources()
-                            .facts_that_may_refer_to_memory_block(&range.base().block)
+                            .facts_that_may_refer_to_memory_block(&range.base().base)
                             .next()
                             .is_none()
                 })
@@ -11962,7 +11836,7 @@ fn prepare_contract_resource_transfer_unexplained(
     }
     let (local_read_views, intrinsic_read_views): (Vec<_>, Vec<_>) = implicit_read_views.into_iter()
         .partition(|requirement| matches!(requirement.fact.resource(), Resource::Memory(range)
-            if range.base().block.is_local_block() && !callee_state.memory().is_read_only_block(&range.base().block)));
+            if range.base().base.is_local_block() && !callee_state.memory().is_read_only_block(&range.base().base)));
     // A composite view whose checked body is empty on this path protects no
     // bytes and holds no token, so there is nothing to lend and nothing a
     // loan could suspend (D6: an empty permission grants no dereference).
@@ -12544,7 +12418,7 @@ fn prepare_contract_resource_transfer_unexplained(
         if matches!(
             intrinsic_view.fact.resource(),
             Resource::Memory(range)
-                if range.base().block.is_local_block()
+                if range.base().base.is_local_block()
                     && !local_view_range_within_block(range, callee_state.memory())
         ) {
             return Ok(Err(RuntimeError::MissingResource {
@@ -12631,8 +12505,8 @@ fn prepare_contract_resource_transfer_unexplained(
         // whatever the caller keeps beyond it: `views a[0..3]` on an
         // `int32 b[2]` used to be discharged by the block merely existing.
         if let ResourceFact::View(Resource::Memory(range)) = resource
-            && range.base().block.is_local_block()
-            && callee_state.memory().has_block(&range.base().block)
+            && range.base().base.is_local_block()
+            && callee_state.memory().has_block(&range.base().base)
             && !callee_state
                 .memory()
                 .requires_explicit_scalar_ownership(range.base())
@@ -12769,11 +12643,11 @@ fn produced_memory_initialization(
     entry_state: &ExecutionState,
     post_state: &ExecutionState,
     interface: &FunctionContractInterface,
-    mut memory: Memory,
+    mut memory: SymbolicMemory,
     assumptions: &PureFactContext,
     facts: &mut ExecutionFacts,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<Memory, RuntimeError>> {
+) -> ExecutionResult<Result<SymbolicMemory, RuntimeError>> {
     for resource in interface.resource_ensures() {
         let Some(segment) = resource.term().memory_segment() else {
             continue;
@@ -12812,12 +12686,12 @@ fn produced_memory_initialization(
         let Resource::Memory(range) = fact.resource() else {
             continue;
         };
-        let extent = if range.wide_bounds().is_some() {
+        let byte_span = if range.wide_bounds().is_some() {
             None
         } else {
             range.byte_footprint().1.as_const()
         };
-        if extent == Some(0) {
+        if byte_span == Some(0) {
             continue;
         }
         // Transfer checking established this output's authority and bounds.
@@ -12830,31 +12704,34 @@ fn produced_memory_initialization(
         if segment.is_uninitialized() {
             memory = memory.with_uninitialized_object(
                 start,
-                extent.unwrap_or(Memory::UNBOUNDED_UNWRITTEN_EXTENT),
+                byte_span.unwrap_or(SymbolicMemory::UNBOUNDED_UNWRITTEN_SPAN),
             );
             continue;
         }
         // Initialized bytes of a length known only at the call are not
         // recorded; a read of them then needs a store or `defined` evidence.
-        let Some(extent) = extent else {
+        let Some(byte_span) = byte_span else {
             continue;
         };
         match segment.value_runs() {
             Some(runs) => {
                 for &(offset, length) in runs {
-                    if offset.checked_add(length).is_some_and(|end| end <= extent) {
+                    if offset
+                        .checked_add(length)
+                        .is_some_and(|end| end <= byte_span)
+                    {
                         memory =
                             memory.with_initialized_object(&start.offset_by_bytes(offset), length);
                     }
                 }
             }
-            None => memory = memory.with_initialized_object(&start, extent),
+            None => memory = memory.with_initialized_object(&start, byte_span),
         }
         // Only an explicit complete byte output needs this representation
         // equation. Ordinary scalar reads keep their retained roots and do
         // no extra byte-view work. Initialization is supplied above by the
         // checked output clause, never by the numeric equation.
-        if extent == 4
+        if byte_span == 4
             && range.element_width() == 1
             && segment.value_runs().is_none()
             && let Some(equation) = crate::kernel::eval::declared_uint32_read_representation(
@@ -13194,7 +13071,7 @@ fn evaluate_contract_return_resource_context(
         if let Some(Some(prepared)) = prepared_outputs.get(clause_index) {
             return Ok(Ok(prepared.clone()));
         }
-        // Memory state selection is carried by the normalized specification.
+        // SymbolicMemory state selection is carried by the normalized specification.
         // A named instance uses post fields while retaining entry identity.
         let (state, cached) = match resource.state_source() {
             ResourceStateSource::Entry => (entry_state, &mut entry_supply),
@@ -13430,7 +13307,7 @@ fn evaluate_contract_return_resource_context(
 fn opened_composite_read_views(
     resources: &ResourceContext,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> Vec<ResourceFact> {
     if !resources
@@ -13628,8 +13505,6 @@ fn evaluate_contract_return_resources(
                         prepared
                             .frontier_sources(ensured_resources, true)
                             .map(|(source, fact)| (fact, return_bodies.for_return(source, fact))),
-                        interface.composite_resource_definitions(),
-                        post_state.memory(),
                         assumptions,
                     ) {
                         return Some(error);
@@ -13648,8 +13523,6 @@ fn evaluate_contract_return_resources(
                     prepared
                         .frontier_sources(ensured_resources, false)
                         .map(|(source, fact)| (fact, return_bodies.for_return(source, fact))),
-                    interface.composite_resource_definitions(),
-                    post_state.memory(),
                     assumptions,
                 )
             },
@@ -13683,7 +13556,7 @@ fn evaluate_contract_return_resources(
             Ok(resources) => resources,
             Err(error) => return Ok(Err(resource_context_runtime_error(error))),
         };
-    let Some(projected_cores_by_support) = crate::instrumentation::measure_operation(
+    let projected_cores_by_support = crate::instrumentation::measure_operation(
         interface_name,
         "contract resource transition",
         "ensured resource core projection",
@@ -13692,18 +13565,11 @@ fn evaluate_contract_return_resources(
                 ensured_resources,
                 &inserted_ensured_occurrences,
                 &return_bodies,
-                interface.composite_resource_definitions(),
-                post_state,
                 assumptions,
                 &return_resources,
             )
         },
-    ) else {
-        return Ok(Err(RuntimeError::FunctionContract(format!(
-            "could not expand ensured composite resources after call ({})",
-            bounded_contract_resource_frontier(ensured_resources)
-        ))));
-    };
+    );
     // The callee has already certified every ensured composite and its
     // instantiated body. Its duplicable cores are therefore observations of
     // certified ownership, not independent persistent caller capabilities.
@@ -13726,7 +13592,7 @@ fn evaluate_contract_return_resources(
             destination: support_occurrence,
             expansion,
             projected,
-            frontier,
+            frontier: _,
             viewed_children: _,
         } = resource;
         if support.is_own() {
@@ -13742,11 +13608,6 @@ fn evaluate_contract_return_resources(
             };
             let body = if let Some(body) = return_bodies.for_return(source, &support) {
                 body.escrow_boundary()
-            } else if matches!(
-                support.resource(),
-                Resource::Composite { .. } | Resource::Instance(_)
-            ) {
-                frontier.clone()
             } else {
                 Vec::new()
             };
@@ -13766,24 +13627,7 @@ fn evaluate_contract_return_resources(
             _ => false,
         };
         if !is_population {
-            let support = super::loans::EscapingComposite {
-                head: support.clone(),
-                occurrence: support_occurrence,
-            };
-            if let Some(pieces) = constructed_borrowing_pieces {
-                produced_borrowing_pieces.extend(pieces);
-            } else {
-                produced_borrowing_pieces.extend(
-                    frontier
-                        .into_iter()
-                        .filter(|piece| piece.is_view())
-                        .map(|piece| ProducedBorrowingPiece {
-                            support: support.clone(),
-                            piece,
-                            sources: None,
-                        }),
-                );
-            }
+            produced_borrowing_pieces.extend(constructed_borrowing_pieces);
         }
         return_resources = return_resources
             .unchecked_with_supported_facts_from_occurrence_with_memory(
@@ -13841,79 +13685,39 @@ fn produced_composite_frontier_conflict<'a>(
             Option<&'a mixed_return_resources::ConstructedReturnBody>,
         ),
     >,
-    definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
     assumptions: &PureFactContext,
 ) -> Option<RuntimeError> {
     let mut destination = destination.clone();
     for (produced, body) in ensured {
         let name = match produced.resource() {
             Resource::Composite { name, .. } => name.as_str(),
-            Resource::Instance(instance) if body.is_some() => instance.name(),
+            Resource::Instance(instance) => instance.name(),
             _ => continue,
         };
         if !produced.is_own() {
             continue;
         }
-        if let Some(body) = body {
-            match destination.admit_returned_flat_body(body, assumptions) {
-                FlatBodyAdmission::Admitted => {
-                    destination = destination.unchecked_with_facts(body.boundary().iter().cloned());
-                    continue;
-                }
-                FlatBodyAdmission::Conflict { piece, held } => {
-                    return Some(RuntimeError::ProducedCompositeOverlapsHeldResource {
-                        produced: Box::new(produced.clone()),
-                        piece,
-                        held,
-                    });
-                }
-                // Missing geometry retains the actual boundary goal. A miss
-                // never authorizes the returned ownership.
-                FlatBodyAdmission::Unestablished(required) => {
-                    return Some(resource_context_runtime_error(
-                        ResourceContextValidityError::UnestablishedOwnedBoundary(required),
-                    ));
-                }
-                FlatBodyAdmission::Unsupported => {
-                    return Some(resource_context_runtime_error(
-                        ResourceContextValidityError::UnsupportedOwnershipBoundary,
-                    ));
-                }
-            }
-        }
-        let legacy_frontier;
-        let frontier = if let Some(body) = body {
-            body.boundary()
-        } else {
-            let singleton = ResourceContext::new_with_equalities(assumptions)
-                .unchecked_with_fact(produced.clone());
-            // Opaque and unmigrated heads retain their legacy expansion.
-            let Some((_, children, _)) = expand_composite_resource_fact_with_children(
-                &singleton,
-                produced,
-                definitions,
-                &crate::kernel::ProgramPoint::of_memory(memory),
-                assumptions,
-            ) else {
-                continue;
-            };
-            legacy_frontier = children;
-            legacy_frontier.as_slice()
-        };
+        let body = body.expect("returned family dispatch must carry a finite body");
+        let frontier = body.boundary();
         // A token-only body holds no memory, instance, or nested composite a
         // destination fact could overlap: token units are a count, and counts
         // add rather than collide.
-        if !frontier.iter().any(|piece| {
-            piece.is_own()
-                && matches!(
-                    piece.resource(),
-                    Resource::Memory(_)
-                        | Resource::PopulationAuthority(_)
-                        | Resource::Instance(_)
-                        | Resource::Composite { .. }
-                )
-        }) {
+        if !body
+            .frontier
+            .iter()
+            .chain(body.boundary().iter())
+            .any(|piece| {
+                piece.is_own()
+                    && matches!(
+                        piece.resource(),
+                        Resource::Memory(_)
+                            | Resource::Iterated(_)
+                            | Resource::PopulationAuthority(_)
+                            | Resource::Instance(_)
+                            | Resource::Composite { .. }
+                    )
+            })
+        {
             continue;
         }
         // The frontier was evaluated for one unit, and an ordinary composite
@@ -14087,7 +13891,7 @@ fn bind_composite_witness_values(
             .as_ref()
             .and_then(|term| {
                 if term.uint64_as_const() == Some(0) {
-                    return Some(Pointer::null());
+                    return Some(Address::null());
                 }
                 let mut used = super::eval::pointer_tags::UsedFacts::new();
                 super::eval::pointer_tags::tagged_address_form(term, assumptions, &mut used)
@@ -14120,7 +13924,7 @@ fn bind_composite_witness_values(
             word.as_ref()
                 .map(super::eval::canonical_term)
                 .hash(&mut hasher);
-            Pointer::symbolic(Variable(4_000_000_000 + hasher.finish() % 4_000_000_000))
+            Address::symbolic(Variable(4_000_000_000 + hasher.finish() % 4_000_000_000))
         });
         let value = ProgramValue::typed_pointer(pointer, witness.program_type());
         state.locals.set_typed(
@@ -14142,7 +13946,7 @@ fn held_child_witness(
     arguments: &[AlgebraicValue],
     resources: &ResourceContext,
     assumptions: &PureFactContext,
-) -> Option<Pointer> {
+) -> Option<Address> {
     // The body's own instance is never its own child.
     let own_pointers = arguments
         .iter()
@@ -14177,7 +13981,7 @@ fn held_child_witness(
         // proven a different pointer.
         .filter(|pointer| {
             own_pointers.iter().all(|own| {
-                own.block != pointer.block
+                own.base != pointer.base
                     || assumptions
                         .decide(&ConditionTerm::pointer_equal(pointer.clone(), own.clone()))
                         == Some(false)
@@ -14567,7 +14371,7 @@ fn lower_selected_resource_body_clauses(
             }
             // An asserted resource clause includes the expression domains
             // recorded by arithmetic lowering, regardless of their logical
-            // shape. Memory/access prerequisites still require evidence.
+            // shape. SymbolicMemory/access prerequisites still require evidence.
             if goal.evaluation_domain {
                 retained_conditions.push(goal.proposition().clone());
                 continue;
@@ -14742,7 +14546,7 @@ fn body_fact_is_established_through_a_pointer_alias(
     );
     variables.into_iter().any(|variable| {
         established
-            .exact_pointer_aliases(&Pointer::symbolic(variable))
+            .exact_pointer_aliases(&Address::symbolic(variable))
             .any(|alias| {
                 let candidate =
                     crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_address_variable(
@@ -14756,7 +14560,7 @@ fn body_fact_is_established_through_a_pointer_alias(
 }
 
 /// Exchange one exclusive instance for its immediate memory body, or back.
-/// Memory-only bodies need no open token, including guarded/matched bodies.
+/// SymbolicMemory-only bodies need no open token, including guarded/matched bodies.
 /// Recursive children require explicit independent child selections.
 #[cfg(test)]
 pub(crate) fn rewrite_resource_instance(
@@ -15358,12 +15162,12 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     }
     let body_specs = &body_specs[..];
     // Unfolding assumes the body the fold established, its clauses through
-    // pointers of unseen formation included (`assume_entry_clause_extents`);
+    // pointers of unseen formation included (`assume_entry_clause_spans`);
     // folding checks them.
     let body_assumptions = if unfold {
         assumptions
             .clone()
-            .assume_entry_clause_extents()
+            .assume_entry_clause_spans()
             .assume_held_resource_domains()
     } else {
         assumptions.clone()
@@ -15653,7 +15457,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
         let Some(range) = fact.memory_range() else {
             continue;
         };
-        facts.extend(crate::kernel::admitted_memory_range_extent_facts(range));
+        facts.extend(crate::kernel::admitted_memory_range_span_facts(range));
         facts.push(range.loadable_fact(&state.memory));
     }
     // What a fold consumes is what holding the folded instance lets C read.
@@ -15847,7 +15651,7 @@ pub(super) fn loop_instance_guard(
     instance: &ResourceInstance,
     definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
-) -> Result<Option<(Pointer, ConditionTerm)>, String> {
+) -> Result<Option<(Address, ConditionTerm)>, String> {
     let Ok(index) = definitions.binary_search_by(|d| {
         crate::instrumentation::record_deterministic_work(1);
         d.name().cmp(instance.name())
@@ -15979,7 +15783,7 @@ pub(super) fn expand_composite_resource_fact(
 pub(crate) fn checked_composite_projection_evidence(
     viewed: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> Option<CompositeProjectionEvidence> {
     // Projection checks the selected head alone. Checked construction attaches
@@ -16147,12 +15951,12 @@ fn construct_composite_resource_body_with_source(
     };
     let mut budget = ExecutionBudget::beside_live_state();
     // Opening a held composite assumes the body its fold established
-    // (`assume_entry_clause_extents`).
+    // (`assume_entry_clause_spans`).
     let evaluation_assumptions = assumptions
         .clone()
         .allow_symbolic_contract_loads()
         .prefer_symbolic_external_loads()
-        .assume_entry_clause_extents()
+        .assume_entry_clause_spans()
         .assume_held_resource_domains();
     let mut child_facts = Vec::new();
     let Some(body_active) = evaluate_composite_resource_body_condition(
@@ -16572,7 +16376,7 @@ pub(super) fn expose_composite_resource_fact(
     context: &ResourceContext,
     target: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
     // Exposure unfolds composites until the target is held. A memory target
@@ -16693,9 +16497,7 @@ pub(super) fn function_return_resources_definitionally_established(
     let Some(post_resources) = post_resources else {
         return false;
     };
-    let Ok(post_resource_facts) = post_resources.observable_facts(assumptions) else {
-        return false;
-    };
+    let post_resource_facts = post_resources.observable_facts_assuming_valid(assumptions);
     let assumptions = assumptions_with_propositions(assumptions, &post_resource_facts);
     let mut post_state = callee_state.with_memory_continuing(&claim_return_state, exit_memory);
     post_state.resources = post_resources;
@@ -17080,9 +16882,7 @@ pub(super) fn assembled_composite_body_facts_hold(
         Some(false) => return true,
         None => return false,
     }
-    let Ok(piece_facts) = resources.observable_facts(assumptions) else {
-        return false;
-    };
+    let piece_facts = resources.observable_facts_assuming_valid(assumptions);
     let assumptions = assumptions_with_propositions(assumptions, &piece_facts);
     definition.facts().iter().all(|fact| {
         let Ok(paths) = lower_spec_proposition_at_state_with_loop_entry(
@@ -17108,7 +16908,7 @@ pub(super) fn assembled_composite_body_facts_hold(
 /// True when every element of a constant-bounded memory range is concretely
 /// loadable, so a view of it is represented by the materialized cells rather
 /// than a resource fact.
-fn view_range_concretely_loadable(memory: &Memory, range: &MemoryRange) -> bool {
+fn view_range_concretely_loadable(memory: &SymbolicMemory, range: &MemoryRange) -> bool {
     let (Some(start), Some(end)) = (range.constant_start(), range.constant_end()) else {
         return false;
     };
@@ -17116,17 +16916,15 @@ fn view_range_concretely_loadable(memory: &Memory, range: &MemoryRange) -> bool 
         return false;
     }
     let width = match &range.base().offset {
-        PointerOffsetTerm::Int32Scaled { byte_width, .. } => {
-            u32::try_from(*byte_width).unwrap_or(4)
-        }
+        AddressOffset::Int32Scaled { byte_width, .. } => u32::try_from(*byte_width).unwrap_or(4),
         _ => 4,
     };
     (start..end).all(|index| {
-        let pointer = Pointer {
-            block: range.base().block.clone(),
-            offset: PointerOffsetTerm::add(
+        let pointer = Address {
+            base: range.base().base.clone(),
+            offset: AddressOffset::add(
                 range.base().offset.clone(),
-                PointerOffsetTerm::scale_int32(MachineTerm::constant(index), i64::from(width)),
+                AddressOffset::scale_int32(MachineTerm::constant(index), i64::from(width)),
             ),
         };
         memory.is_loadable_concretely(&pointer, width)
@@ -17145,7 +16943,7 @@ fn consume_resource_fact_definitionally(
         available: &ResourceContext,
         required: &ResourceFact,
         definitions: &[CompositeResourceDefinition],
-        memory: &Memory,
+        memory: &SymbolicMemory,
         assumptions: &PureFactContext,
         seen: &mut BTreeSet<(ResourceContext, ResourceFact)>,
     ) -> Option<ResourceContext> {
@@ -17270,7 +17068,7 @@ pub(super) fn resource_context_definitionally_contains(
     available: &ResourceContext,
     required: &ResourceContext,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> bool {
     let mut remaining = available.clone();
@@ -17295,7 +17093,7 @@ pub(super) fn resource_contexts_definitionally_equivalent_by_consumption(
     left: &ResourceContext,
     right: &ResourceContext,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> bool {
     resource_context_definitionally_contains(left, right, definitions, memory, assumptions)
@@ -17799,8 +17597,8 @@ fn evaluate_resource_clauses_in_section(
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum ResourceClauseDependencyKey {
     Fact(ResourceFact),
-    MemoryBase(Pointer),
-    MemoryBlock(PointerBlock),
+    MemoryBase(Address),
+    MemoryBlock(AddressBase),
 }
 
 /// A sparse segment-tree coordinate space for a concrete memory block.
@@ -17813,7 +17611,7 @@ enum ResourceClauseDependencyKey {
 /// fallback below instead.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct ResourceClauseIntervalSpace {
-    block: PointerBlock,
+    block: AddressBase,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -17852,7 +17650,7 @@ struct ResourceClauseWaiterIndex {
     /// its explicit block is still a sound conservative candidate boundary.
     /// Store the dependency index as well as the clause so register/remove
     /// stay symmetric when one clause waits on multiple ranges in a block.
-    concrete_block_fallback: BTreeMap<PointerBlock, BTreeSet<ResourceClauseIntervalWaiter>>,
+    concrete_block_fallback: BTreeMap<AddressBase, BTreeSet<ResourceClauseIntervalWaiter>>,
     intervals: ResourceClauseIntervalIndex,
 }
 
@@ -17869,7 +17667,7 @@ fn resource_clause_concrete_memory_interval(
     }
     Some((
         ResourceClauseIntervalSpace {
-            block: range.base().block.clone(),
+            block: range.base().base.clone(),
         },
         start,
         end,
@@ -17912,7 +17710,7 @@ fn evaluate_resource_clause_with_dependencies(
     entry_state: &ExecutionState,
     state: &ExecutionState,
     resource: &ResourceSpec,
-    selected_load_values: &BTreeMap<(Pointer, ProgramType), ProgramValue>,
+    selected_load_values: &BTreeMap<(Address, ProgramType), ProgramValue>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<(Result<ResourceFact, RuntimeError>, Vec<ResourceFact>)> {
@@ -18287,7 +18085,7 @@ fn resource_clause_memory_views(
         .allow_symbolic_contract_loads()
         .prefer_symbolic_external_loads()
         // These are the established clauses of the held instance.
-        .assume_entry_clause_extents()
+        .assume_entry_clause_spans()
         .assume_held_resource_domains();
     let mut budget = ExecutionBudget::beside_live_state();
     let Ok(Ok(body_resources)) = evaluate_function_resource_context_with_normalization(
@@ -19245,7 +19043,7 @@ fn resolve_retained_aggregate_fields(
         } = expression
         && let Some((parameter, pointer)) = projection(pointer)
         && let Some(LocalBinding::AggregateObject { slot, .. }) = entry.locals.binding(parameter)
-        && !state.memory.has_block(&slot.block)
+        && !state.memory.has_block(&slot.base)
         && !matches!(
             value_type,
             ProgramType::Int32Array(_)
@@ -19365,7 +19163,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
     entry_state: &ExecutionState,
     state: &ExecutionState,
     resource: &ResourceSpec,
-    selected_load_values: &BTreeMap<(Pointer, ProgramType), ProgramValue>,
+    selected_load_values: &BTreeMap<(Address, ProgramType), ProgramValue>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<ResourceFact, RuntimeError>> {
@@ -20060,7 +19858,7 @@ fn evaluate_function_declared_resource_spec(
     argument_state_sources: &[ResourceStateSource],
     parameter_types: &[ProgramType],
     source_arguments: Option<&[String]>,
-    selected_load_values: &BTreeMap<(Pointer, ProgramType), ProgramValue>,
+    selected_load_values: &BTreeMap<(Address, ProgramType), ProgramValue>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<ResourceFact, RuntimeError>> {
@@ -20240,19 +20038,19 @@ fn evaluate_function_declared_resource_spec(
             && index == 1
             && let ProgramValue::UInt64(bytes) = value.numeric_value()
         {
-            match uint64_allocation_extent_argument(bytes, assumptions) {
+            match uint64_allocation_size_argument(bytes, assumptions) {
                 Ok(value) => value,
                 Err(error) => return Ok(Err(error)),
             }
         } else {
             value
         };
-        // A 64-bit `allocation` byte count is a `uint64` extent (D4).
-        let accepts_allocation_extent = name == ResourceFact::ALLOCATION_RESOURCE_NAME
+        // A 64-bit `allocation` byte count is a `uint64` size (D4).
+        let accepts_allocation_size = name == ResourceFact::ALLOCATION_RESOURCE_NAME
             && index == 1
             && matches!(&value, ProgramValue::UInt64(_));
         if !accepts_allocation_pointer
-            && !accepts_allocation_extent
+            && !accepts_allocation_size
             && !parameter_type.accepts(&value)
         {
             return Ok(Err(RuntimeError::FunctionContract(format!(
@@ -20300,12 +20098,12 @@ fn evaluate_function_declared_resource_spec(
 }
 
 /// The `allocation` token argument a contract's `uint64` (`size_t`) byte
-/// count states (`design/heap-extents.md`, D4).
+/// count states (`design/heap-allocation-sizes.md`, D4).
 ///
-/// A constant that fits a 32-bit extent is one, as `malloc` of a constant
-/// `size_t` size makes it (D2). Any other value is a 64-bit extent, admitted
+/// A constant that fits a 32-bit size is one, as `malloc` of a constant
+/// `size_t` size makes it (D2). Any other value is a 64-bit size, admitted
 /// under the decision `malloc` makes for one
-/// ([`crate::kernel::eval::uint64_heap_extent_bytes_are_exact`]): at most
+/// ([`crate::kernel::eval::uint64_allocation_size_bytes_are_exact`]): at most
 /// `PTRDIFF_MAX` and positive, and a product with a constant factor `k` only
 /// with its other factor decided at most `PTRDIFF_MAX / k`. A `size_t`
 /// product may wrap, and the heap reads `n * k` bytes back as `n` elements,
@@ -20314,10 +20112,10 @@ fn evaluate_function_declared_resource_spec(
 /// A clause someone else established is assumed, not decided again: a
 /// contract's own entry clauses, which every caller establishes by
 /// evaluating them under this decision, and the body of a held composite,
-/// which its fold established (`assume_entry_clause_extents`). Every other
+/// which its fold established (`assume_entry_clause_spans`). Every other
 /// evaluation decides: a requirement at a call, a clause a function produces
 /// at its exit, and one an opaque or extern call returns to its caller.
-fn uint64_allocation_extent_argument(
+fn uint64_allocation_size_argument(
     bytes: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> Result<ProgramValue, RuntimeError> {
@@ -20326,8 +20124,8 @@ fn uint64_allocation_extent_argument(
     {
         return Ok(int32(MachineTerm::constant(constant as u32)));
     }
-    if assumptions.should_assume_entry_clause_extents()
-        || crate::kernel::eval::uint64_heap_extent_bytes_are_exact(bytes, assumptions)
+    if assumptions.should_assume_entry_clause_spans()
+        || crate::kernel::eval::uint64_allocation_size_bytes_are_exact(bytes, assumptions)
     {
         Ok(ProgramValue::UInt64(bytes.clone()))
     } else {
@@ -20594,13 +20392,13 @@ fn resource_fact_containing_allocation(
 /// Bounded by this frame's own bindings; it reads no caller state.
 fn retired_automatistorage_creation_blocks(
     state: &ExecutionState,
-    after: &Memory,
-) -> Vec<PointerBlock> {
+    after: &SymbolicMemory,
+) -> Vec<AddressBase> {
     state
         .locals
         .slots()
-        .filter(|slot| state.memory.has_block(&slot.block) && !after.has_block(&slot.block))
-        .map(|slot| slot.block.clone())
+        .filter(|slot| state.memory.has_block(&slot.base) && !after.has_block(&slot.base))
+        .map(|slot| slot.base.clone())
         .collect()
 }
 
@@ -20608,9 +20406,9 @@ type AutomaticLifetimeInput = (usize, usize, usize, usize, usize);
 
 struct AutomaticLifetimeRetirement {
     // Pin the input roots so their addresses cannot be reused during a session.
-    input: Memory,
-    blocks: Vec<PointerBlock>,
-    after: Memory,
+    input: SymbolicMemory,
+    blocks: Vec<AddressBase>,
+    after: SymbolicMemory,
 }
 
 thread_local! {
@@ -20623,7 +20421,10 @@ pub(super) fn clear_automatic_lifetime_retirement() {
 
 /// Only the physical transition is reused. Callers check current loan,
 /// mutex, population and return-value restrictions before calling this.
-fn retire_automatic_lifetime_blocks(before: &Memory, blocks: &[PointerBlock]) -> Memory {
+fn retire_automatic_lifetime_blocks(
+    before: &SymbolicMemory,
+    blocks: &[AddressBase],
+) -> SymbolicMemory {
     if blocks.is_empty() {
         return before.clone();
     }
@@ -20657,19 +20458,21 @@ fn retire_automatic_lifetime_blocks(before: &Memory, blocks: &[PointerBlock]) ->
     after
 }
 
-fn end_inline_frame_automatic_lifetimes(state: &ExecutionState) -> Result<Memory, RuntimeError> {
+fn end_inline_frame_automatic_lifetimes(
+    state: &ExecutionState,
+) -> Result<SymbolicMemory, RuntimeError> {
     let memory = &state.memory;
     let mut blocks = Vec::new();
     let mut selected = BTreeSet::new();
     for slot in state.locals.slots() {
         crate::instrumentation::record_deterministic_work(1);
-        if !block_is_frame_scoped_automatic_object(&slot.block) {
+        if !block_is_frame_scoped_automatic_object(&slot.base) {
             continue;
         }
-        if !memory.has_block(&slot.block) {
+        if !memory.has_block(&slot.base) {
             continue;
         }
-        if !selected.insert(slot.block.clone()) {
+        if !selected.insert(slot.base.clone()) {
             continue;
         }
         if let Some(error) = super::mutexes::automatic_storage_refusal(
@@ -20678,14 +20481,14 @@ fn end_inline_frame_automatic_lifetimes(state: &ExecutionState) -> Result<Memory
                 .locals
                 .name_for_slot(slot)
                 .expect("indexed local slot"),
-            &slot.block,
+            &slot.base,
         ) {
             return Err(error);
         }
-        if let Some(error) = state.population_storage_retirement_refusal(&slot.block) {
+        if let Some(error) = state.population_storage_retirement_refusal(&slot.base) {
             return Err(error);
         }
-        blocks.push(slot.block.clone());
+        blocks.push(slot.base.clone());
     }
     Ok(retire_automatic_lifetime_blocks(memory, &blocks))
 }
@@ -20698,21 +20501,21 @@ fn end_inline_frame_automatic_lifetimes(state: &ExecutionState) -> Result<Memory
 fn end_function_body_automatic_lifetimes(
     state: &ExecutionState,
     function: &ProgramFunction,
-    caller: &Memory,
+    caller: &SymbolicMemory,
     returned: Option<&ProgramValue>,
-) -> Result<Memory, RuntimeError> {
+) -> Result<SymbolicMemory, RuntimeError> {
     let memory = &state.memory;
     let mut blocks = Vec::new();
     let mut selected = BTreeSet::new();
     for slot in state.locals.slots() {
         crate::instrumentation::record_deterministic_work(1);
-        if slot.block.is_local_block()
+        if slot.base.is_local_block()
             && !(function.return_aggregate_layout().is_some()
-                && matches!(returned, Some(ProgramValue::Pointer(pointer)) if pointer.pointer().block == slot.block))
-            && !caller.has_block(&slot.block)
-            && memory.has_block(&slot.block)
+                && matches!(returned, Some(ProgramValue::Pointer(pointer)) if pointer.pointer().base == slot.base))
+            && !caller.has_block(&slot.base)
+            && memory.has_block(&slot.base)
         {
-            if !selected.insert(slot.block.clone()) {
+            if !selected.insert(slot.base.clone()) {
                 continue;
             }
             if let Some(error) = super::mutexes::automatic_storage_refusal(
@@ -20721,33 +20524,33 @@ fn end_function_body_automatic_lifetimes(
                     .locals
                     .name_for_slot(slot)
                     .expect("indexed local slot"),
-                &slot.block,
+                &slot.base,
             ) {
                 return Err(error);
             }
-            if let Some(error) = state.population_storage_retirement_refusal(&slot.block) {
+            if let Some(error) = state.population_storage_retirement_refusal(&slot.base) {
                 return Err(error);
             }
-            blocks.push(slot.block.clone());
+            blocks.push(slot.base.clone());
         }
     }
     for (_, pointer) in state.aggregate_step_objects.iter() {
         crate::instrumentation::record_deterministic_work(1);
-        if !caller.has_block(&pointer.block)
-            && memory.has_block(&pointer.block)
-            && selected.insert(pointer.block.clone())
+        if !caller.has_block(&pointer.base)
+            && memory.has_block(&pointer.base)
+            && selected.insert(pointer.base.clone())
         {
-            if let Some(error) = state.population_storage_retirement_refusal(&pointer.block) {
+            if let Some(error) = state.population_storage_retirement_refusal(&pointer.base) {
                 return Err(error);
             }
             if let Some(error) = super::mutexes::automatic_storage_refusal(
                 state,
                 "aggregate expression result",
-                &pointer.block,
+                &pointer.base,
             ) {
                 return Err(error);
             }
-            blocks.push(pointer.block.clone());
+            blocks.push(pointer.base.clone());
         }
     }
     Ok(retire_automatic_lifetime_blocks(memory, &blocks))
@@ -20755,7 +20558,7 @@ fn end_function_body_automatic_lifetimes(
 
 /// Whether this block is an automatic object a call frame minted for itself,
 /// rather than the outermost frame's `local:<name>` or a pseudo-slot.
-fn block_is_frame_scoped_automatic_object(block: &PointerBlock) -> bool {
+fn block_is_frame_scoped_automatic_object(block: &AddressBase) -> bool {
     block.starts_with("local:lifetime:") || block.starts_with("local:frame:")
 }
 
@@ -20765,18 +20568,18 @@ pub(in crate::kernel) fn function_exit_memory(
     callee_state: &ExecutionState,
     value: &ExecutionValue,
     function: &ProgramFunction,
-) -> Memory {
+) -> SymbolicMemory {
     if function.return_aggregate_layout().is_some() {
         return callee_state.memory.clone();
     }
     match value.pointer() {
         Some(pointer)
-            if pointer.pointer().block.is_local_block()
-                && !caller_state.memory.has_block(&pointer.pointer().block) =>
+            if pointer.pointer().base.is_local_block()
+                && !caller_state.memory.has_block(&pointer.pointer().base) =>
         {
             callee_state
                 .memory
-                .without_local_block(&pointer.pointer().block)
+                .without_local_block(&pointer.pointer().base)
         }
         _ => callee_state.memory.clone(),
     }
@@ -20868,7 +20671,7 @@ pub(crate) fn unreturned_allocation_with_checked_returned_resources(
             &entry_state,
             function.resource_requires(),
             function.composite_resource_definitions(),
-            &assumptions.clone().assume_entry_clause_extents(),
+            &assumptions.clone().assume_entry_clause_spans(),
             &mut budget,
         )
         .map_err(|limit| RuntimeError::FunctionContract(limit.describe()))??;
@@ -20959,7 +20762,7 @@ pub(crate) fn unreturned_allocation_at_function_exit(
         &entry_state,
         function.resource_requires(),
         function.composite_resource_definitions(),
-        &assumptions.clone().assume_entry_clause_extents(),
+        &assumptions.clone().assume_entry_clause_spans(),
         budget,
     )? {
         Ok((_, clauses)) => clauses,
@@ -21603,38 +21406,17 @@ fn contract_exit_outcome_with_boundary_transfer(
             Err(error) => return Ok(Err(error)),
         }
     }
-    // A proof may hold the body's exit resources in a split representation
-    // (one owned token twice rather than a quantity of two). Execution
-    // composes its resources as it goes; compose the retained ones the same
-    // way so the completed outcome is the canonical one certification compares.
-    let exceptional = matches!(&outcome, StatementOutcome::Throw { .. });
-    let outcome = match outcome {
-        StatementOutcome::Return { value, mut state }
-        | StatementOutcome::Throw { value, mut state } => {
-            if state.loan_view_bindings().iter().next().is_none() {
-                // Validate the retained partition, then normalize its representation.
-                // Re-inserting every fact into an empty context repeated all
-                // attachment work at each explicit path completion.
-                if let Some(error) = state.resources.validity_error(assumptions) {
-                    return Ok(Err(resource_context_runtime_error(error)));
-                }
-                let resources = state.resources.clone().normalized(assumptions);
-                state = Box::new(state.with_resource_context(resources));
-            } else if state.resources.validity_error(assumptions).is_some()
-                || !state.loan_bindings_are_consistent()
-            {
-                return Ok(Err(RuntimeError::FunctionContract(
-                    "stable-view return resources are not a valid bound context".to_string(),
-                )));
-            }
-            if exceptional {
-                StatementOutcome::Throw { value, state }
-            } else {
-                StatementOutcome::Return { value, state }
-            }
-        }
-        other => other,
-    };
+    // Execution and proof rewrites construct this partition as they go.
+    // Retain its exact resources, projections, quantities and occurrence IDs;
+    // completing a path neither re-admits it nor canonicalizes the ambient
+    // frame. The binding mirror is a constant-time shared-root invariant.
+    if let StatementOutcome::Return { state, .. } | StatementOutcome::Throw { state, .. } = &outcome
+        && !state.loan_bindings_are_consistent()
+    {
+        return Ok(Err(RuntimeError::FunctionContract(
+            "stable-view return resources are not a valid bound context".into(),
+        )));
+    }
     let callee_state = if let Some(receipt) = checked_transfer {
         receipt.callee.clone()
     } else {
@@ -22254,9 +22036,9 @@ pub(super) fn function_outcome_from_body(
                 crate::kernel::eval::retire_automatic_storage_owner(
                     &mut caller_state,
                     &MemoryRange::new_with_element_width(
-                        Pointer {
-                            block: block.clone(),
-                            offset: PointerOffsetTerm::Constant(0),
+                        Address {
+                            base: block.clone(),
+                            offset: AddressOffset::Constant(0),
                         },
                         0.into(),
                         bytes,
@@ -22335,9 +22117,9 @@ pub(super) fn function_outcome_from_body(
                 crate::kernel::eval::retire_automatic_storage_owner(
                     &mut caller_state,
                     &MemoryRange::new_with_element_width(
-                        Pointer {
-                            block: block.clone(),
-                            offset: PointerOffsetTerm::Constant(0),
+                        Address {
+                            base: block.clone(),
+                            offset: AddressOffset::Constant(0),
                         },
                         0.into(),
                         bytes,

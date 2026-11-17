@@ -40,7 +40,7 @@ admitted profile; dynamic facts belong in states or checked execution state.
 
 | Component | Meaning | Does not establish |
 | --- | --- | --- |
-| Storage | Allocation identity/generation, extent, alignment, and live storage | An object of an arbitrary requested type |
+| Storage | Allocation identity/generation, size, alignment, and live storage | An object of an arbitrary requested type |
 | Object | Declared/admitted type, layout, containing object and subobject, lifecycle phase | Initialized contents or permission |
 | Representation | Typed values and byte fragments describing that storage at a state | Legal access by every source-language type |
 | Definite initialization | The selected bytes have been written or otherwise validly initialized | A particular value, or validity for every type |
@@ -67,7 +67,7 @@ containing allocation does not justify traversal across unrelated scalar
 subobjects. An unseen pointer needs bounds evidence, and native reference
 binding alone cannot initialize an unwritten C++ referent. The delivered
 bounded rules and accepted C cast policy are in
-[Pointer subobject extents](pointer-subobject-extents.md) and
+[Pointer subobject bounds](pointer-subobject-bounds.md) and
 [Pointer/integer representations](pointer-integer-representations.md).
 The historical sibling-pointer defect is not a fresh current-master finding.
 
@@ -83,7 +83,7 @@ The kernel then applies their shared effects consistently, including at calls.
 
 | Operation | Required evidence | Resulting effect |
 | --- | --- | --- |
-| Allocate storage | Checked extent/alignment and allocation kind | Fresh live storage and the specified owner; no fabricated contents |
+| Allocate storage | Checked size/alignment and allocation kind | Fresh live storage and the specified owner; no fabricated contents |
 | Select construction destination | Exact pointer, layout, range and authority | Bind that destination before execution; no extra freshness assumption |
 | Begin object/subobject use | Admitted declaration or construction rule | Record/validate type and lifecycle phase; no arbitrary reinterpretation |
 | Initialize scalar/field | Valid destination, conversion, phase and write permission | Store the converted value and mark the written range initialized |

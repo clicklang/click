@@ -276,7 +276,7 @@ pub(in crate::surface) struct FixedStateLoweringOptions<'a> {
     /// application binds its parameters. An argument that names another state
     /// (`old(a)`, `at(mark, a)`) binds the parameter to that state's memory;
     /// one read at the lowering state is absent and reads through it.
-    pub(in crate::surface) bound_array_memories: Option<&'a BTreeMap<String, SpecMemory>>,
+    pub(in crate::surface) bound_array_memories: Option<&'a BTreeMap<String, SpecPoint>>,
     /// Click functions that stay applications: the proof unfolds them itself.
     pub(in crate::surface) opaque_click_functions: Option<&'a BTreeSet<String>>,
     pub(in crate::surface) pointer_element_widths: BTreeMap<String, u32>,
@@ -966,7 +966,7 @@ pub(in crate::surface) fn evaluate_resource_argument_through_kernel(
     result: Option<&ProgramValue>,
 ) -> Result<ProgramValue, String> {
     // Most resource fragments already carry their resolved C spelling.
-    // Retain the source expression only where its `c(result)` distinction
+    // Retain the source expression only where its `program::result` distinction
     // matters, and keep the typed null supplied by parameter lowering.
     let original = if result.is_none()
         || !crate::surface::lowering::contract_expression_referenced_names(original)
@@ -1085,7 +1085,7 @@ pub(in crate::surface) fn evaluate_fixed_state_array_ref_through_kernel(
     | ContractExpression::ProgramExpression(ProgramExpression::Variable(
         crate::kernel::BindingName::Named(name),
     ))
-    | ContractExpression::CBinding(name) = expression
+    | ContractExpression::ProgramBinding(name) = expression
         && let Some(array_ref) = contract_environment.array_refs.get(name)
         && let Some(ProgramValue::Pointer(value)) = contract_environment.values.get(name)
     {
@@ -1173,7 +1173,7 @@ fn has_live_aggregate_binding(state: &ExecutionState, name: &str) -> bool {
     state
         .locals()
         .aggregate_object_pointer(name)
-        .is_some_and(|slot| state.memory().has_block(&slot.block))
+        .is_some_and(|slot| state.memory().has_block(&slot.base))
 }
 
 impl FixedStateLowering {
@@ -1757,7 +1757,7 @@ mod retained_capture_tests {
             ProgramValue::Float64(MachineTerm::Variable(Variable(997002))),
             ProgramValue::Pointer(
                 crate::kernel::PointerValue::new(
-                    crate::kernel::Pointer::symbolic(Variable(997003)),
+                    crate::kernel::Address::symbolic(Variable(997003)),
                     ProgramType::Int32Pointer,
                 )
                 .with_pointee_constant(true),

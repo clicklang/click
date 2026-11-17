@@ -109,10 +109,10 @@ fn wide_casts_match_all_existing_integer_directions() {
 #[test]
 fn wide_reads_keep_type_and_state_in_casts_and_observations() {
     let _session = VerificationSession::enter();
-    let address = Pointer::symbolic(Variable(995703));
-    let before = crate::kernel::intern_memory(Memory::new());
+    let address = Address::symbolic(Variable(995703));
+    let before = crate::kernel::intern_memory(SymbolicMemory::new());
     let after = crate::kernel::intern_memory(
-        Memory::new().store(address.clone(), ProgramValue::Int32(7u32.into())),
+        SymbolicMemory::new().store(address.clone(), ProgramValue::Int32(7u32.into())),
     );
     for format in [MachineIntegerType::Int128, MachineIntegerType::UInt128] {
         let kind = crate::kernel::LoadKind::of_type(format.program_type()).unwrap();
@@ -177,8 +177,8 @@ fn supported_wide_arithmetic_matches_native_values_and_domains() {
                                 MachineTerm::Variable(Variable(id)),
                             ),
                             5 => MachineTerm::MemoryLoad(
-                                ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
-                                Box::new(Pointer::symbolic(Variable(id))),
+                                ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
+                                Box::new(Address::symbolic(Variable(id))),
                                 crate::kernel::LoadKind::of_type(format.program_type()).unwrap(),
                             ),
                             _ => word(format, 2.into()),

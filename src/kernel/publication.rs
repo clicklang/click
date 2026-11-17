@@ -221,7 +221,7 @@ pub(super) fn execute_publication_paths(
 /// Consumes the flag's explicit storage ownership and mints both rights.
 fn initialize(
     state: &ExecutionState,
-    flag: &Pointer,
+    flag: &Address,
     value: &ProgramValue,
     payload: &crate::kernel::ResourceDescription,
     assumptions: &PureFactContext,
@@ -292,7 +292,7 @@ fn payload_fact(right: &PublicationRight) -> ResourceFact {
 /// payload's memory as an unlock forgets protected memory.
 fn release_store(
     state: &ExecutionState,
-    flag: &Pointer,
+    flag: &Address,
     desired: &ProgramValue,
     order: &ProgramValue,
     assumptions: &PureFactContext,
@@ -385,7 +385,7 @@ fn release_store(
 /// some value and receives nothing.
 fn acquire_load(
     state: &ExecutionState,
-    flag: &Pointer,
+    flag: &Address,
     order: &ProgramValue,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -492,10 +492,10 @@ mod tests {
     use super::*;
     use crate::kernel::{ResourceDescription, ResourceFieldSchema};
 
-    fn flag(index: usize) -> Pointer {
-        Pointer {
-            block: format!("publication-flag-{index}").into(),
-            offset: PointerOffsetTerm::Constant(0),
+    fn flag(index: usize) -> Address {
+        Address {
+            base: format!("publication-flag-{index}").into(),
+            offset: AddressOffset::Constant(0),
         }
     }
 
@@ -518,18 +518,18 @@ mod tests {
     /// Subscriber rights for flags `0..subscribers`, beside `unrelated`
     /// other flags' publisher rights and as many owned cells.
     fn state(subscribers: usize, unrelated: usize) -> ExecutionState {
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         let mut resources = ResourceContext::new();
         for index in 0..subscribers {
             resources = resources.unchecked_with_fact(right(PublicationSide::Subscriber, index));
         }
         for index in subscribers..subscribers + unrelated {
-            let cell = Pointer {
-                block: format!("unrelated-cell-{index}").into(),
-                offset: PointerOffsetTerm::Constant(0),
+            let cell = Address {
+                base: format!("unrelated-cell-{index}").into(),
+                offset: AddressOffset::Constant(0),
             };
             memory = memory
-                .with_block(cell.block.clone(), 4)
+                .with_block(cell.base.clone(), 4)
                 .store(cell.clone(), int32(0));
             resources = resources
                 .unchecked_with_fact(right(PublicationSide::Publisher, index))

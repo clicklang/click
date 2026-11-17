@@ -403,11 +403,11 @@ mod tests {
         use crate::kernel::machine_integer::comparison::condition_for_operand_views;
         let _session = crate::kernel::VerificationSession::enter();
         let memory = crate::kernel::intern_memory(
-            crate::kernel::Memory::new().with_block("retained_state-comparison", 4),
+            crate::kernel::SymbolicMemory::new().with_block("retained_state-comparison", 4),
         );
-        let pointer = Pointer {
-            block: "retained_state-comparison".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "retained_state-comparison".into(),
+            offset: AddressOffset::Constant(0),
         };
         let variable = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
@@ -457,11 +457,11 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let empty = crate::kernel::eval::capture_load_variable_registry();
         let memory = crate::kernel::intern_memory(
-            crate::kernel::Memory::new().with_block("retained_state-key", 4),
+            crate::kernel::SymbolicMemory::new().with_block("retained_state-key", 4),
         );
-        let pointer = Pointer {
-            block: "retained_state-key".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "retained_state-key".into(),
+            offset: AddressOffset::Constant(0),
         };
         let variable = crate::kernel::load_variable_for_cell_with_origin(
             &memory,

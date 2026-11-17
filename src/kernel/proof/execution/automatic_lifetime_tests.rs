@@ -8,7 +8,7 @@ fn automatic_lifetime_event_rejects_active_local_loan_and_forged_retirement() {
     use crate::kernel::{ResourceStateSource, ResourceTransferRole};
     let state = ExecutionState::new()
         .with_local("selected", int32(5))
-        .with_memory(Memory::new().with_block("local:selected", 4));
+        .with_memory(SymbolicMemory::new().with_block("local:selected", 4));
     let pointer = state.locals().slot("selected").unwrap().clone();
     let viewed = ResourceFact::view_memory(MemoryRange::new(pointer.clone(), 0.into(), 1.into()));
     let ledger = LoanLedger::new();
@@ -48,7 +48,7 @@ fn automatic_lifetime_event_rejects_active_local_loan_and_forged_retirement() {
         names,
         after_state: state
             .clone()
-            .with_memory(state.memory().clone().without_local_block(&pointer.block)),
+            .with_memory(state.memory().clone().without_local_block(&pointer.base)),
     };
     assert!(forged.advance_checked(&state).is_none());
 }
@@ -57,7 +57,7 @@ fn automatic_lifetime_event_rejects_active_local_loan_and_forged_retirement() {
 fn automatic_lifetime_event_rejects_forged_mutex_storage_retirement() {
     let state = ExecutionState::new()
         .with_local("holder", int32(0))
-        .with_memory(Memory::new().with_block("local:holder", 48));
+        .with_memory(SymbolicMemory::new().with_block("local:holder", 48));
     let address = state.locals().slot("holder").unwrap().offset_by_bytes(8);
     let context = crate::kernel::mutexes::MutexContext::new(state)
         .initialize_empty(address.clone(), 40)
@@ -74,7 +74,7 @@ fn automatic_lifetime_event_rejects_forged_mutex_storage_retirement() {
         names: names.clone(),
         after_state: state
             .clone()
-            .with_memory(state.memory().clone().without_local_block(&address.block)),
+            .with_memory(state.memory().clone().without_local_block(&address.base)),
     };
     assert!(forged.advance_checked(state).is_none());
     assert_eq!(core.reached_state(), state);
@@ -97,7 +97,7 @@ fn automatic_lifetime_event_rejects_forged_mutex_storage_retirement() {
 fn automatic_lifetime_end_records_the_retired_storage_footprint() {
     let state = ExecutionState::new()
         .with_local("selected", int32(5))
-        .with_memory(Memory::new().with_block("local:selected", 4));
+        .with_memory(SymbolicMemory::new().with_block("local:selected", 4));
     let slot = state.locals().slot("selected").unwrap().clone();
     let mut core = ExecutionProofCore::at_entry(state.clone(), ExecutionFrontier::default());
     let after = core
@@ -125,7 +125,7 @@ fn automatic_lifetime_end_records_the_retired_storage_footprint() {
     );
     let whole_statement = crate::kernel::RegionFootprint::with_scope_cleanup(&statement, footprint);
     let outside = Resource::Memory(MemoryRange::new_with_element_width(
-        Memory::frame_local_pointer(0, "outside"),
+        SymbolicMemory::frame_local_pointer(0, "outside"),
         0u32.into(),
         4u32.into(),
         1,

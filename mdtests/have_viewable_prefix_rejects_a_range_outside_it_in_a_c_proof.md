@@ -5,7 +5,7 @@ The positive half is
 and `a[0..k]` may run past the end of the stated range, so the narrowing is
 refused. The diagnostic names the written goal and reports the failed
 source-proof construction, without attributing the miss to a guessed source
-range or byte-extent premise.
+range or byte-span premise.
 
 ```c filename=have_loadable_prefix_rejects_a_range_outside_it_in_a_c_proof.c
 int32 probe(int32 a[], int32 n, int32 k) {

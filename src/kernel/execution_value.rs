@@ -513,7 +513,7 @@ enum StoredIdentity<'a> {
     Machine(&'a SharedMachineIntegerTerm),
     Native(NativeStorageIdentity<'a>),
 }
-/// Local machine keys own shared observation handles. Memory cells reuse the
+/// Local machine keys own shared observation handles. SymbolicMemory cells reuse the
 /// structural family projections and leave native numeric carriers explicit.
 #[derive(Debug)]
 enum StoredKey {
@@ -717,8 +717,8 @@ mod tests {
             KernelTerm::variable(KernelType::Algebraic(ty.clone()), Variable(999764)),
             KernelTerm::algebraic_read(
                 ty.clone(),
-                intern_memory(Memory::new()),
-                SharedPointerAddress::import(&Pointer::symbolic(Variable(999765))),
+                intern_memory(SymbolicMemory::new()),
+                SharedAddress::import(&Address::symbolic(Variable(999765))),
             ),
         ];
         fn hash(value: &impl std::hash::Hash) -> u64 {
@@ -796,9 +796,9 @@ mod tests {
                     native_stored.cmp(&StoredExecutionValue::from(other))
                 );
             }
-            let address = Memory::local_pointer("stored_bool");
-            let memory = Memory::new()
-                .with_block(address.block.clone(), 1)
+            let address = SymbolicMemory::local_pointer("stored_bool");
+            let memory = SymbolicMemory::new()
+                .with_block(address.base.clone(), 1)
                 .store_retained(address.clone(), cell.into_value());
             assert_eq!(
                 memory.known_retained_value(&address).unwrap().shared(),
@@ -893,7 +893,7 @@ mod tests {
     fn pointer_local_storage_retains_root_and_native_identity() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(1027000)),
+            Address::symbolic(Variable(1027000)),
             ProgramType::Int32Pointer,
         );
         let root = KernelTerm::shared_pointer_call(
@@ -968,7 +968,7 @@ mod tests {
     fn pointer_memory_cells_keep_roots_and_the_previous_native_key() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(1027500)),
+            Address::symbolic(Variable(1027500)),
             ProgramType::Int32Pointer,
         )
         .with_pointee_constant(true);
@@ -986,7 +986,7 @@ mod tests {
         }
         assert_eq!(hash(&retained), hash(&native_cell));
         assert_eq!(format!("{retained:?}"), format!("{native:?}"));
-        let address = Pointer::symbolic(Variable(1027501));
+        let address = Address::symbolic(Variable(1027501));
         let mut cells = CellStore::new();
         cells.insert_retained(address.clone(), retained);
         assert_eq!(cells.get_retained(&address).unwrap().shared(), Some(&root));
@@ -1005,9 +1005,9 @@ mod tests {
     #[test]
     fn pointer_store_history_keeps_the_root_after_cache_forgetting() {
         let _session = crate::kernel::VerificationSession::enter();
-        let address = Memory::local_pointer("retained_pointer_cell");
+        let address = SymbolicMemory::local_pointer("retained_pointer_cell");
         let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(1027600)),
+            Address::symbolic(Variable(1027600)),
             ProgramType::Int32Pointer,
         )
         .with_pointee_constant(true);
@@ -1019,8 +1019,8 @@ mod tests {
             ),
             SharedPointerValue::import(&pointer),
         );
-        let memory = Memory::new()
-            .with_block(address.block.clone(), C_POINTER_BYTE_WIDTH)
+        let memory = SymbolicMemory::new()
+            .with_block(address.base.clone(), C_POINTER_BYTE_WIDTH)
             .store_retained(address.clone(), ExecutionValue::Shared(root.clone()));
         assert_eq!(
             memory.known_retained_value(&address).unwrap().shared(),
@@ -1034,7 +1034,7 @@ mod tests {
         assert!(forgotten.known_value(&address).is_none());
         for retained_state in [&memory, &forgotten] {
             let origin =
-                Pointer::loaded_value(&crate::kernel::intern_memory_ref(retained_state), &address);
+                Address::loaded_value(&crate::kernel::intern_memory_ref(retained_state), &address);
             let recovered =
                 crate::kernel::memory_history::complete_pointer_carrier_read_retained_value(
                     &origin,

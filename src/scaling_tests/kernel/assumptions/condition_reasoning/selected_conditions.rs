@@ -9,8 +9,8 @@ fn exact_memory_condition_matches_ignore_other_facts() {
             crate::kernel::IntegerTerm::var(Variable(right)).into(),
         ),
         1 => ConditionTerm::pointer_equal(
-            Pointer::symbolic(Variable(left)),
-            Pointer::symbolic(Variable(right)),
+            Address::symbolic(Variable(left)),
+            Address::symbolic(Variable(right)),
         ),
         2 => ConditionTerm::uint64_less_than(var(left), var(right)),
         3 => ConditionTerm::signed_less_than(MachineTerm::add(var(left), 1u32.into()), var(right)),
@@ -124,8 +124,8 @@ fn equivalent_equality_spellings_use_bounded_lookups() {
             };
             let offset = |left, right| {
                 ConditionTerm::PointerOffsetEqual(
-                    Box::new(PointerOffsetTerm::Variable(Variable(left))),
-                    Box::new(PointerOffsetTerm::Variable(Variable(right))),
+                    Box::new(AddressOffset::Variable(Variable(left))),
+                    Box::new(AddressOffset::Variable(Variable(right))),
                 )
             };
             let mut context = PureFactContext::new();
@@ -302,8 +302,8 @@ fn compound_load_condition_hits_and_misses_ignore_other_facts() {
                 let _session = crate::kernel::VerificationSession::enter();
                 let var = |id| MachineTerm::Variable(Variable(id));
                 let raw = MachineTerm::MemoryLoad(
-                    ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
-                    Box::new(Pointer::symbolic(Variable(997_000))),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
+                    Box::new(Address::symbolic(Variable(997_000))),
                     crate::kernel::LoadKind::Int32,
                 );
                 let named = MachineTerm::Variable(

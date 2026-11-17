@@ -1,7 +1,7 @@
 use super::*;
 
 fn opaque(id: u64) -> PointerValue {
-    PointerValue::new(Pointer::symbolic(Variable(id)), ProgramType::Int32Pointer)
+    PointerValue::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
 }
 
 /// The witness arrives after the entire related class has been built. Each
@@ -13,7 +13,7 @@ fn pointer_domain_queries_read_cached_classes_without_alias_discovery() {
         for related in [4u64, 16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
             let root = opaque(998_000);
-            let selected = root.clone().with_extent(Some(SubobjectExtent {
+            let selected = root.clone().with_bounds(Some(SubobjectBounds {
                 start: root.pointer().clone(),
                 width: 4u32.into(),
             }));
@@ -46,7 +46,7 @@ fn pointer_domain_queries_read_cached_classes_without_alias_discovery() {
             });
             assert_eq!(
                 domain,
-                PointerDomain::Selected(selected.extent().unwrap().clone())
+                PointerDomain::Selected(selected.bounds().unwrap().clone())
             );
             let logarithm = (related + unrelated + 1).ilog2() as usize + 1;
             assert!(
@@ -74,17 +74,17 @@ fn pointer_domain_queries_read_cached_classes_without_alias_discovery() {
 fn an_unregistered_pointer_domain_does_not_recover_memory_history() {
     for stores in [0u64, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for i in 0..stores {
             memory = memory.store(
-                Pointer::symbolic(Variable(1_000_000 + i)),
+                Address::symbolic(Variable(1_000_000 + i)),
                 ProgramValue::Int32(7u32.into()),
             );
         }
         let memory = crate::kernel::intern_memory(memory);
-        let cell = Pointer::symbolic(Variable(1_001_000));
+        let cell = Address::symbolic(Variable(1_001_000));
         let read = PointerValue::from_read(
-            Pointer::loaded_value(&memory, &cell),
+            Address::loaded_value(&memory, &cell),
             ProgramType::Int32Pointer,
             &memory,
             &cell,

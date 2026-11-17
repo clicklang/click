@@ -1,13 +1,13 @@
-# a contract cannot state a range whose extent wraps
+# a contract cannot state a range whose span wraps
 
 A stated range carries its byte-count guards as facts, so the one thing that
 must not be possible is stating a range whose guards are false: the clause
-would hand the proof a valid-extent fact about a range that has none, and
-`mdtests/wrapped_viewable_extent_is_not_a_cell.md` is what that buys.
+would hand the proof a valid-span fact about a range that has none, and
+`mdtests/wrapped_viewable_span_is_not_a_cell.md` is what that buys.
 
 Stating one is refused where the clause is prepared, by the same shared
 definition the guards come from. `n == 1073741824` makes the element count of
-`p[0..n]` decidably too wide for a four-byte extent, so `views p[0..n]` never
+`p[0..n]` decidably too wide for a four-byte span, so `views p[0..n]` never
 becomes an assumption at all — the refusal is about the clause, not about the
 proof that would have used it.
 

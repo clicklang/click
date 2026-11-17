@@ -4,7 +4,7 @@ fn access(budget: &mut ExecutionBudget, kind: VolatileAccessKind) -> ExecutionPu
     volatile_access_fact(
         budget,
         kind,
-        Pointer::symbolic(Variable(800_001)),
+        Address::symbolic(Variable(800_001)),
         ProgramType::Int32,
         ProgramValue::Int32(MachineTerm::Variable(Variable(800_002))),
     )
@@ -26,7 +26,7 @@ fn typed_accesses_keep_nominal_identity_and_read_results() {
         panic!()
     };
     assert_eq!(event.value_type, ProgramType::Int32);
-    assert_eq!(event.pointer, Pointer::symbolic(Variable(800_001)));
+    assert_eq!(event.pointer, Address::symbolic(Variable(800_001)));
     assert_eq!(first.proposition().clone(), *first.proposition());
 }
 
@@ -35,7 +35,7 @@ fn predicate_spelling_and_uncertified_records_do_not_supply_read_results() {
     let legacy = ExecutionPureFact::certified(Proposition::Predicate {
         name: "__click_volatile_read_0".into(),
         arguments: vec![
-            Term::ProgramValue(ProgramValue::pointer(Pointer::symbolic(Variable(800_001)))),
+            Term::ProgramValue(ProgramValue::pointer(Address::symbolic(Variable(800_001)))),
             Term::ProgramValue(ProgramValue::Int32(MachineTerm::constant(7))),
         ],
     });
@@ -66,14 +66,14 @@ fn substitution_reaches_operands_and_preserves_event_identity() {
     let mapped = substitute_pointer_variable_in_proposition(
         &mapped,
         Variable(800_001),
-        &Pointer::symbolic(Variable(800_003)),
+        &Address::symbolic(Variable(800_003)),
     );
     let Proposition::VolatileAccess(mapped) = mapped else {
         panic!()
     };
     assert_eq!(mapped.id, original.id);
     assert_eq!(mapped.kind, original.kind);
-    assert_eq!(mapped.pointer, Pointer::symbolic(Variable(800_003)));
+    assert_eq!(mapped.pointer, Address::symbolic(Variable(800_003)));
     assert_eq!(mapped.value, ProgramValue::Int32(MachineTerm::constant(9)));
 }
 

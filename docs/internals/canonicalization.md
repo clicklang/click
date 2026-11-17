@@ -75,7 +75,7 @@ allocation changes remain barriers; read identity by itself does not establish
 state equality or access authority. The end-to-end regression is
 `mdtests/cached_read_return_completion.md`.
 The same comparison preserves a selected resource body's identical readability
-fact across cached states. Address, byte extent, and wide/narrow kind must
+fact across cached states. Address, byte span, and wide/narrow kind must
 match exactly. Return-trace certification rechecks that body fact before
 retaining its cached-state form; it never imports an arbitrary caller fact
 context. Repeated comparisons of one state pair share a local result, so
@@ -141,7 +141,7 @@ stored summary.
 The same rule applies to loads at propositionally equal addresses. Their load
 variables remain distinct context-free forms. A target-directed congruence
 derivation checks that both registered origins have the same memory version and
-pointer block, and retains exact ground-equality paths for the differing
+address base, and retains exact ground-equality paths for the differing
 offset leaves. Smart proof expansion renders those paths as ordinary
 `rewrite` steps followed by `normalize`.
 

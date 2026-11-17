@@ -714,7 +714,7 @@ pub(super) mod tests {
             ProgramType::Int32,
             "concrete_body",
             vec![],
-            ProgramStatement::seq(Arc::new(loop_statement()), Arc::new(tail)),
+            ProgramStatement::seq(Arc::new(loop_statement()), Arc::new(tail.clone())),
         )
         .with_contract(
             vec![],
@@ -757,17 +757,35 @@ pub(super) mod tests {
         } else {
             opened.into_execution_core()
         };
-        core.record_condition_transition(
+        let sources = core.enter_loop_phases(&function, &[]).unwrap();
+        let after_loop = Arc::new(tail.clone());
+        core.frontier.continuations.push(
+            ProofExecutionContinuation::loop_body(
+                Arc::new(ProgramStatement::seq(
+                    Arc::new(loop_statement()),
+                    Arc::new(tail),
+                )),
+                0,
+                Some(after_loop),
+                1,
+                None,
+                sources,
+            )
+            .unwrap(),
+        );
+        let ProgramStatement::Loop { test, .. } = loop_statement() else {
+            unreachable!()
+        };
+        let (execution, _) = crate::kernel::api::prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule_using_budget(
+            entry.clone(), (*test.statement).clone(), facts.clone(), environment.clone(), ExecutionSemantics::APPLY_VERIFIED_RULES,
+            &mut ExecutionBudget::default(),
+        );
+        core.record_statement_transition_with_descent(
             &function,
             &[],
-            Theorem::new(Proposition::ProgramConditionEvaluates {
-                state: Box::new(entry.clone()),
-                condition: int32_literal(0),
-                outcome: ConditionOutcome::Value(false),
-            }),
+            &execution.paths[0],
             facts.clone(),
-            &[],
-            &[],
+            &Vec::<ExecutionPureFact>::new(),
         )
         .unwrap();
         let outcome = StatementOutcome::Return {

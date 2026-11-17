@@ -37,14 +37,14 @@ fn overflow_conditions_reuse_shared_numeric_dags() {
                 crate::kernel::reasoning::substitute_pointer_variable_in_common_condition(
                     &nested,
                     Variable(999902),
-                    &Pointer::null()
+                    &Address::null()
                 ),
                 Some(nested)
             );
             assert_eq!(
                 crate::kernel::memory_history::transport_framed_common_condition(
                     &source,
-                    &crate::kernel::Memory::new(),
+                    &crate::kernel::SymbolicMemory::new(),
                     None
                 ),
                 Some(source)

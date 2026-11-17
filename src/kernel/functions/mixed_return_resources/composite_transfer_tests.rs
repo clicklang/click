@@ -313,7 +313,7 @@ fn held_body_construction_uses_the_parent_partition_and_fresh_child_occurrences(
         ],
     );
     let ambient = ResourceFact::own_memory(MemoryRange::new(
-        Pointer::symbolic(Variable(8_796_551)),
+        Address::symbolic(Variable(8_796_551)),
         0u32.into(),
         4u32.into(),
     ));

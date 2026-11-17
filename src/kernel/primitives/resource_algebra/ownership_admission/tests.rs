@@ -1,9 +1,9 @@
 use super::*;
 
-fn at(id: u64) -> Pointer {
-    Pointer::symbolic(Variable(8_770_000 + id))
+fn at(id: u64) -> Address {
+    Address::symbolic(Variable(8_770_000 + id))
 }
-fn owner(base: Pointer, start: u32, end: u32) -> ResourceFact {
+fn owner(base: Address, start: u32, end: u32) -> ResourceFact {
     ResourceFact::own_memory(MemoryRange::new_with_element_width(
         base,
         start.into(),
@@ -302,7 +302,7 @@ fn private_frame_coverage_is_scoped_to_its_registry_and_defers_to_local_aliases(
     crate::kernel::set_never_address_taken_locals(std::collections::BTreeSet::from([
         "boundary_private".into(),
     ]));
-    let local = crate::kernel::Memory::local_pointer("boundary_private");
+    let local = crate::kernel::SymbolicMemory::local_pointer("boundary_private");
     let frame = ResourceContext::new().unchecked_with_fact(owner(local.clone(), 0, 4));
     let output = owner(at(90), 0, 4);
     let facts = PureFactContext::new();
@@ -334,13 +334,13 @@ fn private_frame_coverage_is_scoped_to_its_registry_and_defers_to_local_aliases(
 fn automatic_storage_and_entry_arguments_keep_their_structural_partition() {
     let _session = crate::kernel::VerificationSession::enter();
     let facts = PureFactContext::new();
-    let pointer = |block| Pointer {
-        block,
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = |block| Address {
+        base: block,
+        offset: AddressOffset::Constant(0),
     };
-    let argument = owner(pointer(PointerBlock::ExternalArgument), 0, 4);
-    let local = owner(pointer(PointerBlock::Concrete("local:object".into())), 0, 4);
-    let private = owner(pointer(PointerBlock::Temporary(8_779_000)), 0, 4);
+    let argument = owner(pointer(AddressBase::ExternalArgument), 0, 4);
+    let local = owner(pointer(AddressBase::Concrete("local:object".into())), 0, 4);
+    let private = owner(pointer(AddressBase::Temporary(8_779_000)), 0, 4);
     let frame = ResourceContext::new().unchecked_with_facts([local.clone(), private.clone()]);
     let _fast =
         crate::kernel::search::FastOperationScope::enter("allocation-class ownership boundary");
@@ -353,11 +353,7 @@ fn automatic_storage_and_entry_arguments_keep_their_structural_partition() {
         frame.admit_without_discovery([local], &facts),
         OwnershipAdmission::Admitted { .. }
     ));
-    let global = owner(
-        pointer(PointerBlock::Concrete("global:object".into())),
-        0,
-        4,
-    );
+    let global = owner(pointer(AddressBase::Concrete("global:object".into())), 0, 4);
     assert!(matches!(
         ResourceContext::new()
             .unchecked_with_fact(global)

@@ -22,9 +22,9 @@ use crate::persistent::PersistentMap;
 use super::functions::suspend_verified_worker;
 use super::loans::{LoanLedger, LoanViewBinding, LoanViewBindings, StableViewTransferPlan};
 use super::{
-    ConditionTerm, ExecutionBudget, ExecutionEnvironment, ExecutionPureFact, ExecutionResult,
-    ExecutionState, MachineTerm, Memory, MemoryRange, Pointer, PointerBlock, ProgramValue,
-    Proposition, PureFactContext, ResourceContext, ResourceFact, RuntimeError,
+    Address, AddressBase, ConditionTerm, ExecutionBudget, ExecutionEnvironment, ExecutionPureFact,
+    ExecutionResult, ExecutionState, MachineTerm, MemoryRange, ProgramValue, Proposition,
+    PureFactContext, ResourceContext, ResourceFact, RuntimeError, SymbolicMemory,
     VerifiedFunctionRule, VerifiedFunctionTerminationRule,
 };
 
@@ -44,7 +44,7 @@ pub(super) struct WorkerCompletion {
     entry_partition: Option<super::functions::ReturnedEntryPartition>,
     plan: StableViewTransferPlan,
     outputs: ResourceContext,
-    memory: Memory,
+    memory: SymbolicMemory,
     effects: Vec<MemoryRange>,
     facts: crate::kernel::ExecutionFacts,
     mutex_ledger: Option<super::mutexes::MutexLedger>,
@@ -74,7 +74,7 @@ pub(super) struct WorkerCreation {
 /// Until then the parent cannot observe that population's total.
 #[derive(Clone, Debug)]
 pub(super) struct DeferredMemberExchange {
-    pub(super) block: PointerBlock,
+    pub(super) block: AddressBase,
     pub(super) description: super::ResourceDescription,
     pub(super) produce: bool,
     pub(super) quantity: MachineTerm,
@@ -85,7 +85,7 @@ impl WorkerCompletion {
     pub(super) fn checked(
         plan: StableViewTransferPlan,
         outputs: ResourceContext,
-        memory: Memory,
+        memory: SymbolicMemory,
         effects: Vec<MemoryRange>,
         facts: crate::kernel::ExecutionFacts,
         mutex_ledger: Option<super::mutexes::MutexLedger>,
@@ -127,11 +127,11 @@ pub(super) struct PendingThreadCreate {
 #[derive(Clone, Debug)]
 pub(super) enum PendingThreadMemoryDelta {
     Declare {
-        block: PointerBlock,
+        block: AddressBase,
         bytes: u32,
     },
     Store {
-        pointer: Pointer,
+        pointer: Address,
         value: ProgramValue,
     },
 }
@@ -182,9 +182,9 @@ impl PendingCreateAuthority {
 struct PendingThreadCreateStorage {
     identity: u64,
     status: MachineTerm,
-    handle_slot: Pointer,
+    handle_slot: Address,
     handle_value: ProgramValue,
-    success_memory: Memory,
+    success_memory: SymbolicMemory,
     success: PendingCreateAuthority,
     failure: PendingCreateAuthority,
     deltas: PersistentMap<u64, PendingThreadMemoryDelta>,
@@ -211,7 +211,7 @@ impl PendingThreadCreate {
 
     pub(super) fn new(
         status: MachineTerm,
-        handle_slot: Pointer,
+        handle_slot: Address,
         handle_value: ProgramValue,
         success: &ExecutionState,
         failure: &ExecutionState,
@@ -274,9 +274,9 @@ impl PendingThreadCreate {
         &self,
         status: impl Fn(&MachineTerm) -> MachineTerm,
         resources: impl Fn(&ResourceContext) -> ResourceContext,
-        pointer: impl Fn(&Pointer) -> Pointer,
+        pointer: impl Fn(&Address) -> Address,
         value: impl Fn(&ProgramValue) -> ProgramValue,
-        memory: impl Fn(&Memory) -> Memory,
+        memory: impl Fn(&SymbolicMemory) -> SymbolicMemory,
     ) -> Self {
         let storage = &self.storage;
         let map_authority = |authority: &PendingCreateAuthority| PendingCreateAuthority {
@@ -468,7 +468,7 @@ struct ThreadLedgerStorage {
     rights: PersistentMap<ThreadHandle, Arc<CompletionRight>>,
     loan_trace: Option<ThreadLoanTrace>,
     local_views: PersistentMap<ResourceFact, LoanViewBinding>,
-    mutex_workers: PersistentMap<Pointer, usize>,
+    mutex_workers: PersistentMap<Address, usize>,
     parent_partition: Option<ParentOwnershipPartition>,
 }
 
@@ -557,7 +557,7 @@ impl ThreadLedger {
         })
     }
 
-    pub(super) fn has_mutex_workers(&self, mutex: &Pointer) -> bool {
+    pub(super) fn has_mutex_workers(&self, mutex: &Address) -> bool {
         self.storage.mutex_workers.contains_key(mutex)
     }
 
@@ -569,6 +569,7 @@ impl ThreadLedger {
         self.storage.local_views.get(fact)
     }
 
+    #[cfg(test)]
     pub(super) fn witnesses_loan_recovery(
         &self,
         origin: &LoanLedger,
@@ -1240,7 +1241,7 @@ impl ThreadContext {
 #[cfg(test)]
 mod ownership_partition_tests {
     use super::*;
-    use crate::kernel::PointerOffsetTerm;
+    use crate::kernel::AddressOffset;
 
     #[test]
     fn worker_partition_receipt_survives_private_slots_but_not_public_ownership_or_registry_changes()
@@ -1250,24 +1251,24 @@ mod ownership_partition_tests {
         ]));
         let own = |block| {
             ResourceFact::own_memory(super::super::MemoryRange::new(
-                Pointer {
-                    block,
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: block,
+                    offset: AddressOffset::Constant(0),
                 },
                 0u32.into(),
                 4u32.into(),
             ))
         };
         let original =
-            ResourceContext::new().unchecked_with_fact(own(PointerBlock::Heap(8_991_810)));
+            ResourceContext::new().unchecked_with_fact(own(AddressBase::Heap(8_991_810)));
         let ledger = ThreadLedger::new().with_parent_partition(&original, true);
         let private = original
             .clone()
-            .unchecked_with_fact(own(PointerBlock::Concrete("local:worker_private".into())));
+            .unchecked_with_fact(own(AddressBase::Concrete("local:worker_private".into())));
         assert!(ledger.preserves_parent_partition(&private));
         let public = private
             .clone()
-            .unchecked_with_fact(own(PointerBlock::Heap(8_991_811)));
+            .unchecked_with_fact(own(AddressBase::Heap(8_991_811)));
         assert!(!ledger.preserves_parent_partition(&public));
         crate::kernel::set_never_address_taken_locals(std::collections::BTreeSet::new());
         assert!(!ledger.preserves_parent_partition(&private));

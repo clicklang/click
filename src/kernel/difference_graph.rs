@@ -22,8 +22,8 @@
 
 use crate::kernel::MachineIntegerType;
 use crate::kernel::binary_term;
+use crate::kernel::{Address, AddressOffset, ConditionTerm, MachineTerm};
 use crate::kernel::{CompareRelation, OverflowOperation};
-use crate::kernel::{ConditionTerm, MachineTerm, Pointer, PointerOffsetTerm};
 use crate::kernel::{MachineBinaryOp, MachineUnaryOp};
 use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{
@@ -2395,8 +2395,8 @@ enum ScaledOffset<'a> {
     Bytes(i64),
 }
 
-fn scaled_offset(offset: &crate::kernel::PointerOffsetTerm) -> Option<ScaledOffset<'_>> {
-    use crate::kernel::PointerOffsetTerm as O;
+fn scaled_offset(offset: &crate::kernel::AddressOffset) -> Option<ScaledOffset<'_>> {
+    use crate::kernel::AddressOffset as O;
     match offset {
         O::Int32Scaled { value, byte_width } if *byte_width != 0 => {
             Some(ScaledOffset::Scaled(value.operand_view(), *byte_width))
@@ -2424,7 +2424,7 @@ fn offset_equality(condition: &ConditionTerm) -> Option<ConditionTerm> {
     // Wide scaled offsets also denote exact products, so cancelling their
     // common nonzero stride preserves equality and disequality. Keep the
     // full index domain; no low-word projection is involved.
-    use crate::kernel::PointerOffsetTerm as O;
+    use crate::kernel::AddressOffset as O;
     let wide = match (a.as_ref(), b.as_ref()) {
         (
             O::Int64Scaled {
@@ -2515,10 +2515,10 @@ fn offset_equality(condition: &ConditionTerm) -> Option<ConditionTerm> {
 /// (`p->size` and `q->size`): the offsets are equal exactly when the bases
 /// are, since adding one constant is injective.
 fn same_field_bases<'a>(
-    a: &'a PointerOffsetTerm,
-    b: &'a PointerOffsetTerm,
-) -> Option<(&'a PointerOffsetTerm, &'a PointerOffsetTerm)> {
-    use crate::kernel::PointerOffsetTerm as O;
+    a: &'a AddressOffset,
+    b: &'a AddressOffset,
+) -> Option<(&'a AddressOffset, &'a AddressOffset)> {
+    use crate::kernel::AddressOffset as O;
     match (a, b) {
         (O::Add(a_base, a_field), O::Add(b_base, b_field))
             if matches!(
@@ -2535,8 +2535,8 @@ fn same_field_bases<'a>(
 /// Two pointer offsets that cannot be equal whatever their values: a
 /// constant byte offset that no whole number of `int32` elements reaches.
 fn offset_mismatch(
-    a: &crate::kernel::PointerOffsetTerm,
-    b: &crate::kernel::PointerOffsetTerm,
+    a: &crate::kernel::AddressOffset,
+    b: &crate::kernel::AddressOffset,
 ) -> Option<bool> {
     match (scaled_offset(a)?, scaled_offset(b)?) {
         (ScaledOffset::Scaled(_, width), ScaledOffset::Bytes(bytes))
@@ -2753,16 +2753,16 @@ impl Residues {
 
     /// `addr(p + o)` is `addr(p) + o`: the address of a pointer whose
     /// offset is a sum, read through the address of one summand's pointer.
-    fn address_residue(&self, pointer: &Pointer, depth: u32) -> Option<Residue> {
-        use crate::kernel::PointerOffsetTerm as O;
+    fn address_residue(&self, pointer: &Address, depth: u32) -> Option<Residue> {
+        use crate::kernel::AddressOffset as O;
         let O::Add(left, right) = &pointer.offset else {
             return None;
         };
         let mut best = None;
         for (base, offset) in [(left, right), (right, left)] {
             let base = MachineTerm::PointerAddress(
-                Box::new(Pointer {
-                    block: pointer.block.clone(),
+                Box::new(Address {
+                    base: pointer.base.clone(),
                     offset: base.as_ref().clone(),
                 }),
                 crate::kernel::AddressObjectClass::NONE,
@@ -2779,8 +2779,8 @@ impl Residues {
 
 /// The residue of a pointer offset's byte count: exact for constants, and
 /// `0 mod 2^tz(w)` for `w` times an unknown index.
-fn offset_residue(offset: &PointerOffsetTerm) -> Option<Residue> {
-    use crate::kernel::PointerOffsetTerm as O;
+fn offset_residue(offset: &AddressOffset) -> Option<Residue> {
+    use crate::kernel::AddressOffset as O;
     charge();
     match offset {
         O::Constant(bytes) => Some(Residue::exact(*bytes as u64)),
@@ -2806,10 +2806,10 @@ fn offset_residue(offset: &PointerOffsetTerm) -> Option<Residue> {
 /// smaller class's disequalities into the larger's.
 #[derive(Clone, Debug, Default)]
 struct PointerClasses {
-    ids: PersistentMap<Pointer, NodeId>,
-    terms: PersistentMap<NodeId, Pointer>,
+    ids: PersistentMap<Address, NodeId>,
+    terms: PersistentMap<NodeId, Address>,
     /// The ids of the pointers with each offset, for an offset question.
-    by_offset: PersistentMap<PointerOffsetTerm, crate::persistent::PersistentSet<NodeId>>,
+    by_offset: PersistentMap<AddressOffset, crate::persistent::PersistentSet<NodeId>>,
     parent: PersistentMap<NodeId, NodeId>,
     size: PersistentMap<NodeId, usize>,
     unequal: PersistentMap<NodeId, crate::persistent::PersistentSet<NodeId>>,
@@ -2817,7 +2817,7 @@ struct PointerClasses {
 }
 
 impl PointerClasses {
-    fn id(&mut self, pointer: &Pointer) -> NodeId {
+    fn id(&mut self, pointer: &Address) -> NodeId {
         if let Some(id) = self.ids.get(pointer) {
             return *id;
         }
@@ -2866,7 +2866,7 @@ impl PointerClasses {
 
     /// Records `a == b` (`value`) or `a != b`; false when that contradicts
     /// what is recorded.
-    fn assume(&mut self, a: &Pointer, b: &Pointer, value: bool) -> bool {
+    fn assume(&mut self, a: &Address, b: &Address, value: bool) -> bool {
         let (a, b) = (self.id(a), self.id(b));
         let (root_a, root_b) = (self.find(a), self.find(b));
         if !value {
@@ -2906,7 +2906,7 @@ impl PointerClasses {
         true
     }
 
-    fn decide(&self, a: &Pointer, b: &Pointer) -> Option<bool> {
+    fn decide(&self, a: &Address, b: &Address) -> Option<bool> {
         let (a, b) = (self.ids.get(a)?, self.ids.get(b)?);
         let (root_a, root_b) = (self.find(*a), self.find(*b));
         if root_a == root_b {
@@ -2919,7 +2919,7 @@ impl PointerClasses {
     /// `a == b` for two offsets of one block, read from recorded pointers
     /// in a common block with those offsets: such pointers are equal
     /// exactly when their offsets are.
-    fn decide_offsets(&self, a: &PointerOffsetTerm, b: &PointerOffsetTerm) -> Option<bool> {
+    fn decide_offsets(&self, a: &AddressOffset, b: &AddressOffset) -> Option<bool> {
         let (with_a, with_b) = (self.by_offset.get(a)?, self.by_offset.get(b)?);
         let pairs = with_a
             .iter()
@@ -2927,7 +2927,7 @@ impl PointerClasses {
         for (left, right) in pairs.take(EDGE_LIMIT) {
             charge();
             let (left, right) = (self.terms.get(left)?, self.terms.get(right)?);
-            if left.block != right.block {
+            if left.base != right.base {
                 continue;
             }
             if let Some(answer) = self.decide(left, right) {

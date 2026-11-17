@@ -238,7 +238,7 @@ pub(super) struct PureTheoremContext {
     /// Immutable specification parameter names, retained for diagnostics.
     pub(super) diagnostic_names: std::sync::Arc<[(Variable, String)]>,
     pub(super) declaration_bindings: BTreeMap<String, ContractExpression>,
-    pub(super) memory: Memory,
+    pub(super) memory: SymbolicMemory,
     pub(super) values: BTreeMap<String, ProgramValue>,
     pub(super) integer_values: PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     pub(super) array_refs: ClickArrayRefs,
@@ -592,9 +592,9 @@ pub(super) fn pure_induction_hypothesis(
         // so the guards are recomputed for the moved range and become
         // premises of the hypothesis. Without them the hypothesis would be
         // strictly stronger than the theorem it is proving — it would grant
-        // the conclusion at an argument where the range's extent wraps, which
+        // the conclusion at an argument where the range's span wraps, which
         // is an argument the theorem itself never covered.
-        for guard in crate::kernel::stated_loadable_extent_guards(&requirement)
+        for guard in crate::kernel::stated_loadable_span_guards(&requirement)
             .into_iter()
             .rev()
         {
@@ -1252,7 +1252,7 @@ fn check_pure_structural_induction(
                     .iter()
                     .rev()
                     .fold(conclusion.clone(), |body, premise| {
-                        let body = crate::kernel::stated_loadable_extent_guards(premise)
+                        let body = crate::kernel::stated_loadable_span_guards(premise)
                             .into_iter()
                             .rev()
                             .fold(body, |body, guard| {
@@ -1286,7 +1286,7 @@ fn check_pure_structural_induction(
         // a guard has no source clause for.
         for guard in branch_requires
             .iter()
-            .flat_map(crate::kernel::stated_loadable_extent_guards)
+            .flat_map(crate::kernel::stated_loadable_span_guards)
             .collect::<Vec<_>>()
         {
             if !branch_requires.contains(&guard) {
@@ -1388,7 +1388,7 @@ pub(super) fn pure_theorem_context(
     theorem: &TheoremDefinition,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<PureTheoremContext, ClickError> {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let values = pure_theorem_parameter_values_with_generic_pointers(
         theorem.parameters(),
         &theorem.generic_pointer_parameters,
@@ -1438,7 +1438,7 @@ pub(super) fn pure_theorem_context(
     let mut requires = requires;
     for guard in requires
         .iter()
-        .flat_map(crate::kernel::stated_loadable_extent_guards)
+        .flat_map(crate::kernel::stated_loadable_span_guards)
         .collect::<Vec<_>>()
     {
         if !requires.contains(&guard) {
@@ -1626,8 +1626,8 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 )),
                 InterfaceType::VoidPointer | InterfaceType::VoidPointerPointer => {
                     ProgramValue::typed_pointer(
-                        Pointer {
-                            block: PointerBlock::ExternalArgument,
+                        Address {
+                            base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
                                 MachineTerm::Variable(Variable(
                                     POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
@@ -1676,8 +1676,8 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::Int8Pointer | InterfaceType::Int8Array(_) => {
                     ProgramValue::typed_pointer(
-                        Pointer {
-                            block: PointerBlock::ExternalArgument,
+                        Address {
+                            base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
                                 MachineTerm::Variable(Variable(
                                     POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
@@ -1690,8 +1690,8 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::Int16Pointer | InterfaceType::Int16Array(_) => {
                     ProgramValue::typed_pointer(
-                        Pointer {
-                            block: PointerBlock::ExternalArgument,
+                        Address {
+                            base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
                                 MachineTerm::Variable(Variable(
                                     POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
@@ -1704,8 +1704,8 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::UInt16Pointer | InterfaceType::UInt16Array(_) => {
                     ProgramValue::typed_pointer(
-                        Pointer {
-                            block: PointerBlock::ExternalArgument,
+                        Address {
+                            base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
                                 MachineTerm::Variable(Variable(
                                     POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
@@ -1718,8 +1718,8 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::Int32Pointer | InterfaceType::Int32Array(_) => {
                     ProgramValue::typed_pointer(
-                        Pointer {
-                            block: PointerBlock::ExternalArgument,
+                        Address {
+                            base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
                                 MachineTerm::Variable(Variable(
                                     POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
@@ -1734,8 +1734,8 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 | InterfaceType::CharArray(_, _)
                 | InterfaceType::UInt8Pointer
                 | InterfaceType::UInt8Array(_) => ProgramValue::typed_pointer(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
+                    Address {
+                        base: AddressBase::ExternalArgument,
                         offset: scale_int32_offset(
                             MachineTerm::Variable(Variable(
                                 POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
@@ -1747,8 +1747,8 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 ),
                 InterfaceType::UInt32Pointer | InterfaceType::UInt32Array(_) => {
                     ProgramValue::typed_pointer(
-                        Pointer {
-                            block: PointerBlock::ExternalArgument,
+                        Address {
+                            base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
                                 MachineTerm::Variable(Variable(
                                     POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
@@ -1761,8 +1761,8 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::Int64Pointer(_) | InterfaceType::Int64Array(_, _) => {
                     ProgramValue::typed_pointer(
-                        Pointer {
-                            block: PointerBlock::ExternalArgument,
+                        Address {
+                            base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
                                 MachineTerm::Variable(Variable(
                                     POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
@@ -1775,8 +1775,8 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::Int128Pointer | InterfaceType::Int128Array(_) => {
                     ProgramValue::typed_pointer(
-                        Pointer {
-                            block: PointerBlock::ExternalArgument,
+                        Address {
+                            base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
                                 MachineTerm::Variable(Variable(
                                     POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
@@ -1789,8 +1789,8 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::UInt64Pointer(_) | InterfaceType::UInt64Array(_, _) => {
                     ProgramValue::typed_pointer(
-                        Pointer {
-                            block: PointerBlock::ExternalArgument,
+                        Address {
+                            base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
                                 MachineTerm::Variable(Variable(
                                     POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
@@ -1803,8 +1803,8 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::UInt128Pointer | InterfaceType::UInt128Array(_) => {
                     ProgramValue::typed_pointer(
-                        Pointer {
-                            block: PointerBlock::ExternalArgument,
+                        Address {
+                            base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
                                 MachineTerm::Variable(Variable(
                                     POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
@@ -1817,8 +1817,8 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::Float32Pointer | InterfaceType::Float32Array(_) => {
                     ProgramValue::typed_pointer(
-                        Pointer {
-                            block: PointerBlock::ExternalArgument,
+                        Address {
+                            base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
                                 MachineTerm::Variable(Variable(
                                     POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
@@ -1831,8 +1831,8 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::Float64Pointer | InterfaceType::Float64Array(_) => {
                     ProgramValue::typed_pointer(
-                        Pointer {
-                            block: PointerBlock::ExternalArgument,
+                        Address {
+                            base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
                                 MachineTerm::Variable(Variable(
                                     POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
@@ -1850,8 +1850,8 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         .to_kernel_type()
                         .byte_width();
                     ProgramValue::typed_pointer(
-                        Pointer {
-                            block: PointerBlock::ExternalArgument,
+                        Address {
+                            base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
                                 MachineTerm::Variable(Variable(
                                     POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
@@ -1880,8 +1880,8 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         .to_kernel_type()
                         .byte_width();
                     ProgramValue::typed_pointer(
-                        Pointer {
-                            block: PointerBlock::ExternalArgument,
+                        Address {
+                            base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
                                 MachineTerm::Variable(Variable(
                                     POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
@@ -1893,12 +1893,12 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                     )
                 }
                 InterfaceType::FunctionPointer(_) => ProgramValue::typed_pointer(
-                    Pointer::symbolic_function(Variable(index as u64)),
+                    Address::symbolic_function(Variable(index as u64)),
                     interface_type.to_kernel_type(),
                 ),
                 InterfaceType::PointerArray(_, _, _) => ProgramValue::typed_pointer(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
+                    Address {
+                        base: AddressBase::ExternalArgument,
                         offset: scale_int32_offset(
                             MachineTerm::Variable(Variable(
                                 POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
@@ -1927,7 +1927,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
 pub(in crate::surface) fn pure_theorem_array_refs(
     parameters: &[FunctionParameter],
     values: &BTreeMap<String, ProgramValue>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
 ) -> ClickArrayRefs {
     parameters
         .iter()
@@ -3416,7 +3416,7 @@ pub(super) fn click_function_applications(
             ContractExpression::QualifiedC { .. }
             | ContractExpression::ProgramExpression(_)
             | ContractExpression::ArrayIndex { .. }
-            | ContractExpression::CBinding(_)
+            | ContractExpression::ProgramBinding(_)
             | ContractExpression::ResourceWildcard => {}
         }
     }
@@ -3518,7 +3518,7 @@ pub(super) fn lower_pure_theorem_proposition(
     theorem_name: &str,
     proposition: &ClickProposition,
     contract_environment: ContractEnvironment<'_>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
     lower_pure_theorem_proposition_with_opaque_calls(
@@ -3536,7 +3536,7 @@ pub(super) fn lower_pure_theorem_proposition_with_integer_values(
     proposition: &ClickProposition,
     contract_environment: ContractEnvironment<'_>,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
     lower_pure_theorem_proposition_with_algebraic_and_integer_values(
@@ -3557,7 +3557,7 @@ pub(super) fn lower_pure_theorem_proposition_with_algebraic_and_integer_values(
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
     lower_pure_theorem_proposition_recording_introductions(
@@ -3584,7 +3584,7 @@ pub(super) fn lower_pure_theorem_proposition_recording_introductions(
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<(Proposition, crate::kernel::LoweringIntroductions), String> {
     let state = ExecutionState::new().with_memory(memory.clone());
@@ -3609,7 +3609,7 @@ pub(super) fn lower_pure_theorem_proposition_with_algebraic_values(
     proposition: &ClickProposition,
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
     lower_pure_theorem_proposition_with_algebraic_and_integer_values(
@@ -3630,7 +3630,7 @@ fn lower_pure_theorem_proposition_with_opaque_calls(
     theorem_name: &str,
     proposition: &ClickProposition,
     contract_environment: ContractEnvironment<'_>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: &BTreeSet<String>,
 ) -> Result<Proposition, String> {

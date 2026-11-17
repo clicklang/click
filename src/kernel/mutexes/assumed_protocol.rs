@@ -75,7 +75,7 @@ impl AssumedMutexProtocol {
         })
     }
 
-    pub(super) fn mutex(&self) -> &Pointer {
+    pub(super) fn mutex(&self) -> &Address {
         let Resource::MutexUse(identity) = self.use_fact.resource() else {
             unreachable!()
         };
@@ -202,7 +202,7 @@ impl AssumedMutexProtocol {
         budget: &mut crate::kernel::ExecutionBudget,
     ) -> Result<
         (
-            crate::kernel::Memory,
+            crate::kernel::SymbolicMemory,
             Option<crate::kernel::ResourceInstance>,
         ),
         MutexTransitionError,
@@ -365,7 +365,7 @@ impl AssumedMutexProtocol {
 #[derive(Clone, Debug)]
 pub(in crate::kernel) struct OpaqueMutexAcquisitions {
     pub(super) identity: u64,
-    pub(super) receipts: PersistentMap<Pointer, Arc<AssumedMutexGuard>>,
+    pub(super) receipts: PersistentMap<Address, Arc<AssumedMutexGuard>>,
     pub(super) storage: MutexLedger,
     pub(super) holders: PersistentMap<LoanParticipantId, usize>,
 }
@@ -374,12 +374,12 @@ impl OpaqueMutexAcquisitions {
     pub(in crate::kernel) fn has_local_hold(&self, participant: Option<LoanParticipantId>) -> bool {
         participant.is_none_or(|holder| self.holders.contains_key(&holder))
     }
-    pub(super) fn guard_resource(&self, mutex: &Pointer) -> Option<ResourceFact> {
+    pub(super) fn guard_resource(&self, mutex: &Address) -> Option<ResourceFact> {
         self.receipts.get(mutex).map(|guard| guard.fact.clone())
     }
     pub(super) fn acquisition_conflicts(
         &self,
-        mutex: &Pointer,
+        mutex: &Address,
         assumptions: &PureFactContext,
     ) -> bool {
         let bytes = crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin()
@@ -419,7 +419,7 @@ impl Hash for OpaqueMutexAcquisitions {
 #[cfg(test)]
 pub(in crate::kernel) fn opaque_runtime_transition(
     state: &ExecutionState,
-    mutex: &Pointer,
+    mutex: &Address,
     acquire: bool,
     assumptions: &PureFactContext,
 ) -> Result<(ExecutionState, CheckedLoanCallEvidenceSequence), MutexTransitionError> {
@@ -437,7 +437,7 @@ pub(in crate::kernel) fn opaque_runtime_transition(
 
 pub(in crate::kernel) fn opaque_runtime_transition_with_payload(
     state: &ExecutionState,
-    mutex: &Pointer,
+    mutex: &Address,
     acquire: bool,
     assumptions: &PureFactContext,
     definition: Option<&crate::kernel::CompositeResourceDefinition>,
@@ -460,7 +460,7 @@ pub(in crate::kernel) fn opaque_runtime_transition_with_payload(
 
 pub(super) fn opaque_runtime_transition_with_selected_use(
     state: &ExecutionState,
-    mutex: &Pointer,
+    mutex: &Address,
     acquire: bool,
     assumptions: &PureFactContext,
     definition: Option<&crate::kernel::CompositeResourceDefinition>,
@@ -582,7 +582,7 @@ pub(super) fn opaque_runtime_transition_with_selected_use(
 }
 
 /// A fresh instance of the protected resource with arbitrary fields, as an
-/// acquisition hands it out. Memory is not changed here.
+/// acquisition hands it out. SymbolicMemory is not changed here.
 pub(super) fn mint_protected_instance(
     description: &crate::kernel::ResourceDescription,
     definition: Option<&crate::kernel::CompositeResourceDefinition>,
@@ -630,7 +630,7 @@ pub(super) fn mint_protected_instance(
     .ok_or("protected mutex type requires an exclusive resource")?)
 }
 
-/// Memory after a thread releases `released` to its mutex. Other threads may
+/// SymbolicMemory after a thread releases `released` to its mutex. Other threads may
 /// change that memory before this one acquires it again, so every
 /// observation inside its footprint goes. The footprint is derived here,
 /// while the thread still owns the resource and its memory names the
@@ -647,7 +647,7 @@ fn forget_released_protected_memory(
     definitions: &[crate::kernel::CompositeResourceDefinition],
     assumptions: &PureFactContext,
     budget: &mut crate::kernel::ExecutionBudget,
-) -> Result<crate::kernel::Memory, MutexTransitionError> {
+) -> Result<crate::kernel::SymbolicMemory, MutexTransitionError> {
     let ranges = crate::kernel::functions::checked_owned_memory_ranges(
         released,
         definitions,
@@ -682,7 +682,7 @@ pub(super) fn fresh_protected_payload(
     budget: &mut crate::kernel::ExecutionBudget,
 ) -> Result<
     (
-        crate::kernel::Memory,
+        crate::kernel::SymbolicMemory,
         Option<crate::kernel::ResourceInstance>,
     ),
     MutexTransitionError,
@@ -765,7 +765,7 @@ mod tests {
     use crate::kernel::{MutexUseIdentity, ResourceContext, Variable};
 
     fn input() -> (ExecutionState, AssumedMutexProtocol) {
-        let mutex = Pointer::symbolic(Variable(765));
+        let mutex = Address::symbolic(Variable(765));
         let description = ResourceFact::own(Resource::MutexUse(MutexUseIdentity {
             protected: None,
             binding: None,
@@ -802,7 +802,7 @@ mod tests {
             ResourceFieldType::Program(ProgramType::Int32),
         )])
         .unwrap();
-        let mutex = Pointer::symbolic(Variable(765));
+        let mutex = Address::symbolic(Variable(765));
         let description = ResourceDescription::new(
             "counter_state".into(),
             vec![ProgramValue::pointer(mutex.clone()).into()].into(),
@@ -1086,7 +1086,7 @@ mod tests {
             .loan_ledger
             .as_ref()
             .unwrap()
-            .borrowed_mutex_use_input(first.holder, support, Pointer::symbolic(Variable(766)))
+            .borrowed_mutex_use_input(first.holder, support, Address::symbolic(Variable(766)))
             .unwrap();
         let second_fact = ledger.mutex_use_resource(root.usage, first.holder).unwrap();
         state.resources = state.resources.unchecked_with_fact(second_fact);
@@ -1177,7 +1177,7 @@ mod tests {
         let mutex = protocol.mutex();
         let (held, _) = opaque_runtime_transition(&state, mutex, true, &assumptions).unwrap();
         assert!(opaque_runtime_transition(&held, mutex, true, &assumptions).is_err());
-        let wrong = Pointer::symbolic(Variable(766));
+        let wrong = Address::symbolic(Variable(766));
         assert!(opaque_runtime_transition(&held, &wrong, false, &assumptions).is_err());
         assert!(protocol.check_return(&held).is_err());
         let (released, _) = opaque_runtime_transition(&held, mutex, false, &assumptions).unwrap();

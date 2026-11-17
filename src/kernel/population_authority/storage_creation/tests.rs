@@ -29,7 +29,7 @@ fn resolved_malloc(pending: &ExecutionState, success: bool) -> ExecutionState {
         panic!("pending allocation has a result pointer");
     };
     let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(pointer.pointer().clone(), Pointer::null()),
+        ConditionTerm::pointer_equal(pointer.pointer().clone(), Address::null()),
         !success,
     ));
     crate::kernel::resolve_pending_heap_allocations(pending, &assumptions)
@@ -38,7 +38,7 @@ fn resolved_malloc(pending: &ExecutionState, success: bool) -> ExecutionState {
 #[test]
 fn only_successful_real_malloc_records_creation() {
     let entry = ExecutionState::new()
-        .with_local("p", ProgramValue::pointer(Pointer::null()))
+        .with_local("p", ProgramValue::pointer(Address::null()))
         .with_population_creation_tracking();
     let pending = pending_malloc(&entry);
     let local_native_output_43 = pending.locals().get_native("p");
@@ -75,8 +75,8 @@ fn only_successful_real_malloc_records_creation() {
     let imported = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
-            Memory::new()
-                .with_heap_allocation_claim(created.pointer().clone(), HeapExtent::int32(16))
+            SymbolicMemory::new()
+                .with_heap_allocation_claim(created.pointer().clone(), AllocationSize::int32(16))
                 .expect("assumed allocation claim"),
         );
     assert!(!imported.population_storage_created_here(created));
@@ -123,13 +123,13 @@ fn only_successful_real_malloc_records_creation() {
             .creation
             .as_ref()
             .unwrap()
-            .created_here(&created.block),
+            .created_here(&created.base),
         succeeded
             .population_effects
             .creation
             .as_ref()
             .unwrap()
-            .created_here(&created.block),
+            .created_here(&created.base),
         "the new identity preserves the caller's creation right"
     );
 
@@ -154,7 +154,7 @@ fn only_successful_real_malloc_records_creation() {
 
     let untracked = resolved_malloc(
         &pending_malloc(
-            &ExecutionState::new().with_local("p", ProgramValue::pointer(Pointer::null())),
+            &ExecutionState::new().with_local("p", ProgramValue::pointer(Address::null())),
         ),
         true,
     );
@@ -164,7 +164,7 @@ fn only_successful_real_malloc_records_creation() {
 #[test]
 fn caller_pending_malloc_resolved_in_helper_keeps_caller_origin() {
     let caller = ExecutionState::new()
-        .with_local("p", ProgramValue::pointer(Pointer::null()))
+        .with_local("p", ProgramValue::pointer(Address::null()))
         .with_population_creation_tracking();
     let pending = pending_malloc(&caller);
     let local_native_output_163 = pending.locals().get_native("p");
@@ -214,14 +214,14 @@ fn caller_pending_malloc_resolved_in_helper_keeps_caller_origin() {
             pending.population_effects.creation.as_ref(),
             state.population_effects.creation.as_ref(),
         );
-        if pointer.pointer() == &Pointer::null() {
+        if pointer.pointer() == &Address::null() {
             saw_failure = true;
             assert_eq!(*value.native(), ProgramValue::Int32(0.into()));
             assert!(!resumed.population_storage_created_here(pointer));
         } else {
             saw_success = true;
             assert_eq!(*value.native(), ProgramValue::Int32(1.into()));
-            assert!(matches!(pointer.block, PointerBlock::Heap(_)));
+            assert!(matches!(pointer.base, AddressBase::Heap(_)));
             assert!(resumed.population_storage_created_here(pointer));
         }
     }
@@ -275,14 +275,14 @@ fn actual_stack_declaration_grants_one_lifetime_creation_event() {
         panic!("one re-entry path");
     };
     let second_slot = second.locals().slot("x").expect("new slot");
-    assert_ne!(slot.block, second_slot.block);
+    assert_ne!(slot.base, second_slot.base);
     assert!(second.population_storage_created_here(second_slot));
     assert!(!second.population_storage_created_here(&slot));
 }
 
 #[test]
 fn member_history_blocks_late_establishment_after_transfer_and_return() {
-    let block = PointerBlock::Heap(940_100);
+    let block = AddressBase::Heap(940_100);
     let caller = CreationEvents::new().created(block.clone());
     let moved = caller.member_created(&block, "reference");
     let helper = moved.enter_call();
@@ -318,8 +318,8 @@ fn member_history_blocks_late_establishment_after_transfer_and_return() {
 
 #[test]
 fn pending_member_history_follows_actual_malloc_result() {
-    let pending = PointerBlock::Symbolic(Variable(940_101));
-    let live = PointerBlock::Heap(940_102);
+    let pending = AddressBase::Symbolic(Variable(940_101));
+    let live = AddressBase::Heap(940_102);
     let caller = CreationEvents::new()
         .pending_creation(pending.clone())
         .member_created(&pending, "reference");
@@ -335,7 +335,7 @@ fn pending_member_history_follows_actual_malloc_result() {
 
 #[test]
 fn storage_cannot_expire_with_outstanding_population_authority() {
-    let block = PointerBlock::Heap(940_103);
+    let block = AddressBase::Heap(940_103);
     let created = CreationEvents::new().created(block.clone());
     let established = created
         .establish(&block, "reference")
@@ -362,33 +362,33 @@ fn repeated_entry_recheck_reuses_the_same_creation_environment() {
     let first = caller.enter_call();
     assert_eq!(first, caller.enter_call());
     assert_ne!(first, caller);
-    let advanced = caller.created(PointerBlock::Heap(940_104));
+    let advanced = caller.created(AddressBase::Heap(940_104));
     assert_ne!(first, advanced.enter_call());
 }
 
 #[test]
 fn rechecking_storage_creation_events_reuses_exact_successor_roots() {
-    let live = PointerBlock::Heap(940_107);
+    let live = AddressBase::Heap(940_107);
     let start = CreationEvents::new();
     assert_eq!(start.created(live.clone()), start.created(live));
 
-    let pending = PointerBlock::Symbolic(Variable(940_108));
+    let pending = AddressBase::Symbolic(Variable(940_108));
     let first = start.pending_creation(pending.clone());
     assert_eq!(first, start.pending_creation(pending.clone()));
-    let resolved = first.resolve_pending(&pending, Some(PointerBlock::Heap(940_109)));
+    let resolved = first.resolve_pending(&pending, Some(AddressBase::Heap(940_109)));
     assert_eq!(
         resolved,
-        first.resolve_pending(&pending, Some(PointerBlock::Heap(940_109)))
+        first.resolve_pending(&pending, Some(AddressBase::Heap(940_109)))
     );
 }
 
-fn member_description(block: PointerBlock) -> ResourceDescription {
+fn member_description(block: AddressBase) -> ResourceDescription {
     ResourceDescription::new(
         "reference".into(),
         vec![
-            ProgramValue::pointer(Pointer {
-                block,
-                offset: PointerOffsetTerm::Constant(0),
+            ProgramValue::pointer(Address {
+                base: block,
+                offset: AddressOffset::Constant(0),
             })
             .into(),
         ]
@@ -402,9 +402,9 @@ fn opaque_helper_import_has_no_count_and_checks_each_member_exchange() {
     let description = ResourceDescription::new(
         "reference".into(),
         vec![
-            ProgramValue::pointer(Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Variable(Variable(940_110)),
+            ProgramValue::pointer(Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Variable(Variable(940_110)),
             })
             .into(),
         ]
@@ -423,25 +423,25 @@ fn opaque_helper_import_has_no_count_and_checks_each_member_exchange() {
     assert!(!nested_call.owns_population_authority(&description));
     assert!(!nested_call.owns_population_member(&description));
     assert_eq!(
-        entry.observe(&PointerBlock::ExternalArgument, "reference"),
+        entry.observe(&AddressBase::ExternalArgument, "reference"),
         Err(CreationRefusal::UnknownTotal)
     );
     let (retained, _) = entry
-        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, true)
+        .checked_member_exchange(&AddressBase::ExternalArgument, &description, true)
         .expect("retain may add one member while already holding a member");
     assert!(retained.born_imported_member_since(&entry, &description));
     assert!(retained.observe_symbolic(&description).is_none());
     let (retained_twice, _) = retained
-        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, true)
+        .checked_member_exchange(&AddressBase::ExternalArgument, &description, true)
         .expect("each checked birth adds another held member");
     assert!(retained_twice.born_imported_member_since(&retained, &description));
     assert!(retained_twice.observe_symbolic(&description).is_none());
     assert_eq!(
-        retained_twice.observe(&PointerBlock::ExternalArgument, "reference"),
+        retained_twice.observe(&AddressBase::ExternalArgument, "reference"),
         Err(CreationRefusal::UnknownTotal)
     );
     let (restored, _) = retained
-        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, false)
+        .checked_member_exchange(&AddressBase::ExternalArgument, &description, false)
         .unwrap();
     assert!(restored.owns_population_member(&description));
     assert_eq!(
@@ -452,46 +452,46 @@ fn opaque_helper_import_has_no_count_and_checks_each_member_exchange() {
         .import_opaque_contract_population(&description, 2)
         .unwrap();
     let (one, _) = two
-        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, false)
+        .checked_member_exchange(&AddressBase::ExternalArgument, &description, false)
         .unwrap();
     assert!(one.spent_imported_member_since(&two, &description));
     assert!(one.owns_population_member(&description));
     let (none, _) = one
-        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, false)
+        .checked_member_exchange(&AddressBase::ExternalArgument, &description, false)
         .expect("the second explicitly held fragment can also be spent");
     assert!(!none.owns_population_member(&description));
     assert!(matches!(
-        none.checked_member_exchange(&PointerBlock::ExternalArgument, &description, false),
+        none.checked_member_exchange(&AddressBase::ExternalArgument, &description, false),
         Err(CreationRefusal::MissingMembers)
     ));
     let empty = CreationEvents::new()
         .import_opaque_contract_population(&description, 0)
         .unwrap();
     let (born, _) = empty
-        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, true)
+        .checked_member_exchange(&AddressBase::ExternalArgument, &description, true)
         .expect("an opaque helper can birth its exact member once");
     assert!(born.born_imported_member_since(&empty, &description));
     assert!(born.owns_population_member(&description));
     let (born_twice, _) = born
-        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, true)
+        .checked_member_exchange(&AddressBase::ExternalArgument, &description, true)
         .expect("repeated checked births preserve numeric fragment custody");
     assert!(born_twice.born_imported_member_since(&born, &description));
     assert!(born_twice.observe_symbolic(&description).is_none());
     let (spent, _) = entry
-        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, false)
+        .checked_member_exchange(&AddressBase::ExternalArgument, &description, false)
         .expect("an opaque helper can spend its exact imported member once");
     assert!(spent.spent_imported_member_since(&entry, &description));
     assert!(!spent.owns_population_member(&description));
     assert!(matches!(
-        spent.checked_member_exchange(&PointerBlock::ExternalArgument, &description, false),
+        spent.checked_member_exchange(&AddressBase::ExternalArgument, &description, false),
         Err(CreationRefusal::MissingMembers)
     ));
     let other = ResourceDescription::new(
         "reference".into(),
         vec![
-            ProgramValue::pointer(Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Variable(Variable(940_111)),
+            ProgramValue::pointer(Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Variable(Variable(940_111)),
             })
             .into(),
         ]
@@ -502,13 +502,13 @@ fn opaque_helper_import_has_no_count_and_checks_each_member_exchange() {
     assert!(both.owns_population_authority(&description));
     assert!(both.owns_population_member(&other));
     let (spent_first, _) = both
-        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, false)
+        .checked_member_exchange(&AddressBase::ExternalArgument, &description, false)
         .unwrap();
     assert!(!spent_first.owns_population_member(&description));
     assert!(spent_first.owns_population_member(&other));
     assert!(!spent_first.spent_imported_member_since(&both, &other));
     let (spent_second, _) = spent_first
-        .checked_member_exchange(&PointerBlock::ExternalArgument, &other, false)
+        .checked_member_exchange(&AddressBase::ExternalArgument, &other, false)
         .unwrap();
     assert!(spent_second.spent_imported_member_since(&spent_first, &other));
     assert!(!spent_second.spent_imported_member_since(&spent_first, &description));
@@ -543,7 +543,7 @@ fn opaque_helper_import_has_no_count_and_checks_each_member_exchange() {
 
 #[test]
 fn observable_unary_import_preserves_arbitrary_count_and_current_custody() {
-    let description = member_description(PointerBlock::ExternalArgument);
+    let description = member_description(AddressBase::ExternalArgument);
     let source = CreationEvents::new();
     let entry = source
         .import_observable_contract_population(&description, 1)
@@ -574,7 +574,7 @@ fn observable_unary_import_preserves_arbitrary_count_and_current_custody() {
         .unwrap()
         .return_to(&helper);
     let (spent, _) = held
-        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, false)
+        .checked_member_exchange(&AddressBase::ExternalArgument, &description, false)
         .unwrap();
     let after = spent.observe_symbolic(&description).unwrap();
     assert_eq!(after.entry_count, count.entry_count);
@@ -583,7 +583,7 @@ fn observable_unary_import_preserves_arbitrary_count_and_current_custody() {
 
 #[test]
 fn opaque_numeric_batch_composes_with_units_without_fabricating_custody() {
-    let description = member_description(PointerBlock::ExternalArgument);
+    let description = member_description(AddressBase::ExternalArgument);
     let entry = CreationEvents::new()
         .import_observable_contract_population(&description, 0)
         .unwrap();
@@ -594,7 +594,7 @@ fn opaque_numeric_batch_composes_with_units_without_fabricating_custody() {
     );
     let exchange = |state: &CreationEvents, produce, amount, facts: &PureFactContext| {
         state.checked_member_exchange_quantity(
-            &PointerBlock::ExternalArgument,
+            &AddressBase::ExternalArgument,
             &description,
             produce,
             &MachineTerm::constant(amount),
@@ -658,7 +658,7 @@ fn opaque_numeric_batch_composes_with_units_without_fabricating_custody() {
 
 #[test]
 fn field_quantity_moves_and_consumes_only_the_owned_numerical_batch() {
-    let description = member_description(PointerBlock::ExternalArgument);
+    let description = member_description(AddressBase::ExternalArgument);
     let quantity = MachineTerm::Variable(Variable(940_140));
     let facts = PureFactContext::new().assume_condition(
         ConditionTerm::equal(quantity.clone(), MachineTerm::constant(2)),
@@ -706,7 +706,7 @@ fn field_quantity_moves_and_consumes_only_the_owned_numerical_batch() {
     assert_eq!(
         members
             .checked_member_exchange_quantity(
-                &PointerBlock::ExternalArgument,
+                &AddressBase::ExternalArgument,
                 &description,
                 false,
                 &quantity,
@@ -726,7 +726,7 @@ fn field_quantity_moves_and_consumes_only_the_owned_numerical_batch() {
         .unwrap();
     let spent = both
         .checked_member_exchange_quantity(
-            &PointerBlock::ExternalArgument,
+            &AddressBase::ExternalArgument,
             &description,
             false,
             &quantity,
@@ -739,7 +739,7 @@ fn field_quantity_moves_and_consumes_only_the_owned_numerical_batch() {
     assert_eq!(
         spent
             .checked_member_exchange_quantity(
-                &PointerBlock::ExternalArgument,
+                &AddressBase::ExternalArgument,
                 &description,
                 false,
                 &quantity,
@@ -759,7 +759,7 @@ fn field_quantity_moves_and_consumes_only_the_owned_numerical_batch() {
 
 #[test]
 fn field_quantity_cannot_spend_a_global_count_without_member_custody() {
-    let description = member_description(PointerBlock::ExternalArgument);
+    let description = member_description(AddressBase::ExternalArgument);
     let quantity = MachineTerm::Variable(Variable(940_141));
     let facts = PureFactContext::new().assume_condition(
         ConditionTerm::equal(quantity.clone(), MachineTerm::constant(2)),
@@ -777,7 +777,7 @@ fn field_quantity_cannot_spend_a_global_count_without_member_custody() {
     assert_eq!(
         authority_only
             .checked_member_exchange_quantity(
-                &PointerBlock::ExternalArgument,
+                &AddressBase::ExternalArgument,
                 &description,
                 false,
                 &quantity,
@@ -804,7 +804,7 @@ fn field_quantity_cannot_spend_a_global_count_without_member_custody() {
 
 #[test]
 fn field_quantity_batch_work_ignores_quantity_and_unrelated_facts() {
-    let description = member_description(PointerBlock::ExternalArgument);
+    let description = member_description(AddressBase::ExternalArgument);
     let quantity = MachineTerm::Variable(Variable(940_142));
     let mut work = Vec::new();
     for (amount, unrelated) in [(2, 0), (64, 32), (1024, 256), (65536, 1024)] {
@@ -840,7 +840,7 @@ fn field_quantity_batch_work_ignores_quantity_and_unrelated_facts() {
                 .unwrap();
             let spent = both
                 .checked_member_exchange_quantity(
-                    &PointerBlock::ExternalArgument,
+                    &AddressBase::ExternalArgument,
                     &description,
                     false,
                     &quantity,
@@ -863,7 +863,7 @@ fn field_quantity_batch_work_ignores_quantity_and_unrelated_facts() {
 
 #[test]
 fn opaque_symbolic_batch_has_one_checked_exchange_and_current_custody() {
-    let description = member_description(PointerBlock::ExternalArgument);
+    let description = member_description(AddressBase::ExternalArgument);
     // Keep this a genuinely symbolic batch: fixed numerical batches now
     // compose with unit exchanges, covered by the separate numerical test.
     let quantity = MachineTerm::Variable(Variable(940_120));
@@ -885,12 +885,12 @@ fn opaque_symbolic_batch_has_one_checked_exchange_and_current_custody() {
         .unwrap();
     assert!(held.owns_population_member(&description));
     assert!(matches!(
-        held.checked_member_exchange(&PointerBlock::ExternalArgument, &description, true),
+        held.checked_member_exchange(&AddressBase::ExternalArgument, &description, true),
         Err(CreationRefusal::InvalidQuantity)
     ));
     let (spent, _) = held
         .checked_member_exchange_quantity(
-            &PointerBlock::ExternalArgument,
+            &AddressBase::ExternalArgument,
             &description,
             false,
             &quantity,
@@ -900,7 +900,7 @@ fn opaque_symbolic_batch_has_one_checked_exchange_and_current_custody() {
     assert!(!spent.owns_population_member(&description));
     assert!(matches!(
         spent.checked_member_exchange_quantity(
-            &PointerBlock::ExternalArgument,
+            &AddressBase::ExternalArgument,
             &description,
             false,
             &quantity,
@@ -920,7 +920,7 @@ fn opaque_symbolic_batch_has_one_checked_exchange_and_current_custody() {
         .unwrap();
     let (born, _) = empty
         .checked_member_exchange_quantity(
-            &PointerBlock::ExternalArgument,
+            &AddressBase::ExternalArgument,
             &description,
             true,
             &quantity,
@@ -929,14 +929,14 @@ fn opaque_symbolic_batch_has_one_checked_exchange_and_current_custody() {
         .unwrap();
     assert!(born.owns_population_member(&description));
     assert!(matches!(
-        born.checked_member_exchange(&PointerBlock::ExternalArgument, &description, false),
+        born.checked_member_exchange(&AddressBase::ExternalArgument, &description, false),
         Err(CreationRefusal::MissingMembers)
     ));
 }
 
 #[test]
 fn opaque_symbolic_batch_call_custody_roundtrips_independently_of_authority() {
-    let description = member_description(PointerBlock::ExternalArgument);
+    let description = member_description(AddressBase::ExternalArgument);
     let quantity = MachineTerm::Variable(Variable(940_130));
     let assumptions = PureFactContext::new().assume_condition(
         crate::kernel::ConditionTerm::signed_greater_equal(
@@ -981,7 +981,7 @@ fn opaque_symbolic_batch_call_custody_roundtrips_independently_of_authority() {
     assert_eq!(
         authority_only
             .checked_member_exchange_quantity(
-                &PointerBlock::ExternalArgument,
+                &AddressBase::ExternalArgument,
                 &description,
                 false,
                 &quantity,
@@ -1062,7 +1062,7 @@ fn opaque_symbolic_batch_call_custody_roundtrips_independently_of_authority() {
     assert_eq!(
         batch_only
             .checked_member_exchange_quantity(
-                &PointerBlock::ExternalArgument,
+                &AddressBase::ExternalArgument,
                 &description,
                 false,
                 &quantity,
@@ -1075,7 +1075,7 @@ fn opaque_symbolic_batch_call_custody_roundtrips_independently_of_authority() {
 
 #[test]
 fn opaque_symbolic_birth_returns_exact_batch_without_moving_framed_population() {
-    let description = member_description(PointerBlock::ExternalArgument);
+    let description = member_description(AddressBase::ExternalArgument);
     let entry_count = MachineTerm::Variable(Variable(940_132));
     let quantity = MachineTerm::Variable(Variable(940_133));
     let assumptions = PureFactContext::new()
@@ -1102,7 +1102,7 @@ fn opaque_symbolic_birth_returns_exact_batch_without_moving_framed_population() 
         .unwrap();
     let (born, _) = authorized
         .checked_member_exchange_quantity(
-            &PointerBlock::ExternalArgument,
+            &AddressBase::ExternalArgument,
             &description,
             true,
             &quantity,
@@ -1154,7 +1154,7 @@ fn opaque_symbolic_birth_returns_exact_batch_without_moving_framed_population() 
 
 #[test]
 fn independent_opaque_symbolic_populations_keep_their_own_counts_and_members() {
-    let first = member_description(PointerBlock::ExternalArgument);
+    let first = member_description(AddressBase::ExternalArgument);
     let second = ResourceDescription::new(
         "other_reference".into(),
         first.arguments().to_vec().into(),
@@ -1181,7 +1181,7 @@ fn independent_opaque_symbolic_populations_keep_their_own_counts_and_members() {
         .unwrap();
     let (spent, _) = entry
         .checked_member_exchange_quantity(
-            &PointerBlock::ExternalArgument,
+            &AddressBase::ExternalArgument,
             &first,
             false,
             &first_quantity,
@@ -1209,7 +1209,7 @@ fn independent_opaque_symbolic_populations_keep_their_own_counts_and_members() {
     assert!(spent.imported_member_delta_since_entry(&second).is_none());
     let (spent_both, _) = spent
         .checked_member_exchange_quantity(
-            &PointerBlock::ExternalArgument,
+            &AddressBase::ExternalArgument,
             &second,
             false,
             &second_quantity,
@@ -1228,9 +1228,9 @@ fn independent_opaque_symbolic_populations_keep_their_own_counts_and_members() {
 
 #[test]
 fn two_authority_control_import_checks_each_custody_and_scope() {
-    let pointer = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Variable(Variable(940_112)),
+    let pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Variable(Variable(940_112)),
     };
     let selected = ResourceFact::own(Resource::Composite {
         name: "control".into(),
@@ -1258,7 +1258,7 @@ fn two_authority_control_import_checks_each_custody_and_scope() {
     )
     .unwrap();
     let cell = SpecExpression::MemoryLoad {
-        memory: SpecMemory::Current,
+        memory: SpecPoint::Current,
         pointer: Box::new(SpecExpression::PointerOffset {
             pointer: Box::new(SpecExpression::ProgramExpression(
                 crate::kernel::program_expression::variable("p"),
@@ -1337,7 +1337,7 @@ fn two_authority_control_import_checks_each_custody_and_scope() {
         assert!(!imported.checked_empty_population(description));
         assert!(
             imported
-                .checked_establish(&PointerBlock::ExternalArgument, description)
+                .checked_establish(&AddressBase::ExternalArgument, description)
                 .is_err()
         );
     }
@@ -1422,9 +1422,9 @@ fn two_authority_control_import_checks_each_custody_and_scope() {
             .is_err()
     );
     let mut wrong_args = member.arguments().to_vec();
-    wrong_args[0] = ProgramValue::pointer(Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(912),
+    wrong_args[0] = ProgramValue::pointer(Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(912),
     })
     .into();
     let wrong = ResourceFact::own(Resource::Composite {
@@ -1457,9 +1457,9 @@ fn two_authority_control_import_checks_each_custody_and_scope() {
 
 #[test]
 fn checked_control_import_observes_only_its_exact_entry_population() {
-    let pointer = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Variable(Variable(940_112)),
+    let pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Variable(Variable(940_112)),
     };
     let selected = ResourceFact::own(Resource::Composite {
         name: "control".into(),
@@ -1487,7 +1487,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     )
     .unwrap();
     let cell = SpecExpression::MemoryLoad {
-        memory: SpecMemory::Current,
+        memory: SpecPoint::Current,
         pointer: Box::new(SpecExpression::PointerOffset {
             pointer: Box::new(SpecExpression::ProgramExpression(
                 crate::kernel::program_expression::variable("p"),
@@ -1558,7 +1558,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
         )
         .unwrap();
     let (spent, _) = imported_with_member
-        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, false)
+        .checked_member_exchange(&AddressBase::ExternalArgument, &description, false)
         .unwrap();
     let retirement_assumptions =
         PureFactContext::new().assume_proposition(Proposition::ConditionIs(
@@ -1752,13 +1752,13 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
         "a folded wrapper alone cannot read count"
     );
     let (with_member, _) = imported
-        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, true)
+        .checked_member_exchange(&AddressBase::ExternalArgument, &description, true)
         .unwrap();
     let born_count = with_member.observe_symbolic(&description).unwrap();
     assert_eq!(born_count.delta, 1);
     assert_eq!(born_count.entry_owned_members, 0);
     let (without_member, _) = with_member
-        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, false)
+        .checked_member_exchange(&AddressBase::ExternalArgument, &description, false)
         .unwrap();
     assert_eq!(
         without_member.observe_symbolic(&description).unwrap().delta,
@@ -1767,9 +1767,9 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     let wrong = ResourceDescription::new(
         "reference".into(),
         vec![
-            ProgramValue::pointer(Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Variable(Variable(940_113)),
+            ProgramValue::pointer(Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Variable(Variable(940_113)),
             })
             .into(),
         ]
@@ -1818,7 +1818,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
 
 #[test]
 fn helper_call_transfers_authority_and_member_without_changing_total() {
-    let block = PointerBlock::Heap(940_106);
+    let block = AddressBase::Heap(940_106);
     let description = member_description(block.clone());
     let caller = CreationEvents::new().created(block.clone());
     let (caller, _) = caller.checked_establish(&block, &description).unwrap();
@@ -1862,7 +1862,7 @@ fn helper_call_transfers_authority_and_member_without_changing_total() {
 
 #[test]
 fn checked_member_exchange_conserves_exact_authority_total() {
-    let block = PointerBlock::Heap(940_105);
+    let block = AddressBase::Heap(940_105);
     let description = member_description(block.clone());
     let created = CreationEvents::new().created(block.clone());
     assert_eq!(
@@ -1914,7 +1914,7 @@ fn checked_member_exchange_conserves_exact_authority_total() {
 
 #[test]
 fn checked_member_exchange_requires_exact_field_free_anchor_and_holder() {
-    let block = PointerBlock::Heap(940_106);
+    let block = AddressBase::Heap(940_106);
     let established = CreationEvents::new()
         .created(block.clone())
         .establish(&block, "reference")
@@ -1923,16 +1923,16 @@ fn checked_member_exchange_requires_exact_field_free_anchor_and_holder() {
     let offset = ResourceDescription::new(
         "reference".into(),
         vec![
-            ProgramValue::pointer(Pointer {
-                block: block.clone(),
-                offset: PointerOffsetTerm::Constant(4),
+            ProgramValue::pointer(Address {
+                base: block.clone(),
+                offset: AddressOffset::Constant(4),
             })
             .into(),
         ]
         .into(),
         ResourceFieldSchema::new(vec![]).unwrap(),
     );
-    let wrong_block = PointerBlock::Heap(940_107);
+    let wrong_block = AddressBase::Heap(940_107);
     let fielded = ResourceDescription::new(
         "reference".into(),
         base.arguments().to_vec().into(),
@@ -1965,14 +1965,14 @@ fn checked_member_exchange_requires_exact_field_free_anchor_and_holder() {
 
 #[test]
 fn opaque_nested_numeric_custody_transfer_and_return() {
-    let description = member_description(PointerBlock::ExternalArgument);
+    let description = member_description(AddressBase::ExternalArgument);
     let entry = CreationEvents::new()
         .import_opaque_contract_population(&description, 2)
         .unwrap();
     assert!(entry.tracks_population(&description));
     let child = entry.enter_call();
     assert!(matches!(
-        child.checked_member_exchange(&PointerBlock::ExternalArgument, &description, false),
+        child.checked_member_exchange(&AddressBase::ExternalArgument, &description, false),
         Err(CreationRefusal::MissingAuthority)
     ));
     let sent = child
@@ -1991,7 +1991,7 @@ fn opaque_nested_numeric_custody_transfer_and_return() {
             .owns_population_authority(&description)
     );
     assert!(matches!(
-        sent.checked_member_exchange(&PointerBlock::ExternalArgument, &description, false),
+        sent.checked_member_exchange(&AddressBase::ExternalArgument, &description, false),
         Err(CreationRefusal::MissingMembers)
     ));
     let sent = sent
@@ -2010,7 +2010,7 @@ fn opaque_nested_numeric_custody_transfer_and_return() {
         Err(CreationRefusal::OutstandingOwnership)
     );
     let (spent, _) = sent
-        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, false)
+        .checked_member_exchange(&AddressBase::ExternalArgument, &description, false)
         .unwrap();
     assert_eq!(
         spent
@@ -2042,7 +2042,7 @@ fn opaque_nested_numeric_custody_transfer_and_return() {
 
 #[test]
 fn opaque_returned_authority_cannot_strand_members() {
-    let description = member_description(PointerBlock::ExternalArgument);
+    let description = member_description(AddressBase::ExternalArgument);
     let entry = CreationEvents::new()
         .import_opaque_contract_population(&description, 1)
         .unwrap();
@@ -2061,7 +2061,7 @@ fn opaque_returned_authority_cannot_strand_members() {
     );
     assert!(matches!(
         authority_returned.checked_member_exchange(
-            &PointerBlock::ExternalArgument,
+            &AddressBase::ExternalArgument,
             &description,
             false
         ),
@@ -2081,7 +2081,7 @@ fn opaque_returned_authority_cannot_strand_members() {
 
 #[test]
 fn opaque_symbolic_nested_transfer_refuses_splitting_and_preserves_global_total() {
-    let description = member_description(PointerBlock::ExternalArgument);
+    let description = member_description(AddressBase::ExternalArgument);
     let entry = CreationEvents::new()
         .import_opaque_contract_population_inner(
             &description,
@@ -2125,11 +2125,11 @@ fn opaque_symbolic_nested_transfer_refuses_splitting_and_preserves_global_total(
 
 #[test]
 fn proof_entry_keeps_opaque_assumptions_without_creator_privilege() {
-    let description = member_description(PointerBlock::ExternalArgument);
+    let description = member_description(AddressBase::ExternalArgument);
     let imported = CreationEvents::new()
         .import_opaque_contract_population(&description, 1)
         .unwrap();
-    let block = PointerBlock::Heap(777);
+    let block = AddressBase::Heap(777);
     let created = imported.created(block.clone());
     let proof = created.enter_proof_entry();
     assert!(proof.owns_population_authority(&description));
@@ -2142,7 +2142,7 @@ fn proof_entry_keeps_opaque_assumptions_without_creator_privilege() {
 
 #[test]
 fn checked_empty_retirement_survives_free_but_not_a_new_lifetime() {
-    let block = PointerBlock::Heap(980_100);
+    let block = AddressBase::Heap(980_100);
     let description = member_description(block.clone());
     let created = CreationEvents::new().created(block.clone());
     assert!(!created.checked_empty_population(&description));
@@ -2167,9 +2167,9 @@ fn checked_empty_retirement_survives_free_but_not_a_new_lifetime() {
     let wrong_offset = ResourceDescription::new(
         "reference".into(),
         vec![
-            ProgramValue::pointer(Pointer {
-                block: block.clone(),
-                offset: PointerOffsetTerm::Constant(4),
+            ProgramValue::pointer(Address {
+                base: block.clone(),
+                offset: AddressOffset::Constant(4),
             })
             .into(),
         ]
@@ -2183,7 +2183,7 @@ fn checked_empty_retirement_survives_free_but_not_a_new_lifetime() {
 
 #[test]
 fn opaque_retirement_requires_global_count_proof_not_local_exhaustion() {
-    let description = member_description(PointerBlock::ExternalArgument);
+    let description = member_description(AddressBase::ExternalArgument);
     let entry_count = MachineTerm::Variable(Variable(980_200));
     let entry = CreationEvents::new()
         .import_opaque_contract_population_inner(
@@ -2195,7 +2195,7 @@ fn opaque_retirement_requires_global_count_proof_not_local_exhaustion() {
         )
         .unwrap();
     let (spent, _) = entry
-        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, false)
+        .checked_member_exchange(&AddressBase::ExternalArgument, &description, false)
         .unwrap();
     assert!(!spent.checked_empty_population(&description));
     assert_eq!(
@@ -2236,7 +2236,7 @@ fn opaque_retirement_requires_global_count_proof_not_local_exhaustion() {
 
 #[test]
 fn imported_retirement_supports_empty_and_complete_numeric_populations() {
-    let description = member_description(PointerBlock::ExternalArgument);
+    let description = member_description(AddressBase::ExternalArgument);
     for quantity in [0, 1, 3, 2147483647] {
         let events = CreationEvents::new()
             .import_opaque_contract_population_inner(
@@ -2252,7 +2252,7 @@ fn imported_retirement_supports_empty_and_complete_numeric_populations() {
         } else {
             events
                 .checked_member_exchange_quantity(
-                    &PointerBlock::ExternalArgument,
+                    &AddressBase::ExternalArgument,
                     &description,
                     false,
                     &MachineTerm::constant(quantity),
@@ -2271,7 +2271,7 @@ fn imported_retirement_supports_empty_and_complete_numeric_populations() {
 
 #[test]
 fn imported_symbolic_retirement_requires_spent_custody_and_global_zero() {
-    let description = member_description(PointerBlock::ExternalArgument);
+    let description = member_description(AddressBase::ExternalArgument);
     let quantity = MachineTerm::Variable(Variable(980_210));
     let total = MachineTerm::Variable(Variable(980_211));
     let assumptions = PureFactContext::new().assume_condition(
@@ -2305,7 +2305,7 @@ fn imported_symbolic_retirement_requires_spent_custody_and_global_zero() {
     );
     let spent = held
         .checked_member_exchange_quantity(
-            &PointerBlock::ExternalArgument,
+            &AddressBase::ExternalArgument,
             &description,
             false,
             &quantity,
@@ -2339,7 +2339,7 @@ fn imported_symbolic_retirement_requires_spent_custody_and_global_zero() {
     assert!(
         retired
             .checked_member_exchange_quantity(
-                &PointerBlock::ExternalArgument,
+                &AddressBase::ExternalArgument,
                 &description,
                 true,
                 &MachineTerm::constant(1),
@@ -2355,7 +2355,7 @@ fn imported_symbolic_retirement_requires_spent_custody_and_global_zero() {
 
 #[test]
 fn opaque_numeric_count_keeps_multiple_births_and_deaths() {
-    let block = PointerBlock::ExternalArgument;
+    let block = AddressBase::ExternalArgument;
     let description = member_description(block.clone());
     let entry = CreationEvents::new()
         .import_opaque_contract_population_inner(
@@ -2403,7 +2403,7 @@ fn opaque_numeric_count_keeps_multiple_births_and_deaths() {
 
 #[test]
 fn opaque_numeric_count_delta_survives_exact_call_custody() {
-    let block = PointerBlock::ExternalArgument;
+    let block = AddressBase::ExternalArgument;
     let description = member_description(block.clone());
     let mut caller = CreationEvents::new()
         .import_opaque_contract_population_inner(
@@ -2440,7 +2440,7 @@ fn opaque_numeric_count_delta_survives_exact_call_custody() {
 
 #[test]
 fn opaque_numeric_count_observation_uses_exact_magnitude_and_overflow_guard() {
-    let block = PointerBlock::ExternalArgument;
+    let block = AddressBase::ExternalArgument;
     let description = member_description(block.clone());
     let [AlgebraicValue::Program(pointer)] = description.arguments() else {
         panic!("pointer anchor")
@@ -2514,13 +2514,13 @@ fn opaque_numeric_count_observation_uses_exact_magnitude_and_overflow_guard() {
 
 #[test]
 fn count_uses_its_written_anchor_not_a_proven_alias() {
-    let description = member_description(PointerBlock::ExternalArgument);
+    let description = member_description(AddressBase::ExternalArgument);
     let [AlgebraicValue::Program(ProgramValue::Pointer(anchor))] = description.arguments() else {
         panic!("pointer anchor")
     };
-    let alias = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(9_850_100)), 4),
+    let alias = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(9_850_100)), 4),
     };
     let count_of = |pointer: PointerValue| SpecExpression::CountedResourceCount {
         name: "reference".into(),
@@ -2592,7 +2592,7 @@ fn count_uses_its_written_anchor_not_a_proven_alias() {
 
 #[test]
 fn allocation_companion_transfers_cleanup_without_creation_privilege() {
-    let block = PointerBlock::Heap(990_811);
+    let block = AddressBase::Heap(990_811);
     let caller = CreationEvents::new().created(block.clone());
     let helper = caller.enter_call();
     let held = helper
@@ -2621,7 +2621,7 @@ fn allocation_companion_transfers_cleanup_without_creation_privilege() {
 
 #[test]
 fn borrowed_allocation_companion_returns_its_cleanup_obligation() {
-    let block = PointerBlock::Heap(990_812);
+    let block = AddressBase::Heap(990_812);
     let caller = CreationEvents::new().created(block.clone());
     let helper = caller.enter_call();
     let held = helper
@@ -2642,7 +2642,7 @@ fn borrowed_allocation_companion_returns_its_cleanup_obligation() {
 
 #[test]
 fn allocation_companion_cannot_free_storage_with_live_population() {
-    let block = PointerBlock::Heap(990_813);
+    let block = AddressBase::Heap(990_813);
     let caller = CreationEvents::new()
         .created(block.clone())
         .establish(&block, "reference")
@@ -2665,11 +2665,11 @@ fn allocation_companion_cannot_free_storage_with_live_population() {
 mod wildcard_scope_tests {
     use super::*;
 
-    fn description(block: &PointerBlock, keys: &[u32]) -> ResourceDescription {
+    fn description(block: &AddressBase, keys: &[u32]) -> ResourceDescription {
         let mut arguments = vec![
-            ProgramValue::pointer(Pointer {
-                block: block.clone(),
-                offset: PointerOffsetTerm::Constant(0),
+            ProgramValue::pointer(Address {
+                base: block.clone(),
+                offset: AddressOffset::Constant(0),
             })
             .into(),
         ];
@@ -2680,16 +2680,16 @@ mod wildcard_scope_tests {
             ResourceFieldSchema::new(vec![]).unwrap(),
         )
     }
-    fn scope(block: &PointerBlock, arity: usize) -> ResourceDescription {
+    fn scope(block: &AddressBase, arity: usize) -> ResourceDescription {
         description(block, &[])
             .with_population_arity(arity)
             .unwrap()
     }
 
     fn opaque_scope(index: u32) -> (ResourceDescription, ResourceDescription) {
-        let anchor = ProgramValue::pointer(Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(i64::from(index) * 4),
+        let anchor = ProgramValue::pointer(Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(i64::from(index) * 4),
         });
         let scope = ResourceDescription::new(
             "slot".into(),
@@ -2759,7 +2759,7 @@ mod wildcard_scope_tests {
         assert_eq!(held.observe_symbolic(&scope).unwrap().entry_count, total);
         assert!(held.finish_call(&imported).is_err());
         assert!(
-            held.checked_member_exchange(&PointerBlock::ExternalArgument, &member, true)
+            held.checked_member_exchange(&AddressBase::ExternalArgument, &member, true)
                 .is_err()
         );
         let returned = held
@@ -2777,7 +2777,7 @@ mod wildcard_scope_tests {
         assert!(returned.owns_imported_population_member(&member));
         assert!(
             returned
-                .checked_establish(&PointerBlock::ExternalArgument, &scope)
+                .checked_establish(&AddressBase::ExternalArgument, &scope)
                 .is_err()
         );
     }
@@ -2792,7 +2792,7 @@ mod wildcard_scope_tests {
         assert!(matches!(count.entry_count, MachineTerm::Variable(_)));
         assert_eq!(count.entry_owned_members, 1);
         let death = |events: &CreationEvents, candidate: &ResourceDescription| {
-            events.checked_member_exchange(&PointerBlock::ExternalArgument, candidate, false)
+            events.checked_member_exchange(&AddressBase::ExternalArgument, candidate, false)
         };
         let mut arguments = member.arguments().to_vec();
         arguments[1] = int32(8).into();
@@ -2829,12 +2829,12 @@ mod wildcard_scope_tests {
         assert!(death(&spent, &member).is_err());
         assert!(
             spent
-                .checked_member_exchange(&PointerBlock::ExternalArgument, &member, true)
+                .checked_member_exchange(&AddressBase::ExternalArgument, &member, true)
                 .is_err()
         );
         assert!(
             spent
-                .checked_establish(&PointerBlock::ExternalArgument, &scope)
+                .checked_establish(&AddressBase::ExternalArgument, &scope)
                 .is_err()
         );
     }
@@ -2905,7 +2905,7 @@ mod wildcard_scope_tests {
         let birth = |events: &CreationEvents, member: &ResourceDescription| {
             events
                 .checked_exclusive_member_exchange_quantity(
-                    &PointerBlock::ExternalArgument,
+                    &AddressBase::ExternalArgument,
                     member,
                     true,
                     &MachineTerm::constant(1),
@@ -2921,7 +2921,7 @@ mod wildcard_scope_tests {
         assert!(two.owns_imported_population_member(&second));
         assert!(!two.owns_imported_population_member(&wrong));
         assert!(
-            two.checked_member_exchange(&PointerBlock::ExternalArgument, &wrong, false)
+            two.checked_member_exchange(&AddressBase::ExternalArgument, &wrong, false)
                 .is_err()
         );
         assert!(two.observe_exact_member(&wrong).is_err());
@@ -2948,16 +2948,16 @@ mod wildcard_scope_tests {
         assert!(!sent_first.owns_imported_population_member(&second));
         assert!(
             sent_first
-                .checked_member_exchange(&PointerBlock::ExternalArgument, &second, false)
+                .checked_member_exchange(&AddressBase::ExternalArgument, &second, false)
                 .is_err()
         );
         let spent = sent_first
-            .checked_member_exchange(&PointerBlock::ExternalArgument, &first, false)
+            .checked_member_exchange(&AddressBase::ExternalArgument, &first, false)
             .unwrap()
             .0;
         assert!(
             spent
-                .checked_member_exchange(&PointerBlock::ExternalArgument, &first, false)
+                .checked_member_exchange(&AddressBase::ExternalArgument, &first, false)
                 .is_err()
         );
         let returned = spent
@@ -3004,7 +3004,7 @@ mod wildcard_scope_tests {
                      candidate: &ResourceDescription,
                      assumptions: &PureFactContext| {
             events.checked_member_exchange_quantity(
-                &PointerBlock::ExternalArgument,
+                &AddressBase::ExternalArgument,
                 candidate,
                 true,
                 &MachineTerm::constant(1),
@@ -3068,11 +3068,11 @@ mod wildcard_scope_tests {
         assert!(birth(&issued, &different, &bounded).is_err());
         assert!(
             issued
-                .checked_member_exchange(&PointerBlock::ExternalArgument, &different, false)
+                .checked_member_exchange(&AddressBase::ExternalArgument, &different, false)
                 .is_err()
         );
         let (returned, death) = issued
-            .checked_member_exchange(&PointerBlock::ExternalArgument, &member, false)
+            .checked_member_exchange(&AddressBase::ExternalArgument, &member, false)
             .unwrap();
         assert!(death.matches(&issued, &returned, &member, false));
         assert!(!death.matches(&issued, &returned, &different, false));
@@ -3082,20 +3082,20 @@ mod wildcard_scope_tests {
         assert!(!returned.owns_imported_population_member(&member));
         assert!(
             returned
-                .checked_member_exchange(&PointerBlock::ExternalArgument, &member, false)
+                .checked_member_exchange(&AddressBase::ExternalArgument, &member, false)
                 .is_err()
         );
 
         assert!(
             issued
-                .checked_establish(&PointerBlock::ExternalArgument, &scope)
+                .checked_establish(&AddressBase::ExternalArgument, &scope)
                 .is_err()
         );
     }
 
     #[test]
     fn local_numeric_batch_preserves_exact_wildcard_counts() {
-        let pool = PointerBlock::Heap(991_202);
+        let pool = AddressBase::Heap(991_202);
         let scope = scope(&pool, 2);
         let selected = description(&pool, &[1]);
         let other = description(&pool, &[2]);
@@ -3149,7 +3149,7 @@ mod wildcard_scope_tests {
 
     #[test]
     fn exact_counts_preserve_multiplicity_and_require_current_authority() {
-        let pool = PointerBlock::Heap(950_001);
+        let pool = AddressBase::Heap(950_001);
         let scope = scope(&pool, 3);
         let (empty, _) = CreationEvents::new()
             .created(pool.clone())
@@ -3191,7 +3191,7 @@ mod wildcard_scope_tests {
         assert_eq!(exact.entry_owned_members, 1);
         assert_eq!(exact.delta, 0);
         let (spent, _) = entry
-            .checked_member_exchange(&PointerBlock::ExternalArgument, &member, false)
+            .checked_member_exchange(&AddressBase::ExternalArgument, &member, false)
             .unwrap();
         let after = spent.observe_exact_member(&member).unwrap();
         assert_eq!(after.entry_count, exact.entry_count);
@@ -3203,7 +3203,7 @@ mod wildcard_scope_tests {
 
     #[test]
     fn exact_counts_do_not_treat_unresolved_indices_as_absent() {
-        let pool = PointerBlock::Heap(950_002);
+        let pool = AddressBase::Heap(950_002);
         let scope = scope(&pool, 2);
         let (empty, _) = CreationEvents::new()
             .created(pool.clone())
@@ -3229,16 +3229,16 @@ mod wildcard_scope_tests {
 
     #[test]
     fn exact_count_identity_ignores_pointer_casts_and_qualifiers() {
-        let pool = PointerBlock::Heap(950_004);
+        let pool = AddressBase::Heap(950_004);
         let scope = scope(&pool, 2);
         let (empty, _) = CreationEvents::new()
             .created(pool.clone())
             .checked_establish(&pool, &scope)
             .unwrap();
         let mut arguments = description(&pool, &[0]).arguments().to_vec();
-        let pointer = ProgramValue::pointer(Pointer {
-            block: PointerBlock::Heap(950_005),
-            offset: PointerOffsetTerm::Constant(4),
+        let pointer = ProgramValue::pointer(Address {
+            base: AddressBase::Heap(950_005),
+            offset: AddressOffset::Constant(4),
         });
         arguments[1] = pointer.clone().into();
         let member = ResourceDescription::new(
@@ -3271,7 +3271,7 @@ mod wildcard_scope_tests {
 
     #[test]
     fn exact_count_never_reports_zero_for_an_unindexed_batch() {
-        let pool = PointerBlock::Heap(950_006);
+        let pool = AddressBase::Heap(950_006);
         let scope = scope(&pool, 2);
         let (empty, _) = CreationEvents::new()
             .created(pool.clone())
@@ -3302,7 +3302,7 @@ mod wildcard_scope_tests {
 
     #[test]
     fn wildcard_scope_checks_signature_and_conserves_aggregate_total() {
-        let pool = PointerBlock::Heap(920_001);
+        let pool = AddressBase::Heap(920_001);
         let authority = scope(&pool, 3);
         let entry = CreationEvents::new().created(pool.clone());
         let (empty, _) = entry.checked_establish(&pool, &authority).unwrap();
@@ -3327,7 +3327,7 @@ mod wildcard_scope_tests {
             two.checked_member_exchange(&pool, &authority, true)
                 .is_err()
         );
-        let foreign = PointerBlock::Heap(920_002);
+        let foreign = AddressBase::Heap(920_002);
         assert!(
             two.checked_member_exchange(&foreign, &description(&foreign, &[1, 10]), true)
                 .is_err()
@@ -3351,7 +3351,7 @@ mod wildcard_scope_tests {
 
 #[test]
 fn retired_symbolic_batch_receipt_survives_helper_return_without_live_rights() {
-    let description = member_description(PointerBlock::ExternalArgument);
+    let description = member_description(AddressBase::ExternalArgument);
     let quantity = MachineTerm::Variable(Variable(980_220));
     let assumptions = PureFactContext::new().assume_condition(
         crate::kernel::ConditionTerm::signed_greater_equal(
@@ -3378,7 +3378,7 @@ fn retired_symbolic_batch_receipt_survives_helper_return_without_live_rights() {
         .unwrap();
     let spent = held
         .checked_member_exchange_quantity(
-            &PointerBlock::ExternalArgument,
+            &AddressBase::ExternalArgument,
             &description,
             false,
             &quantity,
@@ -3407,7 +3407,7 @@ fn retired_symbolic_batch_receipt_survives_helper_return_without_live_rights() {
     assert!(
         returned
             .checked_member_exchange_quantity(
-                &PointerBlock::ExternalArgument,
+                &AddressBase::ExternalArgument,
                 &description,
                 true,
                 &MachineTerm::constant(1),
@@ -3425,7 +3425,7 @@ fn retired_symbolic_batch_receipt_survives_helper_return_without_live_rights() {
 
 #[test]
 fn helper_cleanup_must_retire_each_control_population_at_global_zero() {
-    let slots = member_description(PointerBlock::ExternalArgument);
+    let slots = member_description(AddressBase::ExternalArgument);
     let private = ResourceDescription::new(
         "private".into(),
         slots.arguments().to_vec().into(),
@@ -3470,7 +3470,7 @@ fn helper_cleanup_must_retire_each_control_population_at_global_zero() {
             .unwrap();
         let spent = held
             .checked_member_exchange_quantity(
-                &PointerBlock::ExternalArgument,
+                &AddressBase::ExternalArgument,
                 &slots,
                 false,
                 &MachineTerm::constant(3),
@@ -3501,10 +3501,10 @@ fn helper_cleanup_must_retire_each_control_population_at_global_zero() {
 
 #[test]
 fn local_named_wildcard_members_count_occurrences_not_field_values() {
-    let block = PointerBlock::Heap(940_502);
-    let anchor = ProgramValue::pointer(Pointer {
-        block: block.clone(),
-        offset: PointerOffsetTerm::Constant(0),
+    let block = AddressBase::Heap(940_502);
+    let anchor = ProgramValue::pointer(Address {
+        base: block.clone(),
+        offset: AddressOffset::Constant(0),
     });
     let schema = ResourceFieldSchema::new(vec![(
         "serial".into(),
@@ -3567,7 +3567,7 @@ fn local_named_wildcard_members_count_occurrences_not_field_values() {
 
 #[test]
 fn local_numeric_batch_splits_and_requires_owned_authority() {
-    let block = PointerBlock::Heap(991_200);
+    let block = AddressBase::Heap(991_200);
     let description = member_description(block.clone());
     let created = CreationEvents::new().created(block.clone());
     let exchange = |state: &CreationEvents, produce: bool, amount: u32| {
@@ -3605,7 +3605,7 @@ fn local_numeric_batch_splits_and_requires_owned_authority() {
 
 #[test]
 fn local_numeric_batch_work_does_not_grow_with_quantity() {
-    let block = PointerBlock::Heap(991_201);
+    let block = AddressBase::Heap(991_201);
     let description = member_description(block.clone());
     let empty = CreationEvents::new()
         .created(block.clone())
@@ -3647,14 +3647,14 @@ fn local_numeric_batch_work_does_not_grow_with_quantity() {
 
 #[test]
 fn authority_contract_entry_retains_only_authenticated_member_bounds() {
-    let block = PointerBlock::ExternalArgument;
+    let block = AddressBase::ExternalArgument;
     let description = ResourceDescription::new(
         "reference".into(),
         vec![
             ProgramValue::typed_pointer(
-                Pointer {
-                    block,
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: block,
+                    offset: AddressOffset::Constant(0),
                 },
                 ProgramType::Int32Pointer,
             )
@@ -3774,7 +3774,7 @@ fn wildcard_named_authority_import_is_read_only_and_lookup_scales() {
 }
 
 fn check_named_authority_import(arity: Option<usize>) {
-    let base = member_description(PointerBlock::ExternalArgument);
+    let base = member_description(AddressBase::ExternalArgument);
     let schema = ResourceFieldSchema::new(vec![(
         "serial".into(),
         ResourceFieldType::Program(ProgramType::Int32),
@@ -3864,9 +3864,9 @@ fn check_named_authority_import(arity: Option<usize>) {
         // select the first imported population merely by family or block.
         let other_pattern = pattern.map_values(|_| {
             AlgebraicValue::Program(ProgramValue::typed_pointer(
-                Pointer {
-                    block: PointerBlock::ExternalArgument,
-                    offset: PointerOffsetTerm::Constant(4),
+                Address {
+                    base: AddressBase::ExternalArgument,
+                    offset: AddressOffset::Constant(4),
                 },
                 ProgramType::Int32Pointer,
             ))
@@ -3933,7 +3933,7 @@ fn check_named_authority_import(arity: Option<usize>) {
             assert_eq!(
                 entry
                     .checked_member_exchange_quantity(
-                        &PointerBlock::ExternalArgument,
+                        &AddressBase::ExternalArgument,
                         &description,
                         produce,
                         &MachineTerm::constant(1),
@@ -4003,7 +4003,7 @@ fn check_named_authority_import(arity: Option<usize>) {
     );
     assert!(
         CreationEvents::new()
-            .created(PointerBlock::Heap(941_020))
+            .created(AddressBase::Heap(941_020))
             .import_observable_named_authority(&description)
             .is_err()
     );
@@ -4011,7 +4011,7 @@ fn check_named_authority_import(arity: Option<usize>) {
 
 #[test]
 fn exact_symbolic_birth_does_not_infer_custody_from_bounds() {
-    let block = PointerBlock::ExternalArgument;
+    let block = AddressBase::ExternalArgument;
     let description = member_description(block.clone());
     let quantity = MachineTerm::Variable(Variable(990_002));
     let entry = CreationEvents::new()
@@ -4064,7 +4064,7 @@ fn exact_symbolic_birth_does_not_infer_custody_from_bounds() {
 
 #[test]
 fn numeric_member_birth_overflow_is_not_missing_custody() {
-    let block = PointerBlock::ExternalArgument;
+    let block = AddressBase::ExternalArgument;
     let description = member_description(block.clone());
     let full = CreationEvents::new()
         .import_opaque_contract_population_inner(
@@ -4095,9 +4095,9 @@ fn numeric_member_birth_overflow_is_not_missing_custody() {
 
 #[test]
 fn imported_named_exact_counts_refuse_unresolved_neighbor_effects() {
-    let anchor = ProgramValue::pointer(Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    let anchor = ProgramValue::pointer(Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     });
     let schema = ResourceFieldSchema::new(vec![(
         "serial".into(),
@@ -4160,8 +4160,8 @@ fn diverged_paths_that_create_the_same_storage_record_the_same_state() {
     // same call-result local after the arms' ledgers have diverged, so each
     // mints its own anchor for it. The branch join must see one state.
     let start = CreationEvents::new();
-    let scratch = PointerBlock::Heap(940_120);
-    let shared = PointerBlock::Heap(940_121);
+    let scratch = AddressBase::Heap(940_120);
+    let shared = AddressBase::Heap(940_121);
     let retired_scratch = start
         .created(scratch.clone())
         .retired(&scratch)
@@ -4185,10 +4185,10 @@ fn diverged_paths_that_create_the_same_storage_record_the_same_state() {
     assert!(!left_established.records_same_state_up_to_fresh_anchors(&right_established));
 
     // Different storage is a different state, whatever its anchors.
-    let other = start.created(PointerBlock::Heap(940_122));
+    let other = start.created(AddressBase::Heap(940_122));
     assert!(!left.records_same_state_up_to_fresh_anchors(&other));
     assert!(
-        !left.records_same_state_up_to_fresh_anchors(&right.created(PointerBlock::Heap(940_123)))
+        !left.records_same_state_up_to_fresh_anchors(&right.created(AddressBase::Heap(940_123)))
     );
 }
 

@@ -247,16 +247,8 @@ pub(in crate::surface) fn special_plan_to_surface(
 /// The premise indices a node cites, for renumbering.
 fn cited_premise_indices(node: &mut SpecialArithmeticNode) -> Vec<&mut usize> {
     match node {
-        SpecialArithmeticNode::IntegerProductBounds { bounds, .. }
-        | SpecialArithmeticNode::IntegerDivisionBounds { bounds, .. }
-        | SpecialArithmeticNode::IntegerMultiplyOrder { bounds, .. }
-        | SpecialArithmeticNode::IntegerQuotientBound { bounds, .. }
-        | SpecialArithmeticNode::IntegerBoundExclusion { bounds, .. }
-        | SpecialArithmeticNode::IntegerRelationTransport { bounds, .. }
-        | SpecialArithmeticNode::IntegerPolynomialIdentity { bounds, .. }
-        | SpecialArithmeticNode::IntegerQuotientShift { bounds, .. }
+        SpecialArithmeticNode::IntegerPolynomialIdentity { bounds, .. }
         | SpecialArithmeticNode::IntegerCastIdentity { bounds, .. }
-        | SpecialArithmeticNode::IntegerOperationIdentity { bounds, .. }
         | SpecialArithmeticNode::UnsignedSumBound { bounds, .. }
         | SpecialArithmeticNode::SignedDefined { bounds, .. } => bounds.iter_mut().collect(),
         SpecialArithmeticNode::PointerTranslation {
@@ -382,7 +374,7 @@ fn alignment_is_relevant(
 
 fn proposition_mentions_pointer(
     proposition: &Proposition,
-    target: &crate::kernel::Pointer,
+    target: &crate::kernel::Address,
 ) -> bool {
     let mut pending = vec![proposition];
     let mut shared_seen = std::collections::HashSet::new();
@@ -429,7 +421,7 @@ fn proposition_mentions_pointer(
     false
 }
 
-fn term_mentions_pointer(term: &MachineTerm, target: &crate::kernel::Pointer) -> bool {
+fn term_mentions_pointer(term: &MachineTerm, target: &crate::kernel::Address) -> bool {
     let mut pending = vec![term];
     while let Some(current) = pending.pop() {
         match current {
@@ -468,8 +460,8 @@ fn term_mentions_pointer(term: &MachineTerm, target: &crate::kernel::Pointer) ->
     false
 }
 
-fn bounded_pointer_equal(left: &crate::kernel::Pointer, right: &crate::kernel::Pointer) -> bool {
-    if !bounded_pointer_work(left) || !bounded_pointer_work(right) || left.block != right.block {
+fn bounded_pointer_equal(left: &crate::kernel::Address, right: &crate::kernel::Address) -> bool {
+    if !bounded_pointer_work(left) || !bounded_pointer_work(right) || left.base != right.base {
         return false;
     }
     let mut pending = vec![(&left.offset, &right.offset)];
@@ -479,34 +471,31 @@ fn bounded_pointer_equal(left: &crate::kernel::Pointer, right: &crate::kernel::P
         }
         match (left, right) {
             (
-                crate::kernel::PointerOffsetTerm::Constant(a),
-                crate::kernel::PointerOffsetTerm::Constant(b),
+                crate::kernel::AddressOffset::Constant(a),
+                crate::kernel::AddressOffset::Constant(b),
             ) => {
                 if a != b {
                     return false;
                 }
             }
             (
-                crate::kernel::PointerOffsetTerm::Variable(a),
-                crate::kernel::PointerOffsetTerm::Variable(b),
+                crate::kernel::AddressOffset::Variable(a),
+                crate::kernel::AddressOffset::Variable(b),
             ) => {
                 if a != b {
                     return false;
                 }
             }
-            (
-                crate::kernel::PointerOffsetTerm::Add(a, b),
-                crate::kernel::PointerOffsetTerm::Add(c, d),
-            ) => {
+            (crate::kernel::AddressOffset::Add(a, b), crate::kernel::AddressOffset::Add(c, d)) => {
                 pending.push((a, c));
                 pending.push((b, d));
             }
             (
-                crate::kernel::PointerOffsetTerm::Int32Scaled {
+                crate::kernel::AddressOffset::Int32Scaled {
                     value: a,
                     byte_width: aw,
                 },
-                crate::kernel::PointerOffsetTerm::Int32Scaled {
+                crate::kernel::AddressOffset::Int32Scaled {
                     value: b,
                     byte_width: bw,
                 },
@@ -516,12 +505,12 @@ fn bounded_pointer_equal(left: &crate::kernel::Pointer, right: &crate::kernel::P
                 }
             }
             (
-                crate::kernel::PointerOffsetTerm::Int64Scaled {
+                crate::kernel::AddressOffset::Int64Scaled {
                     value: a,
                     byte_width: aw,
                     ..
                 },
-                crate::kernel::PointerOffsetTerm::Int64Scaled {
+                crate::kernel::AddressOffset::Int64Scaled {
                     value: b,
                     byte_width: bw,
                     ..
@@ -748,7 +737,7 @@ fn charge_proposition(proposition: &Proposition) -> bool {
     }
 }
 
-fn bounded_offset_work(root: &crate::kernel::PointerOffsetTerm) -> bool {
+fn bounded_offset_work(root: &crate::kernel::AddressOffset) -> bool {
     let mut pending = vec![root];
     let mut count = 0usize;
     while let Some(offset) = pending.pop() {
@@ -757,12 +746,12 @@ fn bounded_offset_work(root: &crate::kernel::PointerOffsetTerm) -> bool {
             return false;
         }
         match offset {
-            crate::kernel::PointerOffsetTerm::Add(left, right) => {
+            crate::kernel::AddressOffset::Add(left, right) => {
                 pending.push(left);
                 pending.push(right);
             }
-            crate::kernel::PointerOffsetTerm::Int32Scaled { value, .. }
-            | crate::kernel::PointerOffsetTerm::Int64Scaled { value, .. }
+            crate::kernel::AddressOffset::Int32Scaled { value, .. }
+            | crate::kernel::AddressOffset::Int64Scaled { value, .. }
                 if !bounded_index_work(value) =>
             {
                 return false;
@@ -812,7 +801,7 @@ fn bounded_term_work_count(root: &MachineTerm, count: &mut usize) -> bool {
                 return false;
             }
             MachineTerm::PointerAddress(pointer, _)
-                if !bounded_pointer_block_work(&pointer.block) =>
+                if !bounded_address_base_work(&pointer.base) =>
             {
                 return false;
             }
@@ -822,15 +811,16 @@ fn bounded_term_work_count(root: &MachineTerm, count: &mut usize) -> bool {
     true
 }
 
-fn bounded_pointer_work(pointer: &crate::kernel::Pointer) -> bool {
-    bounded_pointer_block_work(&pointer.block) && bounded_offset_work(&pointer.offset)
+fn bounded_pointer_work(pointer: &crate::kernel::Address) -> bool {
+    bounded_address_base_work(&pointer.base) && bounded_offset_work(&pointer.offset)
 }
 
-fn bounded_pointer_block_work(block: &crate::kernel::PointerBlock) -> bool {
+fn bounded_address_base_work(block: &crate::kernel::AddressBase) -> bool {
     let size = match block {
-        crate::kernel::PointerBlock::Concrete(name)
-        | crate::kernel::PointerBlock::Function(name) => name.len(),
-        crate::kernel::PointerBlock::StringLiteral { identity, bytes } => {
+        crate::kernel::AddressBase::Concrete(name) | crate::kernel::AddressBase::Function(name) => {
+            name.len()
+        }
+        crate::kernel::AddressBase::StringLiteral { identity, bytes } => {
             identity.payload_bytes().saturating_add(bytes.len())
         }
         _ => 1,
@@ -1015,7 +1005,7 @@ fn bounded_term_equal_count(left: &MachineTerm, right: &MachineTerm, count: &mut
     true
 }
 
-fn alignment_shape(condition: &ConditionTerm) -> Option<(&crate::kernel::Pointer, u64)> {
+fn alignment_shape(condition: &ConditionTerm) -> Option<(&crate::kernel::Address, u64)> {
     crate::kernel::proof::arithmetic_special::checked_pointer_alignment(condition)
 }
 

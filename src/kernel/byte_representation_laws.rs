@@ -9,7 +9,7 @@ pub(crate) fn prove_uint32_from_le_bytes(pointer: PointerValue) -> Result<Theore
     let state = ExecutionState::new();
     let base = SpecExpression::Value(ProgramValue::Pointer(pointer.clone()));
     let view = SpecProposition::MemoryLoadable {
-        memory: SpecMemory::Current,
+        memory: SpecPoint::Current,
         base: base.clone(),
         start: SpecExpression::Value(ProgramValue::Int32(0u32.into())),
         end: SpecExpression::Value(ProgramValue::Int32(1u32.into())),
@@ -31,7 +31,7 @@ pub(crate) fn prove_uint32_from_le_bytes(pointer: PointerValue) -> Result<Theore
         .iter()
         .fold(assumptions, |facts, p| facts.assume_proposition(p.clone()));
     let word = SpecExpression::MemoryLoad {
-        memory: SpecMemory::Current,
+        memory: SpecPoint::Current,
         pointer: Box::new(base.clone()),
         value_type: ProgramType::UInt32,
     };
@@ -42,7 +42,7 @@ pub(crate) fn prove_uint32_from_le_bytes(pointer: PointerValue) -> Result<Theore
         &assumptions,
     )?;
     premises.push(defined.clone());
-    for guard in super::stated_loadable_extent_guards(&premises[1]) {
+    for guard in super::stated_loadable_span_guards(&premises[1]) {
         if !premises.contains(&guard) {
             premises.push(guard);
         }
@@ -53,7 +53,7 @@ pub(crate) fn prove_uint32_from_le_bytes(pointer: PointerValue) -> Result<Theore
         crate::instrumentation::record_deterministic_work(1);
         SpecExpression::Cast(
             Box::new(SpecExpression::MemoryLoad {
-                memory: SpecMemory::Current,
+                memory: SpecPoint::Current,
                 pointer: Box::new(SpecExpression::PointerOffset {
                     pointer: Box::new(bytes.clone()),
                     elements: Box::new(SpecExpression::Value(ProgramValue::Int32(index.into()))),

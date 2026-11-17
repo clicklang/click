@@ -113,8 +113,8 @@ pub(in crate::surface::proof) fn check_fixed_state_theorem_application_using_fac
             )));
         }
         // Citing a stated range cites both of its halves; see
-        // `cite_range_extent_guards`.
-        crate::surface::proof::theorem_application::cite_range_extent_guards(
+        // `cite_range_span_guards`.
+        crate::surface::proof::theorem_application::cite_range_span_guards(
             &premise,
             &mut explicit_premises,
             |guard| available.available_across_effects(guard, &[]),

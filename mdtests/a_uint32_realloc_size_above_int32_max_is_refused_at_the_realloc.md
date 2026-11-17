@@ -1,8 +1,8 @@
 # A `uint32` `realloc` size above `INT32_MAX` is refused at the `realloc`
 
 `realloc` admits its new size as `malloc` does: a `uint32` byte count
-must be bounded by `INT32_MAX` to fit the checked signed 32-bit heap extent
-(`design/heap-extents.md`). A bound of 3000000000 is not enough, and the
+must be bounded by `INT32_MAX` to fit the checked signed 32-bit allocation size
+(`design/heap-allocation-sizes.md`). A bound of 3000000000 is not enough, and the
 `realloc` is refused and names the bound, rather than its result's first
 access being misreported as leaving the object.
 
@@ -37,5 +37,5 @@ int32 grow(uint32 n) {
 ```
 
 ```expect
-fail: heap allocation size must be known to fit the signed 32-bit heap extent
+fail: heap allocation size must be known to fit the signed 32-bit allocation size
 ```

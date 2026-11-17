@@ -13,17 +13,17 @@ fn unaddressable_scalar_owners_do_not_restate_observable_memory_frames() {
     let saved = crate::kernel::capture_block_registries();
     let base = ResourceContext::new()
         .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
-            Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Variable(Variable(93_600)),
+            Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Variable(Variable(93_600)),
             },
             0u32.into(),
             1u32.into(),
         )))
         .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
-            Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Variable(Variable(93_601)),
+            Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Variable(Variable(93_601)),
             },
             0u32.into(),
             1u32.into(),
@@ -42,7 +42,7 @@ fn unaddressable_scalar_owners_do_not_restate_observable_memory_frames() {
         for i in 0..count {
             resources = resources.unchecked_with_fact(ResourceFact::own_memory(
                 MemoryRange::new_with_element_width(
-                    Memory::local_pointer(format!("hidden_{i}")),
+                    SymbolicMemory::local_pointer(format!("hidden_{i}")),
                     0u32.into(),
                     4u32.into(),
                     1,
@@ -56,7 +56,7 @@ fn unaddressable_scalar_owners_do_not_restate_observable_memory_frames() {
         measured_work.push((count, work));
         assert_eq!(resources.facts().len(), count + 2);
         let addressed = ResourceFact::own_memory(MemoryRange::new(
-            Memory::local_pointer("addressed"),
+            SymbolicMemory::local_pointer("addressed"),
             0u32.into(),
             1u32.into(),
         ));
@@ -88,7 +88,7 @@ fn memory_range_endpoint_graph_matching_scales_without_fact_index() {
         }
         let resource = |index| {
             Resource::Memory(MemoryRange::new(
-                Pointer::symbolic(Variable(43_000)),
+                Address::symbolic(Variable(43_000)),
                 MachineTerm::constant(0),
                 MachineTerm::add(variable(index), MachineTerm::constant(1)),
             ))
@@ -112,14 +112,14 @@ fn memory_range_endpoint_graph_matching_scales_without_fact_index() {
 
 #[test]
 fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
-    let memory = Memory::new();
-    let storage = Pointer {
-        block: "viewed-storage".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let memory = SymbolicMemory::new();
+    let storage = Address {
+        base: "viewed-storage".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let result = Pointer {
-        block: PointerBlock::Symbolic(Variable(9_300_100)),
-        offset: PointerOffsetTerm::Constant(0),
+    let result = Address {
+        base: AddressBase::Symbolic(Variable(9_300_100)),
+        offset: AddressOffset::Constant(0),
     };
     let equality = Proposition::ConditionIs(
         ConditionTerm::pointer_equal(result.clone(), storage.clone()),
@@ -152,9 +152,9 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
         for index in 0..size {
             context = context.assume_proposition(Proposition::MemoryLoadable {
                 memory: memory.clone(),
-                base: Pointer {
-                    block: format!("unrelated-view-{index}").into(),
-                    offset: PointerOffsetTerm::Constant(0),
+                base: Address {
+                    base: format!("unrelated-view-{index}").into(),
+                    offset: AddressOffset::Constant(0),
                 },
                 bytes: MachineTerm::constant(4),
                 wide: false,
@@ -180,9 +180,9 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
         "alias transport work: {samples:?}"
     );
 
-    let local = Memory::local_pointer("expired-view");
-    let before = Memory::new().with_block("local:expired-view", 4);
-    let after = before.without_local_block(&local.block);
+    let local = SymbolicMemory::local_pointer("expired-view");
+    let before = SymbolicMemory::new().with_block("local:expired-view", 4);
+    let after = before.without_local_block(&local.base);
     let context = PureFactContext::new()
         .assume_proposition(Proposition::ConditionIs(
             ConditionTerm::pointer_equal(result.clone(), local.clone()),
@@ -207,10 +207,10 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
 
 #[test]
 fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
-    let memory = Memory::new();
-    let target = Pointer {
-        block: "indexed-viewable-shapes".into(),
-        offset: PointerOffsetTerm::Constant(10_000),
+    let memory = SymbolicMemory::new();
+    let target = Address {
+        base: "indexed-viewable-shapes".into(),
+        offset: AddressOffset::Constant(10_000),
     };
     let samples = [16, 32, 64, 128]
         .into_iter()
@@ -225,9 +225,9 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
             for index in 0..size {
                 assumptions = assumptions.assume_proposition(Proposition::MemoryLoadable {
                     memory: memory.clone(),
-                    base: Pointer {
-                        block: target.block.clone(),
-                        offset: PointerOffsetTerm::Constant(index as i64),
+                    base: Address {
+                        base: target.base.clone(),
+                        offset: AddressOffset::Constant(index as i64),
                     },
                     bytes: MachineTerm::constant(4),
                     wide: false,
@@ -259,13 +259,13 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
 fn composition_store_separation_uses_checked_aliases_without_scanning_other_owners() {
     use crate::kernel::memory_history::owned_composition_store_separated_evidence;
 
-    let parameter = |id| Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(id)), 4),
+    let parameter = |id| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(id)), 4),
     };
     let write_base = parameter(95_001);
     let read = parameter(95_002);
-    let owner = Pointer::symbolic(Variable(95_003));
+    let owner = Address::symbolic(Variable(95_003));
     let alias = ConditionTerm::pointer_equal(write_base.clone(), owner.clone());
     for offset in [0, 8] {
         let write = write_base.offset_by_bytes(offset);
@@ -287,7 +287,7 @@ fn composition_store_separation_uses_checked_aliases_without_scanning_other_owne
             });
             let hop = hop.expect("the store's exact alias names its owned member");
             let store = MemoryDerivation::Store {
-                base: crate::kernel::intern_memory(Memory::new()),
+                base: crate::kernel::intern_memory(SymbolicMemory::new()),
                 pointer: write.clone(),
                 value: int32(7).into(),
             };
@@ -307,7 +307,7 @@ fn composition_store_separation_uses_checked_aliases_without_scanning_other_owne
                     .is_none()
             );
             let wider_store = MemoryDerivation::Store {
-                base: crate::kernel::intern_memory(Memory::new()),
+                base: crate::kernel::intern_memory(SymbolicMemory::new()),
                 pointer: write.clone(),
                 value: int64(7).into(),
             };
@@ -335,22 +335,22 @@ fn composition_store_separation_uses_checked_aliases_without_scanning_other_owne
 /// refused every chain past it.
 #[test]
 fn load_equality_resolves_through_stored_cell_chains_of_any_length() {
-    let base = Pointer {
-        block: "chain".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: "chain".into(),
+        offset: AddressOffset::Constant(0),
     };
     let cell = |index: usize| base.offset_by_elements(MachineTerm::constant(index as u32), 4);
     let mut samples = Vec::new();
     for length in [32usize, 64, 96, 128] {
-        let mut memory =
-            Memory::new().store(cell(length), ProgramValue::Int32(MachineTerm::constant(42)));
+        let mut memory = SymbolicMemory::new()
+            .store(cell(length), ProgramValue::Int32(MachineTerm::constant(42)));
         for index in (0..length).rev() {
             let next = MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                 Box::new(cell(index + 1)),
                 crate::kernel::LoadKind::Int32,
             );
-            memory = Memory::new().store(cell(index), ProgramValue::Int32(next));
+            memory = SymbolicMemory::new().store(cell(index), ProgramValue::Int32(next));
         }
         let load = MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
@@ -380,10 +380,10 @@ fn load_equality_resolves_through_stored_cell_chains_of_any_length() {
 
 #[test]
 #[ignore = "nightly: 1.4s in the parallel gate"]
-fn shifted_constant_view_extents_match_without_ambient_search() {
+fn shifted_constant_view_spans_match_without_ambient_search() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = Memory::new();
-    let base = Pointer::symbolic(Variable(9_319_000));
+    let memory = SymbolicMemory::new();
+    let base = Address::symbolic(Variable(9_319_000));
     let index = MachineTerm::Variable(Variable(9_319_001));
     let count = |length| {
         binary_node!(
@@ -442,7 +442,7 @@ fn shifted_constant_view_extents_match_without_ambient_search() {
         ));
         assert!(!context.proves_memory_loadable(
             &memory,
-            &Pointer::symbolic(Variable(9_319_002)),
+            &Address::symbolic(Variable(9_319_002)),
             &MachineTerm::constant(4 * width),
         ));
     }
@@ -469,7 +469,7 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
     let native = MachineTerm::Variable(Variable(983_110));
     let alias = MachineTerm::Variable(Variable(983_111));
     let last = |n| MachineTerm::uint64_subtract(n, MachineTerm::uint64_constant(1));
-    let wide = |n| PointerOffsetTerm::scaled_int64_node(n, 4, true);
+    let wide = |n| AddressOffset::scaled_int64_node(n, 4, true);
     let projected = MachineTerm::uint32_from_64(last(native.clone()));
     let query = wide(last(alias.clone()));
     let bound = ConditionTerm::uint64_less_equal(
@@ -554,9 +554,9 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
 /// of stated compositions compare such states at every lookup.
 #[test]
 fn ordering_states_of_one_path_does_not_walk_their_shared_entries() {
-    let object = |index: u32| Pointer::symbolic(Variable(99_400 + u64::from(index)));
+    let object = |index: u32| Address::symbolic(Variable(99_400 + u64::from(index)));
     for size in [16u32, 64, 256] {
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         let mut resources = ResourceContext::new();
         for index in 0..size {
             memory = memory.store(object(index), int32(index));
@@ -593,8 +593,8 @@ fn ordering_states_of_one_path_does_not_walk_their_shared_entries() {
 /// every size.
 #[test]
 fn store_separation_without_an_owner_reads_only_listed_compositions() {
-    let object = |index: u32| Pointer::symbolic(Variable(98_900 + u64::from(index)));
-    let unowned = Pointer::symbolic(Variable(98_899));
+    let object = |index: u32| Address::symbolic(Variable(98_900 + u64::from(index)));
+    let unowned = Address::symbolic(Variable(98_899));
     let mut admitted = Vec::new();
     let mut proved = Vec::new();
     let mut refused = Vec::new();
@@ -653,7 +653,7 @@ fn store_separation_without_an_owner_reads_only_listed_compositions() {
 /// object from the oldest costs the same at every size, and still succeeds.
 #[test]
 fn store_separation_work_is_independent_of_earlier_compositions() {
-    let object = |index: u32| Pointer::symbolic(Variable(98_300 + u64::from(index)));
+    let object = |index: u32| Address::symbolic(Variable(98_300 + u64::from(index)));
     let mut work = Vec::new();
     for size in [8u32, 32, 128] {
         let mut resources = ResourceContext::new();
@@ -689,8 +689,8 @@ fn store_separation_work_is_independent_of_earlier_compositions() {
 /// corresponding C proof supplies separation and transports the read explicitly.
 #[test]
 fn written_store_separation_and_alias_refusal_ignore_unrelated_objects() {
-    let pointer = |index: u64| Pointer::symbolic(Variable(97_100 + index));
-    let equal = |left: &Pointer, right: &Pointer| {
+    let pointer = |index: u64| Address::symbolic(Variable(97_100 + index));
+    let equal = |left: &Address, right: &Address| {
         Proposition::ConditionIs(
             ConditionTerm::pointer_equal(left.clone(), right.clone()),
             true,
@@ -740,13 +740,13 @@ fn written_store_separation_and_alias_refusal_ignore_unrelated_objects() {
 #[test]
 fn stated_pointer_separation_lookup_visits_only_its_anchor_index() {
     for cross_block in [false, true] {
-        let pointer = |id, right| Pointer {
-            block: if right && cross_block {
-                PointerBlock::Symbolic(Variable(941_000))
+        let pointer = |id, right| Address {
+            base: if right && cross_block {
+                AddressBase::Symbolic(Variable(941_000))
             } else {
-                PointerBlock::ExternalArgument
+                AddressBase::ExternalArgument
             },
-            offset: PointerOffsetTerm::Variable(Variable(id)),
+            offset: AddressOffset::Variable(Variable(id)),
         };
         let fact = |id| Proposition::ResourceSeparate {
             left: Box::new(Resource::Memory(memory_range(pointer(id, false), 0, 1))),
@@ -807,9 +807,9 @@ fn stated_pointer_separation_lookup_visits_only_its_anchor_index() {
 
 #[test]
 fn kept_frame_class_lookup_adds_only_selected_physical_coverage() {
-    let pointer = |id| Pointer {
-        block: PointerBlock::Symbolic(Variable(id)),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = |id| Address {
+        base: AddressBase::Symbolic(Variable(id)),
+        offset: AddressOffset::Constant(0),
     };
     let queried = pointer(951_001);
     let middle = pointer(951_002);
@@ -863,7 +863,7 @@ fn kept_frame_class_lookup_adds_only_selected_physical_coverage() {
 
 #[test]
 fn rechecked_kept_frame_checks_selected_equality_without_rebuilding_foreign_inputs() {
-    let pointer = |id| Pointer::symbolic(Variable(id));
+    let pointer = |id| Address::symbolic(Variable(id));
     let queried = pointer(954_001);
     let middle = pointer(954_002);
     let owner = pointer(954_003);
@@ -935,9 +935,9 @@ fn one_owned_member_does_not_trigger_store_alias_reasoning() {
         count_composition_store_alias_queries, owned_composition_store_separated_evidence,
     };
 
-    let base = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(99_700)), 4),
+    let base = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(99_700)), 4),
     };
     let index = MachineTerm::Variable(Variable(99_701));
     let write = base.offset_by_bytes(12);
@@ -1004,24 +1004,24 @@ fn one_owned_member_does_not_trigger_store_alias_reasoning() {
 fn fixed_overlapping_ranges_ignore_unrelated_separation_facts() {
     let samples = [4u64, 8, 16, 32].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(9_893_000)), 4),
+        let base = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(9_893_000)), 4),
         };
         let outer = MemoryRange::new(base.clone(), 0u32.into(), 6u32.into());
         let inner = MemoryRange::new(base, 2u32.into(), 4u32.into());
         let mut facts = PureFactContext::new();
         for index in 0..size {
-            let a = Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::scale_int32(
+            let a = Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::scale_int32(
                     MachineTerm::Variable(Variable(9_894_000 + index * 2)),
                     4,
                 ),
             };
-            let b = Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::scale_int32(
+            let b = Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::scale_int32(
                     MachineTerm::Variable(Variable(9_894_001 + index * 2)),
                     4,
                 ),
@@ -1060,9 +1060,9 @@ fn fixed_overlapping_ranges_ignore_unrelated_separation_facts() {
 /// store must select compositions by both accesses rather than scan history.
 #[test]
 fn ownerless_store_separation_ignores_unrelated_composition_history() {
-    let object = |index| Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Variable(Variable(950_000 + index)),
+    let object = |index| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Variable(Variable(950_000 + index)),
     };
     for growing_partition in [false, true] {
         let mut samples = Vec::new();

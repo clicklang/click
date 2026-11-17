@@ -28,7 +28,7 @@ theorem introduced_as(x: int64) {
 theorem obtained() {
     requires exists (y: int32) { y == 3 };
     ensures exists (y: int32) { list::contains(List::Cons(y, List::Nil), y) } by {
-        obtain (z: int32) { z == 3 }
+        let z = obtain(exists (z: int32) { z == 3 });
         have list::contains(List::Cons(z, List::Nil), z) by {
             unfold(list::contains(List::Cons(z, List::Nil), z));
             solve();
