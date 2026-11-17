@@ -252,14 +252,16 @@ fn bitvector_substitution_reaches_machine_integer_proposition() {
 #[test]
 fn integer_fold_loadable_obligation_keeps_carriers_separate() {
     let shared_id = Variable(71_100);
-    let index = IntegerRangeFoldIndex::Int32 {
+    let index: IntegerFoldIndexResult = IntegerRangeFoldIndex::Int32 {
         start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
         end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(4)),
-    };
+    }
+    .into();
     let integer_address = MachineTerm::IntegerToMachine {
         value: IntegerTerm::var(shared_id).into(),
         destination: MachineIntegerType::Int32,
-    };
+    }
+    .into();
     let integer_address_requirement = Proposition::MemoryLoadable {
         memory: Memory::new(),
         base: Pointer {
@@ -345,10 +347,11 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
         bytes: MachineTerm::constant(4),
         wide: false,
     };
-    let index = IntegerRangeFoldIndex::Int32 {
+    let index: IntegerFoldIndexResult = IntegerRangeFoldIndex::Int32 {
         start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
         end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(4)),
-    };
+    }
+    .into();
     let wrapped = integer_range_fold_body_obligation(requirement, &index, accumulator, item);
     assert!(matches!(
         wrapped,
@@ -367,7 +370,8 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
         },
         bytes: MachineTerm::constant(4),
         wide: false,
-    };
+    }
+    .into();
     let direct_wrapped =
         integer_range_fold_body_obligation(direct_requirement, &index, accumulator, item);
     assert!(matches!(
@@ -419,10 +423,11 @@ fn integer_fold_loadable_obligation_keeps_accumulator_for_two_hop_direct_offset(
         bytes: MachineTerm::constant(4),
         wide: false,
     };
-    let index = IntegerRangeFoldIndex::Int32 {
+    let index: IntegerFoldIndexResult = IntegerRangeFoldIndex::Int32 {
         start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
         end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(4)),
-    };
+    }
+    .into();
     let wrapped = integer_range_fold_body_obligation(requirement, &index, accumulator, item);
     assert!(matches!(
         wrapped,
@@ -440,7 +445,8 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
     let pointer = Pointer {
         block: PointerBlock::Concrete("array".into()),
         offset: PointerOffsetTerm::Constant(0),
-    };
+    }
+    .into();
     let load = crate::kernel::eval::load_variable_for_cell(
         &memory,
         &pointer,

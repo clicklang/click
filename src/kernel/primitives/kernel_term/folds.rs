@@ -130,7 +130,7 @@ impl KernelFold {
         }
     }
 
-    fn integer_index(
+    pub(crate) fn integer_index(
         import: &mut KernelTermImport,
         index: &IntegerRangeFoldIndex,
     ) -> (KernelFoldIndex, KernelTerm, KernelTerm) {
@@ -151,20 +151,6 @@ impl KernelFold {
                 import.integer(end),
             ),
         }
-    }
-
-    /// Common result production imports only the selected endpoints. Initial
-    /// value and body are already retained roots, not native compatibility reads.
-    pub(crate) fn integer_with_children(
-        index: &IntegerRangeFoldIndex,
-        accumulator: Variable,
-        item: Variable,
-        initial: KernelTerm,
-        body: KernelTerm,
-    ) -> Self {
-        let (index, start, end) = Self::integer_index(&mut KernelTermImport::default(), index);
-        Self::new(index, accumulator, item, [start, end, initial, body])
-            .expect("Integer fold result types")
     }
 
     pub(crate) fn import_integer(

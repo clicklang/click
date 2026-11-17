@@ -70,7 +70,9 @@ Kernel files:
   `spec/integer_result.rs` retains one common Integer root through evaluator
   paths, arithmetic, conditionals and fold initial/body production. Native
   comparison, capture and ranking outputs use explicit compatibility reads;
-  deferred bindings and fold endpoints remain separate storage boundaries.
+  deferred evaluator bindings and evaluated fold endpoints also retain common
+  roots. Compound native specification inputs still use the selected typed
+  substitution boundary; native fold descriptors remain checking/input DTOs.
 - `eval.rs`: program expression/statement evaluation and memory operations.
 - `loops.rs`: loop verification, loop effects, loop havoc, and invariant
   helpers.

@@ -16,6 +16,9 @@ impl From<SharedIntegerTerm> for IntegerResult {
     }
 }
 impl IntegerResult {
+    pub(super) fn from_kernel(root: KernelTerm) -> Self {
+        Self(root)
+    }
     pub(super) fn operation(operator: KernelIntegerOperator, arguments: Vec<Self>) -> Self {
         Self(
             KernelTerm::integer_operation(
@@ -104,20 +107,25 @@ impl IntegerResult {
     }
 
     pub(super) fn range_fold(
-        index: IntegerRangeFoldIndex,
+        index: IntegerFoldIndexResult,
         initial: Self,
         accumulator: Variable,
         item: Variable,
         body: Self,
     ) -> Self {
         Self(
-            KernelFold::integer_with_children(
-                &index,
+            KernelFold::new(
+                index.kind,
                 accumulator,
                 item,
-                initial.into_kernel(),
-                body.into_kernel(),
+                [
+                    index.bounds[0].clone(),
+                    index.bounds[1].clone(),
+                    initial.into_kernel(),
+                    body.into_kernel(),
+                ],
             )
+            .expect("Integer fold result types")
             .into_term(),
         )
     }
@@ -227,10 +235,11 @@ mod conditional_contract_tests {
     #[test]
     fn integer_common_conditionals_keep_native_equal_arm_and_payload_rules() {
         let _session = VerificationSession::enter();
-        let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(1009890)),
-            ProgramType::Int32Pointer,
-        );
+        let ProgramValue::Pointer(pointer) =
+            crate::kernel::symbolic_call_result(ProgramType::Int32Pointer, Variable(1009890))
+        else {
+            unreachable!("typed symbolic pointer")
+        };
         let call = |constant| {
             IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                 "integer_conditional_pointer".into(),
