@@ -709,19 +709,6 @@ pub(in crate::surface::proof) fn plan_automatic_loop_preservation_body(
     // A preservation proof is nested in the enclosing execution proof.
     // Its marks still name fixed states; share their persistent map prefix.
     let mut recorded_states = enclosing_states.clone();
-    if test.is_some_and(|test| test.entry_condition().is_some())
-        && let Some(region) = source_layout.loop_test_phase_entry(loop_index)
-    {
-        for kind in [ProgramPointKind::Entry, ProgramPointKind::Exit] {
-            record_statement_program_state(
-                &mut recorded_states,
-                environment.function_block,
-                region,
-                kind,
-                preservation.state().clone(),
-            );
-        }
-    }
     let constants = ExecutionProofConstants {
         proof_site: environment.frontier_loop_source.proof_site.clone(),
         source_layout,
@@ -1031,19 +1018,6 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     };
     // Inner marks remain local to this proof's persistent-map version.
     let mut recorded_states = enclosing_states.clone();
-    if test.is_some_and(|test| test.entry_condition().is_some())
-        && let Some(region) = source_layout.loop_test_phase_entry(loop_index)
-    {
-        for kind in [ProgramPointKind::Entry, ProgramPointKind::Exit] {
-            record_statement_program_state(
-                &mut recorded_states,
-                environment.function_block,
-                region,
-                kind,
-                preservation.state().clone(),
-            );
-        }
-    }
     let nested_tactic_capture = expansion_capture
         .as_deref()
         .and_then(|capture| capture.nested_for_site(preserve_site));
