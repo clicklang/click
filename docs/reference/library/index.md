@@ -7829,6 +7829,97 @@ predicate all_not_equal(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes::all_not_equal(args))` when a proof needs the predicate body.
 
+### `bytes::comparison`
+
+```click
+predicate comparison(left: uint8[], right: uint8[], length: uint64, cmp: int32) {
+    (cmp == 0 implies bytes::equal(left, 0u64, right, 0u64, length)) and
+    (cmp != 0 implies not bytes::equal(left, 0u64, right, 0u64, length)) and
+    forall (k: uint64) {
+        k < length and bytes::equal_range(left, right, 0u64, k) implies
+            (left[k] < right[k] implies cmp < 0) and
+            (right[k] < left[k] implies cmp > 0)
+    }
+}
+```
+
+**Meaning:** Describes a signed comparison of the first `length` bytes. Zero means the ranges are equal and nonzero means they differ. At the first differing unsigned byte, a smaller left byte requires a negative result and a larger left byte requires a positive result. The magnitude is unspecified.
+
+**Kind:** predicate. The declaration above is normative.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) applies the comparison laws. C ordering clients are checked in [`mdtests/memcmp_orders_the_first_differing_byte.md`](https://github.com/clicklang/click/blob/master/mdtests/memcmp_orders_the_first_differing_byte.md) and [`mdtests/memcmp_orders_after_equal_prefix.md`](https://github.com/clicklang/click/blob/master/mdtests/memcmp_orders_after_equal_prefix.md).
+
+### `bytes::comparison_negative_after_prefix`
+
+```click
+theorem comparison_negative_after_prefix(left: uint8[], right: uint8[], length: uint64, first: uint64, cmp: int32) {
+    requires bytes::comparison(left, right, length, cmp);
+    requires first < length;
+    requires bytes::equal_range(left, right, 0u64, first);
+    requires left[first] < right[first];
+    ensures cmp < 0 by {
+        unfold(bytes::comparison(left, right, length, cmp));
+        instantiate(forall (k: uint64) {
+            k < length and bytes::equal_range(left, right, 0u64, k) implies
+                (left[k] < right[k] implies cmp < 0) and
+                (right[k] < left[k] implies cmp > 0)
+        }, first);
+        solve();
+    }
+}
+```
+
+**Meaning:** An equal prefix ending at `first`, followed by a smaller left byte within the compared range, forces a negative comparison. This is a checked theorem; the author supplies the first-difference index.
+
+**Kind:** proved theorem. The declaration above is normative.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) applies the comparison laws. C ordering clients are checked in [`mdtests/memcmp_orders_the_first_differing_byte.md`](https://github.com/clicklang/click/blob/master/mdtests/memcmp_orders_the_first_differing_byte.md) and [`mdtests/memcmp_orders_after_equal_prefix.md`](https://github.com/clicklang/click/blob/master/mdtests/memcmp_orders_after_equal_prefix.md).
+
+### `bytes::comparison_positive_after_prefix`
+
+```click
+theorem comparison_positive_after_prefix(left: uint8[], right: uint8[], length: uint64, first: uint64, cmp: int32) {
+    requires bytes::comparison(left, right, length, cmp);
+    requires first < length;
+    requires bytes::equal_range(left, right, 0u64, first);
+    requires right[first] < left[first];
+    ensures cmp > 0 by {
+        unfold(bytes::comparison(left, right, length, cmp));
+        instantiate(forall (k: uint64) {
+            k < length and bytes::equal_range(left, right, 0u64, k) implies
+                (left[k] < right[k] implies cmp < 0) and
+                (right[k] < left[k] implies cmp > 0)
+        }, first);
+        solve();
+    }
+}
+```
+
+**Meaning:** An equal prefix ending at `first`, followed by a larger left byte within the compared range, forces a positive comparison. This is a checked theorem.
+
+**Kind:** proved theorem. The declaration above is normative.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) applies the comparison laws. C ordering clients are checked in [`mdtests/memcmp_orders_the_first_differing_byte.md`](https://github.com/clicklang/click/blob/master/mdtests/memcmp_orders_the_first_differing_byte.md) and [`mdtests/memcmp_orders_after_equal_prefix.md`](https://github.com/clicklang/click/blob/master/mdtests/memcmp_orders_after_equal_prefix.md).
+
+### `bytes::comparison_zero_when_equal`
+
+```click
+theorem comparison_zero_when_equal(left: uint8[], right: uint8[], length: uint64, cmp: int32) {
+    requires bytes::comparison(left, right, length, cmp);
+    requires bytes::equal(left, 0u64, right, 0u64, length);
+    ensures cmp == 0 by {
+        unfold(bytes::comparison(left, right, length, cmp));
+        solve();
+    }
+}
+```
+
+**Meaning:** Equal compared ranges force a zero result. This is a checked consequence of `bytes::comparison`, including the empty-range case.
+
+**Kind:** proved theorem. The declaration above is normative.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) applies the comparison laws. C ordering clients are checked in [`mdtests/memcmp_orders_the_first_differing_byte.md`](https://github.com/clicklang/click/blob/master/mdtests/memcmp_orders_the_first_differing_byte.md) and [`mdtests/memcmp_orders_after_equal_prefix.md`](https://github.com/clicklang/click/blob/master/mdtests/memcmp_orders_after_equal_prefix.md).
+
 ## `click::cstr`
 
 Source: `library/cstr.click`, `import click::cstr;`, or brought by `click::c::string`.
@@ -9417,18 +9508,15 @@ extern int32 memcmp(const uint8 left[], const uint8 right[], uint64 bytes) {
     views left[0..bytes];
     views right[0..bytes];
     requires forall (k: uint64) { k < bytes implies defined(left[k]) and defined(right[k]) };
-    ensures result == 0 implies bytes::equal(left, 0u64, right, 0u64, bytes);
-    ensures result != 0 implies not bytes::equal(left, 0u64, right, 0u64, bytes);
+    ensures bytes::comparison(left, right, bytes, result);
 }
 ```
 
-**Meaning:** Reads both `bytes`-long byte ranges (a `size_t` count, as in C) under views, without mutation, and distinguishes equal
-from unequal prefixes by whether the result is zero. Views are shared, so
-one viewed or owned range can be both operands.
+**Meaning:** Reads both `bytes`-long byte ranges (a `size_t` count, as in C) under views, without mutation. Equal ranges yield zero. For unequal ranges, the first differing byte determines the sign, with both bytes interpreted as unsigned: smaller left means negative and larger left means positive. No exact magnitude is promised. Views are shared, so one viewed or owned range can be both operands. The zero-count case yields zero. The external contract is an assumption about the C library; the `bytes::comparison_*` theorems are checked consequences of its comparison relation.
 
 **Kind:** external C contract. The declaration is an explicit verification assumption.
 
-**Verified use:** [`mdtests/strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md`](https://github.com/clicklang/click/blob/master/mdtests/strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md) checks its range and definedness preconditions at a call, and [`mdtests/memcmp_reads_two_viewed_buffers.md`](https://github.com/clicklang/click/blob/master/mdtests/memcmp_reads_two_viewed_buffers.md) compares two viewed buffers and one buffer with itself.
+**Verified use:** [`mdtests/strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md`](https://github.com/clicklang/click/blob/master/mdtests/strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md) checks its range and definedness preconditions at a call, and [`mdtests/memcmp_reads_two_viewed_buffers.md`](https://github.com/clicklang/click/blob/master/mdtests/memcmp_reads_two_viewed_buffers.md) compares two viewed buffers and one buffer with itself. Ordering, equal prefixes, unsigned high bytes, and the equal/empty cases are checked in `mdtests/memcmp_orders_the_first_differing_byte.md`, `mdtests/memcmp_orders_after_equal_prefix.md`, `mdtests/memcmp_orders_high_unsigned_bytes.md`, `mdtests/memcmp_equal_bytes_compare_as_zero.md`, and `mdtests/memcmp_zero_bytes_compare_as_zero.md`. Negative controls reject a wrong sign, a later difference overriding the first, an exact-magnitude claim, and uninitialized inputs.
 
 ### `memset`
 
