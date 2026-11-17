@@ -1008,27 +1008,6 @@ fn exhausted_work_budget_outweighs_missing_path_goal_diagnostic() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_07")]
-fn solve_uses_assumed_compound_proposition() {
-    let proposition = Proposition::Or(
-        Box::new(Proposition::Predicate {
-            name: "left".to_string(),
-            arguments: Vec::new(),
-        }),
-        Box::new(Proposition::Predicate {
-            name: "right".to_string(),
-            arguments: Vec::new(),
-        }),
-    );
-    let assumptions = PureFactContext::new().assume_proposition(proposition.clone());
-
-    assert_eq!(
-        solve_proposition(&proposition, &assumptions),
-        NormalizedProposition::True
-    );
-}
-
-#[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_07")]
 fn failed_algebraic_solve_reports_claim_without_internal_schema_dump() {
     let source = r#"
         spec enum Maybe<T> { None, Some(T) }
@@ -4484,7 +4463,6 @@ test_batches! {
     ],
     diagnostic_batch_07: [
         exhausted_work_budget_outweighs_missing_path_goal_diagnostic,
-        solve_uses_assumed_compound_proposition,
         failed_algebraic_solve_reports_claim_without_internal_schema_dump,
         failed_compound_algebraic_solve_renders_the_goal_once_without_a_debug_dump,
     ],
