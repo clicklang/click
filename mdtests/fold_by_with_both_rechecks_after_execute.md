@@ -34,12 +34,15 @@ void bump(struct holder* h) {
     step();
     fold(holder_of(h)) by {
         both {
-            known();
-        } and {
-            have h->count < 200 by {
-                solve() using { at(function.entry, h->count < 100); };
+            left => {
+                known();
             }
-            known();
+            right => {
+                have h->count < 200 by {
+                    solve() using { at(function.entry, h->count < 100); };
+                }
+                known();
+            }
         }
     }
     known();

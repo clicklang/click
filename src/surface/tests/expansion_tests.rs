@@ -3036,16 +3036,25 @@ theorem fixed_integer_witness(value: int32) {
     } by {
         witness(0);
         both {
-            both {
-                known();
-            } and {
-                known();
+            left => {
+                both {
+                    left => {
+                        known();
+                    }
+                    right => {
+                        known();
+                    }
+                }
             }
-        } and {
-            both {
-                normalize();
-            } and {
-                normalize();
+            right => {
+                both {
+                    left => {
+                        normalize();
+                    }
+                    right => {
+                        normalize();
+                    }
+                }
             }
         }
     }
@@ -20584,9 +20593,12 @@ fn arithmetic_in_each_both_arm_is_selected_at_its_location() {
  requires 0 <= b;
  ensures 0 <= a and 0 <= b by {
   both {
-   solve() using { 0 <= a; };
-  } and {
-   solve() using { 0 <= b; };
+      left => {
+       solve() using { 0 <= a; };
+      }
+      right => {
+       solve() using { 0 <= b; };
+      }
   }
  }
 }
@@ -21645,15 +21657,18 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
             requires b == 0;
             ensures a == 0 and (a == 0 implies a + 1 == 1) by {
                 both {
-                    have a == 0 by {
-                        rewrite(a, b); rewrite(b, 0); normalize();
+                    left => {
+                        have a == 0 by {
+                            rewrite(a, b); rewrite(b, 0); normalize();
+                        }
+                        known();
                     }
-                    known();
-                } and {
-                    intro();
-                    have a == 0 by { known(); }
-                    have a + 1 == 1 by { rewrite(a, 0); normalize(); }
-                    known();
+                    right => {
+                        intro();
+                        have a == 0 by { known(); }
+                        have a + 1 == 1 by { rewrite(a, 0); normalize(); }
+                        known();
+                    }
                 }
             }
         }
@@ -21681,7 +21696,7 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
             requires a == b;
             requires b == 0;
             ensures a == 0 and (a == 0 implies a + 1 == 1)
-            {} both {{ known(); }} and {{ intro(); known(); }}
+            {} both {{ left => {{ known(); }} right => {{ intro(); known(); }} }}
             }}
         }}
     "#,
