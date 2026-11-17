@@ -368,6 +368,13 @@ Changing the index without the required mutex transition therefore fails,
 even when the mutex ledger itself has not changed. Duplicate occurrences and
 stale initializations or acquisitions are refused.
 
+The public proposition `held(mutex)` lowers to a typed `SpecProposition::MutexHeld`
+observation and then the selected protocol's Boolean condition. It is not a
+reserved predicate atom. Its pointer expression keeps the ordinary definedness
+obligations; facts do not redirect its lookup to an aliased mutex. Observing
+heldness supplies no guard ownership and cannot authorize an unlock. Predicate
+wrappers around `held` retain their resource-state dependency.
+
 This form currently accepts scalar comparisons over C values for mutex guards.
 Conditions such as `held(mutex)` cannot define their own ownership. Other
 conditional loop resource clauses use the ordinary decided-condition rules.

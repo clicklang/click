@@ -5179,13 +5179,9 @@ impl AnnotationLowerer<'_> {
                             arguments.len()
                         ));
                     };
-                    return Ok(SpecProposition::Predicate {
-                        resource_state_dependent: true,
-                        name: crate::kernel::MUTEX_HELD_PREDICATE_NAME.to_string(),
-                        arguments: vec![SpecPredicateArgument::Value(
-                            self.lower_contract_expression_to_spec(mutex, environment)?,
-                        )],
-                    });
+                    return Ok(SpecProposition::MutexHeld(Box::new(
+                        self.lower_contract_expression_to_spec(mutex, environment)?,
+                    )));
                 }
                 if name == "little_endian" {
                     if !arguments.is_empty() {

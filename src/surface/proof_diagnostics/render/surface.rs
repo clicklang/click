@@ -3291,14 +3291,6 @@ mod tests {
             .with_memory(Memory::new().with_block("global:m", 4));
         let mut labels = MemoryStateLabels::with_state(ParameterBinding::default(), &state);
         let fact = |name: String, arguments: Vec<Term>| Proposition::Predicate { name, arguments };
-        let held = fact(
-            crate::kernel::MUTEX_HELD_PREDICATE_NAME.into(),
-            vec![
-                Term::ExecutionState(Box::new(state.clone())),
-                Term::ProgramValue(cell("m")),
-            ],
-        );
-        assert_eq!(source(&held, &mut labels), "held(m)");
         let same = fact(
             crate::kernel::SAME_OBJECT_PREDICATE_NAME.into(),
             vec![Term::ProgramValue(cell("m")), Term::ProgramValue(cell("p"))],
@@ -3312,7 +3304,7 @@ mod tests {
             ],
         );
         assert_eq!(source(&contract, &mut labels), "ordered(p)");
-        for (premise, internal) in [(&held, false), (&same, false), (&contract, false)] {
+        for (premise, internal) in [(&same, false), (&contract, false)] {
             assert_eq!(
                 crate::surface::proof_diagnostics::is_internal_premise(premise),
                 internal

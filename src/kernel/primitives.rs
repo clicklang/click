@@ -31,15 +31,13 @@ pub(crate) const SAME_OBJECT_PREDICATE_NAME: &str = "__click_same_object";
 /// `element_width`-byte elements: `{prefix}{element_width}(start, from, to)`
 /// (`design/pointer-subobject-extents.md`, Phase C).
 pub(crate) const SUBOBJECT_COVERS_PREDICATE_PREFIX: &str = "__click_subobject_covers_";
-pub(crate) const MUTEX_HELD_PREDICATE_NAME: &str = "__click_mutex_held";
 
-/// The Click spelling of the kernel predicate `name`: `held` and
-/// `same_object` for the built-ins, the declared name for a contract or a
+/// The Click spelling of the kernel predicate `name`: `same_object`
+/// for the built-in, the declared name for a contract or a
 /// user predicate. `None` marks verifier bookkeeping under the reserved
 /// `__click_` prefix, which no Click proposition lowers to.
 pub(crate) fn predicate_source_name(name: &str) -> Option<&str> {
     match name {
-        MUTEX_HELD_PREDICATE_NAME => Some("held"),
         SAME_OBJECT_PREDICATE_NAME => Some("same_object"),
         LITTLE_ENDIAN_PREDICATE_NAME => Some("little_endian"),
         _ => FunctionContract::surface_name_from_predicate(name)
@@ -5462,6 +5460,8 @@ pub enum SpecProposition {
         program_type: ProgramType,
         body: Box<SpecProposition>,
     },
+    /// Observe this state's mutex protocol without conferring ownership.
+    MutexHeld(Box<SpecExpression>),
     Predicate {
         name: String,
         arguments: Vec<SpecPredicateArgument>,

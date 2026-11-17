@@ -108,7 +108,7 @@ fn refuse_reserved_name(kind: DeclarationKind, name: &str) -> Result<(), ClickEr
                     "`same_object` is a built-in proposition and cannot be redefined",
                 ));
             }
-            if matches!(name, "held" | crate::kernel::MUTEX_HELD_PREDICATE_NAME) {
+            if name == "held" {
                 return Err(ClickError::new(
                     "`held` is a built-in proposition and cannot be redefined",
                 ));
