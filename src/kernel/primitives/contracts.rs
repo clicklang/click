@@ -387,12 +387,6 @@ impl GlobalAggregate {
         self
     }
 
-    /// The class the object's block records: the frontend's, or what the
-    /// kernel type gives.
-    pub fn declared_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
-        self.declared_class.clone()
-    }
-
     pub fn source_name(&self) -> &str {
         &self.source_name
     }
@@ -457,12 +451,6 @@ impl GlobalAggregateArray {
     ) -> Self {
         self.declared_class = class;
         self
-    }
-
-    /// The class the object's block records: the frontend's, or what the
-    /// kernel type gives.
-    pub fn declared_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
-        self.declared_class.clone()
     }
 
     pub fn source_name(&self) -> &str {
@@ -4062,12 +4050,6 @@ impl TerminationError {
     /// The function whose termination was being decided, when one was.
     pub fn function(&self) -> Option<&str> {
         self.function.as_deref()
-    }
-
-    /// Whether the check refused a function-level measure on a function
-    /// with no recursive edge to rank.
-    pub fn is_superfluous_recursive_measure(&self) -> bool {
-        self.superfluous_recursive_measure
     }
 }
 

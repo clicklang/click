@@ -83,10 +83,6 @@ impl FoldReadDefinition {
         }
     }
 
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
     fn fingerprint(&self) -> u64 {
         use std::hash::{Hash, Hasher};
         crate::instrumentation::record_deterministic_work(1);
@@ -284,10 +280,6 @@ impl CheckedFoldReadSummary {
             accumulator: *accumulator,
             item: *item,
         })
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
     }
 
     /// The support of one application of this function, or `None` when the

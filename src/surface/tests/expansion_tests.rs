@@ -17080,6 +17080,42 @@ fn local_job_views_expand_and_reverify_without_ownership_annotations() {
 }
 
 #[test]
+#[ignore = "nightly: two-hop loop frame verification, expansion and cold replay"]
+fn two_hop_loop_frame_expands_and_cold_replays() {
+    let (source, sources) =
+        mdtest_sources("mdtests/loop_frame_keeps_a_two_hop_map_beside_a_written_array.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    with_proof_trace("clear_data", || {
+        verify_c_sources(&source, &sources).unwrap_or_else(|error| {
+            panic!(
+                "{}\n{}",
+                error.report(),
+                error.trace_context_report().unwrap_or_default()
+            )
+        });
+    });
+    assert!(!source.contains("transport("), "{source}");
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "clear_data.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("preserve("), "{expanded}");
+    without_implicit_solve_for_claim("clear_data.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+
+    // Writing the framed map instead of the owned data array must be refused.
+    let bad_c = sources[0]
+        .1
+        .replace("arena->data[i] = 0;", "arena->occupied[i] = 0;");
+    assert_ne!(bad_c, sources[0].1);
+    assert!(verify_c_sources(&source, &[(sources[0].0, bad_c.as_str())]).is_err());
+}
+
+#[test]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn an_unfold_bound_scalar_field_expands_and_reverifies() {
     // `let { prefix: p } = unfold(before)` names the folded field value that

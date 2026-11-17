@@ -358,25 +358,6 @@ impl crate::kernel::CheckedFunctionExecution {
     pub(crate) fn open_outcome(&self, index: usize) -> Option<super::OutcomeProofCore> {
         self.published_outcome(index).open_core()
     }
-
-    #[cfg(test)]
-    pub(crate) fn with_closed_exit_obligations(
-        mut self,
-        completions: Vec<crate::kernel::ClosedContractExit>,
-    ) -> Result<Self, &'static str> {
-        for completion in completions {
-            let index = completion.path_index();
-            let path = self
-                .paths()
-                .get(index)
-                .ok_or("contract closing selected an unknown path")?;
-            if !completion.matches_path(path) {
-                return Err("contract closing belongs to a different producer path");
-            }
-            self.closed_exit_obligations[index] = Some(completion);
-        }
-        Ok(self)
-    }
 }
 
 /// Why [`ExecutionProofCore::checked_return_path`] refused a path: the
@@ -671,17 +652,6 @@ impl CheckedCallEvents {
         let mut events = Self::default();
         events.insert(event);
         events
-    }
-
-    pub(crate) fn extend(&mut self, other: &Self) {
-        for group in &other.groups {
-            for id in group.active.iter() {
-                self.insert(&CheckedCallEvent {
-                    registry: group.registry.clone(),
-                    id: *id,
-                });
-            }
-        }
     }
 
     pub(crate) fn contains(&self, event: &CheckedCallEvent) -> bool {
@@ -6696,82 +6666,6 @@ fn collect_retained_call_events<'e>(
     }
 }
 
-/// Check only a literal int32 comparison, without folding expressions or
-/// consulting a context. Signed order interprets the stored bits as int32.
-#[cfg(test)]
-fn ground_comparison_premise_holds(premise: &Proposition) -> bool {
-    use crate::kernel::ConditionTerm;
-    let Proposition::ConditionIs(condition, expected) = premise else {
-        return false;
-    };
-    let (left, right) = match condition {
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessThan,
-            left,
-            right,
-        }
-        | ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessEqual,
-            left,
-            right,
-        }
-        | ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterThan,
-            left,
-            right,
-        }
-        | ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterEqual,
-            left,
-            right,
-        }
-        | ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-            relation: CompareRelation::Equal,
-            left,
-            right,
-        } => (left, right),
-        _ => return false,
-    };
-    let (Some(left), Some(right)) = (left.as_const(), right.as_const()) else {
-        return false;
-    };
-    let (left, right) = (left as i32, right as i32);
-    let actual = match condition {
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessThan,
-            ..
-        } => left < right,
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessEqual,
-            ..
-        } => left <= right,
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterThan,
-            ..
-        } => left > right,
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterEqual,
-            ..
-        } => left >= right,
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-            relation: CompareRelation::Equal,
-            ..
-        } => left == right,
-        _ => unreachable!("comparison shape was checked above"),
-    };
-    actual == *expected
-}
-
 /// Branch evidence names its exact arm context. Do not derive a missing
 /// prerequisite from other facts at the join. Literal comparisons and
 /// integer reflexivity are context-free rules, not premise search.
@@ -6810,23 +6704,6 @@ pub(super) fn checked_interface_pointer_equality(
             true
         )
     ) && super::fact_reasoning::normalize_using_conditions(goal, &[], facts).is_ok()
-}
-
-#[cfg(test)]
-fn checked_evidence_premises_hold(theorem: &Theorem, facts: &PureFactStore) -> bool {
-    checked_evidence_premises_hold_in(theorem, facts.assumptions())
-}
-
-#[cfg(test)]
-fn checked_evidence_premises_hold_in(theorem: &Theorem, context: &PureFactContext) -> bool {
-    let mut proposition = theorem.proposition();
-    while let Proposition::Implies(premise, body) = proposition {
-        if !context.proves_exact(premise) && !ground_comparison_premise_holds(premise) {
-            return false;
-        }
-        proposition = body;
-    }
-    true
 }
 
 fn split_checked_evidence_statement(

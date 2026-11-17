@@ -3177,11 +3177,7 @@ impl<'a> TermRewrite<'a> {
                 Term::Algebraic(value) => {
                     collect_algebraic_carriers_seen(value, &mut variables, &mut seen)
                 }
-                Term::ExpressionOutcome(_)
-                | Term::StatementOutcome(_)
-                | Term::FunctionOutcome(_)
-                | Term::Memory(_)
-                | Term::ExecutionState(_) => {}
+                Term::Memory(_) | Term::ExecutionState(_) => {}
             }
             if variables.exhausted() {
                 break;
@@ -3420,16 +3416,12 @@ impl<'a> TermRewrite<'a> {
             Sort::Integer => Some(BindingCarrier::Integer),
             Sort::Algebraic(_) => Some(BindingCarrier::Algebraic),
             Sort::Bitvector32
-            | Sort::Bitvector64
             | Sort::ProgramInt32
             | Sort::ProgramInt64
             | Sort::ProgramInteger(_)
             | Sort::ProgramPointer(_)
             | Sort::ProgramObjectPointer(_, _)
-            | Sort::ProgramValue
-            | Sort::PointerOffset
             | Sort::Condition => Some(BindingCarrier::Program),
-            _ => None,
         };
         let Some(carrier) = carrier else {
             return (variable, self.scoped_proposition(body));
@@ -5750,7 +5742,11 @@ impl<'a> TermRewrite<'a> {
                 let (op, left, right) = v
                     .as_bitvector_comparison()
                     .expect("every other condition has its own arm");
-                op.build_raw(self.bits(left), self.bits(right))
+                super::equality_rewrite::rebuild_machine_comparison(
+                    op,
+                    self.bits(left),
+                    self.bits(right),
+                )
             }
         };
         // Comparison forms are lookup aids, not stored syntax. Replacing a

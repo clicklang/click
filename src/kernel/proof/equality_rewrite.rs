@@ -27,6 +27,25 @@ fn rewrite_pointer_index(
 }
 
 pub(in crate::kernel) use shared::clear as clear_shared_exact_rewrite_cache;
+/// Rebuild a rewritten comparison without folding it. Native 32-bit
+/// comparisons read words: selecting an unsigned literal arm must use the
+/// same root encoding as logical lowering. Nested arithmetic stays intact.
+pub(super) fn rebuild_machine_comparison(
+    operator: BitvectorComparisonOp,
+    left: MachineTerm,
+    right: MachineTerm,
+) -> ConditionTerm {
+    let (left, right) = if matches!(
+        operator,
+        BitvectorComparisonOp::Compare(MachineIntegerType::Int32 | MachineIntegerType::UInt32, _)
+    ) {
+        (left.into_word32(), right.into_word32())
+    } else {
+        (left, right)
+    };
+    operator.build_raw(left, right)
+}
+
 pub(in crate::kernel) use shared::normalize_node as rebuild_normalized_machine_node;
 pub(in crate::kernel) use shared::transport_node as rebuild_transported_machine_node;
 
@@ -2434,7 +2453,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
             let rewritten_condition = if let Some((operator, goal_left, goal_right)) =
                 condition.as_bitvector_comparison()
             {
-                operator.build_raw(
+                rebuild_machine_comparison(
+                    operator,
                     rewrite_term(goal_left, left, right),
                     rewrite_term(goal_right, left, right),
                 )

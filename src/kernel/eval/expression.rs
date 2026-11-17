@@ -205,6 +205,7 @@ fn float_to_integer_conversion_value(
     })
 }
 
+#[cfg(test)]
 pub(in crate::kernel) fn evaluate_program_expression(
     state: &ExecutionState,
     expression: &ProgramExpression,

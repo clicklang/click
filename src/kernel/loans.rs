@@ -2320,10 +2320,12 @@ impl CheckedLoanCallEvidenceSequence {
         self.len == 0
     }
 
+    #[cfg(test)]
     pub(crate) fn is_valid(&self) -> bool {
         self.summary.valid
     }
 
+    #[cfg(test)]
     pub(crate) fn recovered_ledger_for(
         &self,
         caller_ledger: &LoanLedger,
@@ -2345,6 +2347,7 @@ impl CheckedLoanCallEvidenceSequence {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn pristine_recovery(&self) -> (Option<LoanParticipantId>, Option<LoanLedger>) {
         self.summary
             .last_pristine_recovered
@@ -5910,6 +5913,7 @@ impl LoanLedger {
         ))
     }
 
+    #[cfg(test)]
     pub(crate) fn permits_view(
         &self,
         holder: LoanParticipantId,
@@ -5936,31 +5940,6 @@ impl LoanLedger {
                     .unchecked_with_fact(permitted.clone())
                     .satisfies_fact(&description.viewed, assumptions)
             })
-    }
-
-    pub(crate) fn authorizes_bindings(
-        &self,
-        holder: LoanParticipantId,
-        bindings: &LoanViewBindings,
-        assumptions: &PureFactContext,
-    ) -> bool {
-        bindings.iter().all(|(_, binding)| {
-            self.storage
-                .data
-                .loans
-                .get(&binding.loan)
-                .is_some_and(|loan| loan.scope == binding.scope)
-                && self.permits_view(
-                    holder,
-                    &StableViewDescription {
-                        loan: binding.loan,
-                        support: binding.support,
-                        viewed: binding.viewed.clone(),
-                    },
-                    binding.share,
-                    assumptions,
-                )
-        })
     }
 
     pub(crate) fn describe_view(

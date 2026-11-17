@@ -345,6 +345,7 @@ impl ReservedVariableSets {
     }
 
     /// Every reserved variable; this collects every lazy part.
+    #[cfg(test)]
     pub(crate) fn iter(&self) -> impl Iterator<Item = &Variable> {
         self.sets
             .iter()
@@ -462,22 +463,13 @@ impl LazyReservedVariables {
 pub enum Sort {
     Condition,
     Bitvector32,
-    Bitvector64,
     Integer,
-    PointerOffset,
-    ProgramType,
     ProgramInt32,
     ProgramInt64,
     ProgramInteger(MachineIntegerType),
     ProgramPointer(ProgramType),
     ProgramObjectPointer(ProgramType, crate::kernel::effective_type::CAccessClass),
-    ProgramValue,
-    Sequence(Option<ProgramType>),
     Algebraic(AlgebraicType),
-    Memory,
-    ExecutionState,
-    StatementOutcome,
-    FunctionOutcome,
 }
 
 impl Sort {
@@ -5889,7 +5881,6 @@ pub enum LoopEffectOrigin {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum LoopEffect {
-    Immutable,
     Mutable(Vec<MemorySegment>),
 }
 
@@ -6403,10 +6394,6 @@ impl AggregateUnionField {
         }
     }
 
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
     pub fn offset_bytes(&self) -> u32 {
         self.offset_bytes
     }
@@ -6437,10 +6424,6 @@ impl AggregateUnion {
             size_bytes,
             fields,
         }
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
     }
 
     pub fn offset_bytes(&self) -> u32 {
@@ -7340,12 +7323,7 @@ pub struct VerifiedFunctionRule {
     pub(super) checked_callees: Option<Arc<BTreeSet<String>>>,
 }
 
-impl VerifiedFunctionRule {
-    /// How the certification behind this rule ran the function's loops.
-    pub fn loop_semantics(&self) -> LoopSemantics {
-        self.loop_semantics
-    }
-}
+impl VerifiedFunctionRule {}
 
 /// A nominal, body-independent behavioral interface for an indirect call.
 ///
@@ -7612,10 +7590,6 @@ pub enum RankingMeasureKey {
 }
 
 impl FunctionTerminationPlan {
-    pub fn function_name(&self) -> &str {
-        &self.function_name
-    }
-
     pub fn extend_loop_measures(
         &mut self,
         measures: impl IntoIterator<Item = (usize, LoopTerminationMeasure)>,
@@ -7740,32 +7714,7 @@ pub struct TerminationError {
     pub(super) superfluous_recursive_measure: bool,
 }
 
-impl VerifiedFunctionTerminationRule {
-    pub fn function_name(&self) -> &str {
-        self.function.name()
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct VerifiedFunctionContractClaim {
-    pub(super) pointer_result: Option<Arc<PurePointerResult>>,
-
-    pub(super) function: ProgramFunction,
-    pub(super) key: FunctionContractClaimKey,
-    /// Exact load equalities consumed while checking this claim. Keeping the
-    /// witnesses on the proof object makes contract finalization the owner of
-    /// its equality decisions rather than relying on an ambient prover later.
-    pub(super) load_equalities: Vec<super::CheckedLoadEquality>,
-    /// The loop semantics of the certification this claim came from.
-    pub(super) loop_semantics: LoopSemantics,
-    /// The user-defined tactics the certification this claim came from
-    /// applied.
-    pub(super) applied_tactics: std::collections::BTreeSet<String>,
-    /// Complete conservative call dependencies from kernel-checked execution.
-    /// None retains source-call analysis; a present empty set proves no calls.
-    /// Shared across claims and certificate reuse, never copied per step.
-    pub(super) checked_callees: Option<Arc<BTreeSet<String>>>,
-}
+impl VerifiedFunctionTerminationRule {}
 
 /// Kernel-checked evidence that a checked proof discharged one proposition at
 /// one exact function outcome. Contract finalization finds this evidence by
@@ -7781,12 +7730,6 @@ pub(crate) struct CheckedFunctionProposition {
     /// from the kernel's goal for that claim, which carries the claim's
     /// identity through to here. `None` for any other proposition.
     pub(super) claim: Option<FunctionContractClaimTarget>,
-}
-
-impl VerifiedFunctionContractClaim {
-    pub fn key(&self) -> &FunctionContractClaimKey {
-        &self.key
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -8106,7 +8049,6 @@ pub enum ExecutionLimit {
     /// A loop invariant's pass count, `iterations`, read where no loop
     /// phase binds it.
     LoopIterationsUnbound,
-    UnsupportedIntegerExistentialBody,
     UnsupportedPureFunctionResult(ProgramType),
     /// Stage 5 (`design/machine-integers.md`, decision D2): a `Bool`
     /// compared with an integer. `Bool` has no integer value.
@@ -8148,12 +8090,6 @@ pub enum ExecutionLimit {
     /// taken the instance away, and a reader needs to be told *that* rather
     /// than which counter the evaluation was holding at the time.
     ResourceFieldInstanceUnavailable,
-    /// A worker may still change this total. No current observation is
-    /// available until the checked completion right is joined.
-    ResourceCountPendingWorker,
-    /// Another tracked population of the family is neither proven equal to
-    /// nor proven different from the counted one, so no total is a count.
-    ResourceCountPossiblyAliased,
     /// A count names one concrete population anchor.
     AuthorityCountNeedsExactPointer,
     AuthorityCountNeedsResolvedMember,
@@ -8163,8 +8099,6 @@ pub enum ExecutionLimit {
     AuthorityCountLentToWorker,
     /// An outstanding locked worker changes the population before its join.
     AuthorityCountPendingLockedWorker,
-    /// The exact population total cannot be represented as C int32.
-    AuthorityCountOverflows,
     /// The right side of an `or` has no value wherever its left side is
     /// false, the only case in which it is read.
     DisjunctionRightUndefined,
@@ -8201,9 +8135,6 @@ impl ExecutionLimit {
             Self::UnsupportedPureFunctionResult(result_type) => {
                 format!("unsupported pure-function result type {result_type:?}")
             }
-            Self::UnsupportedIntegerExistentialBody => {
-                "an Integer existential body that must be pure and total".to_string()
-            }
             Self::BoolComparedWithInteger => "a `Bool` compared with an integer".to_string(),
             Self::BoolOrdered => "an order on `Bool`".to_string(),
             Self::BoolArithmetic => "arithmetic on a `Bool`".to_string(),
@@ -8216,12 +8147,6 @@ impl ExecutionLimit {
             }
             Self::ExecutionIdentityBesideLiveState => {
                 "an internal request for an execution identity beside a live state".to_string()
-            }
-            Self::ResourceCountPendingWorker => {
-                "count(...) requires joining its outstanding worker".to_string()
-            }
-            Self::ResourceCountPossiblyAliased => {
-                "count(...) of a population that may alias another tracked population of its family; state whether their arguments are equal or different".to_string()
             }
             Self::AuthorityCountNeedsExactPointer => {
                 "count(...) needs one exact base pointer".to_string()
@@ -8239,7 +8164,6 @@ impl ExecutionLimit {
             Self::AuthorityCountLentToWorker => {
                 "count(...) requires owning authority for that population, which an outstanding worker holds until its pthread_join".to_string()
             }
-            Self::AuthorityCountOverflows => "the population count exceeds int32".to_string(),
             Self::DisjunctionRightUndefined => {
                 "an `or` whose right side is undefined wherever its left side is false".to_string()
             }
@@ -12353,18 +12277,6 @@ impl ResourceTerm {
             _ => None,
         }
     }
-
-    pub fn declared_parameter_types(&self) -> Option<&[ProgramType]> {
-        match self {
-            Self::Composite {
-                parameter_types, ..
-            }
-            | Self::Token {
-                parameter_types, ..
-            } => Some(parameter_types),
-            _ => None,
-        }
-    }
 }
 
 impl ResourceSpec {
@@ -12822,10 +12734,6 @@ impl ResourceSpec {
         self.term.declared_argument_states()
     }
 
-    pub fn declared_parameter_types(&self) -> Option<&[ProgramType]> {
-        self.term.declared_parameter_types()
-    }
-
     pub fn composite(
         access: ResourceAccessMode,
         name: String,
@@ -13164,11 +13072,8 @@ pub enum Term {
     ProgramValue(ProgramValue),
     Sequence(SequenceTerm),
     Algebraic(AlgebraicTerm),
-    ExpressionOutcome(ExpressionOutcome),
     // Outcomes carry ExecutionState. Keep them out of Term's inline size so cloning
     // a deep pure proposition does not spend stack on unused C variants.
-    StatementOutcome(Box<StatementOutcome>),
-    FunctionOutcome(Box<FunctionOutcome>),
     Memory(Memory),
     ExecutionState(Box<ExecutionState>),
 }
@@ -15157,97 +15062,6 @@ pub struct SymbolicExecution {
     pub(super) limit: Option<ExecutionLimit>,
 }
 
-/// One complete path set contract certification may judge a claim over: a
-/// checked execution reused at the contract's entry, or the kernel's own
-/// execution when no artifact was supplied. Its paths jointly cover the function from the
-/// entry they name, so a claim that holds on every one of them holds.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ContractPathSet {
-    pub(super) closed_exit_obligations: Vec<Option<super::ClosedContractExit>>,
-    /// Producer path identities, retained across authorized entry rebasing.
-    pub(super) completion_path_origins: Vec<Theorem>,
-    pub(super) paths: Vec<SymbolicExecutionPath>,
-    /// Exact resource claims checked for each path.  The vector is parallel
-    /// to `paths`; an entry names only claims whose surface proof crossed the
-    /// kernel resource/lifetime checker for that path.
-    pub(super) checked_resource_claims: Vec<Vec<FunctionContractClaimKey>>,
-    pub(super) checked_resource_transitions: Vec<bool>,
-    /// Paths whose contract exit resource transition was deferred because a
-    /// conditional produced effect was not decided by the proof entry facts.
-    /// Contract certification must resolve these paths under an exhaustive
-    /// guard case before using their post-state.
-    pub(super) deferred_contract_exits: Vec<bool>,
-    /// Exact boundary error retained for each deferred path. A deferred marker
-    /// is valid only when this records the conditional-effect selection error
-    /// that caused the deferral.
-    pub(super) deferred_contract_exit_errors: Vec<Option<RuntimeError>>,
-    /// Resource facts projected from native outcome completions for each
-    /// path. Deferred exit resolution composes these facts into the body
-    /// outcome before applying the remaining conditional boundary effect.
-    pub(super) checked_returned_resources: Vec<ResourceContext>,
-    /// The caller state the reused artifact's proof ran at, when its paths
-    /// were rebased onto this contract's caller state. A claim the proof
-    /// completed at that state certifies the rebased path: the rebase
-    /// checked the two entry representations definitionally equal.
-    pub(super) completion_origin_state: Option<ExecutionState>,
-    /// Authenticated entry custody for each path, including partitioned proofs.
-    pub(super) boundary_transfers:
-        Vec<Option<Arc<super::functions::CheckedBoundaryResourceTransfer>>>,
-}
-
-/// A complete function frontier produced from only the exact function's
-/// contract entry state and requirements.
-///
-/// Unlike [`SymbolicExecution`], this type is accepted as evidence when
-/// certifying an opaque function rule. Its fields are kernel-private so callers
-/// cannot turn an execution performed under arbitrary assumptions into
-/// contract evidence.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct FunctionContractExecution {
-    pub(super) pointer_result: Option<Arc<PurePointerResult>>,
-
-    /// One entry per resource-guard case of the contract, each listing every
-    /// path set available for that case. A claim holds when, in every case,
-    /// one path set certifies it on all of its paths: each set is a complete
-    /// execution of the function under the case, so any one is authority for
-    /// it. The sets differ only in how the proofs that produced them
-    /// structured the paths (a proof that joins two arms publishes the
-    /// joined path; another publishes each arm), and a claim completed on
-    /// one proof's outcome is matched against that proof's paths.
-    pub(super) cases: Vec<Vec<ContractPathSet>>,
-    /// Why certification produced no paths: either no supplied checked
-    /// artifact could be reused, or the contract entry context itself could
-    /// not be built. Callers report it; it carries no authority.
-    pub(super) reuse_diagnostic: Option<String>,
-    /// The entry premise the contract context could not authorize, when that
-    /// is why reuse was refused. The kernel names its *kind* in
-    /// `reuse_diagnostic`; a reader needs the premise itself to know which
-    /// fact is missing, and only the caller can spell it in the user's names.
-    /// It carries no authority either — it is the refused premise, not a
-    /// granted one.
-    pub(super) reuse_unauthorized_premise: Option<Proposition>,
-    /// The resources the contract entry held where that premise was refused.
-    /// A refused loadability premise is a claim about these, so a reader
-    /// needs them beside it to see which range the premise fell outside.
-    pub(super) reuse_entry_resources: Vec<ResourceFact>,
-    /// The pure facts of the contract context that premise was refused in:
-    /// what it was checked against.
-    pub(super) reuse_context_facts: Vec<Proposition>,
-    pub(super) checked_call_events: super::proof::CheckedCallEvents,
-    /// How this certification ran the function's loops. Under
-    /// `ApplyVerifiedRules` a loop is either run concretely to its exit or
-    /// replaced by a verified loop rule, and one with neither yields no
-    /// paths; under `Verify` an annotated loop may be summarized without
-    /// ever exiting. The termination check reads this to know which.
-    pub(super) loop_semantics: LoopSemantics,
-    /// The user-defined tactics the certified proofs applied.
-    pub(super) applied_tactics: std::collections::BTreeSet<String>,
-    /// Complete conservative call dependencies from kernel-checked execution.
-    /// None retains source-call analysis; a present empty set proves no calls.
-    /// Shared across claims and certificate reuse, never copied per step.
-    pub(super) checked_callees: Option<Arc<BTreeSet<String>>>,
-}
-
 /// A kernel-created record of one exact whole-function execution judgment.
 /// Opened-contract executions retain their producer's entry authority;
 /// whole-contract admission consumes it without rechecking premises or entry
@@ -15313,70 +15127,6 @@ pub enum FunctionContractExecutionMode {
     ExecuteLoops,
 }
 
-impl FunctionContractExecution {
-    /// An empty certification that carries why it produced no paths. A
-    /// diagnostic is not authority: the result is still empty and certifies
-    /// nothing.
-    pub(crate) fn failed(diagnostic: String) -> Self {
-        Self {
-            pointer_result: None,
-            cases: Vec::new(),
-            reuse_diagnostic: Some(diagnostic),
-            reuse_unauthorized_premise: None,
-            reuse_entry_resources: Vec::new(),
-            reuse_context_facts: Vec::new(),
-            checked_call_events: Default::default(),
-            loop_semantics: LoopSemantics::Verify,
-            checked_callees: None,
-            applied_tactics: Default::default(),
-        }
-    }
-
-    /// Every path across every case and path set.
-    pub fn path_count(&self) -> usize {
-        self.cases.iter().flatten().map(|set| set.paths.len()).sum()
-    }
-
-    /// Whether every resource-guard case has a path set to judge claims
-    /// over.
-    pub(crate) fn is_complete(&self) -> bool {
-        !self.cases.is_empty()
-            && self
-                .cases
-                .iter()
-                .all(|alternatives| !alternatives.is_empty())
-    }
-
-    pub(crate) fn cases(&self) -> &[Vec<ContractPathSet>] {
-        &self.cases
-    }
-
-    /// Why certification produced no paths although checked artifacts were
-    /// supplied: the premise kind or entry-state component that blocked
-    /// reuse.
-    pub fn reuse_diagnostic(&self) -> Option<&str> {
-        self.reuse_diagnostic.as_deref()
-    }
-
-    /// The entry premise behind [`Self::reuse_diagnostic`], for a caller that
-    /// can print it in the names the user wrote.
-    pub fn reuse_unauthorized_premise(&self) -> Option<&Proposition> {
-        self.reuse_unauthorized_premise.as_ref()
-    }
-
-    /// The contract entry resources [`Self::reuse_unauthorized_premise`] was
-    /// refused against.
-    pub fn reuse_entry_resources(&self) -> &[ResourceFact] {
-        &self.reuse_entry_resources
-    }
-
-    /// The contract context's pure facts [`Self::reuse_unauthorized_premise`]
-    /// was refused against.
-    pub fn reuse_context_facts(&self) -> &[Proposition] {
-        &self.reuse_context_facts
-    }
-}
-
 impl CheckedFunctionExecution {
     pub fn paths(&self) -> &[SymbolicExecutionPath] {
         self.execution.paths()
@@ -15386,12 +15136,6 @@ impl CheckedFunctionExecution {
         self.boundary_transfer
             .as_deref()
             .map_or(&self.function, |transfer| transfer.checked_function())
-    }
-
-    pub(crate) fn boundary_transfer(
-        &self,
-    ) -> Option<&Arc<super::functions::CheckedBoundaryResourceTransfer>> {
-        self.boundary_transfer.as_ref()
     }
 
     pub(crate) fn function_arguments(&self) -> &[ProgramExpression] {
@@ -15518,10 +15262,6 @@ impl CheckedFunctionExecution {
                 .map_err(|difference| format!("path {index}: {difference}"))?;
         }
         Ok(())
-    }
-
-    pub fn limit(&self) -> Option<ExecutionLimit> {
-        self.execution.limit()
     }
 }
 

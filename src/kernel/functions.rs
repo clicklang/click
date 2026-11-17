@@ -1653,6 +1653,7 @@ fn refresh_returned_local_bindings_from_stores(
 }
 
 /// `ProgramFunctionVerifies` for `function` applied to `arguments`.
+#[cfg(test)]
 pub(super) fn execute_program_function_verification_paths(
     state: &ExecutionState,
     function: &ProgramFunction,
@@ -8837,132 +8838,6 @@ pub(crate) fn establish_resource_derived_loop_frames(
     Ok(Ok(function.with_body(body)))
 }
 
-/// Check that inherited loop-frame metadata was established from the checked
-/// entry transition before proof generation. This is an invariant check, not
-/// a second evaluator: source expressions are never re-evaluated here.
-#[cfg(test)]
-pub(crate) fn validate_resource_derived_loop_frames(
-    function: &ProgramFunction,
-    _entry: &ExecutionState,
-    _assumptions: &PureFactContext,
-    _budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<(), String>> {
-    fn has_inherited_loop_frame(statement: &ProgramStatement) -> bool {
-        match statement {
-            ProgramStatement::Seq(statements) => statements
-                .iter()
-                .any(|statement| has_inherited_loop_frame(statement)),
-            ProgramStatement::If {
-                then_branch,
-                else_branch,
-                ..
-            } => has_inherited_loop_frame(then_branch) || has_inherited_loop_frame(else_branch),
-            ProgramStatement::Loop {
-                test: loop_test,
-                update,
-                effect_checks,
-                body,
-                ..
-            } => {
-                let (_, _, test) = loop_test.execution_parts();
-                effect_checks
-                    .iter()
-                    .any(|check| check.origin() == LoopEffectOrigin::InheritedResourceDerived)
-                    || has_inherited_loop_frame(body)
-                    || update
-                        .as_ref()
-                        .is_some_and(|update| has_inherited_loop_frame(update))
-                    || test
-                        .as_ref()
-                        .is_some_and(|test| has_inherited_loop_frame(&test.statement))
-            }
-            ProgramStatement::Switch { cases, .. } => cases
-                .iter()
-                .any(|case| has_inherited_loop_frame(&case.body)),
-
-            _ => false,
-        }
-    }
-    if !function.resource_derived_mutable_frame() || !has_inherited_loop_frame(function.body()) {
-        return Ok(Ok(()));
-    }
-    fn check_statement(statement: &ProgramStatement) -> ExecutionResult<Result<(), String>> {
-        let check = |checks: &[LoopEffectCheck]| -> ExecutionResult<Result<(), String>> {
-            for effect_check in checks {
-                if effect_check.origin() != LoopEffectOrigin::InheritedResourceDerived {
-                    continue;
-                }
-                let Some(actual) = effect_check.validated_ranges() else {
-                    return Ok(Err(
-                        "resource-derived loop frame was not established at function entry"
-                            .to_string(),
-                    ));
-                };
-                if actual.windows(2).any(|pair| pair[1] <= pair[0]) {
-                    return Ok(Err(
-                        "inherited loop frame is not in canonical checked form".to_string()
-                    ));
-                }
-            }
-            Ok(Ok(()))
-        };
-        match statement {
-            ProgramStatement::Seq(statements) => {
-                if let Err(error) = check_statement(statements.first())? {
-                    return Ok(Err(error));
-                }
-                check_statement(&statements.rest())
-            }
-            ProgramStatement::If {
-                then_branch,
-                else_branch,
-                ..
-            } => {
-                if let Err(error) = check_statement(then_branch)? {
-                    return Ok(Err(error));
-                }
-                check_statement(else_branch)
-            }
-            ProgramStatement::Loop {
-                test: loop_test,
-                update,
-                effect_checks,
-                body,
-                ..
-            } => {
-                let (_, _, test) = loop_test.execution_parts();
-                if let Err(error) = check(effect_checks)? {
-                    return Ok(Err(error));
-                }
-                if let Err(error) = check_statement(body)? {
-                    return Ok(Err(error));
-                }
-                if let Some(update) = update
-                    && let Err(error) = check_statement(update)?
-                {
-                    return Ok(Err(error));
-                }
-                if let Some(test) = test {
-                    check_statement(&test.statement)
-                } else {
-                    Ok(Ok(()))
-                }
-            }
-            ProgramStatement::Switch { cases, .. } => {
-                for case in cases {
-                    if let Err(error) = check_statement(&case.body)? {
-                        return Ok(Err(error));
-                    }
-                }
-                Ok(Ok(()))
-            }
-
-            _ => Ok(Ok(())),
-        }
-    }
-    check_statement(function.body())
-}
-
 /// Whether an owned composite the interface requires has a guarded body
 /// anywhere under it. A resource-derived footprint used to be lowered from
 /// source with the enclosing conditions as guards on every segment beneath
@@ -13470,8 +13345,6 @@ fn evaluate_contract_return_resources(
                     prepared
                         .frontier_sources(ensured_resources, true)
                         .map(|(source, fact)| (fact, return_bodies.for_return(source, fact))),
-                    interface.composite_resource_definitions(),
-                    post_state.memory(),
                     assumptions,
                 ) {
                     return Some(error);
@@ -13489,8 +13362,6 @@ fn evaluate_contract_return_resources(
                 prepared
                     .frontier_sources(ensured_resources, false)
                     .map(|(source, fact)| (fact, return_bodies.for_return(source, fact))),
-                interface.composite_resource_definitions(),
-                post_state.memory(),
                 assumptions,
             )
         },
@@ -13531,8 +13402,6 @@ fn evaluate_contract_return_resources(
                 ensured_resources,
                 &inserted_ensured_occurrences,
                 &return_bodies,
-                interface.composite_resource_definitions(),
-                post_state,
                 assumptions,
                 &return_resources,
             )
@@ -13564,7 +13433,7 @@ fn evaluate_contract_return_resources(
             destination: support_occurrence,
             expansion,
             projected,
-            frontier,
+            frontier: _,
             viewed_children: _,
         } = resource;
         if support.is_own() {
@@ -13580,11 +13449,6 @@ fn evaluate_contract_return_resources(
             };
             let body = if let Some(body) = return_bodies.for_return(source, &support) {
                 body.escrow_boundary()
-            } else if matches!(
-                support.resource(),
-                Resource::Composite { .. } | Resource::Instance(_)
-            ) {
-                frontier.clone()
             } else {
                 Vec::new()
             };
@@ -13604,24 +13468,7 @@ fn evaluate_contract_return_resources(
             _ => false,
         };
         if !is_population {
-            let support = super::loans::EscapingComposite {
-                head: support.clone(),
-                occurrence: support_occurrence,
-            };
-            if let Some(pieces) = constructed_borrowing_pieces {
-                produced_borrowing_pieces.extend(pieces);
-            } else {
-                produced_borrowing_pieces.extend(
-                    frontier
-                        .into_iter()
-                        .filter(|piece| piece.is_view())
-                        .map(|piece| ProducedBorrowingPiece {
-                            support: support.clone(),
-                            piece,
-                            sources: None,
-                        }),
-                );
-            }
+            produced_borrowing_pieces.extend(constructed_borrowing_pieces);
         }
         return_resources = return_resources
             .unchecked_with_supported_facts_from_occurrence_with_memory(
@@ -13677,68 +13524,38 @@ fn produced_composite_frontier_conflict<'a>(
             Option<&'a mixed_return_resources::ConstructedReturnBody>,
         ),
     >,
-    definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
     assumptions: &PureFactContext,
 ) -> Option<RuntimeError> {
     for (produced, body) in ensured {
         let name = match produced.resource() {
             Resource::Composite { name, .. } => name.as_str(),
-            Resource::Instance(instance) if body.is_some() => instance.name(),
+            Resource::Instance(instance) => instance.name(),
             _ => continue,
         };
         if !produced.is_own() {
             continue;
         }
-        if let Some(body) = body {
-            match destination.admit_returned_flat_body(body, assumptions) {
-                FlatBodyAdmission::Admitted => continue,
-                FlatBodyAdmission::Conflict { piece, held } => {
-                    return Some(RuntimeError::ProducedCompositeOverlapsHeldResource {
-                        produced: Box::new(produced.clone()),
-                        piece,
-                        held,
-                    });
-                }
-                FlatBodyAdmission::Unsupported => {
-                    return Some(resource_context_runtime_error(
-                        ResourceContextValidityError::UnsupportedOwnershipBoundary,
-                    ));
-                }
-            }
-        }
-        let legacy_frontier;
-        let frontier = if let Some(body) = body {
-            body.boundary()
-        } else {
-            let singleton = ResourceContext::new_with_equalities(assumptions)
-                .unchecked_with_fact(produced.clone());
-            // Opaque and unmigrated heads retain their legacy expansion.
-            let Some((_, children, _)) = expand_composite_resource_fact_with_children(
-                &singleton,
-                produced,
-                definitions,
-                &crate::kernel::ProgramPoint::of_memory(memory),
-                assumptions,
-            ) else {
-                continue;
-            };
-            legacy_frontier = children;
-            legacy_frontier.as_slice()
-        };
+        let body = body.expect("returned family dispatch must carry a finite body");
+        let frontier = body.boundary();
         // A token-only body holds no memory, instance, or nested composite a
         // destination fact could overlap: token units are a count, and counts
         // add rather than collide.
-        if !frontier.iter().any(|piece| {
-            piece.is_own()
-                && matches!(
-                    piece.resource(),
-                    Resource::Memory(_)
-                        | Resource::PopulationAuthority(_)
-                        | Resource::Instance(_)
-                        | Resource::Composite { .. }
-                )
-        }) {
+        if !body
+            .frontier
+            .iter()
+            .chain(body.boundary().iter())
+            .any(|piece| {
+                piece.is_own()
+                    && matches!(
+                        piece.resource(),
+                        Resource::Memory(_)
+                            | Resource::Iterated(_)
+                            | Resource::PopulationAuthority(_)
+                            | Resource::Instance(_)
+                            | Resource::Composite { .. }
+                    )
+            })
+        {
             continue;
         }
         // The frontier was evaluated for one unit, and an ordinary composite

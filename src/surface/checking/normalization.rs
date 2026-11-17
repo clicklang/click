@@ -8,9 +8,7 @@ use crate::kernel::{
     bits32_constant, constant_u32, int64_constant, native_constant, uint64_constant,
 };
 #[cfg(test)]
-use crate::surface::planning::solve::{
-    SolveEvidence, plan_explicit_equality_rewrites_from, plan_solve_certificate,
-};
+use crate::surface::planning::solve::plan_explicit_equality_rewrites_from;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface) enum NormalizedProposition {
@@ -102,140 +100,6 @@ pub(in crate::surface) fn normalize_proposition(
 
 pub(in crate::surface) use crate::kernel::proof::equality_rewrite::rewrite_proposition_by_exact_equality;
 
-#[cfg(test)]
-fn check_solve_certificate(
-    proposition: &Proposition,
-    assumptions: &PureFactContext,
-    certificate: &SolveEvidence,
-) -> bool {
-    match certificate {
-        SolveEvidence::Normalize => {
-            matches!(
-                normalize_proposition(proposition),
-                NormalizedProposition::True
-            )
-        }
-        SolveEvidence::Derivation(derivation) => {
-            derivation.conclusion() == proposition && derivation.check(assumptions)
-        }
-    }
-}
-
-#[cfg(test)]
-pub(in crate::surface) fn solve_proposition(
-    proposition: &Proposition,
-    assumptions: &PureFactContext,
-) -> NormalizedProposition {
-    if let Some(certificate) = plan_solve_certificate(proposition, assumptions)
-        && check_solve_certificate(proposition, assumptions, &certificate)
-    {
-        return NormalizedProposition::True;
-    }
-    let simplified = match proposition {
-        Proposition::Equal(left, right) => match normalized_terms_equal(left, right) {
-            Some(true) => NormalizedProposition::True,
-            Some(false) => NormalizedProposition::False,
-            None => NormalizedProposition::Proposition(Proposition::Equal(
-                normalize_term(left),
-                normalize_term(right),
-            )),
-        },
-        Proposition::ConditionIs(condition, expected) => {
-            match normalize_condition(condition, assumptions) {
-                Some(actual) if actual == *expected => NormalizedProposition::True,
-                Some(_) => NormalizedProposition::False,
-                None => NormalizedProposition::Proposition(proposition.clone()),
-            }
-        }
-        Proposition::And(left, right) => {
-            let left = solve_proposition(left, assumptions);
-            let right = solve_proposition(right, assumptions);
-            match (left, right) {
-                (NormalizedProposition::False, _) | (_, NormalizedProposition::False) => {
-                    NormalizedProposition::False
-                }
-                (NormalizedProposition::True, NormalizedProposition::True) => {
-                    NormalizedProposition::True
-                }
-                (NormalizedProposition::True, right) => right,
-                (left, NormalizedProposition::True) => left,
-                (left, right) => NormalizedProposition::Proposition(Proposition::And(
-                    Box::new(left.into_proposition()),
-                    Box::new(right.into_proposition()),
-                )),
-            }
-        }
-        Proposition::Or(left, right) => {
-            let left = solve_proposition(left, assumptions);
-            let right = solve_proposition(right, assumptions);
-            match (left, right) {
-                (NormalizedProposition::True, _) | (_, NormalizedProposition::True) => {
-                    NormalizedProposition::True
-                }
-                (NormalizedProposition::False, NormalizedProposition::False) => {
-                    NormalizedProposition::False
-                }
-                (NormalizedProposition::False, right) => right,
-                (left, NormalizedProposition::False) => left,
-                (left, right) => NormalizedProposition::Proposition(Proposition::Or(
-                    Box::new(left.into_proposition()),
-                    Box::new(right.into_proposition()),
-                )),
-            }
-        }
-        Proposition::Not(body) => match solve_proposition(body, assumptions) {
-            NormalizedProposition::True => NormalizedProposition::False,
-            NormalizedProposition::False => NormalizedProposition::True,
-            body => NormalizedProposition::Proposition(Proposition::Not(Box::new(
-                body.into_proposition(),
-            ))),
-        },
-        Proposition::Implies(left, right) => {
-            let left = solve_proposition(left, assumptions);
-            let right = solve_proposition(right, assumptions);
-            match (left, right) {
-                (NormalizedProposition::False, _) | (_, NormalizedProposition::True) => {
-                    NormalizedProposition::True
-                }
-                (NormalizedProposition::True, right) => right,
-                (_, NormalizedProposition::False) => NormalizedProposition::False,
-                (left, right) => NormalizedProposition::Proposition(Proposition::Implies(
-                    Box::new(left.into_proposition()),
-                    Box::new(right.into_proposition()),
-                )),
-            }
-        }
-        Proposition::ForAll { .. }
-        | Proposition::Exists { .. }
-        | Proposition::Predicate { .. }
-        | Proposition::VolatileAccess(_)
-        | Proposition::ProgramExpressionEvaluates { .. }
-        | Proposition::ProgramConditionEvaluates { .. }
-        | Proposition::ProgramStatementVerifies { .. }
-        | Proposition::ProgramFunctionVerifies { .. }
-        | Proposition::ProgramFunctionPartiallySatisfiesSpecification { .. }
-        | Proposition::MemoryLoads { .. }
-        | Proposition::MemoryReadDefined { .. }
-        | Proposition::ResourceViewable { .. }
-        | Proposition::MemoryLoadable { .. }
-        | Proposition::MemoryCanStore { .. }
-        | Proposition::ResourceSeparate { .. }
-        | Proposition::ResourceComposition(_)
-        | Proposition::ResourceContains { .. }
-        | Proposition::MemoryMutatesOnly { .. }
-        | Proposition::MemoryEffectSummary { .. }
-        | Proposition::HeapAllocationFreed { .. } => {
-            NormalizedProposition::Proposition(proposition.clone())
-        }
-    };
-    if matches!(simplified, NormalizedProposition::True) {
-        // A successful smart tactic must come from the certificate path above.
-        NormalizedProposition::Proposition(proposition.clone())
-    } else {
-        simplified
-    }
-}
-
 impl NormalizedProposition {
     fn into_proposition(self) -> Proposition {
         match self {
@@ -286,18 +150,6 @@ pub(in crate::surface) fn normalize_term(term: &Term) -> Term {
         }
         _ => term.clone(),
     }
-}
-
-#[cfg(test)]
-pub(in crate::surface) fn normalize_condition(
-    condition: &ConditionTerm,
-    assumptions: &PureFactContext,
-) -> Option<bool> {
-    normalize_condition_without_assumptions(condition).or_else(|| {
-        assumptions
-            .selected_for_test()
-            .decide_selected_condition(condition)
-    })
 }
 
 pub(in crate::surface) fn normalize_condition_without_assumptions(

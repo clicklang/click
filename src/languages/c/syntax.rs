@@ -579,11 +579,6 @@ impl CGlobalArray {
         self.length.is_none()
     }
 
-    pub fn interface_type(&self) -> InterfaceType {
-        self.complete_c_type()
-            .expect("incomplete external array has no C type")
-    }
-
     pub(crate) fn complete_c_type(&self) -> Option<InterfaceType> {
         array_type_for_element(self.element_type, self.length?)
     }
@@ -1504,11 +1499,6 @@ impl CArrayInitializer {
         self.length
     }
 
-    /// The value of every element the initializer does not list.
-    pub fn zero(&self) -> &CExpression {
-        &self.zero
-    }
-
     /// The listed elements, ascending by index.
     pub fn elements(&self) -> &[(u32, CExpression)] {
         &self.elements
@@ -1805,10 +1795,6 @@ impl CStaticAggregateArray {
         &self.struct_name
     }
 
-    pub fn layout(&self) -> &RecordLayout {
-        &self.layout
-    }
-
     pub fn length(&self) -> u32 {
         self.length
     }
@@ -2098,10 +2084,6 @@ impl CFieldSourceId {
 impl CFieldSource {
     pub fn id(&self) -> &CFieldSourceId {
         &self.id
-    }
-
-    pub fn position(&self) -> &SourcePosition {
-        &self.position
     }
 
     pub fn field_name(&self) -> &str {
@@ -2475,9 +2457,6 @@ impl std::fmt::Debug for CSite {
 impl CStatementSite {
     pub(crate) fn source_bindings(&self) -> Option<&CSourceBindings> {
         self.source_bindings.as_deref()
-    }
-    pub fn position(&self) -> &SourcePosition {
-        &self.position
     }
 
     /// The statement's place among the statements as written; see the field.
@@ -3769,10 +3748,6 @@ impl CEnumDefinition {
     pub fn value(&self, name: &str) -> Option<i64> {
         self.values.get(name).copied()
     }
-
-    pub fn compatible_type(&self) -> InterfaceType {
-        self.compatible_type
-    }
 }
 
 impl CUnionLayout {
@@ -3804,10 +3779,6 @@ impl CUnionField {
 
     pub fn pointee_is_constant(&self) -> bool {
         self.pointee_constant
-    }
-
-    pub fn enum_name(&self) -> Option<&str> {
-        self.enum_name.as_deref()
     }
 
     pub fn offset_bytes(&self) -> u32 {
