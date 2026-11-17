@@ -1,7 +1,7 @@
 //! Ownership of the complete clause-by-entry-case contract judgment.
 
 use super::*;
-use crate::kernel::proof::{BranchId, ProofBranch, ProofBranchState, ProofFacts, ProofObject};
+use crate::kernel::proof::{BranchId, ProofBranch, ProofBranchState, ProofObject, PureFactStore};
 use crate::persistent::PersistentMap;
 mod root;
 pub(crate) use root::{CompletedContractExecution, WholeContractRoot};
@@ -234,7 +234,7 @@ impl WholeContractProof {
             ProofBranch::new(
                 goal,
                 ProofBranchState {
-                    facts: ProofFacts::default(),
+                    facts: PureFactStore::default(),
                     execution: None,
                 },
             )
@@ -521,7 +521,7 @@ mod tests {
             ProofBranch::new(
                 crate::kernel::proof::ProofObligation::FunctionOutcome(goal),
                 ProofBranchState {
-                    facts: ProofFacts::from_ordered(&[]),
+                    facts: PureFactStore::from_ordered(&[]),
                     execution: None,
                 },
             ),
@@ -653,7 +653,7 @@ mod tests {
             ProofBranch::new(
                 crate::kernel::proof::ProofObligation::FunctionOutcome(goal.clone()),
                 ProofBranchState {
-                    facts: ProofFacts::from_ordered(std::slice::from_ref(&fact)),
+                    facts: PureFactStore::from_ordered(std::slice::from_ref(&fact)),
                     execution: None,
                 },
             ),
@@ -996,7 +996,7 @@ mod tests {
         let routed = proof
             .replace_focused_obligation_and_facts(
                 crate::kernel::proof::ProofObligation::FunctionOutcome(goal),
-                ProofFacts::from_ordered(std::slice::from_ref(&contradiction)),
+                PureFactStore::from_ordered(std::slice::from_ref(&contradiction)),
             )
             .unwrap_or_else(|_| panic!("the outcome is open"));
         routed

@@ -37,7 +37,7 @@ fn annotated_condition_lookup_and_selected_normalization_skip_unrelated_facts() 
         }
         premises.push(wrapped(source.clone()));
         let target = wrapped(cited.clone());
-        let facts = crate::kernel::proof::ProofFacts::from_ordered(&premises);
+        let facts = crate::kernel::proof::PureFactStore::from_ordered(&premises);
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             assert_eq!(facts.assumptions().decide(&comparison(true)), Some(false));
             assert!(facts.available_across_effects(&target, &ExecutionFacts::new()));

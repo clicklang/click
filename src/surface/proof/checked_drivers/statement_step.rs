@@ -2,7 +2,7 @@ use super::*;
 
 pub(in crate::surface::proof) struct CheckedStatementStep {
     pub(in crate::surface::proof) execution: ExecutionProofState,
-    pub(in crate::surface::proof) facts: ProofFacts,
+    pub(in crate::surface::proof) facts: PureFactStore,
     pub(in crate::surface::proof) added_facts: Vec<Proposition>,
 }
 
@@ -12,7 +12,7 @@ pub(in crate::surface::proof) struct CheckedStatementStep {
 pub(in crate::surface::proof) fn check_statement_step_with_policy(
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
-    requirement_pure_facts: &ProofFacts,
+    requirement_pure_facts: &PureFactStore,
     context: Option<&PureFactContext>,
     prerequisite_policy: StatementPrerequisitePolicy,
 ) -> Result<CheckedStatementStep, ClickError> {
@@ -29,7 +29,7 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
         .core
         .checked_step_case_context(execution.presentation.case_assumptions.len());
     let state: &mut ExecutionState = &mut execution.core.state;
-    let assumptions = requirement_pure_facts.store().assumptions();
+    let assumptions = requirement_pure_facts.assumptions();
     // A bare `step()` executes in the whole proof context: prerequisites
     // are proved from it, and nothing is transported per step because the
     // kernel keeps cell names it can prove unwritten from that context.
@@ -113,8 +113,7 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
             step_facts.push(resource_fact);
         }
     }
-    let step_facts =
-        PureFactList::for_statement(step_facts, local_context, requirement_pure_facts.store());
+    let step_facts = PureFactList::for_statement(step_facts, local_context, requirement_pure_facts);
     let apply = |policy, selected_context| {
         execute_step_successor_from_frontier_position(
             execution,

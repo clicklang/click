@@ -119,7 +119,7 @@ fn constructor_partition_transports_pointer_payloads_without_scanning_ambient_fa
     let env = crate::kernel::ExecutionEnvironment::new();
     let mut samples = Vec::new();
     for size in [8, 32, 128] {
-        let mut facts = ProofFacts::default().with_fact(alias.clone());
+        let mut facts = PureFactStore::default().with_fact(alias.clone());
         for index in 0..size {
             facts = facts.with_fact(Proposition::Predicate {
                 name: format!("unrelated_{index}"),
@@ -144,7 +144,7 @@ fn constructor_partition_transports_pointer_payloads_without_scanning_ambient_fa
         assert!(!facts.available(&transported));
         let (unrelated, _, _) = core
             .algebraic_case_partition(
-                &ProofFacts::default(),
+                &PureFactStore::default(),
                 &value,
                 &env,
                 &[],
@@ -220,7 +220,7 @@ fn concrete_constructor_payload_spelling_is_checked_and_indexed() {
     let environment = crate::kernel::ExecutionEnvironment::new();
     let mut samples = Vec::new();
     for size in [16, 64, 256] {
-        let facts = ProofFacts::from_ordered(
+        let facts = PureFactStore::from_ordered(
             &(0..size)
                 .map(|index| Proposition::Predicate {
                     name: format!("ambient{index}"),
@@ -326,7 +326,7 @@ fn return_materialized_reads_scale_with_the_selected_cells() {
             memory = memory.store(pointer.clone(), int32(7));
         }
         let state = ExecutionState::new().with_memory(memory.clone());
-        let mut base = ProofFacts::default();
+        let mut base = PureFactStore::default();
         let (function, mut events) = returned_proposition_trace(&state, &base);
         let initial = base.clone();
         let context = returned_proposition_context(&state);
@@ -359,7 +359,7 @@ fn return_materialized_reads_scale_with_the_selected_cells() {
 fn return_proposition_context_validation_scales_with_introductions() {
     let samples = [16, 32, 64, 128].map(|size| {
         let state = ExecutionState::new();
-        let mut base = ProofFacts::default();
+        let mut base = PureFactStore::default();
         let premises: Vec<_> = (0..size)
             .map(|i| {
                 Proposition::ConditionIs(
@@ -443,7 +443,7 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
     let selected = ResourceFact::own(Resource::Instance(instance.clone()));
     let folded = ExecutionState::new()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));
-    let facts = ProofFacts::default();
+    let facts = PureFactStore::default();
     let (open, _) = crate::kernel::rewrite_resource_instance(
         &folded,
         &instance,
@@ -658,7 +658,7 @@ fn instance_rewrite_certificate_rejects_unrelated_state_and_fact_changes() {
     let selected = ResourceFact::own(Resource::Instance(instance.clone()));
     let before = ExecutionState::new()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));
-    let facts = ProofFacts::default();
+    let facts = PureFactStore::default();
     let (opened, _) = crate::kernel::rewrite_resource_instance(
         &before,
         &instance,
@@ -863,7 +863,7 @@ fn branch_fact_availability_is_exact_and_independent_of_ambient_history() {
     );
     let mut samples = Vec::new();
     for size in [16, 32, 64, 128] {
-        let mut facts = ProofFacts::default().with_fact(strong.clone());
+        let mut facts = PureFactStore::default().with_fact(strong.clone());
         for index in 0..size {
             facts = facts.with_fact(Proposition::ConditionIs(
                 ConditionTerm::signed_less_than(
@@ -921,7 +921,7 @@ fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
     let mut previous = None;
     for count in [16_u32, 64, 256, 1024] {
         let mut memory = Memory::new();
-        let mut parent = ProofFacts::default();
+        let mut parent = PureFactStore::default();
         for index in 0..count {
             memory = memory.store(owner.offset_by_bytes((index + 1) * 8), int32(index));
             parent = parent.with_fact(Proposition::ConditionIs(
@@ -938,7 +938,7 @@ fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
             ConditionTerm::pointer_equal(alias.clone(), owner.clone()),
             true,
         ));
-        let check = |state: &ExecutionState, facts: &ProofFacts, spec: &SpecProposition| {
+        let check = |state: &ExecutionState, facts: &PureFactStore, spec: &SpecProposition| {
             CheckedInterfaceLowering::check(
                 spec,
                 state,
@@ -1039,7 +1039,7 @@ fn interface_lowering_retention_shares_unrelated_history() {
         right: SpecExpression::Value(int32(1)),
     };
     let samples = [16, 32, 64, 128].map(|size| {
-        let mut facts = ProofFacts::default();
+        let mut facts = PureFactStore::default();
         let mut state = ExecutionState::new();
         for index in 0..size {
             facts = facts.with_fact(Proposition::Predicate {
@@ -1115,7 +1115,7 @@ fn constructing_an_instance_fold_pays_for_its_body_once() {
         )
         .with_composite_resource_definitions(vec![definition.clone()]);
         let before = ExecutionState::new();
-        let facts = ProofFacts::default();
+        let facts = PureFactStore::default();
         let (_, direct) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::rewrite_resource_instance_selecting_children(
                 &before,
@@ -1199,7 +1199,7 @@ fn a_checked_interface_join_does_not_reconstruct_a_calls_havoc() {
                 &before_state,
                 &after_state,
                 [&called, &parent],
-                [&ProofFacts::default(), &ProofFacts::default()],
+                [&PureFactStore::default(), &PureFactStore::default()],
                 [&called.effect_facts, &parent.effect_facts],
                 Some([&steps, &[]]),
             )
@@ -1234,7 +1234,7 @@ fn taking_a_constructor_arm_reuses_its_constructed_fact_context() {
                 },
             ))],
         };
-        let root = ProofFacts::default();
+        let root = PureFactStore::default();
         let (partition, _, _) = core
             .algebraic_case_partition(
                 &root,

@@ -70,7 +70,7 @@ fn conjunct_elimination_is_flat_against_unrelated_history_and_facts() {
                 ),
                 _ => false,
             };
-        let facts = ProofFacts::default();
+        let facts = PureFactStore::default();
         let same = |context: PureFactContext| context;
         let variables = BTreeSet::new();
         let (carried, work) = crate::instrumentation::measure_deterministic_work(|| {

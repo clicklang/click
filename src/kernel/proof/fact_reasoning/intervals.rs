@@ -301,7 +301,7 @@ pub(super) fn reduces_one_operation(goal: &Proposition, premises: &[Proposition]
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::proof::{ProofFacts, fact_reasoning::normalize_using_conditions};
+    use crate::kernel::proof::{PureFactStore, fact_reasoning::normalize_using_conditions};
     fn literal(n: i64) -> SharedIntegerTerm {
         IntegerTerm::constant_i64(n).into()
     }
@@ -330,7 +330,7 @@ mod tests {
     #[test]
     fn interval_reduction_requires_the_selected_endpoints() {
         let (goal, bounds) = inputs(MachineBinaryOp::Add, 1);
-        let facts = ProofFacts::from_ordered(&bounds);
+        let facts = PureFactStore::from_ordered(&bounds);
         normalize_using_conditions(&goal, &bounds, &facts).unwrap();
         assert!(normalize_using_conditions(&goal, &bounds[..1], &facts).is_err());
         let wrong = le(literal(0), literal(1));
@@ -360,7 +360,7 @@ mod tests {
         ];
         let goal = le(literal(0), observe(root));
         assert!(
-            normalize_using_conditions(&goal, &selected, &ProofFacts::from_ordered(&selected))
+            normalize_using_conditions(&goal, &selected, &PureFactStore::from_ordered(&selected))
                 .is_err()
         );
     }
@@ -389,7 +389,7 @@ mod tests {
         ] {
             let (goal, bounds) = inputs(op, n);
             assert!(
-                normalize_using_conditions(&goal, &bounds, &ProofFacts::from_ordered(&bounds))
+                normalize_using_conditions(&goal, &bounds, &PureFactStore::from_ordered(&bounds))
                     .is_err()
             );
         }

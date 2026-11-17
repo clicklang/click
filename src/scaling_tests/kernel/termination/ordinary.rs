@@ -27,7 +27,7 @@ fn selected_termination_steps_do_not_visit_unrelated_functions_or_goals() {
         );
         let goal = scope.atom(TerminationAtomKind::Returns, "leaf0").unwrap();
         let (plan, work) = crate::instrumentation::measure_deterministic_work(|| {
-            scope.plan(&goal, &ProofFacts::default()).unwrap()
+            scope.plan(&goal, &PureFactStore::default()).unwrap()
         });
         assert_eq!(plan.len(), 2);
         assert!(work <= 16, "{size} functions: {work} plan work");
@@ -48,7 +48,7 @@ fn whole_termination_proof_and_completion_scale_with_explicit_output() {
         let ((proof, work), index_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
                 let mut proof = proof;
-                for step in scope.plan(scope.goal(), &ProofFacts::default()).unwrap() {
+                for step in scope.plan(scope.goal(), &PureFactStore::default()).unwrap() {
                     proof = proof.check_termination(&step).unwrap().0;
                 }
                 proof
@@ -80,7 +80,7 @@ fn termination_dependency_planning_stops_at_the_ordinary_run_budget() {
         let scope = scope(size);
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::instrumentation::with_run_work_limit(8, || {
-                scope.plan(scope.goal(), &ProofFacts::default())
+                scope.plan(scope.goal(), &PureFactStore::default())
             })
         });
         assert!(result.unwrap_err().contains("solve budget"));
@@ -97,7 +97,7 @@ fn publishing_selected_promises_does_not_visit_unrelated_rule_subjects() {
         let scope = scope_requested(size, BTreeSet::from(["leaf0".into()]));
         assert_eq!(scope.requested_subjects.len(), 1);
         let mut proof = Proof::for_program_termination((), scope.clone(), ());
-        for step in scope.plan(scope.goal(), &ProofFacts::default()).unwrap() {
+        for step in scope.plan(scope.goal(), &PureFactStore::default()).unwrap() {
             proof = proof.check_termination(&step).unwrap().0;
         }
         let proof = proof

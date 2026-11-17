@@ -392,7 +392,7 @@ mod tests {
         assert!(context.pointer_designations_match(&displaced, &b));
         assert!(context.pointers_known_equal(displaced.pointer(), b.pointer()));
         assert!(context.contains_known(&goal));
-        let proof_facts = crate::kernel::proof::ProofFacts::from_ordered(&facts);
+        let proof_facts = crate::kernel::proof::PureFactStore::from_ordered(&facts);
         assert!(
             crate::kernel::proof::fact_reasoning::normalize_using_conditions(
                 &goal,
