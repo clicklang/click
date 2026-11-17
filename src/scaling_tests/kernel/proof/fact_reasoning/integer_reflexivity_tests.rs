@@ -42,10 +42,16 @@ fn listed_loaded_fold_matching_tracks_explicit_premises_not_memory_history() {
     let mut selected = Vec::new();
     for size in [16u32, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer { block: "listed-fold".into(), offset: PointerOffsetTerm::Constant(0) };
+        let pointer = Pointer {
+            block: "listed-fold".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
         let mut memory = Memory::new().with_block("listed-fold", size * 4);
         for index in 0..size {
-            memory = memory.store(pointer.offset_by_bytes(index * 4), ProgramValue::Int32(MachineTerm::constant(index)));
+            memory = memory.store(
+                pointer.offset_by_bytes(index * 4),
+                ProgramValue::Int32(MachineTerm::constant(index)),
+            );
         }
         let memory = crate::kernel::intern_memory(memory);
         let required = listed_loaded_fold(&memory, 981_000, 989_000);
@@ -55,12 +61,30 @@ fn listed_loaded_fold_matching_tracks_explicit_premises_not_memory_history() {
         });
         assert!(result);
         fixed.push(work);
-        let mut premises = (0..size).map(|index| listed_loaded_fold(&memory, 983_000 + u64::from(index) * 4, 990_000 + u64::from(index))).collect::<Vec<_>>();
+        let mut premises = (0..size)
+            .map(|index| {
+                listed_loaded_fold(
+                    &memory,
+                    983_000 + u64::from(index) * 4,
+                    990_000 + u64::from(index),
+                )
+            })
+            .collect::<Vec<_>>();
         premises.insert(0, matching);
-        let (result, work) = crate::instrumentation::measure_deterministic_work(|| listed_comparison_fact_is_available(&required, &premises));
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            listed_comparison_fact_is_available(&required, &premises)
+        });
         assert!(result);
         selected.push(work);
     }
-    assert!(fixed[0] > 0 && fixed.iter().all(|work| *work == fixed[0]), "{fixed:?}");
-    assert!(selected.windows(2).all(|pair| pair[1] <= pair[0] * 5 + 1024), "{selected:?}");
+    assert!(
+        fixed[0] > 0 && fixed.iter().all(|work| *work == fixed[0]),
+        "{fixed:?}"
+    );
+    assert!(
+        selected
+            .windows(2)
+            .all(|pair| pair[1] <= pair[0] * 5 + 1024),
+        "{selected:?}"
+    );
 }
