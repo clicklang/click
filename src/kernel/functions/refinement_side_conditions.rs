@@ -315,7 +315,8 @@ pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
             | SpecProposition::ExistsAlgebraic { .. }
             | SpecProposition::ExistsPointer { .. }
             | SpecProposition::IntegerComparison { .. } => Visit::Descend,
-            SpecProposition::Predicate { .. }
+            SpecProposition::MutexHeld(_)
+            | SpecProposition::Predicate { .. }
             | SpecProposition::ResourceSeparate { .. }
             | SpecProposition::ResourceViewable { .. }
             | SpecProposition::ResourceContains { .. }
