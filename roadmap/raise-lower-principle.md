@@ -945,7 +945,9 @@ recording (121 refused lowerings, zero changed terms or paths), and quality
 checks (script exit zero). An incremental compiler fingerprint error was
 resolved by clearing only the failed crate cache and rebuilding with unchanged
 settings. The old private native Integer-match factory has no remaining
-callers and is removed. Upstream integration and PR delivery remain pending.
+callers and is removed. After integrating upstream `affad43dd`, all 516
+focused checks and quality checks passed again (script exit zero). PR delivery
+is pending.
 Full nightly was not run.
 
 ## Chunk 3: machine-valued pure-function results
