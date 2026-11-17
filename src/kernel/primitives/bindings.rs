@@ -488,7 +488,7 @@ pub enum BindingName {
     /// The address carrying a reference binding. The referent's binding is
     /// structural identity; an address-looking source string is never a carrier.
     ReferenceCarrier(Arc<BindingName>),
-    /// The length component of a Rust slice parameter in the current function.
+    /// The length component of a Rust slice binding.
     SliceLength(SliceLengthBinding),
 }
 
@@ -497,20 +497,42 @@ pub struct SliceLengthBinding(Arc<SliceLengthMetadata>);
 
 #[derive(Debug)]
 struct SliceLengthMetadata {
-    slice: Arc<str>,
+    owner: SliceLengthOwner,
     /// Proof spelling for interfaces that also carry presentation names.
     spelling: Arc<str>,
 }
 
+#[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
+enum SliceLengthOwner {
+    Parameter(Arc<str>),
+    Local(LocalBindingId),
+}
+
 impl SliceLengthBinding {
-    pub(super) fn slice(&self) -> &Arc<str> {
-        &self.0.slice
+    pub(super) fn parameter(&self) -> Option<&str> {
+        match &self.0.owner {
+            SliceLengthOwner::Parameter(name) => Some(name),
+            SliceLengthOwner::Local(_) => None,
+        }
+    }
+
+    pub(super) fn local(&self) -> Option<&LocalBindingId> {
+        match &self.0.owner {
+            SliceLengthOwner::Local(declaration) => Some(declaration),
+            SliceLengthOwner::Parameter(_) => None,
+        }
+    }
+}
+
+impl std::fmt::Display for SliceLengthBinding {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0.spelling)
     }
 }
 
 impl PartialEq for SliceLengthBinding {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0) || self.slice() == other.slice()
+        Arc::ptr_eq(&self.0, &other.0) || self.0.owner == other.0.owner
     }
 }
 impl Eq for SliceLengthBinding {}
@@ -521,25 +543,47 @@ impl PartialOrd for SliceLengthBinding {
 }
 impl Ord for SliceLengthBinding {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.slice().cmp(other.slice())
+        self.0.owner.cmp(&other.0.owner)
     }
 }
 impl Hash for SliceLengthBinding {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.slice().hash(state);
+        match &self.0.owner {
+            // Preserve the existing parameter-slot hash.
+            SliceLengthOwner::Parameter(name) => name.hash(state),
+            SliceLengthOwner::Local(declaration) => declaration.hash(state),
+        }
     }
 }
 
 impl BindingName {
     pub(crate) fn slice_length(slice: &str) -> Self {
         Self::SliceLength(SliceLengthBinding(Arc::new(SliceLengthMetadata {
-            slice: Arc::from(slice),
+            owner: SliceLengthOwner::Parameter(Arc::from(slice)),
             spelling: Arc::from(format!("{slice}.len()")),
         })))
     }
+    pub(crate) fn local_slice_length(declaration: LocalBindingId) -> Self {
+        let spelling = format!(
+            "{}.len()",
+            declaration.spelling().expect("Rust slice place")
+        );
+        Self::SliceLength(SliceLengthBinding(Arc::new(SliceLengthMetadata {
+            owner: SliceLengthOwner::Local(declaration),
+            spelling: Arc::from(spelling),
+        })))
+    }
+
     pub(crate) fn slice_length_of(&self) -> Option<&str> {
         match self {
-            Self::SliceLength(length) => Some(length.slice()),
+            Self::SliceLength(length) => length.parameter(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn slice_length_local(&self) -> Option<&LocalBindingId> {
+        match self {
+            Self::SliceLength(length) => length.local(),
             _ => None,
         }
     }
@@ -554,7 +598,7 @@ impl BindingName {
     /// Key for Surface tables that carry parameter metadata by proof spelling.
     pub(crate) fn metadata_name(&self) -> Option<&str> {
         match self {
-            Self::SliceLength(length) => Some(&length.0.spelling),
+            Self::SliceLength(length) if length.parameter().is_some() => Some(&length.0.spelling),
             _ => self.unresolved_name(),
         }
     }

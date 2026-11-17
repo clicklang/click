@@ -1228,16 +1228,20 @@ impl Parser {
     }
 
     pub(super) fn take_rust_slice_len(&mut self, name: &str) -> Option<crate::kernel::BindingName> {
-        if !self.rust_slice_params.contains(name)
-            || self.peek() != Some(&Token::Dot)
+        if self.peek() != Some(&Token::Dot)
             || self.peek_next() != Some(&Token::Ident("len".into()))
             || self.tokens.get(self.position + 2) != Some(&Token::LParen)
             || self.tokens.get(self.position + 3) != Some(&Token::RParen)
         {
             return None;
         }
+        let length = if self.rust_slice_params.contains(name) {
+            crate::kernel::BindingName::slice_length(name)
+        } else {
+            self.rust_slice_locals.get(name)?.clone()
+        };
         self.position += 4;
-        Some(crate::kernel::BindingName::slice_length(name))
+        Some(length)
     }
 
     /// `&T` and `&mut T` in a signature. The parameter is the pointer that

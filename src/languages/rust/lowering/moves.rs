@@ -231,12 +231,9 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     pointee: element.clone(),
                 })?
                 .to_kernel_type();
-                let length = format!("{}_len", local.name);
-                if !cx.locals.insert(length.clone()) {
-                    return Err("MIR scalar slice length collision".into());
-                }
+                let length = cx.declare_slice_length(&local.name)?;
                 cx.shared_scalar_slices
-                    .insert(local.name.clone(), (length.as_str().into(), element_type));
+                    .insert(local.name.clone(), (length.clone(), element_type));
                 program_seq(
                     program_declare_with_all_qualifiers(
                         &local.name,
@@ -250,12 +247,9 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                 )
             }
             Type::ByteSlice { mutable } => {
-                let length = format!("{}_len", local.name);
-                if !cx.locals.insert(length.clone()) {
-                    return Err("MIR slice local length collision".into());
-                }
+                let length = cx.declare_slice_length(&local.name)?;
                 cx.slices
-                    .insert(local.name.clone(), (length.as_str().into(), !mutable));
+                    .insert(local.name.clone(), (length.clone(), !mutable));
                 program_seq(
                     program_declare_with_all_qualifiers(
                         &local.name,
@@ -1716,6 +1710,8 @@ mod tests {
                 mir_point: None,
                 mir_nodes: BTreeMap::new(),
                 next_temporary: 0,
+                slice_local_owner: LocalFunctionId::new(None, "test".into()),
+                next_slice_local: 0,
                 next_call_result: std::cell::Cell::new(0),
                 loop_iterators: Vec::new(),
                 locals: BTreeSet::new(),

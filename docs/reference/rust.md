@@ -1100,8 +1100,9 @@ the operands themselves
 Shared `&[u8]` and mutable `&mut [u8]` parameters, local copies and reborrows,
 builtin `.len()`, indexed reads and writes, and direct slice calls are supported.
 Slice references pass a pointer and a length. A shared slice has a shared
-pointer and a mutable slice has a mutable pointer. Proofs refer to the
-length of a parameter `bytes` as `bytes.len()`.
+pointer and a mutable slice has a mutable pointer. Proofs use `bytes.len()`
+for a slice parameter or local named `bytes`. After a local is reassigned,
+`at(point, bytes.len())` reads the length it held at the selected point.
 On the pinned target, `usize` is a 64-bit unsigned value, including lengths,
 index literals, comparisons, casts, returns, and general scalar arithmetic.
 Addition, subtraction, and multiplication require checked overflow freedom at

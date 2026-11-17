@@ -184,6 +184,8 @@ pub(in crate::surface) struct FunctionLocals {
 #[derive(Clone, Default)]
 pub(in crate::surface) struct SourceBindingIndex {
     declarations: BTreeMap<crate::kernel::LocalBindingId, SourceBindingInfo>,
+    rust_slice_locals:
+        BTreeMap<String, std::sync::Arc<BTreeMap<String, crate::kernel::BindingName>>>,
     statics: BTreeMap<crate::kernel::StaticBindingId, SourceBindingInfo>,
     static_files: BTreeSet<Option<String>>,
     owners: BTreeMap<String, BTreeSet<Option<String>>>,
@@ -922,9 +924,11 @@ struct Parser {
     /// declaration, so it keeps the C type exactly, `long` apart from
     /// `long long`; a specification type elsewhere names a representation.
     exact_long_rank: bool,
-    /// The slice parameters of the Rust signature being parsed. Each is one
-    /// name in the sidecar and a pointer with a `name_len` length underneath.
+    /// Rust slice parameters of the current signature, which have a pointer
+    /// and a typed length component.
     rust_slice_params: BTreeSet<String>,
+    /// Slice local length bindings by place in the selected Rust function.
+    rust_slice_locals: std::sync::Arc<BTreeMap<String, crate::kernel::BindingName>>,
     /// The element type of each slice parameter read so far, by name: the
     /// latest parameter of that name, which is the current declaration's.
     rust_slice_elements: BinderMap<InterfaceType>,
@@ -1292,9 +1296,17 @@ impl ProgramLayouts {
         // Declarations normally share one owner. Retain the typed owner so a
         // long function/source spelling is copied once, not per temporary.
         let mut last_owner = None;
+        let mut slice_locals = BTreeMap::new();
         let mut record = |binding: &crate::kernel::BindingName,
                           site: Option<&syntax::CSite>,
                           materialized: bool| {
+            if let Some(local) = binding.slice_length_local() {
+                slice_locals.insert(
+                    local.spelling().expect("Rust slice place").to_owned(),
+                    binding.clone(),
+                );
+                return;
+            }
             let Some(id) = binding.local_id() else {
                 return;
             };
@@ -1435,6 +1447,12 @@ impl ProgramLayouts {
                     _ => {}
                 }
             }
+        }
+        if !slice_locals.is_empty() {
+            index.rust_slice_locals.insert(
+                function.source_name().to_owned(),
+                std::sync::Arc::new(slice_locals),
+            );
         }
     }
 
@@ -1889,6 +1907,7 @@ impl Parser {
             int64_t_rank: LongRank::Long,
             exact_long_rank: false,
             rust_slice_params: BTreeSet::new(),
+            rust_slice_locals: Default::default(),
             rust_slice_elements: BinderMap::new(),
             rust_vec_params: BTreeMap::new(),
             rust_loop_iterators: Vec::new(),
@@ -4904,6 +4923,14 @@ impl Parser {
             .get(&table_name)
             .map(|locals| locals.loop_iterators.clone())
             .unwrap_or_default();
+        let previous_slice_locals = std::mem::replace(
+            &mut self.rust_slice_locals,
+            self.local_bindings
+                .rust_slice_locals
+                .get(&table_name)
+                .cloned()
+                .unwrap_or_default(),
+        );
         let signature = signature.with_rust_loop_iterators(&loop_iterators);
         let previous_loop_iterators =
             std::mem::replace(&mut self.rust_loop_iterators, loop_iterators);
@@ -5523,6 +5550,7 @@ impl Parser {
         self.names.program_parameter_types = previous_c_parameter_types;
         self.names.program_object_names = previous_c_object_names;
         self.rust_loop_iterators = previous_loop_iterators;
+        self.rust_slice_locals = previous_slice_locals;
         let parameter_struct_casts = std::mem::replace(
             &mut self.names.parameter_struct_casts,
             previous_parameter_struct_casts,
@@ -6103,21 +6131,23 @@ impl Parser {
         Ok(())
     }
 
-    /// A C variable, or the length a slice parameter's `name.len()` denotes.
+    /// A program variable, or the length a slice's `name.len()` denotes.
     #[inline(never)]
     fn c_variable_expression(&mut self, name: String) -> Result<ContractExpression, ClickError> {
         if let Some(expression) = self.take_rust_iterator_method(&name, None)? {
             return Ok(expression);
         }
+        if let Some(length) = self.take_rust_slice_len(&name) {
+            return Ok(ContractExpression::ProgramExpression(
+                ProgramExpression::Variable(length),
+            ));
+        }
         self.refuse_unknown_loop_value(&name)?;
         if let Some(expression) = self.take_rust_vec_method(&name)? {
             return Ok(expression);
         }
-        let name = self
-            .take_rust_slice_len(&name)
-            .unwrap_or_else(|| name.into());
         Ok(ContractExpression::ProgramExpression(
-            ProgramExpression::Variable(name),
+            ProgramExpression::Variable(name.into()),
         ))
     }
 
@@ -16875,9 +16905,11 @@ impl Parser {
                 })
             }
             Some(Token::Ident(name)) => {
+                if let Some(length) = self.take_rust_slice_len(&name) {
+                    return Ok(CExpression::Variable(length));
+                }
                 self.refuse_unknown_loop_value(&name)?;
-                let name = self.take_rust_slice_len(&name).unwrap_or_else(|| name.into());
-                Ok(CExpression::Variable(name))
+                Ok(CExpression::Variable(name.into()))
             }
             Some(Token::RustInteger(literal)) => literal.program_expression(false).map_err(|message| self.error(message)),
             Some(Token::Number(value)) => Ok(CExpression::Int32Literal(value)),

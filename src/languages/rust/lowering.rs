@@ -743,6 +743,11 @@ fn lower_function(
         mir_point: None,
         mir_nodes: BTreeMap::new(),
         next_temporary: 0,
+        slice_local_owner: LocalFunctionId::new(
+            Some(export.logical_source.clone()),
+            f.name.clone(),
+        ),
+        next_slice_local: 0,
         next_call_result: std::cell::Cell::new(next_call_result),
         loop_iterators: Vec::new(),
         locals,
@@ -831,6 +836,8 @@ struct Context<'a> {
     mir_point: Option<super::borrow_frontiers::MirPoint>,
     mir_nodes: BTreeMap<usize, usize>,
     next_temporary: u32,
+    slice_local_owner: LocalFunctionId,
+    next_slice_local: u32,
     next_call_result: std::cell::Cell<u32>,
     /// The iterator each loop advances, by loop index in preorder.
     loop_iterators: Vec<Option<crate::languages::interface::RustLoopIterator>>,
@@ -901,6 +908,17 @@ impl Context<'_> {
         }
         statement
     }
+    fn declare_slice_length(&mut self, place: &str) -> Result<BindingName, String> {
+        let ordinal = self.next_slice_local;
+        self.next_slice_local = ordinal.checked_add(1).ok_or("too many Rust slice locals")?;
+        Ok(BindingName::local_slice_length(LocalBindingId::new(
+            self.slice_local_owner.clone(),
+            false,
+            ordinal,
+            Some(place.to_owned()),
+        )))
+    }
+
     fn body(&mut self, body: &[S]) -> Result<ProgramStatement, String> {
         let mut result = program_skip();
         for s in body {
@@ -935,12 +953,9 @@ impl Context<'_> {
                 }
                 if let Type::ByteSlice { mutable } = &place.value_type {
                     let (pointer, length_value) = self.slice_parts(initializer)?;
-                    let length = format!("{}_len", place.name);
-                    if !self.locals.insert(length.clone()) {
-                        return Err("slice local length collision".into());
-                    }
+                    let length = self.declare_slice_length(&place.name)?;
                     self.slices
-                        .insert(place.name.clone(), (length.as_str().into(), !mutable));
+                        .insert(place.name.clone(), (length.clone(), !mutable));
                     return Ok(program_seq(
                         program_declare_with_all_qualifiers(
                             &place.name,
@@ -1209,14 +1224,12 @@ impl Context<'_> {
                 return Err("split_at results must be shared byte slices".into());
             }
             let length_name = if declare {
-                let length_name = format!("{}_len", place.name);
-                if !self.locals.insert(place.name.clone())
-                    || !self.locals.insert(length_name.clone())
-                {
+                if !self.locals.insert(place.name.clone()) {
                     return Err("duplicate split_at local identity".into());
                 }
+                let length_name = self.declare_slice_length(&place.name)?;
                 self.slices
-                    .insert(place.name.clone(), (length_name.as_str().into(), true));
+                    .insert(place.name.clone(), (length_name.clone(), true));
                 result = program_seq(
                     result,
                     program_seq(
@@ -1231,7 +1244,7 @@ impl Context<'_> {
                         program_declare(&length_name, ProgramType::UInt64),
                     ),
                 );
-                length_name.into()
+                length_name
             } else {
                 self.slices
                     .get(&place.name)

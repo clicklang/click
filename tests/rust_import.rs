@@ -6787,6 +6787,69 @@ fn rust_methods_resolve_by_the_receivers_type() {
 }
 
 #[test]
+fn rust_slice_local_lengths_follow_a_recorded_point() {
+    let p = Project::new(
+        r#"
+pub fn retarget(bytes: &[u8], left_len: usize) -> usize {
+    let (mut left, right) = bytes.split_at(1);
+    let first = left.len();
+    left = right;
+    first + left.len() + left_len
+}
+pub fn scalar(words: &[u32], view_len: usize) -> usize {
+    let view = words;
+    view.len() ^ view_len
+}
+"#,
+    );
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    let sidecar = r#"verifying "borrow.rs";
+fn retarget(bytes: &[u8], left_len: usize) -> usize {
+    requires bytes.len() == 4u64;
+    requires left_len == 7u64;
+    ensures result == 11u64;
+} by {
+    step_until(statement(1));
+    have left.len() == 1u64;
+    step_until(statement(3));
+    have left.len() == 3u64;
+    have at(statement(1).entry, left.len()) == 1u64;
+    have left_len == 7u64;
+    step_until(function.exit);
+    solve();
+}
+fn scalar(words: &[u32], view_len: usize) -> usize {
+    requires words.len() == 4u64;
+    requires view_len == 2u64;
+    ensures result == 6u64;
+}
+"#;
+    let verify = |source: &str| {
+        ProgramVerificationSession::new_program_prepared(source, &prepared)
+            .map(|_| ())
+            .map_err(|error| error.report())
+    };
+    verify(sidecar).unwrap();
+    assert!(
+        verify(&sidecar.replace(
+            "at(statement(1).entry, left.len()) == 1u64",
+            "at(statement(1).entry, left.len()) == 3u64",
+        ))
+        .is_err()
+    );
+    let claim = "retarget.contract";
+    let expanded =
+        click::surface::expand_program_prepared_claim_source_by_label(sidecar, &prepared, claim)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(
+        expanded.contains("at(statement(1).entry, left.len())"),
+        "{expanded}"
+    );
+    click::surface::without_implicit_solve_for_claim(claim, || verify(&expanded)).unwrap();
+}
+
+#[test]
 fn rust_slice_parameter_length_and_source_parameter_are_distinct() {
     let p = Project::new(
         "pub fn byte_count(bytes: &[u8], bytes_len: usize) -> usize { bytes.len() + bytes_len }

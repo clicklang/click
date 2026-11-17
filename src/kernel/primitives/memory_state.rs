@@ -49,7 +49,11 @@ fn write_havoc_string(identity: &mut String, tag: &str, value: &str) {
 fn write_havoc_block(identity: &mut String, block: AddressBase) {
     match block {
         AddressBase::SliceLength { slice, instance } => {
-            write_havoc_string(identity, "bslice", &slice);
+            if let Some(parameter) = slice.parameter() {
+                write_havoc_string(identity, "bslice", parameter);
+            } else if let Some(local) = slice.local() {
+                write_havoc_string(identity, "bslocal", &local.canonical().to_string());
+            }
             let _ = write!(identity, "{instance:?};");
         }
         AddressBase::ReferenceCarrier { referent, instance } => {
@@ -7676,7 +7680,7 @@ impl SymbolicMemory {
         let name = name.into();
         let block = match name {
             BindingName::SliceLength(length) => AddressBase::SliceLength {
-                slice: length.slice().clone(),
+                slice: length,
                 instance: LocalStorageInstance::ValueParameter,
             },
             BindingName::ReferenceCarrier(referent) => AddressBase::ReferenceCarrier {
@@ -7705,7 +7709,7 @@ impl SymbolicMemory {
         let name = name.into();
         let block = match name {
             BindingName::SliceLength(length) => AddressBase::SliceLength {
-                slice: length.slice().clone(),
+                slice: length,
                 instance: LocalStorageInstance::Implicit,
             },
             BindingName::ReferenceCarrier(referent) => AddressBase::ReferenceCarrier {
@@ -7735,7 +7739,7 @@ impl SymbolicMemory {
         let name = name.into();
         let block = match name {
             BindingName::SliceLength(length) => AddressBase::SliceLength {
-                slice: length.slice().clone(),
+                slice: length,
                 instance: LocalStorageInstance::Lifetime(lifetime),
             },
             BindingName::ReferenceCarrier(referent) => AddressBase::ReferenceCarrier {
@@ -7823,7 +7827,7 @@ impl SymbolicMemory {
         match name.into() {
             BindingName::SliceLength(length) => Address {
                 base: AddressBase::SliceLength {
-                    slice: length.slice().clone(),
+                    slice: length,
                     instance: LocalStorageInstance::Frame(frame),
                 },
                 offset: AddressOffset::Constant(0),

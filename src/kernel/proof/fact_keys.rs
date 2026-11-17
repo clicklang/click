@@ -1038,7 +1038,10 @@ enum AlphaPointerOffsetNode {
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum AlphaAddressBaseKey {
-    SliceLength(std::sync::Arc<str>, crate::kernel::LocalStorageInstance),
+    SliceLength(
+        crate::kernel::SliceLengthBinding,
+        crate::kernel::LocalStorageInstance,
+    ),
     ReferenceCarrier(
         std::sync::Arc<crate::kernel::BindingName>,
         crate::kernel::LocalStorageInstance,

@@ -16,7 +16,8 @@ use std::sync::{Arc, OnceLock};
 mod bindings;
 pub use bindings::{
     BindingDeclaration, BindingName, GeneratedBinderId, LocalBindingId, LocalFunctionId,
-    LocalStorageInstance, StaticBindingId, StaticBindingMetadata, StaticBindingOwner,
+    LocalStorageInstance, SliceLengthBinding, StaticBindingId, StaticBindingMetadata,
+    StaticBindingOwner,
 };
 
 /// Opaque creation identity carried by a modeled `pthread_t` word. Its ID is
@@ -3050,9 +3051,9 @@ pub enum AddressBase {
         referent: Arc<BindingName>,
         instance: LocalStorageInstance,
     },
-    /// Internal bookkeeping for the length component of a slice parameter.
+    /// Internal storage of the length component of a slice.
     SliceLength {
-        slice: Arc<str>,
+        slice: SliceLengthBinding,
         instance: LocalStorageInstance,
     },
     StaticObject {
@@ -3463,7 +3464,7 @@ impl std::fmt::Display for AddressBase {
             Self::ContractResult => formatter.write_str("result.storage()"),
             Self::ContractException => formatter.write_str("exception.storage()"),
             Self::SliceLength { slice, instance } => {
-                write!(formatter, "{slice}.len().storage({instance})")
+                write!(formatter, "{slice}.storage({instance})")
             }
             Self::StaticObject { binding } => write!(formatter, "{binding}.storage()"),
             Self::ReferenceCarrier { referent, instance } => {

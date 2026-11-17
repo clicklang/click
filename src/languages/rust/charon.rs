@@ -3580,14 +3580,10 @@ pub(super) fn decode_crate(
                 let mut components = Vec::new();
                 for index in 0..2 {
                     let mut component = format!("{n}_slice_{index}");
-                    while reserved.contains(&format!("{component}_len"))
-                        || reserved.contains(&component)
-                        || local_names.contains(&component)
-                    {
+                    while reserved.contains(&component) || local_names.contains(&component) {
                         component.push('_');
                     }
                     reserved.insert(component.clone());
-                    reserved.insert(format!("{component}_len"));
                     local_names.insert(component.clone());
                     locals.push(out::Place {
                         name: component.clone(),
