@@ -255,3 +255,41 @@ mod tests;
 mod scaling_tests {
     include!("../../../scaling_tests/kernel/primitives/resource_algebra/ownership_admission.rs");
 }
+
+impl ResourceContext {
+    /// Apply a checked loan's restoration recipe. Old separation comes from
+    /// the entry partition and the ledger; return-delta checks happen once at
+    /// the recovery boundary, never by re-admitting this old footprint.
+    pub(in crate::kernel) fn restore_checked_escrow(
+        mut self,
+        member: &crate::kernel::loans::RecoveredEscrow,
+        assumptions: &PureFactContext,
+    ) -> Result<Self, ResourceContextValidityError> {
+        #[cfg(test)]
+        let _fast = crate::kernel::search::FastOperationScope::enter("restore checked escrow");
+        if self
+            .storage
+            .entry_by_occurrence
+            .contains_key(&member.occurrence())
+        {
+            return Err(ResourceContextValidityError::DuplicateOwnedResourceFact(
+                member.fact().clone(),
+            ));
+        }
+        if self.storage.facts.is_empty() {
+            self.synchronize_memory_equalities(assumptions);
+        }
+        self.insert_fact_with_support_occurrence_and_metadata_at(
+            member.fact().clone(),
+            None,
+            None,
+            None,
+            Some(member.occurrence()),
+        );
+        if let Some(binding) = member.binding() {
+            self = self.with_loan_dependency(member.occurrence(), binding.clone());
+        }
+        self.advance_prepared_memory_equalities(assumptions);
+        Ok(self)
+    }
+}

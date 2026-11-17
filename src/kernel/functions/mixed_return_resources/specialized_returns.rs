@@ -294,13 +294,8 @@ pub(super) fn construct(
             && let Some(transfer) = consumed.children.get(&vec![clause, index])
         {
             ReturnOwnershipOrigin::ConsumedCell(*transfer)
-        } else if let ReturnResourceComposition::BodyAllocations {
-            creator, events, ..
-        } = composition
-        {
-            FreshAllocationReturn::from_created_owner(&fact, creator, events)
-                .map(ReturnOwnershipOrigin::FreshAllocation)
-                .unwrap_or(ReturnOwnershipOrigin::Description)
+        } else if let Some(fresh) = composition.fresh_allocation(&fact) {
+            ReturnOwnershipOrigin::FreshAllocation(fresh)
         } else {
             ReturnOwnershipOrigin::Description
         };

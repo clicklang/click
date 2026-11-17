@@ -1683,6 +1683,11 @@ fn migrated_return_partitions_and_boundaries_cannot_restore_legacy_search() {
             "src/kernel/functions.rs",
             "produced_composite_frontier_conflict",
         ),
+        (
+            "src/kernel/functions.rs",
+            "recover_candidate_stable_view_resources",
+        ),
+        ("src/kernel/loans.rs", "recover_stable_views_impl"),
     ] {
         for target in [
             "try_compose_with_legacy_discovery_and_occurrences",

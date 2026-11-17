@@ -1465,6 +1465,17 @@ impl ResourceContext {
         // alias pointer values to them. The existing index certifies that no
         // opaque owner is hidden outside this storage partition. Result and
         // exception bookkeeping slots are not physical automatic objects.
+        if matches!(
+            range.base().block,
+            PointerBlock::ExternalArgument | PointerBlock::ExternalObject(_)
+        ) && self.storage.index.owned_automatic_memory_by_block.len() == blocks.len()
+            && !blocks.contains_key(&PointerBlock::ContractResult)
+            && !blocks.contains_key(&PointerBlock::ContractException)
+        {
+            // Every held block is physical automatic storage, which the
+            // structural rule separates from incoming argument memory.
+            return Clear;
+        }
         let automatic_partition = range.base().block.is_local_block()
             && !matches!(
                 range.base().block,
@@ -1607,6 +1618,9 @@ impl ResourceContext {
         {
             return Clear;
         }
+        if matches!(range.base().block, PointerBlock::StringLiteral { .. }) {
+            return Unsupported;
+        }
         if let decided @ (Clear | Overlap(_)) = self.structural_owned_overlap(fact, assumptions) {
             return decided;
         }
@@ -1620,6 +1634,72 @@ impl ResourceContext {
                 .iter()
                 .next()
                 .expect("singleton owner");
+            // Existing structural storage separation needs no alias walk or
+            // prepared graph, and is independent of interval endpoints.
+            if held.base().blocks_proven_distinct(range.base()) {
+                return Clear;
+            }
+            let selected_entry = || {
+                self.storage
+                    .index
+                    .owned_memory_by_block
+                    .get(&held.base().block)
+                    .and_then(|entries| entries.iter().next())
+                    .copied()
+            };
+            if let (
+                Some((left_origin, left_start, left_end)),
+                Some((right_origin, right_start, right_end)),
+            ) = (
+                super::resource_algebra::constant_memory_coordinates(held),
+                super::resource_algebra::constant_memory_coordinates(range),
+            ) && left_origin == right_origin
+            {
+                if left_start >= left_end
+                    || right_start >= right_end
+                    || left_end <= right_start
+                    || right_end <= left_start
+                {
+                    return Clear;
+                }
+                if let Some(entry) = selected_entry() {
+                    return Overlap(entry);
+                }
+            }
+            // Register only the two explicit ranges, never the ambient frame.
+            let graph = &assumptions.equality_graph;
+            graph.footprint_class(held);
+            graph.footprint_class(range);
+            if let (Some(ls), Some(le), Some(rs), Some(re)) = (
+                graph.canonical_pointer(&held.start_pointer()),
+                graph.canonical_pointer(&held.end_pointer()),
+                graph.canonical_pointer(&range.start_pointer()),
+                graph.canonical_pointer(&range.end_pointer()),
+            ) && ls.representative == le.representative
+                && ls.representative == rs.representative
+                && ls.representative == re.representative
+            {
+                let left_end = le.offset.constant_difference(&rs.offset);
+                let right_end = re.offset.constant_difference(&ls.offset);
+                let left_length = le.offset.constant_difference(&ls.offset);
+                let right_length = re.offset.constant_difference(&rs.offset);
+                if left_length.is_some_and(|length| length <= 0)
+                    || right_length.is_some_and(|length| length <= 0)
+                {
+                    return Clear;
+                }
+                if left_end.is_some_and(|end| end <= 0) || right_end.is_some_and(|end| end <= 0) {
+                    return Clear;
+                }
+                if left_length.is_some_and(|length| length > 0)
+                    && right_length.is_some_and(|length| length > 0)
+                    && left_end.is_some_and(|end| end > 0)
+                    && right_end.is_some_and(|end| end > 0)
+                    && let Some(entry) = selected_entry()
+                {
+                    return Overlap(entry);
+                }
+            }
             if held.base() == range.base()
                 && held.element_width() == range.element_width()
                 && let (Some((left_start, left_end)), Some((right_start, right_end))) =

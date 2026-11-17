@@ -4802,3 +4802,75 @@ fn a_failed_selected_return_permission_does_not_retry_a_wider_description() {
         Some(preferred)
     );
 }
+
+#[test]
+fn escrow_receipt_preserves_selected_occurrence_through_both_recoveries() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let assumptions = PureFactContext::new();
+    let owner = memory(0, 8, true);
+    let resources =
+        ResourceContext::new_with_equalities(&assumptions).unchecked_with_fact(owner.clone());
+    let source = resources
+        .unique_owned_occurrence_for_fact(&owner)
+        .unwrap()
+        .0;
+    let (ledger, caller, callee) = participants();
+    let plan = plan_stable_view_transfer(
+        &resources,
+        &[checked(memory(0, 8, false))],
+        &assumptions,
+        &ledger,
+        caller,
+        callee,
+    )
+    .unwrap();
+    let _fast = crate::kernel::search::FastOperationScope::enter("escrow receipt test");
+    let recovery = plan
+        .recover_stable_views(&assumptions, &BTreeMap::new(), &[])
+        .unwrap();
+    assert_eq!(
+        recovery.resources.owned_fact_for_occurrence(source),
+        Some(&owner)
+    );
+    let (returned, bindings) = recovery
+        .restore_returned_escrows(
+            ResourceContext::new_with_equalities(&assumptions),
+            &crate::kernel::functions::EscrowRecoveryBoundary::default(),
+            &assumptions,
+        )
+        .unwrap();
+    assert_eq!(returned.owned_fact_for_occurrence(source), Some(&owner));
+    assert!(bindings.is_empty());
+    // An already installed occurrence is stale evidence, not a description
+    // that may silently suppress one of two owners.
+    assert!(
+        recovery
+            .restore_returned_escrows(
+                returned,
+                &crate::kernel::functions::EscrowRecoveryBoundary::default(),
+                &assumptions
+            )
+            .is_err()
+    );
+}
+
+#[test]
+fn materialized_escrow_receipts_keep_distinct_children_and_their_source() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let facts = PureFactContext::new();
+    let head = owned("adapter_head");
+    let source = backing(&head);
+    let children = [owned("adapter_child"), owned("adapter_child")];
+    let receipts = RecoveredEscrow::materialized(source, &children);
+    assert_ne!(receipts[0].occurrence(), receipts[1].occurrence());
+    let mut restored = ResourceContext::new_with_equalities(&facts);
+    for member in &receipts {
+        assert_eq!(member.source, source);
+        restored = restored.restore_checked_escrow(member, &facts).unwrap();
+        assert_eq!(
+            restored.owned_fact_for_occurrence(member.occurrence()),
+            Some(member.fact())
+        );
+    }
+    assert_eq!(restored.facts().len(), 2);
+}

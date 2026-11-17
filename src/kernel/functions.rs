@@ -30,8 +30,8 @@ use mixed_return_resources::{
     project_return_resource_cores,
 };
 pub(in crate::kernel) use mixed_return_resources::{
-    ConstructedReturnBody, ReturnResourceTransfer, ReturnedConsumedCell, ReturnedFreshAllocation,
-    ReturnedOwnershipPartition,
+    ConstructedReturnBody, EscrowRecoveryBoundary, ReturnResourceTransfer, ReturnedConsumedCell,
+    ReturnedFreshAllocation, ReturnedOwnershipPartition,
 };
 #[cfg(test)]
 mod produced_argument_supply_tests;
@@ -215,6 +215,13 @@ enum ReturnResourceComposition<'a> {
         consumed: Option<&'a ConsumedCellReturns>,
     },
     ValidateDescriptions,
+    /// Output descriptions stay private until the existing joint-custody
+    /// proof consumes their units from this live body state.
+    BodyReturns {
+        actual: &'a ExecutionState,
+        creator: Option<&'a CreationEvents>,
+        consumed: &'a ConsumedCellReturns,
+    },
 }
 
 impl<'a> ReturnResourceComposition<'a> {
@@ -222,6 +229,7 @@ impl<'a> ReturnResourceComposition<'a> {
         match self {
             Self::ApplyTransfers(plan) => Some(plan),
             Self::BodyAllocations { consumed, .. } => consumed,
+            Self::BodyReturns { consumed, .. } => Some(consumed),
             _ => None,
         }
     }
@@ -235,17 +243,36 @@ impl<'a> ReturnResourceComposition<'a> {
         }
     }
 
+    fn fresh_allocation(self, fact: &ResourceFact) -> Option<FreshAllocationReturn> {
+        match self {
+            Self::BodyAllocations {
+                creator, events, ..
+            } => FreshAllocationReturn::from_created_owner(fact, creator, events),
+            Self::BodyReturns {
+                actual,
+                creator: Some(creator),
+                ..
+            } => FreshAllocationReturn::from_created_owner(
+                fact,
+                creator,
+                actual.population_effects.creation.as_ref()?,
+            ),
+            _ => None,
+        }
+    }
+
     fn origin_for_return(
         self,
         clause: usize,
         entry_borrow: bool,
         fact: &ResourceFact,
     ) -> ReturnOwnershipOrigin {
-        if let Self::BodyAllocations {
-            creator, events, ..
-        } = self
-        {
-            return FreshAllocationReturn::from_created_owner(fact, creator, events)
+        if matches!(
+            self,
+            Self::BodyAllocations { .. } | Self::BodyReturns { .. }
+        ) {
+            return self
+                .fresh_allocation(fact)
                 .map(ReturnOwnershipOrigin::FreshAllocation)
                 .unwrap_or(ReturnOwnershipOrigin::Description);
         }
@@ -776,6 +803,7 @@ fn recover_candidate_stable_view_resources(
     callee_state: &ExecutionState,
     transfer: &FunctionResourceTransfer,
     return_resources: ResourceContext,
+    escrow_boundary: EscrowRecoveryBoundary,
     assumptions: &PureFactContext,
     output_assumptions: &PureFactContext,
     obligations: &[ProofObligation],
@@ -954,7 +982,6 @@ fn recover_candidate_stable_view_resources(
                 recovery.diagnostic_subject(),
             )))
         })?;
-    let recovered_ledger = recovery.ledger;
     let mut residual = return_resources;
     for fact in plan.mutex_use_requirements.values() {
         residual = residual
@@ -1052,25 +1079,13 @@ fn recover_candidate_stable_view_resources(
     // owner later drops it. Compose the recovered escrows into that residual
     // rather than rebuilding the residual fact by fact, which would keep the
     // facts and lose what supports them.
-    let mut recovered_resources = residual;
+    let (mut recovered_resources, restored_bindings) = recovery
+        .restore_returned_escrows(residual, &escrow_boundary, output_assumptions)
+        .map_err(resource_context_runtime_error)?;
+    let recovered_ledger = recovery.ledger;
     let mut recovered_bindings = recovery.view_bindings;
-    for (escrow, hold_binding) in recovery.recovered_escrows {
-        if recovered_resources.contains_exact_representation(&escrow) {
-            continue;
-        }
-        let (next, mut inserted) = recovered_resources
-            .try_compose_with_legacy_discovery_and_occurrences([escrow], assumptions)
-            .map_err(resource_context_runtime_error)?;
-        let occurrence = inserted.pop().map(|(_, occurrence)| occurrence);
-        recovered_resources = next;
-        // An escrowed borrowing composite keeps its hold binding across the
-        // call: the hold stayed in the ledger while the head was lent, and
-        // the recovered head is the occurrence that carries it again.
-        if let (Some(binding), Some(occurrence)) = (hold_binding, occurrence) {
-            recovered_resources =
-                recovered_resources.with_loan_dependency(occurrence, binding.clone());
-            recovered_bindings = recovered_bindings.with_inserted(occurrence, binding);
-        }
+    for (occurrence, binding) in restored_bindings {
+        recovered_bindings = recovered_bindings.with_inserted(occurrence, binding);
     }
     // The producer retained the exact destination occurrence. Equal head
     // descriptions and unrelated ambient owners cannot select this binding.
@@ -3929,6 +3944,7 @@ fn execute_verified_function_applications_with_suspension(
         let ContractReturnResources {
             output_resources,
             return_resources,
+            escrow_boundary,
             ensured_views: returned_views,
             produced_borrowing_pieces,
         } = match evaluate_contract_return_resources(
@@ -4709,6 +4725,7 @@ fn execute_verified_function_applications_with_suspension(
             &post_state,
             &transfer,
             return_resources,
+            escrow_boundary,
             &effective_assumptions,
             &assumptions_with_path_context(&effective_assumptions, &facts, &[]),
             &obligations,
@@ -5061,6 +5078,7 @@ fn exceptional_direct_function_path(
     let post_assumptions = assumptions_with_path_context(effective_assumptions, &facts, &[]);
     let ContractReturnResources {
         return_resources,
+        escrow_boundary,
         ensured_views,
         produced_borrowing_pieces,
         ..
@@ -5098,6 +5116,7 @@ fn exceptional_direct_function_path(
             &post_state,
             &transfer,
             return_resources,
+            escrow_boundary,
             effective_assumptions,
             &post_assumptions,
             &obligations,
@@ -13197,13 +13216,21 @@ fn evaluate_contract_return_resource_context(
         // its occurrence. Consumers compose the pieces of their requested
         // footprint; constructing outputs must not discover optional merges
         // by walking the ambient pointer/endpoint equality classes.
-        evaluated = match evaluated.admit_clause(
-            resource.clone(),
-            composition.origin_for_return(clause_index, return_entry_borrow, &resource),
-            Some(clause_index),
-            composition.consumed_children(),
-            assumptions,
-        ) {
+        evaluated = match if matches!(composition, ReturnResourceComposition::BodyReturns { .. }) {
+            Ok(evaluated.stage_body_clause(
+                resource.clone(),
+                composition.origin_for_return(clause_index, return_entry_borrow, &resource),
+                clause_index,
+            ))
+        } else {
+            evaluated.admit_clause(
+                resource.clone(),
+                composition.origin_for_return(clause_index, return_entry_borrow, &resource),
+                Some(clause_index),
+                composition.consumed_children(),
+                assumptions,
+            )
+        } {
             Ok(evaluated) => evaluated,
             Err(error) => return Ok(Err(resource_context_runtime_error(error))),
         };
@@ -13223,13 +13250,24 @@ fn evaluate_contract_return_resource_context(
                 budget,
             )? {
                 Ok(fact) => {
-                    evaluated = match evaluated.admit_clause(
-                        fact.clone(),
-                        composition.origin_for_return(clause_index, false, &fact),
-                        Some(clause_index),
-                        composition.consumed_children(),
-                        assumptions,
+                    evaluated = match if matches!(
+                        composition,
+                        ReturnResourceComposition::BodyReturns { .. }
                     ) {
+                        Ok(evaluated.stage_body_clause(
+                            fact.clone(),
+                            composition.origin_for_return(clause_index, false, &fact),
+                            clause_index,
+                        ))
+                    } else {
+                        evaluated.admit_clause(
+                            fact.clone(),
+                            composition.origin_for_return(clause_index, false, &fact),
+                            Some(clause_index),
+                            composition.consumed_children(),
+                            assumptions,
+                        )
+                    } {
                         Ok(evaluated) => evaluated,
                         Err(error) => return Ok(Err(resource_context_runtime_error(error))),
                     };
@@ -13334,16 +13372,10 @@ fn evaluate_function_return_resources(
         function.name(),
         function.contract_interface(),
         &[],
-        match (
-            allocation_creator,
-            post_state.population_effects.creation.as_ref(),
-        ) {
-            (Some(creator), Some(events)) => ReturnResourceComposition::BodyAllocations {
-                creator,
-                events,
-                consumed: Some(consumed_returns),
-            },
-            _ => ReturnResourceComposition::ValidateDescriptions,
+        ReturnResourceComposition::BodyReturns {
+            actual: post_state,
+            creator: allocation_creator,
+            consumed: consumed_returns,
         },
         assumptions,
         budget,
@@ -13353,7 +13385,7 @@ fn evaluate_function_return_resources(
 #[allow(clippy::too_many_arguments)]
 fn evaluate_contract_return_resources(
     caller_resources_after_requirements: &ResourceContext,
-    escrowed_owners: &[ResourceFact],
+    _escrowed_owners: &[ResourceFact],
     canonical_borrowed_owners: &[(ResourceFact, ResourceFact)],
     borrowed_inputs: &[CheckedResourceFact],
     entry_clauses: &[CheckedResourceFact],
@@ -13389,6 +13421,21 @@ fn evaluate_contract_return_resources(
         Ok(resources) => resources,
         Err(error) => return Ok(Err(error)),
     };
+    // Establish the output partition from actual joint custody, once. Raw
+    // descriptions are private candidates until this proof succeeds.
+    if let ReturnResourceComposition::BodyReturns { actual, .. } = composition
+        && !jointly_consume_returned_resource_units(
+            actual.resources(),
+            &evaluated.resources,
+            actual,
+            interface,
+            assumptions,
+        )
+    {
+        return Ok(Err(RuntimeError::FunctionContract(
+            "function body does not yet establish its joint returned resource units".into(),
+        )));
+    }
     let ensured_resources = &evaluated.resources;
     let Some(return_bodies) = ConstructedReturnBodies::try_construct(
         &evaluated,
@@ -13434,7 +13481,6 @@ fn evaluate_contract_return_resources(
             if !prepared.entry_borrow_outputs.facts().is_empty() {
                 let retained = caller_resources_after_requirements
                     .clone()
-                    .unchecked_with_facts(escrowed_owners.iter().cloned())
                     .unchecked_with_facts(
                         prepared.transferred_memory_outputs.facts().iter().cloned(),
                     );
@@ -13450,15 +13496,10 @@ fn evaluate_contract_return_resources(
                     return Some(error);
                 }
             }
-            // A lend empties the escrowed owner out of the residual, and
-            // recovery composes it straight back. The destination for this
-            // check is what the caller holds across the call, so the escrow
-            // belongs in it; without it the stable-view transition would
-            // admit exactly the overlap the definitional residual catches.
-            let destination = prepared
-                .frame
-                .clone()
-                .unchecked_with_facts(escrowed_owners.iter().cloned());
+            // Withheld escrows have their own checked finite frontier. Their
+            // boundary is checked once, when that restoration receipt is
+            // consumed, rather than by expanding their heads here.
+            let destination = prepared.frame.clone();
             produced_composite_frontier_conflict(
                 &destination,
                 prepared
@@ -13525,9 +13566,16 @@ fn evaluate_contract_return_resources(
     // its projections through the reverse index.
     let mut return_resources = return_resources;
     let mut produced_borrowing_pieces = Vec::new();
+    let origins = evaluated
+        .occurrences
+        .iter()
+        .map(|entry| (entry.source, entry.origin))
+        .collect::<BTreeMap<_, _>>();
+    let mut escrow_boundary = EscrowRecoveryBoundary::default();
     for resource in projected_cores_by_support {
         let constructed_borrowing_pieces = resource.constructed_borrowing_pieces();
         let ProjectedReturnResource {
+            source,
             support,
             destination: support_occurrence,
             expansion,
@@ -13535,6 +13583,29 @@ fn evaluate_contract_return_resources(
             frontier,
             viewed_children: _,
         } = resource;
+        if support.is_own() {
+            let origin = origins[&source];
+            let raw = if matches!(origin, ReturnOwnershipOrigin::Description)
+                && !matches!(
+                    support.resource(),
+                    Resource::Composite { .. } | Resource::Instance(_)
+                ) {
+                vec![support.clone()]
+            } else {
+                Vec::new()
+            };
+            let body = if let Some(body) = return_bodies.for_return(source, &support) {
+                body.boundary().to_vec()
+            } else if matches!(
+                support.resource(),
+                Resource::Composite { .. } | Resource::Instance(_)
+            ) {
+                frontier.clone()
+            } else {
+                Vec::new()
+            };
+            escrow_boundary.record(support_occurrence, raw, body);
+        }
         // Only the one-level frontier names the borrows this composite
         // packages; a nested composite's own body is that composite's
         // business (the 4b rule). The viewed pieces of an observed
@@ -13584,6 +13655,7 @@ fn evaluate_contract_return_resources(
     Ok(Ok(ContractReturnResources {
         output_resources: evaluated.resources,
         return_resources,
+        escrow_boundary,
         ensured_views,
         produced_borrowing_pieces,
     }))
@@ -13594,6 +13666,7 @@ pub(crate) struct ContractReturnResources {
     /// The explicit output delta, without the caller's unrelated frame.
     pub(crate) output_resources: ResourceContext,
     pub(crate) return_resources: ResourceContext,
+    pub(in crate::kernel) escrow_boundary: EscrowRecoveryBoundary,
     pub(crate) ensured_views: Vec<ResourceFact>,
     pub(crate) produced_borrowing_pieces: Vec<ProducedBorrowingPiece>,
 }
@@ -20992,6 +21065,7 @@ fn function_outcome_from_body_with_resource_transfer(
     let ContractReturnResources {
         output_resources,
         return_resources,
+        escrow_boundary,
         ensured_views: returned_views,
         produced_borrowing_pieces,
     } = match crate::instrumentation::measure_operation(
@@ -21028,22 +21102,6 @@ fn function_outcome_from_body_with_resource_transfer(
         }
         Err(error) => return Ok((FunctionOutcome::RuntimeError(error), obligations, None)),
     };
-    // Authority members require actual joint custody before output projection.
-    if !jointly_consume_returned_resource_units(
-        state.resources(),
-        &output_resources,
-        &state,
-        function.contract_interface(),
-        assumptions,
-    ) {
-        return Ok((
-            FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
-                "function body does not yet establish its joint returned resource units".into(),
-            )),
-            obligations,
-            None,
-        ));
-    }
     transfer.candidate_output_views = returned_views;
     transfer.produced_borrowing_pieces = produced_borrowing_pieces;
     let (return_resources, return_ledger, return_participant, return_view_bindings, loan_evidence) =
@@ -21052,6 +21110,7 @@ fn function_outcome_from_body_with_resource_transfer(
             &state,
             &transfer,
             return_resources,
+            escrow_boundary,
             assumptions,
             assumptions,
             &obligations,

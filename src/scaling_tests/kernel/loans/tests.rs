@@ -1509,3 +1509,62 @@ fn loan_access_requirement_is_retained_and_branch_local() {
         assert!(sample.2 <= samples[0].2 + 32);
     }
 }
+
+#[test]
+fn escrow_restoration_ignores_unrelated_frame_owners() {
+    let mut samples = Vec::new();
+    for count in [4usize, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let facts = PureFactContext::new();
+        let owner = memory(0, 8, true);
+        let mut resources =
+            ResourceContext::new_with_equalities(&facts).unchecked_with_fact(owner.clone());
+        let source = resources
+            .unique_owned_occurrence_for_fact(&owner)
+            .unwrap()
+            .0;
+        for index in 0..count {
+            resources = resources.unchecked_with_fact(ResourceFact::own_memory(
+                crate::kernel::MemoryRange::new(
+                    Pointer::symbolic(Variable(9_870_000 + index as u64)),
+                    0u32.into(),
+                    8u32.into(),
+                ),
+            ));
+        }
+        let (ledger, caller, callee) = participants();
+        let plan = plan_stable_view_transfer(
+            &resources,
+            &[checked(memory(0, 8, false))],
+            &facts,
+            &ledger,
+            caller,
+            callee,
+        )
+        .unwrap();
+        let frame = plan.caller_resources_after_requirements.clone();
+        let ((returned, work), maps) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                let recovery = plan
+                    .recover_stable_views(&facts, &BTreeMap::new(), &[])
+                    .unwrap();
+                recovery
+                    .restore_returned_escrows(
+                        frame,
+                        &crate::kernel::functions::EscrowRecoveryBoundary::default(),
+                        &facts,
+                    )
+                    .unwrap()
+                    .0
+            })
+        });
+        assert_eq!(returned.owned_fact_for_occurrence(source), Some(&owner));
+        samples.push((work, maps));
+    }
+    assert!(
+        samples
+            .iter()
+            .all(|(work, maps)| *work <= samples[0].0 + 64 && *maps <= samples[0].1 * 3 + 256),
+        "escrow restoration scanned unrelated state: {samples:?}"
+    );
+}

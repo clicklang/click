@@ -858,6 +858,9 @@ struct LoanRecord {
     assumed_mutex_protected: Option<ResourceDescription>,
     support: ResourceOccurrenceId,
     escrow: Option<ResourceFact>,
+    /// Checked finite ownership frontier retained at lend time. Recovery
+    /// carries this recipe rather than expanding the escrow description.
+    restoration_frontier: Arc<Vec<ResourceFact>>,
     /// Every checked viewed projection authorized by this loan.  A composite
     /// loan keeps its folded head plus all primitive body views here so a
     /// child binding cannot be minted from the head alone.
@@ -1889,11 +1892,11 @@ pub(crate) struct StableViewTransferPlan {
     /// the residual alone would not see what the caller still holds across
     /// the call.
     escrowed_owners: Vec<ResourceFact>,
-    /// The hold bindings of escrowed borrowing composites, by escrow fact.
+    /// The hold bindings of escrowed borrowing composites, by selected occurrence.
     /// The head leaves the caller residual for the call, but its hold stays
     /// in the ledger, and recovery hands the binding back to the restored
     /// head (step 7).
-    escrowed_holds: Vec<(ResourceFact, LoanViewBinding)>,
+    escrowed_holds: BTreeMap<ResourceOccurrenceId, LoanViewBinding>,
     /// Owned requirements whose caller occurrence carried a hold binding: the
     /// composite went to the callee together with its borrow. Recovery
     /// re-binds it if the callee returned it and releases the hold if the
@@ -1912,7 +1915,89 @@ pub(crate) struct StableViewTransferPlan {
     /// recovery hands back in place of the head (docs/internals/stable-views.md). The
     /// escrow stays the head in the ledger, so the loan still protects the
     /// whole frontier; only what the caller gets back differs.
-    adapter_restorations: BTreeMap<LoanId, Vec<ResourceFact>>,
+    adapter_restorations: BTreeMap<LoanId, Vec<RecoveredEscrow>>,
+    protected_escrows: BTreeMap<ResourceOccurrenceId, RecoveredEscrow>,
+}
+
+/// Ownership emitted by a checked ledger recovery, retaining the actual
+/// occurrence and its existing hold. Only the loan producer can issue it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct RecoveredEscrow {
+    fact: ResourceFact,
+    occurrence: ResourceOccurrenceId,
+    source: ResourceOccurrenceId,
+    binding: Option<LoanViewBinding>,
+    frontier: Arc<Vec<ResourceFact>>,
+}
+
+impl RecoveredEscrow {
+    fn root(
+        fact: ResourceFact,
+        source: ResourceOccurrenceId,
+        binding: Option<LoanViewBinding>,
+    ) -> Self {
+        Self {
+            frontier: Arc::new(vec![fact.clone()]),
+            fact,
+            occurrence: source,
+            source,
+            binding,
+        }
+    }
+
+    fn from_loan(
+        ledger: &LoanLedger,
+        loan: LoanId,
+        fact: ResourceFact,
+        source: ResourceOccurrenceId,
+        binding: Option<LoanViewBinding>,
+    ) -> Self {
+        Self {
+            frontier: ledger
+                .storage
+                .data
+                .loans
+                .get(&loan)
+                .expect("checked loan recovery")
+                .restoration_frontier
+                .clone(),
+            fact,
+            occurrence: source,
+            source,
+            binding,
+        }
+    }
+
+    fn materialized(source: ResourceOccurrenceId, facts: &[ResourceFact]) -> Vec<Self> {
+        let (_, emitted) =
+            ResourceContext::new().unchecked_with_facts_and_occurrences(facts.iter().cloned());
+        emitted
+            .into_iter()
+            .map(|(fact, occurrence)| Self {
+                frontier: Arc::new(vec![fact.clone()]),
+                fact,
+                occurrence,
+                source,
+                binding: None,
+            })
+            .collect()
+    }
+
+    fn emitted(fact: ResourceFact) -> Self {
+        let (_, mut emitted) = ResourceContext::new().unchecked_with_facts_and_occurrences([fact]);
+        let (fact, occurrence) = emitted.pop().expect("one checked restoration");
+        Self::root(fact, occurrence, None)
+    }
+
+    pub(crate) fn fact(&self) -> &ResourceFact {
+        &self.fact
+    }
+    pub(crate) fn occurrence(&self) -> ResourceOccurrenceId {
+        self.occurrence
+    }
+    pub(crate) fn binding(&self) -> Option<&LoanViewBinding> {
+        self.binding.as_ref()
+    }
 }
 
 /// What a call leaves behind for a borrowing composite it produced or
@@ -1943,6 +2028,8 @@ pub(crate) struct StableViewRecovery {
     /// The escrowed owners recovery handed back, in recovery order, each
     /// with the hold binding its occurrence carried before the call.
     pub(crate) recovered_escrows: Vec<(ResourceFact, Option<LoanViewBinding>)>,
+    restorations: Vec<RecoveredEscrow>,
+    protected_escrows: BTreeMap<ResourceOccurrenceId, RecoveredEscrow>,
     pub(crate) mutex_authority_updates: Vec<mutex_calls::MutexAuthorityUpdate>,
     /// The holds this call's produced borrowing composites now carry.
     pub(crate) escaped_holds: Vec<EscapedHold>,
@@ -1954,6 +2041,53 @@ pub(crate) struct StableViewRecovery {
 }
 
 impl StableViewRecovery {
+    pub(in crate::kernel) fn restore_returned_escrows(
+        &self,
+        mut resources: ResourceContext,
+        boundary: &crate::kernel::functions::EscrowRecoveryBoundary,
+        assumptions: &PureFactContext,
+    ) -> Result<
+        (
+            ResourceContext,
+            Vec<(ResourceOccurrenceId, LoanViewBinding)>,
+        ),
+        crate::kernel::primitives::ResourceContextValidityError,
+    > {
+        #[cfg(test)]
+        let _fast = crate::kernel::search::FastOperationScope::enter("escrow return restoration");
+        let mut protected = ResourceContext::new_with_equalities(assumptions);
+        let mut opaque = false;
+        let members = self.protected_escrows.values().chain(
+            self.restorations
+                .iter()
+                .filter(|member| !self.protected_escrows.contains_key(&member.occurrence())),
+        );
+        for member in members {
+            opaque |= member.frontier.iter().any(|fact| {
+                fact.is_own()
+                    && matches!(
+                        fact.resource(),
+                        Resource::Composite { .. }
+                            | Resource::Instance(_)
+                            | Resource::Footprint(_)
+                            | Resource::Parameter(_)
+                            | Resource::Star(_)
+                            | Resource::Iterated(_)
+                    )
+            });
+            protected = protected.unchecked_with_facts(member.frontier.iter().cloned());
+        }
+        boundary.admit(&protected, opaque, &resources, assumptions)?;
+        let mut bindings = Vec::new();
+        for member in &self.restorations {
+            resources = resources.restore_checked_escrow(member, assumptions)?;
+            if let Some(binding) = member.binding() {
+                bindings.push((member.occurrence(), binding.clone()));
+            }
+        }
+        Ok((resources, bindings))
+    }
+
     pub(crate) fn diagnostic_subject(&self) -> LoanRefusalSubject {
         self.transitions
             .last()
@@ -3170,9 +3304,10 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
     }
 
     let mut loan_roots = Vec::new();
-    let mut adapter_restorations = BTreeMap::<LoanId, Vec<ResourceFact>>::new();
+    let mut adapter_restorations = BTreeMap::<LoanId, Vec<RecoveredEscrow>>::new();
+    let mut protected_escrows = BTreeMap::new();
     let mut escrowed_owners = Vec::new();
-    let mut escrowed_holds = Vec::new();
+    let mut escrowed_holds = BTreeMap::new();
     let mut grouped = BTreeMap::<ResourceOccurrenceId, Vec<(usize, CheckedResourceFact)>>::new();
     let mut rebound = BTreeMap::<
         LoanViewBinding,
@@ -3369,10 +3504,20 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                 !split_reborrowed_views,
             ));
             escrowed_owners.push(selected.clone());
+            protected_escrows.insert(
+                support,
+                RecoveredEscrow::from_loan(
+                    &planned_ledger,
+                    opening.loan,
+                    selected.clone(),
+                    support,
+                    None,
+                ),
+            );
             if let Some(binding) = parent_view_bindings.get(&support)
                 && binding.hold.is_some()
             {
-                escrowed_holds.push((selected.clone(), binding.clone()));
+                escrowed_holds.insert(support, binding.clone());
             }
             let mut owner_occurrences = BTreeMap::<LoanViewBinding, ResourceOccurrenceId>::new();
             for (index, requirement) in cluster {
@@ -3647,14 +3792,30 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             {
                 Some(backing) => {
                     escrowed_owners.extend(backing.restored.iter().cloned());
-                    adapter_restorations.insert(opening.loan, backing.restored.clone());
+                    let restored = RecoveredEscrow::materialized(support, &backing.restored);
+                    for member in &restored {
+                        protected_escrows.insert(member.occurrence(), member.clone());
+                    }
+                    adapter_restorations.insert(opening.loan, restored);
                 }
-                None => escrowed_owners.push(selected.clone()),
+                None => {
+                    escrowed_owners.push(selected.clone());
+                    protected_escrows.insert(
+                        support,
+                        RecoveredEscrow::from_loan(
+                            &planned_ledger,
+                            opening.loan,
+                            selected.clone(),
+                            support,
+                            None,
+                        ),
+                    );
+                }
             }
             if let Some(binding) = parent_view_bindings.get(&support)
                 && binding.hold.is_some()
             {
-                escrowed_holds.push((selected.clone(), binding.clone()));
+                escrowed_holds.insert(support, binding.clone());
             }
             let mut owner_occurrences = BTreeMap::<LoanViewBinding, ResourceOccurrenceId>::new();
             for (index, requirement) in cluster {
@@ -3829,6 +3990,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         suspended_local_parents: BTreeMap::new(),
         suspended_local_reborrows: BTreeMap::new(),
         adapter_restorations,
+        protected_escrows,
     })
 }
 
@@ -4084,13 +4246,10 @@ impl StableViewTransferPlan {
     ) -> Result<StableViewRecovery, StableViewPlanError> {
         // Recovery changes only this call's escrow. Normalizing the ambient
         // frame would rebuild unrelated resource indexes at every child join.
-        let restore_resource = |resources: ResourceContext, fact: &ResourceFact| {
+        let restore_resource = |resources: ResourceContext, member: &RecoveredEscrow| {
             resources
-                .try_compose_into_valid_context_delaying_normalization(
-                    std::iter::once(fact.clone()),
-                    assumptions,
-                )
-                .map_err(|error| composition_conflict(error, fact))
+                .restore_checked_escrow(member, assumptions)
+                .map_err(|error| composition_conflict(error, member.fact()))
         };
         self.validate_exclusive_reservation()?;
         let parent_ledger = self.parent_ledger;
@@ -4102,6 +4261,7 @@ impl StableViewTransferPlan {
         let mut local_view_updates = BTreeMap::new();
         let mut transitions = Vec::new();
         let mut recovered_escrows = Vec::new();
+        let mut restorations = Vec::new();
         let mut mutex_authority_updates = Vec::new();
         let mut pending_holds: Vec<(Vec<EscapingComposite>, LoanViewBinding)> = Vec::new();
         for (scope, loan, root, support, recoverable) in loan_roots.into_iter().rev() {
@@ -4206,7 +4366,15 @@ impl StableViewTransferPlan {
                         .without_bound_view_occurrence(*occurrence, &binding)
                         .ok_or(StableViewPlanError::InvalidResidual)?;
                     view_bindings = view_bindings.without(*occurrence);
-                    resources = restore_resource(resources, &escrow)?;
+                    let member = RecoveredEscrow::from_loan(
+                        &ledger,
+                        binding.loan,
+                        escrow.clone(),
+                        recovered_support,
+                        None,
+                    );
+                    resources = restore_resource(resources, &member)?;
+                    restorations.push(member);
                     recovered_escrows.push((escrow, None));
                 } else if ledger
                     .validate_view_binding(binding.clone(), self.caller)
@@ -4233,18 +4401,23 @@ impl StableViewTransferPlan {
                 // was materialized from, so a `views` requirement leaves the
                 // caller's own packaging exactly as it found it.
                 if let Some(restored) = self.adapter_restorations.get(&loan) {
-                    for fact in restored {
-                        resources = restore_resource(resources, fact)?;
-                        recovered_escrows.push((fact.clone(), None));
+                    for member in restored {
+                        resources = restore_resource(resources, member)?;
+                        recovered_escrows.push((member.fact().clone(), None));
+                        restorations.push(member.clone());
                     }
                     continue;
                 }
-                resources = restore_resource(resources, &escrow)?;
-                let hold_binding = self
-                    .escrowed_holds
-                    .iter()
-                    .find(|(held, _)| *held == escrow)
-                    .map(|(_, binding)| binding.clone());
+                let hold_binding = self.escrowed_holds.get(&recovered_support).cloned();
+                let member = RecoveredEscrow::from_loan(
+                    &ledger,
+                    loan,
+                    escrow.clone(),
+                    recovered_support,
+                    hold_binding.clone(),
+                );
+                resources = restore_resource(resources, &member)?;
+                restorations.push(member);
                 recovered_escrows.push((escrow, hold_binding));
             }
         }
@@ -4266,10 +4439,19 @@ impl StableViewTransferPlan {
             ledger = ledger.apply(&end)?;
             transitions.push(end);
             if ledger.loan_is_recoverable_by(binding.loan, self.caller) {
-                let (recover, escrow, _) = ledger.recover(binding.loan, self.caller)?;
+                let (recover, escrow, recovered_support) =
+                    ledger.recover(binding.loan, self.caller)?;
                 ledger = ledger.apply(&recover)?;
                 transitions.push(recover);
-                resources = restore_resource(resources, &escrow)?;
+                let member = RecoveredEscrow::from_loan(
+                    &ledger,
+                    binding.loan,
+                    escrow.clone(),
+                    recovered_support,
+                    None,
+                );
+                resources = restore_resource(resources, &member)?;
+                restorations.push(member);
                 recovered_escrows.push((escrow, None));
             }
         }
@@ -4305,7 +4487,9 @@ impl StableViewTransferPlan {
                 ledger = returned.ledger;
                 transitions.extend(returned.exit_transitions);
                 let source = use_plan.source_resource().clone();
-                resources = restore_resource(resources, &source)?;
+                let member = RecoveredEscrow::emitted(source.clone());
+                resources = restore_resource(resources, &member)?;
+                restorations.push(member);
                 recovered_escrows.push((source, None));
             }
         }
@@ -4351,6 +4535,8 @@ impl StableViewTransferPlan {
             hold_transitions,
             resources,
             recovered_escrows,
+            restorations,
+            protected_escrows: self.protected_escrows,
             mutex_authority_updates,
             escaped_holds,
             view_bindings,
@@ -6283,6 +6469,7 @@ impl LoanLedger {
                         assumed_mutex_protected: None,
                         support: *support,
                         escrow: Some(escrow.clone()),
+                        restoration_frontier: Arc::new(vec![escrow.clone()]),
                         permitted: if is_mutex_lifetime_owner(escrow) {
                             Vec::new()
                         } else {
@@ -6409,6 +6596,7 @@ impl LoanLedger {
                         assumed_mutex_protected: None,
                         support: *support,
                         escrow: Some(escrow.clone()),
+                        restoration_frontier: Arc::new(backing.clone()),
                         permitted: std::iter::once(ResourceFact::View(escrow.resource().clone()))
                             .chain(
                                 backing
@@ -6505,6 +6693,7 @@ impl LoanLedger {
                         assumed_mutex: Some(initialization.description(mutex)),
                         assumed_mutex_protected: protected.clone(),
                         escrow: None,
+                        restoration_frontier: Arc::new(Vec::new()),
                         permitted: Vec::new().into(),
                         origin: LoanOrigin::BorrowedContractInput,
                         recovered: false,
@@ -6603,6 +6792,7 @@ impl LoanLedger {
                         assumed_mutex_protected: None,
                         support: *support,
                         escrow: None,
+                        restoration_frontier: Arc::new(Vec::new()),
                         permitted: permitted.into(),
                         origin: local
                             .as_ref()
@@ -6741,6 +6931,7 @@ impl LoanLedger {
                         assumed_mutex_protected: None,
                         support: parent.support,
                         escrow: None,
+                        restoration_frontier: Arc::new(Vec::new()),
                         permitted: permitted.clone().into(),
                         origin: LoanOrigin::Reborrowed,
                         recovered: false,

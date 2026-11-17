@@ -79,6 +79,21 @@ impl Boundary<'_> {
         {
             self.errors.push(format!("{}: legacy loop preparation belongs only to the explicit independent-input adapter", self.path));
         }
+        if self.path == "src/kernel/loans.rs"
+            && self.function == "recover_stable_views_impl"
+            && matches!(
+                name,
+                "try_compose_into_valid_context_delaying_normalization"
+                    | "try_compose_with_legacy_discovery_and_occurrences"
+                    | "owned_occurrences_for_fact"
+                    | "permitted_descriptions"
+            )
+        {
+            self.errors.push(format!(
+                "{}: escrow recovery must consume checked restoration evidence ({name})",
+                self.path
+            ));
+        }
         if self.path == "src/kernel/primitives/memory_equality_index.rs"
             && self.function == "constant_owned_overlap"
             && name == "decide"
@@ -93,7 +108,9 @@ impl Boundary<'_> {
             || (self.path == "src/kernel/functions.rs"
                 && matches!(
                     self.function.as_str(),
-                    "produced_composite_frontier_conflict" | "construct_composite_resource_body"
+                    "produced_composite_frontier_conflict"
+                        | "construct_composite_resource_body"
+                        | "recover_candidate_stable_view_resources"
                 )))
             && matches!(
                 name,

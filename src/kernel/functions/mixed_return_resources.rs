@@ -31,7 +31,7 @@ impl ConsumedCellReturns {
             .map(|parameter| parameter.binding_name())
             .collect::<BTreeSet<_>>();
         let mut inputs = BTreeMap::<FixedMemoryKey, VecDeque<ConsumedCellReturn>>::new();
-        let mut borrowed = BTreeMap::<FixedMemoryKey, VecDeque<ResourceOccurrenceId>>::new();
+        let mut borrowed = BTreeMap::<BorrowedResourceKey, VecDeque<ResourceOccurrenceId>>::new();
         for (checked, source) in plan
             .transferred_ownership
             .iter()
@@ -49,27 +49,30 @@ impl ConsumedCellReturns {
             else {
                 continue;
             };
+            let Some(source) = source else { continue };
+            let Some(owner) = caller.owned_fact_for_occurrence(*source) else {
+                continue;
+            };
+            if checked.role == ResourceTransferRole::Borrow {
+                // An entry-state return reuses the already evaluated input
+                // clause itself. Its selected occurrence is the evidence;
+                // its surface pointer spelling need not be a bare parameter.
+                borrowed
+                    .entry(borrowed_resource_key(input))
+                    .or_default()
+                    .push_back(*source);
+                continue;
+            }
             let Some(key) = fixed_memory_key(input, &parameters, checked.role) else {
                 continue;
             };
-            let Some(source) = source else { continue };
-            // One indexed read excludes sources materialized from composites.
-            // Reservation already proved coverage and separated the residual.
-            if caller
-                .owned_fact_for_occurrence(*source)
-                .and_then(ResourceFact::memory_own_range)
-                .is_none()
-            {
+            if owner.memory_own_range().is_none() {
                 continue;
             }
-            if checked.role == ResourceTransferRole::Borrow {
-                borrowed.entry(key).or_default().push_back(*source);
-            } else {
-                inputs
-                    .entry(key)
-                    .or_default()
-                    .push_back(ConsumedCellReturn { input: *source });
-            }
+            inputs
+                .entry(key)
+                .or_default()
+                .push_back(ConsumedCellReturn { input: *source });
         }
         let mut outputs = Self::default();
         let bindings = parameters
@@ -79,9 +82,9 @@ impl ConsumedCellReturns {
         for (index, output) in interface.resource_ensures().iter().enumerate() {
             if output.role() == ResourceTransferRole::Borrow
                 && output.state_source() == ResourceStateSource::Entry
-                && let Some(key) =
-                    fixed_memory_key(output, &parameters, ResourceTransferRole::Borrow)
-                && let Some(input) = borrowed.get_mut(&key).and_then(VecDeque::pop_front)
+                && let Some(input) = borrowed
+                    .get_mut(&borrowed_resource_key(output))
+                    .and_then(VecDeque::pop_front)
             {
                 outputs.borrowed.insert(index, input);
                 continue;
@@ -390,6 +393,24 @@ impl EvaluatedReturnResources {
         self.admit_clause(fact, origin, None, None, assumptions)
     }
 
+    /// Private body candidate. Its units must be consumed jointly from the
+    /// actual body before this context can be composed into a successor.
+    pub(super) fn stage_body_clause(
+        mut self,
+        fact: ResourceFact,
+        origin: ReturnOwnershipOrigin,
+        clause: usize,
+    ) -> Self {
+        let (context, emitted) = self.resources.unchecked_with_facts_and_occurrences([fact]);
+        self.resources = context;
+        self.occurrences.push(EvaluatedReturnOccurrence {
+            source: emitted[0].1,
+            origin,
+            clause: Some(clause),
+        });
+        self
+    }
+
     pub(super) fn admit_clause(
         mut self,
         fact: ResourceFact,
@@ -461,12 +482,15 @@ impl EvaluatedReturnResources {
                         ReturnOwnershipOrigin::Description
                     }
                     (
-                        ReturnResourceComposition::BodyAllocations { .. },
+                        ReturnResourceComposition::BodyAllocations { .. }
+                        | ReturnResourceComposition::BodyReturns { .. },
                         ReturnOwnershipOrigin::FreshAllocation(_),
                     ) => entry.origin,
-                    (ReturnResourceComposition::BodyAllocations { .. }, _) => {
-                        ReturnOwnershipOrigin::Description
-                    }
+                    (
+                        ReturnResourceComposition::BodyAllocations { .. }
+                        | ReturnResourceComposition::BodyReturns { .. },
+                        _,
+                    ) => ReturnOwnershipOrigin::Description,
                     _ => entry.origin,
                 },
             })
@@ -959,13 +983,8 @@ impl ConstructedReturnBodies {
                 && let Some(transfer) = plan.children.get(path)
             {
                 ReturnOwnershipOrigin::ConsumedCell(*transfer)
-            } else if let ReturnResourceComposition::BodyAllocations {
-                creator, events, ..
-            } = composition
-            {
-                FreshAllocationReturn::from_created_owner(&fact, creator, events)
-                    .map(ReturnOwnershipOrigin::FreshAllocation)
-                    .unwrap_or(ReturnOwnershipOrigin::Description)
+            } else if let Some(fresh) = composition.fresh_allocation(&fact) {
+                ReturnOwnershipOrigin::FreshAllocation(fresh)
             } else {
                 ReturnOwnershipOrigin::Description
             };
@@ -1078,6 +1097,7 @@ pub(in crate::kernel) struct ProducedBorrowingPiece {
 }
 
 pub(super) struct ProjectedReturnResource {
+    pub(super) source: ResourceOccurrenceId,
     pub(super) support: ResourceFact,
     pub(super) destination: ResourceOccurrenceId,
     pub(super) expansion: Vec<ResourceFact>,
@@ -1185,6 +1205,7 @@ pub(super) fn project_return_resource_cores(
                 .into_iter()
                 .collect::<Vec<_>>();
             Some(ProjectedReturnResource {
+                source: source_occurrence,
                 support: support.clone(),
                 destination: destination_occurrence,
                 expansion,
@@ -1215,3 +1236,65 @@ mod scaling_tests {
 }
 
 mod specialized_returns;
+
+/// The producer's new ownership boundary, indexed by the actual returned
+/// occurrence. Already checked input transfers do not enter this delta.
+#[derive(Default)]
+pub(in crate::kernel) struct EscrowRecoveryBoundary {
+    entries: Vec<(ResourceOccurrenceId, Vec<ResourceFact>)>,
+}
+
+impl EscrowRecoveryBoundary {
+    pub(super) fn record(
+        &mut self,
+        output: ResourceOccurrenceId,
+        mut raw: Vec<ResourceFact>,
+        body: Vec<ResourceFact>,
+    ) {
+        raw.extend(body);
+        if !raw.is_empty() {
+            self.entries.push((output, raw));
+        }
+    }
+
+    pub(in crate::kernel) fn admit(
+        &self,
+        protected: &ResourceContext,
+        opaque: bool,
+        live: &ResourceContext,
+        assumptions: &PureFactContext,
+    ) -> Result<(), ResourceContextValidityError> {
+        for (occurrence, frontier) in &self.entries {
+            // Protocol reconciliation can remove an emitted authority.
+            if live.owned_fact_for_occurrence(*occurrence).is_none() {
+                continue;
+            }
+            if opaque
+                && frontier.iter().any(|fact| {
+                    fact.is_own()
+                        && !matches!(fact.resource(), Resource::Token { .. } | Resource::Emp)
+                })
+            {
+                return Err(ResourceContextValidityError::UnsupportedOwnershipBoundary);
+            }
+            match protected.admit_returned_frontier(frontier, assumptions) {
+                FlatBodyAdmission::Admitted => {}
+                FlatBodyAdmission::Unsupported => {
+                    return Err(ResourceContextValidityError::UnsupportedOwnershipBoundary);
+                }
+                FlatBodyAdmission::Conflict { piece, held } => {
+                    return Err(match (held.memory_own_range(), piece.memory_own_range()) {
+                        (Some(left), Some(right)) => {
+                            ResourceContextValidityError::OverlappingOwnedMemoryResources {
+                                left: left.clone(),
+                                right: right.clone(),
+                            }
+                        }
+                        _ => ResourceContextValidityError::DuplicateOwnedResourceFact(*piece),
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+}

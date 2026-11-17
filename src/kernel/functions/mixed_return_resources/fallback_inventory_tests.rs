@@ -198,3 +198,62 @@ fn symbolic_composite_children_construct_a_partition_without_discovery() {
     let body = bodies.get(outputs.occurrences[0].source).unwrap();
     assert_eq!(body.transfers.len(), 2);
 }
+
+#[test]
+fn body_returns_use_actual_joint_custody_for_their_output_partition() {
+    use crate::kernel::program_expression::{int32_literal, variable};
+    let _session = crate::kernel::VerificationSession::enter();
+    let facts = PureFactContext::new();
+    let p = Pointer::symbolic(Variable(8_915_601));
+    let q = Pointer::symbolic(Variable(8_915_602));
+    let actual = ExecutionState::new()
+        .with_local("p", ProgramValue::pointer(p.clone()))
+        .with_local("q", ProgramValue::pointer(q.clone()))
+        .with_memory(
+            Memory::new()
+                .with_block(p.block.clone(), 4)
+                .with_block(q.block.clone(), 4),
+        )
+        .with_resource_context(
+            ResourceContext::new_with_equalities(&facts).unchecked_with_facts([
+                ResourceFact::own_memory(MemoryRange::new(p.clone(), 0u32.into(), 1u32.into())),
+                ResourceFact::own_memory(MemoryRange::new(q.clone(), 0u32.into(), 1u32.into())),
+            ]),
+        );
+    for (names, succeeds) in [(vec!["p", "q"], true), (vec!["p", "p"], false)] {
+        let outputs = names
+            .into_iter()
+            .map(|name| {
+                ResourceSpec::owned_memory(MemorySegment::new(
+                    variable(name),
+                    int32_literal(0),
+                    int32_literal(1),
+                ))
+                .with_role(ResourceTransferRole::Produce)
+                .with_state_source(ResourceStateSource::Post)
+            })
+            .collect();
+        let function =
+            program_function(ProgramType::Void, "body_partition", vec![], program_skip())
+                .with_resource_summary(vec![], outputs);
+        let result = evaluate_function_return_resources(
+            &ResourceContext::new_with_equalities(&facts),
+            &[],
+            &[],
+            &[],
+            &[],
+            &actual,
+            &actual,
+            &function,
+            None,
+            &ConsumedCellReturns::default(),
+            &facts,
+            &mut ExecutionBudget::beside_live_state(),
+        )
+        .unwrap();
+        assert_eq!(result.is_ok(), succeeds);
+        if let Ok(returned) = result {
+            assert_eq!(returned.output_resources.facts().len(), 2);
+        }
+    }
+}

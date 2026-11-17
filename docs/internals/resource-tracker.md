@@ -1842,11 +1842,11 @@ The automatic call-return inventory now distinguishes these boundaries:
 
 | Route | Current status |
 | --- | --- |
-| `EvaluatedReturnResources::admit_clause` | Carries fixed borrowed/consumed input occurrence selections from the checked call plan, uses each input once, and checks those members only against the newly described subset. Other outputs use bounded indexed admission. Unsupported geometry refuses; no discovery fallback. |
+| `EvaluatedReturnResources::admit_clause` | Carries checked entry-borrow and fixed consumed-input occurrence selections from the checked call plan, uses each input once, and checks those members only against the newly described subset. Other outputs use bounded indexed admission. Unsupported geometry refuses; no discovery fallback. |
 | `construct_composite_resource_body` | Selected returned bodies construct their child partition with bounded admission and preserve child identities. The unselected expansion path remains a generic full-composition consumer. |
 | `PreparedReturnComposition::finish` | Consumes an opaque `ReturnedOwnershipPartition`. The producer's partition, including restored borrowed/consumed/fresh outputs, is retained; only pending outputs versus the original retained frame are checked. Returned pieces are not compared with each other again. |
 | `produced_composite_frontier_conflict` | Constructed frontiers use bounded cross-boundary checks. Proven conflicts retain the selected held fact; unsupported geometry refuses. Legacy family expansion remains separate, but its exposed frontier also uses bounded boundary checks. |
-| `recover_candidate_stable_view_resources` | Selected loan backing survives, but composing the recovered escrow still calls legacy admission. Restoration needs to retain the withheld occurrences' partition relationship. |
+| `recover_candidate_stable_view_resources` | Consumes checked escrow restoration receipts carrying selected occurrences and holds. Restores the entry partition directly; checks only new return ownership against protected escrows and newly released inherited roots. No legacy ownership admission. |
 | `project_return_resource_cores` and legacy-family expansion | Unconstructed families are expanded from descriptions again. Each classifier outcome eventually needs a reusable body/frontier, deliberately opaque ownership, or a bounded refusal. Unsupported language shapes do not all need implementation. |
 
 The producer separates selected fixed-footprint inputs from newly described
@@ -1857,6 +1857,27 @@ boundary with the new-description subset; a new description checks against the
 whole emitted prefix. Neither order can silently admit an overlap. These
 selections carry ownership identity, not permission inferred from matching
 pointer spellings. Other input families keep their bounded-admission route.
+
+Escrow recovery retains the selected backing occurrence rather than allocating a
+replacement from its description. Adapter materialization allocates its restored
+child occurrences once and carries them with their parent source. Hold bindings
+are keyed by the backing occurrence. Both recovery stages consume those receipts;
+neither rechecks separation among the old frame members. The return producer
+records a boundary delta by actual output occurrence. Newly described owners and constructed body frontiers are checked once against
+the finite frontiers retained by the loan producer, including older roots released
+when consumed holds close. Opaque frontier members cause a bounded refusal when
+new ownership could intersect them. Removed protocol outputs do not participate.
+The body's joint-custody proof certifies its internal output partition; recovery
+still checks its boundary with withheld escrow. Duplicate
+live restoration occurrences refuse rather than silently deduplicating equal
+resource descriptions. Ledger liveness and transition checks remain separate.
+
+Function-body returns stage descriptions privately, then establish their output
+partition with the existing joint-custody proof against the actual live body.
+That proof runs before construction and projection; it is not repeated afterward.
+The caller boundary still checks new ownership against its retained frame.
+Entry-state borrowed clauses carry the checked input occurrence even when their
+surface address is a field expression or their endpoints are symbolic.
 
 `UnsupportedOwnershipBoundary` means missing indexed separation evidence,
 not established overlap. No incomplete successor is published. The supported
@@ -1877,7 +1898,7 @@ endpoint facts, output size, and unsupported boundaries.
 The wider perimeter remains separate. `ExecutionState::local_scalar_access_resources`
 and `ReservedLocalScalarOwner::restore_into` still admit withheld owners through
 the legacy wrapper. The generic incremental facade serves exchange restoration,
-certified groups, stable-view recovery, function resource context evaluation,
+certified groups, function resource context evaluation,
 instance rewriting, contract refinement, iterated steps, loop guards,
 proof-interface joins and thread joins. The manifest names each caller and
 count. Older `try_compose_with_fact(s)` and delaying-normalization variants
