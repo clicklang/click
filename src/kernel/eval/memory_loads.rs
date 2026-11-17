@@ -2667,8 +2667,10 @@ pub(crate) fn comparison_form(proposition: &Proposition) -> Option<Proposition> 
 /// `proposition` with each closed comparison under its connectives and
 /// binders replaced by the constant it decides from its literal roots, or
 /// `None` when it contains none. Visits only the proposition's own nodes.
+///
+/// Uncharged, like the rest of the comparison form: the form is memoized, so
+/// charging its walk would make the same lookup cost differ by cache state.
 fn decide_closed_conditions(proposition: &Proposition) -> Option<Proposition> {
-    crate::instrumentation::record_deterministic_work(1);
     let pair = |left: &Proposition, right: &Proposition| {
         let decided_left = decide_closed_conditions(left);
         let decided_right = decide_closed_conditions(right);
