@@ -2063,6 +2063,13 @@ among the requirements and must rewrite the goal in the listed order.
 observation. Other families keep native value equality and ordering, including
 raw Boolean words, float bits, and native call-argument carrier distinctions.
 Its hash need only agree across equal stored keys; it is not a serialized ID.
+Boolean, float and algebraic local/outcome keys project common children rather
+than materializing an enclosing native value tree. Algebraic projections retain
+constructor field positions, match binding/body order and original call-argument
+carriers. Scalar algebraic fields and read addresses keep selected compatibility
+descriptors; memory keys and exact refresh remain separate consumers.
+Projection memos belong to one verification, with iterative construction,
+comparison and disposal for shared or deep algebraic structure.
 
 `StoredMemoryValue` preserves native `ProgramValue` structural equality, order,
 and hash stream. Replacing it with a local observation key would change the
