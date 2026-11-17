@@ -5355,12 +5355,12 @@ fn checked_contract_control_read_state(
             .ok_or_else(|| RuntimeError::MissingResource {
                 resource: Box::new(fact.clone()),
             })?;
-        let children = children
-            .into_iter()
-            .filter(|child| !without_head.contains_exact_representation(child))
-            .collect::<Vec<_>>();
+        // The selected held wrapper supplies its body beside this frame.
+        // Keep the constructed successor; an equal ambient child is not a
+        // replacement for the ownership removed with the parent.
         resources = without_head
-            .try_compose_with_facts_delaying_normalization(children, assumptions)
+            .install_established_partition(children, assumptions)
+            .map(|(context, _)| context)
             .map_err(resource_context_runtime_error)?;
     }
     Ok(state.clone().with_resource_context(resources))
@@ -13063,61 +13063,56 @@ fn evaluate_contract_return_resource_context(
                 .unchecked_with_facts(entry_argument_views.iter().cloned()),
         )
     };
-    let entry_state_for_argument_reads =
-        if interface
-            .resource_ensures()
-            .iter()
-            .take(count)
-            .any(|resource| resource.guard().is_some())
-        {
-            let mut resources = entry_state_for_argument_reads.resources().clone();
-            for checked in entry_clauses {
-                let Resource::Composite { name, .. } = checked.fact.resource() else {
-                    continue;
-                };
-                let Some(definition) = interface.composite_resource_definition(name) else {
-                    continue;
-                };
-                if !definition
-                    .contains()
-                    .iter()
-                    .any(|child| matches!(child.term(), ResourceTerm::PopulationAuthority { .. }))
-                {
-                    continue;
-                }
-                // An entry checker may already have opened this control.
-                // In that case the guard must use its actual authority child.
-                if !resources.contains_exact_representation(&checked.fact) {
-                    continue;
-                }
-                let (children, _) = match entry_state_for_argument_reads
-                    .checked_authority_wrapper_body(&checked.fact, definition, assumptions)
-                {
-                    Ok(body) => body,
-                    Err(error) => return Ok(Err(RuntimeError::FunctionContract(error))),
-                };
-                let Some(without_head) =
-                    resources.without_fact_incrementally(&checked.fact, assumptions)
-                else {
-                    return Ok(Err(RuntimeError::MissingResource {
-                        resource: Box::new(checked.fact.clone()),
-                    }));
-                };
-                let missing = children
-                    .into_iter()
-                    .filter(|child| !without_head.contains_exact_representation(child))
-                    .collect::<Vec<_>>();
-                resources = match without_head
-                    .try_compose_with_facts_delaying_normalization(missing, assumptions)
-                {
-                    Ok(expanded) => expanded,
-                    Err(error) => return Ok(Err(resource_context_runtime_error(error))),
-                };
+    let entry_state_for_argument_reads = if interface
+        .resource_ensures()
+        .iter()
+        .take(count)
+        .any(|resource| resource.guard().is_some())
+    {
+        let mut resources = entry_state_for_argument_reads.resources().clone();
+        for checked in entry_clauses {
+            let Resource::Composite { name, .. } = checked.fact.resource() else {
+                continue;
+            };
+            let Some(definition) = interface.composite_resource_definition(name) else {
+                continue;
+            };
+            if !definition
+                .contains()
+                .iter()
+                .any(|child| matches!(child.term(), ResourceTerm::PopulationAuthority { .. }))
+            {
+                continue;
             }
-            entry_state_for_argument_reads.with_resource_context(resources)
-        } else {
-            entry_state_for_argument_reads
-        };
+            // An entry checker may already have opened this control.
+            // In that case the guard must use its actual authority child.
+            if !resources.contains_exact_representation(&checked.fact) {
+                continue;
+            }
+            let (children, _) = match entry_state_for_argument_reads.checked_authority_wrapper_body(
+                &checked.fact,
+                definition,
+                assumptions,
+            ) {
+                Ok(body) => body,
+                Err(error) => return Ok(Err(RuntimeError::FunctionContract(error))),
+            };
+            let Some(without_head) =
+                resources.without_fact_incrementally(&checked.fact, assumptions)
+            else {
+                return Ok(Err(RuntimeError::MissingResource {
+                    resource: Box::new(checked.fact.clone()),
+                }));
+            };
+            resources = match without_head.install_established_partition(children, assumptions) {
+                Ok((expanded, _)) => expanded,
+                Err(error) => return Ok(Err(resource_context_runtime_error(error))),
+            };
+        }
+        entry_state_for_argument_reads.with_resource_context(resources)
+    } else {
+        entry_state_for_argument_reads
+    };
     // A returned control preserves the authority consumed at entry. Match
     // its source spelling against only those authenticated input controls;
     // alias equality does not create a new ledger identity.

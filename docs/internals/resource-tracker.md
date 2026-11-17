@@ -1965,6 +1965,9 @@ them. Fresh viewed children receive only the selected parent's binding; equal
 ambient children keep theirs. A body already exposed by the same loan retains
 its existing child occurrences instead of emitting duplicate views. This reuse
 uses bounded exact-child nominees and checks their retained loan authority.
+Control scratch reads and guarded-return entry reads also replace their selected
+held wrapper with its declared children; they do not re-admit those children
+against the caller frame or absorb equal ambient owners.
 Population/control projection, selected callee
 ownership reservations, loop declarations and loop-frame restoration use their
 held or declared partition rather than raw caller-boundary admission. Their

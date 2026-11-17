@@ -15,12 +15,10 @@ src/kernel/functions.rs	legacy-caller	::apply_verified_heap_allocation_delta	exp
 src/kernel/functions.rs	legacy-caller	::candidate_composite_view_adapter	try_compose_with_fact	1
 src/kernel/functions.rs	legacy-caller	::checked_composite_projection_evidence	expand_composite_resource_fact_with_children	1
 src/kernel/functions.rs	legacy-caller	::checked_composite_projection_evidence	try_compose_with_fact	1
-src/kernel/functions.rs	legacy-caller	::checked_contract_control_read_state	try_compose_with_facts_delaying_normalization	1
 src/kernel/functions.rs	legacy-caller	::checked_one_level_frontier	expand_composite_resource_fact_with_children	1
 src/kernel/functions.rs	legacy-caller	::checked_one_level_frontier	try_compose_with_fact	1
 src/kernel/functions.rs	legacy-caller	::construct_program_function_resource	try_compose_with_fact	1
 src/kernel/functions.rs	legacy-caller	::contract_exit_outcome_with_boundary_transfer	validity_error	2
-src/kernel/functions.rs	legacy-caller	::evaluate_contract_return_resource_context	try_compose_with_facts_delaying_normalization	1
 src/kernel/functions.rs	legacy-caller	::execute_verified_function_applications_with_suspension	try_compose_into_valid_context_delaying_normalization	1
 src/kernel/functions.rs	legacy-caller	::expand_composite_resource_fact	expand_composite_resource_fact_with_children	1
 src/kernel/functions.rs	legacy-caller	::expand_composites_for_frame	expand_composite_resource_fact_with_children	1
