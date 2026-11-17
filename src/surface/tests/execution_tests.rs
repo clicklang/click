@@ -1444,7 +1444,7 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
                     };
                     let (loop_statement, result) = (statements.first().clone(), statements.rest());
                     let ProgramStatement::Loop {
-                        condition,
+                        test,
                         invariant,
                         invariant_checks,
                         body,
@@ -1453,6 +1453,7 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
                     else {
                         panic!("fill3 suffix should start with a loop");
                     };
+                    let condition = test.execution_parts().0.clone();
                     program_function(
                         ProgramType::Int32,
                         "fill3",

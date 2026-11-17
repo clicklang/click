@@ -1583,7 +1583,7 @@ pub(in crate::kernel) fn abstract_loop_paths(
     // to be synchronized across this boundary.
     let paths = execute_program_loop_exit_paths(
         state,
-        ProgramLoop::of(statement).expect("matched a loop statement"),
+        LoopExecutionView::of(statement).expect("matched a loop statement"),
         assumptions,
         execution_context.environment,
         Some(execution_context.environment),
@@ -1971,7 +1971,7 @@ fn loop_state_components_match_at_back_edge_inner(
 
 /// The parts of one program loop the loop rule reads, borrowed from it.
 #[derive(Clone, Copy)]
-pub(super) struct ProgramLoop<'a> {
+pub(super) struct LoopExecutionView<'a> {
     pub(super) condition: &'a ProgramExpression,
     pub(super) invariant: &'a [Proposition],
     pub(super) invariant_checks: &'a [LoopInvariantCheck],
@@ -1982,18 +1982,17 @@ pub(super) struct ProgramLoop<'a> {
     pub(super) body: &'a ProgramStatement,
     pub(super) update: Option<&'a ProgramStatement>,
     pub(super) test: Option<&'a LoopTestRegion>,
-    pub(super) do_while: bool,
+    pub(super) direct_post_test: bool,
     pub(super) backedge_target: Option<ControlTargetId>,
     pub(super) natural_exit_target: Option<ControlTargetId>,
 }
 
-impl<'a> ProgramLoop<'a> {
+impl<'a> LoopExecutionView<'a> {
     /// The loop a program statement states, or `None` for any other statement.
     pub(super) fn of(statement: &'a ProgramStatement) -> Option<Self> {
         let ProgramStatement::Loop {
-            test,
+            test: loop_test,
             update,
-            condition,
             invariant,
             invariant_checks,
             effect_checks,
@@ -2001,15 +2000,15 @@ impl<'a> ProgramLoop<'a> {
             ranking_measures,
             structural_measure,
             body,
-            do_while,
             backedge_target,
             natural_exit_target,
         } = statement
         else {
             return None;
         };
+        let (condition, direct_post_test, test) = loop_test.execution_parts();
         Some(Self {
-            test: test.as_ref(),
+            test,
             update: update.as_deref(),
             condition,
             invariant,
@@ -2019,7 +2018,7 @@ impl<'a> ProgramLoop<'a> {
             ranking_measures,
             structural_measure: structural_measure.as_deref(),
             body,
-            do_while: *do_while,
+            direct_post_test,
             backedge_target: *backedge_target,
             natural_exit_target: *natural_exit_target,
         })
@@ -2029,7 +2028,7 @@ impl<'a> ProgramLoop<'a> {
 #[allow(clippy::too_many_arguments)]
 pub(super) fn execute_program_loop_exit_paths_with_proven_phases(
     state: &ExecutionState,
-    program_loop: ProgramLoop<'_>,
+    program_loop: LoopExecutionView<'_>,
     assumptions: &PureFactContext,
     execution_context: ExecutionContext<'_>,
     initialization_proven: bool,
@@ -2468,7 +2467,6 @@ fn join_loop_exits(
         outcome: StatementOutcome::Normal(Box::new(exit_state)),
         facts,
         obligations,
-
         loan_evidence,
     })
 }
@@ -4198,7 +4196,7 @@ fn loop_exit_state_difference(
 #[allow(clippy::too_many_arguments)]
 fn execute_program_loop_exit_paths(
     state: &ExecutionState,
-    program_loop: ProgramLoop<'_>,
+    program_loop: LoopExecutionView<'_>,
     assumptions: &PureFactContext,
     environment: &ExecutionEnvironment,
     preservation_environment: Option<&ExecutionEnvironment>,
@@ -4210,7 +4208,7 @@ fn execute_program_loop_exit_paths(
     budget: &mut ExecutionBudget,
     variables: &mut KernelVariableGenerator,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
-    let ProgramLoop {
+    let LoopExecutionView {
         condition,
         invariant,
         invariant_checks,
@@ -4219,7 +4217,7 @@ fn execute_program_loop_exit_paths(
         body,
         update,
         test,
-        do_while,
+        direct_post_test,
         backedge_target,
         natural_exit_target,
         ..
@@ -4276,7 +4274,7 @@ fn execute_program_loop_exit_paths(
             let summary = collect_loop_preservation_summary(
                 state,
                 &head,
-                ProgramLoop {
+                LoopExecutionView {
                     effect_checks: &head.effect_checks,
                     ..program_loop
                 },
@@ -4322,7 +4320,7 @@ fn execute_program_loop_exit_paths(
         .map(ExecutionPureFact::new)
         .collect::<Vec<_>>();
 
-    let (initial_may_continue, initial_may_exit) = if do_while {
+    let (initial_may_continue, initial_may_exit) = if direct_post_test {
         (!final_exit_candidates.is_empty(), false)
     } else if final_exit_candidates.is_empty() {
         (true, true)
@@ -4461,7 +4459,7 @@ fn execute_program_loop_exit_paths(
     )?;
     let mut has_live_iteration = false;
     for (invariant_facts, invariant_obligations, _) in &invariant_contexts {
-        if do_while
+        if direct_post_test
             || !assume_condition_truthiness(
                 &guard_state,
                 condition,
@@ -5126,7 +5124,7 @@ pub(super) struct LoopPreservationSummary {
 pub(super) fn collect_loop_preservation_summary(
     loop_entry_state: &ExecutionState,
     head: &LoopHead,
-    program_loop: ProgramLoop<'_>,
+    program_loop: LoopExecutionView<'_>,
     composite_resource_definitions: &[CompositeResourceDefinition],
     whole_loop_effect_summaries: &[Proposition],
     assumptions: &PureFactContext,
@@ -5134,7 +5132,7 @@ pub(super) fn collect_loop_preservation_summary(
     budget: &mut ExecutionBudget,
     variables: &mut KernelVariableGenerator,
 ) -> ExecutionResult<LoopPreservationSummary> {
-    let ProgramLoop {
+    let LoopExecutionView {
         condition,
         invariant_checks,
         effect_checks,
@@ -5144,7 +5142,7 @@ pub(super) fn collect_loop_preservation_summary(
         body,
         update,
         test,
-        do_while,
+        direct_post_test,
         backedge_target,
         natural_exit_target,
         ..
@@ -5176,7 +5174,7 @@ pub(super) fn collect_loop_preservation_summary(
         &[],
         budget,
     )? {
-        let condition_contexts = if do_while {
+        let condition_contexts = if direct_post_test {
             vec![ConditionAssumption {
                 branch: ConditionBranch::Decided(true),
                 facts: invariant_facts.clone(),
@@ -5315,7 +5313,7 @@ pub(super) fn collect_loop_preservation_summary(
                             assumptions,
                             budget,
                         )?;
-                        let mut path_obligations = if do_while && !may_continue {
+                        let mut path_obligations = if direct_post_test && !may_continue {
                             Vec::new()
                         } else {
                             collect_invariant_check_obligations(
@@ -8787,8 +8785,12 @@ pub(super) fn statement_may_write_memory(
         }
 
         ProgramStatement::Loop {
-            test, update, body, ..
+            test: loop_test,
+            update,
+            body,
+            ..
         } => {
+            let (_, _, test) = loop_test.execution_parts();
             statement_may_write_memory(state, body)
                 || test
                     .as_ref()
@@ -8887,8 +8889,12 @@ pub(super) fn collect_loop_modified_locals(
         }
 
         ProgramStatement::Loop {
-            test, update, body, ..
+            test: loop_test,
+            update,
+            body,
+            ..
         } => {
+            let (_, _, test) = loop_test.execution_parts();
             collect_loop_modified_locals(body, names);
             if let Some(test) = test {
                 collect_loop_modified_locals(&test.statement, names);
@@ -9139,12 +9145,12 @@ fn for_each_statement_expression<'a>(
         }
 
         ProgramStatement::Loop {
-            test,
+            test: loop_test,
             update,
-            condition,
             body,
             ..
         } => {
+            let (condition, _, test) = loop_test.execution_parts();
             visit(condition);
             for_each_statement_expression(body, visit);
             if let Some(test) = test {
@@ -9252,12 +9258,12 @@ pub(crate) fn collect_address_taken_locals(
         }
 
         ProgramStatement::Loop {
-            test,
+            test: loop_test,
             update,
-            condition,
             body,
             ..
         } => {
+            let (condition, _, test) = loop_test.execution_parts();
             collect_address_taken_in_expression(condition, names);
             collect_address_taken_locals(body, names);
             if let Some(test) = test {

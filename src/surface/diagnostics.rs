@@ -6963,11 +6963,10 @@ pub(super) fn describe_execution_statement_head(statement: &ProgramStatement) ->
             format!("the loop's test ({})", describe_c_guard(condition))
         }
         ProgramStatement::Loop {
-            condition,
-            do_while,
-            ..
+            test: loop_test, ..
         } => {
-            if *do_while {
+            let (condition, direct_post_test, _) = loop_test.execution_parts();
+            if direct_post_test {
                 format!("do ... while ({})", describe_c_guard(condition))
             } else {
                 format!("while ({})", describe_c_guard(condition))

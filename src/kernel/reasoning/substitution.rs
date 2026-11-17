@@ -1154,7 +1154,6 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
         ProgramStatement::Loop {
             test,
             update,
-            condition,
             invariant,
             invariant_checks,
             effect_checks,
@@ -1162,19 +1161,17 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             ranking_measures,
             structural_measure,
             body,
-            do_while,
             backedge_target,
             natural_exit_target,
         } => ProgramStatement::Loop {
-            test: test.as_ref().map(|test| LoopTestRegion {
+            test: LoopTestRegion {
                 statement: std::sync::Arc::new(walk_execution_statement(&test.statement, s)),
                 position: test.position,
-            }),
+            },
             update: update
                 .as_ref()
                 .map(|step| std::sync::Arc::new(walk_execution_statement(step, s))),
             structural_measure: structural_measure.clone(),
-            condition: s.program_expression(condition),
             ranking_measures: ranking_measures
                 .iter()
                 .map(|measure| walk_ranking_component(measure, s))
@@ -1210,7 +1207,6 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
                     }),
                 })
                 .collect(),
-            do_while: *do_while,
             backedge_target: *backedge_target,
             natural_exit_target: *natural_exit_target,
             body: Box::new(walk_execution_statement(body, s)),
@@ -1973,9 +1969,11 @@ mod resource_frame_substitution_tests {
             ),
         );
         let statement = ProgramStatement::Loop {
-            test: None,
+            test: crate::kernel::LoopTestRegion::expression(
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::LoopTestPosition::BeforeBody,
+            ),
             update: None,
-            condition: crate::kernel::program_expression::int32_literal(0),
             invariant: Vec::new(),
             invariant_checks: Vec::new(),
             effect_checks: vec![inherited_check(range)],
@@ -1983,7 +1981,6 @@ mod resource_frame_substitution_tests {
             ranking_measures: Vec::new(),
             structural_measure: None,
             body: Box::new(ProgramStatement::Skip),
-            do_while: false,
             backedge_target: None,
             natural_exit_target: None,
         };
@@ -2019,9 +2016,11 @@ mod resource_frame_substitution_tests {
             MachineTerm::constant(1),
         );
         let statement = ProgramStatement::Loop {
-            test: None,
+            test: crate::kernel::LoopTestRegion::expression(
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::LoopTestPosition::BeforeBody,
+            ),
             update: None,
-            condition: crate::kernel::program_expression::int32_literal(0),
             invariant: Vec::new(),
             invariant_checks: Vec::new(),
             effect_checks: vec![inherited_check(range)],
@@ -2029,7 +2028,6 @@ mod resource_frame_substitution_tests {
             ranking_measures: Vec::new(),
             structural_measure: None,
             body: Box::new(ProgramStatement::Skip),
-            do_while: false,
             backedge_target: None,
             natural_exit_target: None,
         };
@@ -2828,15 +2826,15 @@ pub(in crate::kernel) fn collect_execution_statement_bound_variables(
             collect_execution_statement_bound_variables(else_branch, variables);
         }
         ProgramStatement::Loop {
-            test,
+            test: loop_test,
             update,
-            condition,
             invariant,
             invariant_checks,
             effect_checks,
             body,
             ..
         } => {
+            let (condition, _, test) = loop_test.execution_parts();
             collect_program_expression_bound_variables(condition, variables);
             for proposition in invariant {
                 collect_proposition_bound_variables(proposition, variables);

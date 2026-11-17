@@ -928,7 +928,7 @@ fn loop_preservation_contexts_with_mode(
     body: &ProgramStatement,
     assumptions: &PureFactContext,
     next_kernel_variable: u64,
-    do_while: bool,
+    direct_post_test: bool,
 ) -> Result<Vec<LoopPreservationContext>, LoopHeadRefusal> {
     // The head inherits the execution's counter instead of restarting at the
     // base of the identity range. Restarting it in the middle of an execution
@@ -1025,7 +1025,7 @@ fn loop_preservation_contexts_with_mode(
             error,
         )
     })? {
-        let condition_contexts = if do_while {
+        let condition_contexts = if direct_post_test {
             vec![ConditionAssumption {
                 branch: ConditionBranch::Decided(true),
                 facts: invariant_facts.clone(),
@@ -2645,19 +2645,68 @@ pub fn program_while_with_invariant_and_effect_checks(
     body: ProgramStatement,
 ) -> ProgramStatement {
     ProgramStatement::Loop {
-        test: None,
+        test: crate::kernel::LoopTestRegion::expression(
+            condition,
+            crate::kernel::LoopTestPosition::BeforeBody,
+        ),
         update: None,
-        condition,
         invariant,
         invariant_checks,
         effect_checks,
         resource_specs: Vec::new(),
         ranking_measures: Vec::new(),
         structural_measure: None,
-        do_while: false,
         backedge_target: None,
         natural_exit_target: None,
         body: Box::new(body),
+    }
+}
+
+impl LoopTestRegion {
+    /// A test with no preparation or temporary cleanup.
+    pub fn expression(condition: ProgramExpression, position: LoopTestPosition) -> Self {
+        Self {
+            statement: std::sync::Arc::new(ProgramStatement::LoopTest {
+                condition,
+                aggregate_steps: Vec::new(),
+            }),
+            position,
+        }
+    }
+
+    /// The direct post-test's first body has already run. Subsequent entries
+    /// use its guard directly; a prepared test keeps its own phase placement.
+    pub(crate) fn for_repeated_iteration(&self) -> Self {
+        let position = if self.execution_parts().1 {
+            LoopTestPosition::BeforeBody
+        } else {
+            self.position
+        };
+        Self {
+            statement: self.statement.clone(),
+            position,
+        }
+    }
+
+    /// Borrow the executable entry guard without storing another condition or
+    /// placement on the loop. A preparation-free test can be decided directly;
+    /// an explicit test region is entered before its decision is available.
+    pub(crate) fn execution_parts(&self) -> (&ProgramExpression, bool, Option<&Self>) {
+        if let ProgramStatement::LoopTest {
+            condition,
+            aggregate_steps,
+        } = self.statement.as_ref()
+            && aggregate_steps.is_empty()
+        {
+            return (
+                condition,
+                self.position == LoopTestPosition::AfterBody,
+                None,
+            );
+        }
+        static REGION_ENTRY: std::sync::LazyLock<ProgramExpression> =
+            std::sync::LazyLock::new(|| crate::kernel::program_expression::int32_literal(1));
+        (&REGION_ENTRY, false, Some(self))
     }
 }
 
@@ -2723,27 +2772,17 @@ pub(crate) fn program_loop_pass(
 }
 
 impl ProgramStatement {
-    /// Retain an effectful test once, outside the body and its scopes.
+    /// Set the loop's one test region, outside the body and its scopes.
     pub fn with_loop_test(
         mut self,
         statement: ProgramStatement,
         position: LoopTestPosition,
     ) -> Self {
-        if let Self::Loop {
-            test,
-            condition,
-            do_while,
-            ..
-        } = &mut self
-        {
-            *test = Some(LoopTestRegion {
+        if let Self::Loop { test, .. } = &mut self {
+            *test = LoopTestRegion {
                 statement: std::sync::Arc::new(statement),
                 position,
-            });
-            // The shared region owns the test and its placement. The shell
-            // has an unconditional guard, including on its initial visit.
-            *do_while = false;
-            *condition = crate::kernel::program_expression::int32_literal(1);
+            };
         }
         self
     }
@@ -2863,16 +2902,17 @@ pub fn program_do_while_with_invariant_and_effect_checks(
     body: ProgramStatement,
 ) -> ProgramStatement {
     ProgramStatement::Loop {
-        test: None,
+        test: crate::kernel::LoopTestRegion::expression(
+            condition,
+            crate::kernel::LoopTestPosition::AfterBody,
+        ),
         update: None,
-        condition,
         invariant: Vec::new(),
         invariant_checks,
         effect_checks,
         resource_specs: Vec::new(),
         ranking_measures: Vec::new(),
         structural_measure: None,
-        do_while: true,
         backedge_target: None,
         natural_exit_target: None,
         body: Box::new(body),
@@ -4933,7 +4973,7 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases_using_budget(
     } = statement.into();
     let loop_evidence =
         loop_evidence.map(|evidence| evidence.executed_under(LoopSemantics::ApplyVerifiedRules));
-    let Some(program_loop) = crate::kernel::loops::ProgramLoop::of(&statement) else {
+    let Some(program_loop) = crate::kernel::loops::LoopExecutionView::of(&statement) else {
         return (
             SymbolicExecution {
                 paths: Vec::new(),

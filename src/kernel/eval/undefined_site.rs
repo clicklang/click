@@ -84,8 +84,8 @@ pub(super) fn statement_expressions<'a>(
         | ProgramStatement::StepValue { expression, .. } => expressions.push((expression, false)),
         ProgramStatement::Assert { condition, .. }
         | ProgramStatement::LoopTest { condition, .. }
-        | ProgramStatement::If { condition, .. }
-        | ProgramStatement::Loop { condition, .. } => expressions.push((condition, true)),
+        | ProgramStatement::If { condition, .. } => expressions.push((condition, true)),
+        ProgramStatement::Loop { test, .. } => expressions.push((test.execution_parts().0, true)),
         ProgramStatement::CallConstruct { arguments, .. } => {
             expressions.extend(arguments.iter().map(|argument| (argument, false)));
         }

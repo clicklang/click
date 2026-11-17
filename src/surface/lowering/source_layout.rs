@@ -58,8 +58,12 @@ pub(in crate::surface) fn count_loop_regions(
                 try_body, handler, ..
             } => pending.extend([try_body.as_ref(), handler.as_ref()]),
             ProgramStatement::Loop {
-                test, update, body, ..
+                test: loop_test,
+                update,
+                body,
+                ..
             } => {
+                let (_, _, test) = loop_test.execution_parts();
                 count += 1;
                 pending.push(body);
                 if let Some(test) = test {
@@ -263,10 +267,6 @@ fn kernel_statement_reads(statement: &ProgramStatement) -> bool {
             condition: expression,
             ..
         }
-        | ProgramStatement::Loop {
-            condition: expression,
-            ..
-        }
         | ProgramStatement::Switch { expression, .. }
         | ProgramStatement::HeapAllocate {
             bytes: expression, ..
@@ -274,6 +274,7 @@ fn kernel_statement_reads(statement: &ProgramStatement) -> bool {
         | ProgramStatement::HeapFree {
             pointer: expression,
         } => expression_reads(expression),
+        ProgramStatement::Loop { test, .. } => expression_reads(test.execution_parts().0),
         ProgramStatement::Call { arguments, .. }
         | ProgramStatement::CallConstruct { arguments, .. }
         | ProgramStatement::CallResult { arguments, .. } => arguments.iter().any(expression_reads),
@@ -513,8 +514,12 @@ impl SourceExecutionLayout {
                     Ok(statement_index)
                 }
                 ProgramStatement::Loop {
-                    test, update, body, ..
+                    test: loop_test,
+                    update,
+                    body,
+                    ..
                 } => {
+                    let (_, _, test) = loop_test.execution_parts();
                     let statement_index = *next_statement_index;
                     *next_statement_index += 1;
                     let loop_index = layout.loop_bodies.len();
@@ -2112,8 +2117,12 @@ fn collect_kernel_automatic_exits(
                 tails
             }
             ProgramStatement::Loop {
-                test, update, body, ..
+                test: loop_test,
+                update,
+                body,
+                ..
             } => {
+                let (_, _, test) = loop_test.execution_parts();
                 if let Some(test) = test
                     .as_ref()
                     .filter(|test| test.position == crate::kernel::LoopTestPosition::BeforeBody)

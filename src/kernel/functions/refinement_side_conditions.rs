@@ -1033,8 +1033,12 @@ pub(super) fn statement_writes_aggregate_parameter(
         }
 
         ProgramStatement::Loop {
-            test, update, body, ..
+            test: loop_test,
+            update,
+            body,
+            ..
         } => {
+            let (_, _, test) = loop_test.execution_parts();
             statement_writes_aggregate_parameter(body, parameter_name, writes, unknown_write);
             if let Some(test) = test {
                 statement_writes_aggregate_parameter(

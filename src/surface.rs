@@ -6587,6 +6587,18 @@ impl ProofOpen {
             close_proof: Some(close_proof),
         }
     }
+
+    /// The `have`s a deferred close of `open(resource)` proved for the
+    /// several body facts its closing fold left open: an `open` with an
+    /// empty `by`, which the certificate appends to the block of the scope
+    /// it closes. A written `by` is never empty.
+    pub(crate) fn deferred_block_tail(resource: ResourceClause, haves: Vec<ProofTactic>) -> Self {
+        Self {
+            resource,
+            tactics: haves,
+            close_proof: Some(Vec::new()),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

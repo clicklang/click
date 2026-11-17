@@ -1059,9 +1059,8 @@ pub(in crate::kernel) fn collect_execution_statement_bitvector_variables(
             collect_execution_statement_bitvector_variables(else_branch, variables);
         }
         ProgramStatement::Loop {
-            test,
+            test: loop_test,
             update,
-            condition,
             invariant,
             invariant_checks,
             effect_checks,
@@ -1069,6 +1068,7 @@ pub(in crate::kernel) fn collect_execution_statement_bitvector_variables(
             body,
             ..
         } => {
+            let (condition, _, test) = loop_test.execution_parts();
             collect_program_expression_bitvector_variables(condition, variables);
             for proposition in invariant {
                 collect_proposition_bitvector_variables(proposition, variables);
