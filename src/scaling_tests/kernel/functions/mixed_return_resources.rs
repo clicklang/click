@@ -2762,15 +2762,22 @@ fn opaque_and_refused_family_dispatch_ignore_ambient_owners_and_aliases() {
                         _ => {}
                     }
                 }
-                let mut selected = flat_body_definition("selected", &p, if axis == "body" { count } else { 1 });
-                selected.sealed = sealed;
+                let (head, mut selected) = if sealed {
+                    let (head, mut definition) = super::specialized_return_tests::named(p.clone(), 8_916_001);
+                    definition.contains = flat_body_definition("unused", &p, if axis == "body" { count } else { 1 }).contains;
+                    definition.sealed = true;
+                    (head, definition)
+                } else {
+                    (ResourceFact::own_composite("selected".into(), vec![]),
+                     flat_body_definition("selected", &p, if axis == "body" { count } else { 1 }))
+                };
                 if !sealed {
                     selected.witnesses.push(program_parameter("unsupported", ProgramType::Int32));
                 }
                 definitions.push(selected);
                 definitions.sort_by(|a,b| a.name().cmp(b.name()));
                 let outputs = EvaluatedReturnResources::new(&facts)
-                    .admit(ResourceFact::own_composite("selected".into(), vec![]), ReturnOwnershipOrigin::Description, &facts).unwrap();
+                    .admit(head, ReturnOwnershipOrigin::Description, &facts).unwrap();
                 let state = ExecutionState::new().with_resource_context(resources);
                 let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                     let _fast = crate::kernel::search::FastOperationScope::enter("bounded family dispatch");

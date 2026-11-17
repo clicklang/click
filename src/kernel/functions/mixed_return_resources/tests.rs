@@ -1359,9 +1359,8 @@ fn nonunit_memory_returns_refuse_but_token_counts_keep_their_constructed_body() 
 fn sealed_return_dispatch_retains_opaque_identity_and_projection_needs_no_definition() {
     let facts = PureFactContext::new();
     let pointer = Pointer::symbolic(Variable(8_819_004));
-    let mut definition = flat_body_definition("sealed", &pointer, 1);
+    let (head, mut definition) = super::specialized_return_tests::named(pointer, 8_819_008);
     definition.sealed = true;
-    let head = ResourceFact::own_composite("sealed".into(), vec![]);
     let evaluated = EvaluatedReturnResources::new(&facts)
         .admit(head.clone(), ReturnOwnershipOrigin::Description, &facts)
         .unwrap();
@@ -1392,6 +1391,108 @@ fn sealed_return_dispatch_retains_opaque_identity_and_projection_needs_no_defini
     assert_eq!(projected[0].expansion, vec![head]);
     assert!(projected[0].frontier.is_empty());
     assert!(projected[0].viewed_children.as_slice().is_empty());
+}
+
+#[test]
+fn sealed_field_free_returns_keep_their_explicit_memory_frontier() {
+    let facts = PureFactContext::new();
+    let p = Pointer::symbolic(Variable(8_819_009));
+    let mut definition = flat_body_definition("sealed_memory", &p, 1);
+    definition.sealed = true;
+    let head = ResourceFact::own_composite("sealed_memory".into(), vec![]);
+    let outputs = EvaluatedReturnResources::new(&facts)
+        .admit(head.clone(), ReturnOwnershipOrigin::Description, &facts).unwrap();
+    let _fast = crate::kernel::search::FastOperationScope::enter("sealed finite frontier");
+    let bodies = ConstructedReturnBodies::construct(&outputs, &[definition], &ExecutionState::new(), &facts);
+    let body = bodies.get(outputs.occurrences[0].source).unwrap();
+    assert!(body.folded.is_empty());
+    assert!(body.frontier.iter().any(|piece| piece.memory_own_range().is_some()));
+    let held = ResourceFact::own_memory(MemoryRange::new(p, 0u32.into(), 1u32.into()));
+    assert!(matches!(produced_composite_frontier_conflict(
+        &ResourceContext::new_with_equalities(&facts).unchecked_with_fact(held),
+        std::iter::once((&head, Some(body))), &facts,
+    ), Some(RuntimeError::ProducedCompositeOverlapsHeldResource { .. })));
+}
+
+#[test]
+fn opaque_instances_keep_the_actual_fields_without_opening_unhandled_children() {
+    let facts = PureFactContext::new();
+    let p = Pointer::symbolic(Variable(8_819_005));
+    let (head, mut definition) = super::specialized_return_tests::named(p.clone(), 8_819_006);
+    definition.contains.push(composite_spec(
+        "unopened_child",
+        ProgramExpression::Value(ProgramValue::pointer(p)),
+        ResourceTransferRole::Borrow,
+    ));
+    let evaluated = EvaluatedReturnResources::new(&facts)
+        .admit(head.clone(), ReturnOwnershipOrigin::Description, &facts)
+        .unwrap();
+    let source = evaluated.occurrences[0].source;
+    let _fast = crate::kernel::search::FastOperationScope::enter("opaque selected instance");
+    // There is deliberately no child definition or authority to reconstruct.
+    let bodies = ConstructedReturnBodies::construct(
+        &evaluated,
+        &[definition.clone()],
+        &ExecutionState::new(),
+        &facts,
+    );
+    let body = bodies.get(source).unwrap();
+    assert_eq!(body.folded, vec![(head.clone(), source)]);
+    assert_eq!(body.expansion, vec![head]);
+    assert!(body.frontier.is_empty());
+    assert!(body.transfers.is_empty());
+    definition.instance_schema = Some(ResourceFieldSchema::new(vec![]).unwrap());
+    assert!(
+        ConstructedReturnBodies::try_construct(
+            &evaluated,
+            &[definition],
+            &ExecutionState::new(),
+            ReturnResourceComposition::ValidateDescriptions,
+            &facts
+        )
+        .is_none()
+    );
+}
+
+#[test]
+fn nonunit_memory_cannot_hide_behind_borrowed_child_custody() {
+    let facts = PureFactContext::new();
+    let p = Pointer::symbolic(Variable(8_819_007));
+    let head = ResourceFact::Own(
+        Resource::Composite {
+            name: "many".into(),
+            arguments: vec![].into(),
+        },
+        Box::new(2u32.into()),
+    );
+    let outputs = EvaluatedReturnResources::new(&facts)
+        .admit(head.clone(), ReturnOwnershipOrigin::EntryBorrow, &facts)
+        .unwrap();
+    let plan = ConsumedCellReturns::default();
+    let _fast = crate::kernel::search::FastOperationScope::enter("counted borrowed return");
+    let bodies = ConstructedReturnBodies::try_construct(
+        &outputs,
+        &[flat_body_definition("many", &p, 1)],
+        &ExecutionState::new(),
+        ReturnResourceComposition::ApplyTransfers(&plan),
+        &facts,
+    )
+    .unwrap();
+    let body = bodies.get(outputs.occurrences[0].source).unwrap();
+    assert!(
+        !body
+            .boundary
+            .iter()
+            .any(|piece| piece.memory_own_range().is_some())
+    );
+    assert!(
+        produced_composite_frontier_conflict(
+            &ResourceContext::new_with_equalities(&facts),
+            std::iter::once((&head, Some(body))),
+            &facts
+        )
+        .is_some()
+    );
 }
 
 pub(super) fn constructed_flat_return(

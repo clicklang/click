@@ -1852,11 +1852,13 @@ The automatic call-return inventory now distinguishes these boundaries:
 
 Family dispatch has no legacy set or downstream expansion route. Supported
 ordinary, existential, recursive, instance and authority families retain their
-producer's children. Sealed heads and instances outside the specialized constructor fragment remain
-deliberately opaque, retaining their exact occurrence and instance bindings
-without exposing child ownership. Generic expansion previously left these
-instances folded too; dispatch now records that outcome directly. Missing definitions and shapes
-outside these finite constructors refuse before publishing a return. Counted
+producer's children. Instances outside the specialized constructor fragment remain deliberately
+opaque, retaining their exact occurrence and instance bindings without exposing
+child ownership. Generic expansion previously left these
+instances folded too; dispatch now records that outcome directly. Sealed field-free composites keep their certified finite frontier; seal visibility
+does not erase internal memory boundaries. Iterated ownership is carried as one
+finite descriptor leaf, without enumerating its guarded elements. Missing
+definitions and unsupported field-free shapes refuse before publishing a return. Counted
 bodies without exclusive leaves keep their count semantics; a nonunit body that
 exposes exclusive ownership refuses even when its leaves carry input custody.
 Returned views always retain the identities of the children that produced them;

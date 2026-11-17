@@ -1126,15 +1126,6 @@ impl ConstructedReturnBodies {
                     definition.name().cmp(name)
                 })
                 .ok()?];
-            // Sealed ownership deliberately exposes no body. Retain its exact
-            // head and occurrence rather than trying a downstream expansion.
-            if definition.sealed {
-                bodies.insert(
-                    occurrence.source,
-                    ConstructedReturnBody::opaque(support, occurrence.source),
-                );
-                continue;
-            }
             if let Some(family) = specialized_returns::classify(support, definitions) {
                 match specialized_returns::construct(
                     family,
@@ -1164,7 +1155,11 @@ impl ConstructedReturnBodies {
             // In particular, nested schemas and protocol wrappers do not need
             // a body reconstruction just to cross the return boundary.
             if let Resource::Instance(instance) = support.resource() {
-                if definition.instance_schema.as_ref() != Some(instance.schema()) {
+                if definition
+                    .instance_schema
+                    .as_ref()
+                    .is_some_and(|schema| schema != instance.schema())
+                {
                     return None;
                 }
                 bodies.insert(
@@ -1175,8 +1170,7 @@ impl ConstructedReturnBodies {
             }
             // A family outside the finite constructor fragment is a bounded
             // refusal, never permission to rediscover a body in a consumer.
-            if !Self::supports(name, definitions, &mut supported, &mut BTreeSet::new())
-            {
+            if !Self::supports(name, definitions, &mut supported, &mut BTreeSet::new()) {
                 return None;
             }
             let borrowed = composition.restores_entry_borrows()
@@ -1206,7 +1200,7 @@ impl ConstructedReturnBodies {
     // Classify definitions before producing any body. Existential migration
     // retains pointer witness bindings and nested child occurrences. Its binder
     // examines only this definition, never held children.
-    // Guarded direct recursion emits a finite frontier and retains its child
+    // Direct recursion emits a finite frontier and retains its child
     // folded. Non-pointer witnesses and named child schemas refuse here;
     // specialized authority/matched fragments have their own constructor.
     fn supports(
@@ -1234,7 +1228,6 @@ impl ConstructedReturnBodies {
         });
         let valid = definition.instance_schema.is_none()
             && definition.matched.is_none()
-            && (!definition.is_recursive() || definition.condition.is_some())
             && explicit_witnesses
             && definition.children.is_empty()
             && definition.contains().iter().all(|child| {
@@ -1243,7 +1236,9 @@ impl ConstructedReturnBodies {
                     return false;
                 }
                 match child.term() {
-                    ResourceTerm::Memory(_) | ResourceTerm::Token { .. } => true,
+                    ResourceTerm::Memory(_)
+                    | ResourceTerm::Token { .. }
+                    | ResourceTerm::Iterated(_) => true,
                     ResourceTerm::Composite { name, .. } => {
                         child.quantity() == &ResourceQuantity::One
                             && ((name == definition.name() && definition.is_recursive())

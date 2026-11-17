@@ -13667,6 +13667,7 @@ fn produced_composite_frontier_conflict<'a>(
                 && matches!(
                     piece.resource(),
                     Resource::Memory(_)
+                        | Resource::Iterated(_)
                         | Resource::PopulationAuthority(_)
                         | Resource::Instance(_)
                         | Resource::Composite { .. }
