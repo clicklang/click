@@ -2582,37 +2582,66 @@ fn float_reflexive(finite: &Proposition, result: &Proposition) -> bool {
     if !charge_bitvector(finite_expression) {
         return false;
     }
-    let Proposition::ConditionIs(condition, expected) = result else {
+    let Some((condition, left, right)) = finite_float_comparison(result) else {
         return false;
     };
-    let (operator, left, right, width) = match condition {
+    let width = if matches!(condition, ConditionTerm::Float32(_)) {
+        32
+    } else {
+        64
+    };
+    charge_bitvector(left)
+        && charge_bitvector(right)
+        && bitvector_equal(left, right)
+        && width == finite_width
+        && bitvector_equal(left, finite_expression)
+}
+
+/// Extract the operands when the comparison has the polarity it would have
+/// on equal finite operands.
+fn finite_float_comparison(
+    result: &Proposition,
+) -> Option<(&ConditionTerm, &MachineTerm, &MachineTerm)> {
+    let Proposition::ConditionIs(condition, expected) = result else {
+        return None;
+    };
+    let (operator, left, right) = match condition {
         ConditionTerm::Float32(FloatCondition::Comparison {
             operator,
             left,
             right,
-        }) => (*operator, left.as_ref(), right.as_ref(), 32),
-        ConditionTerm::Float64(FloatCondition::Comparison {
+        })
+        | ConditionTerm::Float64(FloatCondition::Comparison {
             operator,
             left,
             right,
-        }) => (*operator, left.as_ref(), right.as_ref(), 64),
-        _ => return false,
+        }) => (*operator, left.as_ref(), right.as_ref()),
+        _ => return None,
     };
-    if !charge_bitvector(left) || !charge_bitvector(right) {
-        return false;
-    }
-    let same_result = bitvector_equal(left, right);
-    let same_finite = bitvector_equal(left, finite_expression);
-    if width != finite_width || !same_result || !same_finite {
-        return false;
-    }
     let reflexive = matches!(
         operator,
         ComparisonOperator::Equal
             | ComparisonOperator::LessEqual
             | ComparisonOperator::GreaterEqual
     );
-    *expected == reflexive
+    (*expected == reflexive).then_some((condition, left, right))
+}
+
+pub(super) fn finite_float_reflexivity_premise(result: &Proposition) -> Option<Proposition> {
+    let (condition, operand, other) = finite_float_comparison(result)?;
+    if operand != other {
+        return None;
+    }
+    let finite = match condition {
+        ConditionTerm::Float32(_) => {
+            ConditionTerm::float32_classification(operand.clone(), FloatClassification::Finite)
+        }
+        ConditionTerm::Float64(_) => {
+            ConditionTerm::float64_classification(operand.clone(), FloatClassification::Finite)
+        }
+        _ => unreachable!("finite reflexivity only selects float comparisons"),
+    };
+    Some(Proposition::ConditionIs(finite, true))
 }
 
 #[cfg(test)]

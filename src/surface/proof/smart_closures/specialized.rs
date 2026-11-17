@@ -136,10 +136,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if matches!(node, UnsignedSumBound { .. }) {
             return Self::try_widened_unsigned_sum_using(proof, &premises);
         }
-        if matches!(node, IntegerQuotientShift { .. }) {
-            return Self::try_quotient_shift_using(proof, &premises);
-        }
         let scope = proof.driver().open_have(result.clone())?;
+        if matches!(node, FloatReflexive { .. }) {
+            if !Self::known_bridge_using(scope.body(), &premises)? {
+                return Ok(None);
+            }
+            let closed = scope.driver().apply_step(ProofStep::Known)?;
+            return Ok(Some(closed.join()?.driver().apply_step(ProofStep::Known)?));
+        }
         if matches!(
             node,
             PointerAlignment { .. } | PointerWordEquality { .. } | PointerWordFromAlignment { .. }

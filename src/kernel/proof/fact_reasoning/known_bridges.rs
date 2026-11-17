@@ -222,7 +222,8 @@ pub(crate) fn known_bridge_leaf(
         Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a, b), true) => {
             mask_bound(a, b, available)
         }
-        _ => false,
+        _ => crate::kernel::proof::arithmetic_special::finite_float_reflexivity_premise(goal)
+            .is_some_and(|premise| holds(&premise, available)),
     }
 }
 

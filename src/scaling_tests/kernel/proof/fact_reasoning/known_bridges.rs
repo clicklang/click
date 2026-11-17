@@ -143,3 +143,45 @@ fn neutral_bitwise_leaves_keep_large_operands_shared_without_fact_queries() {
     }
     assert!(costs.windows(2).all(|p| p[0] == p[1]), "{costs:?}");
 }
+
+#[test]
+fn finite_float_reflexivity_uses_one_exact_classification() {
+    let _session = VerificationSession::enter();
+    let finite = |id| {
+        Proposition::ConditionIs(
+            ConditionTerm::float32_classification(
+                MachineTerm::Variable(Variable(id)),
+                FloatClassification::Finite,
+            ),
+            true,
+        )
+    };
+    let operand = MachineTerm::Variable(Variable(996800));
+    let goal = Proposition::ConditionIs(
+        ConditionTerm::float32_compare(operand.clone(), operand, ComparisonOperator::Equal),
+        true,
+    );
+    let mut costs = Vec::new();
+    for size in [8, 32, 128, 512] {
+        let mut premises = (0..size).map(|i| finite(997000 + i)).collect::<Vec<_>>();
+        let missing = PureFactStore::from_ordered(&premises);
+        premises.push(finite(996800));
+        let facts = PureFactStore::from_ordered(&premises);
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for (context, expected) in [(&missing, false), (&facts, true)] {
+                let lookups = std::cell::Cell::new(0);
+                assert_eq!(
+                    known_bridge_leaf(&goal, &|premise| {
+                        lookups.set(lookups.get() + 1);
+                        assert_eq!(premise, &finite(996800));
+                        context.pure_known_available(premise)
+                    }),
+                    expected
+                );
+                assert_eq!(lookups.get(), 1);
+            }
+        });
+        costs.push(work);
+    }
+    assert!(costs.windows(2).all(|p| p[1] <= 2 * p[0]), "{costs:?}");
+}

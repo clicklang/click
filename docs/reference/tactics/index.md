@@ -1792,8 +1792,12 @@ nonnegative operands. Pointer translation names its equality first and scalar
 bounds after it; tagged-word rules name their word equality first (when used)
 and then the alignment facts. One finite classification proves the matching
 reflexive IEEE comparison. These are fixed local rules over explicit inputs;
-none selects premises or expands a polynomial. Legacy `rules` certificates
-remain accepted as authored compatibility syntax.
+none selects premises or expands a polynomial.
+
+For a reflexive `float` or `double` comparison, `solve` expands to
+`known()` when the exact `isfinite(x)` fact is available for the common
+operand. Restricted `solve() using` must select that fact. For example,
+`isfinite(x)` establishes `x == x`, `x <= x` and `not(x < x)`.
 
 For supported native unsigned address words, `solve` emits ordinary `have`
 goals, `apply(click::integer::...) using`, rewrites, and `known()`: alignment

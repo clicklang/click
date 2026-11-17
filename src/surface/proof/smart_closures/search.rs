@@ -10356,6 +10356,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
         }
         let goal = proof.goal()?;
+        if matches!(
+            goal,
+            Proposition::ConditionIs(ConditionTerm::Float32(_) | ConditionTerm::Float64(_), _)
+        ) && Self::known_bridge_using(&proof, surfaces).ok() == Some(true)
+        {
+            return proof
+                .driver()
+                .apply_step(ProofStep::Known)
+                .ok()
+                .filter(Proof::is_complete);
+        }
         let premise_pairs = surfaces
             .iter()
             .map(|surface| {
