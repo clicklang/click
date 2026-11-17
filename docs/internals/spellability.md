@@ -337,9 +337,9 @@ Baseline (2026-11-17, ordinary mdtest corpus, both runs passing):
 - Fact stability: 0 `differs`, 0 `paths:N`, 371 `refused` lines in 19
   fixtures; 338 of them come from
   `mutex_resource_quantity_requires_conservation` (`uint32` comparisons).
-- Round trip: 54,795 records. Of the 11,017 spellings the raiser produced,
-  9,358 were `same`, 663 `polarity`, 754 `differs` and 242 `unlowered`;
-  9,485 terms were `unraised` and 34,293 had `no-state` (mostly
+- Round trip: 55,035 records. Of the 11,198 spellings the raiser produced,
+  9,539 were `same`, 663 `polarity`, 754 `differs` and 242 `unlowered`;
+  9,514 terms were `unraised` and 34,323 had `no-state` (mostly
   termination predicates). Recurring `differs` shapes: an entry read
   raised through a current name (`old(*result) == 7` spelled
   `result->value == 7`, lowering to `old(*next) == 7`); a reflexive
