@@ -286,7 +286,11 @@ pub(super) fn construct(
         };
         let origin = if fact.is_view() {
             ReturnOwnershipOrigin::Description
-        } else if borrowed && fixed_memory_shape(spec, &parameters).is_some() {
+        } else if borrowed
+            && (fixed_memory_shape(spec, &parameters).is_some()
+                || definition.condition.is_none()
+                    && summary_transfer::invariant_memory_shape(spec, &parameters))
+        {
             ReturnOwnershipOrigin::EntryBorrow
         } else if definition.matched.is_none()
             && fact.memory_own_range().is_some()
