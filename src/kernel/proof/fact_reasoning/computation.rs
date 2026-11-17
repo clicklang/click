@@ -61,6 +61,18 @@ pub(crate) fn trivial_condition_value(condition: &ConditionTerm) -> Option<bool>
             left,
             right,
         } => {
+            // Equality compares word bits. Substitution can retain an unsigned
+            // constant in a signed equality (or conversely) at the same width.
+            if *relation == CompareRelation::Equal
+                && let (
+                    MachineTerm::Constant { format: a, bits: x },
+                    MachineTerm::Constant { format: b, bits: y },
+                ) = (left.as_ref(), right.as_ref())
+                && a.format().width() == format.format().width()
+                && b.format().width() == format.format().width()
+            {
+                return Some(x == y);
+            }
             let order = if left == right {
                 std::cmp::Ordering::Equal
             } else {

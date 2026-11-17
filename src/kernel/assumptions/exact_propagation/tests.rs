@@ -476,3 +476,33 @@ fn exact_propagation_matches_retained_and_native_arithmetic_operands() {
     );
     assert!(!context(vec![rule, different]).contains_known(&result));
 }
+
+#[test]
+fn exact_propagation_computes_substituted_word_equality_guards() {
+    use crate::kernel::*;
+    let result = atom("result");
+    for (right, equal) in [(0, false), (1, true), (2, false)] {
+        let comparison = ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left: Box::new(MachineTerm::uint64_constant(1)),
+            right: Box::new(MachineTerm::int64_constant(right)),
+        };
+        for truth in [true, false] {
+            let guard = Proposition::ConditionIs(comparison.clone(), truth);
+            let facts = context(vec![implies(guard, result.clone())]);
+            assert_eq!(facts.contains_known(&result), equal == truth);
+        }
+    }
+    // A width mismatch is not an intrinsic equality, even for equal bits.
+    let mismatched = ConditionTerm::Compare {
+        format: MachineIntegerType::Int64,
+        relation: CompareRelation::Equal,
+        left: Box::new(MachineTerm::constant(1)),
+        right: Box::new(MachineTerm::int64_constant(1)),
+    };
+    assert_eq!(
+        crate::kernel::proof::fact_reasoning::trivial_condition_value(&mismatched),
+        None
+    );
+}
