@@ -1447,6 +1447,10 @@ value, or the next free spelling (`result_`) when a source local has that name;
 names its capture of a return value that destructors follow the same way,
 with a numeric suffix on a collision.
 
+`temporaries::remove_unused` removes a temporary the body never names apart
+from its storage markers, and a `()` temporary that is only a call's
+destination, which the call never writes.
+
 These still stay a temporary:
 
 - a call's result read more than once, so a slice, chunk or `enumerate`
