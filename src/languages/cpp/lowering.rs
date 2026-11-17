@@ -1606,10 +1606,10 @@ impl LoweringContext<'_> {
                 Ok(operation)
             }
             CppStatement::ThrowIosFailure { .. } => {
-                let capture = self.fresh_call_capture()?;
                 let payload = ProgramType::Parameter(crate::kernel::TypeParameterName::intern(
                     "std::ios_base::failure",
                 ));
+                let capture = self.fresh_temporary(payload)?;
                 let construction = program_seq(
                     program_declare(capture.clone(), payload),
                     self.call_then_assign(
