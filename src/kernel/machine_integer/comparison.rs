@@ -162,6 +162,15 @@ pub(crate) fn literal_native_comparison_value(condition: &ConditionTerm) -> Opti
     else {
         return None;
     };
+    // Wide equality reads no sign and is filed at `int64` whatever its
+    // literals' signedness (`ConditionTerm::int64_equal`): compare the bits.
+    if *format == MachineIntegerType::Int64
+        && *relation == crate::kernel::CompareRelation::Equal
+        && let (Some(left), Some(right)) =
+            (left.bitvector64_as_const(), right.bitvector64_as_const())
+    {
+        return Some(left == right);
+    }
     if !matches!(
         format,
         MachineIntegerType::Int8

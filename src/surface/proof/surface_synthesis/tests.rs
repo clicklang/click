@@ -7058,6 +7058,12 @@ fn closed_machine_equality_lowering_retains_its_comparison() {
                 truth,
                 "{source}"
             );
+            assert_eq!(
+                crate::kernel::machine_integer::comparison::closed_condition_value(condition)
+                    == Some(held),
+                truth,
+                "{source}: {condition:?}"
+            );
             let raised =
                 synthesize_surface_proposition(&lowered, ParameterBinding::default(), &state)
                     .unwrap();
