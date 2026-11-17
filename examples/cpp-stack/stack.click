@@ -252,44 +252,44 @@ unsigned long pushed_size(int x) {
         requires aligned(&stack, 8) by solve();
     }
     step();
-    have separate(region(13).footprint, memory(stack.head)) by { normalize() using {}; }
-    have stack.head == at(region(13).entry, stack.head) by {
-        preserve(memory(stack.head), region(13));
-    }
-    step();
-    have separate(region(14).footprint, memory(stack.head)) by { normalize() using {}; }
-    have stack.head == at(region(14).entry, stack.head) by {
-        preserve(memory(stack.head), region(14));
-    }
-    mark before_size;
-    let { tail: first_tail } = unfold(pushed);
-    let { tail: empty_tail } = unfold(first_tail);
-    unfold(empty_tail);
-    step();
     have separate(region(15).footprint, memory(stack.head)) by { normalize() using {}; }
     have stack.head == at(region(15).entry, stack.head) by {
         preserve(memory(stack.head), region(15));
-    }
-    have separate(region(15).footprint, memory(stack.head->next)) by { normalize() using {}; }
-    have stack.head->next == at(region(15).entry, stack.head->next) by {
-        preserve(memory(stack.head->next), region(15));
-    }
-    have separate(region(15).footprint, memory(stack.head->next->next)) by { normalize() using {}; }
-    have stack.head->next->next == at(region(15).entry, stack.head->next->next) by {
-        preserve(memory(stack.head->next->next), region(15));
     }
     step();
     have separate(region(16).footprint, memory(stack.head)) by { normalize() using {}; }
     have stack.head == at(region(16).entry, stack.head) by {
         preserve(memory(stack.head), region(16));
     }
-    have separate(region(16).footprint, memory(stack.head->next)) by { normalize() using {}; }
-    have stack.head->next == at(region(16).entry, stack.head->next) by {
-        preserve(memory(stack.head->next), region(16));
+    mark before_size;
+    let { tail: first_tail } = unfold(pushed);
+    let { tail: empty_tail } = unfold(first_tail);
+    unfold(empty_tail);
+    step();
+    have separate(region(17).footprint, memory(stack.head)) by { normalize() using {}; }
+    have stack.head == at(region(17).entry, stack.head) by {
+        preserve(memory(stack.head), region(17));
     }
-    have separate(region(16).footprint, memory(stack.head->next->next)) by { normalize() using {}; }
-    have stack.head->next->next == at(region(16).entry, stack.head->next->next) by {
-        preserve(memory(stack.head->next->next), region(16));
+    have separate(region(17).footprint, memory(stack.head->next)) by { normalize() using {}; }
+    have stack.head->next == at(region(17).entry, stack.head->next) by {
+        preserve(memory(stack.head->next), region(17));
+    }
+    have separate(region(17).footprint, memory(stack.head->next->next)) by { normalize() using {}; }
+    have stack.head->next->next == at(region(17).entry, stack.head->next->next) by {
+        preserve(memory(stack.head->next->next), region(17));
+    }
+    step();
+    have separate(region(18).footprint, memory(stack.head)) by { normalize() using {}; }
+    have stack.head == at(region(18).entry, stack.head) by {
+        preserve(memory(stack.head), region(18));
+    }
+    have separate(region(18).footprint, memory(stack.head->next)) by { normalize() using {}; }
+    have stack.head->next == at(region(18).entry, stack.head->next) by {
+        preserve(memory(stack.head->next), region(18));
+    }
+    have separate(region(18).footprint, memory(stack.head->next->next)) by { normalize() using {}; }
+    have stack.head->next->next == at(region(18).entry, stack.head->next->next) by {
+        preserve(memory(stack.head->next->next), region(18));
     }
     let empty_tail = fold(nodes(stack.head->next->next), { items: List<int32>::Nil });
     let first_tail = fold(nodes(stack.head->next), { items: List::Cons(x, List<int32>::Nil) }, { tail: empty_tail });

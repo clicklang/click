@@ -282,6 +282,7 @@ fn prepare_functions(
             crate::instrumentation::record_deterministic_work(1);
             let mut locals = BTreeMap::new();
             let mut references = BTreeSet::new();
+            let mut record_references = BTreeMap::new();
             let mut objects = BTreeSet::new();
             let mut ambiguous = BTreeSet::new();
             let mut pending = vec![source.body.as_slice()];
@@ -294,6 +295,19 @@ fn prepare_functions(
                             // an object, in two scopes, is read as written.
                             if matches!(local.value_type, CppType::LvalueReference { .. }) {
                                 references.insert(local.name.clone());
+                                if let Some((_, name, _)) =
+                                    super::scalar::record_referent(&local.value_type)
+                                {
+                                    let carrier =
+                                        super::lowering::reference_carrier_name(&local.name).into();
+                                    if record_references
+                                        .get(&carrier)
+                                        .is_some_and(|known| known != name)
+                                    {
+                                        ambiguous.insert(local.name.clone());
+                                    }
+                                    record_references.insert(carrier, name.to_owned());
+                                }
                             } else {
                                 objects.insert(local.name.clone());
                             }
@@ -327,6 +341,18 @@ fn prepare_functions(
             }
             for name in ambiguous {
                 locals.remove(&name);
+                let carrier: crate::kernel::BindingName =
+                    super::lowering::reference_carrier_name(&name).into();
+                if record_references.contains_key(&carrier) {
+                    return Err(format!("C++ record-reference local `{name}` has ambiguous record layouts across scopes"));
+                }
+            }
+            for name in &objects {
+                let carrier: crate::kernel::BindingName =
+                    super::lowering::reference_carrier_name(name).into();
+                if record_references.contains_key(&carrier) {
+                    return Err(format!("C++ record-reference local `{name}` shares its name with an object in another scope"));
+                }
             }
             let interface = source
                 .virtual_method
@@ -369,6 +395,7 @@ fn prepare_functions(
                         .map(|(name, ty)| (name.into(), ty))
                         .collect(),
                 )
+                .with_local_struct_pointers(record_references)
                 .with_local_references(
                     references
                         .difference(&objects)

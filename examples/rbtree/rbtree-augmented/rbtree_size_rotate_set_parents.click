@@ -163,27 +163,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                 have old->__rb_parent_color == at(words, old->__rb_parent_color);
                 rewrite(old->__rb_parent_color, at(words, old->__rb_parent_color)); known();
             }
-            have new->__rb_parent_color == old(old->__rb_parent_color) by {
-                have contains((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), statement(3).footprint) by { known(); }
-                apply(separation::separate_star(at(words, d), memory(old->__rb_parent_color), memory(new->__rb_parent_color))) using {
-                    at(words, separate(d, memory(new->__rb_parent_color)));
-                    at(words, separate(memory(old->__rb_parent_color), memory(new->__rb_parent_color)));
-                };
-                apply(separation::separate_star(at(words, d) * memory(old->__rb_parent_color), memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color))) using {
-                    separate(at(words, d) * memory(old->__rb_parent_color), memory(new->__rb_parent_color));
-                    at(words, separate(memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color)));
-                };
-                apply(separation::contains_refl(memory(new->__rb_parent_color))) using {};
-                apply(separation::separate_restrict((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color), statement(3).footprint, memory(new->__rb_parent_color))) using {
-                    separate((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color));
-                    contains((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), statement(3).footprint);
-                    contains(memory(new->__rb_parent_color), memory(new->__rb_parent_color));
-                };
-                have new->__rb_parent_color == at(words, new->__rb_parent_color) by {
-                    preserve(memory(new->__rb_parent_color), statement(3));
-                }
-                rewrite(new->__rb_parent_color, at(words, new->__rb_parent_color)); known();
-            }
+            have new->__rb_parent_color == old(old->__rb_parent_color) by known();
             have ((new->__rb_parent_color & ~3) as (struct rb_node*)) == sized_context_parent(old(c.model), 0) by known();
             step_until(function.exit);
         },
@@ -255,27 +235,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                 have old->__rb_parent_color == at(words, old->__rb_parent_color);
                 rewrite(old->__rb_parent_color, at(words, old->__rb_parent_color)); known();
             }
-            have new->__rb_parent_color == old(old->__rb_parent_color) by {
-                have contains((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), statement(3).footprint) by { known(); }
-                apply(separation::separate_star(at(words, d), memory(old->__rb_parent_color), memory(new->__rb_parent_color))) using {
-                    at(words, separate(d, memory(new->__rb_parent_color)));
-                    at(words, separate(memory(old->__rb_parent_color), memory(new->__rb_parent_color)));
-                };
-                apply(separation::separate_star(at(words, d) * memory(old->__rb_parent_color), memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color))) using {
-                    separate(at(words, d) * memory(old->__rb_parent_color), memory(new->__rb_parent_color));
-                    at(words, separate(memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color)));
-                };
-                apply(separation::contains_refl(memory(new->__rb_parent_color))) using {};
-                apply(separation::separate_restrict((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color), statement(3).footprint, memory(new->__rb_parent_color))) using {
-                    separate((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color));
-                    contains((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), statement(3).footprint);
-                    contains(memory(new->__rb_parent_color), memory(new->__rb_parent_color));
-                };
-                have new->__rb_parent_color == at(words, new->__rb_parent_color) by {
-                    preserve(memory(new->__rb_parent_color), statement(3));
-                }
-                rewrite(new->__rb_parent_color, at(words, new->__rb_parent_color)); known();
-            }
+            have new->__rb_parent_color == old(old->__rb_parent_color) by known();
             have ((new->__rb_parent_color & ~3) as (struct rb_node*)) == sized_context_parent(old(c.model), 0) by known();
             step_until(function.exit);
         },
@@ -347,27 +307,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                 have old->__rb_parent_color == at(words, old->__rb_parent_color);
                 rewrite(old->__rb_parent_color, at(words, old->__rb_parent_color)); known();
             }
-            have new->__rb_parent_color == old(old->__rb_parent_color) by {
-                have contains((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), statement(3).footprint) by { known(); }
-                apply(separation::separate_star(at(words, d), memory(old->__rb_parent_color), memory(new->__rb_parent_color))) using {
-                    at(words, separate(d, memory(new->__rb_parent_color)));
-                    at(words, separate(memory(old->__rb_parent_color), memory(new->__rb_parent_color)));
-                };
-                apply(separation::separate_star(at(words, d) * memory(old->__rb_parent_color), memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color))) using {
-                    separate(at(words, d) * memory(old->__rb_parent_color), memory(new->__rb_parent_color));
-                    at(words, separate(memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color)));
-                };
-                apply(separation::contains_refl(memory(new->__rb_parent_color))) using {};
-                apply(separation::separate_restrict((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color), statement(3).footprint, memory(new->__rb_parent_color))) using {
-                    separate((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color));
-                    contains((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), statement(3).footprint);
-                    contains(memory(new->__rb_parent_color), memory(new->__rb_parent_color));
-                };
-                have new->__rb_parent_color == at(words, new->__rb_parent_color) by {
-                    preserve(memory(new->__rb_parent_color), statement(3));
-                }
-                rewrite(new->__rb_parent_color, at(words, new->__rb_parent_color)); known();
-            }
+            have new->__rb_parent_color == old(old->__rb_parent_color) by known();
             have ((new->__rb_parent_color & ~3) as (struct rb_node*)) == sized_context_parent(old(c.model), 0) by known();
             step_until(function.exit);
         },
