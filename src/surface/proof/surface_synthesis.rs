@@ -4680,6 +4680,16 @@ fn registered_load_in_state(variable: &Variable, state: &ExecutionState) -> Opti
     scalar_read_in_state(&read, state)
 }
 
+/// Whether entry/current synthesis is looking at one actual program point.
+/// A later point can have equal memory, and two absent IDs prove nothing.
+fn synthesis_states_share_program_point(entry: &ExecutionState, state: &ExecutionState) -> bool {
+    std::ptr::eq(entry, state)
+        || entry
+            .program_point()
+            .id()
+            .is_some_and(|point| state.program_point().id() == Some(point))
+}
+
 fn scalar_read_in_state(read: &MachineTerm, state: &ExecutionState) -> Option<MachineTerm> {
     let MachineTerm::MemoryLoad(_, pointer, kind) = read else {
         return None;
@@ -5158,7 +5168,7 @@ fn synthesize_surface_bitvector(
             let old = SYNTHESIS_ENTRY_STATE
                 .with(|slot| slot.borrow().clone())
                 .and_then(|entry| {
-                    if entry.memory() == state.memory() {
+                    if synthesis_states_share_program_point(&entry, state) {
                         return None;
                     }
                     let load = scalar_read_in_state(&read, &entry)?;

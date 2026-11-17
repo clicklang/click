@@ -7527,3 +7527,20 @@ fn bitwise_arm_conditionals_round_trip_after_rewrite() {
         }
     }
 }
+
+#[test]
+fn old_read_shortcut_identifies_points_instead_of_equal_snapshots() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let entry = ExecutionState::new().with_memory(Memory::new());
+    let frame = ExecutionState::at_state(&entry);
+    assert!(synthesis_states_share_program_point(&entry, &frame));
+    let later = entry.clone().with_memory(entry.memory().clone());
+    assert_eq!(entry.memory(), later.memory());
+    assert!(!synthesis_states_share_program_point(&entry, &later));
+    assert!(!synthesis_states_share_program_point(
+        &ExecutionState::new(),
+        &ExecutionState::new()
+    ));
+    let unnamed = ExecutionState::new();
+    assert!(synthesis_states_share_program_point(&unnamed, &unnamed));
+}
