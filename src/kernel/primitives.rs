@@ -6513,9 +6513,9 @@ impl AggregateInitializer {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct AggregateLayout {
-    /// A local C bit-field record is copied as a representation with
-    /// potentially unwritten bits.
-    pub(super) copy_bit_field_representation: bool,
+    /// The declared bits copied by an assignment of a local C bit-field
+    /// record. Padding is outside the assigned value.
+    pub(super) bit_field_bits: Option<std::num::NonZeroU32>,
     pub(super) size_bytes: u32,
     pub(super) alignment_bytes: u32,
     pub(super) fields: Vec<AggregateField>,
@@ -6535,13 +6535,17 @@ impl AggregateLayout {
             fields,
             unions: Vec::new(),
             value_type: None,
-            copy_bit_field_representation: false,
+            bit_field_bits: None,
         }
     }
 
-    pub(crate) fn bit_field_record(size_bytes: u32, alignment_bytes: u32) -> Self {
+    pub(crate) fn bit_field_record(
+        size_bytes: u32,
+        alignment_bytes: u32,
+        field_bits: std::num::NonZeroU32,
+    ) -> Self {
         Self {
-            copy_bit_field_representation: true,
+            bit_field_bits: Some(field_bits),
             ..Self::new(size_bytes, alignment_bytes, Vec::new())
         }
     }
@@ -6575,7 +6579,7 @@ impl AggregateLayout {
             fields,
             unions,
             value_type: None,
-            copy_bit_field_representation: false,
+            bit_field_bits: None,
         }
     }
 

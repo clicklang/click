@@ -5527,13 +5527,15 @@ impl SymbolicMemory {
         self
     }
 
-    /// Copy one local bit-field record, including the holes in its
-    /// initialization. The aggregate path checks the C lvalues first.
+    /// Copy the named fields of a local bit-field record from one snapshot.
+    /// Assignment carries the source members, including unwritten fields.
+    /// It does not guarantee that a source padding bit is copied.
     pub(in crate::kernel) fn copy_local_bit_field_record(
         mut self,
         source: &Address,
         destination: &Address,
         bytes: u32,
+        field_bits: std::num::NonZeroU32,
     ) -> Result<Self, UndefinedBehavior> {
         if !source.base.is_local_block()
             || !destination.base.is_local_block()
@@ -5542,9 +5544,6 @@ impl SymbolicMemory {
             || self.is_read_only_block(&destination.base)
         {
             return Err(UndefinedBehavior::InvalidMemory);
-        }
-        if source == destination {
-            return Ok(self);
         }
         let snapshot = self.clone();
         let base = intern_derivation_base(&mut self);
@@ -5557,24 +5556,46 @@ impl SymbolicMemory {
             }
             self = prepared;
         }
-        self.replace_initialization_for_representation_copy(
-            &snapshot,
-            &RepresentationCopyRange {
-                source: source.clone(),
-                destination: destination.clone(),
-                bytes,
-            },
-        );
-        for byte in 0..bytes {
-            if let Some(value) = crate::kernel::eval::known_integer_byte(
-                &snapshot,
-                &source.offset_by_bytes(byte),
-                Some(ByteOrder::Little),
-            ) {
-                Arc::make_mut(&mut self.cells).insert(
-                    destination.offset_by_bytes(byte),
-                    ProgramValue::UInt8(value),
-                );
+        let initialized = &mut Arc::make_mut(&mut self.heap).initialized;
+        initialized.forget(destination, bytes);
+        initialized.forget_symbolic_offsets(&destination.base);
+        for (offset, members) in field_bits.get().to_le_bytes().into_iter().enumerate() {
+            if members == 0 {
+                continue;
+            }
+            let from = source.offset_by_bytes(offset as u32);
+            let to = destination.offset_by_bytes(offset as u32);
+            let full =
+                crate::kernel::eval::known_integer_byte(&snapshot, &from, Some(ByteOrder::Little));
+            let source_initialization = &snapshot.heap.initialized;
+            let mask = members
+                & if full.is_some() {
+                    u8::MAX
+                } else {
+                    source_initialization.mask_at(&from)
+                };
+            let value = full.or_else(|| {
+                let ProgramValue::UInt8(value) =
+                    source_initialization.partial_byte(&from)?.value.as_ref()?
+                else {
+                    return None;
+                };
+                Some(value.clone())
+            });
+            match mask {
+                0 => {}
+                u8::MAX => {
+                    initialized.record(&to, 1);
+                    if let Some(value) = value {
+                        Arc::make_mut(&mut self.cells).insert(to, ProgramValue::UInt8(value));
+                    }
+                }
+                _ => {
+                    let value = value.map(|value| {
+                        ProgramValue::UInt8(crate::kernel::eval::mask_byte(value, mask))
+                    });
+                    initialized.set_partial(to, mask, value);
+                }
             }
         }
         record_memory_derivation(

@@ -293,7 +293,7 @@ impl Parser {
         let mut storage =
             RecordLayout::from_explicit_fields_with_structs(Vec::new(), 4, 4, &BTreeMap::new())
                 .expect("one aligned allocation word");
-        storage.bit_field_record = true;
+        storage.bit_field_bits = std::num::NonZeroU32::new(complete_mask);
         storage.class = Some(
             crate::kernel::effective_type::CStructContentsBuilder::default().build(tag.clone()),
         );
@@ -657,7 +657,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn local_bit_field_storage_cannot_be_exposed_through_source() {
+    fn bit_fields_keep_address_and_unevaluated_operand_restrictions() {
         for (access, diagnostic) in [
             (
                 "return &f.ready == 0;",
@@ -676,8 +676,8 @@ mod tests {
             let source = format!(
                 "struct flags {{ unsigned int ready : 1; }}; int g(void) {{ struct flags f = {{1}}; {access} }}"
             );
-            let error = super::super::parse_functions(&source)
-                .expect_err("bit-field storage cannot escape");
+            let error =
+                super::super::parse_functions(&source).expect_err("unsupported bit-field operand");
             assert!(error.message().contains(diagnostic), "{}", error.message());
         }
     }

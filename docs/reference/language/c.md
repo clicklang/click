@@ -1389,9 +1389,9 @@ arithmetic after promotion, and store the result. Increment and decrement
 expressions used for their values are outside this subset.
 
 Copies between same-type local records, including `struct tag copy = object`
-and `*destination = *source`, transfer the source word and its initialization
+and `*destination = *source`, transfer the named fields and their initialization
 state. Assigning a record with an unwritten field leaves that field unwritten
-in the destination. Reads of such a field are refused.
+in the destination. Typed assignment supplies no padding bits.
 
 A character pointer cast from the address of a local record observes that
 record's representation. A byte write initializes all eight bits of its

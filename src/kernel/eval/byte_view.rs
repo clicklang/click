@@ -48,7 +48,7 @@ pub(in crate::kernel) fn known_integer_byte(
     integer_cell_byte(&cell.value, cell.byte)
 }
 
-pub(super) fn mask_byte(value: MachineTerm, mask: u8) -> MachineTerm {
+pub(in crate::kernel) fn mask_byte(value: MachineTerm, mask: u8) -> MachineTerm {
     use MachineIntegerType::{UInt8, UInt32};
     if mask == u8::MAX {
         return value;
