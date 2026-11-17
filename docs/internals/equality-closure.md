@@ -750,8 +750,19 @@ Scalar registration no longer retains an observation-origin memory for a
 cached-cell lookup. Function-pointer stores also retain an explicit typed
 read equation. Read registration has no pending cached-cell lookup queue,
 unresolved-cell retry index, or mirrored alias-class maps. Separate checked
-pointer-read authorities, memory-resolution APIs, and compound-term
-canonicalization remain outside this registration boundary.
+pointer-read authorities, memory-resolution APIs, and other callers of
+compound-term canonicalization remain outside this registration boundary.
+
+Compound machine-expression inputs to the graph select read identities while
+retaining their operators; preparation does not run `canonical_term` to
+substitute cached values into them. Already-selected reads retain their exact
+identity. Read applications and explicit equations connect `read + 3` to `10` after
+`read == 7` is admitted, without importing that equality into a sibling context.
+The `compound_read_queries_require_explicit_equations` regression covers native
+32-/64-bit inputs, shared 32-bit inputs, and late address aliases. The scaling
+regression `compound_read_query_ignores_cached_expression_size` keeps the query
+fixed while growing a cached expression that it must never inspect. Raw read
+kinds outside the migrated integer widths retain their existing preparation.
 
 Cold scalar queries use address congruence and explicit equations instead of
 enumerating an address class to find a cached cell. Scaling tests cover growing
