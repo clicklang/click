@@ -8331,6 +8331,19 @@ impl ResourceContext {
         byte_endpoints: bool,
         written_only: bool,
     ) -> Self {
+        // One retained nonzero fact has no partner to coalesce. Preserve the
+        // normalizer's input attachment, but do not discover alias/endpoint
+        // candidates for a merge that cannot exist. Zero units still take
+        // the ordinary cleanup path below.
+        if self.storage.facts.len() <= 1
+            && !self.storage.facts.iter().next().is_some_and(|(_, fact)| {
+                fact.has_valid_exclusive_access()
+                    && fact.owned_quantity_term().and_then(MachineTerm::as_const) == Some(0)
+            })
+        {
+            self.synchronize_memory_equalities(assumptions);
+            return self;
+        }
         if !self.storage.supported_by.is_empty()
             || !self.storage.expansions_by_support_occurrence.is_empty()
         {

@@ -44,10 +44,7 @@ impl ResourceContext {
                 .explicit_memory_boundaries
                 .get(&(range.clone(), self.storage.index.boundary_memory.identity()))
             {
-                crate::kernel::assumptions::record_implicit_reasoning_provenance(
-                    assumptions,
-                    source,
-                );
+                crate::kernel::assumptions::record_implicit_consulted_premises(assumptions, source);
                 return Clear;
             }
         }

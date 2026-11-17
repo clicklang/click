@@ -1872,10 +1872,21 @@ same rule, and entry escrow recovery uses the resulting partition token.
 Targeted verification and expansion use the same Hoare frame rule under a
 scoped source-contract hypothesis. That capability remains conditional, is
 retired with the verification selection, and never certifies the unselected
-body. External descriptions, named interfaces and raw return APIs receive no
-such capability; they retain bounded admission and explicit missing-boundary goals.
+body.
+Named and callback application retains an `EstablishedFunctionContract`: the
+instantiated interface plus the actual contract predicate premise selected for
+that function value. That premise supplies the conditional Hoare frame rule
+through selected direct calls, indirect calls and entry-escrow recovery. Bare
+nominal declarations and discarded template bodies supply no authority, and
+this capability never becomes concrete body-safety evidence. Missing or
+inapplicable callback facts still refuse before application.
+External descriptions and raw return APIs retain bounded admission and explicit
+missing-boundary goals.
 `verified_outputs_retain_the_callers_frame.md` and its expansion/replay test
 contrast a verified callee with an uncertified external-output control.
+`named_contract_outputs_retain_the_callers_frame.md` covers opaque pointer
+outputs through both selected direct and abstract callback application;
+expansion and replay retain the established contract premise.
 
 Contract recipes retain immutable memory leaves from consumed heads as well as
 flat consumed cells. Fixed byte spans can partition one consumed object into

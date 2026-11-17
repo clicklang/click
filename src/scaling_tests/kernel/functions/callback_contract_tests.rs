@@ -452,3 +452,68 @@ fn contract_refinement_work_is_flat_in_unrelated_facts() {
         "refinement checking must not scan unrelated ambient facts: {samples:?}"
     );
 }
+
+#[test]
+fn established_callback_frame_rule_ignores_unrelated_owners_and_aliases() {
+    for aliases in [false, true] {
+        let mut samples = Vec::new();
+        for count in [4_u64, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let contract = opaque_callback_contract();
+            let callback = Pointer::symbolic_function(Variable(8_961_000));
+            let (state, argument, held) = opaque_callback_state(if aliases { 1 } else { count });
+            let mut facts = PureFactContext::new()
+                .assume_proposition(named_contract_fact(&contract, callback.clone()));
+            if aliases {
+                for i in 0..count {
+                    facts = facts.assume_condition(
+                        ConditionTerm::pointer_equal(
+                            Pointer::symbolic(Variable(8_960_000)),
+                            Pointer::symbolic(Variable(8_962_000 + i)),
+                        ),
+                        true,
+                    );
+                }
+            }
+            let environment = ExecutionEnvironment::new().with_function_contract(contract.clone());
+            let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let _fast = crate::kernel::search::FastOperationScope::enter(
+                    "established callback frame rule",
+                );
+                let established = contracts_for_pointer(
+                    &callback,
+                    &facts,
+                    &environment,
+                    &contract.function_pointer_type(),
+                );
+                execute_program_function_contracts_paths(
+                    &state,
+                    &established.iter().collect::<Vec<_>>(),
+                    std::slice::from_ref(&argument),
+                    &facts,
+                    &environment,
+                    &mut ExecutionBudget::new(),
+                )
+                .unwrap()
+            });
+            let [
+                FunctionPath {
+                    outcome:
+                        FunctionOutcome::Return {
+                            state: returned, ..
+                        },
+                    ..
+                },
+            ] = paths.as_slice()
+            else {
+                panic!("{paths:?}")
+            };
+            assert!(returned.resources().contains_exact_representation(&held));
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 128),
+            "aliases={aliases}: {samples:?}"
+        );
+    }
+}

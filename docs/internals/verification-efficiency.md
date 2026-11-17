@@ -118,7 +118,7 @@ Distinguish these producer boundaries:
 | Producer or caller | Ownership evidence and current boundary |
 | --- | --- |
 | Instance unfold | `unfold_instance_body` consumes the selected parent and exposes its constructed body in the retained frame. It checks exclusive identities without rediscovering memory overlap. Evaluating the body description earlier is a separate operation. |
-| Return-clause evaluation | Executed-body returns consume each output from one persistent body context. Verified function rules and scoped source-contract hypotheses construct their joint outputs beside the reserved-input frame. Description-only summaries retain finite consumed-footprint recipes and checked entry borrows; unjustified descriptions still require checked ownership admission. |
+| Return-clause evaluation | Executed-body returns consume each output from one persistent body context. Verified function rules, scoped source-contract hypotheses and established named-contract premises construct their joint outputs beside the reserved-input frame. Description-only summaries retain finite consumed-footprint recipes and checked entry borrows; unjustified descriptions still require checked ownership admission. |
 | Return composition | `FramedReturnPartition` retains the output group and caller frame constructed by body custody or a function frame rule; `finish` installs it directly. Description-only paths restore selected entry borrows, consumed-cell transfers and fresh allocations, then admit remaining descriptions explicitly. `ValidateDescriptions` does not turn a role marker into transfer evidence. |
 | Produced composite boundary | Function frame rules cover the joint output partition, including post-memory footprints. Description-only summaries bind immutable leaves and fixed byte fragments to consumed inputs; supported entry borrows retain provenance. Unmatched children and post-memory footprints still pass through `produced_composite_frontier_conflict`. |
 | Iterated `take` and `scatter` | The checked hole/guard transition or hole-free whole-range consumption constructs the exposed memory directly in the same frame. Neither operation readmits it or normalizes the surrounding block. Source selection, guard reasoning, and the explicit hole list have separate costs. |
@@ -196,10 +196,22 @@ retained `VerifiedFunctionRule` to construct the joint output partition beside
 the checked input reservation's frame. It does not reconstruct that relationship
 from pointer geometry or composite descriptions. Targeted verification and
 expansion carry the same frame rule conditionally under scoped source-contract
-hypotheses; those hypotheses never certify an unselected body. External and
-named interface descriptions receive no such capability. The source regression
+hypotheses; those hypotheses never certify an unselected body. Named calls and
+callbacks retain their established predicate premise alongside the instantiated
+interface in `EstablishedFunctionContract`. That premise grants the same
+conditional frame rule through application without inspecting a source body.
+A nominal declaration or external description receives no such capability. The source regression
 `verified_outputs_retain_the_callers_frame.md` verifies, expands and replays a
 returned pointer field with no equality postcondition.
+`named_contract_outputs_retain_the_callers_frame.md` checks the corresponding
+selected named and abstract callback calls. Their deterministic scaling control
+holds the call fixed beside 4/16/64 owners or aliases, and the source proof
+expands and replays without implicit solving.
+Singleton normalization preserves a nonzero fact and its occurrence directly,
+while retaining normal index attachment. There is no second fact to coalesce,
+so it does not enumerate aliases or endpoint spellings. Zero quantities retain
+the ordinary cleanup path. The direct singleton and complete-callback scaling
+regressions cover the alias growth this avoids during input reservation.
 
 Folded heads can describe memory through post-call reads. Their existing
 composite-footprint boundary rule remains, against the retained frame and

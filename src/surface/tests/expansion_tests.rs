@@ -1,6 +1,34 @@
 use super::*;
 
 #[test]
+fn named_contract_output_frame_rule_expands_and_replays() {
+    let (source, sources) =
+        mdtest_sources("mdtests/named_contract_outputs_retain_the_callers_frame.md");
+    let sources = sources
+        .iter()
+        .map(|(name, code)| (name.as_str(), code.as_str()))
+        .collect::<Vec<_>>();
+    verify_c_sources(&source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    for label in ["direct.contract", "indirect.contract", "refined.contract"] {
+        let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+    let start = source.find("int32 indirect(").unwrap();
+    let missing = format!(
+        "{}{}",
+        &source[..start],
+        source[start..].replacen("    requires Transfer(callback);\n", "", 1)
+    );
+    assert_ne!(missing, source);
+    verify_c_sources(&missing, &sources)
+        .expect_err("a declaration alone cannot establish the callback contract");
+}
+
+#[test]
 fn verified_output_frame_rule_expands_without_geometry_discovery() {
     let (source, sources) = mdtest_sources("mdtests/verified_outputs_retain_the_callers_frame.md");
     let sources = sources

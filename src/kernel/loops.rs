@@ -1358,8 +1358,9 @@ fn execute_program_indirect_call_paths(
                     {
                         let target_assumptions =
                             assumptions_with_path_context(assumptions, &facts, &obligations);
-                        let owned = super::functions::contracts_from_facts(
-                            target_assumptions.function_contract_facts_for(pointer.pointer()),
+                        let owned = super::functions::contracts_for_pointer(
+                            pointer.pointer(),
+                            &target_assumptions,
                             execution_context.environment,
                             &function_type,
                         );

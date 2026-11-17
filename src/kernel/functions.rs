@@ -2084,8 +2084,9 @@ pub(super) fn execute_program_function_call_paths(
         .as_deref()
     {
         let pointer = Pointer::function(function.name());
-        let owned = contracts_from_facts(
-            assumptions.function_contract_facts_for(&pointer),
+        let owned = contracts_for_pointer(
+            &pointer,
+            assumptions,
             execution_context.environment,
             &function.function_pointer_type(),
         );
@@ -2810,12 +2811,20 @@ fn instance_binder_shape(parameter: &ResourceSpec) -> Option<(&str, usize)> {
     Some((name.as_str(), arguments.len()))
 }
 
-/// Conditional source-contract hypotheses retain the Hoare frame rule only
-/// inside their verification selection. They are never body certificates.
+/// Theorem and contract-premise capabilities for the Hoare frame rule.
+/// Scoped hypotheses and established named contracts remain conditional on
+/// their premises; neither becomes concrete body-safety evidence.
 #[derive(Clone, Copy)]
 enum FramedCallRule<'a> {
-    Verified { _rule: &'a VerifiedFunctionRule },
-    ScopedHypothesis { _rule: &'a ExternalFunctionRule },
+    Verified {
+        _rule: &'a VerifiedFunctionRule,
+    },
+    ScopedHypothesis {
+        _rule: &'a ExternalFunctionRule,
+    },
+    Named {
+        _rule: &'a EstablishedFunctionContract,
+    },
 }
 
 /// One candidate contract application. The interface is the complete input
@@ -2823,8 +2832,9 @@ enum FramedCallRule<'a> {
 /// declaration identity needed to lower a direct function's global and
 /// static names. Optional concrete evidence is consulted only by verified
 /// direct calls for body-specific safety checks and loadable literal facts.
-/// Named callbacks carry neither; external assumptions carry storage but no
-/// proof evidence.
+/// Named callbacks carry no concrete storage or body evidence; their
+/// established contract premises supply a separate frame-rule capability.
+/// External assumptions carry storage but no body proof evidence.
 #[derive(Clone, Copy)]
 struct FunctionContractApplication<'a> {
     pointer_result: Option<&'a PurePointerResult>,
@@ -2836,7 +2846,7 @@ struct FunctionContractApplication<'a> {
     interface: &'a FunctionContractInterface,
     storage: Option<&'a ProgramFunction>,
     evidence: Option<&'a ProgramFunction>,
-    /// A verified theorem or a scoped source-contract hypothesis; concrete
+    /// A theorem or an established contract premise; concrete
     /// declaration storage alone never grants this frame rule.
     framed_rule: Option<FramedCallRule<'a>>,
     /// The checked representation-copy effect of a recognized byte-copy
@@ -5142,7 +5152,7 @@ struct PreparedVerifiedFunctionCall<'a> {
     /// Concrete evidence is present only for a verified direct rule. Named
     /// contracts and external assumptions deliberately carry none.
     evidence: Option<&'a ProgramFunction>,
-    /// A verified theorem or a scoped source-contract hypothesis; concrete
+    /// A theorem or an established contract premise; concrete
     /// declaration storage alone never grants this frame rule.
     framed_rule: Option<FramedCallRule<'a>>,
     /// The body-independent interface used to prepare this application. It is
@@ -6703,16 +6713,47 @@ fn prepare_verified_function_call<'a>(
     }))
 }
 
+/// An instantiated nominal interface together with the premise that grants
+/// it for this function value. Only fact lookup constructs this capability;
+/// a bare `FunctionContract` declaration has no frame-rule authority.
+#[derive(Clone, Debug)]
+pub(super) struct EstablishedFunctionContract {
+    contract: FunctionContract,
+    _premise: Proposition,
+}
+
+impl std::ops::Deref for EstablishedFunctionContract {
+    type Target = FunctionContract;
+    fn deref(&self) -> &Self::Target {
+        &self.contract
+    }
+}
+
+#[derive(Clone, Copy)]
+struct NamedContractApplication<'a> {
+    contract: &'a FunctionContract,
+    framed_rule: Option<FramedCallRule<'a>>,
+}
+
+impl std::ops::Deref for NamedContractApplication<'_> {
+    type Target = FunctionContract;
+    fn deref(&self) -> &Self::Target {
+        self.contract
+    }
+}
+
 /// The contracts facts attach to a function value, each with the values
 /// its fact fixes for its value parameters, that apply to a call of type
 /// `function_type`. A fact whose values do not have its contract's value
 /// parameter types contributes nothing.
-pub(super) fn contracts_from_facts(
-    facts: impl Iterator<Item = (String, Proposition)>,
+pub(super) fn contracts_for_pointer(
+    pointer: &Pointer,
+    assumptions: &PureFactContext,
     environment: &ExecutionEnvironment,
     function_type: &ProgramType,
-) -> Vec<FunctionContract> {
-    facts
+) -> Vec<EstablishedFunctionContract> {
+    assumptions
+        .function_contract_facts_for(pointer)
         .filter_map(|(name, fact)| {
             let contract = environment.get_function_contract(&name)?;
             let Proposition::Predicate { arguments, .. } = &fact else {
@@ -6726,7 +6767,10 @@ pub(super) fn contracts_from_facts(
                     _ => None,
                 })
                 .collect::<Option<Vec<_>>>()?;
-            contract.instantiated(&values)
+            Some(EstablishedFunctionContract {
+                contract: contract.instantiated(&values)?,
+                _premise: fact,
+            })
         })
         .filter(|contract| &contract.function_pointer_type() == function_type)
         .collect()
@@ -6734,7 +6778,32 @@ pub(super) fn contracts_from_facts(
 
 pub(super) fn execute_program_function_contracts_paths(
     caller_state: &ExecutionState,
-    contracts: &[&FunctionContract],
+    contracts: &[&EstablishedFunctionContract],
+    arguments: &[ProgramExpression],
+    assumptions: &PureFactContext,
+    environment: &ExecutionEnvironment,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<FunctionPath>> {
+    let applications = contracts
+        .iter()
+        .map(|contract| NamedContractApplication {
+            contract,
+            framed_rule: Some(FramedCallRule::Named { _rule: contract }),
+        })
+        .collect::<Vec<_>>();
+    execute_named_contract_applications_paths(
+        caller_state,
+        &applications,
+        arguments,
+        assumptions,
+        environment,
+        budget,
+    )
+}
+
+fn execute_named_contract_applications_paths(
+    caller_state: &ExecutionState,
+    contracts: &[NamedContractApplication<'_>],
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
     environment: &ExecutionEnvironment,
@@ -6822,16 +6891,19 @@ pub(super) fn execute_program_function_contracts_paths(
     };
     let applications = contracts
         .iter()
-        .map(|contract| FunctionContractApplication {
-            pointer_result: None,
-            name: contract.callee_name(),
-            interface_name: contract.name(),
-            interface: contract.interface(),
-            storage: None,
-            evidence: None,
-            framed_rule: None,
-            representation_copy: None,
-            value_arguments: contract.value_arguments(),
+        .map(|application| {
+            let contract = application.contract;
+            FunctionContractApplication {
+                pointer_result: None,
+                name: contract.callee_name(),
+                interface_name: contract.name(),
+                interface: contract.interface(),
+                storage: None,
+                evidence: None,
+                framed_rule: application.framed_rule,
+                representation_copy: None,
+                value_arguments: contract.value_arguments(),
+            }
         })
         .collect::<Vec<_>>();
     execute_verified_function_applications(
@@ -7230,8 +7302,9 @@ fn function_contract_requirement_is_proven(
             // has those contracts as its implementations: a closure instance
             // carries its own contract, fixed to its captured values.
             let Some(target) = target else {
-                for source in contracts_from_facts(
-                    assumptions.function_contract_facts_for(pointer.pointer()),
+                for source in contracts_for_pointer(
+                    pointer.pointer(),
+                    assumptions,
                     environment,
                     &pointer.program_type(),
                 ) {
