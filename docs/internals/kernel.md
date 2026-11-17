@@ -2038,3 +2038,24 @@ facts its root branch assumed are exactly the declared requirements, and that
 the declared binders are exactly the free variables. The rewrite variant
 additionally cites each equality it applied, which must be exactly available
 among the requirements and must rewrite the goal in the listed order.
+
+## Value storage identity contracts
+
+`ExecutionValue` compares exact producers; native and shared carriers are distinct.
+`StoredExecutionValue` compares machine values by their format-tagged shared
+observation. Other families keep native value equality and ordering, including
+raw Boolean words, float bits, and native call-argument carrier distinctions.
+Its hash need only agree across equal stored keys; it is not a serialized ID.
+
+`StoredMemoryValue` preserves native `ProgramValue` structural equality, order,
+and hash stream. Replacing it with a local observation key would change the
+contract. Exact outcome refresh uses `same_native_value`, separately from local
+storage equality. Certification syntax and fact observations have their own
+admission rules; neither inherits a storage key's equivalences.
+
+Regression evidence: `execution_value::storage_contract_tests` checks pairwise
+mixed-carrier order/hash classes and float call-argument distinctions. Existing
+`local_storage_identity_matches_native_without_changing_producer_equality` and
+`exact_native_value_comparison_does_not_use_machine_storage_equivalence` cover the intentional
+machine producer/storage/refresh differences. Representation changes must keep
+these contracts and test growing shared operands without native materialization.
