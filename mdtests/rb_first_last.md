@@ -282,7 +282,8 @@ theorem list_starts_with_append(xs: List<struct rb_node*>, ys: List<struct rb_no
                                 value: struct rb_node*) {
     requires rb_list_starts_with(xs, value) != 0;
     ensures rb_list_starts_with(list::append(xs, ys), value) == 1 by {
-        induct(xs) as ih {
+        let ih = induct(xs);
+        match xs {
             List::Nil => {
                 have rb_list_starts_with(List<struct rb_node*>::Nil, value) == 0 by {
                     unfold(rb_list_starts_with(List<struct rb_node*>::Nil, value));
@@ -328,7 +329,8 @@ theorem list_starts_with_append(xs: List<struct rb_node*>, ys: List<struct rb_no
 theorem list_ends_with_is_nonempty(xs: List<struct rb_node*>, value: struct rb_node*) {
     requires rb_list_ends_with(xs, value) != 0;
     ensures xs != List<struct rb_node*>::Nil by {
-        induct(xs) as ih {
+        let ih = induct(xs);
+        match xs {
             List::Nil => {
                 have rb_list_ends_with(List<struct rb_node*>::Nil, value) == 0 by {
                     unfold(rb_list_ends_with(List<struct rb_node*>::Nil, value));
@@ -358,7 +360,8 @@ theorem list_ends_with_append(xs: List<struct rb_node*>, ys: List<struct rb_node
                               value: struct rb_node*) {
     requires rb_list_ends_with(ys, value) == 1;
     ensures rb_list_ends_with(list::append(xs, ys), value) == 1 by {
-        induct(xs) as ih {
+        let ih = induct(xs);
+        match xs {
             List::Nil => {
                 unfold(list::append(List<struct rb_node*>::Nil, ys));
                 known();
@@ -385,7 +388,8 @@ theorem rb_inorder_first_at_leftmost(tree: RbTree, node: struct rb_node*) {
     requires rb_left(tree) == RbTree::Empty;
     requires rb_identity_is(tree, node) == 1;
     ensures rb_list_starts_with(rb_inorder(tree), node) == 1 by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 have rb_identity_is(RbTree::Empty, node) != 0 by {
                     rewrite(rb_identity_is(RbTree::Empty, node), 1);
@@ -467,7 +471,8 @@ theorem rb_inorder_last_at_rightmost(tree: RbTree, node: struct rb_node*) {
     requires rb_right(tree) == RbTree::Empty;
     requires rb_identity_is(tree, node) == 1;
     ensures rb_list_ends_with(rb_inorder(tree), node) == 1 by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 have rb_identity_is(RbTree::Empty, node) != 0 by {
                     rewrite(rb_identity_is(RbTree::Empty, node), 1);
@@ -556,7 +561,8 @@ theorem plug_keeps_first(ctx: Context, sub: RbTree, node: struct rb_node*) {
     requires ctx_all_left(ctx) == 1;
     requires rb_list_starts_with(rb_inorder(sub), node) == 1;
     ensures rb_list_starts_with(rb_inorder(plug(ctx, sub)), node) == 1 by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => {
                 unfold(plug(Context::Top, sub));
                 known();
@@ -624,7 +630,8 @@ theorem plug_keeps_last(ctx: Context, sub: RbTree, node: struct rb_node*) {
     requires ctx_all_right(ctx) == 1;
     requires rb_list_ends_with(rb_inorder(sub), node) == 1;
     ensures rb_list_ends_with(rb_inorder(plug(ctx, sub)), node) == 1 by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => {
                 unfold(plug(Context::Top, sub));
                 known();

@@ -2031,6 +2031,14 @@ function-entry memory and entry scalar values, then elaborates `expr`
 normally. The surface evaluates no expression itself: every C fragment,
 wherever it is stated, is elaborated this way and evaluated by the kernel.
 
+Declared resource arguments with `ResourceStateSource::Entry` use the
+entry state unless the evaluation frame carries the same actual program-point
+ID (or is the entry state object itself). Such a frame may add the folded
+clauses' read authority at entry. Equal memory snapshots at distinct points
+do not select the entry frame; two missing point IDs do not identify states.
+`functions::resource_argument_point_tests` covers these distinctions. This
+selection does not use `ProgramPoint`'s legacy snapshot-based equality.
+
 Memory access obligations carry the operation byte width. Do not infer load or
 store width only from pointer syntax; the operation type is what determines
 whether an access needs one byte or four bytes.
@@ -2098,11 +2106,22 @@ index handles, with iterative construction/comparison/disposal and per-session
 memos. Subobject widths retain their selected native structural descriptor;
 key operations do not request the enclosing native pointer value.
 
-`StoredMemoryValue` preserves native `ProgramValue` structural equality, order,
-and hash stream. Replacing it with a local observation key would change the
-contract. Exact outcome refresh uses `same_native_value`, separately from local
-storage equality. Certification syntax and fact observations have their own
-admission rules; neither inherits a storage key's equivalences.
+`StoredMemoryValue` preserves native `ProgramValue` structural equality and
+ordering. Boolean, float, algebraic and pointer cells cache the same structural
+family projections across immutable cell clones; hashes consume their cached
+fingerprints without exporting an enclosing native value. Native/shared equal
+cells hash equally, but matching the raw `ProgramValue` hash bytes is no longer
+a contract for these families. Numeric cells retain their native carrier and
+structural key/hash; local machine observation equivalence is not used for
+memory cells. Selected scalar compatibility adapters inside family projections
+remain explicit boundaries.
+
+Memory maps still maintain their content hashes incrementally; snapshot
+interning and collision checks are unchanged. Content hashes and the state
+ordering that uses them can change when cell hash encoding changes. Exact
+outcome refresh uses `same_native_value`, separately from local storage equality.
+Certification syntax and fact observations have their own admission rules;
+neither inherits a storage key's equivalences.
 
 Regression evidence: `execution_value::storage_contract_tests` checks pairwise
 mixed-carrier order/hash classes and float call-argument distinctions. Existing

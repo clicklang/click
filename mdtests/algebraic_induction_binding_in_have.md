@@ -18,7 +18,8 @@ function nat_zero(n: Nat) -> int32 decreases n {
 theorem binding_in_have(n: Nat) {
     requires forall (k: int32) { k == k };
     ensures n == n by {
-        induct(n) as ih {
+        let ih = induct(n);
+        match n {
             Nat::Zero => { normalize(); }
             Nat::Succ(previous) => {
                 have previous == previous by normalize();

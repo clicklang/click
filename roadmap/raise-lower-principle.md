@@ -721,6 +721,29 @@ independent skewed/balanced conjunction curves. Those curves now run separately,
 retaining every size, replay check and work bound. Both separated tests passed;
 no timeout, deterministic budget or proof fixture changed.
 
+### 10i Retained memory-value key hashing
+
+Boolean, float, algebraic and pointer cells cache structural family keys across
+immutable cell clones. Hashing, equality and ordering read these keys without
+requesting an enclosing native descriptor. Native value equality/order and
+collision checking are preserved. Numeric cells retain their existing native
+carrier and structural keys; local machine observation identities are not
+substituted for memory identity. Selected scalar adapters remain explicit.
+
+The native hash-byte compatibility constraint was removed with user approval.
+Snapshot interning and incremental content hashing remain unchanged; their
+hash numbers and resulting state ordering can change. A bounded red regression
+measured 152 / 632 / 10,232 hash-input bytes for 3 / 5 / 9 shared float nodes.
+The fixed route emits nine bytes at each size without populating the enclosing
+native cache. Growing DAG controls cover cold construction, cloned-cell warm
+hashing and fresh-verification isolation. Mixed native/shared family matrices,
+forced outer hash collisions and a numeric-call carrier distinction guard the
+existing equality classes. The focused suite passed all 41 checks.
+All 8,508 nonignored library checks passed, including all 1,855 scaling checks.
+The full regular mdtest corpus and examples passed unchanged. Corpus-wide
+fact-stability auditing recorded zero changed terms, zero fact-selected paths
+and 371 refusals without facts. Quality checks passed; Nightly was not run.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential

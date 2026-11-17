@@ -2418,7 +2418,8 @@ fn pure_theorem_generic_and_structural_induction_emit_written_tactics() {
     theorem reflexive<T>(x: T) { ensures x == x by { normalize(); } }
     theorem induction_shape(xs: TestList<int32>) {
         ensures xs == xs by {
-            induct(xs) as ih {
+            let ih = induct(xs);
+            match xs {
                 TestList::Nil => { normalize(); }
                 TestList::Cons(head, tail) => { apply(ih(tail)); normalize(); }
             }
@@ -2432,11 +2433,11 @@ fn pure_theorem_generic_and_structural_induction_emit_written_tactics() {
     )));
     assert!(events.iter().any(|event| matches!(event,
         VerificationEvent::TacticStarted(tactic) if tactic.claim == "induction_shape.ensures_0"
-            && tactic.class == "control" && tactic.source_tactic_path.as_deref() == Some(&[0])
+            && tactic.class == "control" && tactic.source_tactic_path.as_deref() == Some(&[1])
     )));
     assert!(events.iter().any(|event| matches!(event,
         VerificationEvent::TacticStarted(tactic) if tactic.claim == "induction_shape.ensures_0"
-            && tactic.source_tactic_path.as_deref() == Some(&[2])
+            && tactic.source_tactic_path.as_deref() == Some(&[3])
     )));
 }
 

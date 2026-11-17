@@ -41,7 +41,8 @@ function copy_tree(tree: Tree<int32>) -> Tree<int32>
 theorem append_right_identity(xs: TestList<int32>) {
     requires xs == xs;
     ensures append(xs, TestList<int32>::Nil) == xs by {
-        induct(xs) as ih {
+        let ih = induct(xs);
+        match xs {
             TestList::Nil => {
                 unfold(append(TestList<int32>::Nil, TestList<int32>::Nil));
                 solve();
@@ -61,7 +62,8 @@ theorem append_right_identity(xs: TestList<int32>) {
 
 theorem copy_tree_identity(tree: Tree<int32>) {
     ensures copy_tree(tree) == tree by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             Tree::Empty => {
                 unfold(copy_tree(Tree<int32>::Empty));
                 solve();

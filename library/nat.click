@@ -54,7 +54,8 @@ theorem add_succ_left(n: Nat, m: Nat) {
 
 theorem to_integer_add(n: Nat, m: Nat) {
     ensures to_integer(nat::add(n, m)) == to_integer(n) + to_integer(m) by {
-        induct(n) as ih {
+        let ih = induct(n);
+        match n {
             Nat::Zero => {
                 unfold(nat::add(Nat::Zero, m));
                 apply(nat::to_integer_zero());
@@ -77,7 +78,8 @@ theorem to_integer_add(n: Nat, m: Nat) {
 
 theorem add_right_identity(n: Nat) {
     ensures nat::add(n, Nat::Zero) == n by {
-        induct(n) as ih {
+        let ih = induct(n);
+        match n {
             Nat::Zero => {
                 unfold(nat::add(Nat::Zero, Nat::Zero));
                 normalize();
@@ -94,7 +96,8 @@ theorem add_right_identity(n: Nat) {
 
 theorem add_succ_right(n: Nat, m: Nat) {
     ensures nat::add(n, Nat::Succ(m)) == Nat::Succ(nat::add(n, m)) by {
-        induct(n) as ih {
+        let ih = induct(n);
+        match n {
             Nat::Zero => {
                 unfold(nat::add(Nat::Zero, Nat::Succ(m)));
                 unfold(nat::add(Nat::Zero, m));
@@ -113,7 +116,8 @@ theorem add_succ_right(n: Nat, m: Nat) {
 
 theorem add_associative(a: Nat, b: Nat, c: Nat) {
     ensures nat::add(nat::add(a, b), c) == nat::add(a, nat::add(b, c)) by {
-        induct(a) as ih {
+        let ih = induct(a);
+        match a {
             Nat::Zero => {
                 unfold(nat::add(Nat::Zero, b));
                 unfold(nat::add(Nat::Zero, nat::add(b, c)));
@@ -136,7 +140,8 @@ theorem add_associative(a: Nat, b: Nat, c: Nat) {
 
 theorem add_commutative(a: Nat, b: Nat) {
     ensures nat::add(a, b) == nat::add(b, a) by {
-        induct(a) as ih {
+        let ih = induct(a);
+        match a {
             Nat::Zero => {
                 unfold(nat::add(Nat::Zero, b));
                 apply(nat::add_right_identity(b));

@@ -190,7 +190,8 @@ function heap_member(tree: HeapTree, target: struct tree_node*) -> Bool
 
 theorem heap_member_is_address_membership(tree: HeapTree, target: struct tree_node*) {
     ensures heap_member(tree, target) == list::contains(heap_addresses(tree), address(target)) by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             HeapTree::Empty => {
                 unfold(heap_member(HeapTree::Empty, target));
                 unfold(heap_addresses(HeapTree::Empty));
@@ -232,7 +233,8 @@ theorem heap_rotate_left_node_preserves_inorder(node: struct tree_node*, value: 
                                                left: HeapTree, right: HeapTree) {
     ensures heap_inorder(heap_rotate_left(HeapTree::Node(node, value, left, right)))
         == heap_inorder(HeapTree::Node(node, value, left, right)) by {
-        induct(right) as ih {
+        let ih = induct(right);
+        match right {
             HeapTree::Empty => {
                 unfold(heap_rotate_left(HeapTree::Node(node, value, left, HeapTree::Empty)));
                 normalize();
@@ -264,7 +266,8 @@ theorem heap_rotate_left_node_preserves_inorder(node: struct tree_node*, value: 
 
 theorem heap_rotate_left_preserves_inorder(tree: HeapTree) {
     ensures heap_inorder(heap_rotate_left(tree)) == heap_inorder(tree) by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             HeapTree::Empty => {
                 unfold(heap_rotate_left(HeapTree::Empty));
                 normalize();
@@ -281,7 +284,8 @@ theorem heap_rotate_right_node_preserves_inorder(node: struct tree_node*, value:
                                                  left: HeapTree, right: HeapTree) {
     ensures heap_inorder(heap_rotate_right(HeapTree::Node(node, value, left, right)))
         == heap_inorder(HeapTree::Node(node, value, left, right)) by {
-        induct(left) as ih {
+        let ih = induct(left);
+        match left {
             HeapTree::Empty => {
                 unfold(heap_rotate_right(HeapTree::Node(node, value, HeapTree::Empty, right)));
                 normalize();
@@ -313,7 +317,8 @@ theorem heap_rotate_right_node_preserves_inorder(node: struct tree_node*, value:
 
 theorem heap_rotate_right_preserves_inorder(tree: HeapTree) {
     ensures heap_inorder(heap_rotate_right(tree)) == heap_inorder(tree) by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             HeapTree::Empty => {
                 unfold(heap_rotate_right(HeapTree::Empty));
                 normalize();
@@ -329,7 +334,8 @@ theorem heap_rotate_right_preserves_inorder(tree: HeapTree) {
 theorem plug_inorder_transport(ctx: Context, a: HeapTree, b: HeapTree) {
     requires heap_inorder(a) == heap_inorder(b);
     ensures heap_inorder(plug(ctx, a)) == heap_inorder(plug(ctx, b)) by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => {
                 unfold(plug(Context::Top, a));
                 unfold(plug(Context::Top, b));
@@ -655,7 +661,8 @@ function tree_mirror<T>(tree: Tree<T>) -> Tree<T>
 
 theorem tree_mirror_twice<T>(tree: Tree<T>) {
     ensures tree_mirror(tree_mirror(tree)) == tree by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             Tree::Empty => {
                 unfold(tree_mirror(Tree<T>::Empty));
                 solve();
@@ -675,7 +682,8 @@ theorem tree_mirror_twice<T>(tree: Tree<T>) {
 
 theorem tree_mirror_preserves_size<T>(tree: Tree<T>) {
     ensures tree_size(tree_mirror(tree)) == tree_size(tree) by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             Tree::Empty => {
                 unfold(tree_mirror(Tree<T>::Empty));
                 normalize();

@@ -266,7 +266,7 @@ impl Ord for ConditionStorageKey {
 }
 
 /// Native ProgramValue variant order. Numeric local keys live in the separate
-/// machine-observation family; memory cells keep their native hash stream.
+/// machine-observation family; numeric memory cells keep native structural keys.
 fn native_rank(value: &ProgramValue) -> u8 {
     match value {
         ProgramValue::PointerInteger(_) => 0,
