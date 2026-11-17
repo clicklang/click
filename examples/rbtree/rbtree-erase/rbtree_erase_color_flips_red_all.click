@@ -1558,14 +1558,14 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         normalize() using { separate(memory(id->__rb_parent_color), memory(id->rb_left)); };
                                                     }
                                                     have id->rb_left == at(red_flip, id->rb_left) by {
-                                                        preserve(separate(statement(1).statement(1).statement(14).statement(1).statement(1).statement(0).footprint, memory(id->rb_left)));
+                                                        preserve(memory(id->rb_left), statement(1).statement(1).statement(14).statement(1).statement(1).statement(0));
                                                     }
                                                     have id->rb_left == sid by { rewrite(id->rb_left, at(red_flip, id->rb_left)); known(); }
                                                     have separate(statement(1).statement(1).statement(14).statement(1).statement(1).statement(0).footprint, memory(id->rb_right)) by {
                                                         normalize() using { separate(memory(id->__rb_parent_color), memory(id->rb_right)); };
                                                     }
                                                     have id->rb_right == at(red_flip, id->rb_right) by {
-                                                        preserve(separate(statement(1).statement(1).statement(14).statement(1).statement(1).statement(0).footprint, memory(id->rb_right)));
+                                                        preserve(memory(id->rb_right), statement(1).statement(1).statement(14).statement(1).statement(1).statement(0));
                                                     }
                                                     have id->rb_right == node by { rewrite(id->rb_right, at(red_flip, id->rb_right)); known(); }
                                                     // State the C word addition first, then its exact value.
@@ -2425,13 +2425,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 normalize() using { separate(memory(tmp1->__rb_parent_color), memory(tmp1->rb_left)); };
                                             }
                                             have tmp1->rb_left == at(near_color, tmp1->rb_left) by {
-                                                preserve(separate(statement(1).statement(1).statement(12).statement(3).footprint, memory(tmp1->rb_left)));
+                                                preserve(memory(tmp1->rb_left), statement(1).statement(1).statement(12).statement(3));
                                             }
                                             have separate(statement(1).statement(1).statement(12).statement(3).footprint, memory(tmp1->rb_right)) by {
                                                 normalize() using { separate(memory(tmp1->__rb_parent_color), memory(tmp1->rb_right)); };
                                             }
                                             have tmp1->rb_right == at(near_color, tmp1->rb_right) by {
-                                                preserve(separate(statement(1).statement(1).statement(12).statement(3).footprint, memory(tmp1->rb_right)));
+                                                preserve(memory(tmp1->rb_right), statement(1).statement(1).statement(12).statement(3));
                                             }
                                             have tmp1 == zid by { solve(); }
                                             have tmp1->__rb_parent_color == (address(parent) | 1) by { known(); }
@@ -2482,7 +2482,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 contains(memory(tmp1->rb_left), memory(tmp1->rb_left));
                                             };
                                             have tmp1->rb_left == at(red_rotation, tmp1->rb_left) by {
-                                                preserve(separate(statement(1).statement(1).statement(12).statement(4).footprint, memory(tmp1->rb_left)));
+                                                preserve(memory(tmp1->rb_left), statement(1).statement(1).statement(12).statement(4));
                                             }
                                             have contains((at(red_rotation, u) * memory(parent->__rb_parent_color)) * memory(at(iteration, id->rb_left as (uint64 *))[0]), statement(1).statement(1).statement(12).statement(4).footprint) by known();
                                             apply(separation::separate_star(at(red_rotation, u), memory(parent->__rb_parent_color), memory(tmp1->rb_right))) using {
@@ -2500,7 +2500,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 contains(memory(tmp1->rb_right), memory(tmp1->rb_right));
                                             };
                                             have tmp1->rb_right == at(red_rotation, tmp1->rb_right) by {
-                                                preserve(separate(statement(1).statement(1).statement(12).statement(4).footprint, memory(tmp1->rb_right)));
+                                                preserve(memory(tmp1->rb_right), statement(1).statement(1).statement(12).statement(4));
                                             }
                                             mark red_callback;
                                             step(); // The callback preserves all tree resources.
@@ -2534,13 +2534,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 normalize() using { separate(memory(*(&sibling)), memory(tmp1->rb_left)); };
                                             }
                                             have tmp1->rb_left == at(red_sibling, tmp1->rb_left) by {
-                                                preserve(separate(statement(1).statement(1).statement(12).statement(6).footprint, memory(tmp1->rb_left)));
+                                                preserve(memory(tmp1->rb_left), statement(1).statement(1).statement(12).statement(6));
                                             }
                                             have separate(statement(1).statement(1).statement(12).statement(6).footprint, memory(tmp1->rb_right)) by {
                                                 normalize() using { separate(memory(*(&sibling)), memory(tmp1->rb_right)); };
                                             }
                                             have tmp1->rb_right == at(red_sibling, tmp1->rb_right) by {
-                                                preserve(separate(statement(1).statement(1).statement(12).statement(6).footprint, memory(tmp1->rb_right)));
+                                                preserve(memory(tmp1->rb_right), statement(1).statement(1).statement(12).statement(6));
                                             }
                                             have sibling == zid by { solve(); }
                                             let red_deficit_tag = fold(rb_context_tag(parent, sid), { color: Color::Red });
@@ -2554,13 +2554,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 normalize() using { separate(memory(*(&tmp1)), memory(sibling->rb_left)); };
                                             }
                                             have sibling->rb_left == at(far_read, sibling->rb_left) by {
-                                                preserve(separate(statement(1).statement(1).statement(13).footprint, memory(sibling->rb_left)));
+                                                preserve(memory(sibling->rb_left), statement(1).statement(1).statement(13));
                                             }
                                             have separate(statement(1).statement(1).statement(13).footprint, memory(sibling->rb_right)) by {
                                                 normalize() using { separate(memory(*(&tmp1)), memory(sibling->rb_right)); };
                                             }
                                             have sibling->rb_right == at(far_read, sibling->rb_right) by {
-                                                preserve(separate(statement(1).statement(1).statement(13).footprint, memory(sibling->rb_right)));
+                                                preserve(memory(sibling->rb_right), statement(1).statement(1).statement(13));
                                             }
                                             if rb_root_black(zlm) == 1 {
                                                 if rb_root_black(zrm) == 1 {
@@ -2597,13 +2597,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         normalize() using { separate(memory(((&tmp2) as (uint8 *))[0..8]), memory(sibling->rb_left)); };
                                                     }
                                                     have sibling->rb_left == at(near_read, sibling->rb_left) by {
-                                                        preserve(separate(statement(1).statement(1).statement(14).statement(0).footprint, memory(sibling->rb_left)));
+                                                        preserve(memory(sibling->rb_left), statement(1).statement(1).statement(14).statement(0));
                                                     }
                                                     have separate(statement(1).statement(1).statement(14).statement(0).footprint, memory(sibling->rb_right)) by {
                                                         normalize() using { separate(memory(((&tmp2) as (uint8 *))[0..8]), memory(sibling->rb_right)); };
                                                     }
                                                     have sibling->rb_right == at(near_read, sibling->rb_right) by {
-                                                        preserve(separate(statement(1).statement(1).statement(14).statement(0).footprint, memory(sibling->rb_right)));
+                                                        preserve(memory(sibling->rb_right), statement(1).statement(1).statement(14).statement(0));
                                                     }
                                                     match zr.model ensuring {
                                                         owns ls: rb_at(tmp2);
@@ -2634,13 +2634,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         normalize() using { separate(memory(sibling->__rb_parent_color), memory(sibling->rb_left)); };
                                                     }
                                                     have sibling->rb_left == at(near_flip, sibling->rb_left) by {
-                                                        preserve(separate(statement(1).statement(1).statement(14).statement(1).statement(0).footprint, memory(sibling->rb_left)));
+                                                        preserve(memory(sibling->rb_left), statement(1).statement(1).statement(14).statement(1).statement(0));
                                                     }
                                                     have separate(statement(1).statement(1).statement(14).statement(1).statement(0).footprint, memory(sibling->rb_right)) by {
                                                         normalize() using { separate(memory(sibling->__rb_parent_color), memory(sibling->rb_right)); };
                                                     }
                                                     have sibling->rb_right == at(near_flip, sibling->rb_right) by {
-                                                        preserve(separate(statement(1).statement(1).statement(14).statement(1).statement(0).footprint, memory(sibling->rb_right)));
+                                                        preserve(memory(sibling->rb_right), statement(1).statement(1).statement(14).statement(1).statement(0));
                                                     }
                                                     have zid->__rb_parent_color == address(id) by { rewrite(id, parent); solve(); }
                                                     have (zid->__rb_parent_color & 1) == 0 by { rewrite(zid->__rb_parent_color, address(id)); solve() using { aligned(id, 8); }; }
@@ -2661,14 +2661,14 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         normalize() using { separate(memory(parent->__rb_parent_color), memory(parent->rb_left)); };
                                                     }
                                                     have parent->rb_left == at(red_flip, parent->rb_left) by {
-                                                        preserve(separate(statement(1).statement(1).statement(14).statement(1).statement(1).statement(0).footprint, memory(parent->rb_left)));
+                                                        preserve(memory(parent->rb_left), statement(1).statement(1).statement(14).statement(1).statement(1).statement(0));
                                                     }
                                                     have parent->rb_left == zid by { rewrite(parent->rb_left, at(red_flip, parent->rb_left)); known(); }
                                                     have separate(statement(1).statement(1).statement(14).statement(1).statement(1).statement(0).footprint, memory(parent->rb_right)) by {
                                                         normalize() using { separate(memory(parent->__rb_parent_color), memory(parent->rb_right)); };
                                                     }
                                                     have parent->rb_right == at(red_flip, parent->rb_right) by {
-                                                        preserve(separate(statement(1).statement(1).statement(14).statement(1).statement(1).statement(0).footprint, memory(parent->rb_right)));
+                                                        preserve(memory(parent->rb_right), statement(1).statement(1).statement(14).statement(1).statement(1).statement(0));
                                                     }
                                                     have parent->rb_right == node by { rewrite(parent->rb_right, at(red_flip, parent->rb_right)); known(); }
                                                     // State the C word addition first, then its exact value.
@@ -2738,13 +2738,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         normalize() using { separate(memory(((&tmp2) as (uint8 *))[0..8]), memory(sibling->rb_left)); };
                                                     }
                                                     have sibling->rb_left == at(near_read, sibling->rb_left) by {
-                                                        preserve(separate(statement(1).statement(1).statement(14).statement(0).footprint, memory(sibling->rb_left)));
+                                                        preserve(memory(sibling->rb_left), statement(1).statement(1).statement(14).statement(0));
                                                     }
                                                     have separate(statement(1).statement(1).statement(14).statement(0).footprint, memory(sibling->rb_right)) by {
                                                         normalize() using { separate(memory(((&tmp2) as (uint8 *))[0..8]), memory(sibling->rb_right)); };
                                                     }
                                                     have sibling->rb_right == at(near_read, sibling->rb_right) by {
-                                                        preserve(separate(statement(1).statement(1).statement(14).statement(0).footprint, memory(sibling->rb_right)));
+                                                        preserve(memory(sibling->rb_right), statement(1).statement(1).statement(14).statement(0));
                                                     }
                                                     match zr.model {
                                                         RbTree::Empty => {
@@ -3455,14 +3455,14 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         normalize() using { separate(memory(id->__rb_parent_color), memory(id->rb_right)); };
                                                     }
                                                     have id->rb_right == at(red_flip, id->rb_right) by {
-                                                        preserve(separate(statement(1).statement(1).statement(2).statement(1).statement(1).statement(0).footprint, memory(id->rb_right)));
+                                                        preserve(memory(id->rb_right), statement(1).statement(1).statement(2).statement(1).statement(1).statement(0));
                                                     }
                                                     have id->rb_right == sid by { rewrite(id->rb_right, at(red_flip, id->rb_right)); known(); }
                                                     have separate(statement(1).statement(1).statement(2).statement(1).statement(1).statement(0).footprint, memory(id->rb_left)) by {
                                                         normalize() using { separate(memory(id->__rb_parent_color), memory(id->rb_left)); };
                                                     }
                                                     have id->rb_left == at(red_flip, id->rb_left) by {
-                                                        preserve(separate(statement(1).statement(1).statement(2).statement(1).statement(1).statement(0).footprint, memory(id->rb_left)));
+                                                        preserve(memory(id->rb_left), statement(1).statement(1).statement(2).statement(1).statement(1).statement(0));
                                                     }
                                                     have id->rb_left == node by { rewrite(id->rb_left, at(red_flip, id->rb_left)); known(); }
                                                     // State the C word addition first, then its exact value.
@@ -4323,13 +4323,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 normalize() using { separate(memory(tmp1->__rb_parent_color), memory(tmp1->rb_right)); };
                                             }
                                             have tmp1->rb_right == at(near_color, tmp1->rb_right) by {
-                                                preserve(separate(statement(1).statement(1).statement(0).statement(3).footprint, memory(tmp1->rb_right)));
+                                                preserve(memory(tmp1->rb_right), statement(1).statement(1).statement(0).statement(3));
                                             }
                                             have separate(statement(1).statement(1).statement(0).statement(3).footprint, memory(tmp1->rb_left)) by {
                                                 normalize() using { separate(memory(tmp1->__rb_parent_color), memory(tmp1->rb_left)); };
                                             }
                                             have tmp1->rb_left == at(near_color, tmp1->rb_left) by {
-                                                preserve(separate(statement(1).statement(1).statement(0).statement(3).footprint, memory(tmp1->rb_left)));
+                                                preserve(memory(tmp1->rb_left), statement(1).statement(1).statement(0).statement(3));
                                             }
                                             have tmp1 == zid by { solve(); }
                                             have tmp1->__rb_parent_color == (address(parent) | 1) by { known(); }
@@ -4380,7 +4380,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 contains(memory(tmp1->rb_right), memory(tmp1->rb_right));
                                             };
                                             have tmp1->rb_right == at(red_rotation, tmp1->rb_right) by {
-                                                preserve(separate(statement(1).statement(1).statement(0).statement(4).footprint, memory(tmp1->rb_right)));
+                                                preserve(memory(tmp1->rb_right), statement(1).statement(1).statement(0).statement(4));
                                             }
                                             have contains((at(red_rotation, u) * memory(parent->__rb_parent_color)) * memory(at(iteration, id->rb_right as (uint64 *))[0]), statement(1).statement(1).statement(0).statement(4).footprint) by known();
                                             apply(separation::separate_star(at(red_rotation, u), memory(parent->__rb_parent_color), memory(tmp1->rb_left))) using {
@@ -4398,7 +4398,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 contains(memory(tmp1->rb_left), memory(tmp1->rb_left));
                                             };
                                             have tmp1->rb_left == at(red_rotation, tmp1->rb_left) by {
-                                                preserve(separate(statement(1).statement(1).statement(0).statement(4).footprint, memory(tmp1->rb_left)));
+                                                preserve(memory(tmp1->rb_left), statement(1).statement(1).statement(0).statement(4));
                                             }
                                             mark red_callback;
                                             step(); // The callback preserves all tree resources.
@@ -4432,13 +4432,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 normalize() using { separate(memory(*(&sibling)), memory(tmp1->rb_right)); };
                                             }
                                             have tmp1->rb_right == at(red_sibling, tmp1->rb_right) by {
-                                                preserve(separate(statement(1).statement(1).statement(0).statement(6).footprint, memory(tmp1->rb_right)));
+                                                preserve(memory(tmp1->rb_right), statement(1).statement(1).statement(0).statement(6));
                                             }
                                             have separate(statement(1).statement(1).statement(0).statement(6).footprint, memory(tmp1->rb_left)) by {
                                                 normalize() using { separate(memory(*(&sibling)), memory(tmp1->rb_left)); };
                                             }
                                             have tmp1->rb_left == at(red_sibling, tmp1->rb_left) by {
-                                                preserve(separate(statement(1).statement(1).statement(0).statement(6).footprint, memory(tmp1->rb_left)));
+                                                preserve(memory(tmp1->rb_left), statement(1).statement(1).statement(0).statement(6));
                                             }
                                             have sibling == zid by { solve(); }
                                             let red_deficit_tag = fold(rb_context_tag(parent, sid), { color: Color::Red });
@@ -4452,13 +4452,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 normalize() using { separate(memory(*(&tmp1)), memory(sibling->rb_right)); };
                                             }
                                             have sibling->rb_right == at(far_read, sibling->rb_right) by {
-                                                preserve(separate(statement(1).statement(1).statement(1).footprint, memory(sibling->rb_right)));
+                                                preserve(memory(sibling->rb_right), statement(1).statement(1).statement(1));
                                             }
                                             have separate(statement(1).statement(1).statement(1).footprint, memory(sibling->rb_left)) by {
                                                 normalize() using { separate(memory(*(&tmp1)), memory(sibling->rb_left)); };
                                             }
                                             have sibling->rb_left == at(far_read, sibling->rb_left) by {
-                                                preserve(separate(statement(1).statement(1).statement(1).footprint, memory(sibling->rb_left)));
+                                                preserve(memory(sibling->rb_left), statement(1).statement(1).statement(1));
                                             }
                                             if rb_root_black(zrm) == 1 {
                                                 if rb_root_black(zlm) == 1 {
@@ -4494,13 +4494,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         normalize() using { separate(memory(((&tmp2) as (uint8 *))[0..8]), memory(sibling->rb_right)); };
                                                     }
                                                     have sibling->rb_right == at(near_read, sibling->rb_right) by {
-                                                        preserve(separate(statement(1).statement(1).statement(2).statement(0).footprint, memory(sibling->rb_right)));
+                                                        preserve(memory(sibling->rb_right), statement(1).statement(1).statement(2).statement(0));
                                                     }
                                                     have separate(statement(1).statement(1).statement(2).statement(0).footprint, memory(sibling->rb_left)) by {
                                                         normalize() using { separate(memory(((&tmp2) as (uint8 *))[0..8]), memory(sibling->rb_left)); };
                                                     }
                                                     have sibling->rb_left == at(near_read, sibling->rb_left) by {
-                                                        preserve(separate(statement(1).statement(1).statement(2).statement(0).footprint, memory(sibling->rb_left)));
+                                                        preserve(memory(sibling->rb_left), statement(1).statement(1).statement(2).statement(0));
                                                     }
                                                     match zl.model ensuring {
                                                         owns ls: rb_at(tmp2);
@@ -4531,13 +4531,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         normalize() using { separate(memory(sibling->__rb_parent_color), memory(sibling->rb_right)); };
                                                     }
                                                     have sibling->rb_right == at(near_flip, sibling->rb_right) by {
-                                                        preserve(separate(statement(1).statement(1).statement(2).statement(1).statement(0).footprint, memory(sibling->rb_right)));
+                                                        preserve(memory(sibling->rb_right), statement(1).statement(1).statement(2).statement(1).statement(0));
                                                     }
                                                     have separate(statement(1).statement(1).statement(2).statement(1).statement(0).footprint, memory(sibling->rb_left)) by {
                                                         normalize() using { separate(memory(sibling->__rb_parent_color), memory(sibling->rb_left)); };
                                                     }
                                                     have sibling->rb_left == at(near_flip, sibling->rb_left) by {
-                                                        preserve(separate(statement(1).statement(1).statement(2).statement(1).statement(0).footprint, memory(sibling->rb_left)));
+                                                        preserve(memory(sibling->rb_left), statement(1).statement(1).statement(2).statement(1).statement(0));
                                                     }
                                                     have zid->__rb_parent_color == address(id) by { rewrite(id, parent); solve(); }
                                                     have (zid->__rb_parent_color & 1) == 0 by { rewrite(zid->__rb_parent_color, address(id)); solve() using { aligned(id, 8); }; }
@@ -4558,14 +4558,14 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         normalize() using { separate(memory(parent->__rb_parent_color), memory(parent->rb_right)); };
                                                     }
                                                     have parent->rb_right == at(red_flip, parent->rb_right) by {
-                                                        preserve(separate(statement(1).statement(1).statement(2).statement(1).statement(1).statement(0).footprint, memory(parent->rb_right)));
+                                                        preserve(memory(parent->rb_right), statement(1).statement(1).statement(2).statement(1).statement(1).statement(0));
                                                     }
                                                     have parent->rb_right == zid by { rewrite(parent->rb_right, at(red_flip, parent->rb_right)); known(); }
                                                     have separate(statement(1).statement(1).statement(2).statement(1).statement(1).statement(0).footprint, memory(parent->rb_left)) by {
                                                         normalize() using { separate(memory(parent->__rb_parent_color), memory(parent->rb_left)); };
                                                     }
                                                     have parent->rb_left == at(red_flip, parent->rb_left) by {
-                                                        preserve(separate(statement(1).statement(1).statement(2).statement(1).statement(1).statement(0).footprint, memory(parent->rb_left)));
+                                                        preserve(memory(parent->rb_left), statement(1).statement(1).statement(2).statement(1).statement(1).statement(0));
                                                     }
                                                     have parent->rb_left == node by { rewrite(parent->rb_left, at(red_flip, parent->rb_left)); known(); }
                                                     // State the C word addition first, then its exact value.
@@ -4635,13 +4635,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         normalize() using { separate(memory(((&tmp2) as (uint8 *))[0..8]), memory(sibling->rb_right)); };
                                                     }
                                                     have sibling->rb_right == at(near_read, sibling->rb_right) by {
-                                                        preserve(separate(statement(1).statement(1).statement(2).statement(0).footprint, memory(sibling->rb_right)));
+                                                        preserve(memory(sibling->rb_right), statement(1).statement(1).statement(2).statement(0));
                                                     }
                                                     have separate(statement(1).statement(1).statement(2).statement(0).footprint, memory(sibling->rb_left)) by {
                                                         normalize() using { separate(memory(((&tmp2) as (uint8 *))[0..8]), memory(sibling->rb_left)); };
                                                     }
                                                     have sibling->rb_left == at(near_read, sibling->rb_left) by {
-                                                        preserve(separate(statement(1).statement(1).statement(2).statement(0).footprint, memory(sibling->rb_left)));
+                                                        preserve(memory(sibling->rb_left), statement(1).statement(1).statement(2).statement(0));
                                                     }
                                                     match zl.model {
                                                         RbTree::Empty => {

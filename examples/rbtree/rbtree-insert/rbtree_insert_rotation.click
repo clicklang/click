@@ -76,7 +76,7 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                 };
             }
             have identity->__rb_parent_color == at(before_child_change, identity->__rb_parent_color) by {
-                preserve(separate(statement(0).statement(0).statement(0).footprint, memory(identity->__rb_parent_color)));
+                preserve(memory(identity->__rb_parent_color), statement(0).statement(0).statement(0));
             }
             have identity->__rb_parent_color == address(grandparent) + (identity->__rb_parent_color & 1) by {
                 rewrite(identity->__rb_parent_color, at(before_child_change, identity->__rb_parent_color));
@@ -106,7 +106,7 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                         };
                     }
                     have identity->__rb_parent_color == at(before_child_change, identity->__rb_parent_color) by {
-                        preserve(separate(statement(0).statement(0).statement(1).footprint, memory(identity->__rb_parent_color)));
+                        preserve(memory(identity->__rb_parent_color), statement(0).statement(0).statement(1));
                     }
                     have identity->__rb_parent_color == address(grandparent) + (identity->__rb_parent_color & 1) by {
                         rewrite(identity->__rb_parent_color, at(before_child_change, identity->__rb_parent_color));
@@ -115,7 +115,7 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
 
                     have separate(memory(parent->rb_right), memory(identity->rb_left)) by { rewrite(parent, identity); normalize(); }
                     have separate(statement(0).statement(0).statement(1).footprint, memory(identity->rb_left)) by { normalize() using { separate(memory(parent->rb_right), memory(identity->rb_left)); }; }
-                    have identity->rb_left == at(before_child_change, identity->rb_left) by { preserve(separate(statement(0).statement(0).statement(1).footprint, memory(identity->rb_left))); }
+                    have identity->rb_left == at(before_child_change, identity->rb_left) by { preserve(memory(identity->rb_left), statement(0).statement(0).statement(1)); }
                     let sibling = fold(rb_at(0), { model: RbTree::Empty });
                     let after = fold(ctx_at(new, root), {
                             model: Context::Right(identity, grandparent, color, sibling_model, outer_model)
@@ -150,7 +150,7 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                         };
                     }
                     have identity->__rb_parent_color == at(before_child_change, identity->__rb_parent_color) by {
-                        preserve(separate(statement(0).statement(0).statement(1).footprint, memory(identity->__rb_parent_color)));
+                        preserve(memory(identity->__rb_parent_color), statement(0).statement(0).statement(1));
                     }
                     have identity->__rb_parent_color == address(grandparent) + (identity->__rb_parent_color & 1) by {
                         rewrite(identity->__rb_parent_color, at(before_child_change, identity->__rb_parent_color));
@@ -159,7 +159,7 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
 
                     have separate(memory(parent->rb_right), memory(identity->rb_left)) by { rewrite(parent, identity); normalize(); }
                     have separate(statement(0).statement(0).statement(1).footprint, memory(identity->rb_left)) by { normalize() using { separate(memory(parent->rb_right), memory(identity->rb_left)); }; }
-                    have identity->rb_left == at(before_child_change, identity->rb_left) by { preserve(separate(statement(0).statement(0).statement(1).footprint, memory(identity->rb_left))); }
+                    have identity->rb_left == at(before_child_change, identity->rb_left) by { preserve(memory(identity->rb_left), statement(0).statement(0).statement(1)); }
                     let after = fold(ctx_at(new, root), {
                             model: Context::Right(identity, grandparent, color, sibling_model, outer_model)
                         }, { up: outer });
