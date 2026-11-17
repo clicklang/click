@@ -268,19 +268,28 @@ scalar type and binds as in Rust, tighter than a binary operator.
 A parameter may be a reference, `&T` or `&mut T`, to a scalar or a struct.
 The contract names what it refers to as Rust does: `*value` for the
 referent and `parent.left` for a field. The type grants the authority a
-safe caller holds: `value: &mut T` owns `*value` and `value: &T` views it,
-a slice `bytes: &mut [T]` or `bytes: &[T]` owns or views
-`bytes[0..bytes.len()]`, and an array `bytes: &[T; N]` owns or views
-`bytes[0..N]`, with no clause written. The derived clause is the
-one a sidecar would write, so the callee is checked against it and each
-caller must hold it. A sidecar that writes an `owns`, `views`, `consumes` or
-`produces` clause naming the parameter states its authority itself, and
-nothing is derived for it: `views parent.right` on a `&mut Pair` promises
-the caller the field is not written. `owns` through a shared reference is
-refused. The rule covers free functions and inherent methods whose referent
-is a scalar, a slice or array of scalars or a struct of scalar fields; a
-receiver, a trait method, a generic function, an `extern` or `contract`
-declaration, an enum and any other referent keep only their written clauses.
+safe caller holds, with no clause written:
+
+- `value: &mut T` owns `*value` and `value: &T` views it, for a scalar, an
+  `Option` of one, a crate enum, or a struct whose fields are scalars or
+  such structs; an inherent method's `&mut self` and `&self` do the same for
+  the `impl` block's type;
+- a slice `bytes: &mut [T]` or `bytes: &[T]` owns or views
+  `bytes[0..bytes.len()]`, and an array `bytes: &[T; N]` owns or views
+  `bytes[0..N]`;
+- a box moved in, `b: Box<R>` for such a struct `R`, consumes
+  `allocation(b, sizeof(R))` and `*b`, and a box moved out, `-> Box<R>`,
+  produces `allocation(result, sizeof(R))` and `*result`.
+
+The derived clause is the one a sidecar would write, so the callee is checked
+against it and each caller must hold it. A sidecar that writes an `owns`,
+`views`, `consumes` or `produces` clause naming the parameter (or `result`)
+states its authority itself, and nothing is derived for it: `views
+parent.right` on a `&mut Pair` promises the caller the field is not written.
+`owns` through a shared reference is refused. A trait method, a generic
+function, an `extern` or `contract` declaration, an option of a box, a struct
+holding a box, pointer or array, and any other type keep only their written
+clauses.
 Lifetimes may be written or
 left out, `fn pick<'a>(value: &'a u32) -> u32`; the contract does not use
 them. Type parameters are limited to the supported
