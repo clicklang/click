@@ -89,8 +89,10 @@ rejected. A bare function designator decays to the same address as `&name` in
 value positions when that function is declared in the translation unit.
 
 Packed layout and general bit-field layouts remain outside the baseline.
-[Local unsigned bit-fields](c.md#local-unsigned-bit-fields) support named member
-accesses in one allocation word on the x86-64 target. Named enum fields use the four-byte scalar ABI representation; broader
+[Local integer bit-fields](c.md#local-integer-bit-fields) support named members
+in one allocation word on the x86-64 target. The frontend limits pointer
+access to a local pointer initialized with the address of a named local
+record. That pointer cannot be reassigned, passed to a function, or returned. Named enum fields use the four-byte scalar ABI representation; broader
 enum shapes remain outside the documented subset. Click resource clauses can
 name supported fields and embedded aggregate places with their typed byte
 ranges. This aggregate-shape support does not complete the separate stable-view

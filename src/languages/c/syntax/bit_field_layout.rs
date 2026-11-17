@@ -28,11 +28,12 @@ impl IntBitField {
 
     /// The shift and positioned mask for a field in the first word.
     pub(crate) fn first_word_slice(self) -> Option<(u32, u32)> {
-        if self.end_bit() > 32 || self.width == 32 {
+        if self.end_bit() > 32 {
             return None;
         }
         let shift = u32::try_from(self.start_bit).ok()?;
-        Some((shift, ((1u32 << self.width) - 1) << shift))
+        let mask = u32::MAX >> (32 - self.width);
+        Some((shift, mask << shift))
     }
 
     pub(crate) fn end_bit(self) -> u64 {

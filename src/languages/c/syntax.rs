@@ -39,7 +39,7 @@ pub const C_PUBLIC_FORMS: &[&str] = &[
     "type.local-array",
     "type.struct-array-parameter",
     "type.struct-value",
-    "type.local-unsigned-bit-field-record",
+    "type.local-integer-bit-field-record",
     "type.function-pointer",
     "type.struct-pointer",
     "type.typeof",

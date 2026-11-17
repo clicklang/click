@@ -1369,28 +1369,40 @@ is arithmetic right shift with sign extension. This is implementation-defined
 in ISO C for negative signed values, but it is the behavior of the mainstream
 compilers Click is targeting.
 
-### Local unsigned bit-fields
+### Local integer bit-fields
 
-The x86-64 C frontend supports standalone file-scope struct definitions consisting of
-named, unqualified `unsigned int` bit-fields that are narrower than `int` and
-fit in one 32-bit allocation word. A local object can use positional or
-designated integer-literal initialization, with omitted fields initialized to
-zero, or start with its fields unwritten. Use `object.field` to read a field
-and `object.field = expression;` to assign a side-effect-free integer
-expression. A read has the promoted `int` type. A write retains only the bits
-of the assigned value that fit the field and preserves the other fields.
+On x86-64, a standalone file-scope struct definition can contain named,
+unqualified `int`, `signed int`, and `unsigned int` bit-fields that fit in one
+32-bit allocation word. Widths are decimal literals between 1 and 32. Local
+records support positional and designated integer-literal initialization,
+including zero initialization of omitted fields, or can start unwritten.
+Reads promote narrow signed and unsigned fields to `int`. A 32-bit unsigned
+field retains type `unsigned int`. Signed values use the target's two's
+complement representation. Writes retain the assigned value's low bits up
+to the field width and preserve neighboring fields.
 
-The local object uses one physical word. The frontend separately tracks which
-fields the program has initialized when it declares the object with no
-initializer. A write to one field leaves an unwritten neighbor unreadable.
-Object addresses, whole-object values, pointer member access, byte copies,
-bit-field accesses in unevaluated operands, and combinations with `goto` are
-outside this subset. Aligned or packed definitions, mixed ordinary fields,
-zero-width or unnamed fields, and layouts spanning allocation words are
-unsupported.
+`object.field` and `pointer->field` read fields. A fixed local pointer can be
+initialized by `struct tag *p = &object`, including a pointer to a const
+record. Member assignment accepts a side-effect-free integer expression.
+Standalone `++`, `--`, `+=`, and `-=` statements read the old field, perform
+arithmetic after promotion, and store the result. Increment and decrement
+expressions used for their values are outside this subset.
+
+Copies between same-type local records, including `struct tag copy = object`
+and `*destination = *source`, transfer the source word and its initialization
+state. Assigning a record with an unwritten field leaves that field unwritten
+in the destination. Reads of such a field are refused.
+
+Pointers are limited to these local aliases. Reassignment, pointer arithmetic,
+calling functions with a record or its pointer, byte access, `memcpy`, bit-field
+addresses, unevaluated field operands, and combinations with `goto` are outside
+the subset. Packed or aligned definitions, ordinary fields mixed with
+bit-fields, unnamed or zero-width fields, and multiword records are unsupported.
 
 <!-- verified-example: mdtests/c_bit_field_neighbor.md -->
 <!-- verified-example: mdtests/c_bit_field_partial_initialization.md -->
+<!-- verified-example: mdtests/c_bit_field_pointer_and_promotion.md -->
+<!-- verified-example: mdtests/c_bit_field_assignment_through_pointers.md -->
 
 ### Block-scope struct compound literals
 

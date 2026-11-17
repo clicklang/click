@@ -61,7 +61,7 @@ verification then runs offline.
 | Kernel and user-space profiles | Supported: distinct predefines, headers, and artifact identity; `tests/compiler_import.rs::userspace_and_kernel_imports_have_distinct_identity_for_identical_c` | Not supported: hosted target only | Not supported: hosted target only; no `no_std` profile |
 | Plain `char` signedness | Supported: signed in `userspace` mode, unsigned in `kernel`; `mdtests/userspace_plain_char_is_signed.md` | Not supported: plain and signed `char` are refused; `unsigned char` and `std::byte` only | Not applicable: bytes are `u8`; the `char` type is not admitted |
 | Struct layout source | Partial: Click's own LP64 rules, not checked against a compiler; `mdtests/gnu_aligned_struct_layout.md` | Supported: Clang-reported layouts, checked; `tests/cpp_import.rs::distinct_record_layouts_keep_field_widths_offsets_and_ownership` | Supported: rustc-reported layouts; `examples/rust-move-drop/` |
-| Packed structs, bit-fields | Partial: direct local unsigned bit-fields in one allocation word; `mdtests/c_bit_field_neighbor.md` | Not supported | Not applicable: no `repr(packed)` admitted |
+| Packed structs, bit-fields | Partial: local signed and unsigned bit-fields in one allocation word; `mdtests/c_bit_field_pointer_and_promotion.md` | Not supported | Not applicable: no `repr(packed)` admitted |
 
 > **Note:** Plain `char` follows the selected C target: signed under
 > `userspace` mode, as GCC and Clang build x86-64 user space by
