@@ -1606,6 +1606,12 @@ and symbolic matches are opaque operands; their identical occurrences may
 cancel, but this check never unfolds a call or resolves a read. It does not
 invoke the general atomic prover.
 
+Direct computation also recognizes the neutral bitwise identities `0 & x == 0`
+and `0 | x == x` at a native word's own format, in either operand order. Intrinsic
+alignment of a null, heap, global or static address reads only that address's
+block registration and constant byte offset. It does not search alignment facts
+or infer alignment for a symbolic offset.
+
 The same fixed local check accepts intrinsic machine type ranges and
 constant-divisor quotient, remainder, and right-shift bounds. A written
 machine `+`, `-`, or `*` observation equals its exact Integer expression when
@@ -1844,9 +1850,14 @@ nonnegative operands. Pointer translation names its equality first and scalar
 bounds after it; tagged-word rules name their word equality first (when used)
 and then the alignment facts. One finite classification proves the matching
 reflexive IEEE comparison. These are fixed local rules over explicit inputs;
-none selects premises or expands a polynomial. Generated proofs use ordinary
-normalization steps; legacy `rules` certificates remain accepted as authored
-compatibility syntax.
+none selects premises or expands a polynomial. Legacy `rules` certificates
+remain accepted as authored compatibility syntax.
+
+For supported native unsigned address words, `solve` emits ordinary `have`
+goals, `apply(click::integer::...) using`, rewrites, and `known()`: alignment
+weakening, scalar element offsets, low-tag projections and high-mask recovery
+name their local laws and retain the unsigned width explicitly. Remaining
+legacy forms still use the compatibility normalization path.
 
 **Accepts** a goal that `normalize()` accepts after this reduction, when every
 cited premise is accepted:

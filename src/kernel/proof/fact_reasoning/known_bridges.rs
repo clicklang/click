@@ -97,6 +97,28 @@ fn identity(
     other: &IntegerTerm,
     available: &impl Fn(&Proposition) -> bool,
 ) -> bool {
+    // Neutral bitwise operands are root-local computation, including source
+    // shapes a generic theorem's native substitution has already folded.
+    if let IntegerTerm::Machine(machine) = value
+        && let Some((ty, op, operands)) = machine.operand_view().binary()
+        && ty == machine.ty()
+    {
+        for [zero, operand] in [operands, [operands[1], operands[0]]] {
+            if zero
+                .literal()
+                .and_then(|n| ty.constant_from_term(&n))
+                .is_some_and(|n| n.to_integer().is_zero())
+            {
+                if op == MachineBinaryOp::BitwiseAnd && other.as_const().is_some_and(Zero::is_zero)
+                {
+                    return true;
+                }
+                if op == MachineBinaryOp::BitwiseOr && operand.observe(ty).as_ref() == Some(other) {
+                    return true;
+                }
+            }
+        }
+    }
     if integer_arm(value, other, available) {
         return true;
     }

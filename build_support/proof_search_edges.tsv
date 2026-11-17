@@ -682,7 +682,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_pred
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_signed_definedness_bounds	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_signed_definedness_bounds	1
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_definedness_by_bounds	driver	3
-src/surface/proof/smart_closures/specialized.rs	search	ProofSearch::apply_specialized_composition	driver	5
+src/surface/proof/smart_closures/specialized.rs	search	ProofSearch::apply_specialized_composition	driver	7
 src/surface/proof/smart_closures/specialized.rs	search	ProofSearch::apply_specialized_composition	try_signed_definedness_bounds	1
 src/surface/proof/driver/claims.rs	driver	::apply_post_execution_arithmetic_using	apply_specialized_composition	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	apply_specialized_composition	1
@@ -756,3 +756,8 @@ src/surface/proof/smart_closures/quotient_shifts.rs	search	ProofSearch::try_quot
 src/surface/proof/smart_closures/quotient_shifts.rs	search	ProofSearch::try_quotient_shift_using	try_integer_algebra	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_integer_algebra	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_quotient_shift_using	1
+src/surface/proof/smart_closures/address_words.rs	search	ProofSearch::try_address_words_using	driver	5
+src/surface/proof/smart_closures/specialized.rs	search	ProofSearch::apply_specialized_composition	try_address_words_using	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_normalization_closure	try_address_words_using	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_address_words_using	1
+src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_address_words_using	try_address_words_using	1

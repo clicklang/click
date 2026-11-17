@@ -47,6 +47,7 @@ pub(crate) fn computes_leaf(goal: &Proposition) -> bool {
         _ => None,
     };
     value == Some(expected)
+        || (expected && super::super::arithmetic_special::intrinsic_pointer_alignment(goal))
 }
 
 fn condition_value(condition: &ConditionTerm) -> Option<bool> {

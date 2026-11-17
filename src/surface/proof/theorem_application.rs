@@ -1370,6 +1370,12 @@ pub(super) fn theorem_application_pointer_element_widths(
         .iter()
         .zip(&application.arguments)
         .filter_map(|(parameter, argument)| {
+            // A numeric address is still a scalar argument. Importing its
+            // source pointer's stride would make scalar addition look like
+            // pointer arithmetic while lowering the instantiated clause.
+            if !parameter_is_click_array_ref(parameter) {
+                return None;
+            }
             let declared_width = parameter.struct_name().and_then(|name| {
                 if parameter
                     .interface_type()

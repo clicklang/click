@@ -1,4 +1,5 @@
 //! Smart closure search and linear script interpretation.
+mod address_words;
 mod integer_algebra;
 mod integer_composition;
 mod quotient_shifts;

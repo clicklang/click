@@ -167,3 +167,57 @@ fn shared_tagged_word_certificates_preserve_bounds_without_exports() {
         previous = Some(work);
     }
 }
+
+#[test]
+fn intrinsic_alignment_known_work_ignores_other_blocks_and_related_facts() {
+    let mut samples = Vec::new();
+    for size in [8, 32, 128, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let block: PointerBlock = "intrinsic-alignment-target".into();
+        crate::kernel::primitives::register_block_alignment(&block, 8);
+        let mut context = crate::kernel::PureFactContext::new();
+        for i in 0..size {
+            let other: PointerBlock = format!("intrinsic-alignment-other-{i}").as_str().into();
+            crate::kernel::primitives::register_block_alignment(&other, 16);
+            for related in [block.clone(), other] {
+                context = context.assume_proposition(Proposition::ConditionIs(
+                    ConditionTerm::pointer_aligned(
+                        Pointer {
+                            block: related,
+                            offset: PointerOffsetTerm::Constant(i * 8),
+                        },
+                        8,
+                    ),
+                    true,
+                ));
+            }
+        }
+        let goals =
+            [(0, 8, true), (4, 8, false), (0, 16, true)].map(|(offset, alignment, truth)| {
+                Proposition::ConditionIs(
+                    ConditionTerm::pointer_aligned(
+                        Pointer {
+                            block: block.clone(),
+                            offset: PointerOffsetTerm::Constant(offset),
+                        },
+                        alignment,
+                    ),
+                    truth,
+                )
+            });
+        let (results, work) = crate::instrumentation::measure_deterministic_work(|| {
+            goals
+                .each_ref()
+                .map(|goal| crate::kernel::proof::fact_reasoning::computes_leaf(goal))
+        });
+        assert_eq!(results, [true, true, false]);
+        samples.push(work);
+        drop(context);
+    }
+    // Quadrupling the indexed registry adds lookup levels, not a scan.
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= pair[0] + 256),
+        "{samples:?}"
+    );
+    assert!(samples.iter().all(|work| *work < 2048), "{samples:?}");
+}

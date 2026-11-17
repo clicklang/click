@@ -95,3 +95,51 @@ fn observation_leaves_keep_growing_arithmetic_and_comparison_dags_shared() {
     }
     assert!(samples.windows(2).all(|p| p[1] <= 5 * p[0]), "{samples:?}");
 }
+
+#[test]
+fn neutral_bitwise_leaves_keep_large_operands_shared_without_fact_queries() {
+    let mut costs = Vec::new();
+    for size in [8, 32, 128, 512] {
+        let _session = VerificationSession::enter();
+        let ty = MachineIntegerType::UInt64;
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ProgramType::UInt64), Variable(996500));
+        for _ in 0..size {
+            root =
+                KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);
+        }
+        let operand =
+            IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, root.clone()).unwrap());
+        let zero = KernelTerm::retained_machine_operand(
+            ty,
+            MachineOperandView::Legacy(&MachineTerm::uint64_constant(0)),
+        );
+        let mut goals = Vec::new();
+        for op in [MachineBinaryOp::BitwiseAnd, MachineBinaryOp::BitwiseOr] {
+            for parts in [[root.clone(), zero.clone()], [zero.clone(), root.clone()]] {
+                let word = KernelTerm::machine_binary_shared(ty, op, parts);
+                let observed =
+                    IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, word).unwrap());
+                let result = if op == MachineBinaryOp::BitwiseAnd {
+                    IntegerTerm::constant_i64(0)
+                } else {
+                    operand.clone()
+                };
+                goals.push(equality(observed.clone(), result));
+                goals.push(equality(observed, IntegerTerm::constant_i64(1)));
+            }
+        }
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for (i, goal) in goals.iter().enumerate() {
+                assert_eq!(
+                    known_bridge_leaf(goal, &|_| panic!("neutral computation queried facts")),
+                    i % 2 == 0
+                );
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        costs.push(work);
+    }
+    assert!(costs.windows(2).all(|p| p[0] == p[1]), "{costs:?}");
+}

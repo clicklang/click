@@ -1434,6 +1434,40 @@ fn offset_difference(goal: &PointerOffsetTerm, premise: &PointerOffsetTerm) -> O
     terms.is_empty().then_some(constant)
 }
 
+/// Literal discovery over one explicit unsigned expression. The charged walk
+/// precedes the legacy constant recognizers; no fact or memory state is read.
+pub(crate) fn unsigned_word_constant_for_discovery(
+    value: crate::kernel::MachineOperandView<'_>,
+) -> Option<u64> {
+    let word = Word(value);
+    if !word_view::charge(word) {
+        return None;
+    }
+    word_view::constants(&[word])
+        .get(&word.key())
+        .copied()
+        .flatten()
+}
+
+/// A bounded discovery hint over two explicit pointers, with no fact context.
+/// The caller still constructs its ordinary address identity and offset law.
+pub(crate) fn constant_pointer_byte_difference(left: &Pointer, right: &Pointer) -> Option<i128> {
+    if !charge_pointer(left)
+        || !charge_pointer(right)
+        || !pointer_block_equal(&left.block, &right.block)
+    {
+        return None;
+    }
+    offset_difference(&left.offset, &right.offset)
+}
+
+/// Goal-local alignment of null, heap, global and static addresses. This
+/// reads only the named block's registration and the written byte offset;
+/// symbolic offsets and facts about other pointers are deliberately excluded.
+pub(crate) fn intrinsic_pointer_alignment(result: &Proposition) -> bool {
+    pointer_alignment(None, result)
+}
+
 fn pointer_alignment(premise: Option<&Proposition>, result: &Proposition) -> bool {
     let Proposition::ConditionIs(condition, expected) = result else {
         return false;
