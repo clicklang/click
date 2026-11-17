@@ -347,14 +347,21 @@ impl Parser {
     pub(super) fn parse_struct_declaration(&mut self) -> Result<(), CSyntaxError> {
         self.expect_ident_spelling("struct")?;
         let name = self.expect_ident("struct name")?;
-        self.parse_struct_body(name)?;
+        self.parse_struct_body(name, true)?;
         self.expect(Token::Semicolon)
     }
 
     // Both named declarations and anonymous typedefs use the same layout and
     // field validation. The caller owns the following declarator/semicolon.
-    pub(super) fn parse_struct_body(&mut self, name: String) -> Result<(), CSyntaxError> {
+    pub(super) fn parse_struct_body(
+        &mut self,
+        name: String,
+        allow_bit_fields: bool,
+    ) -> Result<(), CSyntaxError> {
         self.expect(Token::LBrace)?;
+        if self.bit_field_records.contains_key(&name) {
+            return Err(self.error_here(format!("duplicate struct declaration `{name}`")));
+        }
 
         let mut fields = BTreeMap::new();
         let mut offset_bytes = 0u32;
@@ -368,6 +375,16 @@ impl Parser {
                 continue;
             }
             let field_type = self.parse_type_with_anonymous_struct(false, true, false)?;
+            if fields.is_empty()
+                && matches!(self.peek(), Some(Token::Ident(_)))
+                && self.peek_next() == Some(&Token::Colon)
+            {
+                if !allow_bit_fields {
+                    return Err(self.error_here("bit-field record definitions currently require a standalone file-scope struct"));
+                }
+                return self.parse_bit_field_record(name, field_type);
+            }
+
             if let Some((field_name, interface_type, function_pointer_signature)) =
                 self.parse_function_pointer_declarator(field_type.clone())?
             {
