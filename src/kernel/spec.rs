@@ -988,7 +988,7 @@ fn lower_spec_proposition_at_state_without_range_guards_in(
     // Separation retains its range-validity conjuncts even in a resource
     // definition: folding establishes them and observing may expose them.
     let SpecProposition::MemoryLoadable {
-        memory,
+        point: memory,
         base,
         start,
         end,
@@ -2029,7 +2029,10 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 },
             )
         }
-        SpecProposition::ResourceViewable { memory, resource } => {
+        SpecProposition::ResourceViewable {
+            point: memory,
+            resource,
+        } => {
             let memory = match memory {
                 SpecPoint::Current => scope.state.memory(),
                 SpecPoint::FunctionEntry | SpecPoint::LoopEntry => match scope.loop_entry_state {
@@ -2065,7 +2068,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             )
         }
         SpecProposition::MemoryLoadable {
-            memory,
+            point: memory,
             base,
             start,
             end,
@@ -3190,12 +3193,13 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
                 &BTreeMap::new(),
             )
             .ok_or(ExecutionLimit::Paths)?;
-            lowered_arms.push(AlgebraicIntegerMatchArm {
-                binding_names: crate::kernel::BindingNames::bindings(&arm.bindings),
-                variant: arm.variant.clone(),
-                bindings: bindings.clone(),
-                body: body.into(),
-            });
+            lowered_arms.push(KernelMatchArm::import(
+                &mut KernelTermImport::default(),
+                &arm.variant,
+                &bindings,
+                IntegerResult::from(body).into_kernel(),
+                &crate::kernel::BindingNames::bindings(&arm.bindings),
+            ));
         }
         let value = match scrutinee_path
             .value
@@ -3204,26 +3208,31 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
         {
             Some(AlgebraicTermNode::Constructor { variant, fields }) => lowered_arms
                 .iter()
-                .find(|arm| arm.variant == *variant)
-                .and_then(|arm| {
+                .find(|(arm, _)| arm.variant == *variant)
+                .and_then(|(arm, body)| {
                     if arm.bindings.len() != fields.len() {
                         return None;
                     }
-                    let body = rewrite_integer_match_typed_fields(
-                        arm.body.as_ref().clone(),
-                        &arm.bindings,
-                        fields,
-                    )?;
-                    Some(body)
+                    // Constructor iota keeps the existing selected typed
+                    // checking boundary. Arm storage itself stays common.
+                    let bindings = arm.export_bindings(&mut KernelTermExport::default()).ok()?;
+                    let body = KernelTermExport::default().integer(body).ok()?;
+                    rewrite_integer_match_typed_fields(body.as_ref().clone(), &bindings, fields)
+                        .map(IntegerResult::from)
                 })
                 .ok_or(ExecutionLimit::Paths)?,
-            _ => IntegerTerm::algebraic_match(
-                scrutinee_path.value.into_native_compat(),
-                lowered_arms,
+            _ => IntegerResult::from_kernel(
+                KernelMatch::new(
+                    KernelType::Integer,
+                    scrutinee_path.value.into_kernel(),
+                    lowered_arms,
+                )
+                .map_err(|_| ExecutionLimit::Paths)?
+                .into_term(),
             ),
         };
         result.push(SpecIntegerPath {
-            value: value.into(),
+            value,
             facts: std::mem::take(&mut facts),
             obligations: std::mem::take(&mut obligations),
         });
@@ -3831,7 +3840,7 @@ fn evaluate_spec_algebraic_non_call_in(
                     let ProgramValue::Parameter(term) = path.value.into_native() else {
                         return Err(ExecutionLimit::Paths);
                     };
-                    AlgebraicResult::Native(*term)
+                    AlgebraicResult::from(*term)
                 };
                 if value.algebraic_type() != &expression.algebraic_type {
                     return Err(ExecutionLimit::Paths);
@@ -4059,8 +4068,8 @@ fn evaluate_spec_algebraic_non_call_in(
                             // The same original-class check governs model
                             // fields and calls. It also handles known null
                             // aliases and a declared object's block class.
-                            let (AlgebraicValueType::ObjectPointer(ty, class), Some(value)) =
-                                (expected, field_path.value.program_mut())
+                            let (AlgebraicValueType::ObjectPointer(ty, class), Some(mut value)) =
+                                (expected, field_path.value.program_compat())
                             else {
                                 continue;
                             };
@@ -4073,13 +4082,13 @@ fn evaluate_spec_algebraic_non_call_in(
                                 &field_path.obligations,
                             );
                             if !refine_object_pointer_argument(
-                                value,
+                                &mut value,
                                 class,
                                 scope.state.memory(),
                                 &context,
                             ) {
                                 if !budget.recover_resource_call_types
-                                    || !matches!(value, ProgramValue::Pointer(pointer)
+                                    || !matches!(&value, ProgramValue::Pointer(pointer)
                                         if pointer.object_type_evidence().is_none())
                                 {
                                     continue;
@@ -4087,16 +4096,17 @@ fn evaluate_spec_algebraic_non_call_in(
                                 // A held body asserts the constructor's nominal
                                 // field domain, just as it asserts a call's domain.
                                 // Never replace incompatible positive evidence.
-                                *value =
+                                value =
                                     value.clone().with_pointer_object_class(Some(class.clone()));
                             }
                             if budget.recover_resource_call_types {
                                 field_path.facts.push(ExecutionPureFact::certified(
                                     crate::kernel::object_types::checked_call_type_fact(
-                                        value, class,
+                                        &value, class,
                                     ),
                                 ));
                             }
+                            field_path.value = field_path.value.with_checked_program(value);
                         }
                         let Some((merged_facts, merged_obligations)) =
                             merge_execution_pure_facts_and_obligations_under(
@@ -4125,7 +4135,7 @@ fn evaluate_spec_algebraic_non_call_in(
                 .into_iter()
                 .map(|(fields, facts, obligations)| SpecAlgebraicPath {
                     value: if budget.machine_result_production_disabled {
-                        AlgebraicResult::Native(AlgebraicTerm {
+                        AlgebraicResult::from(AlgebraicTerm {
                             algebraic_type: expression.algebraic_type.clone(),
                             node: AlgebraicTermNode::Constructor {
                                 variant: variant.clone(),
@@ -4435,7 +4445,7 @@ fn algebraic_case_paths_in(
             fields: fields
                 .iter()
                 .cloned()
-                .map(AlgebraicFieldResult::Native)
+                .map(AlgebraicFieldResult::from_native)
                 .collect(),
             facts: Vec::new().into(),
             obligations: Vec::new(),
@@ -4460,7 +4470,7 @@ fn algebraic_case_paths_in(
                     variant: variant.name.clone(),
                     fields: fields
                         .into_iter()
-                        .map(AlgebraicFieldResult::Native)
+                        .map(AlgebraicFieldResult::from_native)
                         .collect(),
                     facts: vec![ExecutionPureFact::new(Proposition::Equal(
                         Term::Algebraic(term.clone()),
@@ -5712,7 +5722,10 @@ fn lower_spec_predicate_proposition_at_state_in(
     for argument in arguments {
         let (expression, memory) = match argument {
             SpecPredicateArgument::Value(expression) => (expression, None),
-            SpecPredicateArgument::ArrayRef { memory, pointer } => (pointer, Some(memory)),
+            SpecPredicateArgument::ArrayRef {
+                point: memory,
+                pointer,
+            } => (pointer, Some(memory)),
         };
         let argument_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
             scope,
@@ -6544,7 +6557,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 return evaluate_spec_expression_paths_with_algebraic_bindings_in(
                     SpecScope { state, ..scope },
                     &SpecExpression::MemoryLoad {
-                        memory: SpecPoint::Current,
+                        point: SpecPoint::Current,
                         pointer: pointer.clone(),
                         value_type: *value_type,
                     },
@@ -6567,7 +6580,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             evaluate_spec_expression_paths_with_algebraic_bindings_in(
                 SpecScope { state, ..scope },
                 &SpecExpression::MemoryLoad {
-                    memory: SpecPoint::At(ProgramPoint::of_memory(memory)),
+                    point: SpecPoint::At(ProgramPoint::of_memory(memory)),
                     pointer: Box::new(pointer),
                     value_type: *value_type,
                 },
@@ -6950,7 +6963,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             evaluate_spec_expression_paths_with_algebraic_bindings_in(
                 SpecScope { state, ..scope },
                 &SpecExpression::MemoryLoad {
-                    memory: SpecPoint::Current,
+                    point: SpecPoint::Current,
                     pointer: Box::new(SpecExpression::Value(ProgramValue::typed_pointer(
                         slot.clone(),
                         ProgramType::ParameterPointer(parameter),
@@ -7582,7 +7595,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             budget,
         )?,
         SpecExpression::MemoryLoad {
-            memory,
+            point: memory,
             pointer,
             value_type,
         } => {
@@ -8044,8 +8057,10 @@ fn evaluate_spec_algebraic_argument_paths_in(
             .into_iter()
             .map(|path| SpecPureFunctionArgumentPath {
                 value: match path.value {
-                    AlgebraicResult::Native(value) => {
-                        SpecCallArgument::Native(PureFunctionArgument::Algebraic(value))
+                    AlgebraicResult::Imported(root) => {
+                        SpecCallArgument::Native(PureFunctionArgument::Algebraic(
+                            AlgebraicResult::Imported(root).into_native_compat(),
+                        ))
                     }
                     AlgebraicResult::Shared(root) => SpecCallArgument::Shared(root),
                 },
@@ -8166,7 +8181,7 @@ fn evaluate_spec_pure_function_argument_paths_in(
             evaluate_spec_algebraic_argument_paths_in(scope, expression, assumptions, budget)
         }
         SpecPureFunctionArgument::ArrayRef {
-            memory,
+            point: memory,
             pointer,
             element_type,
         } => {
