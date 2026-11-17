@@ -86,7 +86,7 @@ fn integer_result_fold_assembly_does_not_export_growing_bodies() {
             for depth in 0..size {
                 let old = body.clone().into_kernel();
                 body = IntegerResult::range_fold(
-                    index.clone(),
+                    index.clone().into(),
                     initial.clone(),
                     Variable(1010000 + 2 * depth as u64),
                     Variable(1010001 + 2 * depth as u64),

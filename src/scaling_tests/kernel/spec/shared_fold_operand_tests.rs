@@ -76,7 +76,7 @@ fn fold_item_domains_retain_growing_endpoints_at_each_width() {
                             end: endpoint,
                         },
                     };
-                    let (sort, guard) = integer_range_fold_item_domain(&index, item);
+                    let (sort, guard) = integer_range_fold_item_domain(&index.into(), item);
                     assert_eq!(
                         sort,
                         if format == MachineIntegerType::Int32 {
