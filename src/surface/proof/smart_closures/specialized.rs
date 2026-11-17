@@ -137,6 +137,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
+        if matches!(node, PointerTranslation { .. }) {
+            return Self::try_pointer_translation_using(proof, &premises);
+        }
         if matches!(node, UnsignedSumBound { .. }) {
             return Self::try_widened_unsigned_sum_using(proof, &premises);
         }

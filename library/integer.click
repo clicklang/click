@@ -6362,3 +6362,465 @@ theorem nonnegative_remainder_from_reconstruction(n: Integer, d: Integer, q: Int
         known();
     }
 }
+
+// Same-element pointer translation from a pointer relation and exact Integer
+// displacement equality. Address-word equality grants no pointer relation.
+axiom uint8_pointer_translate_int32(p: uint8*, q: uint8*, a: int32, b: int32, c: int32, d: int32) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+
+theorem uint8_pointer_add_associate_int32(p: uint8*, i: int32, j: int32) {
+    requires defined(i + j);
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        have (p + i) + 0 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::uint8_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
+            (p + i) + 0 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            defined(i + j);
+        };
+    }
+}
+
+axiom uint8_pointer_translate_uint64(p: uint8*, q: uint8*, a: uint64, b: uint64, c: uint64, d: uint64) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+
+theorem uint8_pointer_add_associate_uint64(p: uint8*, i: uint64, j: uint64) {
+    requires to_integer(i) + to_integer(j) <= 18446744073709551615;
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        have (p + i) + 0u64 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::uint8_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
+            (p + i) + 0u64 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            to_integer(i) + to_integer(j) <= 18446744073709551615;
+        };
+    }
+}
+
+axiom int8_pointer_translate_int32(p: int8*, q: int8*, a: int32, b: int32, c: int32, d: int32) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+
+theorem int8_pointer_add_associate_int32(p: int8*, i: int32, j: int32) {
+    requires defined(i + j);
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        have (p + i) + 0 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::int8_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
+            (p + i) + 0 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            defined(i + j);
+        };
+    }
+}
+
+axiom int8_pointer_translate_uint64(p: int8*, q: int8*, a: uint64, b: uint64, c: uint64, d: uint64) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+
+theorem int8_pointer_add_associate_uint64(p: int8*, i: uint64, j: uint64) {
+    requires to_integer(i) + to_integer(j) <= 18446744073709551615;
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        have (p + i) + 0u64 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::int8_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
+            (p + i) + 0u64 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            to_integer(i) + to_integer(j) <= 18446744073709551615;
+        };
+    }
+}
+
+axiom uint16_pointer_translate_int32(p: uint16*, q: uint16*, a: int32, b: int32, c: int32, d: int32) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+
+theorem uint16_pointer_add_associate_int32(p: uint16*, i: int32, j: int32) {
+    requires defined(i + j);
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        have (p + i) + 0 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::uint16_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
+            (p + i) + 0 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            defined(i + j);
+        };
+    }
+}
+
+axiom uint16_pointer_translate_uint64(p: uint16*, q: uint16*, a: uint64, b: uint64, c: uint64, d: uint64) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+
+theorem uint16_pointer_add_associate_uint64(p: uint16*, i: uint64, j: uint64) {
+    requires to_integer(i) + to_integer(j) <= 18446744073709551615;
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        have (p + i) + 0u64 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::uint16_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
+            (p + i) + 0u64 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            to_integer(i) + to_integer(j) <= 18446744073709551615;
+        };
+    }
+}
+
+axiom int16_pointer_translate_int32(p: int16*, q: int16*, a: int32, b: int32, c: int32, d: int32) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+
+theorem int16_pointer_add_associate_int32(p: int16*, i: int32, j: int32) {
+    requires defined(i + j);
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        have (p + i) + 0 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::int16_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
+            (p + i) + 0 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            defined(i + j);
+        };
+    }
+}
+
+axiom int16_pointer_translate_uint64(p: int16*, q: int16*, a: uint64, b: uint64, c: uint64, d: uint64) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+
+theorem int16_pointer_add_associate_uint64(p: int16*, i: uint64, j: uint64) {
+    requires to_integer(i) + to_integer(j) <= 18446744073709551615;
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        have (p + i) + 0u64 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::int16_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
+            (p + i) + 0u64 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            to_integer(i) + to_integer(j) <= 18446744073709551615;
+        };
+    }
+}
+
+axiom uint32_pointer_translate_int32(p: uint32*, q: uint32*, a: int32, b: int32, c: int32, d: int32) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+
+theorem uint32_pointer_add_associate_int32(p: uint32*, i: int32, j: int32) {
+    requires defined(i + j);
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        have (p + i) + 0 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::uint32_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
+            (p + i) + 0 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            defined(i + j);
+        };
+    }
+}
+
+axiom uint32_pointer_translate_uint64(p: uint32*, q: uint32*, a: uint64, b: uint64, c: uint64, d: uint64) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+
+theorem uint32_pointer_add_associate_uint64(p: uint32*, i: uint64, j: uint64) {
+    requires to_integer(i) + to_integer(j) <= 18446744073709551615;
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        have (p + i) + 0u64 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::uint32_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
+            (p + i) + 0u64 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            to_integer(i) + to_integer(j) <= 18446744073709551615;
+        };
+    }
+}
+
+axiom int32_pointer_translate_int32(p: int32*, q: int32*, a: int32, b: int32, c: int32, d: int32) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+
+theorem int32_pointer_add_associate_int32(p: int32*, i: int32, j: int32) {
+    requires defined(i + j);
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        have (p + i) + 0 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::int32_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
+            (p + i) + 0 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            defined(i + j);
+        };
+    }
+}
+
+axiom int32_pointer_translate_uint64(p: int32*, q: int32*, a: uint64, b: uint64, c: uint64, d: uint64) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+
+theorem int32_pointer_add_associate_uint64(p: int32*, i: uint64, j: uint64) {
+    requires to_integer(i) + to_integer(j) <= 18446744073709551615;
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        have (p + i) + 0u64 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::int32_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
+            (p + i) + 0u64 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            to_integer(i) + to_integer(j) <= 18446744073709551615;
+        };
+    }
+}
+
+axiom uint64_pointer_translate_int32(p: uint64*, q: uint64*, a: int32, b: int32, c: int32, d: int32) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+
+theorem uint64_pointer_add_associate_int32(p: uint64*, i: int32, j: int32) {
+    requires defined(i + j);
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        have (p + i) + 0 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::uint64_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
+            (p + i) + 0 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            defined(i + j);
+        };
+    }
+}
+
+axiom uint64_pointer_translate_uint64(p: uint64*, q: uint64*, a: uint64, b: uint64, c: uint64, d: uint64) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+
+theorem uint64_pointer_add_associate_uint64(p: uint64*, i: uint64, j: uint64) {
+    requires to_integer(i) + to_integer(j) <= 18446744073709551615;
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        have (p + i) + 0u64 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::uint64_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
+            (p + i) + 0u64 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            to_integer(i) + to_integer(j) <= 18446744073709551615;
+        };
+    }
+}
+
+axiom int64_pointer_translate_int32(p: int64*, q: int64*, a: int32, b: int32, c: int32, d: int32) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+
+theorem int64_pointer_add_associate_int32(p: int64*, i: int32, j: int32) {
+    requires defined(i + j);
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        have (p + i) + 0 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::int64_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
+            (p + i) + 0 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            defined(i + j);
+        };
+    }
+}
+
+axiom int64_pointer_translate_uint64(p: int64*, q: int64*, a: uint64, b: uint64, c: uint64, d: uint64) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+
+theorem int64_pointer_add_associate_uint64(p: int64*, i: uint64, j: uint64) {
+    requires to_integer(i) + to_integer(j) <= 18446744073709551615;
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        have (p + i) + 0u64 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::int64_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
+            (p + i) + 0u64 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            to_integer(i) + to_integer(j) <= 18446744073709551615;
+        };
+    }
+}
+
+axiom float32_pointer_translate_int32(p: float*, q: float*, a: int32, b: int32, c: int32, d: int32) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+
+theorem float32_pointer_add_associate_int32(p: float*, i: int32, j: int32) {
+    requires defined(i + j);
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        have (p + i) + 0 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::float32_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
+            (p + i) + 0 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            defined(i + j);
+        };
+    }
+}
+
+axiom float32_pointer_translate_uint64(p: float*, q: float*, a: uint64, b: uint64, c: uint64, d: uint64) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+
+theorem float32_pointer_add_associate_uint64(p: float*, i: uint64, j: uint64) {
+    requires to_integer(i) + to_integer(j) <= 18446744073709551615;
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        have (p + i) + 0u64 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::float32_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
+            (p + i) + 0u64 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            to_integer(i) + to_integer(j) <= 18446744073709551615;
+        };
+    }
+}
+
+axiom float64_pointer_translate_int32(p: double*, q: double*, a: int32, b: int32, c: int32, d: int32) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+
+theorem float64_pointer_add_associate_int32(p: double*, i: int32, j: int32) {
+    requires defined(i + j);
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        have (p + i) + 0 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::float64_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
+            (p + i) + 0 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            defined(i + j);
+        };
+    }
+}
+
+axiom float64_pointer_translate_uint64(p: double*, q: double*, a: uint64, b: uint64, c: uint64, d: uint64) {
+    requires p + a == q + b;
+    requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
+    ensures p + c == q + d;
+}
+
+theorem float64_pointer_add_associate_uint64(p: double*, i: uint64, j: uint64) {
+    requires to_integer(i) + to_integer(j) <= 18446744073709551615;
+    ensures (p + i) + j == p + (i + j) by {
+        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        have (p + i) + 0u64 == p + i by known();
+        have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
+            rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
+            known();
+        }
+        apply(integer::float64_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
+            (p + i) + 0u64 == p + i;
+            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
+            to_integer(i) + to_integer(j) <= 18446744073709551615;
+        };
+    }
+}

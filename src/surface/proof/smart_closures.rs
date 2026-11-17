@@ -2,6 +2,7 @@
 mod address_words;
 mod integer_algebra;
 mod integer_composition;
+mod pointer_offsets;
 mod quotient_shifts;
 mod signed_intervals;
 mod specialized;

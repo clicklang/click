@@ -46,6 +46,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return search_input.driver().apply_step(ProofStep::Known);
         }
         if let Some(closed) =
+            Self::try_pointer_translation_using(search_input, premises.as_deref().unwrap_or(&[]))?
+        {
+            return Ok(closed);
+        }
+        if let Some(closed) =
             Self::try_widened_unsigned_sum_using(search_input, premises.as_deref().unwrap_or(&[]))?
         {
             return Ok(closed);
@@ -2643,6 +2648,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if let Some(proof) =
             attempt::candidate_outcome(search_input.driver().apply_step(ProofStep::Known))?
         {
+            scope.succeed();
+            return Ok(Some(proof));
+        }
+        if let Some(proof) = Self::try_pointer_translation_closure(search_input)? {
             scope.succeed();
             return Ok(Some(proof));
         }
@@ -10261,6 +10270,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Option<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_restricted_solve_closure_before_arithmetic");
+        if let Ok(Some(closed)) = Self::try_pointer_translation_using(search_input, surfaces) {
+            return Some(closed);
+        }
         if let Ok(Some(closed)) = Self::try_widened_unsigned_sum_using(search_input, surfaces) {
             return Some(closed);
         }

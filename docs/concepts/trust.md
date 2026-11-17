@@ -27,7 +27,7 @@ are longer-term work, after those priorities (maintainer, 2026-10-14 and
 | Smart planning and proof search | No | Part of `src/surface` | `src/surface/planning`, `src/surface/proof/smart_*` |
 | C front end and target model | Yes | 29,000 lines of Rust | `src/languages/c` |
 | C++ and Rust import, with their pinned external front ends | Yes, for those languages | 11,000 and 8,000 lines of Rust, plus a 4,500-line C++ exporter | `src/languages/cpp`, `src/languages/rust`, `tools/cpp-exporter` |
-| Click library theorems | Proved ones are checked by `verify_standard_library`; kernel standard theorems are trusted kernel builders whose declarations it shape-checks. All are then applied without re-checking | 197 theorems, 41 of them kernel standard, in 9,136 lines | `library/` |
+| Click library theorems | Proved ones are checked by `verify_standard_library`; kernel standard theorems are trusted kernel builders whose declarations it shape-checks. All are then applied without re-checking | 217 theorems, 41 of them kernel standard, in 9,607 lines | `library/` |
 | Library models: contracts for code Click does not verify | Yes: assumptions | Eight families, each reported by `click verify` ([Library models](#library-models)) | `library/c/`, `src/languages/c/`, `src/languages/cpp/standard_library.rs`, `src/languages/rust/standard_library.rs`, your sidecars |
 | CLI rendering and profiling | No: they do not decide validity | 9,500 lines of Rust | `src/bin` |
 
@@ -119,11 +119,11 @@ call to one is checked against its [library model](#library-models). See
 
 ## The Click library
 
-The `library/` modules declare 197 theorems. `verify_standard_library`
+The `library/` modules declare 217 theorems. `verify_standard_library`
 checks each one, in one of two ways; the gate runs it
 (`standard_library_theorems_are_proved_by_their_own_entry_point`):
 
-- **156 are proved.** Their written or default proofs are checked like any
+- **176 are proved.** Their written or default proofs are checked like any
   other proof. They include the `int32` increment, predecessor, order and
   definedness lemmas, the in-range `+` and `-` observation laws at `int32`,
   `int64`, `uint32` and `uint64`, the `uint32` and `uint64` product laws,
@@ -158,7 +158,7 @@ theorem certification consumes checks that theorem once. A proved library
 theorem is trusted to the extent that the check of its proof is; a kernel
 standard theorem is trusted to the extent that its builder is.
 
-The library also declares 49 `axiom`s, which are trusted, not proved.
+The library also declares 69 `axiom`s, which are trusted, not proved.
 Seven are the laws of the primitive type `Vec<T>` in
 `library/rust/vec.click`, which relate its bodyless operations `vec::len`,
 `vec::get`, `vec::push` and `vec::set`
@@ -314,3 +314,14 @@ proved from truncation, remainder bounds, and ordinary order laws.
 The bounded signed-residue translation emitter uses the proved
 `nonnegative_remainder_from_reconstruction` helper, derived from the quotient
 reconstruction and truncation identities. It adds no axioms.
+
+The scalar `integer::*_pointer_translate_int32` and
+`*_pointer_translate_uint64` families add twenty concrete axiom declarations:
+two law shapes at ten scalar pointee types. A selected pointer equality and
+an exact Integer displacement equality give the translated pointer equality
+at that same element type. No pointer relation follows from wrapping address
+words. Parsed declarations have independent BigInt coordinate-model checks
+with block/domain variation and multiple strides. The twenty association
+helpers are proved from these laws and existing addition observation theorems.
+Signed overflow and unsigned wrapping guards are explicit arithmetic obligations;
+no law grants memory access or changes a memory state or version point.

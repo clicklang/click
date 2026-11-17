@@ -84,6 +84,50 @@ The unsigned address-word laws are checked in
 `integer::float32_pointer_add_address_int64`, `integer::float64_pointer_add_address_int32`,
 `integer::float64_pointer_add_address_int64`.
 
+The scalar-pointer translation and association families are checked by the
+strict scalar-width replay matrix and
+[`pointer_offset_explicit_bridge.md`](pointer_offset_explicit_bridge.md):
+`integer::uint8_pointer_translate_int32`,
+`integer::uint8_pointer_add_associate_int32`,
+`integer::uint8_pointer_translate_uint64`,
+`integer::uint8_pointer_add_associate_uint64`,
+`integer::int8_pointer_translate_int32`,
+`integer::int8_pointer_add_associate_int32`,
+`integer::int8_pointer_translate_uint64`,
+`integer::int8_pointer_add_associate_uint64`,
+`integer::uint16_pointer_translate_int32`,
+`integer::uint16_pointer_add_associate_int32`,
+`integer::uint16_pointer_translate_uint64`,
+`integer::uint16_pointer_add_associate_uint64`,
+`integer::int16_pointer_translate_int32`,
+`integer::int16_pointer_add_associate_int32`,
+`integer::int16_pointer_translate_uint64`,
+`integer::int16_pointer_add_associate_uint64`,
+`integer::uint32_pointer_translate_int32`,
+`integer::uint32_pointer_add_associate_int32`,
+`integer::uint32_pointer_translate_uint64`,
+`integer::uint32_pointer_add_associate_uint64`,
+`integer::int32_pointer_translate_int32`,
+`integer::int32_pointer_add_associate_int32`,
+`integer::int32_pointer_translate_uint64`,
+`integer::int32_pointer_add_associate_uint64`,
+`integer::uint64_pointer_translate_int32`,
+`integer::uint64_pointer_add_associate_int32`,
+`integer::uint64_pointer_translate_uint64`,
+`integer::uint64_pointer_add_associate_uint64`,
+`integer::int64_pointer_translate_int32`,
+`integer::int64_pointer_add_associate_int32`,
+`integer::int64_pointer_translate_uint64`,
+`integer::int64_pointer_add_associate_uint64`,
+`integer::float32_pointer_translate_int32`,
+`integer::float32_pointer_add_associate_int32`,
+`integer::float32_pointer_translate_uint64`,
+`integer::float32_pointer_add_associate_uint64`,
+`integer::float64_pointer_translate_int32`,
+`integer::float64_pointer_add_associate_int32`,
+`integer::float64_pointer_translate_uint64`,
+`integer::float64_pointer_add_associate_uint64`.
+
 The derived `integer::nonnegative_remainder_from_reconstruction` law is checked
 in [`signed_interval_remainder_reconstruction.md`](signed_interval_remainder_reconstruction.md).
 

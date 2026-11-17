@@ -2260,6 +2260,19 @@ search emits separate distribution and rewrite steps. All library proofs use
 ordinary tactics. The [library reference](../library/index.md#foundational-integer-order-axioms)
 states the named laws' exact guards.
 
+Scalar-pointer offset translation expands through the named
+`integer::<pointee>_pointer_translate_int32` /
+`<pointee>_pointer_translate_uint64` laws, explicit
+Integer displacement equalities, and proved pointer-association helpers.
+Nested element offsets are associated only after proving the native index sum
+is exact: signed definedness or an unsigned nonwrapping upper bound. This
+route supports scalar pointees with int32/uint64 indices and preserves element
+strides and the selected pointer relation. It uses at most 64 offsets per
+source chain, 64 selected ambient premises, and 4096 emitter operations under
+the solve deadline. Mixed symbolic
+index families and unsupported pointer forms retain compatibility behavior.
+See [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
 ### Rewriting
 
 **Form:** `rewrite(from, to)`

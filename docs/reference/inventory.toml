@@ -5187,3 +5187,163 @@ path = "reference/library/index.md#integerfloat64_pointer_add_address_int64"
 [[item]]
 id = "library.theorem.integer::nonnegative_remainder_from_reconstruction"
 path = "reference/library/index.md#integernonnegative_remainder_from_reconstruction"
+
+[[item]]
+id = "library.theorem.integer::uint8_pointer_translate_int32"
+path = "reference/library/index.md#integeruint8_pointer_translate_int32"
+
+[[item]]
+id = "library.theorem.integer::uint8_pointer_add_associate_int32"
+path = "reference/library/index.md#integeruint8_pointer_add_associate_int32"
+
+[[item]]
+id = "library.theorem.integer::uint8_pointer_translate_uint64"
+path = "reference/library/index.md#integeruint8_pointer_translate_uint64"
+
+[[item]]
+id = "library.theorem.integer::uint8_pointer_add_associate_uint64"
+path = "reference/library/index.md#integeruint8_pointer_add_associate_uint64"
+
+[[item]]
+id = "library.theorem.integer::int8_pointer_translate_int32"
+path = "reference/library/index.md#integerint8_pointer_translate_int32"
+
+[[item]]
+id = "library.theorem.integer::int8_pointer_add_associate_int32"
+path = "reference/library/index.md#integerint8_pointer_add_associate_int32"
+
+[[item]]
+id = "library.theorem.integer::int8_pointer_translate_uint64"
+path = "reference/library/index.md#integerint8_pointer_translate_uint64"
+
+[[item]]
+id = "library.theorem.integer::int8_pointer_add_associate_uint64"
+path = "reference/library/index.md#integerint8_pointer_add_associate_uint64"
+
+[[item]]
+id = "library.theorem.integer::uint16_pointer_translate_int32"
+path = "reference/library/index.md#integeruint16_pointer_translate_int32"
+
+[[item]]
+id = "library.theorem.integer::uint16_pointer_add_associate_int32"
+path = "reference/library/index.md#integeruint16_pointer_add_associate_int32"
+
+[[item]]
+id = "library.theorem.integer::uint16_pointer_translate_uint64"
+path = "reference/library/index.md#integeruint16_pointer_translate_uint64"
+
+[[item]]
+id = "library.theorem.integer::uint16_pointer_add_associate_uint64"
+path = "reference/library/index.md#integeruint16_pointer_add_associate_uint64"
+
+[[item]]
+id = "library.theorem.integer::int16_pointer_translate_int32"
+path = "reference/library/index.md#integerint16_pointer_translate_int32"
+
+[[item]]
+id = "library.theorem.integer::int16_pointer_add_associate_int32"
+path = "reference/library/index.md#integerint16_pointer_add_associate_int32"
+
+[[item]]
+id = "library.theorem.integer::int16_pointer_translate_uint64"
+path = "reference/library/index.md#integerint16_pointer_translate_uint64"
+
+[[item]]
+id = "library.theorem.integer::int16_pointer_add_associate_uint64"
+path = "reference/library/index.md#integerint16_pointer_add_associate_uint64"
+
+[[item]]
+id = "library.theorem.integer::uint32_pointer_translate_int32"
+path = "reference/library/index.md#integeruint32_pointer_translate_int32"
+
+[[item]]
+id = "library.theorem.integer::uint32_pointer_add_associate_int32"
+path = "reference/library/index.md#integeruint32_pointer_add_associate_int32"
+
+[[item]]
+id = "library.theorem.integer::uint32_pointer_translate_uint64"
+path = "reference/library/index.md#integeruint32_pointer_translate_uint64"
+
+[[item]]
+id = "library.theorem.integer::uint32_pointer_add_associate_uint64"
+path = "reference/library/index.md#integeruint32_pointer_add_associate_uint64"
+
+[[item]]
+id = "library.theorem.integer::int32_pointer_translate_int32"
+path = "reference/library/index.md#integerint32_pointer_translate_int32"
+
+[[item]]
+id = "library.theorem.integer::int32_pointer_add_associate_int32"
+path = "reference/library/index.md#integerint32_pointer_add_associate_int32"
+
+[[item]]
+id = "library.theorem.integer::int32_pointer_translate_uint64"
+path = "reference/library/index.md#integerint32_pointer_translate_uint64"
+
+[[item]]
+id = "library.theorem.integer::int32_pointer_add_associate_uint64"
+path = "reference/library/index.md#integerint32_pointer_add_associate_uint64"
+
+[[item]]
+id = "library.theorem.integer::uint64_pointer_translate_int32"
+path = "reference/library/index.md#integeruint64_pointer_translate_int32"
+
+[[item]]
+id = "library.theorem.integer::uint64_pointer_add_associate_int32"
+path = "reference/library/index.md#integeruint64_pointer_add_associate_int32"
+
+[[item]]
+id = "library.theorem.integer::uint64_pointer_translate_uint64"
+path = "reference/library/index.md#integeruint64_pointer_translate_uint64"
+
+[[item]]
+id = "library.theorem.integer::uint64_pointer_add_associate_uint64"
+path = "reference/library/index.md#integeruint64_pointer_add_associate_uint64"
+
+[[item]]
+id = "library.theorem.integer::int64_pointer_translate_int32"
+path = "reference/library/index.md#integerint64_pointer_translate_int32"
+
+[[item]]
+id = "library.theorem.integer::int64_pointer_add_associate_int32"
+path = "reference/library/index.md#integerint64_pointer_add_associate_int32"
+
+[[item]]
+id = "library.theorem.integer::int64_pointer_translate_uint64"
+path = "reference/library/index.md#integerint64_pointer_translate_uint64"
+
+[[item]]
+id = "library.theorem.integer::int64_pointer_add_associate_uint64"
+path = "reference/library/index.md#integerint64_pointer_add_associate_uint64"
+
+[[item]]
+id = "library.theorem.integer::float32_pointer_translate_int32"
+path = "reference/library/index.md#integerfloat32_pointer_translate_int32"
+
+[[item]]
+id = "library.theorem.integer::float32_pointer_add_associate_int32"
+path = "reference/library/index.md#integerfloat32_pointer_add_associate_int32"
+
+[[item]]
+id = "library.theorem.integer::float32_pointer_translate_uint64"
+path = "reference/library/index.md#integerfloat32_pointer_translate_uint64"
+
+[[item]]
+id = "library.theorem.integer::float32_pointer_add_associate_uint64"
+path = "reference/library/index.md#integerfloat32_pointer_add_associate_uint64"
+
+[[item]]
+id = "library.theorem.integer::float64_pointer_translate_int32"
+path = "reference/library/index.md#integerfloat64_pointer_translate_int32"
+
+[[item]]
+id = "library.theorem.integer::float64_pointer_add_associate_int32"
+path = "reference/library/index.md#integerfloat64_pointer_add_associate_int32"
+
+[[item]]
+id = "library.theorem.integer::float64_pointer_translate_uint64"
+path = "reference/library/index.md#integerfloat64_pointer_translate_uint64"
+
+[[item]]
+id = "library.theorem.integer::float64_pointer_add_associate_uint64"
+path = "reference/library/index.md#integerfloat64_pointer_add_associate_uint64"

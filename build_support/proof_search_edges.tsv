@@ -791,3 +791,11 @@ src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_cond
 src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::rewrite_conditional_arms_using	driver	2
 src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_conditional_bridge_using	rewrite_conditional_arms_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_goal_conditional_normalization	rewrite_conditional_arms_using	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_normalization_closure	try_pointer_translation_using	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_pointer_translation_using	1
+src/surface/proof/smart_closures/specialized.rs	search	ProofSearch::apply_specialized_composition	try_pointer_translation_using	1
+src/surface/proof/smart_closures/pointer_offsets.rs	mixed	Emitter::apply	driver	1
+src/surface/proof/smart_closures/pointer_offsets.rs	mixed	Emitter::arithmetic	driver	2
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_pointer_translation_closure	1
+src/surface/proof/smart_closures/pointer_offsets.rs	search	ProofSearch::try_pointer_translation_closure	resolve_solve_premises	1
+src/surface/proof/smart_closures/pointer_offsets.rs	search	ProofSearch::try_pointer_translation_closure	try_pointer_translation_using	1
