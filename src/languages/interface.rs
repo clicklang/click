@@ -34,6 +34,9 @@ pub struct ImportedFunction {
     pub(super) inline_body: bool,
     /// Calls used as expression observers must have contracts with views only.
     pub(super) requires_read_only_contract: bool,
+    /// The source promises that exceptions cannot escape this definition.
+    /// Its checked contract must expose only normal outcomes.
+    pub(super) requires_nonthrowing_contract: bool,
     /// The declaration names its parameters only by position, as a Rust
     /// `extern` block item does in Charon's output; the sidecar head names
     /// them ([`Self::named_by_head`]).
@@ -66,6 +69,9 @@ pub struct ImportedFunction {
     /// executable statement indices after the complete body is parsed.
     pub(super) control_targets: BTreeMap<String, (crate::kernel::ControlTargetId, usize)>,
     pub(super) structs: DeclarationMap<RecordLayout>,
+    /// Native frontends share their prepared nominal layouts across functions.
+    /// Only indexed source queries read this; ordinary C declaration scopes stay local.
+    pub(super) prepared_record_layouts: std::sync::Arc<BTreeMap<String, RecordLayout>>,
     pub(super) enums: DeclarationMap<CEnumDefinition>,
     pub(super) unions: DeclarationMap<CUnionLayout>,
     pub(super) globals: DeclarationMap<CGlobal>,
@@ -262,6 +268,8 @@ pub struct CallbackInterface {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecordLayout {
     pub(super) fields: BTreeMap<String, RecordField>,
+    /// Declared embedded-object paths, indexed by byte offset and nominal type.
+    pub(super) embedded_structs: BTreeMap<(u32, String), String>,
     /// Leaf fields used when a struct value is copied through the kernel.
     /// Embedded struct fields are flattened here while preserving their
     /// declared names as qualified paths and their complete ABI offsets.
@@ -483,6 +491,15 @@ impl ImportedFunction {
         self
     }
 
+    pub(crate) fn with_nonthrowing_contract(mut self, required: bool) -> Self {
+        self.requires_nonthrowing_contract = required;
+        self
+    }
+
+    pub(crate) fn requires_nonthrowing_contract(&self) -> bool {
+        self.requires_nonthrowing_contract
+    }
+
     pub(crate) fn with_read_only_contract(mut self, required: bool) -> Self {
         self.requires_read_only_contract = required;
         self
@@ -591,6 +608,7 @@ impl ImportedFunction {
         alias.return_struct_name = self.return_struct_name.clone();
         alias.return_pointer_struct_name = self.return_pointer_struct_name.clone();
         alias.requires_read_only_contract = self.requires_read_only_contract;
+        alias.requires_nonthrowing_contract = self.requires_nonthrowing_contract;
         alias.dispatched_method = Some(self.name.clone());
         alias
     }
@@ -611,6 +629,7 @@ impl ImportedFunction {
             name,
             inline_body: false,
             requires_read_only_contract: false,
+            requires_nonthrowing_contract: false,
             positional_parameters: false,
             closure_captures: 0,
             trait_interface: None,
@@ -624,6 +643,7 @@ impl ImportedFunction {
             callback_statement_sources: std::sync::Arc::default(),
             control_targets: BTreeMap::new(),
             structs: DeclarationMap::new(),
+            prepared_record_layouts: std::sync::Arc::default(),
             enums: DeclarationMap::new(),
             unions: DeclarationMap::new(),
             globals: DeclarationMap::new(),
@@ -740,6 +760,7 @@ impl ImportedFunction {
             && self.return_struct_name == other.return_struct_name
             && self.aggregate_return_mode == other.aggregate_return_mode
             && self.return_pointer_struct_name == other.return_pointer_struct_name
+            && self.requires_nonthrowing_contract == other.requires_nonthrowing_contract
             && self.positional_parameters == other.positional_parameters
             && self.closure_captures == other.closure_captures
             && unnamed(&self.parameters) == unnamed(&other.parameters)
@@ -765,6 +786,13 @@ impl ImportedFunction {
                         == crate::kernel::AggregateReturnMode::Construction
             }
         }
+    }
+
+    pub(crate) fn record_layout(&self, name: &str) -> Option<&RecordLayout> {
+        crate::instrumentation::record_deterministic_work(1);
+        self.prepared_record_layouts
+            .get(name)
+            .or_else(|| self.structs.get(name))
     }
 
     pub fn structs(&self) -> &DeclarationMap<RecordLayout> {
@@ -922,6 +950,30 @@ impl ImportedFunction {
 }
 
 impl RecordLayout {
+    pub(crate) fn index_embedded_structs(
+        fields: &BTreeMap<String, RecordField>,
+    ) -> BTreeMap<(u32, String), String> {
+        let mut embedded = BTreeMap::new();
+        for (name, field) in fields {
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some(nominal) = field.struct_name.as_ref().filter(|_| {
+                field.interface_type == InterfaceType::Int32
+                    && field.array_element_width.is_none()
+                    && field.union_name.is_none()
+            }) {
+                embedded.insert((field.offset_bytes, nominal.clone()), name.clone());
+            }
+        }
+        embedded
+    }
+
+    pub(crate) fn embedded_struct_field(&self, offset: u32, target: &str) -> Option<&str> {
+        crate::instrumentation::record_deterministic_work(1);
+        self.embedded_structs
+            .get(&(offset, target.to_string()))
+            .map(String::as_str)
+    }
+
     /// The struct's class for the strict-aliasing check, when it has one
     /// (`design/effective-types.md`).
     pub(crate) fn class(&self) -> Option<&crate::kernel::effective_type::CStructClass> {
@@ -1111,6 +1163,7 @@ impl RecordLayout {
             previous_end = previous_end.max(end);
         }
         Ok(Self {
+            embedded_structs: Self::index_embedded_structs(&named_fields),
             fields: named_fields,
             aggregate_fields,
             aggregate_unions: Vec::new(),

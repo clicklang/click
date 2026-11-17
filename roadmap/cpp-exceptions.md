@@ -2,11 +2,30 @@
 
 Priority: P2.
 
-Soundness: incomplete. Every construct this issue covers is refused today:
-the parser rejects a `throws` contract with `owns`, `views` or another
-resource clause, `throws` accepts only `int32`, and the C++ importer accepts
-only `throw` of an `int` payload with one `catch (int name)` handler. No
-false acceptance is known.
+Status: first slice delivered. The unchanged pinned Bitcoin
+`SpanReader::ignore(size_t)` and a modular caller have checked normal and
+exceptional descriptor and backing-byte guarantees, including expansion,
+cold checking and retained-session replay. `throws int32` and exact opaque
+`throws std::ios_base::failure` admit borrowed memory `owns`/`views` on both
+exits. The selected constructor profile authenticates its declaration and
+records allocation-failure termination as a library assumption.
+
+Ordinary user-defined aggregate exceptions now use the `typed` profile and
+resolved `throws T` names. Trivial aggregate prvalues and empty tags propagate
+with opaque payloads; initializer reads and arithmetic remain checked. The
+regressions cover qualified names, exact nominal type separation, borrowed
+memory, expansion and retained checking.
+
+`noexcept` definitions now admit checked nonthrowing interfaces: guarded
+throwing calls must have impossible exceptional outcomes, and `throws` cannot
+weaken a `noexcept` declaration. Supported constructors, getters and normal
+cleanup can participate in exception-enabled proofs. `std::terminate` and
+opaque-class unwinding through destructible locals remain outside the model.
+
+Still pending: `SpanReader::read`, decoded serialization through that real
+reader, and exact/base-class typed catches. User constructors, lvalue throws,
+nontrivial exception classes, resource transitions and full C++ unwinding
+remain refused. No false acceptance is known.
 
 ## Motivation
 
@@ -36,16 +55,13 @@ void read(std::span<std::byte> dst)
 excludes the throwing path by precondition would leave the actual
 malformed-input behavior unverified, so the exception has to be modeled.
 
-The current model (see
+The first slice now supports memory footprints on both exits and an opaque
+`std::ios_base::failure` payload; see
 [architecture](../docs/internals/architecture.md#selected-control-flow-and-c-cleanup-model)
-and [the language reference](../docs/reference/language/index.md#exceptional-results))
-cannot state this contract for three reasons:
-
-1. A function that may throw cannot hold resources, so `read` cannot view
-   its source or own its destination.
-2. The payload must be `int32`; `std::ios_base::failure` is a class.
-3. Handlers match only `catch (int name)`; Bitcoin callers catch
-   `const std::ios_base::failure&` or `const std::exception&`.
+and [the language reference](../docs/reference/language/index.md#exceptional-results).
+Handlers still match only `catch (int name)`; Bitcoin callers need
+`const std::ios_base::failure&` or `const std::exception&`. `read` and those
+handlers are the remaining application targets below.
 
 ## Violated invariant
 

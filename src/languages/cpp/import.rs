@@ -712,6 +712,21 @@ fn decode_artifact(
         for statement in statements {
             crate::instrumentation::record_deterministic_work(1);
             match statement {
+                CppStatement::ThrowIosFailure {
+                    constructor,
+                    declaration_file,
+                    ..
+                } => {
+                    if contracts.get(constructor.function.as_str()).copied() != Some(constructor)
+                        || dependency_files
+                            .get(constructor.header.as_str())
+                            .map(|path| path.as_ref())
+                            != Some(declaration_file.as_str())
+                        || !metadata_files.contains(declaration_file.as_str())
+                    {
+                        return Err("opaque exception constructor differs from its pinned locked declaration".into());
+                    }
+                }
                 CppStatement::LibraryAssert {
                     contract, metadata, ..
                 } => {
@@ -999,9 +1014,9 @@ fn validate_config(config: &Config) -> Result<(), String> {
             "C++ import config must use schema {CONFIG_SCHEMA}, Clang {STANDARD} for {TARGET}"
         ));
     }
-    if matches!(config.exception_behavior, CppExceptionBehavior::ScalarInt32) && !config.exceptions
+    if !matches!(config.exception_behavior, CppExceptionBehavior::NormalOnly) && !config.exceptions
     {
-        return Err("scalar int32 exception import requires C++ exceptions enabled".into());
+        return Err("exception import requires C++ exceptions enabled".into());
     }
     for (label, value) in [
         ("exporter", config.exporter.as_str()),

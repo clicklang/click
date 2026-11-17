@@ -938,7 +938,8 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
     s: &S,
 ) -> ProgramStatement {
     match statement {
-        ProgramStatement::Skip
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)
         | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
@@ -2745,7 +2746,8 @@ pub(in crate::kernel) fn collect_execution_statement_bound_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match statement {
-        ProgramStatement::Skip
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)
         | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }

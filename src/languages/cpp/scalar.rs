@@ -283,6 +283,18 @@ pub(super) fn reference_element(value: &CppType) -> Option<Scalar> {
     }
 }
 
+/// A native pointer may add pointee const without changing its element type.
+pub(super) fn pointer_qualification(source: &CppType, target: &CppType) -> bool {
+    match (source, target) {
+        (CppType::Pointer { pointee: source }, CppType::Pointer { pointee: target }) => {
+            Scalar::pointer_element(source, true).is_some_and(|element| !element.is_const)
+                && Scalar::pointer_element(target, true).is_some_and(|element| element.is_const)
+                && same_scalar_type(&scalar_value_type(source), &scalar_value_type(target))
+        }
+        _ => false,
+    }
+}
+
 /// Whether a returned reference or pointer refers to a const native element.
 pub(super) fn returns_constant_element(value: &CppType) -> bool {
     match value {
@@ -331,6 +343,34 @@ pub(super) fn same_scalar_type(left: &CppType, right: &CppType) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pointer_qualification_preserves_native_identity_and_only_adds_const() {
+        let pointer = |bits, signed, is_const| CppType::Pointer {
+            pointee: Box::new(CppType::Integer {
+                bits,
+                signed,
+                is_const,
+                source_aliases: Vec::new(),
+            }),
+        };
+        for (bits, signed) in [(32, true), (32, false), (8, false)] {
+            let mutable = pointer(bits, signed, false);
+            let constant = pointer(bits, signed, true);
+            assert!(pointer_qualification(&mutable, &constant));
+            assert!(!pointer_qualification(&constant, &mutable));
+            assert!(!pointer_qualification(&mutable, &mutable));
+            assert!(!pointer_qualification(&constant, &constant));
+            for (other_bits, other_signed) in [(32, true), (32, false), (8, false), (64, true)] {
+                if (bits, signed) != (other_bits, other_signed) {
+                    assert!(!pointer_qualification(
+                        &mutable,
+                        &pointer(other_bits, other_signed, true)
+                    ));
+                }
+            }
+        }
+    }
 
     #[test]
     fn scalar_classification_preserves_qualification_and_rejects_unsupported_widths() {

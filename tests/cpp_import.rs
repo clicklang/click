@@ -2867,6 +2867,7 @@ fn scalar_int32_profile_rejects_broader_guarded_try_shapes() {
         ONE_GUARD_UNWIND_MDTEST,
     )
     .unwrap();
+    let original_sidecar = mdtest.click_source.clone().unwrap();
     let cpp = mdtest.cpp_source.unwrap();
     let declaration = "        Restore guard(&value);\n        helper(should_throw);";
     assert!(cpp.source.contains(declaration));
@@ -2915,17 +2916,9 @@ fn scalar_int32_profile_rejects_broader_guarded_try_shapes() {
             1,
         )
     );
-    for (name, source, expected) in [
-        (
-            "throwing_destructor",
-            throwing_destructor,
-            "has a non-throwing exception specification but can still throw",
-        ),
-        (
-            "calling_destructor",
-            calling_destructor,
-            "noexcept C++ object operation",
-        ),
+    for (name, source) in [
+        ("throwing_destructor", throwing_destructor),
+        ("calling_destructor", calling_destructor),
     ] {
         let project = Project::with_fixture(&cpp.filename, &cpp.functions[0], &source);
         project.write_exception_enabled_compilation_database();
@@ -2935,13 +2928,20 @@ fn scalar_int32_profile_rejects_broader_guarded_try_shapes() {
             true,
             &cpp.profile,
         );
-        let error = refresh_import(&project.config())
-            .expect_err(&format!("{name} must not enter a locked artifact"));
-        assert!(error.contains(expected), "{name}: {error}");
-        assert!(
-            !project.artifact().exists(),
-            "{name} was unexpectedly locked"
-        );
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = if name == "calling_destructor" {
+            format!(
+                "{original_sidecar}\nint32 destructor_helper() throws int32 {{ ensures false; exceptional ensures exception == 7; }}\n"
+            )
+        } else {
+            original_sidecar.clone()
+        };
+        let path = project.directory.join("destructor.click");
+        fs::write(&path, &source).unwrap();
+        let parsed = read_click_project(&path, &source).unwrap();
+        verify_program_prepared_project(&parsed, &import)
+            .expect_err("a noexcept destructor's escaping exception must fail its proof");
     }
 }
 
@@ -2966,12 +2966,8 @@ fn scalar_int32_profile_rejects_a_non_int32_exception_payload() {
         true,
         "scalar_int32",
     );
-    let error = refresh_import(&noexcept.config())
-        .expect_err("the scalar profile must not mis-model noexcept termination");
-    assert!(
-        error.contains("does not model noexcept termination"),
-        "{error}"
-    );
+    refresh_import(&noexcept.config())
+        .expect("noexcept admission is followed by a checked nonthrowing contract");
 
     let project = Project::new();
     fs::write(
@@ -5931,7 +5927,7 @@ fn cpp_pointer_slice_rejects_differences_and_multilevel_pointers() {
     .unwrap();
     let error = refresh_import(&project.config()).unwrap_err();
     assert!(error.contains("bump_reference.cpp:1"), "{error}");
-    assert!(error.contains("mutable int* parameter"), "{error}");
+    assert!(error.contains("native element pointer"), "{error}");
     assert!(!project.artifact().exists());
 }
 
@@ -6298,11 +6294,11 @@ fn cpp_frontend_rejects_unsupported_source_without_a_c_fallback() {
 
     fs::write(
         project.source(),
-        "int increment(const int* value) noexcept {\n    return *value;\n}\n",
+        "int increment(volatile int* value) noexcept {\n    return *value;\n}\n",
     )
     .unwrap();
     let error = refresh_import(&project.config()).unwrap_err();
-    assert!(error.contains("mutable int* parameter"), "{error}");
+    assert!(error.contains("native element pointer"), "{error}");
     assert!(!project.artifact().exists());
 
     fs::write(
@@ -9337,8 +9333,8 @@ fn direct_return_calls_keep_guarded_try_returns_unsupported_and_emit_uncaught_cl
         assert!(!project.artifact().exists());
     }
 
-    // Uncaught cleanup edges are checked structurally: resource-bearing
-    // exceptional contracts remain outside the existing surface slice.
+    // Keep this regression focused on the selected guard's structural cleanup.
+    // Borrowed memory on throwing exits has separate proof/replay coverage.
     let escaping = Project::with_fixture("unwind.cpp", "escaping", cpp);
     escaping.write_exception_enabled_compilation_database();
     escaping.write_config_with_exception_behavior("escaping", "unwind.cpp", true, "scalar_int32");
@@ -17085,12 +17081,8 @@ fn cpp_null_pointer_conversions_keep_effectful_operands_and_other_types_outside_
             "unsupported explicit C++ conversion",
         ),
         (
-            "const int* run() noexcept { return nullptr; }",
-            "mutable int32 pointer",
-        ),
-        (
             "long long* run() noexcept { return nullptr; }",
-            "mutable int32 pointer",
+            "native element pointer",
         ),
     ] {
         let project = Project::with_fixture("null.cpp", "run", cpp);
@@ -20026,6 +20018,882 @@ fn committed_cpp_project_imports_match_the_pinned_exporter() {
                 fs::read(committed.join(&file)).unwrap(),
                 "{relative}/{}: run scripts/refresh-cpp-imports.sh",
                 file.display()
+            );
+        }
+    }
+}
+
+#[test]
+#[ignore = "nightly: exceptional memory proof expansion and replay"]
+fn scalar_exception_returns_changed_memory_and_borrowed_authority() {
+    let project = Project::with_fixture(
+        "caller.cpp",
+        "caller",
+        r#"
+void update(int* value, bool fail) {
+    if (fail) { *value = 9; throw 7; }
+    *value = 7;
+}
+void caller(int* value, bool fail) { update(value, fail); }
+"#,
+    );
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("caller", "caller.cpp", true, "scalar_int32");
+    refresh_import(&project.config()).unwrap();
+    let prepared = load_import(&project.config()).unwrap();
+    let source = r#"verifying "caller.cpp";
+void update(int32* value, bool fail) throws int32 {
+    owns value[0];
+    ensures value[0] == 7;
+    exceptional ensures value[0] == 9;
+    exceptional ensures exception == 7;
+}
+void caller(int32* value, bool fail) throws int32 {
+    owns value[0];
+    ensures value[0] == 7;
+    exceptional ensures value[0] == 9;
+    exceptional ensures exception == 7;
+}
+"#;
+    check_return_call_sidecar(&project, &prepared, source);
+    let sidecar = project.directory.join("false.click");
+    for false_source in [
+        source.replace(
+            "exceptional ensures value[0] == 9;",
+            "exceptional ensures value[0] == old(value[0]);",
+        ),
+        source.replacen("    owns value[0];", "    views value[0];", 1),
+    ] {
+        fs::write(&sidecar, &false_source).unwrap();
+        let parsed = read_click_project(&sidecar, &false_source).unwrap();
+        verify_program_prepared_project(&parsed, &prepared).expect_err(
+            "a false exceptional state or read-only authority cannot certify the write",
+        );
+    }
+}
+
+#[test]
+#[ignore = "nightly: borrowed authority cannot be consumed on a throwing exit"]
+fn scalar_exception_refuses_lost_borrowed_authority() {
+    let project = Project::with_fixture(
+        "abandon.cpp",
+        "abandon",
+        "void take(int* value) noexcept;\nvoid abandon(int* value) { take(value); throw 7; }\n",
+    );
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("abandon", "abandon.cpp", true, "scalar_int32");
+    refresh_import(&project.config()).unwrap();
+    let prepared = load_import(&project.config()).unwrap();
+    let source = r#"verifying "abandon.cpp";
+extern void take(int32* value) {
+    consumes value[0];
+    ensures true;
+}
+void abandon(int32* value) throws int32 {
+    owns value[0];
+    ensures true;
+    exceptional ensures exception == 7;
+}
+"#;
+    let sidecar = project.directory.join("abandon.click");
+    fs::write(&sidecar, source).unwrap();
+    let parsed = read_click_project(&sidecar, source).unwrap();
+    let error = verify_program_prepared_project(&parsed, &prepared)
+        .expect_err("a throwing function must return the authority it borrowed");
+    assert!(
+        error.message().contains("resource") || error.message().contains("ownership"),
+        "{}",
+        error.report()
+    );
+}
+
+#[test]
+#[ignore = "nightly: user-defined opaque exception construction and replay"]
+fn typed_aggregate_exceptions_check_initializers_and_return_memory() {
+    let project = Project::with_fixture(
+        "errors.cpp",
+        "relay",
+        r#"
+namespace errors { struct ParseError { int code; }; }
+struct Other { int code; };
+void raise(int* counter, int code, bool fail) {
+    if (fail) { *counter = code; throw errors::ParseError{code + 1}; }
+    *counter = 0;
+}
+void relay(int* counter, int code, bool fail, Other* marker) {
+    raise(counter, code, fail);
+}
+"#,
+    );
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("relay", "errors.cpp", true, "typed");
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let prepared = load_import(&project.config()).unwrap();
+    let source = r#"verifying "errors.cpp";
+void raise(int32* counter, int32 code, bool fail) throws errors::ParseError {
+    requires code < 2147483647;
+    owns counter[0];
+    ensures counter[0] == 0;
+    exceptional ensures counter[0] == code;
+}
+void relay(int32* counter, int32 code, bool fail, struct Other* marker) throws errors::ParseError {
+    requires code < 2147483647;
+    owns counter[0];
+    ensures counter[0] == 0;
+    exceptional ensures counter[0] == code;
+}
+"#;
+    check_return_call_sidecar(&project, &prepared, source);
+    let sidecar_path = project.directory.join("arithmetic.click");
+    let parsed = read_click_project(&sidecar_path, source).unwrap();
+    let mut rewritten = parsed.clone();
+    for label in ["raise.contract", "relay.contract"] {
+        let expanded = expand_project_claim_source_by_label(
+            &rewritten,
+            &ProgramInputs::program(&prepared),
+            label,
+        )
+        .unwrap();
+        let (session, _) =
+            ProgramVerificationSession::new_program_prepared_project(&rewritten, &prepared)
+                .unwrap();
+        rewritten = parsed.with_entry_source(expanded.clone());
+        let position = project_tactic_source_position(
+            &rewritten,
+            &ProgramInputs::program(&prepared),
+            label,
+            0,
+        )
+        .unwrap();
+        session
+            .verify_at_project(&expanded, position.line, position.column)
+            .unwrap();
+    }
+    click::surface::without_implicit_solve(|| {
+        verify_program_prepared_project(&rewritten, &prepared)
+    })
+    .unwrap();
+    let sidecar = project.directory.join("bad.click");
+    for (name, bad) in [
+        (
+            "different nominal type",
+            source.replace("throws errors::ParseError", "throws Other"),
+        ),
+        (
+            "unresolved type",
+            source.replace("throws errors::ParseError", "throws Missing"),
+        ),
+        (
+            "initializer overflow",
+            source.replace("    requires code < 2147483647;\n", ""),
+        ),
+        (
+            "lost mutable authority",
+            source.replace("owns counter[0];", "views counter[0];"),
+        ),
+        (
+            "false exceptional memory",
+            source.replace(
+                "exceptional ensures counter[0] == code;",
+                "exceptional ensures counter[0] == 0;",
+            ),
+        ),
+        (
+            "opaque payload fields",
+            source.replace(
+                "exceptional ensures counter[0] == code;",
+                "exceptional ensures exception.code == code + 1;",
+            ),
+        ),
+    ] {
+        fs::write(&sidecar, &bad).unwrap();
+        let accepted = read_click_project(&sidecar, &bad)
+            .ok()
+            .is_some_and(|parsed| verify_program_prepared_project(&parsed, &prepared).is_ok());
+        assert!(!accepted, "accepted {name}");
+    }
+}
+
+#[test]
+#[ignore = "nightly: empty user exception tags and initializer read authority"]
+fn typed_empty_exception_tags_and_checked_payload_reads() {
+    for (file, selected, cpp, source) in [
+        (
+            "tag.cpp",
+            "marker",
+            "namespace errors { struct End {}; } void marker(bool fail) { if (fail) { throw errors::End{}; } }",
+            r#"verifying "tag.cpp";
+void marker(bool fail) throws errors::End { ensures true; exceptional ensures true; }
+"#,
+        ),
+        (
+            "pointer-read.cpp",
+            "from_memory",
+            "struct ReadError { int code; }; void from_memory(const int* p) { throw ReadError{p[0]}; }",
+            r#"verifying "pointer-read.cpp";
+void from_memory(const int32* p) throws ReadError { views p[0]; ensures true; exceptional ensures true; }
+"#,
+        ),
+        (
+            "read.cpp",
+            "from_reference",
+            "struct ReadError { int code; }; void from_reference(const int& value) { throw ReadError{value}; }",
+            r#"verifying "read.cpp";
+void from_reference(const int32& value) throws ReadError { views value; ensures true; exceptional ensures true; }
+"#,
+        ),
+    ] {
+        let project = Project::with_fixture(file, selected, cpp);
+        project.write_exception_enabled_compilation_database();
+        project.write_config_with_exception_behavior(selected, file, true, "typed");
+        refresh_import(&project.config()).unwrap();
+        let prepared = load_import(&project.config()).unwrap();
+        check_return_call_sidecar(&project, &prepared, source);
+        if selected == "from_reference" || selected == "from_memory" {
+            let bad = source
+                .replace("views value;", "")
+                .replace("views p[0];", "");
+            let sidecar = project.directory.join("bad.click");
+            fs::write(&sidecar, &bad).unwrap();
+            let parsed = read_click_project(&sidecar, &bad).unwrap();
+            verify_program_prepared_project(&parsed, &prepared)
+                .expect_err("opaque construction must still read its initializer with authority");
+        }
+    }
+}
+
+#[test]
+#[ignore = "nightly: user exception source and artifact admission controls"]
+fn typed_exceptions_refuse_unmodeled_construction_and_corrupt_fields() {
+    for cpp in [
+        "struct Error { int code; explicit Error(int n) noexcept : code(n) {} }; void probe() { throw Error{1}; }",
+        "struct Error { int code; ~Error() noexcept {} }; void probe() { throw Error{1}; }",
+        "struct Error { int code; }; void probe(Error& e) { throw e; }",
+        "struct Error { int code; }; void probe() { throw Error{}; }",
+    ] {
+        let project = Project::with_fixture("refused.cpp", "probe", cpp);
+        project.write_exception_enabled_compilation_database();
+        project.write_config_with_exception_behavior("probe", "refused.cpp", true, "typed");
+        assert!(refresh_import(&project.config()).is_err(), "admitted {cpp}");
+    }
+    let project = Project::with_fixture(
+        "error.cpp",
+        "probe",
+        "struct Error { int code; }; void probe() { throw Error{1}; }",
+    );
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("probe", "error.cpp", true, "typed");
+    refresh_import(&project.config()).unwrap();
+    let original: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    for mutation in 0..4 {
+        let mut artifact = original.clone();
+        let statement = &mut artifact["functions"][0]["body"][0];
+        match mutation {
+            0 => statement["fields"] = serde_json::json!([]),
+            1 => statement["fields"][0]["field"]["record_declaration_id"] = "wrong".into(),
+            2 => statement["value_type"]["name"] = "Missing".into(),
+            3 => artifact["exception_behavior"] = "scalar_int32".into(),
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec_pretty(&artifact).unwrap();
+        let mut locked = lock.clone();
+        use sha2::{Digest, Sha256};
+        lock_source_mut(&mut locked)["artifact"]["sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_source_mut(&mut locked)["artifact"]["bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(project.lock(), serde_json::to_vec_pretty(&locked).unwrap()).unwrap();
+        assert!(
+            load_import(&project.config()).is_err(),
+            "accepted artifact mutation {mutation}"
+        );
+    }
+}
+
+fn check_native_const_pointer_composition(native: &str, proof: &str) {
+    let cpp = format!(
+        r#"
+{native} read(const {native}* p) noexcept {{ return p[0]; }}
+{native}* identity({native}* p) noexcept {{ return p; }}
+const {native}* freeze({native}* p) noexcept {{ return identity(p); }}
+const {native}* choose({native}* p) noexcept {{
+    const {native}* q = static_cast<const {native}*>(p);
+    q = freeze(p);
+    return q;
+}}
+{native} probe({native}* p) noexcept {{
+    const {native}* q = choose(p);
+    return read(q);
+}}
+"#
+    );
+    let project = Project::with_fixture("const.cpp", "probe", &cpp);
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = format!(
+        r#"verifying "const.cpp";
+{proof} read(const {proof}* p) {{ views p[0]; ensures result == p[0]; }}
+{proof}* identity({proof}* p) {{ ensures result == p; }}
+const {proof}* freeze({proof}* p) {{ ensures result == p; }}
+const {proof}* choose({proof}* p) {{ ensures result == p; }}
+{proof} probe({proof}* p) {{ views p[0]; ensures result == p[0]; }}
+"#
+    );
+    check_return_call_sidecar(&project, &import, &source);
+    let path = project.directory.join("arithmetic.click");
+    let parsed = read_click_project(&path, &source).unwrap();
+    let labels = project_smart_tactic_source_sites(&parsed, &ProgramInputs::program(&import))
+        .unwrap()
+        .into_iter()
+        .map(|site| site.claim_label)
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut rewritten = parsed.clone();
+    for label in labels {
+        let expanded = expand_project_claim_source_by_label(
+            &rewritten,
+            &ProgramInputs::program(&import),
+            &label,
+        )
+        .unwrap();
+        let (session, _) =
+            ProgramVerificationSession::new_program_prepared_project(&rewritten, &import).unwrap();
+        rewritten = parsed.with_entry_source(expanded.clone());
+        let position =
+            project_tactic_source_position(&rewritten, &ProgramInputs::program(&import), &label, 0)
+                .unwrap();
+        session
+            .verify_at_project(&expanded, position.line, position.column)
+            .unwrap();
+    }
+    click::surface::without_implicit_solve(|| verify_program_prepared_project(&rewritten, &import))
+        .unwrap();
+    for bad in [
+        source.replace("views p[0];", ""),
+        source.replace(
+            &format!("read(const {proof}* p)"),
+            &format!("read({proof}* p)"),
+        ),
+        source.replace(
+            &format!("const {proof}* choose"),
+            &format!("{proof}* choose"),
+        ),
+        source.replace("ensures result == p[0];", "ensures result != p[0];"),
+    ] {
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &bad).unwrap();
+        let accepted = read_click_project(&path, &bad)
+            .ok()
+            .is_some_and(|parsed| verify_program_prepared_project(&parsed, &import).is_ok());
+        assert!(
+            !accepted,
+            "accepted weakened const signature, missing authority or false value: {bad}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "nightly: const int pointer composition, full expansion and retained replay"]
+fn cpp_const_pointer_int_composition() {
+    check_native_const_pointer_composition("int", "int32");
+}
+#[test]
+#[ignore = "nightly: const unsigned pointer composition, full expansion and retained replay"]
+fn cpp_const_pointer_unsigned_composition() {
+    check_native_const_pointer_composition("unsigned int", "uint32");
+}
+#[test]
+#[ignore = "nightly: const byte pointer composition, full expansion and retained replay"]
+fn cpp_const_pointer_byte_composition() {
+    check_native_const_pointer_composition("unsigned char", "uint8");
+}
+
+#[test]
+#[ignore = "nightly: const-qualified callback parameters and results"]
+fn cpp_const_pointer_callbacks_preserve_qualified_signatures() {
+    let project = Project::with_fixture(
+        "callback.cpp",
+        "probe",
+        r#"
+const int* identity(const int* p) noexcept { return p; }
+const int* invoke(const int* (*f)(const int*) noexcept, const int* p) noexcept {
+    const int* (*g)(const int*) noexcept = f;
+    return g(p);
+}
+const int* probe(const int* p) noexcept { return invoke(&identity, p); }
+"#,
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "callback.cpp";
+contract const int32* Identity(const int32* p) { ensures result == p; }
+const int32* identity(const int32* p) { ensures result == p; }
+theorem identity_refines() { ensures Identity(&identity) by { unfold(Identity); solve(); } }
+const int32* invoke(const int32* (*f)(const int32*), const int32* p) {
+    requires Identity(f); ensures result == p;
+}
+const int32* probe(const int32* p) { ensures result == p; } by { apply(identity_refines()); step_until(function.exit); solve(); }
+"#;
+    check_return_call_sidecar(&project, &import, source);
+    for bad in [
+        source.replace("(*f)(const int32*)", "(*f)(int32*)"),
+        source.replace("const int32* (*f)", "int32* (*f)"),
+    ] {
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &bad).unwrap();
+        let accepted = read_click_project(&path, &bad)
+            .ok()
+            .is_some_and(|parsed| verify_program_prepared_project(&parsed, &import).is_ok());
+        assert!(!accepted, "callback signature lost const");
+    }
+}
+
+#[test]
+#[ignore = "nightly: native const pointer views do not freeze mutable aliases"]
+fn cpp_const_pointer_alias_reads_after_mutable_store_and_null_returns() {
+    // The original direct const-pointer read, previously an admission refusal.
+    let direct = Project::with_fixture(
+        "increment.cpp",
+        "increment",
+        "int increment(const int* value) noexcept {\n    return *value;\n}\n",
+    );
+    refresh_import(&direct.config()).unwrap();
+    let imported = load_import(&direct.config()).unwrap();
+    check_return_call_sidecar(
+        &direct,
+        &imported,
+        "verifying \"increment.cpp\"; int32 increment(const int32* value) { views value[0]; ensures result == value[0]; }",
+    );
+    let project = Project::with_fixture(
+        "alias.cpp",
+        "probe",
+        "int probe(int* p) noexcept { const int* q = p; *p = 7; return q[0]; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        "verifying \"alias.cpp\"; int32 probe(int32* p) { owns p[0]; ensures p[0] == 7; ensures result == 7; }",
+    );
+    for expression in ["nullptr", "0", "static_cast<const int*>(nullptr)"] {
+        let cpp = format!("const int* probe() noexcept {{ return {expression}; }}");
+        let project = Project::with_fixture("null.cpp", "probe", &cpp);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        check_return_call_sidecar(
+            &project,
+            &import,
+            "verifying \"null.cpp\"; const int32* probe() { ensures result == 0; }",
+        );
+    }
+}
+
+#[test]
+#[ignore = "nightly: const pointer source and artifact controls"]
+fn cpp_const_pointer_refuses_removal_stores_and_forged_qualification() {
+    for cpp in [
+        "int probe(const int* p) noexcept { *p = 1; return *p; }",
+        "int probe(const int* p) noexcept { int* q = const_cast<int*>(p); return *q; }",
+        "int probe(const volatile int* p) noexcept { return *p; }",
+        "unsigned char probe(const char* p) noexcept { return *p; }",
+    ] {
+        let project = Project::with_fixture("refused.cpp", "probe", cpp);
+        assert!(refresh_import(&project.config()).is_err(), "admitted {cpp}");
+    }
+    use sha2::{Digest, Sha256};
+    let rewrite = |project: &Project, artifact: serde_json::Value, lock: &serde_json::Value| {
+        let bytes = serde_json::to_vec_pretty(&artifact).unwrap();
+        let mut lock = lock.clone();
+        lock_source_mut(&mut lock)["artifact"]["sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_source_mut(&mut lock)["artifact"]["bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(project.lock(), serde_json::to_vec_pretty(&lock).unwrap()).unwrap();
+    };
+    let project = Project::with_fixture(
+        "qualify.cpp",
+        "probe",
+        "int probe(int* p) noexcept { const int* q = p; return *q; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    let original: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    for mutation in 0..3 {
+        let mut artifact = original.clone();
+        let cast = &mut artifact["functions"][0]["body"][0]["initializer"]["value"];
+        assert_eq!(cast["kind"], "pointer_qualification");
+        match mutation {
+            0 => cast["value_type"]["pointee"]["is_const"] = false.into(),
+            1 => cast["value_type"]["pointee"]["signed"] = false.into(),
+            2 => cast["value"]["value_type"]["pointee"]["is_const"] = true.into(),
+            _ => unreachable!(),
+        }
+        rewrite(&project, artifact, &lock);
+        assert!(
+            load_import(&project.config()).is_err(),
+            "accepted qualification mutation {mutation}"
+        );
+    }
+    let project = Project::with_fixture(
+        "store.cpp",
+        "probe",
+        "int probe(const int* p) noexcept { return *p; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    let mut artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    let returned = artifact["functions"][0]["body"][0].clone();
+    let mut value_type = returned["value"]["value_type"].clone();
+    value_type["is_const"] = false.into();
+    let store = serde_json::json!({"kind":"store", "pointer":returned["value"]["pointer"], "value":{"kind":"integer_literal", "value":"1", "value_type":value_type, "span":returned["span"]}, "span":returned["span"]});
+    artifact["functions"][0]["body"] = serde_json::json!([store, returned]);
+    rewrite(&project, artifact, &lock);
+    let error = load_import(&project.config()).unwrap_err();
+    assert!(error.contains("store pointer"), "{error}");
+}
+
+#[test]
+#[ignore = "nightly: const pointer constructor and getter composition"]
+fn cpp_const_pointer_constructed_view_getter_composes() {
+    let project = Project::with_fixture(
+        "view.cpp",
+        "probe",
+        r#"
+struct View {
+    const int* data;
+    explicit View(const int* p) noexcept : data(p) {}
+    int get() const noexcept { return *data; }
+};
+int probe(const int* p) noexcept { View view(p); return view.get(); }
+"#,
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "view.cpp";
+View::View(const int32* p) { owns this->data; ensures this->data == p; }
+int32 View::get() const { views this->data; views this->data[0]; ensures result == this->data[0]; }
+int32 probe(const int32* p) { views p[0]; ensures result == p[0]; }
+"#;
+    check_return_call_sidecar(&project, &import, source);
+}
+
+fn check_noexcept_replay_all(
+    project: &Project,
+    import: &click::languages::cpp::PreparedCppImport,
+    source: &str,
+) {
+    check_return_call_sidecar(project, import, source);
+    let parsed = read_click_project(&project.directory.join("arithmetic.click"), source).unwrap();
+    let labels = project_smart_tactic_source_sites(&parsed, &ProgramInputs::program(import))
+        .unwrap()
+        .into_iter()
+        .map(|site| site.claim_label)
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut rewritten = parsed.clone();
+    for label in labels {
+        let expanded = expand_project_claim_source_by_label(
+            &rewritten,
+            &ProgramInputs::program(import),
+            &label,
+        )
+        .unwrap();
+        let (session, _) =
+            ProgramVerificationSession::new_program_prepared_project(&rewritten, import).unwrap();
+        rewritten = parsed.with_entry_source(expanded.clone());
+        let position =
+            project_tactic_source_position(&rewritten, &ProgramInputs::program(import), &label, 0)
+                .unwrap();
+        session
+            .verify_at_project(&expanded, position.line, position.column)
+            .unwrap();
+    }
+    click::surface::without_implicit_solve(|| verify_program_prepared_project(&rewritten, import))
+        .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: checked scalar noexcept calls, guarded throws and replay"]
+fn cpp_noexcept_scalar_boundaries_require_no_escaping_exception() {
+    let project = Project::with_fixture(
+        "checked.cpp",
+        "probe",
+        r#"
+int direct(int x, bool fail) noexcept { if (fail) { throw 7; } return x; }
+int leaf(int x) noexcept { return x; }
+int fallible(int x, bool fail) { if (fail) { throw 7; } return leaf(x); }
+int guarded(int x, bool fail) noexcept { return fallible(x, fail); }
+int probe(int x, bool fail) { int value = direct(x, fail); return guarded(value, fail); }
+"#,
+    );
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("probe", "checked.cpp", true, "scalar_int32");
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "checked.cpp";
+int32 direct(int32 x, bool fail) { requires fail == false; ensures result == x; }
+int32 leaf(int32 x) { ensures result == x; }
+int32 fallible(int32 x, bool fail) throws int32 { ensures result == x; exceptional ensures fail == true; exceptional ensures exception == 7; }
+int32 guarded(int32 x, bool fail) { requires fail == false; ensures result == x; }
+int32 probe(int32 x, bool fail) { requires fail == false; ensures result == x; }
+"#;
+    check_noexcept_replay_all(&project, &import, source);
+    for bad in [
+        source.replace("requires fail == false;", ""),
+        source.replace(
+            "int32 guarded(int32 x, bool fail) {",
+            "int32 guarded(int32 x, bool fail) throws int32 {",
+        ),
+        source.replace(
+            "int32 leaf(int32 x) {",
+            "int32 leaf(int32 x) throws int32 {",
+        ),
+    ] {
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &bad).unwrap();
+        let accepted = read_click_project(&path, &bad)
+            .ok()
+            .is_some_and(|parsed| verify_program_prepared_project(&parsed, &import).is_ok());
+        assert!(
+            !accepted,
+            "accepted escaping exception or throwing noexcept contract"
+        );
+    }
+}
+
+#[test]
+#[ignore = "nightly: typed noexcept(true/false), guarded opaque exits and replay"]
+fn cpp_noexcept_typed_conditions_are_checked_at_the_boundary() {
+    let project = Project::with_fixture(
+        "typed.cpp",
+        "probe",
+        r#"
+struct Error { int code; };
+int leaf(int x) noexcept { return x; }
+int fallible(int x, bool fail) { if (fail) { throw Error{x}; } return leaf(x); }
+int guarded(int x, bool fail) noexcept(true) { return fallible(x, fail); }
+int probe(int x, bool fail) noexcept(false) { return guarded(x, fail); }
+"#,
+    );
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("probe", "typed.cpp", true, "typed");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert!(!import.export().functions[0].declared_noexcept);
+    assert!(
+        import
+            .export()
+            .reachable_functions
+            .iter()
+            .find(|function| function.name == "guarded")
+            .unwrap()
+            .declared_noexcept
+    );
+    let source = r#"verifying "typed.cpp";
+int32 leaf(int32 x) { ensures result == x; }
+int32 fallible(int32 x, bool fail) throws Error { ensures result == x; exceptional ensures fail == true; }
+int32 guarded(int32 x, bool fail) { requires fail == false; ensures result == x; } by {
+    step();
+    outcomes {
+        returned => { step(); step_until(function.exit); solve(); }
+        threw => { step(); have fail == true; have false by { contradiction(fail); }; solve(); }
+    }
+}
+int32 probe(int32 x, bool fail) throws Error { requires fail == false; ensures result == x; exceptional ensures true; }
+"#;
+    click::surface::with_proof_trace("guarded", || {
+        check_noexcept_replay_all(&project, &import, source)
+    });
+    for bad in [
+        source.replace("requires fail == false;", ""),
+        source.replace(
+            "int32 guarded(int32 x, bool fail) {",
+            "int32 guarded(int32 x, bool fail) throws Error {",
+        ),
+    ] {
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &bad).unwrap();
+        let accepted = read_click_project(&path, &bad)
+            .ok()
+            .is_some_and(|parsed| verify_program_prepared_project(&parsed, &import).is_ok());
+        assert!(
+            !accepted,
+            "accepted escaping opaque exception or noexcept(true) weakening"
+        );
+    }
+}
+
+#[test]
+#[ignore = "nightly: noexcept constructors/getters in opaque exception profiles"]
+fn cpp_noexcept_constructors_and_getters_compose_with_throwing_profiles() {
+    for profile in ["typed", "ios_failure"] {
+        let project = Project::with_fixture(
+            "view.cpp",
+            "probe",
+            r#"
+struct View {
+    int value;
+    explicit View(int x) noexcept : value(x) {}
+    int get() const noexcept { return value; }
+};
+int probe(int x) { View view(x); return view.get(); }
+"#,
+        );
+        project.write_exception_enabled_compilation_database();
+        project.write_config_with_exception_behavior("probe", "view.cpp", true, profile);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = r#"verifying "view.cpp";
+View::View(int32 x) { owns this->value; ensures this->value == x; }
+int32 View::get() const { views this->value; ensures result == this->value; }
+int32 probe(int32 x) { ensures result == x; }
+"#;
+        check_noexcept_replay_all(&project, &import, source);
+    }
+}
+
+#[test]
+#[ignore = "nightly: unconditional noexcept throws must fail verification"]
+fn cpp_noexcept_does_not_trust_the_source_promise() {
+    for (profile, cpp, payload) in [
+        (
+            "scalar_int32",
+            "void probe() noexcept { throw 7; }",
+            "int32",
+        ),
+        (
+            "typed",
+            "struct Error {}; void probe() noexcept { throw Error{}; }",
+            "Error",
+        ),
+    ] {
+        let project = Project::with_fixture("escape.cpp", "probe", cpp);
+        project.write_exception_enabled_compilation_database();
+        project.write_config_with_exception_behavior("probe", "escape.cpp", true, profile);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        for signature in [
+            "void probe()".to_string(),
+            format!("void probe() throws {payload}"),
+        ] {
+            let source = format!("verifying \"escape.cpp\"; {signature} {{ ensures true; }}");
+            let path = project.directory.join("escape.click");
+            fs::write(&path, &source).unwrap();
+            let parsed = read_click_project(&path, &source).unwrap();
+            assert!(
+                verify_program_prepared_project(&parsed, &import).is_err(),
+                "trusted noexcept promise or exposed its exception"
+            );
+        }
+    }
+}
+
+#[test]
+#[ignore = "nightly: noexcept catches internal scalar exceptions"]
+fn cpp_noexcept_scalar_catches_can_finish_normally() {
+    // Retain both frontiers: a throw at the end of the try body and a
+    // throw that abandons a remaining statement before entering the handler.
+    for (tail, normal) in [("", 3), ("result = 4;", 4)] {
+        let cpp = format!(
+            r#"
+int probe(bool fail) noexcept {{
+    int result = 3;
+    try {{ if (fail) {{ throw 7; }} {tail} }} catch (int error) {{ result = error; }}
+    return result;
+}}
+"#
+        );
+        let project = Project::with_fixture("caught.cpp", "probe", &cpp);
+        project.write_exception_enabled_compilation_database();
+        project.write_config_with_exception_behavior("probe", "caught.cpp", true, "scalar_int32");
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!(
+            r#"verifying "caught.cpp";
+int32 probe(bool fail) {{ ensures fail == false or result == 7; ensures fail == true or result == {normal}; }} by {{
+    if fail {{ step_until(function.exit); solve(); }} else {{ step_until(function.exit); solve(); }}
+}}
+"#
+        );
+        click::surface::with_proof_trace("probe", || {
+            check_noexcept_replay_all(&project, &import, &source)
+        });
+    }
+}
+
+#[test]
+#[ignore = "nightly: noexcept scalar cleanup, body proof and replay"]
+fn cpp_noexcept_scalar_cleanup_remains_checked_on_normal_paths() {
+    check_noexcept_cleanup("scalar_int32", "", "7");
+}
+
+#[test]
+#[ignore = "nightly: noexcept typed cleanup, body proof, replay and unwind refusals"]
+fn cpp_noexcept_typed_cleanup_remains_checked_on_normal_paths() {
+    check_noexcept_cleanup("typed", "struct Error {};", "Error{}");
+}
+
+fn check_noexcept_cleanup(profile: &str, declaration: &str, thrown: &str) {
+    let cpp = format!(
+        r#"
+    {declaration}
+    struct Guard {{
+        int* slot;
+        explicit Guard(int* p) noexcept : slot(p) {{}}
+        ~Guard() noexcept {{ *slot = 9; }}
+    }};
+    int fallible(bool fail) {{ if (fail) {{ throw {thrown}; }} return 4; }}
+    int probe(int* slot, bool fail) noexcept {{ Guard guard(slot); int result = fallible(fail); return result; }}
+    "#
+    );
+    let project = Project::with_fixture("cleanup.cpp", "probe", &cpp);
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("probe", "cleanup.cpp", true, profile);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = format!(
+        r#"verifying "cleanup.cpp";
+    Guard::Guard(int32* p) {{ owns this->slot; owns p[0]; ensures this->slot == p; ensures separate(memory(*this), memory(this->slot[0..1])); }}
+    Guard::~Guard() {{ requires separate(memory(*this), memory(this->slot[0..1])); views this->slot; owns this->slot[0]; ensures this->slot[0] == 9; }}
+    int32 fallible(bool fail) {{ requires fail == false; ensures result == 4; }}
+    int32 probe(int32* slot, bool fail) {{ requires fail == false; owns slot[0]; ensures slot[0] == 9; ensures result == 4; }}
+    "#
+    );
+    click::surface::with_proof_trace("probe", || {
+        check_noexcept_replay_all(&project, &import, &source)
+    });
+    for bad in [
+        source.replace("requires fail == false;", ""),
+        source.replace("ensures slot[0] == 9;", "ensures slot[0] == old(slot[0]);"),
+    ] {
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &bad).unwrap();
+        let parsed = read_click_project(&path, &bad).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+    if profile == "typed" {
+        for replacement in [
+            "int probe(int* slot, bool fail) { Guard guard(slot); int result = fallible(fail); return result; }",
+            "int probe(int* slot, bool fail) { { Guard guard(slot); fallible(fail); } return 4; }",
+        ] {
+            let changed = cpp.replace("int probe(int* slot, bool fail) noexcept { Guard guard(slot); int result = fallible(fail); return result; }", replacement);
+            let refused = Project::with_fixture("unwind.cpp", "probe", &changed);
+            refused.write_exception_enabled_compilation_database();
+            refused.write_config_with_exception_behavior("probe", "unwind.cpp", true, "typed");
+            let error = refresh_import(&refused.config()).unwrap_err();
+            assert!(
+                error.contains("class unwinding remains unsupported"),
+                "{error}"
             );
         }
     }

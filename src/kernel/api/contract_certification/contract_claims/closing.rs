@@ -80,6 +80,23 @@ impl ContractClosingContext {
         })
     }
 
+    pub(crate) fn open_claims(
+        &self,
+        claims: impl IntoIterator<
+            Item = (
+                FunctionContractClaimKey,
+                Option<FunctionContractClaimTarget>,
+            ),
+        >,
+        is_exceptional: bool,
+    ) -> OutcomeClaimGoals {
+        OutcomeClaimGoals::open_with_borrowed_resources(
+            claims,
+            is_exceptional,
+            self.function.resource_ensures(),
+        )
+    }
+
     pub(crate) fn open(
         self: &Arc<Self>,
         path_index: usize,
@@ -401,7 +418,10 @@ impl ContractExitObligations {
                         .unwrap_or(false);
                 let resources_closed = self.checked_transition.is_some()
                     || receipts_closed
-                        && matches!(specification.outcome(), FunctionOutcome::Return { .. })
+                        && matches!(
+                            specification.outcome(),
+                            FunctionOutcome::Return { .. } | FunctionOutcome::Throw { .. }
+                        )
                         && self.resource_receipts_jointly_available(
                             outcome,
                             claims,
@@ -413,7 +433,7 @@ impl ContractExitObligations {
                     outcome,
                     claims,
                     facts,
-                    !outcome.is_exceptional && !resources_closed,
+                    !resources_closed,
                 )?;
                 if !self.context.effect_claims.is_empty() {
                     proved.effects = Some(Arc::new(PreparedEffectGoals {

@@ -623,8 +623,8 @@ pub(in crate::surface::proof) fn statement_contains_call(statement: &ProgramStat
         ProgramStatement::Switch { cases, .. } => {
             cases.iter().any(|case| statement_contains_call(&case.body))
         }
-
-        ProgramStatement::Skip
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)
         | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::Break
