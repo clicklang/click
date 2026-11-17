@@ -1,0 +1,10 @@
+{
+  "units": {
+    "borrow": {
+      "language": "rust",
+      "sources": {
+        "borrow.rs": {}
+      }
+    }
+  }
+}

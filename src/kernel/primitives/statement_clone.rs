@@ -230,8 +230,6 @@ impl ProgramStatement {
                 pointer: pointer.clone(),
                 value: value.clone(),
             },
-            Self::EndScalarReference(value) => Self::EndScalarReference(value.clone()),
-            Self::ScalarReferenceScope(value) => Self::ScalarReferenceScope(value.clone()),
             Self::TypedStore {
                 pointer,
                 value,

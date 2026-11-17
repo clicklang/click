@@ -8636,10 +8636,8 @@ pub(super) fn statement_may_write_memory(
     statement: &ProgramStatement,
 ) -> bool {
     match statement {
-        ProgramStatement::ScalarReferenceScope(scope) => !scope.cleared_locals().is_empty(),
         ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }
@@ -8722,18 +8720,11 @@ pub(super) fn collect_loop_modified_locals(
     names: &mut BTreeSet<BindingName>,
 ) {
     match statement {
-        ProgramStatement::ScalarReferenceScope(scope) => names.extend(
-            scope
-                .cleared_locals()
-                .iter()
-                .map(|(name, _)| name.clone().into()),
-        ),
         ProgramStatement::EndAutomaticLifetimes { names: retired, .. } => {
             names.extend(retired.iter().cloned())
         }
         ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }
@@ -8975,8 +8966,6 @@ fn for_each_statement_expression<'a>(
         ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }
@@ -9086,8 +9075,6 @@ pub(crate) fn collect_address_taken_locals(
         ProgramStatement::EndAutomaticLifetimes { .. } => {}
         ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }

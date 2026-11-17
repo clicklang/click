@@ -5903,25 +5903,6 @@ impl ResourceContext {
         self
     }
 
-    /// Withhold one direct owned occurrence, retaining its identity in a private
-    /// scalar-reference reservation. Derived views of that occurrence expire.
-    pub(in crate::kernel) fn reserve_local_scalar_owner(
-        self,
-        occurrence: ResourceOccurrenceId,
-    ) -> Option<(Self, ReservedLocalScalarOwner)> {
-        let entry = *self.storage.entry_by_occurrence.get(&occurrence)?;
-        if self.storage.supported_by.contains_key(&entry)
-            || self.loan_dependency(occurrence).is_some()
-        {
-            return None;
-        }
-        let fact = self.owned_fact_for_occurrence(occurrence)?.clone();
-        let residual = self
-            .without_memory_views_supported_by_occurrence(occurrence)
-            .without_exact_representation_for_occurrence(occurrence)?;
-        Some((residual, ReservedLocalScalarOwner { fact, occurrence }))
-    }
-
     pub(crate) fn without_exact_representation_for_occurrence(
         mut self,
         occurrence: ResourceOccurrenceId,
@@ -7039,34 +7020,6 @@ impl ResourceContext {
             return Some(aligned);
         }
         None
-    }
-
-    /// Select only a unique direct whole scalar owner from the indexed access
-    /// candidates. Larger ranges and cached projections require another protocol.
-    pub(in crate::kernel) fn exact_scalar_owner_occurrence(
-        &self,
-        pointer: &Pointer,
-        bytes: u32,
-        assumptions: &PureFactContext,
-    ) -> Option<ResourceOccurrenceId> {
-        let entries = self.unique_write_access(pointer, bytes, assumptions)?;
-        let entry = entries.entry();
-        crate::instrumentation::record_deterministic_work(1);
-        let fact = self.fact(entry);
-        let range = fact.memory_own_range()?;
-        if self.storage.supported_by.contains_key(&entry)
-            || range.start_pointer() != *pointer
-            || range
-                .signed_constant_end()
-                .zip(range.signed_constant_start())
-                .and_then(|(end, start)| end.checked_sub(start))
-                .and_then(|count| count.checked_mul(i64::from(range.element_width())))
-                != Some(i64::from(bytes))
-            || fact.owned_quantity_term().and_then(|q| q.as_const()) != Some(1)
-        {
-            return None;
-        }
-        Some(self.occurrence(entry))
     }
 
     pub(in crate::kernel) fn memory_write_range(
@@ -13152,57 +13105,6 @@ fn symbolic_struct_coverage_uses_exact_element_indices() {
         &required(distant, 8u32.into()),
         &first
     ));
-}
-
-impl ReservedLocalScalarOwner {
-    pub(in crate::kernel) fn matches(
-        &self,
-        occurrence: ResourceOccurrenceId,
-        fact: &ResourceFact,
-    ) -> bool {
-        self.occurrence == occurrence && self.fact == *fact
-    }
-
-    /// Return the withheld occurrence, preserving call-receipt support identity.
-    pub(in crate::kernel) fn restore_into(
-        &self,
-        resources: ResourceContext,
-        assumptions: &PureFactContext,
-    ) -> Option<ResourceContext> {
-        if resources
-            .storage
-            .entry_by_occurrence
-            .contains_key(&self.occurrence)
-        {
-            return None;
-        }
-        let (resources, mut inserted) = resources
-            .try_compose_with_legacy_discovery_and_occurrences([self.fact.clone()], assumptions)
-            .ok()?;
-        let mut resources =
-            resources.without_exact_representation_for_occurrence(inserted.pop()?.1)?;
-        resources.insert_fact_with_support_occurrence_and_metadata_at(
-            self.fact.clone(),
-            None,
-            None,
-            None,
-            Some(self.occurrence),
-        );
-        Some(resources)
-    }
-
-    /// Materialize only the selected owner for an ordinary memory producer.
-    pub(in crate::kernel) fn resources(&self, assumptions: &PureFactContext) -> ResourceContext {
-        let mut resources = ResourceContext::new_with_equalities(assumptions);
-        resources.insert_fact_with_support_occurrence_and_metadata_at(
-            self.fact.clone(),
-            None,
-            None,
-            None,
-            Some(self.occurrence),
-        );
-        resources
-    }
 }
 
 #[cfg(test)]

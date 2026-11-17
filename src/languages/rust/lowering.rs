@@ -12,7 +12,6 @@ mod owned_parameter_regressions;
 mod ranges;
 #[cfg(test)]
 mod record_pointer_fields_tests;
-mod scalar_leases;
 mod shared_arrays;
 use crate::kernel::*;
 use crate::languages::c::syntax::LongRank;

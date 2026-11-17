@@ -1561,8 +1561,6 @@ pub(in crate::surface) fn kernel_loop_by_index<'a>(
             .find_map(|case| kernel_loop_by_index(&case.body, target, next_loop_index)),
         ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }

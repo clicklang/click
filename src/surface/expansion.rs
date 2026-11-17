@@ -2195,8 +2195,7 @@ fn returning_then_arms(statement: &ProgramStatement) -> BTreeSet<usize> {
             | ProgramStatement::Continue
             | ProgramStatement::Goto { .. }
             | ProgramStatement::Throw(_)
-            | ProgramStatement::Switch { .. }
-            | ProgramStatement::ScalarReferenceScope(_) => None,
+            | ProgramStatement::Switch { .. } => None,
             _ => Some(false),
         }
     }
