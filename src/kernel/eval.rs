@@ -35,21 +35,22 @@ pub(crate) use undefined_site::{
 /// refusing.
 fn volatile_access_fact(
     budget: &mut ExecutionBudget,
-    write: bool,
+    kind: VolatileAccessKind,
     pointer: Pointer,
     value_type: ProgramType,
     value: ProgramValue,
 ) -> ExecutionResult<ExecutionPureFact> {
-    let event_id = budget.allocate_kernel_variable()?.0;
-    let operation = if write { "write" } else { "read" };
-    let pointer_type = value_type.pointer_to().unwrap_or(ProgramType::UInt8Pointer);
-    Ok(ExecutionPureFact::certified(Proposition::Predicate {
-        name: format!("__click_volatile_{operation}_{event_id}"),
-        arguments: vec![
-            Term::ProgramValue(ProgramValue::typed_pointer(pointer, pointer_type)),
-            Term::ProgramValue(value),
-        ],
-    }))
+    crate::instrumentation::record_deterministic_work(1);
+    let id = VolatileEventId(budget.allocate_kernel_variable()?.0);
+    Ok(ExecutionPureFact::certified(Proposition::VolatileAccess(
+        std::sync::Arc::new(VolatileAccess {
+            id,
+            kind,
+            pointer,
+            value_type,
+            value,
+        }),
+    )))
 }
 
 #[cfg(test)]
@@ -162,3 +163,6 @@ pub(crate) use memory_loads::{
 pub(crate) use memory_loads::loaded_pointer_stored_block;
 
 pub(in crate::kernel) type ExecutionValuePath = ExpressionPath<ExecutionValue>;
+
+#[cfg(test)]
+mod volatile_access_tests;
