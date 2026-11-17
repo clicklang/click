@@ -4,6 +4,7 @@ apply_close_invariants_body
 apply_execution_statement_step
 apply_execution_steps_within
 apply_have_step
+apply_normalize_using_facts
 apply_selected_theorem_application
 apply_step
 apply_step_at
