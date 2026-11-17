@@ -7407,6 +7407,14 @@ pub struct RepresentationCopyEffect {
     pub bytes_argument: usize,
 }
 
+/// An exact byte span of a checked representation copy whose source may
+/// contain unwritten bytes.
+pub(super) struct RepresentationCopyRange {
+    pub(super) destination: Address,
+    pub(super) source: Address,
+    pub(super) bytes: u32,
+}
+
 /// A contract supplied for a C function whose implementation is outside the
 /// verified source set. External rules are intentionally distinct from
 /// [`VerifiedFunctionRule`]: they are knowns accepted at call sites,

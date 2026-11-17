@@ -99,18 +99,44 @@ pub(crate) fn memory_range_is_initialized(
     value_runs: Option<&[(u32, u32)]>,
     assumptions: &PureFactContext,
 ) -> bool {
+    check_range_initialization(memory, range, value_runs, assumptions, false)
+}
+
+/// A copy can turn previously written bytes into unwritten bytes. Before
+/// using the ordinary all-initialized call rule, check for unwritten-object
+/// markers anywhere the copied span can reach, not just at its opening byte.
+pub(super) fn representation_copy_source_is_initialized(
+    memory: &Memory,
+    range: &MemoryRange,
+    assumptions: &PureFactContext,
+) -> bool {
+    check_range_initialization(memory, range, None, assumptions, true)
+}
+
+fn check_range_initialization(
+    memory: &Memory,
+    range: &MemoryRange,
+    value_runs: Option<&[(u32, u32)]>,
+    assumptions: &PureFactContext,
+    check_whole_span: bool,
+) -> bool {
     let start = range.start_pointer();
-    let tracked = (start.base.is_local_block() && memory.has_block(&start.base))
-        || memory.may_read_uninitialized_object(&start, 1)
-        || memory.is_uninitialized_heap_address(&start, 1, assumptions);
-    if !tracked {
-        return true;
-    }
     let bytes = if range.wide_bounds().is_some() {
         None
     } else {
         range.byte_footprint().1.as_const()
     };
+    let tracked_width = if check_whole_span {
+        bytes.unwrap_or(u32::MAX)
+    } else {
+        1
+    };
+    let tracked = (start.base.is_local_block() && memory.has_block(&start.base))
+        || memory.may_read_uninitialized_object(&start, tracked_width)
+        || memory.is_uninitialized_heap_address(&start, tracked_width, assumptions);
+    if !tracked {
+        return true;
+    }
     let width = range.element_width();
     match (bytes, value_runs) {
         (Some(0), _) => true,
