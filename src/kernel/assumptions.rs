@@ -1290,6 +1290,7 @@ fn assumptions_memo_id(assumptions: &PureFactContext) -> u64 {
         key.atomic_connection_facts = crate::persistent::PersistentMap::default();
         key.atomic_ground_facts = crate::kernel::fact_collections::ScanSet::default();
         key.atomic_quantified_facts = crate::kernel::fact_collections::ScanSet::default();
+        key.explicit_memory_boundaries = Default::default();
         key.universals_by_conclusion = crate::persistent::PersistentMap::default();
         key.universal_equality_sources = Default::default();
         key.shared_condition_variables = Default::default();
@@ -3780,7 +3781,20 @@ impl PureFactContext {
         } else {
             ConditionTerm::pointer_equal(right.clone(), left.clone())
         };
-        let source = self.adjust_pointer_address_source(key, condition);
+        let source = self.adjust_pointer_address_source(key.clone(), condition);
+        if left.base.is_local_block() || right.base.is_local_block() {
+            self.equality_graph.admitted.local_pointer_aliases = if source.is_some() {
+                self.equality_graph
+                    .admitted
+                    .local_pointer_aliases
+                    .with_value(key)
+            } else {
+                self.equality_graph
+                    .admitted
+                    .local_pointer_aliases
+                    .without_value(&key)
+            };
+        }
         for (key, alias) in [(left, right), (right, left)] {
             let aliases = self
                 .equality_graph
@@ -4741,6 +4755,7 @@ impl PureFactContext {
             crate::persistent::PersistentMap::default();
         self.equality_graph.admitted.address_base_aliases =
             crate::persistent::PersistentMap::default();
+        self.equality_graph.admitted.local_pointer_aliases = Default::default();
         self.equality_graph
             .admitted
             .pointer_alias_endpoints_by_object = crate::persistent::PersistentMap::default();
@@ -5460,6 +5475,7 @@ impl PureFactContext {
         self.memory_loadable_facts = crate::persistent::PersistentMap::default();
         self.memory_loadable_object_facts = crate::persistent::PersistentMap::default();
         self.memory_loadable_shape_facts = crate::persistent::PersistentMap::default();
+        self.explicit_memory_boundaries = Default::default();
         self.memory_separation_facts = crate::persistent::PersistentMap::default();
         self.resource_contains_facts = crate::persistent::PersistentMap::default();
         self.memory_effect_facts = crate::persistent::PersistentMap::default();
@@ -6388,6 +6404,7 @@ impl PureFactContext {
     /// facts with at least one non-memory side, which the block-pair index
     /// cannot serve but whose containment may entail memory separation.
     fn adjust_nonmemory_separation_fact(&mut self, proposition: &Proposition) {
+        self.index_explicit_memory_boundary(proposition);
         let Proposition::ResourceSeparate { left, right } = proposition else {
             return;
         };

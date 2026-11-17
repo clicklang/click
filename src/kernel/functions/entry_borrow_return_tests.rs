@@ -137,15 +137,12 @@ fn run_mixed_call(
         .with_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 8))
         .with_resource_context(ResourceContext::new().unchecked_with_fact(held));
     let function = mixed_memory_contract(composite, produced_first);
+    // This deliberately inconsistent interface has no body proof.
     let environment =
-        ExecutionEnvironment::new().with_verified_function_rule(VerifiedFunctionRule {
-            descent_completion: None,
-            pointer_result: None,
+        ExecutionEnvironment::new().with_external_function_rule(ExternalFunctionRule {
             function: function.clone(),
-            concrete_loop_exits: None,
-            loop_semantics: LoopSemantics::Verify,
-            checked_callees: None,
-            applied_tactics: Default::default(),
+            scoped_unselected: false,
+            representation_copy: None,
         });
     let output = if overlap {
         pointer.clone()

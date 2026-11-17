@@ -2177,26 +2177,10 @@ fn program_function_contract_entry_facts(
             obligation.proposition().clone(),
         );
     }
-    let observable_facts = entry_resources
-        .observable_facts(&assumptions)
-        .map_err(|error| {
-            let detail = match error {
-                ResourceContextValidityError::UnsupportedOwnershipBoundary => {
-                    "ownership separation lacks indexed evidence"
-                }
-                ResourceContextValidityError::DuplicateOwnedResourceFact(_) => {
-                    "the same resource is owned twice"
-                }
-                ResourceContextValidityError::InvalidExclusiveAccess(_) => {
-                    "a field-bearing resource instance or mutex guard is not owned exclusively"
-                }
-                ResourceContextValidityError::OverlappingOwnedMemoryResources { .. } => {
-                    "two owned memory resources overlap"
-                }
-            };
-            format!("the contract entry resources are not a valid context: {detail}")
-        })?;
-    for proposition in observable_facts {
+    // Entry lowering and body construction already established this declared
+    // partition. Observation retains it without repeating ownership admission.
+    let partition_facts = entry_resources.observable_facts_assuming_valid(&assumptions);
+    for proposition in partition_facts {
         assumptions = entry_facts.assume(
             assumptions,
             ContractEntryFactOrigin::Observable,

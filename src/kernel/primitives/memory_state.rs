@@ -8806,7 +8806,8 @@ impl ExecutionState {
             .filter(|child| !projected.satisfies_fact(child, assumptions))
             .collect::<Vec<_>>();
         let projected = projected
-            .try_compose_with_facts_delaying_normalization(missing, assumptions)
+            .install_established_partition(missing, assumptions)
+            .map(|(context, _)| context)
             .map_err(|error| format!("control body ownership refused: {error}"))?;
         Ok((projected, count))
     }
@@ -9613,7 +9614,8 @@ impl ExecutionState {
                 .without_fact_incrementally(selected, assumptions)
                 .ok_or_else(|| format!("Requires owns {name}(p)"))?;
             resources
-                .try_compose_with_facts_delaying_normalization(body.iter().cloned(), assumptions)
+                .install_established_partition(body.iter().cloned(), assumptions)
+                .map(|(context, _)| context)
                 .map_err(|error| format!("member body ownership refused: {error}"))?
         };
         let exchange = if definition.has_fixed_exclusive_memory() {

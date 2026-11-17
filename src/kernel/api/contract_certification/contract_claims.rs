@@ -1308,11 +1308,7 @@ fn prepare_function_claim_path(
         &entry_state,
         &assumptions,
     );
-    let Ok(resource_facts) = entry_resources.observable_facts(&assumptions) else {
-        return Err("the entry resource context is not observable"
-            .to_string()
-            .into());
-    };
+    let resource_facts = entry_resources.observable_facts_assuming_valid(&assumptions);
     entry_state = entry_state.with_resource_context(entry_resources.clone());
     let facts = definition_facts
         .into_iter()
@@ -1608,11 +1604,7 @@ fn prepare_closing_path(
         &claim_exit_state,
         &assumptions,
     );
-    let Ok(post_resource_facts) = post_resources.observable_facts(&assumptions) else {
-        return Err("the exit resource context is not observable"
-            .to_string()
-            .into());
-    };
+    let post_resource_facts = post_resources.observable_facts_assuming_valid(&assumptions);
     let mut assumptions = assumptions_with_propositions(&assumptions, &post_resource_facts);
     let mut post_state = entry_state.clone().with_memory(exit_memory);
     post_state = post_state.with_resource_context(post_resources.clone());

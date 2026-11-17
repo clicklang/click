@@ -1635,12 +1635,10 @@ permitted stores or a transition that drops the fact:
   owners. A disjoint envelope proves separation; an intersecting envelope is
   unsupported unless both endpoints are exact. Missing bounds stay bounded
   misses, without following order chains. Other
-  symbolic boundary checks refuse when indexed evidence is insufficient.
-  A singleton held owner at the same written base and element width also
-  permits direct signed endpoint comparisons, including symbolic adjacency.
-  The caller checks each new piece only against retained owners. It never installs a temporary
-  combined context, revalidates the unchanged frame or the constructed body's
-  internal partition, or scan the frame again to name a conflict. Exclusive
+  symbolic boundary checks use the maintained summaries or retain the exact
+  missing whole-frame separation premise. They never resume discovery, install
+  a temporary combined context, revalidate the unchanged frame or the
+  constructed body's internal partition, or scan the frame to name a conflict. Exclusive
   boundaries select the retained occurrence by resource or instance identity.
   Projections, packaged views and expansion caches reuse the same construction. Flat memory
   and token returns project directly, without generic composite expansion.
@@ -1838,12 +1836,36 @@ New references, changed counts and stale records fail the build. This is a
 source dependency inventory, not a list of bugs or a complexity proof. A
 compatibility wrapper can complete entirely in its fast path.
 
-The automatic call-return inventory now distinguishes these boundaries:
+The incremental ownership-admission routes now use
+`try_compose_checked_ownership_and_occurrences` and `returned_boundary_conflict`.
+Raw output clauses, composite child construction, pending descriptions,
+produced composite frontiers, stable-view recovery, worker completion and
+loop-frame exchange do not resume ownership discovery on unsupported geometry.
+Selected instance unfolds retain each emitted child's custody root. Loop-frame
+restoration reuses that rule only when the selected root belongs to the loop's
+original owned body. Removal withdraws the child's receipt; arbitrary additions
+still require their boundary with the withheld frame. Emitted occurrences survive
+restoration, and nested restores retain the same provenance.
+Constructed groups retain their internal partition; admission checks only new
+relationships to the destination frame. An indexed conflict refuses; a miss
+retains a `ResourceSeparate` proposition naming the new range and actual
+raw-memory frame. Function-call obligations expose that proposition for an
+explicit proof. Existing loop/thread refusal wrappers may report the broader
+exchange failure instead.
+
+The bounded symbolic checker uses producer-published address and interval
+summaries, including at most one selected symbolic neighbor. It checks direct
+bounds for ordinary partitions such as `p[0..n]` beside `p[n..16]` with
+`1 <= n <= 8`. Larger symbolic partitions can retain an explicit whole-frame
+separation premise. Its memory leaves are indexed at fact admission; lookup
+uses the selected range and canonical identity of the current frame, so a
+proof about an earlier subset cannot authorize a new held range. The cached
+frame footprint is prepared by ownership deltas, not by queries.
 
 | Route | Current status |
 | --- | --- |
 | `EvaluatedReturnResources::admit_clause` | Carries checked entry-borrow and consumed-input selections from the checked call plan, including individually consumed finite input-frontier pieces, and checks them only against newly described outputs. Other outputs use bounded indexed admission. Unsupported geometry refuses; no discovery fallback. |
-| `construct_composite_resource_body` | Selected returned heads retain their certified internal body partition and child identities. Bounded admission detects supported internal conflicts; only boundaries with other returned groups need new separation checks. The unselected expansion path remains a generic full-composition consumer. |
+| `construct_composite_resource_body` | Held heads retain their selected source, frame and emitted child identities through body construction. Raw descriptions establish their missing boundary; generic composition admits only their new delta. Neither route revalidates the retained frame. |
 | `PreparedReturnComposition::finish` | Consumes an opaque `ReturnedOwnershipPartition`. The producer's partition, including restored borrowed/consumed/fresh outputs, is retained; only pending outputs versus the original retained frame are checked. Returned pieces are not compared with each other again. |
 | `produced_composite_frontier_conflict` | Constructed frontiers use bounded cross-boundary checks. Proven conflicts retain the selected held fact; unsupported geometry refuses. Family dispatch supplies every finite body; this consumer never expands a head. |
 | `recover_candidate_stable_view_resources` | Consumes checked escrow restoration receipts carrying selected occurrences and holds. Restores the entry partition directly; checks only new return ownership against protected escrows and newly released inherited roots. No legacy ownership admission. |
@@ -1876,85 +1898,141 @@ input custody. Returned views retain their producer's child identities; there
 is no description-only view receipt. Source guards forbid body production inside
 projection and boundary consumers.
 
-The producer separates selected input ownership from newly described outputs.
-The checked entry projection issues a finite input frontier for read-only tactics
-as well as mutating calls; recording custody does not add write effects. Each
-returned leaf consumes one indexed supplier or residual piece, so static clause
-recipes and dynamically selected pieces cannot reuse the same input bytes.
-Matching custody uses spatial footprints; returned carrier metadata stays on the
-emitted output. Ordinary coordinate ensures are lowered before selection and
-reused by provisional postcondition processing. Ledger observations remain after
-the corresponding ledger transitions.
+A direct `VerifiedFunctionRule` now travels through call preparation as typed
+proof evidence, separately from concrete storage identity and description-only
+interfaces. Its Hoare frame rule constructs the joint returned partition beside
+the checked input reservation's caller frame. Arbitrary-shaped owned outputs,
+including post-state pointer fields without an equality postcondition, need no
+second geometry proof in this path. Normal and exceptional returns retain the
+same rule, and entry escrow recovery uses the resulting partition token.
+Targeted verification and expansion use the same Hoare frame rule under a
+scoped source-contract hypothesis. That capability remains conditional, is
+retired with the verification selection, and never certifies the unselected
+body.
+Named and callback application retains an `EstablishedFunctionContract`: the
+instantiated interface plus the actual contract predicate premise selected for
+that function value. That premise supplies the conditional Hoare frame rule
+through selected direct calls, indirect calls and entry-escrow recovery. Bare
+nominal declarations and discarded template bodies supply no authority, and
+this capability never becomes concrete body-safety evidence. Missing or
+inapplicable callback facts still refuse before application.
+External descriptions and raw return APIs retain bounded admission and explicit
+missing-boundary goals.
+`verified_outputs_retain_the_callers_frame.md` and its expansion/replay test
+contrast a verified callee with an uncertified external-output control.
+`named_contract_outputs_retain_the_callers_frame.md` covers opaque pointer
+outputs through both selected direct and abstract callback application;
+expansion and replay retain the established contract premise.
 
-Distinct selected input occurrences already belong to the call's
-checked input partition, even when their pointer descriptions have symbolic
-coordinates or growing alias classes. A selected member checks only its
-boundary with the new-description subset; a new description checks against the
-whole emitted prefix. Neither order can silently admit an overlap. These
-selections carry ownership identity, not permission inferred from matching
-pointer spellings. Unsupported input frontiers and newly described relationships
-keep their bounded-admission route.
+Contract recipes retain immutable memory leaves from consumed heads as well as
+flat consumed cells. Fixed byte spans can partition one consumed object into
+disjoint field owners; the compiler withdraws each byte from its source interval
+once, preserving bound formats and refusing duplicate fragments. Each selected
+symbolic leaf is used once across all output paths;
+postcondition equalities may connect a returned pointer field to an immutable
+parameter. Model reads do not become parameter-invariant leaves. Typed parameter
+identities and their unambiguous lexical aliases share the declared binder;
+unrelated typed binders are never identified by spelling. Borrowed instances
+reevaluate their model fields while retaining their checked entry custody.
 
-Escrow recovery retains the selected backing occurrence rather than allocating a
-replacement from its description. Adapter materialization allocates its restored
-child occurrences once and carries them with their parent source. Hold bindings
-are keyed by the backing occurrence. Both recovery stages consume those receipts; suspended recovery selects new owned occurrences through a persistent difference with its captured frame;
-neither rechecks separation among the old frame members. The return producer
-records a boundary delta by actual output occurrence. Newly described owners and
-constructed body frontiers are checked once against
-the finite frontiers retained by the loan producer, including older roots released
-when consumed holds close. Opaque frontier members cause a bounded refusal when
-new ownership could intersect them. Removed protocol outputs do not participate.
-The body's joint-custody proof certifies its internal output partition; recovery
-still checks its boundary with withheld escrow. Duplicate live restoration occurrences refuse rather than silently deduplicating equal
-resource descriptions. Ledger liveness and transition checks remain separate.
+Entry escrow recovery carries the return producer's partition token. Worker
+completion additionally requires the parent ownership revision captured by the
+thread ledger; public ownership changes or compiler-private registry changes
+invalidate that receipt. Private scalar bookkeeping preserves it. Missing
+receipts use ordinary checked admission. Allocation-class counters distinguish
+callee automatic storage from external argument objects without visiting owners.
 
-Executed-body return construction consumes each selected output from one persistent
-live-body remainder, establishing the output partition directly. Installation and
-recovery do not repeat that custody consumption or compare its returned siblings
-again. Summary construction keeps each returned head's certified body separate
-from other output groups; finalization preserves composite-specific refusals for
-conflicts with returned flat clauses.
-The caller boundary still checks new ownership against its retained frame.
-Entry-state borrowed clauses carry the checked input occurrence even when their
-surface address is a field expression or their endpoints are symbolic.
+The old `PendingOwnershipAdmission` resume state and
+`legacy_memory_boundary_conflict` are deleted. Their retired target names stay
+in `ownership_fallback_targets.txt` so new references are rejected. Runtime
+probes in `fallback_inventory_tests.rs` now require successful raw-output and
+pending-return checks under `FastOperationScope`; the ownership-admission
+scaling tests grow owners, aliases, explicit frames and removed-owner history.
 
-`UnsupportedOwnershipBoundary` means missing indexed separation evidence,
-not established overlap. No incomplete successor is published. The supported
-fragment includes maintained constant intervals, direct symbolic bounds that
-establish a separating envelope, and singleton exact-base/width intervals
-whose signed endpoints have direct separation evidence. A singleton can also use
-its two explicit ranges' canonical byte coordinates, without preparing the ambient
-frame. It does not enumerate
-alias spellings, symbolic owners, or order chains to recover a miss. Cold physical
-frames use maintained block coverage and the query's checked storage anchor.
-A singleton can register the two explicit ranges' checked read definitions and
-endpoints locally: complete address-class misses require no ambient preparation.
-A positive interval witness can report a conflict even beside unsupported owners.
-Hidden-local coverage is invalidated when its addressability classification changes.
+Return-family dispatch retains finite bodies or deliberate opaque heads as
+specified above. Unsupported shapes refuse at their classifier; projection and
+boundary consumers never reconstruct a missing body.
 
-Regressions in
-`src/kernel/functions/mixed_return_resources/fallback_inventory_tests.rs`
-cover a symbolic adjacent output partition carried to the caller, mixed
-borrowed/produced outputs, retained occurrence identities, bounded refusal
-without successor publication, and symbolic child construction. Source guards
-forbid restoring legacy ownership admission at the migrated operations. Existing
-and added deterministic growth tests cover related/unrelated owners, aliases,
-endpoint facts, output size, and unsupported boundaries.
+The wider dependency perimeter must stay separate from that call-return
+checklist. `ExecutionState::local_scalar_access_resources` and
+`ReservedLocalScalarOwner::restore_into` admit withheld owners through
+the checked incremental API. That API also serves exchange
+restoration, certified groups, stable-view recovery, function resource
+context evaluation, instance rewriting, contract refinement, iterated steps,
+loop guards, proof-interface joins and thread joins. The manifest names every
+caller and reference count. `try_compose_with_fact(s)` and delaying
+normalization variants now use the same bounded incremental admission. The
+retained context is a producer-established partition; explicit `validity_error`
+remains available for validating raw assembled input. Composition does not
+revalidate it. Normalized composition coalesces only changed occurrences and
+bounded nominees from existing exact-resource/shape and constant-neighbor
+indexes, plus a persistent index for symbolic written endpoints. Each
+successful merge consumes a changed occurrence; a missed or loan-bound nominee
+keeps the split representation. It never walks aliases, related resource buckets,
+projection caches or the unchanged frame to find another merge. Untouched
+occurrences, supported projections and loan dependencies keep their identities.
 
-The wider perimeter remains separate. The generic incremental facade serves exchange restoration,
-certified groups, function resource context evaluation,
-instance rewriting, contract refinement, iterated steps, loop guards,
-proof-interface joins and thread joins. The manifest names each caller and
-count. Older `try_compose_with_fact(s)` and delaying-normalization variants
-still reach `validity_error` over the combined context; some also call full
-normalization. Generic expansion also serves contract entry/certification,
-folding and observations. Finishing automatic returns alone does not justify
-deleting APIs these operations still use.
+Generic held-composite expansion removes one actual parent occurrence and
+constructs `HeldCompositeBody`, carrying that source, its residual frame and
+its explicit body. Installation uses the held definition's separating-body
+rule. It does not recheck body geometry or search the frame for equal children.
+Viewed children receive only that parent's exact binding on their fresh emitted
+occurrences. Selected return construction preserves raw clause order and
+multiplicity. Optional normalization visits only the explicit body. Arbitrary
+return descriptions still establish their cross-head and caller boundaries;
+they do not acquire the held parent's frame rule merely from a role marker.
+Generic expansion also serves contract entry/certification, folding and
+observations, whose remaining caller-specific work stays source pinned. Footprint projection
+coalesces the explicit ranges derived from its selected head without admitting
+them again as new ownership; conservative overlapping arm unions remain unions.
+Store framing similarly retains the selected held instance bodies' partition.
+Returned-call recovery collects checked escrow receipts without rebuilding the
+captured entry successor, checks the required output/escrow boundary, then
+installs each receipt directly into the actual return context once.
 
-The remaining legacy admission wrapper first calls `admit_without_discovery`;
-only `Unsupported` resumes `PendingOwnershipAdmission::resume_legacy_discovery`.
-That path can call `legacy_memory_boundary_conflict`, enumerate ownership
-candidates and reason along aliases. It remains pinned for unmigrated callers.
-The source/runtime guards do not observe arbitrary unmetered loops: each
-migration still needs an operation audit and deterministic scaling checks.
+Surface `unfold` constructs its body delta once before publishing definition
+facts. It retains that successor and its emitted child IDs through publication;
+it neither validates the whole projected context nor normalizes ambient buckets.
+Known directly indexed collisions still refuse before a body fact can conceal
+them. Fresh viewed children receive only the selected parent's binding; equal
+ambient children keep theirs. A body already exposed by the same loan retains
+its existing child occurrences instead of emitting duplicate views. This reuse
+uses bounded exact-child nominees and checks their retained loan authority.
+Control scratch reads and guarded-return entry reads also replace their selected
+held wrapper with its declared children; they do not re-admit those children
+against the caller frame or absorb equal ambient owners.
+Population/control projection, selected callee
+ownership reservations, loop declarations and loop-frame restoration use their
+held or declared partition rather than raw caller-boundary admission. Their
+actual reservation/consumption checks remain responsible for custody. Pointer
+comparison builds its separation witness from the two distinct held flat
+members selected from one resource context. Partial returns spend the input
+frontier's actual fragments: distinct slices may share an original owner ID,
+but the same bytes cannot supply two outputs.
+
+Function completion retains the checked body's resource storage, including
+split quantities, supported projections, loan dependencies and occurrence IDs.
+Ordinary returns, exceptional returns and void fallthrough do not call
+`validity_error` or normalize the entire retained context. The loan sidecar's
+shared-root consistency check is constant work; selected output consumption,
+loan recovery and declared resource effects keep their own construction rules.
+
+Entry/exit certification and definition-fact checking use
+`observable_facts_assuming_valid` on their producer-established partitions.
+They expose the compact observable composition without repeating ownership
+admission. The raw `observable_facts` API still validates an assembled description
+before publishing its facts. It is source-pinned as a raw boundary, so a new
+fast-part caller cannot silently reintroduce whole-context validation.
+The `exit_partition_tests` regressions preserve split occurrences across normal,
+exceptional and fallthrough completion, reject overlapping raw observations,
+and grow owners, related ranges, tokens, aliases and private slots at 4/16/64.
+Existing observable-projection tests cover private filtering and invalidation.
+
+The source tests in `tests/search_boundary.rs` pin the perimeter, including
+new/hidden references and duplicate caller edges. Runtime probes exercise
+raw-output admission and pending-return admission; the broader legacy routes
+remain source pinned. Existing migrated fragment tests provide their own no-discovery/scaling evidence. The guard
+observes registered discovery calls, not arbitrary loops: each future migration
+still needs an operation audit and deterministic scaling checks.
+
+Surface observation retains raw-context validation: entry declarations can still expose contradictory instance bodies. That remaining raw boundary is source-inventoried; only producer-established observations may bypass it. Returned composite requirements consume every written body occurrence, before normalization can collapse duplicate memory clauses.

@@ -1608,13 +1608,11 @@ impl CheckedResourceRewrite {
                     .without_fact_incrementally(selected, assumptions)
                     .ok_or("authority control cannot consume its folded resource")?
             };
-            base.try_compose_with_facts_delaying_normalization(
-                children.iter().cloned(),
-                assumptions,
-            )
-            .map_err(|error| {
-                format!("authority control body overlaps existing ownership: {error}")
-            })?
+            base.install_established_partition(children.iter().cloned(), assumptions)
+                .map(|(context, _)| context)
+                .map_err(|error| {
+                    format!("authority control body overlaps existing ownership: {error}")
+                })?
         } else {
             let mut base = before_state.resources().clone();
             for child in &children {
@@ -1625,13 +1623,11 @@ impl CheckedResourceRewrite {
             if before_folded {
                 base
             } else {
-                base.try_compose_with_facts_delaying_normalization(
-                    std::iter::once(selected.clone()),
-                    assumptions,
-                )
-                .map_err(|error| {
-                    format!("authority control duplicates its folded resource: {error}")
-                })?
+                base.install_established_partition(std::iter::once(selected.clone()), assumptions)
+                    .map(|(context, _)| context)
+                    .map_err(|error| {
+                        format!("authority control duplicates its folded resource: {error}")
+                    })?
             }
         };
         if !after_state
@@ -1841,10 +1837,8 @@ impl CheckedResourceRewrite {
                 .clone()
                 .without_fact_incrementally(selected, assumptions)
                 .ok_or("transfer wrapper is missing its folded resource")?
-                .try_compose_with_facts_delaying_normalization(
-                    expanded.facts().iter().cloned(),
-                    assumptions,
-                )
+                .install_established_partition(expanded.facts().iter().cloned(), assumptions)
+                .map(|(context, _)| context)
                 .map_err(|error| format!("transfer wrapper overlaps existing children: {error}"))?
         } else {
             let mut resources = before_state.resources().clone();
@@ -1854,10 +1848,8 @@ impl CheckedResourceRewrite {
                     .ok_or("transfer wrapper is missing an existing child")?;
             }
             resources
-                .try_compose_with_facts_delaying_normalization(
-                    std::iter::once(selected.clone()),
-                    assumptions,
-                )
+                .install_established_partition(std::iter::once(selected.clone()), assumptions)
+                .map(|(context, _)| context)
                 .map_err(|error| {
                     format!("transfer wrapper duplicates its folded resource: {error}")
                 })?
@@ -2370,10 +2362,8 @@ impl CheckedResourceRewrite {
                     before_state
                         .resources()
                         .clone()
-                        .try_compose_with_facts_delaying_normalization(
-                            children.iter().cloned(),
-                            assumptions,
-                        )
+                        .install_established_partition(children.iter().cloned(), assumptions)
+                        .map(|(context, _)| context)
                         .map_err(|error| {
                             format!("member body access duplicates private ownership: {error}")
                         })?
@@ -4325,11 +4315,9 @@ fn interface_join_resources(
         .cloned()
         .collect::<Vec<_>>();
     let expected_resources = common_resources
-        .try_compose_into_valid_context_delaying_normalization(
-            additions.iter().cloned(),
-            successor_facts.assumptions(),
-        )
+        .install_established_partition(additions.iter().cloned(), successor_facts.assumptions())
         .map_err(|_| "the interface resources do not form a valid successor context")?
+        .0
         .normalized_around_facts(&additions, successor_facts.assumptions());
     Ok(InterfaceJoinResources {
         arm_interface_resources,
@@ -11420,7 +11408,8 @@ impl ExecutionProofCore {
         let resources = after_state
             .resources()
             .clone()
-            .try_compose_with_facts_delaying_normalization(frame, before_facts.assumptions())
+            .install_established_partition(frame, before_facts.assumptions())
+            .map(|(context, _)| context)
             .map_err(|error| {
                 format!("return resource exchange changed its retained frame: {error}")
             })?;

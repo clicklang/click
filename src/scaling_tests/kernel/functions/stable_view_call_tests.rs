@@ -378,7 +378,12 @@ fn check_produced_call_return_lowering(axis: &str, overlap: bool) {
             program_skip(),
         )
         .with_resource_summary(vec![], vec![output]);
-        let environment = environment(&function);
+        let environment =
+            ExecutionEnvironment::new().with_external_function_rule(ExternalFunctionRule {
+                function: function.clone(),
+                scoped_unselected: false,
+                representation_copy: None,
+            });
         let arguments = [crate::kernel::program_expression::pointer_value(
             selected.clone(),
         )];

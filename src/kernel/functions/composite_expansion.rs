@@ -156,9 +156,13 @@ pub(super) fn expand_all_composite_resource_facts_and_propositions_with_state(
             let (children, _) = state
                 .checked_authority_wrapper_body(&composite, definition, assumptions)
                 .ok()?;
-            let child_context = ResourceContext::new()
-                .try_compose_with_facts(children.clone(), assumptions)
-                .ok()?;
+            let child_context = ResourceContext::new_with_equalities(assumptions)
+                .install_established_partition(
+                    coalesce_written_resource_descriptions(children.clone(), assumptions),
+                    assumptions,
+                )
+                .ok()?
+                .0;
             let mut relations = vec![Proposition::ResourceComposition(child_context)];
             for child in children {
                 if let Some(owned) = child.owned_resource() {
@@ -335,11 +339,9 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
                 {
                     population_state.resources = population_state
                         .resources
-                        .try_compose_with_facts_delaying_normalization(
-                            [body_resource],
-                            &evaluation_assumptions,
-                        )
-                        .ok()?;
+                        .install_established_partition([body_resource], &evaluation_assumptions)
+                        .ok()?
+                        .0;
                 }
             }
         }
@@ -504,9 +506,13 @@ pub(in crate::kernel) fn evaluate_composite_resource_relation_propositions(
         // separation. Publishing one carrier lets certification answer
         // member-pair queries on demand instead of materializing O(N^2)
         // `ResourceSeparate` propositions.
-        let child_context = ResourceContext::new()
-            .try_compose_with_facts(child_facts, assumptions)
-            .ok()?;
+        let child_context = ResourceContext::new_with_equalities(assumptions)
+            .install_established_partition(
+                coalesce_written_resource_descriptions(child_facts, assumptions),
+                assumptions,
+            )
+            .ok()?
+            .0;
         propositions.push(Proposition::ResourceComposition(child_context));
     }
     for child in &children {
