@@ -358,3 +358,45 @@ fn float_memory_carriers_retain_growing_shared_prefixes() {
         }
     }
 }
+
+#[test]
+fn machine_storage_keys_hash_growing_shared_operands_without_native_output() {
+    use std::hash::{Hash, Hasher};
+    let mut previous = None;
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let atom = KernelTerm::variable(KernelType::Program(ProgramType::UInt64), Variable(998650));
+        let mut root = atom.clone();
+        for _ in 0..size {
+            root = KernelTerm::machine_binary_shared(
+                MachineIntegerType::UInt64,
+                MachineBinaryOp::Add,
+                [root, atom.clone()],
+            );
+        }
+        let value = StoredExecutionValue::from(ExecutionValue::Shared(root.clone()));
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut hash = std::collections::hash_map::DefaultHasher::new();
+            value.hash(&mut hash);
+            hash.finish()
+        });
+        let (_, repeated) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..32 {
+                let mut hash = std::collections::hash_map::DefaultHasher::new();
+                value.hash(&mut hash);
+                assert_eq!(value.cmp(&value.clone()), std::cmp::Ordering::Equal);
+            }
+        });
+        assert_eq!(
+            repeated, 0,
+            "warm key operations inspect no operand prefixes"
+        );
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert_eq!(value.shared(), Some(&root));
+        if let Some(previous) = previous {
+            assert!(work <= 5 * previous, "{previous} -> {work}");
+        }
+        previous = Some(work);
+    }
+}
