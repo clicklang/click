@@ -338,7 +338,7 @@ fn mixed_return_composition_ignores_related_aliases_and_retained_owners() {
                     evaluated
                         .restore_entry_borrows(
                             frame.clone(),
-                            ReturnResourceComposition::RestoreEntryBorrows,
+                            ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
                             &facts,
                         )
                         .unwrap()
@@ -517,7 +517,7 @@ fn consumed_scalar_return_ignores_aliases_and_retained_owners() {
                     evaluated
                         .restore_entry_borrows(
                             frame.clone(),
-                            ReturnResourceComposition::RestoreEntryBorrows,
+                            ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
                             &facts,
                         )
                         .unwrap()
@@ -593,7 +593,7 @@ fn mixed_occurrence_transfers_ignore_ambient_aliases_and_owners() {
                     evaluated
                         .restore_entry_borrows(
                             frame.clone(),
-                            ReturnResourceComposition::RestoreEntryBorrows,
+                            ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
                             &facts,
                         )
                         .unwrap()
@@ -715,7 +715,7 @@ fn selected_scalar_transfers_scale_with_the_return_delta() {
                     evaluated
                         .restore_entry_borrows(
                             ResourceContext::new_with_equalities(&facts),
-                            ReturnResourceComposition::RestoreEntryBorrows,
+                            ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
                             &facts,
                         )
                         .unwrap()
@@ -858,7 +858,7 @@ fn fixed_range_transfer_work_ignores_length_aliases_and_retained_owners() {
                     evaluated
                         .restore_entry_borrows(
                             frame.clone(),
-                            ReturnResourceComposition::RestoreEntryBorrows,
+                            ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
                             &facts,
                         )
                         .unwrap()
@@ -951,10 +951,11 @@ fn fresh_allocation_returns_ignore_creation_history_aliases_and_retained_owners(
                     evaluated
                         .restore_entry_borrows(
                             frame.clone(),
-                            ReturnResourceComposition::BodyAllocations {
-                                consumed: None,
-                                creator: &creator,
-                                events: &events,
+                            ReturnResourceComposition::BodyReturn {
+                                state: &post,
+                                frame: &frame,
+                                allocations: Some((&creator, &events)),
+                                consumed: &ConsumedCellReturns::default(),
                             },
                             &facts,
                         )
@@ -1026,10 +1027,11 @@ fn fresh_allocation_return_work_scales_with_selected_return_pieces() {
                 evaluated
                     .restore_entry_borrows(
                         caller.resources().clone(),
-                        ReturnResourceComposition::BodyAllocations {
-                            consumed: None,
-                            creator: &creator,
-                            events,
+                        ReturnResourceComposition::BodyReturn {
+                            state: &post,
+                            frame: caller.resources(),
+                            allocations: Some((&creator, events)),
+                            consumed: &ConsumedCellReturns::default(),
                         },
                         &facts,
                     )
@@ -1110,7 +1112,7 @@ fn flat_return_body_consumers_scale_with_output_and_ignore_ambient_state() {
             let prepared = evaluated
                 .restore_entry_borrows(
                     frame,
-                    ReturnResourceComposition::RestoreEntryBorrows,
+                    ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
                     &facts,
                 )
                 .unwrap();
@@ -1334,10 +1336,11 @@ fn composite_transfer_consumers_ignore_unrelated_inputs_aliases_and_creation_his
             let (evaluated, _) = super::tests::constructed_flat_return(&pointer, 1, &facts);
             let definition = super::tests::flat_body_definition("boundary_return", &pointer, 1);
             let mode = if fresh {
-                ReturnResourceComposition::BodyAllocations {
-                    consumed: None,
-                    creator: entry.population_effects.creation.as_ref().unwrap(),
-                    events: &events,
+                ReturnResourceComposition::BodyReturn {
+                    state: &post,
+                    frame: &frame,
+                    allocations: Some((entry.population_effects.creation.as_ref().unwrap(), &events)),
+                    consumed: &ConsumedCellReturns::default(),
                 }
             } else {
                 ReturnResourceComposition::ValidateDescriptions

@@ -3961,22 +3961,30 @@ fn joint_planner_lends_from_the_owner_beside_an_unbound_view_description() {
 #[test]
 fn active_child_dependency_blocks_parent_close_until_child_ends() {
     let (ledger, owner, reader) = participants();
-    let parent = lend_test(&ledger, owner, owner, owned("parent"));
+    let borrower = ledger.fresh_participant().unwrap();
+    let parent = lend_test(&ledger, owner, reader, owned("parent"));
     let ledger = ledger.apply(&parent.transition).unwrap();
-    let child = lend_test(&ledger, owner, reader, owned("child"));
+    let binding = LoanViewBinding {
+        loan: parent.loan,
+        scope: parent.scope,
+        share: parent.root_share,
+        support: parent.description.support,
+        viewed: parent.description.viewed.clone(),
+        hold: None,
+    };
+    // A reborrow registers its scope as a dependency of the parent scope.
+    let child = ledger.reborrow(binding, reader, borrower).unwrap();
     let ledger = ledger.apply(&child.transition).unwrap();
-    let dependency = ledger
-        .register_dependency(parent.scope, child.scope, owner)
-        .unwrap();
-    let ledger = ledger.apply(&dependency).unwrap();
     assert_eq!(
         ledger.end(parent.scope, owner),
         Err(LoanRefusal::ActiveDependency)
     );
-    let child_return = ledger.transfer(child.root_share, reader, owner).unwrap();
+    let child_return = ledger.transfer(child.root_share, borrower, reader).unwrap();
     let ledger = ledger.apply(&child_return).unwrap();
-    let child_end = ledger.end(child.scope, owner).unwrap();
+    let child_end = ledger.end(child.scope, reader).unwrap();
     let ledger = ledger.apply(&child_end).unwrap();
+    let parent_return = ledger.transfer(parent.root_share, reader, owner).unwrap();
+    let ledger = ledger.apply(&parent_return).unwrap();
     assert!(ledger.end(parent.scope, owner).is_ok());
 }
 

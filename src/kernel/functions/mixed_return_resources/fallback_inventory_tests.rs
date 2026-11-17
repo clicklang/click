@@ -77,7 +77,7 @@ fn fallback_inventory_pending_return_against_symbolic_frame_still_discovers() {
         returned
             .restore_entry_borrows(
                 frame.clone(),
-                ReturnResourceComposition::RestoreEntryBorrows,
+                ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
                 &facts,
             )
             .unwrap()

@@ -4797,7 +4797,7 @@ fn self_call_loop_indices(
 /// callee outside its own recursive cycle. The members of a cycle share a
 /// height.
 ///
-/// The result is untrusted. [`program_verified_function_termination_rules`] checks
+/// The result is untrusted. The termination check checks
 /// at every call site that the callee is not above its caller, and treats
 /// every call between equal heights as a recursive edge that a declared
 /// measure must rank, so a wrong height can only refuse a function or fail
@@ -4973,7 +4973,9 @@ pub struct TerminationVerdicts {
 }
 
 /// Checks untrusted ranking plans against exact partially-correct function
-/// rules and returns the independently usable subset proved to terminate.
+/// rules and returns the subset proved to terminate. This test fixture runs
+/// the check program completion runs, for rules with no completed contract
+/// bodies.
 ///
 /// The judgment is local descent. `heights` is an untrusted proposal, as
 /// [`program_termination_height_plan`] makes one: every call must reach a callee
@@ -4999,7 +5001,8 @@ pub struct TerminationVerdicts {
 /// a pointer may assume, so a function that requires one of these admits an
 /// execution of its pointer calls that never returns, and receives no
 /// evidence whatever its callees do.
-pub fn program_verified_function_termination_rules(
+#[cfg(test)]
+pub(crate) fn program_verified_function_termination_rules(
     partial_rules: &[VerifiedFunctionRule],
     plan_entries: &[FunctionTerminationPlan],
     verified_loop_rules: &BTreeMap<String, Vec<VerifiedLoopRule>>,
@@ -5009,7 +5012,7 @@ pub fn program_verified_function_termination_rules(
     declared_diverging: &BTreeSet<String>,
     diverging_contracts: &BTreeSet<String>,
 ) -> Result<TerminationVerdicts, TerminationError> {
-    obligations::TerminationObligations::generate_independent(
+    obligations::TerminationObligations::generate_for_rules(
         partial_rules,
         plan_entries,
         verified_loop_rules,
@@ -6997,7 +7000,7 @@ mod local_descent_tests {
     fn generation_opens_recursion_and_loop_requirements_without_proving_them() {
         let rules = [self_call_in_loop_rule("drain")];
         let plans = [self_call_in_loop_plan("drain")];
-        let goals = obligations::TerminationObligations::generate_independent(
+        let goals = obligations::TerminationObligations::generate_for_rules(
             &rules,
             &plans,
             &BTreeMap::new(),

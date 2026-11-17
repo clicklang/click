@@ -136,10 +136,10 @@ On the summary and description-only paths, `admit_clause` checks the returned de
 `FreshAllocationReturn` records the allocation's identity, not a consumed
 slice or a partition of its outputs. Two descriptions of the same fresh cell
 can both carry that provenance. The regression
-`fresh_return_group_checks_sibling_overlap_before_restoration` exercises
-adjacent and duplicate slices from an actual allocation: early admission
-rejects the duplicate, and the body's separate
-`jointly_consume_returned_resource_units` check cannot supply it twice either.
+`fresh_return_group_refuses_sibling_overlap` exercises adjacent and duplicate
+slices from an actual allocation: description admission rejects the
+duplicate, the body's `jointly_consume_returned_resource_units` check cannot
+supply it twice, and body-return restoration refuses it.
 Freshness alone therefore does not justify skipping group construction. A
 body-return construction retains the outputs of joint consumption rather
 than reconstructing ownership from independent descriptions and checking it again.
@@ -890,7 +890,7 @@ call in its syntax; missing evidence falls back to the source body.
 
 `program_termination_height_plan` proposes a height per node (iterative Tarjan,
 longest path over the condensation, cycle members sharing a height).
-`program_verified_function_termination_rules` checks the proposal level by level in
+The termination check (`TerminationObligations::prove_implicitly`) checks the proposal level by level in
 ascending height, reading at each call site only whether the callee is above
 its caller, whether a strictly lower callee has evidence, and whether an
 equal-height callee is a recursive edge a declared measure ranks. A refused
