@@ -8959,10 +8959,29 @@ fn evaluate_spec_if_paths_in(
             &condition_path.obligations,
         );
         // A retained comparison guard is part of the conditional's syntax even
-        // when its two literal operands determine its truth. Checking may
+        // when its operands determine its truth intrinsically. Checking may
         // select an arm; logical lowering retains both guarded values.
         let retained_comparison = !budget.machine_result_production_disabled
             && match &condition_path.proposition {
+                Proposition::ConditionIs(
+                    ConditionTerm::Compare {
+                        format,
+                        left,
+                        right,
+                        ..
+                    },
+                    _,
+                ) if matches!(
+                    format,
+                    MachineIntegerType::Int32
+                        | MachineIntegerType::UInt32
+                        | MachineIntegerType::Int64
+                        | MachineIntegerType::UInt64
+                ) && matches!((left.as_ref(), right.as_ref()), (MachineTerm::Variable(left), MachineTerm::Variable(right)) if left == right) =>
+                {
+                    true
+                }
+
                 Proposition::ConditionIs(
                     ConditionTerm::Compare {
                         format,

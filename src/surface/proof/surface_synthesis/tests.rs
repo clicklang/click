@@ -7127,6 +7127,17 @@ fn check_conditional_round_trip(
     reverse: bool,
     replacement: u64,
 ) {
+    let equality = format!("x == ({replacement} as {spelling})");
+    check_conditional_round_trip_using_equality(format, spelling, guard, reverse, &equality);
+}
+
+fn check_conditional_round_trip_using_equality(
+    format: crate::kernel::MachineIntegerType,
+    spelling: &str,
+    guard: &str,
+    reverse: bool,
+    equality: &str,
+) {
     use crate::kernel::proof::ProofFacts;
     let _session = crate::kernel::VerificationSession::enter();
     let state = ExecutionState::new()
@@ -7156,11 +7167,7 @@ fn check_conditional_round_trip(
         };
         p.clone()
     };
-    let equality = relower_written_proposition(
-        &parse(&format!("x == ({replacement} as {spelling})")),
-        &state,
-    )
-    .unwrap();
+    let equality = relower_written_proposition(&parse(equality), &state).unwrap();
     let value = format!("to_integer(if {guard} {{ x }} else {{ 3 as {spelling} }})");
     let goal = if reverse {
         format!("100 <= {value}")
@@ -7324,6 +7331,26 @@ fn boolean_variable_guard_conditionals_round_trip_after_rewrite() {
         for guard in ["flag", "not flag"] {
             for reverse in [false, true] {
                 check_conditional_round_trip(format, spelling, guard, reverse, 9);
+            }
+        }
+    }
+}
+
+#[test]
+fn reflexive_guard_conditionals_round_trip_after_rewrite() {
+    use crate::kernel::MachineIntegerType as T;
+    for (format, spelling) in [
+        (T::Int32, "int32"),
+        (T::UInt32, "uint32"),
+        (T::Int64, "int64"),
+        (T::UInt64, "uint64"),
+    ] {
+        for op in ["==", "!=", "<", "<=", ">", ">="] {
+            let guard = format!("x {op} y");
+            for reverse in [false, true] {
+                check_conditional_round_trip_using_equality(
+                    format, spelling, &guard, reverse, "x == y",
+                );
             }
         }
     }

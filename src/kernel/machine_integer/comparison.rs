@@ -188,27 +188,37 @@ pub(crate) fn literal_native_comparison_value(condition: &ConditionTerm) -> Opti
     }
 }
 
-/// Preserve closed orders and wide equalities during logical lowering. Inspect
-/// only the two literal roots; deciding their truth belongs to checking.
+/// Preserve literal comparisons and same-variable comparisons during logical
+/// lowering. Inspect only operand roots; deciding truth belongs to checking.
 pub(crate) fn logical_condition_for_operand_views(
     format: MachineIntegerType,
     relation: crate::kernel::CompareRelation,
     operands: [crate::kernel::MachineOperandView<'_>; 2],
 ) -> ConditionTerm {
-    closed_comparison_for_operand_views(format, relation, operands)
+    retained_comparison_for_operand_views(format, relation, operands)
         .unwrap_or_else(|| condition_for_operand_views(format, relation, operands))
 }
 
-fn closed_comparison_for_operand_views(
+fn retained_comparison_for_operand_views(
     format: MachineIntegerType,
     relation: crate::kernel::CompareRelation,
     operands: [crate::kernel::MachineOperandView<'_>; 2],
 ) -> Option<ConditionTerm> {
-    if relation == crate::kernel::CompareRelation::Equal && format.format().bits() != 64 {
-        return None;
-    }
-    let [Some(left), Some(right)] = operands.map(|operand| operand.literal()) else {
-        return None;
+    let variables = operands.map(|operand| operand.variable().copied());
+    let [left, right] = if matches!(format.format().bits(), 32 | 64)
+        && let [Some(left), Some(right)] = variables
+        && left == right
+    {
+        [MachineTerm::Variable(left), MachineTerm::Variable(right)]
+    } else {
+        // Literal 32-bit equalities keep their established normal form.
+        if relation == crate::kernel::CompareRelation::Equal && format.format().bits() != 64 {
+            return None;
+        }
+        let [Some(left), Some(right)] = operands.map(|operand| operand.literal()) else {
+            return None;
+        };
+        [left, right]
     };
     // Native 32-bit comparisons read sign-free words; their format carries
     // the signedness. Keep the same operand representation as exact rewriting.
@@ -219,11 +229,12 @@ fn closed_comparison_for_operand_views(
     };
     // Wide equality compares words, and its established native filing format
     // is Int64 even when the literal operands are unsigned.
-    let format = if relation == crate::kernel::CompareRelation::Equal {
-        MachineIntegerType::Int64
-    } else {
-        format
-    };
+    let format =
+        if relation == crate::kernel::CompareRelation::Equal && format.format().bits() == 64 {
+            MachineIntegerType::Int64
+        } else {
+            format
+        };
     Some(ConditionTerm::Compare {
         format,
         relation,

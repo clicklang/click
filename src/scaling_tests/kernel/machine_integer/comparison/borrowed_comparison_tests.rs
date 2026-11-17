@@ -97,3 +97,59 @@ fn conditional_atom_reads_fixed_roots_without_exporting_arithmetic() {
         }
     }
 }
+
+#[test]
+fn reflexive_variable_comparisons_do_not_walk_arithmetic_operands() {
+    use crate::kernel::{
+        KernelTerm, KernelTermExport, KernelType, MachineBinaryOp, MachineOperandView as V,
+    };
+    for format in [
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int64,
+        MachineIntegerType::UInt64,
+    ] {
+        let mut baseline = None;
+        for size in [16, 64, 256, 1024] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let variable =
+                KernelTerm::variable(KernelType::Program(format.program_type()), Variable(999950));
+            let one = KernelTerm::retained_native_machine_operand(
+                format,
+                &crate::kernel::machine_integer::range::constant_word(format, &1.into()).unwrap(),
+            );
+            let mut arithmetic = variable.clone();
+            for _ in 0..size {
+                arithmetic = KernelTerm::machine_binary_shared(
+                    format,
+                    MachineBinaryOp::Add,
+                    [arithmetic, one.clone()],
+                );
+            }
+            let exports = KernelTermExport::machine_export_count();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let retained = logical_condition_for_operand_views(
+                    format,
+                    R::Equal,
+                    [V::Shared(&variable), V::Shared(&variable)],
+                );
+                assert!(
+                    matches!(retained, ConditionTerm::Compare { relation: R::Equal, left, right, .. }
+                    if matches!((left.as_ref(), right.as_ref()), (MachineTerm::Variable(a), MachineTerm::Variable(b)) if a == b))
+                );
+                let other = logical_condition_for_operand_views(
+                    format,
+                    R::Equal,
+                    [V::Shared(&arithmetic), V::Shared(&arithmetic)],
+                );
+                assert!(!matches!(other, ConditionTerm::Compare { .. }));
+            });
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert_eq!(
+                work,
+                *baseline.get_or_insert(work),
+                "{format:?}, {size} arithmetic nodes"
+            );
+        }
+    }
+}
