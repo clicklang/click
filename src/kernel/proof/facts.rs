@@ -1516,7 +1516,10 @@ impl PureFactStore {
             && crate::kernel::machine_integer::comparison::closed_condition_value(condition)
                 == Some(*value)
         {
-            return self.with_fact(Proposition::ConditionIs(ConditionTerm::Constant(true), true));
+            return self.with_fact(Proposition::ConditionIs(
+                ConditionTerm::Constant(true),
+                true,
+            ));
         }
         if self.top_level_exact.contains(&fact) {
             return self.clone();
