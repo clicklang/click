@@ -228,12 +228,16 @@ fn native_rank(value: &ProgramValue) -> u8 {
 #[derive(Eq, PartialEq)]
 pub(super) enum NativeStorageIdentity<'a> {
     Boolean(&'a BooleanStorageKey),
+    Float32(&'a FloatStorageKey),
+    Float64(&'a FloatStorageKey),
     Value(&'a ProgramValue),
 }
 impl NativeStorageIdentity<'_> {
     fn rank(&self) -> u8 {
         match self {
             Self::Boolean(_) => 2,
+            Self::Float32(_) => 13,
+            Self::Float64(_) => 14,
             Self::Value(v) => native_rank(v),
         }
     }
@@ -243,6 +247,7 @@ impl Hash for NativeStorageIdentity<'_> {
         self.rank().hash(state);
         match self {
             Self::Boolean(v) => v.hash(state),
+            Self::Float32(v) | Self::Float64(v) => v.hash(state),
             Self::Value(v) => v.hash(state),
         }
     }
@@ -258,8 +263,11 @@ impl Ord for NativeStorageIdentity<'_> {
             .cmp(&other.rank())
             .then_with(|| match (self, other) {
                 (Self::Boolean(a), Self::Boolean(b)) => a.cmp(b),
+                (Self::Float32(a), Self::Float32(b)) | (Self::Float64(a), Self::Float64(b)) => {
+                    a.cmp(b)
+                }
                 (Self::Value(a), Self::Value(b)) => a.cmp(b),
-                _ => unreachable!("all Boolean storage keys use the projection"),
+                _ => unreachable!("each migrated family uses its projection"),
             })
     }
 }
@@ -286,6 +294,9 @@ impl Drop for ConditionStorageKey {
     }
 }
 
+mod float;
+pub(in crate::kernel) use float::FloatStorageKey;
+
 thread_local! {
     // Syntax is immutable across state restores, but a fresh verification must
     // pay for its own selected key construction regardless of earlier runs.
@@ -293,6 +304,7 @@ thread_local! {
 }
 pub(in crate::kernel) fn clear_session_key_memos() {
     CONDITION_KEYS.with(|keys| keys.borrow_mut().clear());
+    float::clear_session_key_memos();
 }
 pub(in crate::kernel) fn condition_for_root(source: &KernelTerm) -> ConditionStorageKey {
     CONDITION_KEYS.with(|keys| {
@@ -324,4 +336,8 @@ pub(in crate::kernel) fn condition_for_root(source: &KernelTerm) -> ConditionSto
             .expect("condition storage key")
             .clone()
     })
+}
+
+pub(in crate::kernel) fn float_for_root(root: &KernelTerm) -> FloatStorageKey {
+    float::for_root(root)
 }

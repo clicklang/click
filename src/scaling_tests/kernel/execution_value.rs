@@ -439,6 +439,48 @@ fn boolean_storage_keys_keep_growing_connectives_shared() {
         previous = Some(work);
     }
 }
+
+#[test]
+fn float_storage_keys_keep_growing_operands_shared() {
+    use std::hash::{Hash, Hasher};
+    for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
+        let mut previous = None;
+        for size in [16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let atom =
+                KernelTerm::variable(KernelType::Program(format.program_type()), Variable(998680));
+            let mut root = atom.clone();
+            for _ in 0..size {
+                root = KernelTerm::float_binary(
+                    format,
+                    FloatBinaryOperator::Add,
+                    [root, atom.clone()],
+                )
+                .unwrap();
+            }
+            let stored = StoredExecutionValue::from(ExecutionValue::Shared(root.clone()));
+            let exports = KernelTermExport::float_export_count();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let mut hash = std::collections::hash_map::DefaultHasher::new();
+                stored.hash(&mut hash);
+                hash.finish()
+            });
+            let (_, warm) = crate::instrumentation::measure_deterministic_work(|| {
+                for _ in 0..32 {
+                    let mut hash = std::collections::hash_map::DefaultHasher::new();
+                    stored.hash(&mut hash);
+                }
+            });
+            assert_eq!(warm, 0);
+            assert_eq!(KernelTermExport::float_export_count(), exports);
+            assert!(!root.has_cached_native_argument());
+            if let Some(previous) = previous {
+                assert!(work <= 5 * previous, "{previous} -> {work}");
+            }
+            previous = Some(work);
+        }
+    }
+}
 #[test]
 fn boolean_storage_key_work_is_independent_of_prior_verifications() {
     use std::hash::Hash;
@@ -448,6 +490,45 @@ fn boolean_storage_key_work_is_independent_of_prior_verifications() {
         let mut root = atom.clone();
         for _ in 0..size {
             root = KernelTerm::boolean_if_raw([atom.clone(), root, other.clone()]);
+        }
+        let mut cold = Vec::new();
+        for _ in 0..2 {
+            let _session = crate::kernel::VerificationSession::enter();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let value = StoredExecutionValue::from(ExecutionValue::Shared(root.clone()));
+                let mut hash = std::collections::hash_map::DefaultHasher::new();
+                value.hash(&mut hash);
+            });
+            cold.push(work);
+            let _nested = crate::kernel::VerificationSession::enter();
+            let (_, warm) = crate::instrumentation::measure_deterministic_work(|| {
+                let value = StoredExecutionValue::from(ExecutionValue::Shared(root.clone()));
+                let mut hash = std::collections::hash_map::DefaultHasher::new();
+                value.hash(&mut hash);
+            });
+            assert_eq!(warm, 0, "nested verification retains its parent's memo");
+        }
+        assert!(cold[0] > 0);
+        assert_eq!(
+            cold[0], cold[1],
+            "size={size}: session work must not inherit an earlier key cache"
+        );
+    }
+}
+#[test]
+fn float_storage_key_work_is_independent_of_prior_verifications() {
+    use std::hash::Hash;
+    for size in [16, 64, 256] {
+        let atom =
+            KernelTerm::variable(KernelType::Program(ProgramType::Float64), Variable(998715));
+        let mut root = atom.clone();
+        for _ in 0..size {
+            root = KernelTerm::float_binary(
+                KernelFloatType::Float64,
+                FloatBinaryOperator::Add,
+                [root, atom.clone()],
+            )
+            .unwrap();
         }
         let mut cold = Vec::new();
         for _ in 0..2 {

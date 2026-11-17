@@ -644,6 +644,28 @@ execution/scaling checks, including the session-isolation regressions. All ten
 exact regular Boolean/float fixtures passed with zero fact-stability differences;
 quality checks passed. The focused execution-value suite passed all 29 checks.
 
+### 10e Shared float storage keys
+
+Float local/outcome keys project arithmetic, conversion and call structure from
+common operands, preserving native variant order, exact literal bits/carrier
+widths and native call-argument carrier distinctions. They do not populate an
+enclosing native float value cache. Hashes reuse cached fingerprints; iterative
+construction, comparison pair memos and iterative disposal preserve shared/deep
+structure. Memos are scoped to a verification, with identical cold work across
+fresh verifications and constant warm work within one session.
+
+Numeric conversion operands and nonfloat call arguments retain explicit selected
+native descriptor adapters, assigned to later argument/proposition storage
+slices. Opaque legacy forms retain their native inputs. Memory structural keys
+and exact outcome refresh remain separate consumers.
+
+All 29 focused execution-value tests and all 3,240 selected API/proof/spec/
+execution/scaling checks passed with current upstream integrated, including
+both session-isolation regressions. Growing float operands use zero float
+exports and leave the enclosing native argument cache empty. A 4,096-deep key
+constructs and drops on a 256 KiB stack. All ten regular Boolean/float fixtures
+passed with zero fact-stability differences; quality checks passed.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential
