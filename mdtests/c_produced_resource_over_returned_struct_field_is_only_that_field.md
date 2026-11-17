@@ -3,8 +3,6 @@
 The resource a contract produces over `result.p` is held at the value the
 returned field has, and nothing else. Without `ensures result.p == p` the
 caller cannot tell that value is `p`, so it cannot give back `cell(p)`.
-The unclassified output first needs its missing ownership boundary beside the
-caller's local struct; admission reports that explicit separation obligation.
 
 
 ```c filename=c_produced_resource_over_returned_struct_field_is_only_that_field.c
@@ -43,5 +41,5 @@ int32 rewrap(int32* p) {
 ```
 
 ```expect
-fail: symbolic ownership boundary
+fail: missing resource fact
 ```

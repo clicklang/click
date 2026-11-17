@@ -26,14 +26,14 @@ pub(in crate::kernel) use mixed_return_resources::ReturnedEntryPartition;
 mod produced_argument_supply;
 mod return_loan_backing;
 mod summary_transfer;
-pub(in crate::kernel) use mixed_return_resources::{
-    ConstructedBodyReturn, ConstructedReturnBody, ReturnResourceTransfer, ReturnedConsumedCell,
-    ReturnedFreshAllocation,
-};
 use mixed_return_resources::{
     ConstructedReturnBodies, ConsumedCellReturns, EvaluatedReturnResources, FreshAllocationReturn,
     ProducedBorrowingPiece, ProjectedReturnResource, ReturnOwnershipOrigin,
     project_return_resource_cores,
+};
+pub(in crate::kernel) use mixed_return_resources::{
+    ConstructedReturnBody, FramedReturnPartition, ReturnResourceTransfer, ReturnedConsumedCell,
+    ReturnedFreshAllocation,
 };
 pub(in crate::kernel) use summary_transfer::SummaryResourceTransferRule;
 #[cfg(test)]
@@ -210,6 +210,10 @@ fn record_resource_clause_attempt() {
 #[derive(Clone, Copy)]
 enum ReturnResourceComposition<'a> {
     ApplyTransfers(&'a ConsumedCellReturns),
+    FramedTransfers {
+        _rule: FramedCallRule<'a>,
+        transfers: &'a ConsumedCellReturns,
+    },
     BodyReturn {
         state: &'a ExecutionState,
         frame: &'a ResourceContext,
@@ -220,9 +224,26 @@ enum ReturnResourceComposition<'a> {
 }
 
 impl<'a> ReturnResourceComposition<'a> {
+    fn for_rule(rule: Option<FramedCallRule<'a>>, transfers: &'a ConsumedCellReturns) -> Self {
+        match rule {
+            Some(rule) => Self::FramedTransfers {
+                _rule: rule,
+                transfers,
+            },
+            None => Self::ApplyTransfers(transfers),
+        }
+    }
+
+    fn frames_outputs(self) -> bool {
+        matches!(self, Self::FramedTransfers { .. })
+    }
+
     fn consumed_children(self) -> Option<&'a ConsumedCellReturns> {
         match self {
-            Self::ApplyTransfers(plan) => Some(plan),
+            Self::ApplyTransfers(plan)
+            | Self::FramedTransfers {
+                transfers: plan, ..
+            } => Some(plan),
             Self::BodyReturn {
                 consumed,
                 allocations: Some(_),
@@ -248,7 +269,7 @@ impl<'a> ReturnResourceComposition<'a> {
 
     fn restores_entry_borrows(self) -> bool {
         match self {
-            Self::ApplyTransfers(_) => true,
+            Self::ApplyTransfers(_) | Self::FramedTransfers { .. } => true,
             _ => false,
         }
     }
@@ -267,7 +288,7 @@ impl<'a> ReturnResourceComposition<'a> {
         if entry_borrow {
             return ReturnOwnershipOrigin::EntryBorrow;
         }
-        if let Self::ApplyTransfers(transfers) = self
+        if let Some(transfers) = self.consumed_children()
             && let Some(transfer) = transfers.get(clause)
         {
             return ReturnOwnershipOrigin::ConsumedCell(transfer);
@@ -277,7 +298,9 @@ impl<'a> ReturnResourceComposition<'a> {
 
     fn constructed_summary_output(self, clause: usize) -> Option<&'a ResourceFact> {
         match self {
-            Self::ApplyTransfers(transfers) => transfers.constructed.get(&clause),
+            Self::ApplyTransfers(transfers) | Self::FramedTransfers { transfers, .. } => {
+                transfers.constructed.get(&clause)
+            }
             _ => None,
         }
     }
@@ -2109,6 +2132,9 @@ pub(super) fn execute_program_function_call_paths(
                 interface: rule.function.contract_interface(),
                 storage: Some(&rule.function),
                 evidence: None,
+                framed_rule: rule
+                    .is_scoped_unselected()
+                    .then_some(FramedCallRule::ScopedHypothesis { _rule: rule }),
                 representation_copy: rule.representation_copy(),
                 value_arguments: &[],
             }],
@@ -2500,6 +2526,7 @@ fn execute_verified_function_rule(
             interface: rule.function.contract_interface(),
             storage: Some(&rule.function),
             evidence: Some(&rule.function),
+            framed_rule: Some(FramedCallRule::Verified { _rule: rule }),
             representation_copy: None,
             value_arguments: &[],
         }],
@@ -2544,6 +2571,7 @@ pub(super) fn suspend_verified_worker(
             interface: rule.function.contract_interface(),
             storage: Some(&rule.function),
             evidence: Some(&rule.function),
+            framed_rule: Some(FramedCallRule::Verified { _rule: rule }),
             representation_copy: None,
             value_arguments: &[],
         }],
@@ -2782,6 +2810,14 @@ fn instance_binder_shape(parameter: &ResourceSpec) -> Option<(&str, usize)> {
     Some((name.as_str(), arguments.len()))
 }
 
+/// Conditional source-contract hypotheses retain the Hoare frame rule only
+/// inside their verification selection. They are never body certificates.
+#[derive(Clone, Copy)]
+enum FramedCallRule<'a> {
+    Verified { _rule: &'a VerifiedFunctionRule },
+    ScopedHypothesis { _rule: &'a ExternalFunctionRule },
+}
+
 /// One candidate contract application. The interface is the complete input
 /// to callback preparation. Optional concrete storage supplies only the
 /// declaration identity needed to lower a direct function's global and
@@ -2800,6 +2836,9 @@ struct FunctionContractApplication<'a> {
     interface: &'a FunctionContractInterface,
     storage: Option<&'a ProgramFunction>,
     evidence: Option<&'a ProgramFunction>,
+    /// A verified theorem or a scoped source-contract hypothesis; concrete
+    /// declaration storage alone never grants this frame rule.
+    framed_rule: Option<FramedCallRule<'a>>,
     /// The checked representation-copy effect of a recognized byte-copy
     /// declaration, if this application is one.
     representation_copy: Option<RepresentationCopyEffect>,
@@ -3235,6 +3274,7 @@ fn execute_verified_function_applications_with_suspension(
             interface_name: _interface_name,
             storage,
             evidence,
+            framed_rule,
             interface,
             argument_values,
             entry_state,
@@ -3368,6 +3408,7 @@ fn execute_verified_function_applications_with_suspension(
                 caller_state,
                 interface,
                 evidence.or(storage),
+                framed_rule,
                 &argument_values,
                 &entry_state,
                 &entry_contract_state,
@@ -3882,7 +3923,7 @@ fn execute_verified_function_applications_with_suspension(
             name,
             interface,
             &prepared_outputs,
-            ReturnResourceComposition::ApplyTransfers(&transfer.consumed_cell_returns),
+            ReturnResourceComposition::for_rule(framed_rule, &transfer.consumed_cell_returns),
             &effective_assumptions,
             budget,
         )? {
@@ -4956,6 +4997,7 @@ fn exceptional_direct_function_path(
     caller_state: &ExecutionState,
     interface: &FunctionContractInterface,
     evidence: Option<&ProgramFunction>,
+    framed_rule: Option<FramedCallRule<'_>>,
     argument_values: &[ProgramValue],
     entry_state: &ExecutionState,
     entry_contract_state: &ExecutionState,
@@ -5019,7 +5061,7 @@ fn exceptional_direct_function_path(
         evidence.map_or("exceptional call", |function| function.name()),
         interface,
         &[],
-        ReturnResourceComposition::ApplyTransfers(&transfer.consumed_cell_returns),
+        ReturnResourceComposition::for_rule(framed_rule, &transfer.consumed_cell_returns),
         &post_assumptions,
         budget,
     )? {
@@ -5100,6 +5142,9 @@ struct PreparedVerifiedFunctionCall<'a> {
     /// Concrete evidence is present only for a verified direct rule. Named
     /// contracts and external assumptions deliberately carry none.
     evidence: Option<&'a ProgramFunction>,
+    /// A verified theorem or a scoped source-contract hypothesis; concrete
+    /// declaration storage alone never grants this frame rule.
+    framed_rule: Option<FramedCallRule<'a>>,
     /// The body-independent interface used to prepare this application. It is
     /// explicit even when it is the concrete function's own interface, so
     /// callback and ordinary calls cannot silently grow separate evaluators.
@@ -6645,6 +6690,7 @@ fn prepare_verified_function_call<'a>(
         interface_name: application.interface_name,
         storage: application.storage,
         evidence: application.evidence,
+        framed_rule: application.framed_rule,
         interface: contract_interface,
         argument_values,
         entry_state,
@@ -6783,6 +6829,7 @@ pub(super) fn execute_program_function_contracts_paths(
             interface: contract.interface(),
             storage: None,
             evidence: None,
+            framed_rule: None,
             representation_copy: None,
             value_arguments: contract.value_arguments(),
         })
@@ -13397,55 +13444,57 @@ fn evaluate_contract_return_resources(
     // what its body covers. Check the body against the destination before the
     // head enters it, or a contract that produces a composite over bytes the
     // destination still owns turns one owner into two.
-    if let Some(error) = crate::instrumentation::measure_operation(
-        interface_name,
-        "contract resource transition",
-        "ensured composite frontier check",
-        || {
-            // Borrowed composite arguments retain their entry identity, but
-            // their bodies can read post-call memory. Preserve the existing
-            // check against the retained frame, before adding their heads.
-            if !prepared.entry_borrow_outputs.facts().is_empty() {
-                let retained = caller_resources_after_requirements
+    if !composition.frames_outputs()
+        && let Some(error) = crate::instrumentation::measure_operation(
+            interface_name,
+            "contract resource transition",
+            "ensured composite frontier check",
+            || {
+                // Borrowed composite arguments retain their entry identity, but
+                // their bodies can read post-call memory. Preserve the existing
+                // check against the retained frame, before adding their heads.
+                if !prepared.entry_borrow_outputs.facts().is_empty() {
+                    let retained = caller_resources_after_requirements
+                        .clone()
+                        .unchecked_with_facts(escrowed_owners.iter().cloned())
+                        .unchecked_with_facts(
+                            prepared.transferred_memory_outputs.facts().iter().cloned(),
+                        )
+                        .unchecked_with_facts(return_bodies.transferred_memory_frontier().cloned());
+                    if let Some(error) = produced_composite_frontier_conflict(
+                        &retained,
+                        prepared
+                            .frontier_sources(ensured_resources, true)
+                            .map(|(source, fact)| (fact, return_bodies.for_return(source, fact))),
+                        interface.composite_resource_definitions(),
+                        post_state.memory(),
+                        assumptions,
+                    ) {
+                        return Some(error);
+                    }
+                }
+                // A lend empties the escrowed owner out of the residual, and
+                // recovery composes it straight back. The destination for this
+                // check is what the caller holds across the call, so the escrow
+                // belongs in it; without it the stable-view transition would
+                // admit exactly the overlap the definitional residual catches.
+                let destination = prepared
+                    .frame
                     .clone()
                     .unchecked_with_facts(escrowed_owners.iter().cloned())
-                    .unchecked_with_facts(
-                        prepared.transferred_memory_outputs.facts().iter().cloned(),
-                    )
                     .unchecked_with_facts(return_bodies.transferred_memory_frontier().cloned());
-                if let Some(error) = produced_composite_frontier_conflict(
-                    &retained,
+                produced_composite_frontier_conflict(
+                    &destination,
                     prepared
-                        .frontier_sources(ensured_resources, true)
+                        .frontier_sources(ensured_resources, false)
                         .map(|(source, fact)| (fact, return_bodies.for_return(source, fact))),
                     interface.composite_resource_definitions(),
                     post_state.memory(),
                     assumptions,
-                ) {
-                    return Some(error);
-                }
-            }
-            // A lend empties the escrowed owner out of the residual, and
-            // recovery composes it straight back. The destination for this
-            // check is what the caller holds across the call, so the escrow
-            // belongs in it; without it the stable-view transition would
-            // admit exactly the overlap the definitional residual catches.
-            let destination = prepared
-                .frame
-                .clone()
-                .unchecked_with_facts(escrowed_owners.iter().cloned())
-                .unchecked_with_facts(return_bodies.transferred_memory_frontier().cloned());
-            produced_composite_frontier_conflict(
-                &destination,
-                prepared
-                    .frontier_sources(ensured_resources, false)
-                    .map(|(source, fact)| (fact, return_bodies.for_return(source, fact))),
-                interface.composite_resource_definitions(),
-                post_state.memory(),
-                assumptions,
-            )
-        },
-    ) {
+                )
+            },
+        )
+    {
         return Ok(Err(error));
     }
     let ensured_views = ensured_resources

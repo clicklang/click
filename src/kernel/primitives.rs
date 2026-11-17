@@ -11176,6 +11176,7 @@ pub(super) struct ResourceContextIndex {
     /// clothes: read as `u32`, a range starting below its base sorted past
     /// every range there is and its overlapping neighbour was never probed.
     pub(super) concrete_memory: PersistentMap<(Pointer, bool, i128, i128), ResourceEntryIds>,
+    constant_owned_intervals: memory_equality_index::ConstantOwnershipIntervals,
     /// All constant ranges, including known-empty ones, represented at this origin.
     pub(super) concrete_memory_by_base: PersistentMap<(Pointer, bool), usize>,
     /// Owned memory ranges keyed by their base's root: the block and the

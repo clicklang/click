@@ -415,15 +415,16 @@ struct BodyReturnConstruction {
     frame: ResourceContext,
 }
 
-/// A group built by consuming the executed body's actual owners. The return
-/// producer discharges composite-footprint obligations before installation;
-/// installation never repeats consumption or raw group admission.
-pub(in crate::kernel) struct ConstructedBodyReturn {
+/// A joint output partition constructed by body custody or application of a
+/// function frame rule (verified or conditionally assumed). The producer owns
+/// its frame relationship;
+/// installation never reconstructs that proof through geometric admission.
+pub(in crate::kernel) struct FramedReturnPartition {
     frame: ResourceContext,
     outputs: ResourceContext,
 }
 
-impl ConstructedBodyReturn {
+impl FramedReturnPartition {
     pub(in crate::kernel) fn into_parts(self) -> (ResourceContext, ResourceContext) {
         (self.frame, self.outputs)
     }
@@ -458,7 +459,7 @@ pub(super) struct PreparedReturnComposition {
     restored: BTreeMap<ResourceOccurrenceId, ReturnResourceTransfer>,
     pub(super) transferred_memory_outputs: ResourceContext,
     occurrences: Vec<EvaluatedReturnOccurrence>,
-    body: Option<ConstructedBodyReturn>,
+    body: Option<FramedReturnPartition>,
 }
 
 impl EvaluatedReturnResources {
@@ -495,7 +496,9 @@ impl EvaluatedReturnResources {
         assumptions: &PureFactContext,
     ) -> Result<Self, RuntimeError> {
         let Some(body) = &mut self.body else {
-            if composition.restores_entry_borrows() && origin != ReturnOwnershipOrigin::Description
+            if composition.frames_outputs()
+                || composition.restores_entry_borrows()
+                    && origin != ReturnOwnershipOrigin::Description
             {
                 let (resources, mut inserted) =
                     self.resources.unchecked_with_facts_and_occurrences([fact]);
@@ -594,6 +597,23 @@ impl EvaluatedReturnResources {
         composition: ReturnResourceComposition,
         assumptions: &PureFactContext,
     ) -> Result<PreparedReturnComposition, ResourceContextValidityError> {
+        if composition.frames_outputs() {
+            // The verified Hoare rule transfers this joint output partition
+            // beside the checked input reservation's frame. No geometry or
+            // source-shape reconstruction is needed at application.
+            return Ok(PreparedReturnComposition {
+                frame: frame.clone(),
+                pending: ResourceContext::new_with_equalities(assumptions),
+                entry_borrow_outputs: ResourceContext::new_with_equalities(assumptions),
+                transferred_memory_outputs: ResourceContext::new_with_equalities(assumptions),
+                restored: BTreeMap::new(),
+                occurrences: self.occurrences.clone(),
+                body: Some(FramedReturnPartition {
+                    frame,
+                    outputs: self.resources.clone(),
+                }),
+            });
+        }
         if let Some(body) = &self.body {
             // A folded head may read post-call memory. Preserve its existing
             // boundary rule against the caller frame and the flat siblings
@@ -626,7 +646,7 @@ impl EvaluatedReturnResources {
                 transferred_memory_outputs: ResourceContext::new_with_equalities(assumptions),
                 restored: BTreeMap::new(),
                 occurrences: self.occurrences.clone(),
-                body: Some(ConstructedBodyReturn {
+                body: Some(FramedReturnPartition {
                     frame: body.frame.clone(),
                     outputs: self.resources.clone(),
                 }),

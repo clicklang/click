@@ -7364,15 +7364,15 @@ fn translated_owner_coordinates_keep_native_extent_and_symbolic_origin() {
     );
     // An unrelated symbolic origin is not the same address merely because
     // its block and constant displacement match.
-    assert!(
+    assert!(matches!(
         context
             .clone()
             .try_compose_into_valid_context_delaying_normalization(
                 [owned(995_404, 0, start, start + 1)],
                 &assumptions
-            )
-            .is_ok()
-    );
+            ),
+        Err(ResourceContextValidityError::UnestablishedOwnedBoundary(_))
+    ));
     assert!(
         context
             .try_compose_into_valid_context_delaying_normalization(
@@ -7407,10 +7407,17 @@ fn owned_root_neighbors_keep_alias_and_duplicate_refusals() {
         owned(q.clone(), 5, 6),
     ]);
     let required = owned(p.clone(), 5, 6);
+    let Err(ResourceContextValidityError::UnestablishedOwnedBoundary(goal)) = context
+        .clone()
+        .try_compose_into_valid_context_delaying_normalization([required.clone()], &assumptions)
+    else {
+        panic!("unrelated p and q need their boundary stated");
+    };
+    let stated = assumptions.clone().assume_proposition(*goal);
     assert!(
         context
             .clone()
-            .try_compose_into_valid_context_delaying_normalization([required.clone()], &assumptions)
+            .try_compose_into_valid_context_delaying_normalization([required.clone()], &stated)
             .is_ok()
     );
     assert!(
@@ -7418,7 +7425,7 @@ fn owned_root_neighbors_keep_alias_and_duplicate_refusals() {
             .clone()
             .try_compose_into_valid_context_delaying_normalization(
                 [required.clone(), required.clone()],
-                &assumptions
+                &stated
             )
             .is_err()
     );
@@ -7513,14 +7520,13 @@ fn owned_root_neighbors_require_complete_coordinate_coverage() {
                 .is_err()
         );
         let child = context.clone().without_exact_representation(&held).unwrap();
-        assert!(
-            child
-                .try_compose_into_valid_context_delaying_normalization(
-                    [required.clone()],
-                    &assumptions
-                )
-                .is_ok()
-        );
+        assert!(matches!(
+            child.try_compose_into_valid_context_delaying_normalization(
+                [required.clone()],
+                &assumptions
+            ),
+            Err(ResourceContextValidityError::UnestablishedOwnedBoundary(_))
+        ));
         assert!(
             context
                 .try_compose_into_valid_context_delaying_normalization([required], &assumptions)

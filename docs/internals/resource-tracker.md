@@ -1862,8 +1862,26 @@ uses the selected range and canonical identity of the current frame, so a
 proof about an earlier subset cannot authorize a new held range. The cached
 frame footprint is prepared by ownership deltas, not by queries.
 
+A direct `VerifiedFunctionRule` now travels through call preparation as typed
+proof evidence, separately from concrete storage identity and description-only
+interfaces. Its Hoare frame rule constructs the joint returned partition beside
+the checked input reservation's caller frame. Arbitrary-shaped owned outputs,
+including post-state pointer fields without an equality postcondition, need no
+second geometry proof in this path. Normal and exceptional returns retain the
+same rule, and entry escrow recovery uses the resulting partition token.
+Targeted verification and expansion use the same Hoare frame rule under a
+scoped source-contract hypothesis. That capability remains conditional, is
+retired with the verification selection, and never certifies the unselected
+body. External descriptions, named interfaces and raw return APIs receive no
+such capability; they retain bounded admission and explicit missing-boundary goals.
+`verified_outputs_retain_the_callers_frame.md` and its expansion/replay test
+contrast a verified callee with an uncertified external-output control.
+
 Contract recipes retain immutable memory leaves from consumed heads as well as
-flat consumed cells. Each selected leaf is used once across all output paths;
+flat consumed cells. Fixed byte spans can partition one consumed object into
+disjoint field owners; the compiler withdraws each byte from its source interval
+once, preserving bound formats and refusing duplicate fragments. Each selected
+symbolic leaf is used once across all output paths;
 postcondition equalities may connect a returned pointer field to an immutable
 parameter. Model reads do not become parameter-invariant leaves. Typed parameter
 identities and their unambiguous lexical aliases share the declared binder;

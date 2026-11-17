@@ -10,6 +10,18 @@ impl ResourceContext {
     ) -> ConstantOwnedOverlap {
         use ConstantOwnedOverlap::*;
         if let Some(range) = fact.memory_own_range() {
+            if matches!(range.base().block, PointerBlock::StringLiteral { .. })
+                && let Resource::Memory(held) = self.storage.index.boundary_memory.footprint()
+                && super::super::resource_algebra::string_literal_blocks_may_alias(
+                    &range.base().block,
+                    &held.base().block,
+                )
+            {
+                // Distinct equal-content literals are shared read-only storage,
+                // rather than competing mutable owners. Select a singleton
+                // frame by its cached footprint; do not enumerate literals.
+                return Clear;
+            }
             // A single written memory-memory premise already has an exact
             // fact key. Do not build a second canonical certificate for it.
             if self.storage.index.boundary_memory.len() == 1
@@ -121,6 +133,30 @@ impl ResourceContext {
         };
         if self.flat_owned_memory_ranges().is_empty() {
             return Clear;
+        }
+        if self.storage.index.boundary_memory_count == 1
+            && let Resource::Memory(held) = self.storage.index.boundary_memory.footprint()
+            && let Some(entry) = self
+                .storage
+                .index
+                .owned_memory_by_block
+                .get(&held.base().block)
+                .and_then(|entries| entries.iter().next())
+                .copied()
+        {
+            // Cardinality nominates one live owner. Exact address-class
+            // equality and direct endpoint bounds need no ambient pairing.
+            let graph = graph_for_memory_query(assumptions, range.base());
+            match checked_pair(
+                self.storage.facts.get(&entry).expect("singleton owner"),
+                fact,
+                assumptions,
+                &graph,
+            ) {
+                Some(true) => return Clear,
+                Some(false) => return Overlap(entry),
+                None => {}
+            }
         }
         // Only a producer-published lineage is eligible. A query must never
         // initialize an ambient resource/fact snapshot to obtain coverage.
@@ -340,8 +376,17 @@ fn checked_pair(
     if a.element_width() != b.element_width() {
         return None;
     }
-    if a.base() != b.base() && graph.address_class(a.base())? != graph.address_class(b.base())? {
-        return None;
+    if a.base() != b.base()
+        && facts.decide(&ConditionTerm::pointer_equal(
+            a.base().clone(),
+            b.base().clone(),
+        )) != Some(true)
+    {
+        let a = graph.address_class(a.base())?;
+        let b = graph.address_class(b.base())?;
+        if graph.address_class_root(a) != graph.address_class_root(b) {
+            return None;
+        }
     }
     let ((as_, ae), (bs, be)) = (a.int32_bounds()?, b.int32_bounds()?);
     let le = |a: &MachineTerm, b: &MachineTerm| {

@@ -167,6 +167,7 @@ impl SummaryResourceTransferRule {
             .collect::<BTreeSet<_>>();
         let aliases = post_parameter_aliases(interface, &identity);
         let mut leaves = BTreeMap::<_, VecDeque<usize>>::new();
+        let mut fragments = ConstantInputFragments::default();
         for (input, spec) in interface.resource_requires().iter().enumerate() {
             if spec.role() != ResourceTransferRole::Consume || used.contains(&input) {
                 continue;
@@ -179,7 +180,11 @@ impl SummaryResourceTransferRule {
                 &parameters,
                 &BTreeMap::new(),
             ) {
-                leaves.entry(key).or_default().push_back(input);
+                if let Some((base, start, end)) = constant_memory_span(&key) {
+                    fragments.insert(base, start, end, input);
+                } else {
+                    leaves.entry(key).or_default().push_back(input);
+                }
             }
         }
         for (output, spec) in interface.resource_ensures().iter().enumerate() {
@@ -196,7 +201,12 @@ impl SummaryResourceTransferRule {
                 {
                     continue;
                 }
-                if let Some(input) = leaves.get_mut(&key).and_then(VecDeque::pop_front) {
+                let input = if let Some((base, start, end)) = constant_memory_span(&key) {
+                    fragments.take(&base, start, end)
+                } else {
+                    leaves.get_mut(&key).and_then(VecDeque::pop_front)
+                };
+                if let Some(input) = input {
                     rule.projected_inputs.insert(path, input);
                 }
             }
@@ -363,6 +373,93 @@ fn immutable_memory_key(
         immutable_expression(&segment.end, bindings, aliases)?,
         segment.element_width(),
     ))
+}
+
+/// Compile fixed byte partitions from explicit clauses. Each allocation
+/// withdraws its bytes, so a consumed whole object may supply disjoint fields
+/// but cannot supply an overlapping sibling a second time.
+type ConstantMemoryBase = (ProgramExpression, ProgramType);
+#[derive(Default)]
+struct ConstantInputFragments(BTreeMap<ConstantMemoryBase, BTreeMap<i128, (i128, usize)>>);
+impl ConstantInputFragments {
+    fn insert(&mut self, base: ConstantMemoryBase, start: i128, end: i128, input: usize) {
+        self.0
+            .entry(base)
+            .or_default()
+            .entry(start)
+            .or_insert((end, input));
+    }
+    fn take(&mut self, base: &ConstantMemoryBase, start: i128, end: i128) -> Option<usize> {
+        let slots = self.0.get_mut(base)?;
+        let (&lo, &(hi, input)) = slots.range(..=start).next_back()?;
+        if hi < end {
+            return None;
+        }
+        slots.remove(&lo);
+        if lo < start {
+            slots.insert(lo, (start, input));
+        }
+        if end < hi {
+            slots.insert(end, (hi, input));
+        }
+        Some(input)
+    }
+}
+
+fn constant_memory_span(key: &ImmutableMemoryKey) -> Option<(ConstantMemoryBase, i128, i128)> {
+    fn integer(expression: &ProgramExpression) -> Option<i128> {
+        match expression {
+            ProgramExpression::Value(ProgramValue::Int32(value)) => {
+                value.as_const().map(|value| i128::from(value as i32))
+            }
+            ProgramExpression::Value(ProgramValue::Int64(value)) => {
+                value.int64_as_const().map(|value| i128::from(value as i64))
+            }
+            ProgramExpression::Value(ProgramValue::UInt64(value)) => {
+                value.uint64_as_const().map(i128::from)
+            }
+            _ => None,
+        }
+    }
+    fn address(expression: &ProgramExpression) -> Option<(ProgramExpression, i128)> {
+        match expression {
+            ProgramExpression::Variable(_) | ProgramExpression::Value(ProgramValue::Pointer(_)) => {
+                Some((expression.clone(), 0))
+            }
+            ProgramExpression::PointerOffsetBytes { pointer, bytes } => {
+                let (base, offset) = address(pointer)?;
+                Some((base, offset.checked_add(i128::from(*bytes))?))
+            }
+            ProgramExpression::Subobject { pointer, .. } => address(pointer),
+            ProgramExpression::Cast {
+                expression,
+                target_type,
+                ..
+            } if target_type.is_object_pointer() => address(expression),
+            ProgramExpression::AddressOf(lvalue)
+            | ProgramExpression::CheckedObjectAddress(lvalue) => match lvalue.as_ref() {
+                ProgramExpression::Load(pointer) | ProgramExpression::TypedLoad { pointer, .. } => {
+                    address(pointer)
+                }
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    let (base, offset) = address(&key.0)?;
+    let (ProgramExpression::Value(start_value), ProgramExpression::Value(end_value)) =
+        (&key.1, &key.2)
+    else {
+        return None;
+    };
+    let kind = start_value.program_type();
+    if end_value.program_type() != kind {
+        return None;
+    }
+    let width = i128::from(key.3);
+    let start = offset.checked_add(integer(&key.1)?.checked_mul(width)?)?;
+    let end = offset.checked_add(integer(&key.2)?.checked_mul(width)?)?;
+    (start < end).then_some(((base, kind), start, end))
 }
 
 fn immutable_leaves(

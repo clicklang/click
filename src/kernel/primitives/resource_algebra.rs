@@ -796,6 +796,11 @@ impl ResourceContextIndex {
                 }
             }
             if let Some((origin, start, end)) = constant_memory_coordinates(range) {
+                if mode && start < end {
+                    result
+                        .constant_owned_intervals
+                        .update(&origin, start, end, entry, true);
+                }
                 let base = (origin, mode);
                 // Empty intervals carry no overlap obligation and must not
                 // hide a nonempty predecessor from the neighbour check.
@@ -1159,6 +1164,11 @@ impl ResourceContextIndex {
                 }
             }
             if let Some((origin, start, end)) = constant_memory_coordinates(range) {
+                if mode && start < end {
+                    result
+                        .constant_owned_intervals
+                        .update(&origin, start, end, entry, false);
+                }
                 let base = (origin, mode);
                 if start < end {
                     result.concrete_memory = remove_resource_index_entry(
@@ -6213,11 +6223,11 @@ impl ResourceContext {
         (frame, transfer)
     }
 
-    /// Install outputs consumed jointly from an executed body's partition.
+    /// Install a partition constructed by executed custody or a verified rule.
     /// The producer retains the call's frame relationship; no overlap or
     /// exclusive-identity discovery is repeated at publication.
     pub(in crate::kernel) fn return_constructed_body(
-        transfer: crate::kernel::functions::ConstructedBodyReturn,
+        transfer: crate::kernel::functions::FramedReturnPartition,
         assumptions: &PureFactContext,
     ) -> (Self, Vec<(ResourceFact, ResourceOccurrenceId)>) {
         #[cfg(test)]
@@ -9947,7 +9957,7 @@ pub(in crate::kernel) fn resources_structurally_separate(
 /// Equal-content string literal blocks may be merged by the C implementation.
 /// They provide shared, read-only access, so two such literal facts do not
 /// compete for mutable ownership and cannot establish separation by spelling.
-fn string_literal_blocks_may_alias(left: &PointerBlock, right: &PointerBlock) -> bool {
+pub(super) fn string_literal_blocks_may_alias(left: &PointerBlock, right: &PointerBlock) -> bool {
     if left == right {
         return false;
     }

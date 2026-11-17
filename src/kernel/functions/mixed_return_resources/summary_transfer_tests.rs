@@ -276,3 +276,164 @@ fn symbolic_summary_transfer_keeps_the_selected_slice_spelling_and_its_residual_
     );
     assert_eq!(returned.facts().len(), 2);
 }
+
+/// Model a body-certified identity function whose contract deliberately hides
+/// the returned pointer's equality. Resource ownership is its only result rule.
+pub(super) fn opaque_pointer_return_rule() -> VerifiedFunctionRule {
+    let input = ResourceSpec::owned_memory(
+        MemorySegment::new(variable("p"), int32_literal(0), int32_literal(1))
+            .with_uninitialized(true),
+    );
+    let output = ResourceSpec::owned_memory(MemorySegment::new(
+        ProgramExpression::Variable(BindingName::ContractResult),
+        int32_literal(0),
+        int32_literal(1),
+    ))
+    .with_role(ResourceTransferRole::Produce)
+    .with_state_source(ResourceStateSource::Post);
+    VerifiedFunctionRule {
+        descent_completion: None,
+        pointer_result: None,
+        concrete_loop_exits: None,
+        loop_semantics: LoopSemantics::Verify,
+        checked_callees: None,
+        applied_tactics: Default::default(),
+        function: program_function(
+            ProgramType::Int32Pointer,
+            "opaque_pointer_return",
+            vec![program_parameter("p", ProgramType::Int32Pointer)],
+            program_return(variable("p")),
+        )
+        .with_resource_summary(vec![input], vec![output]),
+    }
+}
+
+#[test]
+fn verified_pointer_output_frames_without_a_geometric_recipe() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let rule = opaque_pointer_return_rule();
+    assert!(
+        rule.function
+            .contract_interface()
+            .resource_transfer_rule
+            .inputs_by_output
+            .is_empty()
+    );
+    assert!(
+        rule.function
+            .contract_interface()
+            .resource_transfer_rule
+            .projected_inputs
+            .is_empty()
+    );
+    let owner = |pointer, start: u32, end: u32| {
+        ResourceFact::own_memory(MemoryRange::new(pointer, start.into(), end.into()))
+    };
+    let p = Pointer::symbolic(Variable(8_944_000));
+    let held = owner(Pointer::symbolic(Variable(8_944_001)), 0, 1);
+    let resources =
+        ResourceContext::new().unchecked_with_facts([owner(p.clone(), 0, 1), held.clone()]);
+    let state = ExecutionState::new()
+        .with_population_creation_tracking()
+        .with_memory(Memory::new().with_block(p.block.clone(), 4))
+        .with_resource_context(resources);
+    let function = rule.function.clone();
+    let env = ExecutionEnvironment::new().with_verified_function_rule(rule);
+    let paths = execute_program_function_call_paths(
+        &state,
+        &function,
+        &[ProgramExpression::Value(ProgramValue::pointer(p))],
+        &PureFactContext::new(),
+        ExecutionContext::apply_verified_rules(&env),
+        &mut ExecutionBudget::new(),
+    )
+    .unwrap();
+    let [
+        FunctionPath {
+            outcome: FunctionOutcome::Return {
+                state: returned, ..
+            },
+            ..
+        },
+    ] = paths.as_slice()
+    else {
+        panic!("{paths:?}")
+    };
+    assert!(returned.resources().contains_exact_representation(&held));
+    assert_eq!(returned.resources().flat_owned_memory_ranges().len(), 2);
+    assert_eq!(state.resources().flat_owned_memory_ranges().len(), 2);
+}
+
+pub(super) fn partitioned_input_contract(count: u32, duplicate: bool) -> ProgramFunction {
+    let mut children = (0..count)
+        .map(|i| {
+            ResourceSpec::owned_memory(MemorySegment::new(
+                variable("base"),
+                int32_literal(i),
+                int32_literal(i + 1),
+            ))
+        })
+        .collect::<Vec<_>>();
+    if duplicate {
+        children.push(children[0].clone());
+    }
+    let definition = CompositeResourceDefinition::new(
+        "parts",
+        vec![program_parameter("base", ProgramType::Int32Pointer)],
+        None,
+        false,
+        children,
+        vec![],
+    );
+    let input = ResourceSpec::owned_memory(
+        MemorySegment::new(variable("p"), int32_literal(0), int32_literal(count))
+            .with_uninitialized(true),
+    );
+    let output = ResourceSpec::composite(
+        ResourceAccessMode::Own,
+        "parts".into(),
+        vec![variable("p")],
+        vec![ProgramType::Int32Pointer],
+    )
+    .with_role(ResourceTransferRole::Produce)
+    .with_state_source(ResourceStateSource::Post);
+    program_function(
+        ProgramType::Void,
+        "partitioned_input",
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        program_skip(),
+    )
+    .with_resource_summary(vec![input], vec![output])
+    .with_composite_resource_definitions(vec![definition])
+}
+
+#[test]
+fn constant_consumed_footprint_supplies_disjoint_fields_once() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let p = Pointer::symbolic(Variable(8_945_000));
+    let facts = PureFactContext::new();
+    let original = ResourceFact::own_memory(MemoryRange::new(p.clone(), 0u32.into(), 4u32.into()));
+    let state = ExecutionState::new()
+        .with_population_creation_tracking()
+        .with_memory(Memory::new().with_block(p.block.clone(), 16))
+        .with_local("p", ProgramValue::pointer(p))
+        .with_resource_context(
+            ResourceContext::new_with_equalities(&facts).unchecked_with_fact(original.clone()),
+        );
+    for duplicate in [false, true] {
+        let function = partitioned_input_contract(4, duplicate);
+        let rule = &function.contract_interface().resource_transfer_rule;
+        assert_eq!(rule.projected_inputs.len(), 4);
+        assert!(!rule.projected_inputs.contains_key(&vec![0, 4]));
+        let transfer = super::tests::prepare_mixed_scalar(&function, &state, &facts);
+        let result = super::composite_transfer_tests::returned(
+            &function,
+            &state,
+            &transfer,
+            ReturnResourceComposition::ApplyTransfers(&transfer.consumed_cell_returns),
+            &facts,
+        );
+        assert_eq!(result.is_ok(), !duplicate, "duplicate={duplicate}");
+        assert!(state.resources().contains_exact_representation(&original));
+    }
+}

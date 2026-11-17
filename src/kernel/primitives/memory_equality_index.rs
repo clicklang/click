@@ -87,6 +87,45 @@ fn range_addresses(range: &MemoryRange, owned: bool) -> Vec<(AddressKind, Pointe
     addresses
 }
 
+/// Cold structural ownership queries retain containing intervals even beside
+/// nested intervals. One augmented-tree path selects an actual occurrence.
+#[derive(Clone, Debug, Default)]
+pub(super) struct ConstantOwnershipIntervals(PersistentMap<Pointer, ReadIntervals>);
+impl ConstantOwnershipIntervals {
+    pub(super) fn update(
+        &mut self,
+        origin: &Pointer,
+        start: i128,
+        end: i128,
+        entry: ResourceEntryId,
+        insert: bool,
+    ) {
+        let mut intervals = self.0.get(origin).cloned().unwrap_or_default();
+        let start = AddressCoordinate(AffineOffset::constant(start));
+        if insert {
+            intervals.insert(start, AddressCoordinate(AffineOffset::constant(end)), entry);
+        } else {
+            intervals.remove(start, entry);
+        }
+        self.0 = if intervals.len() == 0 {
+            self.0.without_key(origin)
+        } else {
+            self.0.with_inserted(origin.clone(), intervals)
+        };
+    }
+    pub(super) fn overlap(
+        &self,
+        origin: &Pointer,
+        start: i128,
+        end: i128,
+    ) -> Option<ResourceEntryId> {
+        self.0.get(origin)?.first_overlap(
+            &AddressCoordinate(AffineOffset::constant(start)),
+            &AddressCoordinate(AffineOffset::constant(end)),
+        )
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct AddressCoordinate(AffineOffset);
 impl Ord for AddressCoordinate {
@@ -1571,30 +1610,38 @@ impl ResourceContext {
                 Unsupported
             };
         }
-        let Some(neighbors) = self.constant_owned_neighbors(&origin, start, end, root_members)
-        else {
-            return Unsupported;
-        };
-        for entry in neighbors {
-            crate::instrumentation::record_deterministic_work(1);
-            let held = self.storage.facts.get(&entry).expect("selected neighbor");
-            let Some((_, lo, hi)) = held
-                .memory_own_range()
-                .and_then(super::resource_algebra::constant_memory_coordinates)
-            else {
-                return Unsupported;
-            };
-            if lo < end && start < hi {
-                return if held.owned_quantity_term().is_some_and(|quantity| {
+        if let Some(entry) = self
+            .storage
+            .index
+            .constant_owned_intervals
+            .overlap(&origin, start, end)
+        {
+            return if self
+                .storage
+                .facts
+                .get(&entry)
+                .expect("selected constant owner")
+                .owned_quantity_term()
+                .is_some_and(|quantity| {
                     super::resource_algebra::resource_quantity_is_positive(quantity, assumptions)
                 }) {
-                    Overlap(entry)
-                } else {
-                    Unsupported
-                };
-            }
+                Overlap(entry)
+            } else {
+                Unsupported
+            };
         }
-        if covered { Clear } else { Unsupported }
+        let complete = self
+            .storage
+            .index
+            .concrete_memory_by_base
+            .get(&(origin, true))
+            .copied()
+            == Some(root_members);
+        if covered && complete {
+            Clear
+        } else {
+            Unsupported
+        }
     }
 
     /// A symbolic query may use an enclosing interval established by direct

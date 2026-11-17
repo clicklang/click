@@ -1,6 +1,52 @@
 use super::*;
 
 #[test]
+fn verified_output_frame_rule_expands_without_geometry_discovery() {
+    let (source, sources) = mdtest_sources("mdtests/verified_outputs_retain_the_callers_frame.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    verify_c_sources(&source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "caller.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    without_implicit_solve_for_claim("caller.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+
+    // An external description cannot issue a verified frame rule.
+    let external = r#"
+resource cell(p: int32*) { owns *p; }
+verifying "external_output_frame.c";
+extern int32* wrap(int32* p) {
+    consumes cell(p);
+    produces cell(result);
+}
+int32 caller(int32* p, int32* q) {
+    consumes cell(p);
+    owns *q;
+    ensures result == 0;
+} by { step_until(function.exit); solve(); }
+"#;
+    let external_sources = [(
+        "external_output_frame.c",
+        r#"
+int *wrap(int *p);
+int caller(int *p, int *q) {
+    int *h = wrap(p);
+    return 0;
+}
+"#,
+    )];
+    let error = without_implicit_solve_for_claim("caller.contract", || {
+        verify_c_sources(external, &external_sources).map_err(|error| error.report())
+    })
+    .expect_err("a description cannot issue the verified frame rule");
+    assert!(error.contains("symbolic ownership boundary"), "{error}");
+}
+
+#[test]
 fn symbolic_return_boundary_expands_and_replays_its_explicit_frame_proof() {
     let (source, sources) =
         mdtest_sources("mdtests/a_symbolic_return_boundary_uses_its_explicit_frame_proof.md");

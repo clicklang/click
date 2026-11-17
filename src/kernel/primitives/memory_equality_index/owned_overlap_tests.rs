@@ -1,5 +1,11 @@
 use super::*;
 
+mod scaling_tests {
+    include!(
+        "../../../scaling_tests/kernel/primitives/memory_equality_index/owned_overlap_tests.rs"
+    );
+}
+
 fn at(id: u64) -> Pointer {
     Pointer::symbolic(Variable(8_750_000 + id))
 }

@@ -2527,3 +2527,85 @@ fn composite_parameter_footprints_scale_with_parts_not_the_frame_or_alias_classe
         }
     }
 }
+
+#[test]
+fn verified_output_partition_does_not_discover_the_callers_frame() {
+    for aliases in [false, true] {
+        let mut samples = Vec::new();
+        for count in [4_u64, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let rule = super::summary_transfer_tests::opaque_pointer_return_rule();
+            let transfers = ConsumedCellReturns::default();
+            let composition = ReturnResourceComposition::for_rule(
+                Some(FramedCallRule::Verified { _rule: &rule }),
+                &transfers,
+            );
+            let pointer = Pointer::symbolic(Variable(9_999_000));
+            let output = ResourceFact::own_memory(MemoryRange::new(
+                pointer.clone(),
+                0u32.into(),
+                1u32.into(),
+            ));
+            let mut facts = PureFactContext::new();
+            let mut frame = ResourceContext::new();
+            for i in 0..count {
+                let other = Pointer::symbolic(Variable(9_999_100 + i));
+                if aliases {
+                    facts = facts.assume_condition(
+                        ConditionTerm::pointer_equal(pointer.clone(), other),
+                        true,
+                    );
+                } else {
+                    frame = frame.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
+                        other,
+                        0u32.into(),
+                        1u32.into(),
+                    )));
+                }
+            }
+            let (returned, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let _fast = crate::kernel::search::FastOperationScope::enter(
+                    "verified output frame construction",
+                );
+                EvaluatedReturnResources::for_composition(composition, &facts)
+                    .construct_clause(
+                        output.clone(),
+                        ReturnOwnershipOrigin::Description,
+                        Some(0),
+                        composition,
+                        rule.function.contract_interface(),
+                        &facts,
+                    )
+                    .unwrap()
+                    .restore_entry_borrows(frame.clone(), composition, &facts)
+                    .unwrap()
+                    .finish(&facts)
+                    .unwrap()
+                    .0
+            });
+            assert!(returned.contains_exact_representation(&output));
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 48),
+            "aliases={aliases}: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn fixed_input_partition_recipe_scales_with_its_declared_fields() {
+    let mut samples = Vec::new();
+    for count in [4_u32, 16, 64] {
+        let function = super::summary_transfer_tests::partitioned_input_contract(count, false);
+        let (rule, work) = crate::instrumentation::measure_deterministic_work(|| {
+            summary_transfer::SummaryResourceTransferRule::compile(function.contract_interface())
+        });
+        assert_eq!(rule.projected_inputs.len(), count as usize);
+        samples.push(work);
+    }
+    assert!(
+        samples[2] <= 6 * samples[1] + 32,
+        "partition recipes: {samples:?}"
+    );
+}
