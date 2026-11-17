@@ -864,6 +864,7 @@ impl FunctionContractInterface {
             value_parameters: Vec::new(),
             resource_requires: Vec::new(),
             resource_ensures: Vec::new(),
+            resource_transfer_rule: Default::default(),
             resource_constructors: Vec::new(),
             contract_requires: Vec::new(),
             contract_requirement_sources: ContractRequirementSources::default(),
@@ -1388,6 +1389,9 @@ impl ProgramFunction {
     ) -> Self {
         Arc::make_mut(&mut self.contract_interface).resource_requires = requires;
         Arc::make_mut(&mut self.contract_interface).resource_ensures = ensures;
+        let rule =
+            super::super::functions::SummaryResourceTransferRule::compile(&self.contract_interface);
+        Arc::make_mut(&mut self.contract_interface).resource_transfer_rule = Arc::new(rule);
         self
     }
 

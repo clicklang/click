@@ -2218,3 +2218,145 @@ fn ordinary_return_construction_and_normalization_ignore_alias_history() {
         }
     }
 }
+
+#[test]
+fn summary_transfer_construction_scales_with_clauses_not_retained_owners_or_aliases() {
+    use crate::kernel::program_expression::{int32_literal, variable};
+    for axis in ["frame", "aliases", "same-block aliases", "clauses"] {
+        let mut samples = Vec::new();
+        for count in [4_u64, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let (mut state, mut facts, first) = super::summary_transfer_tests::symbolic_state();
+            let template = super::summary_transfer_tests::symbolic_contract();
+            let mut parameters = template.parameters().to_vec();
+            let mut inputs = template.resource_requires().to_vec();
+            let mut outputs = template.resource_ensures().to_vec();
+            let mut owners = vec![first.clone()];
+            for index in 0..count {
+                let pointer = if axis == "same-block aliases" {
+                    Pointer {
+                        block: first.memory_own_range().unwrap().base().block.clone(),
+                        offset: PointerOffsetTerm::Variable(Variable(9_950_000 + index)),
+                    }
+                } else {
+                    Pointer::symbolic(Variable(9_950_000 + index))
+                };
+                match axis {
+                    "aliases" | "same-block aliases" => {
+                        facts = facts.assume_condition(
+                            ConditionTerm::pointer_equal(
+                                first.memory_own_range().unwrap().base().clone(),
+                                pointer,
+                            ),
+                            true,
+                        );
+                    }
+                    "frame" => owners.push(ResourceFact::own_memory(MemoryRange::new(
+                        pointer,
+                        0u32.into(),
+                        1u32.into(),
+                    ))),
+                    _ => {
+                        let name = format!("selected_{index}");
+                        parameters.push(program_parameter(name.clone(), ProgramType::Int32Pointer));
+                        let input = ResourceSpec::owned_memory(
+                            MemorySegment::new(
+                                variable(name.clone()),
+                                int32_literal(0),
+                                variable("n"),
+                            )
+                            .with_uninitialized(true),
+                        );
+                        outputs.push(
+                            input
+                                .clone()
+                                .with_role(ResourceTransferRole::Produce)
+                                .with_state_source(ResourceStateSource::Post),
+                        );
+                        inputs.push(input);
+                        let memory = state
+                            .memory()
+                            .clone()
+                            .with_block(pointer.block.clone(), 1024);
+                        state = state
+                            .with_memory(memory)
+                            .with_local(name, ProgramValue::pointer(pointer.clone()));
+                        owners.push(ResourceFact::own_memory(MemoryRange::new(
+                            pointer,
+                            0u32.into(),
+                            first.memory_own_range().unwrap().end().clone(),
+                        )));
+                    }
+                }
+            }
+            let resources =
+                ResourceContext::new_with_equalities(&facts).unchecked_with_facts(owners);
+            resources.synchronize_memory_equalities(&facts);
+            state = state.with_resource_context(resources);
+            let function = program_function(
+                ProgramType::Void,
+                "summary_scaling",
+                parameters,
+                program_skip(),
+            )
+            .with_resource_summary(inputs, outputs);
+            let transfer = super::tests::prepare_mixed_scalar(&function, &state, &facts);
+            let composition =
+                ReturnResourceComposition::ApplyTransfers(&transfer.consumed_cell_returns);
+            let (returned, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let _fast = crate::kernel::search::FastOperationScope::enter(
+                    "summary transfer construction",
+                );
+                evaluate_contract_return_resources(
+                    &transfer.caller_resources_after_requirements,
+                    escrowed_owners(&transfer),
+                    &transfer.canonical_borrowed_owners,
+                    &transfer.borrowed_inputs,
+                    &transfer_entry_clauses(&transfer),
+                    &state,
+                    &state,
+                    function.name(),
+                    function.contract_interface(),
+                    &[],
+                    composition,
+                    &facts,
+                    &mut ExecutionBudget::beside_live_state(),
+                )
+                .unwrap()
+                .unwrap()
+            });
+            assert_eq!(
+                returned.output_resources.facts().len(),
+                if axis == "clauses" {
+                    count as usize + 1
+                } else {
+                    1
+                }
+            );
+            assert_eq!(
+                returned
+                    .return_resources
+                    .facts()
+                    .iter()
+                    .filter(|fact| fact.is_own())
+                    .count(),
+                state.resources().facts().len()
+            );
+            assert!(
+                returned
+                    .return_resources
+                    .contains_exact_representation(&first)
+            );
+            samples.push(work);
+        }
+        eprintln!("summary transfer {axis}: {samples:?}");
+        if axis == "clauses" {
+            assert!(samples[2] <= samples[0] * 18 + 256, "{axis}: {samples:?}");
+        } else {
+            assert!(
+                samples.iter().all(|work| *work <= samples[0] + 64),
+                "{axis}: {samples:?}"
+            );
+        }
+    }
+}

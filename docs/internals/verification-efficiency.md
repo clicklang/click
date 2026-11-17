@@ -111,7 +111,7 @@ Distinguish these producer boundaries:
 | Producer or caller | Ownership evidence and current boundary |
 | --- | --- |
 | Instance unfold | `unfold_instance_body` consumes the selected parent and exposes its constructed body in the retained frame. It checks exclusive identities without rediscovering memory overlap. Evaluating the body description earlier is a separate operation. |
-| Return-clause evaluation | Executed-body returns consume each output from one persistent body context before recording it. Summary and description-only paths still use `admit_clause`, which validates the growing group through compatibility admission. A flat restoration measurement does not cover that earlier description validation. |
+| Return-clause evaluation | Executed-body returns consume each output from one persistent body context. Summary returns retain a clause-level rule for unchanged flat footprints, bind it to selected entry reservations, and record those outputs and checked entry borrows directly. Unjustified descriptions still use compatibility admission. |
 | Return composition | An executed body's `ConstructedBodyReturn` retains its constructed output group and captured caller frame; `finish` installs it directly. Summary paths restore selected entry borrows, consumed-cell transfers, and fresh-allocation outputs, then send remaining descriptions through compatibility admission. `ValidateDescriptions` deliberately does not turn a role marker into transfer evidence. |
 | Produced composite boundary | Construction of the body's internal partition does not itself record a transfer against the destination frame. `produced_composite_frontier_conflict` checks that boundary through indexed admission or legacy discovery. Audit the producer's frame evidence before removing this check. |
 | Iterated `take` and `scatter` | These consume or update an iterated owner and expose selected memory, but still pass the exposed memory through compatibility admission. Their checked exchange and retained frame are the starting point for removing rediscovery; no complete-operation fast bound follows from not enumerating the iterated range. |
@@ -187,9 +187,8 @@ The old Boolean joint-custody pass is not run again after construction.
 Folded heads can describe memory through post-call reads. Their existing
 composite-footprint boundary rule remains, against the retained frame and
 the flat siblings constructed in this return. Owning a head alone is not a
-new proof about that post-memory footprint. Summary-only return construction
-and the separate definitional contract-claim checker retain their existing
-paths. This change does not establish a bound for every consumption or
+new proof about that post-memory footprint. The separate definitional
+contract-claim checker retains its existing path. This change does not establish a bound for every consumption or
 composite-expansion route.
 
 The end-to-end regression
@@ -199,6 +198,41 @@ retained caller ownership. The executed-body scaling regressions grow
 cross-block and same-block aliases, unrelated body/frame owners, and selected
 return splits at 4/16/64. The composite post-memory refusal is exercised for
 both summary and executed-body returns.
+
+#### Summary transfer construction
+
+`FunctionContractInterface` retains a `SummaryResourceTransferRule` compiled
+from its resource clauses. It pairs each unguarded produced flat footprint
+with one consumed clause having the same base parameter, element width, and
+literal or parameter bounds. Each input is paired once. The rule is shared
+with the interface, replaced when resource clauses change, and rebuilt after
+substitution. It neither examines caller facts nor infers alias relationships.
+
+Application binds those input clauses to the actual checked entry reservation.
+Only a selected flat owner supplies this construction. The output retains the
+checked input footprint and its source ownership occurrence, without another
+post-state footprint evaluation or early description admission. Composition
+returns it to the reservation's residual frame and retains the emitted
+source-to-destination map. Checked entry borrows likewise record their already
+selected output without early group readmission. They still retain the existing
+composite post-memory boundary rule.
+
+This is a rule for unchanged footprints, not a blanket license from a verified
+contract to insert arbitrary descriptions. New or changed footprints,
+memory-dependent expressions, guarded effects, and unmatched outputs retain
+admission. The description-only mode ignores transfer provenance and establishes
+the missing relationship to its destination. Raw outputs are checked against
+the restored frame even when they precede a justified output in clause order.
+Composite children retain their existing selected fixed-footprint transfer and
+post-memory boundary paths.
+
+`summary_transfer_construction_scales_with_clauses_not_retained_owners_or_aliases`
+measures complete summary return construction at 4/16/64 retained owners,
+cross-block aliases, same-block aliases, and selected clauses. The first three
+axes require bounded work; growing the clauses permits output-proportional work.
+The summary-return regressions cover symbolic endpoints, persistent branches,
+verified call application, duplicate outputs, raw aliases in either clause
+order, stale rule replacement, and description-only refusal.
 
 These are current implementation boundaries, not exceptions to construction
 without re-validation. Remove repeated checking where the producer already

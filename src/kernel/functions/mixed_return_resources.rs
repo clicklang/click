@@ -15,6 +15,8 @@ pub(super) struct ConsumedCellReturn {
 pub(super) struct ConsumedCellReturns {
     direct: BTreeMap<usize, ConsumedCellReturn>,
     children: BTreeMap<Vec<usize>, ConsumedCellReturn>,
+    // Actual checked input footprints, bound once by the entry reservation.
+    pub(super) constructed: BTreeMap<usize, ResourceFact>,
 }
 
 impl ConsumedCellReturns {
@@ -23,6 +25,35 @@ impl ConsumedCellReturns {
         plan: &StableViewTransferPlan,
         caller: &ResourceContext,
     ) -> Self {
+        let selected = plan
+            .transferred_ownership
+            .iter()
+            .zip(&plan.transferred_ownership_sources)
+            .filter_map(|(checked, source)| {
+                let source = (*source)?;
+                if checked.role != ResourceTransferRole::Consume
+                    || caller
+                        .owned_fact_for_occurrence(source)
+                        .and_then(ResourceFact::memory_own_range)
+                        .is_none()
+                {
+                    return None;
+                }
+                Some((checked.section_index?, (checked, source)))
+            })
+            .collect::<BTreeMap<_, _>>();
+        let mut outputs = Self::default();
+        let mut used = BTreeSet::new();
+        for (&output, &input) in &interface.resource_transfer_rule.inputs_by_output {
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some((checked, source)) = selected.get(&input) {
+                outputs
+                    .direct
+                    .insert(output, ConsumedCellReturn { input: *source });
+                outputs.constructed.insert(output, checked.fact.clone());
+                used.insert(input);
+            }
+        }
         let parameters = interface
             .parameters()
             .iter()
@@ -35,6 +66,12 @@ impl ConsumedCellReturns {
             .iter()
             .zip(&plan.transferred_ownership_sources)
         {
+            if checked
+                .section_index
+                .is_some_and(|index| used.contains(&index))
+            {
+                continue;
+            }
             if checked.role != ResourceTransferRole::Consume {
                 continue;
             }
@@ -63,12 +100,17 @@ impl ConsumedCellReturns {
                 .or_default()
                 .push_back(ConsumedCellReturn { input: *source });
         }
-        let mut outputs = Self::default();
+        if inputs.is_empty() {
+            return outputs;
+        }
         let bindings = parameters
             .iter()
             .map(|name| ((*name).clone(), (*name).clone()))
             .collect();
         for (index, output) in interface.resource_ensures().iter().enumerate() {
+            if outputs.direct.contains_key(&index) {
+                continue;
+            }
             if output.role() != ResourceTransferRole::Produce
                 || output.state_source() != ResourceStateSource::Post
                 || output.guard().is_some()
@@ -230,7 +272,7 @@ fn fixed_memory_shape_without_parameter(spec: &ResourceSpec) -> Option<FixedMemo
     ))
 }
 
-fn fixed_memory_bound(expression: &ProgramExpression) -> Option<ProgramValue> {
+pub(super) fn fixed_memory_bound(expression: &ProgramExpression) -> Option<ProgramValue> {
     let ProgramExpression::Value(value) = expression else {
         return None;
     };
@@ -403,6 +445,18 @@ impl EvaluatedReturnResources {
         assumptions: &PureFactContext,
     ) -> Result<Self, RuntimeError> {
         let Some(body) = &mut self.body else {
+            if composition.restores_entry_borrows() && origin != ReturnOwnershipOrigin::Description
+            {
+                let (resources, mut inserted) =
+                    self.resources.unchecked_with_facts_and_occurrences([fact]);
+                self.resources = resources;
+                self.occurrences.push(EvaluatedReturnOccurrence {
+                    source: inserted.pop().expect("one transferred output occurrence").1,
+                    origin,
+                    clause,
+                });
+                return Ok(self);
+            }
             return self
                 .admit_clause(fact, origin, clause, assumptions)
                 .map_err(resource_context_runtime_error);
@@ -1288,6 +1342,8 @@ mod fresh_allocation_tests;
 mod recursive_return_tests;
 #[cfg(test)]
 mod specialized_return_tests;
+#[cfg(test)]
+mod summary_transfer_tests;
 #[cfg(test)]
 pub(super) mod tests;
 
