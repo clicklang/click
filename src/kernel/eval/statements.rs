@@ -3492,6 +3492,10 @@ pub(in crate::kernel) fn paths_after_scope_exit(
             let outcome = match path.outcome {
                 StatementOutcome::Normal(state) => end_scope_automatic_lifetimes(&state, declared)
                     .map(|state| StatementOutcome::Normal(Box::new(state))),
+                StatementOutcome::LoopTestFalse(state) => {
+                    end_scope_automatic_lifetimes(&state, declared)
+                        .map(|state| StatementOutcome::LoopTestFalse(Box::new(state)))
+                }
                 StatementOutcome::Break(state) => end_scope_automatic_lifetimes(&state, declared)
                     .map(|state| StatementOutcome::Break(Box::new(state))),
                 StatementOutcome::Continue(state) => {
@@ -3620,7 +3624,8 @@ pub(in crate::kernel) fn execute_statement_paths(
                 }
                 // Control leaves the sequence with everything the first
                 // statement's path established, its loan evidence included.
-                outcome @ (StatementOutcome::Break(_)
+                outcome @ (StatementOutcome::LoopTestFalse(_)
+                | StatementOutcome::Break(_)
                 | StatementOutcome::Continue(_)
                 | StatementOutcome::Jump { .. }
                 | StatementOutcome::Return { .. }
@@ -3976,33 +3981,6 @@ fn execute_execution_statement_leaf_paths(
             Vec::new().into(),
             Vec::new(),
         )],
-        // A loop's test continues the pass when its condition holds and
-        // leaves the loop when it does not. Leaving is the loop's exit, the
-        // outcome a `break` also has; the frontier records which one it was.
-        ProgramStatement::LoopTest {
-            condition,
-            aggregate_steps,
-        } => {
-            let cleanup = ProgramStatement::EndAutomaticLifetimes {
-                names: Vec::new(),
-                steps: aggregate_steps.clone(),
-            };
-            execute_execution_statement_leaf_paths(
-                state,
-                &ProgramStatement::If {
-                    condition: condition.clone(),
-                    then_branch: Box::new(cleanup.clone()),
-                    else_branch: Box::new(crate::kernel::program_seq(
-                        cleanup,
-                        ProgramStatement::Break,
-                    )),
-                },
-                assumptions,
-                execution_context,
-                budget,
-                judgment,
-            )?
-        }
         ProgramStatement::Continue => vec![StatementExecutionPath::new(
             StatementOutcome::Continue(Box::new(state.clone())),
             Vec::new().into(),
@@ -4787,11 +4765,7 @@ fn execute_execution_statement_leaf_paths(
             assumptions,
             budget,
         )?,
-        ProgramStatement::If {
-            condition,
-            then_branch,
-            else_branch,
-        } => {
+        ProgramStatement::If { condition, .. } | ProgramStatement::LoopTest { condition, .. } => {
             let mut paths = Vec::new();
             for condition_path in
                 evaluate_program_condition_paths(state, condition, assumptions, budget)?
@@ -4806,11 +4780,6 @@ fn execute_execution_statement_leaf_paths(
                         let truthiness_paths =
                             program_truthiness_paths(value, facts, obligations, assumptions);
                         for truthiness_path in truthiness_paths {
-                            let branch = if truthiness_path.is_true {
-                                then_branch
-                            } else {
-                                else_branch
-                            };
                             let path_assumptions = assumptions_with_path_context(
                                 assumptions,
                                 &truthiness_path.facts,
@@ -4840,6 +4809,43 @@ fn execute_execution_statement_leaf_paths(
                             };
                             // The condition's call results end with it.
                             let branch_state = without_read_step_results(branch_state, condition);
+                            // A test carries its own exit reason. End its
+                            // temporaries on either decision, without manufacturing
+                            // a source `break` or an extra statement theorem.
+                            if let ProgramStatement::LoopTest {
+                                aggregate_steps, ..
+                            } = statement
+                            {
+                                let outcome = match end_aggregate_step_lifetimes(
+                                    &branch_state,
+                                    aggregate_steps,
+                                ) {
+                                    Ok(next) if truthiness_path.is_true => {
+                                        StatementOutcome::Normal(Box::new(next))
+                                    }
+                                    Ok(next) => StatementOutcome::LoopTestFalse(Box::new(next)),
+                                    Err(error) => StatementOutcome::RuntimeError(error),
+                                };
+                                paths.push(StatementExecutionPath::new(
+                                    outcome,
+                                    truthiness_path.facts,
+                                    truthiness_path.obligations,
+                                ));
+                                continue;
+                            }
+                            let ProgramStatement::If {
+                                then_branch,
+                                else_branch,
+                                ..
+                            } = statement
+                            else {
+                                unreachable!("condition statement handled above");
+                            };
+                            let branch = if truthiness_path.is_true {
+                                then_branch
+                            } else {
+                                else_branch
+                            };
                             // The arm is a scope: what it declares stops
                             // existing however control leaves it.
                             let declared = scope_declared_names(branch);
@@ -4981,6 +4987,7 @@ fn execution_statement_outcome_state_mut(
 ) -> Option<&mut ExecutionState> {
     match outcome {
         StatementOutcome::Normal(state)
+        | StatementOutcome::LoopTestFalse(state)
         | StatementOutcome::Break(state)
         | StatementOutcome::Continue(state)
         | StatementOutcome::Jump { state, .. }
@@ -5217,7 +5224,8 @@ fn execute_program_switch_suffix_paths(
                 case_facts,
                 case_obligations,
             )),
-            outcome @ (StatementOutcome::Continue(_)
+            outcome @ (StatementOutcome::LoopTestFalse(_)
+            | StatementOutcome::Continue(_)
             | StatementOutcome::Jump { .. }
             | StatementOutcome::Return { .. }
             | StatementOutcome::Throw { .. }
@@ -5497,7 +5505,8 @@ pub(in crate::kernel) fn execute_program_loop_paths(
                                         check_condition: true,
                                     });
                                 }
-                                StatementOutcome::Break(next_state) => {
+                                StatementOutcome::LoopTestFalse(next_state)
+                                | StatementOutcome::Break(next_state) => {
                                     paths.push(StatementExecutionPath::new(
                                         StatementOutcome::Normal(next_state),
                                         facts,

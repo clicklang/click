@@ -158,12 +158,12 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
             let mut checked_initializations = Vec::new();
             let mut preservation_path_certificates = Vec::new();
             let mut final_exit_candidates_by_context = Vec::with_capacity(contexts.len());
-            let mut break_exits_by_context = Vec::with_capacity(contexts.len());
+            let mut early_exits_by_context = Vec::with_capacity(contexts.len());
             let mut return_exits_by_context = Vec::with_capacity(contexts.len());
             let mut exit_points_by_context = Vec::with_capacity(contexts.len());
             for context in &contexts {
                 let mut final_exit_candidates = Vec::new();
-                let mut break_exits = Vec::new();
+                let mut early_exits = Vec::new();
                 let mut return_exits = Vec::new();
                 let mut exit_points = Vec::new();
                 let assumptions = assumptions_from_propositions(&context.pure_facts);
@@ -333,7 +333,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                         })?;
                         verified_loop_rules.extend(result.nested_loop_rules);
                         final_exit_candidates.extend(result.final_exit_candidates);
-                        break_exits.extend(result.break_exits);
+                        early_exits.extend(result.early_exits);
                         return_exits.extend(result.return_exits);
                         exit_points.extend(result.exit_points);
                         environment
@@ -394,7 +394,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                     });
                 }
                 final_exit_candidates_by_context.push(final_exit_candidates);
-                break_exits_by_context.push(break_exits);
+                early_exits_by_context.push(early_exits);
                 return_exits_by_context.push(return_exits);
                 environment
                     .frontier_loop_certificates
@@ -487,7 +487,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                 },
                 initialization_proof.map(|_| checked_initializations.as_slice()),
                 Some(&final_exit_candidates_by_context),
-                Some(&break_exits_by_context),
+                Some(&early_exits_by_context),
                 Some(&return_exits_by_context),
                 Some(&exit_points_by_context),
             )
@@ -626,7 +626,7 @@ fn advance_execution_proof_statement(
     loop_preservation_source: LoopPreservationSource,
     initializations: Option<&[CheckedLoopInitialization]>,
     loop_final_exit_candidates: Option<&[Vec<LoopFinalExitCandidate>]>,
-    loop_break_exits: Option<&[Vec<LoopBreakExit>]>,
+    loop_early_exits: Option<&[Vec<LoopEarlyExit>]>,
     loop_return_exits: Option<&[Vec<LoopReturnExit>]>,
     loop_exit_points: Option<&[Vec<RecordedRegionPoints>]>,
 ) -> Result<Vec<PlanningExecutionContext>, ClickError> {
@@ -649,7 +649,7 @@ fn advance_execution_proof_statement(
             .and_then(|candidates| candidates.get(context_index))
             .map(Vec::as_slice)
             .unwrap_or(&[]);
-        let break_exits = loop_break_exits
+        let early_exits = loop_early_exits
             .and_then(|exits| exits.get(context_index))
             .map(Vec::as_slice)
             .unwrap_or(&[]);
@@ -695,7 +695,7 @@ fn advance_execution_proof_statement(
                 initialization_proven,
                 preservation_proven,
                 final_exit_candidates,
-                break_exits,
+                early_exits,
                 return_exits,
                 &mut context.next_opaque_call,
                 &mut context.next_kernel_variable,
@@ -875,7 +875,8 @@ fn advance_execution_proof_statement(
                         resume_at_statement: Some(target.statement_index),
                     });
                 }
-                StatementOutcome::Break(_)
+                StatementOutcome::LoopTestFalse(_)
+                | StatementOutcome::Break(_)
                 | StatementOutcome::Continue(_)
                 | StatementOutcome::Throw { .. }
                 | StatementOutcome::Return { .. } => {}

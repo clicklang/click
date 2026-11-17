@@ -26,6 +26,11 @@ scopes before entering that continuation. A `break` or function exit skips it.
 The evaluator and execution frontier follow the same regions; invariant and ranking
 obligations close only after the continuation reaches the backedge. A false
 post-test instead supplies a loop exit with its own state and facts.
+A test's false decision produces `StatementOutcome::LoopTestFalse`, separately
+from a written `break`. Both leave the selected loop, but the proof boundary
+retains the reason directly as `TestFalse` or `Break`. Sequences, scopes and
+switches preserve a test exit; only its loop consumes it. Test temporaries end
+on either decision before its outcome is published.
 
 Checked concrete loop entry records explicit `continue` and `break`
 destinations. Each keeps the driver's local source position separately from

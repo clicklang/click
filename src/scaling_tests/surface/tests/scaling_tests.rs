@@ -10568,6 +10568,7 @@ fn conjunction_projection_transport_scales_with_written_source() {
 }
 
 #[test]
+#[ignore = "nightly: 10s focused, full expansion and replay scaling audit"]
 fn conjunction_selection_transport_scales_with_sources_targets_and_premises() {
     fn balanced(leaves: &[String]) -> String {
         if leaves.len() == 1 {
@@ -10696,6 +10697,7 @@ fn implication_transport_replay_scales_with_explicit_links() {
 }
 
 #[test]
+#[ignore = "nightly: 15s focused, full expansion and replay scaling audit"]
 fn compound_implication_transport_scales_with_reads_and_logical_depth() {
     fn tree(leaves: &[String], op: &str, skewed: bool) -> String {
         if leaves.len() == 1 {

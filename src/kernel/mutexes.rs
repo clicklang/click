@@ -3294,6 +3294,7 @@ mod tests {
         let outcomes = [
             StatementOutcome::Normal(Box::new(state.clone())),
             StatementOutcome::Break(Box::new(state.clone())),
+            StatementOutcome::LoopTestFalse(Box::new(state.clone())),
             StatementOutcome::Continue(Box::new(state.clone())),
             StatementOutcome::Return {
                 value: int32(0).into(),

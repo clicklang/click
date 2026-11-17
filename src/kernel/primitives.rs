@@ -8441,6 +8441,8 @@ pub(super) enum LValueOutcome {
 pub enum StatementOutcome {
     Normal(Box<ExecutionState>),
     Break(Box<ExecutionState>),
+    /// The loop's own test was false; distinct from a written `break`.
+    LoopTestFalse(Box<ExecutionState>),
     Continue(Box<ExecutionState>),
     /// A checked source edge awaiting resumption at its function-owned target.
     Jump {
