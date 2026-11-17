@@ -1,6 +1,29 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: repeated entry guard provenance"]
+fn entry_requirement_provenance_survives_repeated_extent_guards() {
+    let sources = [("entry.c", "int32 entry(int32 a[], int32 n) { return 0; }")];
+    let source = r#"
+        verifying "entry.c";
+        int32 entry(int32 a[], int32 n) {
+            requires 0 <= n and n <= 1000;
+            requires n <= 1073741823;
+            requires viewable(a[0..n]);
+            views a[0..n];
+            requires forall (k: int32) {
+                0 <= k and k < n implies -1000 <= a[k] and a[k] <= 1000
+            };
+            ensures result == 0;
+        } by { step(); known(); }
+    "#;
+    verify_c_sources(source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let bad_sources = [("entry.c", "int32 entry(int32 a[], int32 n) { return 1; }")];
+    let error = verify_c_sources(source, &bad_sources).unwrap_err();
+    assert!(error.message().contains("known"), "{}", error.report());
+}
+
+#[test]
 #[ignore = "nightly: symbolic loop frame verification, expansion and cold replay"]
 fn symbolic_loop_frame_expands_and_cold_replays() {
     let (source, sources) = mdtest_sources("mdtests/loop_symbolic_disjoint_array_store_frame.md");
@@ -2697,10 +2720,7 @@ fn integer_sum_range_fold_expands_and_reverifies() {
         .collect::<Vec<_>>();
     let verified_for_expansion =
         verify_c_sources(click_source, &c_sources).unwrap_or_else(|error| {
-            panic!(
-                "summation ordinary verification failed: {}",
-                error.message()
-            )
+            panic!("summation ordinary verification failed: {}", error.report())
         });
     let expanded = expand_checked_grouped_claim(click_source, &verified_for_expansion, "sum")
         .expect("the summation grouped proof should expand");
