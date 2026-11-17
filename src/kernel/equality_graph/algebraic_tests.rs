@@ -316,7 +316,7 @@ fn scalar_read_conflicts_require_the_same_state() {
         base: "cell".into(),
         offset: AddressOffset::Constant(0),
     };
-    let before = Memory::new().with_block("cell", 4).store(
+    let before = SymbolicMemory::new().with_block("cell", 4).store(
         p.clone(),
         ProgramValue::Int32(MachineTerm::Variable(Variable(500))),
     );

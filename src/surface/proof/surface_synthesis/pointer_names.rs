@@ -239,8 +239,8 @@ mod tests {
     #[test]
     fn pointer_proof_names_keep_historical_bounds_reads() {
         let _session = VerificationSession::enter();
-        let address = crate::kernel::Memory::global_pointer("pointer-name-width");
-        let before = Memory::new().with_block("pointer-name-width", 4);
+        let address = crate::kernel::SymbolicMemory::global_pointer("pointer-name-width");
+        let before = SymbolicMemory::new().with_block("pointer-name-width", 4);
         let after = before.clone().store(
             address.clone(),
             ProgramValue::Int32(MachineTerm::constant(12)),
@@ -264,7 +264,7 @@ mod tests {
     #[test]
     fn pointer_read_roots_raise_through_exact_complete_names() {
         let _session = VerificationSession::enter();
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let address = Address::symbolic(Variable(1018010));
         let seeded = memory.clone().with_seeded_cells(
             address.clone(),

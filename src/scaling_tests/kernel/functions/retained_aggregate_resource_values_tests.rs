@@ -34,7 +34,7 @@ fn retained_resource_fields_preserve_lvalues_and_scale_with_expression() {
         // otherwise reuse observations recorded by the first sample.
         let _session = crate::kernel::VerificationSession::enter();
         let mut entry = ExecutionState::new().with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block(slot.base.clone(), 8)
                 .store(slot.clone(), value.clone()),
         );

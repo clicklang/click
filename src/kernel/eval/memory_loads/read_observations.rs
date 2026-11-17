@@ -297,7 +297,7 @@ mod tests {
     #[test]
     fn a_typed_producer_replaces_an_untyped_canonical_reads_guessed_width() {
         let _session = VerificationSession::enter();
-        let memory = intern_memory(Memory::new());
+        let memory = intern_memory(SymbolicMemory::new());
         let pointer = Address::symbolic(Variable(998_709));
         let untyped = canonical_scalar_read(&MachineTerm::MemoryLoad(
             ProgramPoint::at(&memory),
@@ -340,7 +340,7 @@ mod tests {
     #[test]
     fn inspecting_an_unobserved_read_does_not_capture_its_width_or_origin() {
         let _session = VerificationSession::enter();
-        let memory = intern_memory(Memory::new());
+        let memory = intern_memory(SymbolicMemory::new());
         let pointer = Address::symbolic(Variable(998_707));
         let read = MachineTerm::MemoryLoad(
             ProgramPoint::at(&memory),
@@ -369,7 +369,7 @@ mod tests {
             base: format!("local:frame-origin-{index}").into(),
             offset: AddressOffset::Constant(0),
         };
-        let memory = intern_memory(Memory::new().with_block(pointer.base.clone(), 4));
+        let memory = intern_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 4));
         let read = MachineTerm::MemoryLoad(
             ProgramPoint::at(&memory),
             Box::new(pointer.clone()),
@@ -425,7 +425,7 @@ mod tests {
     #[test]
     fn structural_observations_need_no_reserved_name_and_restore_branch_metadata() {
         let _session = VerificationSession::enter();
-        let memory = intern_memory(Memory::new());
+        let memory = intern_memory(SymbolicMemory::new());
         let pointer = Address::symbolic(Variable(998_701));
         let read = KernelTerm::scalar_read_descriptor(
             MachineIntegerType::Int32,
@@ -461,9 +461,10 @@ mod tests {
     fn structural_observations_distinguish_read_kind_and_state() {
         let _session = VerificationSession::enter();
         let pointer = Address::symbolic(Variable(998_702));
-        let before = intern_memory(Memory::new());
-        let after =
-            intern_memory(Memory::new().store(pointer.clone(), ProgramValue::Int32(1u32.into())));
+        let before = intern_memory(SymbolicMemory::new());
+        let after = intern_memory(
+            SymbolicMemory::new().store(pointer.clone(), ProgramValue::Int32(1u32.into())),
+        );
         let first = record(&before, &pointer, LoadKind::Int32, &before, 4);
         let other_kind = record(&before, &pointer, LoadKind::Int16, &before, 2);
         let other_time = record(&after, &pointer, LoadKind::Int32, &after, 8);
@@ -486,7 +487,7 @@ mod tests {
     #[test]
     fn ordinary_integer_producers_retain_reads_without_reserved_variables() {
         let _session = VerificationSession::enter();
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let pointer = Address::symbolic(Variable(998_704));
         for ty in [
             ProgramType::Int8,
@@ -535,7 +536,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let source = Address::symbolic(Variable(998_705));
         let destination = Address::symbolic(Variable(998_706));
-        let memory = intern_memory(Memory::new());
+        let memory = intern_memory(SymbolicMemory::new());
         let held = canonical_form_of_load(memory.clone(), source, LoadKind::Int32);
         let after = intern_memory(
             memory

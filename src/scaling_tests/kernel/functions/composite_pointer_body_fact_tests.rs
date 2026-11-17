@@ -413,7 +413,7 @@ fn numeric_resource_facts_do_not_repeat_the_canonical_read_walk() {
             ),
             &context,
         );
-        let memory = Memory::new().with_call_memory_havoc(
+        let memory = SymbolicMemory::new().with_call_memory_havoc(
             Variable(719_101),
             &[MemoryRange::new_with_element_width(
                 input(719_102),

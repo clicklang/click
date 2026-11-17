@@ -209,9 +209,9 @@ fn numeric_pointer_rewrites_preserve_origin_and_selected_bounds() {
 #[test]
 fn full_pointer_rewrite_changes_read_storage_without_inventing_its_origin() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = intern_memory(Memory::new());
-    let p = Pointer::new(Address::symbolic(Variable(421)), ProgramType::Int32Pointer);
-    let q = Pointer::new(Address::symbolic(Variable(422)), ProgramType::Int32Pointer);
+    let memory = intern_memory(SymbolicMemory::new());
+    let p = PointerValue::new(Address::symbolic(Variable(421)), ProgramType::Int32Pointer);
+    let q = PointerValue::new(Address::symbolic(Variable(422)), ProgramType::Int32Pointer);
     let other = Address::symbolic(Variable(423));
     let read = Pointer::from_read(
         other.clone(),
@@ -250,7 +250,7 @@ fn full_pointer_rewrite_changes_read_storage_without_inventing_its_origin() {
 #[test]
 fn memory_relationship_rewrite_transports_only_a_complete_pointer_carrier() {
     let _session = crate::kernel::VerificationSession::enter();
-    let retained_state = intern_memory(Memory::new());
+    let retained_state = intern_memory(SymbolicMemory::new());
     let storage = Address::symbolic(Variable(424_100));
     let source = Pointer::from_read(
         Address::symbolic(Variable(424_101)),
@@ -304,7 +304,7 @@ fn memory_relationship_rewrite_transports_only_a_complete_pointer_carrier() {
 #[test]
 fn a_full_pointer_rewrite_does_not_adopt_another_read_carrier_at_the_same_address() {
     let _session = crate::kernel::VerificationSession::enter();
-    let retained_state = intern_memory(Memory::new());
+    let retained_state = intern_memory(SymbolicMemory::new());
     let raw = Address::symbolic(Variable(424_110));
     let source = Pointer::from_read(
         raw.clone(),
@@ -519,8 +519,8 @@ fn displaced_copy_keeps_a_domain_not_named_by_the_full_equality() {
             width: 4u32.into(),
         },
     ));
-    let memory = intern_memory(Memory::new());
-    let source = Pointer::from_read(
+    let memory = intern_memory(SymbolicMemory::new());
+    let source = PointerValue::from_read(
         numeric.clone(),
         ProgramType::UInt8Pointer,
         &memory,

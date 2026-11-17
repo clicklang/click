@@ -4,7 +4,7 @@ use super::*;
 use std::collections::HashMap;
 
 struct Transport<'a> {
-    after: &'a Memory,
+    after: &'a SymbolicMemory,
     assumptions: Option<(&'a PureFactContext, bool)>,
     reconstructed_word: bool,
     offsets: HashMap<SharedAddressOffset, SharedAddressOffset>,
@@ -13,7 +13,7 @@ struct Transport<'a> {
 }
 impl<'a> Transport<'a> {
     fn new(
-        after: &'a Memory,
+        after: &'a SymbolicMemory,
         assumptions: Option<(&'a PureFactContext, bool)>,
         reconstructed_word: bool,
     ) -> Self {
@@ -152,7 +152,7 @@ impl PointerRewrite for Transport<'_> {
 
 pub(super) fn transport_addresses(
     source: &[SharedAddress; 2],
-    after: &Memory,
+    after: &SymbolicMemory,
     assumptions: Option<(&PureFactContext, bool)>,
 ) -> Option<[SharedAddress; 2]> {
     let mut transport = Transport::new(after, assumptions, false);
@@ -164,7 +164,7 @@ pub(super) fn transport_addresses(
 
 pub(super) fn transport_offsets(
     source: &[SharedAddressOffset; 2],
-    after: &Memory,
+    after: &SymbolicMemory,
     assumptions: Option<(&PureFactContext, bool)>,
 ) -> Option<[SharedAddressOffset; 2]> {
     let mut transport = Transport::new(after, assumptions, false);
@@ -173,7 +173,7 @@ pub(super) fn transport_offsets(
 
 pub(crate) fn transport_address(
     source: &SharedAddress,
-    after: &Memory,
+    after: &SymbolicMemory,
     assumptions: Option<(&PureFactContext, bool)>,
 ) -> Option<SharedAddress> {
     source
@@ -182,7 +182,7 @@ pub(crate) fn transport_address(
 }
 pub(crate) fn transport_pointer(
     source: &SharedPointerValue,
-    after: &Memory,
+    after: &SymbolicMemory,
     assumptions: Option<(&PureFactContext, bool)>,
 ) -> Option<SharedPointerValue> {
     let reconstructed = matches!(
@@ -201,7 +201,7 @@ mod tests {
     pub(super) fn fixture() -> (SharedMemory, Address, Address) {
         (
             intern_memory(
-                Memory::new()
+                SymbolicMemory::new()
                     .with_block("local:transport-source", 8)
                     .with_block("local:transport-other", 8),
             ),
@@ -273,7 +273,7 @@ mod tests {
     #[test]
     fn shared_transport_keeps_native_constant_chain_and_carrier_policy() {
         let _session = crate::kernel::VerificationSession::enter();
-        let after = Memory::new();
+        let after = SymbolicMemory::new();
         let cases = [
             AddressOffset::Add(
                 Box::new(AddressOffset::Add(

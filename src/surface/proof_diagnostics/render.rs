@@ -13,8 +13,8 @@ use crate::kernel::binary_term;
 use crate::kernel::{
     Address, AddressOffset, AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, AlgebraicValueType,
     ConditionTerm, ExecutionState, ExpressionOutcome, IntegerRangeFoldIndex, IntegerTerm,
-    MachineTerm, Memory, Proposition, PureFunctionArgument, Resource, Sort, SpecCaptureRefusal,
-    Term, Variable,
+    MachineTerm, Proposition, PureFunctionArgument, Resource, Sort, SpecCaptureRefusal,
+    SymbolicMemory, Term, Variable,
 };
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{
@@ -50,13 +50,13 @@ const MAX_MEMORY_STATE_LABELS: usize = 32;
 /// one, or distinct alphabetic labels when it does not.
 #[derive(Clone, Default)]
 pub(crate) struct MemoryStateLabels {
-    memories: Vec<Memory>,
+    memories: Vec<SymbolicMemory>,
     memory_identities: HashMap<(usize, usize, usize, usize, usize), usize>,
     trace_labels: bool,
     range_collisions: Option<range_collisions::RangeCollisions>,
     pointer_values: HashMap<Address, usize>,
     pointer_sources: HashMap<Address, String>,
-    source_memories: Vec<(Memory, String, std::sync::Arc<NamingTables>)>,
+    source_memories: Vec<(SymbolicMemory, String, std::sync::Arc<NamingTables>)>,
     /// Persistent source-point index, consulted only while printing. Older
     /// loop heads must not lose their name when the recent display fills up.
     recorded_states: Option<crate::surface::RecordedStates>,
@@ -67,7 +67,7 @@ pub(crate) struct MemoryStateLabels {
     anonymous_names: HashMap<Variable, String>,
     /// Memories a source spelling names only by a report-local `<state A>`,
     /// defined after the report.
-    unknown_states: Vec<Memory>,
+    unknown_states: Vec<SymbolicMemory>,
     /// Addresses a source spelling names only by a report-local
     /// `<pointer A>`.
     unnamed_pointers: HashMap<Address, String>,
@@ -246,7 +246,7 @@ impl MemoryStateLabels {
 
     /// A memory as a phrase: `this state`, `function entry`, a recorded
     /// point, or a report-local `<state A>`.
-    pub(crate) fn state_phrase(&mut self, memory: &Memory) -> String {
+    pub(crate) fn state_phrase(&mut self, memory: &SymbolicMemory) -> String {
         match self
             .source_memory_context(memory)
             .map(|(point, _)| point.to_owned())
@@ -259,7 +259,7 @@ impl MemoryStateLabels {
     }
 
     /// The report-local name of a memory no recorded state names.
-    pub(crate) fn state_label(&mut self, memory: &Memory) -> String {
+    pub(crate) fn state_label(&mut self, memory: &SymbolicMemory) -> String {
         if let Some(index) = self
             .unknown_states
             .iter()
@@ -414,7 +414,7 @@ impl MemoryStateLabels {
         self.recorded_states = Some(retained_states.clone());
     }
 
-    fn recorded_memory_point(&self, memory: &Memory) -> Option<String> {
+    fn recorded_memory_point(&self, memory: &SymbolicMemory) -> Option<String> {
         let memory = crate::kernel::intern_memory_ref(memory);
         let (selector, _) = self
             .recorded_states
@@ -431,7 +431,7 @@ impl MemoryStateLabels {
         }
     }
 
-    fn source_memory_context(&self, memory: &Memory) -> Option<(&str, &NamingTables)> {
+    fn source_memory_context(&self, memory: &SymbolicMemory) -> Option<(&str, &NamingTables)> {
         // Exact storage roots identify a state without walking memory. When
         // one memory is both the current state and another recorded one,
         // the unqualified current spelling wins.
@@ -486,7 +486,7 @@ impl MemoryStateLabels {
     }
 
     /// One state in source terms: the program event that produced it.
-    fn describe_state(&mut self, memory: &Memory) -> String {
+    fn describe_state(&mut self, memory: &SymbolicMemory) -> String {
         use crate::kernel::{MemoryConstructionKind, MemoryDerivation};
         if !matches!(
             memory.diagnostic_construction(),
@@ -642,7 +642,7 @@ impl MemoryStateLabels {
 
     /// Whether a read of `memory` is qualified by a recorded point rather
     /// than a report-local `<state A>`.
-    pub(crate) fn names_memory(&self, memory: &Memory) -> bool {
+    pub(crate) fn names_memory(&self, memory: &SymbolicMemory) -> bool {
         self.source_memory_context(memory).is_some()
     }
 
@@ -700,7 +700,7 @@ impl MemoryStateLabels {
 
     /// The label of this memory: an existing ordinal when an equal memory has
     /// already been labeled, otherwise the next one.
-    fn label(&mut self, memory: &Memory) -> Option<usize> {
+    fn label(&mut self, memory: &SymbolicMemory) -> Option<usize> {
         if let Some(index) = self.memory_identities.get(&memory.diagnostic_identity()) {
             return Some(*index);
         }
@@ -727,7 +727,7 @@ impl MemoryStateLabels {
         Some(self.memories.len())
     }
 
-    pub(crate) fn memory_state_name(&mut self, memory: &Memory) -> String {
+    pub(crate) fn memory_state_name(&mut self, memory: &SymbolicMemory) -> String {
         self.label(memory).map_or_else(
             || "state<untracked>".to_owned(),
             |index| format!("state#{index}"),
@@ -912,7 +912,7 @@ type NamingTables = (
 /// terminal proof state takes precedence; this preserves ambient names when
 /// a search-only error is rendered after the verification session unwinds.
 #[derive(Clone, Default)]
-pub(crate) struct CapturedNaming(Option<(Memory, std::sync::Arc<NamingTables>)>);
+pub(crate) struct CapturedNaming(Option<(SymbolicMemory, std::sync::Arc<NamingTables>)>);
 
 impl std::fmt::Debug for CapturedNaming {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -964,7 +964,7 @@ impl CapturedNaming {
 /// Whether `memory` is the initial memory, or it with cells seeded from it:
 /// either holds exactly the values memory had before the code ran. A bounded
 /// walk, done only while printing a failure.
-fn is_entry_memory(memory: &Memory) -> bool {
+fn is_entry_memory(memory: &SymbolicMemory) -> bool {
     let mut current = memory.clone();
     for _ in 0..8 {
         if current.is_initial_diagnostic_memory() {
@@ -997,7 +997,7 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
     /// That function's entry memory, so a read of it spells as `old(...)`.
     /// One retained handle per verified function; diagnostics only.
-    static AMBIENT_ENTRY: std::cell::RefCell<Option<(Memory, std::sync::Arc<NamingTables>)>> =
+    static AMBIENT_ENTRY: std::cell::RefCell<Option<(SymbolicMemory, std::sync::Arc<NamingTables>)>> =
         const { std::cell::RefCell::new(None) };
     /// Set while a `--trace-proof` trace is rendered: traces keep their
     /// typed notation, which names each read's width and state.
@@ -1006,7 +1006,10 @@ thread_local! {
 
 /// Starts verifying a C function whose parameters hold `arguments` in the
 /// memory `entry`.
-pub(crate) fn enter_ambient_naming(parameter_binding: ParameterBinding<'_>, entry: &Memory) {
+pub(crate) fn enter_ambient_naming(
+    parameter_binding: ParameterBinding<'_>,
+    entry: &SymbolicMemory,
+) {
     let tables = std::sync::Arc::new((
         parameter_binding.parameters.to_vec(),
         parameter_binding.arguments.to_vec(),
@@ -2582,7 +2585,7 @@ impl Renderer<'_> {
         }
     }
 
-    fn memory(&mut self, memory: &Memory) {
+    fn memory(&mut self, memory: &SymbolicMemory) {
         match self.labels.label(memory) {
             Some(label) => self.fmt(format_args!("state#{label}")),
             None => self.push("state<untracked>"),
@@ -2739,7 +2742,7 @@ mod tests {
         use crate::surface::{CodeRegionRef, ProgramPointKind, ProgramPointRef, RecordedStates};
         let _session = crate::kernel::VerificationSession::enter();
         let cell = Address::symbolic(Variable(989_100));
-        let memory = Memory::new().with_block("unrelated", 4);
+        let memory = SymbolicMemory::new().with_block("unrelated", 4);
         let projected = crate::kernel::canonical_program_memory_for_pointer_load(&memory, &cell);
         let head = ExecutionState::new().with_memory(memory.clone());
         let mut retained_states = RecordedStates::new();
@@ -2757,10 +2760,14 @@ mod tests {
             // Metadata-only declarations retain the same read identity.
             // Real writes give these later points distinct program bytes.
             let state = ExecutionState::new().with_memory(
-                Memory::new().with_block(format!("later{index}"), 4).store(
-                    cell.clone(),
-                    crate::kernel::ProgramValue::UInt64(MachineTerm::uint64_constant(index as u64)),
-                ),
+                SymbolicMemory::new()
+                    .with_block(format!("later{index}"), 4)
+                    .store(
+                        cell.clone(),
+                        crate::kernel::ProgramValue::UInt64(MachineTerm::uint64_constant(
+                            index as u64,
+                        )),
+                    ),
             );
             retained_states.insert(
                 ProgramPointRef {
@@ -2884,10 +2891,12 @@ mod tests {
                 base: format!("local:{local}").into(),
                 offset: AddressOffset::Constant(0),
             };
-            let memory = Memory::new().with_block(format!("local:{local}"), 4).store(
-                pointer,
-                crate::kernel::ProgramValue::Int32(MachineTerm::constant(7)),
-            );
+            let memory = SymbolicMemory::new()
+                .with_block(format!("local:{local}"), 4)
+                .store(
+                    pointer,
+                    crate::kernel::ProgramValue::Int32(MachineTerm::constant(7)),
+                );
             assert_eq!(
                 MemoryStateLabels::default().describe_state(&memory),
                 expected
@@ -3010,7 +3019,7 @@ mod tests {
         assert!(rendered.contains("body=value A"), "{rendered}");
     }
 
-    fn loadable_at(memory: Memory) -> Proposition {
+    fn loadable_at(memory: SymbolicMemory) -> Proposition {
         Proposition::MemoryLoadable {
             memory,
             base: Address {
@@ -3028,10 +3037,10 @@ mod tests {
     /// separately built empty states look like different memory.
     #[test]
     fn equal_states_share_one_label_and_different_memory_does_not() {
-        let first = Memory::default();
+        let first = SymbolicMemory::default();
         let shared = first.clone();
-        let rebuilt = Memory::default();
-        let different = Memory::new().with_block("block", 16);
+        let rebuilt = SymbolicMemory::default();
+        let different = SymbolicMemory::new().with_block("block", 16);
         assert_ne!(first.diagnostic_identity(), rebuilt.diagnostic_identity());
 
         let first_text = render_proposition(&loadable_at(first));
@@ -3042,7 +3051,8 @@ mod tests {
         // Within one report the labels are the order of first appearance, so
         // two different memories are visibly two.
         let mut labels = MemoryStateLabels::default();
-        let empty = render_proposition_labeled(&loadable_at(Memory::default()), &mut labels);
+        let empty =
+            render_proposition_labeled(&loadable_at(SymbolicMemory::default()), &mut labels);
         let blocked = render_proposition_labeled(&loadable_at(different), &mut labels);
         assert!(empty.contains("state#1"), "{empty}");
         assert!(blocked.contains("state#2"), "{blocked}");
@@ -3053,16 +3063,16 @@ mod tests {
     fn state_labels_stop_comparing_past_their_cap() {
         let mut labels = MemoryStateLabels::default();
         for size in 0..MAX_MEMORY_STATE_LABELS as u32 {
-            let memory = Memory::new().with_block(format!("block{size}"), 16);
+            let memory = SymbolicMemory::new().with_block(format!("block{size}"), 16);
             assert_eq!(labels.label(&memory), Some(size as usize + 1));
         }
-        let overflowing = Memory::new().with_block("block0", 16);
+        let overflowing = SymbolicMemory::new().with_block("block0", 16);
         assert_eq!(
             labels.label(&overflowing),
             Some(1),
             "an earlier label still wins"
         );
-        let beyond = Memory::new().with_block("beyond", 16);
+        let beyond = SymbolicMemory::new().with_block("beyond", 16);
         assert_eq!(labels.label(&beyond), None);
         let rendered = render_proposition_labeled(&loadable_at(beyond), &mut labels);
         assert!(rendered.contains("state<untracked>"), "{rendered}");

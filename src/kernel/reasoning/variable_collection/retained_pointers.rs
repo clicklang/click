@@ -239,7 +239,7 @@ mod tests {
     #[test]
     fn shared_address_readers_match_native_modes_without_export() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = intern_memory(Memory::new());
+        let memory = intern_memory(SymbolicMemory::new());
         let cases = [
             Address {
                 base: AddressBase::Symbolic(Variable(1001001)),

@@ -431,7 +431,7 @@ fn null_pointer_zero_offsets_use_scalar_evidence_and_preserve_refusals() {
 #[test]
 fn a_registered_zero_index_permits_null_pointer_formation() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = crate::kernel::intern_memory(Memory::new());
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let address = Address::symbolic(Variable(933_100));
     let load =
         crate::kernel::eval::load_variable_for_exact_cell(&memory, &address, LoadKind::Int32, 4);

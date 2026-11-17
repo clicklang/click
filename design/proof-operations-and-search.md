@@ -196,12 +196,11 @@ Claim lowering, goal transformations, and state preparation are unchanged.
 
 `ProofScope::join` closes directly or reports the missing resource-body fact
 through the ordinary obligation channel. It cannot call the driver or search.
-`ProofDriver::complete_scope` owns written closing proofs and omitted ordinary
-solve through the existing `close_scope_with_body_fact_proof` orchestration.
-It retains the resulting proof as the scope's `by` for expansion. Nested opens
-use `complete_nested_scope` before incorporating the direct checked successor.
-Function-exit closes keep their existing deferred driver route. Superfluous,
-incorrect, and missing explicit closing proofs keep their existing refusals.
+`ProofDriver::complete_scope` runs the ordinary implicit solver through
+`close_scope_with_body_fact_proof`. Expansion retains each resulting proof
+as a `have` at the end of the scope. Nested opens use `complete_nested_scope`
+before incorporating the direct checked successor. Function-exit closes use
+the deferred driver route and attach the same in-block facts at the outcome.
 
 ## Branch interpretation boundary
 

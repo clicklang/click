@@ -182,7 +182,7 @@ mod tests {
     #[test]
     fn retained_load_differences_preserve_native_operator_and_binder_rules() {
         let _session = VerificationSession::enter();
-        let memory = intern_memory(Memory::new());
+        let memory = intern_memory(SymbolicMemory::new());
         let pointer = Address {
             base: AddressBase::Symbolic(Variable(1005600)),
             offset: AddressOffset::Constant(0),
@@ -304,7 +304,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let binder = Variable(1005699);
         let read = MachineTerm::MemoryLoad(
-            ProgramPoint::at(&(intern_memory(Memory::new()))),
+            ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             Box::new(Address::symbolic(binder)),
             LoadKind::Int32,
         );
@@ -372,7 +372,7 @@ mod tests {
         let ty = MachineIntegerType::Int32;
         let pointer = Address::symbolic(Variable(1007340));
         let load = MachineTerm::MemoryLoad(
-            ProgramPoint::at(&(intern_memory(Memory::new()))),
+            ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             pointer.into(),
             LoadKind::Int32,
         );
@@ -399,12 +399,12 @@ mod tests {
     fn shared_read_evidence_preserves_stored_and_origin_chain_sources() {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let pointer = Memory::global_pointer("shared-read-source");
+        let pointer = SymbolicMemory::global_pointer("shared-read-source");
         let sum = MachineTerm::add(
             MachineTerm::Variable(Variable(1007350)),
             MachineTerm::Variable(Variable(1007350)),
         );
-        let initial = Memory::new().with_block("shared-read-source", 4);
+        let initial = SymbolicMemory::new().with_block("shared-read-source", 4);
         let stored = initial
             .clone()
             .store(pointer.clone(), ProgramValue::Int32(sum.clone()));

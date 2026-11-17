@@ -294,7 +294,7 @@ mod tests {
 
     fn owner(name: &str) -> ResourceFact {
         ResourceFact::own_memory(MemoryRange::new(
-            Memory::local_pointer(name),
+            SymbolicMemory::local_pointer(name),
             0u32.into(),
             1u32.into(),
         ))

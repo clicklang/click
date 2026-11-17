@@ -66,60 +66,40 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
         self.proof.with_completed_execution_if(body)
     }
 
-    /// Schedule a resource close's outstanding body fact, retaining its proof
-    /// as the open scope's `by`. The primitive close only reports obligations.
+    /// Retain proofs of a resource close's body facts inside the scope.
     pub(in crate::surface::proof) fn complete_scope(&self) -> Result<Proof<'a>, ClickError> {
         let scope = self.proof;
         let ProofScopeStructure::Open {
             resource,
             source_index,
             preserve_exposed_body,
-            written_close_proof,
         } = scope.structure.as_ref()
         else {
             return scope.clone().join();
         };
-        if scope.body.is_at_function_exit() {
-            return scope.close_open_scope_from(
-                &scope.body,
-                resource,
-                *source_index,
-                *preserve_exposed_body,
-                written_close_proof,
-            );
-        }
-        let (closed, close_proof) = scope.body.driver().close_scope_with_body_fact_proof(
-            resource,
-            written_close_proof.as_deref(),
-            &|body| {
-                scope.close_open_scope_from(
-                    body,
-                    resource,
-                    *source_index,
-                    *preserve_exposed_body,
-                    written_close_proof,
-                )
-            },
-        )?;
-        let (body, close_proof) = match close_proof {
-            None => return Ok(closed),
-            Some(crate::surface::proof::ScopeCloseProof::By(close_proof)) => {
-                (scope.body.certificate(), Some(close_proof))
-            }
-            Some(crate::surface::proof::ScopeCloseProof::BlockTail(haves)) => {
-                let mut steps = scope.body.certificate().steps().to_vec();
-                steps.extend(haves.steps().iter().cloned());
-                (ProofCertificate::from_steps(steps)?, None)
-            }
+        let close = |body: &Proof<'a>| {
+            scope.close_open_scope_from(body, resource, *source_index, *preserve_exposed_body)
         };
+        if scope.body.is_at_function_exit() {
+            return close(&scope.body);
+        }
+        let (closed, tail) = scope
+            .body
+            .driver()
+            .close_scope_with_body_fact_proof(resource, &close)?;
+        let Some(tail) = tail else {
+            return Ok(closed);
+        };
+        let mut steps = scope.body.certificate().steps().to_vec();
+        steps.extend(tail.steps().iter().cloned());
         Ok(Proof {
             node: ProofNode::step_child(
                 &scope.root.node,
                 closed.focused_branch_id(),
                 Arc::new(ProofStep::Open {
                     resource: resource.clone(),
-                    proof: Box::new(body),
-                    close_proof,
+                    proof: Box::new(ProofCertificate::from_steps(steps)?),
+                    deferred_tail: false,
                 }),
             ),
             ..closed

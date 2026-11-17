@@ -382,9 +382,9 @@ pub(crate) fn prove_resource_law(name: &str, args: &[Resource]) -> Option<Theore
     ))
 }
 
-/// Viewability is a pure state-indexed fact, not resource ownership. Memory
+/// Viewability is a pure state-indexed fact, not resource ownership. SymbolicMemory
 /// descriptors use the existing atom so both Surface spellings coincide.
-pub(crate) fn resource_viewable(memory: &Memory, resource: Resource) -> Proposition {
+pub(crate) fn resource_viewable(memory: &SymbolicMemory, resource: Resource) -> Proposition {
     match resource {
         Resource::Memory(range) => range.loadable_fact(memory),
         resource => Proposition::ResourceViewable {
@@ -395,7 +395,7 @@ pub(crate) fn resource_viewable(memory: &Memory, resource: Resource) -> Proposit
 }
 
 pub(crate) fn prove_viewable_restrict(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     parent: Resource,
     child: Resource,
 ) -> Theorem {

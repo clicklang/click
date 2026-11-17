@@ -328,7 +328,7 @@ impl MemoryStateLabels {
         description
     }
 
-    fn legend_state(&mut self, memory: &Memory) -> String {
+    fn legend_state(&mut self, memory: &SymbolicMemory) -> String {
         let point = self
             .source_memories
             .iter()
@@ -626,7 +626,7 @@ mod tests {
             base: "local:p".into(),
             offset: AddressOffset::Constant(0),
         };
-        let before = Memory::new();
+        let before = SymbolicMemory::new();
         let after = before
             .clone()
             .store(base.clone(), ProgramValue::Int32(7u32.into()));
@@ -668,7 +668,7 @@ mod tests {
             base: "local:unchanged".into(),
             offset: AddressOffset::Constant(0),
         };
-        let memory = Memory::new()
+        let memory = SymbolicMemory::new()
             .with_uninitialized_object(pointer.clone(), 4)
             .with_uninitialized_object(pointer, 4);
         let mut labels = MemoryStateLabels::default();
@@ -682,13 +682,15 @@ mod tests {
     #[test]
     fn state_origin_survives_thread_and_arena_changes() {
         let memory = std::thread::spawn(|| {
-            Memory::new().with_block("local:origin-test", 4).store(
-                Address {
-                    base: "local:origin-test".into(),
-                    offset: AddressOffset::Constant(0),
-                },
-                ProgramValue::Int32(MachineTerm::constant(9)),
-            )
+            SymbolicMemory::new()
+                .with_block("local:origin-test", 4)
+                .store(
+                    Address {
+                        base: "local:origin-test".into(),
+                        offset: AddressOffset::Constant(0),
+                    },
+                    ProgramValue::Int32(MachineTerm::constant(9)),
+                )
         })
         .join()
         .unwrap();
@@ -703,7 +705,7 @@ mod tests {
 
     #[test]
     fn proof_entry_construction_is_not_an_unknown_root() {
-        let memory = Memory::new().with_uninitialized_block("local:object", 8);
+        let memory = SymbolicMemory::new().with_uninitialized_block("local:object", 8);
         let mut labels = MemoryStateLabels::default();
         labels.memory_state_name(&memory);
         let text = labels.trace_legend();
@@ -715,7 +717,7 @@ mod tests {
 
     #[test]
     fn legend_defines_loaded_address_and_displacement_recursively() {
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let base = Address::symbolic(Variable(986_401));
         let mut loaded = Address::loaded_value(&memory, &base);
         loaded.offset = AddressOffset::Constant(16);
@@ -735,7 +737,7 @@ mod tests {
     #[test]
     fn legend_shows_recorded_store_and_its_base() {
         let address = Address::symbolic(Variable(986_402));
-        let memory = Memory::new().store(
+        let memory = SymbolicMemory::new().store(
             address.clone(),
             ProgramValue::Int32(MachineTerm::constant(7)),
         );
@@ -793,12 +795,14 @@ mod tests {
 
     #[test]
     fn legend_names_only_matching_recorded_memories() {
-        let memory = Memory::new().with_block("legend_recorded", 8);
+        let memory = SymbolicMemory::new().with_block("legend_recorded", 8);
         let mut labels = MemoryStateLabels::default();
         let naming = std::sync::Arc::new((Vec::new(), Vec::new()));
-        labels
-            .source_memories
-            .push((Memory::new(), "unrelated_point".into(), naming.clone()));
+        labels.source_memories.push((
+            SymbolicMemory::new(),
+            "unrelated_point".into(),
+            naming.clone(),
+        ));
         labels
             .source_memories
             .push((memory.clone(), "before_rotation".into(), naming));

@@ -25,7 +25,7 @@ fn mixed_call_arguments_import_structurally_and_keep_exact_native_forms() {
         PureFunctionArgument::Value(ProgramValue::Parameter(Box::new(algebraic))),
         PureFunctionArgument::Value(ProgramValue::Pointer(pointer.clone())),
         PureFunctionArgument::ArrayRef {
-            memory: Memory::new(),
+            memory: SymbolicMemory::new(),
             pointer: ProgramValue::Pointer(pointer),
             element_type: ProgramType::Int32,
         },

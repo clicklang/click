@@ -19,7 +19,7 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
         ConditionTerm::pointer_equal(base(160_001), base(160_002)),
         true,
     );
-    let endpoint = |memory: Memory| MemoryDagCell::Unwritten {
+    let endpoint = |memory: SymbolicMemory| MemoryDagCell::Unwritten {
         node: intern_memory(memory),
         path: Vec::new(),
     };
@@ -27,7 +27,7 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
     let sizes = [4u64, 16, 64, 256];
     for count in sizes {
         let mut context = PureFactContext::new().assume_proposition(alias.clone());
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for index in 0..count {
             context = context.assume_condition(
                 ConditionTerm::pointer_equal(

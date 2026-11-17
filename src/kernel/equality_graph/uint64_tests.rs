@@ -108,7 +108,7 @@ fn integer_address_definition_preserves_byte_displacements_and_load_states() {
     assert!(graph.are_uint64_equal(&raw_address(&shifted), &sum));
     assert!(!graph.are_uint64_equal(&raw_address(&shifted), &bits));
     // Equal numeric addresses connect compatible reads, not state identity.
-    let memory = intern_memory(Memory::new().with_block("coordinates", 32));
+    let memory = intern_memory(SymbolicMemory::new().with_block("coordinates", 32));
     let pointer = Address {
         base: "coordinates".into(),
         offset: AddressOffset::Constant(0),
@@ -156,7 +156,7 @@ fn equal_integer_address_words_do_not_merge_pointer_names_or_domains() {
 #[test]
 fn wide_read_and_packed_word_congruence_compose_early_and_late() {
     let _session = VerificationSession::enter();
-    let memory = intern_memory(Memory::new().with_block("wide", 128));
+    let memory = intern_memory(SymbolicMemory::new().with_block("wide", 128));
     let zid = Address::symbolic(Variable(910_001));
     let sid = Address::symbolic(Variable(910_002));
     let p = Address::loaded_value(&memory, &Address::symbolic(Variable(910_003)));
@@ -196,7 +196,7 @@ fn wide_read_and_packed_word_congruence_compose_early_and_late() {
 #[test]
 fn wide_reads_preserve_state_width_and_value_sort() {
     let _session = VerificationSession::enter();
-    let before = intern_memory(Memory::new().with_block("wide", 128));
+    let before = intern_memory(SymbolicMemory::new().with_block("wide", 128));
     let p = Address::symbolic(Variable(920_001));
     let q = Address::symbolic(Variable(920_002));
     let after = intern_memory(before.memory().clone().store(
@@ -255,7 +255,7 @@ mod scaling_tests {
 #[test]
 fn a_wide_read_requires_an_explicit_store_equation_even_through_aliases() {
     let _session = VerificationSession::enter();
-    let memory = intern_memory(Memory::new().with_block("cells", 32));
+    let memory = intern_memory(SymbolicMemory::new().with_block("cells", 32));
     let stored_at = Address {
         base: "cells".into(),
         offset: AddressOffset::Constant(8),
@@ -308,7 +308,7 @@ fn raw_wide_read_requires_its_explicit_store_equation() {
     let value = MachineTerm::uint64_constant(0xfedc_ba98_7654_3210);
     let stored = ProgramValue::UInt64(value.clone());
     let after = intern_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_block("wide", 8)
             .store(pointer.clone(), stored.clone()),
     );

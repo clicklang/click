@@ -491,7 +491,7 @@ fn stored_child_arguments_require_owned_memory() {
         offset: AddressOffset::Constant(0),
     };
     let concrete_state = state.clone().with_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_block("unowned-link", 8)
             .store(concrete.clone(), ProgramValue::pointer(Address::null())),
     );
@@ -2136,7 +2136,7 @@ fn composite_exposure_finds_held_cells_by_structure_near_linearly() {
                     &context,
                     &target,
                     std::slice::from_ref(&definition),
-                    &Memory::new(),
+                    &SymbolicMemory::new(),
                     &assumptions,
                 )
             });
@@ -2492,9 +2492,11 @@ fn dependent_resource_clause_work_scales_with_dependency_nodes() {
         .into_iter()
         .map(|size| {
             let pointers = (0..=size).map(pointer).collect::<Vec<_>>();
-            let memory = pointers.windows(2).fold(Memory::new(), |memory, pair| {
-                memory.store(pair[0].clone(), ProgramValue::pointer(pair[1].clone()))
-            });
+            let memory = pointers
+                .windows(2)
+                .fold(SymbolicMemory::new(), |memory, pair| {
+                    memory.store(pair[0].clone(), ProgramValue::pointer(pair[1].clone()))
+                });
             let state = ExecutionState::new().with_memory(memory);
             // Clause 0 is the only initially readable provider.  Put it last
             // and reverse the dependents so a fixed-point implementation must
@@ -2567,7 +2569,8 @@ fn memory_invalidation_scales_with_affected_intervals_and_barrier_output() {
             MachineTerm::constant(0),
             MachineTerm::constant(1),
         ));
-        let memory = Memory::new().with_block("curve-block", (8 * unrelated_count + 8) as u32);
+        let memory =
+            SymbolicMemory::new().with_block("curve-block", (8 * unrelated_count + 8) as u32);
         let mut resources = ResourceContext::new().unchecked_with_fact(target_support.clone());
         let target_occurrence = resources.owned_occurrences_for_fact(&target_support)[0];
         resources = resources.unchecked_with_supported_facts_from_occurrence_with_memory(
@@ -2797,7 +2800,7 @@ fn frame_queries_ignore_folded_compositions_until_explicitly_opened() {
             let selected = composition(0, 1);
             facts = facts.assume_proposition(Proposition::ResourceComposition(selected.clone()));
             let written = memory_range(pointer(1), 0, 1);
-            let memory = Memory::new();
+            let memory = SymbolicMemory::new();
             let produced = crate::kernel::intern_memory(memory.clone().with_call_memory_havoc(
                 Variable(919_000),
                 std::slice::from_ref(&written),
@@ -3230,7 +3233,7 @@ fn observable_projection_ignores_excluded_loan_bindings_when_hashing() {
         let reader = ledger.fresh_participant().unwrap();
         for index in 0..size {
             let range = MemoryRange::new(
-                Memory::local_pointer(format!("hidden_{index}")),
+                SymbolicMemory::local_pointer(format!("hidden_{index}")),
                 0u32.into(),
                 1u32.into(),
             );

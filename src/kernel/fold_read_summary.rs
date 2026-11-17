@@ -172,7 +172,7 @@ impl std::fmt::Display for FoldReadDecline {
 /// `base + element_width * k` for `start <= k < end`, read at `memory`.
 #[derive(Clone, Debug)]
 pub(crate) struct FoldReadInterval {
-    pub(crate) memory: Memory,
+    pub(crate) memory: SymbolicMemory,
     pub(crate) base: Address,
     pub(crate) start: SharedMachineIntegerTerm,
     pub(crate) end: SharedMachineIntegerTerm,
@@ -935,7 +935,7 @@ pub(crate) fn frame_fold_applications(
     if left_state == right_state {
         return Ok(0);
     }
-    // Memory states are content-addressed and each records its first derivation,
+    // SymbolicMemory states are content-addressed and each records its first derivation,
     // so the later state's recorded history need not pass through the
     // earlier one: a second store to one cell re-derives from the state
     // before the first. Walk both back to a common state, always stepping

@@ -81,7 +81,7 @@ use crate::kernel::{MachineCastSpelling, cast_term};
 /// state: nothing compares two states' contents, because a resource context's
 /// `PartialEq` walks its facts and no tracker answer may cost that.
 ///
-/// Memory keeps [`ProgramPoint`] instead, whose identity is one interned
+/// SymbolicMemory keeps [`ProgramPoint`] instead, whose identity is one interned
 /// state id. That is what the naming path needs and what a load variable's
 /// name embeds; a whole state is neither interned nor ordered, so it could not
 /// serve there.

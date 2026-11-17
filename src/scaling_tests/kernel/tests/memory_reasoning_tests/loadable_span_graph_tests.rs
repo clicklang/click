@@ -7,7 +7,7 @@ use super::*;
 #[test]
 fn direct_loadable_span_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let base = Address::symbolic(Variable(9_320_010));
         let range_bytes = span(var(0));
         let fact = Proposition::MemoryLoadable {
@@ -50,7 +50,7 @@ fn direct_loadable_span_graph_queries_scale_without_fact_index() {
 /// its parent instead of copying an index that grows with the path.
 #[test]
 fn filing_a_loadable_fact_in_a_fork_shares_every_other_block() {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let loadable = |id: u64| Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: Address::symbolic(Variable(9_330_000 + id)),
@@ -107,7 +107,7 @@ fn filing_a_load_condition_in_a_fork_shares_every_other_load() {
     let load_condition = |id: u64| {
         ConditionTerm::float64_compare(
             MachineTerm::MemoryLoad(
-                ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
+                ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
                 Box::new(pointer(id)),
                 crate::kernel::LoadKind::Float64,
             ),
@@ -157,7 +157,7 @@ fn filing_a_load_condition_in_a_fork_shares_every_other_load() {
 #[test]
 fn integer_read_facts_do_not_grow_load_time_transport_work() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = crate::kernel::intern_memory(Memory::new());
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let pointer = Address::symbolic(Variable(9_330_000));
     let read = MachineTerm::MemoryLoad(
         ProgramPoint::at(&memory),

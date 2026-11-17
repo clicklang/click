@@ -433,11 +433,11 @@ mod tests {
     #[test]
     fn complete_pointer_conditions_keep_exact_only_load_authority() {
         let _session = crate::kernel::VerificationSession::enter();
-        let before = crate::kernel::Memory::new()
+        let before = crate::kernel::SymbolicMemory::new()
             .with_block("complete-read", 4)
             .with_block("complete-other", 4);
         let after = before.clone().store(
-            crate::kernel::Memory::global_pointer("complete-other"),
+            crate::kernel::SymbolicMemory::global_pointer("complete-other"),
             ProgramValue::Int32(MachineTerm::constant(1)),
         );
         let roots = [before, after].map(|memory| {
@@ -446,7 +446,9 @@ mod tests {
                 offset: AddressOffset::scaled_int32_node(
                     MachineTerm::MemoryLoad(
                         ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
-                        Box::new(crate::kernel::Memory::global_pointer("complete-read")),
+                        Box::new(crate::kernel::SymbolicMemory::global_pointer(
+                            "complete-read",
+                        )),
                         LoadKind::Int32,
                     ),
                     4,

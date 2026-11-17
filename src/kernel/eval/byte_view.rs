@@ -1,6 +1,6 @@
 //! The byte view of integer cells.
 //!
-//! Memory keeps typed cells, not bytes. A one-byte C access that lands inside
+//! SymbolicMemory keeps typed cells, not bytes. A one-byte C access that lands inside
 //! a wider integer cell, rather than on a cell of its own, still has a defined
 //! meaning once the target's byte order is known: under little-endian order,
 //! byte `k` of an integer object holds bits `8k .. 8k + 8` of its value. This
@@ -29,7 +29,7 @@ const WIDEST_INTEGER_CELL_BYTES: i64 = 8;
 /// The equation names only the selected output state; initialization and
 /// authority come from the checked output transfer, not from this equation.
 pub(in crate::kernel) fn declared_uint32_read_representation(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     pointer: &Address,
     byte_order: Option<ByteOrder>,
 ) -> Option<Proposition> {
@@ -85,7 +85,7 @@ pub(in crate::kernel) fn declared_uint32_read_representation(
 /// existing integer cell: the resulting typed cell replaces the byte cells,
 /// and the ordinary store transition invalidates overlapping cached values.
 pub(in crate::kernel) fn assemble_declared_uint32_after_byte_store(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     pointer: &Address,
     stored: &ProgramValue,
     byte_order: Option<ByteOrder>,
@@ -186,7 +186,7 @@ fn integer_cell_width(value: &ProgramValue) -> Option<u32> {
 /// overlapping cell, or an overlapping cell with no byte view (pointer,
 /// float, `_Bool`).
 pub(in crate::kernel) fn containing_integer_cell(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     pointer: &Address,
     byte_order: Option<ByteOrder>,
 ) -> Option<ContainingIntegerCell> {

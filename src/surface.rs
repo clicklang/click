@@ -18,18 +18,18 @@ use crate::kernel::{
     FunctionContractClaimKey, FunctionContractClaimTarget, FunctionContractExecutionMode,
     FunctionExecutionCandidates, FunctionOutcome, FunctionSpecification, LoopEarlyExit, LoopEffect,
     LoopEffectCheck, LoopEffectSpan, LoopFinalExitCandidate, LoopInvariantCheck, LoopReturnExit,
-    MachineTerm, Memory, MemoryRange, MemorySegment, ProgramExpression, ProgramFunction,
-    ProgramStatement, ProgramType, ProgramValue, ProofObligation, Proposition,
-    PropositionDerivation, PureFactContext, Resource,
-    ResourceAccessMode as KernelResourceAccessMode, ResourceContext, ResourceContextValidityError,
-    ResourceFact, ResourceFamily, ResourceSpec, ResourceStateSource, ResourceTransferRole, Sort,
-    SpecAlgebraicExpression, SpecExpression, SpecPoint, SpecPredicateArgument, SpecProposition,
-    SpecResource, StatementOutcome, SymbolicExecution, Term, TerminationRefusal, Theorem,
-    UnsuitableCallback, Variable, VerifiedLoopRule,
-    VerifiedPureTheorem as KernelVerifiedPureTheorem, abstract_execution_state_for_join,
-    assume_universally_quantified_pure_implication, contract_refinement_context, int32,
-    loop_invariants_hold_at_entry, program_assign, program_condition_fact_memories,
-    program_declare, program_do_while_with_invariant_and_effect_checks, program_function,
+    MachineTerm, MemoryRange, MemorySegment, ProgramExpression, ProgramFunction, ProgramStatement,
+    ProgramType, ProgramValue, ProofObligation, Proposition, PropositionDerivation,
+    PureFactContext, Resource, ResourceAccessMode as KernelResourceAccessMode, ResourceContext,
+    ResourceContextValidityError, ResourceFact, ResourceFamily, ResourceSpec, ResourceStateSource,
+    ResourceTransferRole, Sort, SpecAlgebraicExpression, SpecExpression, SpecPoint,
+    SpecPredicateArgument, SpecProposition, SpecResource, StatementOutcome, SymbolicExecution,
+    SymbolicMemory, Term, TerminationRefusal, Theorem, UnsuitableCallback, Variable,
+    VerifiedLoopRule, VerifiedPureTheorem as KernelVerifiedPureTheorem,
+    abstract_execution_state_for_join, assume_universally_quantified_pure_implication,
+    contract_refinement_context, int32, loop_invariants_hold_at_entry, program_assign,
+    program_condition_fact_memories, program_declare,
+    program_do_while_with_invariant_and_effect_checks, program_function,
     program_function_contract_entry_state, program_function_contract_refinement_arguments,
     program_function_contract_refinement_context, program_function_entry_state,
     program_function_termination_plan, program_if, program_pointer_offsets_proven_equal_for_effect,
@@ -454,7 +454,7 @@ pub(crate) fn loop_iterations_spelling(index: usize) -> String {
 
 /// The Rust accessors a proof reads a loop's iterator through, as written
 /// after `iter.`: a call such as `len()` or a public field such as `start`.
-pub(crate) const RUST_ITERATOR_ACCESSORS: [&str; 12] = [
+pub(crate) const RUST_ITERATOR_ACCESSORS: [&str; 13] = [
     "len()",
     "count",
     "as_slice()",
@@ -462,6 +462,7 @@ pub(crate) const RUST_ITERATOR_ACCESSORS: [&str; 12] = [
     "end",
     "start()",
     "end()",
+    "is_empty()",
     "v",
     "v.len()",
     "rem",
@@ -471,7 +472,7 @@ pub(crate) const RUST_ITERATOR_ACCESSORS: [&str; 12] = [
 
 /// The accessors of an iterator of `kind`, which are Rust's own:
 /// `ExactSizeIterator::len`, `slice::Iter::as_slice`, a `Range`'s `start`
-/// and `end` fields, a `RangeInclusive`'s `start()` and `end()`, and a
+/// and `end` fields, a `RangeInclusive`'s `start()`, `end()`, and `is_empty()`, and a
 /// `ChunksExact`'s fields `v`, `rem` and `chunk_size`.
 pub(crate) fn rust_iterator_accessors(
     kind: crate::languages::interface::RustIteratorKind,
@@ -482,7 +483,9 @@ pub(crate) fn rust_iterator_accessors(
             &["len()", "as_slice()", "count"]
         }
         crate::languages::interface::RustIteratorKind::Range => &["start", "end", "len()"],
-        crate::languages::interface::RustIteratorKind::RangeInclusive => &["start()", "end()"],
+        crate::languages::interface::RustIteratorKind::RangeInclusive => {
+            &["start()", "end()", "is_empty()"]
+        }
         // A crate's own iterator is a struct the program holds: a proof
         // reads its fields through the local, `iter.n`.
         crate::languages::interface::RustIteratorKind::User => &[],
@@ -512,6 +515,28 @@ pub(crate) fn rust_iterator_method(
         (K::Range, "end") => variable("end"),
         (K::RangeInclusive, "start()") => variable("start"),
         (K::RangeInclusive, "end()") => variable("end"),
+        (K::RangeInclusive, "is_empty()") => {
+            let local = |suffix| ContractExpression::ProgramExpression(variable(suffix));
+            let compare = |left, operator, right| ClickProposition::Comparison {
+                left,
+                operator,
+                right,
+            };
+            return proposition_bool_value(ClickProposition::Or(
+                Box::new(compare(
+                    local("done"),
+                    ComparisonOperator::NotEqual,
+                    ContractExpression::ProgramExpression(
+                        crate::kernel::program_expression::int32_literal(0),
+                    ),
+                )),
+                Box::new(compare(
+                    local("start"),
+                    ComparisonOperator::GreaterThan,
+                    local("end"),
+                )),
+            ));
+        }
         (K::Range, "len()") => {
             ProgramExpression::Subtract(Box::new(variable("end")), Box::new(variable("start")))
         }
@@ -3431,7 +3456,7 @@ pub(crate) use binary_contract_expression;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ClickArrayRef {
-    memory: Memory,
+    memory: SymbolicMemory,
     pointer: Address,
     element_type: ProgramType,
 }
@@ -3670,7 +3695,7 @@ struct RecordedStates {
     cell_points: crate::persistent::PersistentMap<(u64, usize), ProgramPointSelector>,
     /// The memory of the state inserted last, against which the next insert
     /// finds the cells it changed.
-    last_memory: Option<crate::kernel::Memory>,
+    last_memory: Option<crate::kernel::SymbolicMemory>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -3817,7 +3842,7 @@ impl RecordedStates {
         }
         let before_state = self.get(&before).ok_or("missing footprint entry")?;
         let after_state = self.get(&after).ok_or("missing footprint exit")?;
-        let memory_is = |a: &crate::kernel::Memory, b: &crate::kernel::Memory| {
+        let memory_is = |a: &crate::kernel::SymbolicMemory, b: &crate::kernel::SymbolicMemory| {
             crate::kernel::intern_memory_ref(a) == crate::kernel::intern_memory_ref(b)
         };
         let covered = if start == end {
@@ -6326,13 +6351,7 @@ impl ProofTactic {
                     .collect(),
             },
             Self::Have(have) => vec![Obligation(Source(&have.proof))],
-            Self::Open(open) => {
-                let mut children = vec![Continuing(Script(&open.tactics))];
-                if let Some(close) = &open.close_proof {
-                    children.push(Obligation(Script(close)));
-                }
-                children
-            }
+            Self::Open(open) => vec![Continuing(Script(&open.tactics))],
             Self::If(proof_if) => vec![
                 Continuing(Script(&proof_if.then_tactics)),
                 Continuing(Script(&proof_if.else_tactics)),
@@ -6514,36 +6533,17 @@ impl ProofHave {
 pub struct ProofOpen {
     resource: ResourceClause,
     tactics: Vec<ProofTactic>,
-    /// `open(r) { ... } by { ... }`: the proof of the one body fact the
-    /// scope's closing fold leaves open, as `fold(r) by { ... }` proves a
-    /// fold's.
-    close_proof: Option<Vec<ProofTactic>>,
+    // The captured tail of a deferred close, merged into the matching scope
+    // when the outcome proof is assembled.
+    deferred_tail: bool,
 }
 
 impl ProofOpen {
-    /// The proof a deferred close of `open(resource)` recorded for the body
-    /// fact its closing fold left open: an `open` with no body, which the
-    /// certificate attaches to the scope it closes as that scope's `by`.
-    pub(crate) fn deferred_close_proof(
-        resource: ResourceClause,
-        close_proof: Vec<ProofTactic>,
-    ) -> Self {
-        Self {
-            resource,
-            tactics: Vec::new(),
-            close_proof: Some(close_proof),
-        }
-    }
-
-    /// The `have`s a deferred close of `open(resource)` proved for the
-    /// several body facts its closing fold left open: an `open` with an
-    /// empty `by`, which the certificate appends to the block of the scope
-    /// it closes. A written `by` is never empty.
     pub(crate) fn deferred_block_tail(resource: ResourceClause, haves: Vec<ProofTactic>) -> Self {
         Self {
             resource,
             tactics: haves,
-            close_proof: Some(Vec::new()),
+            deferred_tail: true,
         }
     }
 }
@@ -9749,7 +9749,7 @@ impl StructuralClause {
     /// declared-resource arguments, and the `decreases` measure may spell a
     /// proof `match` arm's bindings or a `let { ... } = unfold(...)` name, which are in
     /// scope for a loop written inside that arm exactly as for a `have` goal
-    /// there. Memory segments are left as written; they name C places.
+    /// there. SymbolicMemory segments are left as written; they name C places.
     pub(in crate::surface) fn with_substituted_bindings(
         &self,
         substitutions: &BinderMap<ContractExpression>,

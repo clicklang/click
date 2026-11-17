@@ -73,7 +73,7 @@ impl MemoryLoadAliasCache {
 #[allow(clippy::too_many_arguments)]
 #[cfg(test)]
 pub(in crate::kernel) fn evaluate_memory_load_paths(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     pointer: Address,
     value_type: ProgramType,
     facts: ExecutionFacts,
@@ -103,7 +103,7 @@ pub(in crate::kernel) fn evaluate_memory_load_paths(
 
 #[allow(clippy::too_many_arguments)]
 pub(in crate::kernel) fn evaluate_retained_memory_load_paths(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     pointer: Address,
     value_type: ProgramType,
     facts: ExecutionFacts,
@@ -229,7 +229,7 @@ pub(in crate::kernel) fn evaluate_retained_memory_load_paths(
 /// one-term spec load rule already governs the non-symbolic spec path in
 /// `crate::kernel::spec`; this is the same rule on the symbolic one.
 pub(in crate::kernel) fn evaluate_spec_memory_load_paths(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     pointer: Address,
     value_type: ProgramType,
     facts: ExecutionFacts,
@@ -265,7 +265,7 @@ pub(in crate::kernel) fn evaluate_spec_memory_load_paths(
 /// Construct the value of a logical read using the shared typed load model.
 /// No C access occurs and no validity evidence is introduced.
 pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     pointer: Address,
     value_type: ProgramType,
     facts: ExecutionFacts,
@@ -290,7 +290,7 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
 }
 
 fn evaluate_logical_memory_load_paths_unbridged(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     pointer: Address,
     value_type: ProgramType,
     facts: ExecutionFacts,
@@ -479,7 +479,7 @@ fn logical_read_names_its_version(value_type: ProgramType) -> bool {
 /// A selected footprint supplies an equal address, not a replacement read
 /// term or access permission. Retain its stored word as a path-local equation.
 fn retain_indexed_scalar_cell_value(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     pointer: &Address,
     value_type: ProgramType,
     assumptions: &PureFactContext,
@@ -520,7 +520,7 @@ fn retain_indexed_scalar_cell_value(
 /// Use a published footprint only to select coordinates for this logical
 /// address. Equality of the address grants no access or state transport.
 fn logical_memory_load_address(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     pointer: Address,
     value_type: ProgramType,
     assumptions: &PureFactContext,
@@ -567,7 +567,7 @@ enum LoadPurpose {
     Validity,
 }
 
-fn has_pending_reallocation_for_pointer(memory: &Memory, pointer: &Address) -> bool {
+fn has_pending_reallocation_for_pointer(memory: &SymbolicMemory, pointer: &Address) -> bool {
     memory
         .heap
         .pending_reallocations
@@ -598,7 +598,7 @@ fn has_pending_reallocation_for_pointer(memory: &Memory, pointer: &Address) -> b
 /// the same order, on one stack frame.
 #[allow(clippy::too_many_arguments)]
 fn evaluate_memory_load_paths_with_alias_cache(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     pointer: Address,
     value_type: ProgramType,
     facts: ExecutionFacts,
@@ -630,7 +630,7 @@ fn evaluate_memory_load_paths_with_alias_cache(
 
 #[allow(clippy::too_many_arguments)]
 fn evaluate_retained_memory_load_paths_with_alias_cache(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     pointer: Address,
     value_type: ProgramType,
     facts: ExecutionFacts,
@@ -712,7 +712,7 @@ fn evaluate_retained_memory_load_paths_with_alias_cache(
 /// the case's facts, and under `assumptions` when a transport built a fact
 /// set of its own for the load (otherwise the one the load was read under).
 struct DistinctLoadCase {
-    memory: Memory,
+    memory: SymbolicMemory,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: Option<PureFactContext>,
@@ -727,8 +727,8 @@ struct DistinctLoadCase {
 /// program point named by an unresolved read.
 #[allow(clippy::too_many_arguments)]
 fn evaluate_retained_memory_load_case(
-    memory: &Memory,
-    written: &Memory,
+    memory: &SymbolicMemory,
+    written: &SymbolicMemory,
     pointer: Address,
     value_type: ProgramType,
     facts: ExecutionFacts,
@@ -1636,7 +1636,7 @@ fn evaluate_retained_memory_load_case(
 /// words from the run's earlier contents. The value is then that
 /// state's load, the term an earlier read or a resource fact names.
 pub(in crate::kernel) fn abstract_value_source(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     pointer: &Address,
 ) -> Option<SharedMemory> {
     let mut source: Option<SharedMemory> = None;
@@ -1675,7 +1675,7 @@ pub(in crate::kernel) fn abstract_value_source(
 /// specification read denotes the named state's value, and a volatile one
 /// may observe a write no recorded step made.
 fn cell_value_recorded_on_path(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     pointer: &Address,
     value_type: ProgramType,
     facts: &mut ExecutionFacts,
@@ -1732,7 +1732,7 @@ fn cell_value_recorded_on_path(
 /// descriptor. Complete-pointer frame evidence remains separate from the
 /// numeric prefix. Only the legacy volatile route still allocates a name.
 fn canonicalized_pointer_value_from_int_cell(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     pointer: &Address,
     value: &ProgramValue,
     value_type: ProgramType,
@@ -1866,7 +1866,7 @@ fn canonicalized_pointer_value_from_int_cell(
 /// `None` sends the load on to the ordinary scans.
 #[allow(clippy::too_many_arguments)]
 fn symbolic_index_run_load(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     pointer: &Address,
     value_type: ProgramType,
     facts: &mut ExecutionFacts,
@@ -1989,7 +1989,11 @@ fn symbolic_index_run_load(
     )
 }
 
-fn complete_loaded_word(value: ProgramValue, memory: &Memory, address: &Address) -> ProgramValue {
+fn complete_loaded_word(
+    value: ProgramValue,
+    memory: &SymbolicMemory,
+    address: &Address,
+) -> ProgramValue {
     if !WordRepresentationScope::keeps_representation() {
         return match value {
             ProgramValue::PointerInteger(record) => *record.numeric,
@@ -2014,7 +2018,7 @@ fn complete_loaded_word(value: ProgramValue, memory: &Memory, address: &Address)
 }
 
 fn canonicalized_symbolic_load_value_with_identity(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     pointer: &Address,
     value_type: ProgramType,
     facts: &mut ExecutionFacts,
@@ -2036,7 +2040,7 @@ fn canonicalized_symbolic_load_value_with_identity(
 
 #[allow(clippy::too_many_arguments)]
 fn canonicalized_retained_symbolic_load_value_with_identity(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     pointer: &Address,
     value_type: ProgramType,
     facts: &mut ExecutionFacts,
@@ -2718,7 +2722,7 @@ fn decide_closed_conditions(proposition: &Proposition) -> Option<Proposition> {
 }
 
 fn comparison_form_uncached(proposition: &Proposition) -> Option<Proposition> {
-    // Memory states stay opaque: only the proposition's own terms are
+    // SymbolicMemory states stay opaque: only the proposition's own terms are
     // visited, never the cells of a state a read names.
     let mut collector =
         crate::kernel::proof::term_rewrite::IntegerSubstitutionVariableCollector::uncharged();
@@ -2896,7 +2900,7 @@ thread_local! {
 
 /// Whether `memory` caches a whole pointer at exactly `address`, as a cell or
 /// as a union cell's pointer view.
-fn holds_pointer_cell(memory: &Memory, address: &Address) -> bool {
+fn holds_pointer_cell(memory: &SymbolicMemory, address: &Address) -> bool {
     matches!(
         memory
             .cells
@@ -3262,7 +3266,11 @@ thread_local! {
 /// state. Widening on conflict: the entry has to cover every access that
 /// resolves through it. A declared array element counts as already recorded
 /// at its declared width.
-pub(in crate::kernel) fn record_load_access_width(memory: &Memory, pointer: &Address, bytes: u32) {
+pub(in crate::kernel) fn record_load_access_width(
+    memory: &SymbolicMemory,
+    pointer: &Address,
+    bytes: u32,
+) {
     let key = (
         crate::kernel::intern_memory(memory.clone()),
         pointer.clone(),
@@ -3378,7 +3386,7 @@ pub(crate) fn load_term_access_width(
 ///
 /// The state-keyed form above is the precise one and is what a caller
 /// holding an interned state asks. This one is for a caller holding a bare
-/// `Memory` it would have to intern only to ask the question, where the C
+/// `SymbolicMemory` it would have to intern only to ask the question, where the C
 /// type at the address is the whole answer anyway: every framing comparison
 /// runs at a state later than the load it is carrying, so the exact key
 /// would miss and fall through to this table regardless.
@@ -4741,7 +4749,7 @@ fn record_wide_load_observation(term: &MachineTerm, variable: Variable) {
 }
 
 // Only a typed producer records an unconditional pointer-read expression.
-fn record_pointer_read_observation(value: &Address, memory: &Memory, address: &Address) {
+fn record_pointer_read_observation(value: &Address, memory: &SymbolicMemory, address: &Address) {
     let epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
     crate::instrumentation::record_deterministic_work(1);
     let memory = crate::kernel::intern_memory_ref(memory);
@@ -5058,7 +5066,7 @@ fn record_load_variable_defining_fact_with_source_and_pointer(
 }
 
 pub(in crate::kernel) fn symbolic_load_value(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     pointer: &Address,
     value_type: ProgramType,
 ) -> Option<ProgramValue> {
@@ -5074,7 +5082,7 @@ pub(in crate::kernel) fn symbolic_load_value(
 /// [`symbolic_load_value`] without recording the access width, for a caller
 /// that has already said how wide the access is.
 pub(in crate::kernel) fn symbolic_load_value_unrecorded(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     pointer: &Address,
     value_type: ProgramType,
 ) -> Option<ProgramValue> {
@@ -5175,7 +5183,7 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
 /// An optional cell-cache reconciliation must not canonicalize a cold load
 /// by walking its unrelated memory history. Missing names give no evidence.
 pub(in crate::kernel) fn cached_symbolic_storage_cell_value(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     pointer: &Address,
     program_type: ProgramType,
 ) -> Option<ProgramValue> {
@@ -5219,7 +5227,7 @@ pub(in crate::kernel) fn cached_symbolic_storage_cell_value(
 }
 
 pub(in crate::kernel) fn symbolic_storage_cell_value(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     pointer: &Address,
     program_type: ProgramType,
     record_width: bool,
@@ -5275,7 +5283,7 @@ mod tests {
             base: "read-api-other".into(),
             offset: AddressOffset::Constant(0),
         };
-        let memory = Memory::new()
+        let memory = SymbolicMemory::new()
             .with_block("read-api-target", 4)
             .with_block("read-api-other", 4)
             .store(pointer.clone(), int32(7));
@@ -5331,7 +5339,7 @@ mod tests {
             base: "read-api-written".into(),
             offset: AddressOffset::Constant(0),
         };
-        let memory = Memory::new()
+        let memory = SymbolicMemory::new()
             .with_block("read-api-written", 4)
             .store(pointer.clone(), int32(7));
         let before = intern_memory_ref(&memory);
@@ -5358,7 +5366,7 @@ mod tests {
     #[test]
     fn pointer_producers_do_not_allocate_scalar_names() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let address = Address::symbolic(Variable(93_001));
         let before = load_variable_registry_len();
         for ty in [
@@ -5399,7 +5407,7 @@ mod tests {
     #[test]
     fn native_narrow_reads_keep_their_width_beside_word_observations() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let pointer = Address::symbolic(Variable(993151));
         record_load_access_width(memory.memory(), &pointer, 8);
         for (kind, bytes) in [
@@ -5440,7 +5448,7 @@ mod tests {
     fn querying_a_registered_read_preserves_its_access_width() {
         for bytes in [4, 8] {
             let _session = crate::kernel::VerificationSession::enter();
-            let memory = crate::kernel::intern_memory(Memory::new());
+            let memory = crate::kernel::intern_memory(SymbolicMemory::new());
             let pointer = Address::symbolic(Variable(993149));
             let name = load_variable_for_exact_cell(&memory, &pointer, LoadKind::Int32, bytes);
             let raw = MachineTerm::MemoryLoad(
@@ -5472,7 +5480,7 @@ mod tests {
     #[test]
     fn structural_read_observations_keep_live_width_epoch_and_restored_metadata() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let pointer = Address::symbolic(Variable(993150));
         let name = load_variable_for_exact_cell(&memory, &pointer, LoadKind::Int32, 4);
         let term = registered_scalar_read_term(&name, MachineIntegerType::Int32).unwrap();
@@ -5527,7 +5535,7 @@ mod tests {
                 offset: AddressOffset::Constant(0),
             };
             let value = ProgramValue::typed_pointer(stored.clone(), ty);
-            let memory = Memory::new().store(address.clone(), value.clone());
+            let memory = SymbolicMemory::new().store(address.clone(), value.clone());
             let context = PureFactContext::new()
                 .allow_symbolic_contract_loads()
                 .assume_proposition(Proposition::ResourceComposition(
@@ -5593,13 +5601,13 @@ mod tests {
     fn logical_read_of_copied_pointer_retains_its_complete_value() {
         let complete_equalities = [false, true].map(|declare_after_store| {
             let _session = crate::kernel::VerificationSession::enter();
-            let field = Memory::frame_local_pointer(0, "copied_pointer");
-            let stored = Pointer::new(
+            let field = SymbolicMemory::frame_local_pointer(0, "copied_pointer");
+            let stored = PointerValue::new(
                 Address::symbolic(Variable(210_399)),
                 ProgramType::Int32Pointer,
             );
             let mut memory =
-                Memory::new().store(field.clone(), ProgramValue::Pointer(stored.clone()));
+                SymbolicMemory::new().store(field.clone(), ProgramValue::Pointer(stored.clone()));
             // Aggregate parameter binding writes its fields, then declares
             // the private destination block. Compare the immediate store.
             if declare_after_store {
@@ -5648,7 +5656,7 @@ mod tests {
         let context = PureFactContext::new()
             .allow_symbolic_contract_loads()
             .force_symbolic_external_loads();
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let first = evaluate_logical_memory_load_paths(
             &memory,
             address.clone(),
@@ -5685,7 +5693,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let empty = PureFactContext::new();
         let registry_before = capture_load_variable_registry();
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let address = Address {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::Constant(8),
@@ -5761,7 +5769,7 @@ mod tests {
     #[test]
     fn logical_read_equations_are_not_conditions_or_quantifier_guards() {
         let value = Address::symbolic(Variable(959_001));
-        let read = Address::loaded_value(&intern_memory(Memory::new()), &value);
+        let read = Address::loaded_value(&intern_memory(SymbolicMemory::new()), &value);
         let fact = ExecutionPureFact::logical_read_equation(
             Pointer::new(value, ProgramType::Int32Pointer),
             read,
@@ -5793,7 +5801,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let context = PureFactContext::new();
         let address = Address::symbolic(Variable(959_101));
-        let base = Memory::new();
+        let base = SymbolicMemory::new();
         let mut facts = ExecutionFacts::new();
         let value = canonicalized_symbolic_load_value_with_identity(
             &base,
@@ -5826,7 +5834,7 @@ mod tests {
     fn checked_resource_index_retains_its_current_pointer_cell() {
         let _session = crate::kernel::VerificationSession::enter();
         let empty = PureFactContext::new();
-        let base = Memory::new();
+        let base = SymbolicMemory::new();
         let source = Address::symbolic(Variable(955_001));
         let cached = logical_pointer_read(&base, &source, &empty);
         assert_eq!(
@@ -6015,7 +6023,7 @@ mod tests {
             base: storage.clone(),
             offset: AddressOffset::Constant(0),
         };
-        let memory = Memory::new()
+        let memory = SymbolicMemory::new()
             .with_block(storage.clone(), 16)
             .with_block(early.clone(), 4);
         let value_type = ProgramType::Int32Pointer;
@@ -6066,7 +6074,7 @@ mod tests {
                 };
                 // Another allocation live at the read, which the value may
                 // point into as well as anything else that existed then.
-                let memory = Memory::new()
+                let memory = SymbolicMemory::new()
                     .with_block(block.clone(), 16)
                     .with_block(AddressBase::Heap(8702), 16);
                 let value_type = ProgramType::Int32Pointer;
@@ -6194,7 +6202,7 @@ mod tests {
             ),
         };
         let expected = ProgramValue::Int32(MachineTerm::constant(7));
-        let memory = Memory::new().store(pointer.clone(), expected.clone());
+        let memory = SymbolicMemory::new().store(pointer.clone(), expected.clone());
         let paths = evaluate_logical_memory_load_paths(
             &memory,
             pointer,
@@ -6222,7 +6230,7 @@ mod tests {
                 offset: AddressOffset::Constant(0),
             };
             let value_type = ProgramType::Int32Pointer;
-            let before = Memory::new()
+            let before = SymbolicMemory::new()
                 .with_block(target.base.clone(), 4)
                 .with_block(cell.base.clone(), 16)
                 .store(
@@ -6325,7 +6333,7 @@ mod tests {
         };
         let assumptions = PureFactContext::new()
             .assume_condition(ConditionTerm::equal(index, MachineTerm::constant(1)), true);
-        let memory = Memory::new()
+        let memory = SymbolicMemory::new()
             .with_block(base.base.clone(), 12)
             .store(base.offset_by_bytes(4), int32(3));
         for initialized in [false, true] {
@@ -6407,7 +6415,7 @@ mod tests {
         // Keep one unresolved cell so the reduced load is still symbolic.
         // Dropping only the later, proven-distinct write then makes the
         // reduced memory structurally equal to this already-interned ancestor.
-        let ancestor_memory = Memory::new().store(retained, int32(1));
+        let ancestor_memory = SymbolicMemory::new().store(retained, int32(1));
         let ancestor = intern_memory_ref(&ancestor_memory);
         let current = ancestor_memory.store(written.clone(), int32(2));
         let distinct = PureFactContext::new().assume_condition(
@@ -6469,7 +6477,7 @@ mod tests {
 
     #[test]
     fn minted_load_fact_carries_exact_producer_binding() {
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let pointer = Address {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::Constant(12),
@@ -6502,7 +6510,7 @@ mod tests {
     #[test]
     fn structural_read_definitions_keep_the_read_carrier_width() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = intern_memory(Memory::new());
+        let memory = intern_memory(SymbolicMemory::new());
         let pointer = Address::symbolic(Variable(299_301));
         for (kind, format) in [
             (LoadKind::Int8, MachineIntegerType::Int8),
@@ -6550,7 +6558,7 @@ mod tests {
     #[test]
     fn structural_read_binding_rejects_changed_width_address_and_epoch() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = intern_memory(Memory::new());
+        let memory = intern_memory(SymbolicMemory::new());
         let address = Address::symbolic(Variable(299_201));
         let raw = |pointer, kind| {
             MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(pointer), kind)
@@ -6596,7 +6604,7 @@ mod tests {
             ConditionTerm::equal(
                 MachineTerm::Variable(variable),
                 MachineTerm::MemoryLoad(
-                    ProgramPoint::at(&(intern_memory(Memory::new()))),
+                    ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
                     Box::new(Address::symbolic(Variable(299_201))),
                     LoadKind::Int32,
                 ),
@@ -6613,7 +6621,7 @@ mod tests {
 
     #[test]
     fn repeated_mint_keeps_each_exact_source_observation_on_one_fact() {
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let pointer = Address {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::Constant(12),
@@ -6652,7 +6660,7 @@ mod tests {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::Constant(20),
         };
-        let first_memory = crate::kernel::intern_memory(Memory::new());
+        let first_memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let first_load = MachineTerm::MemoryLoad(
             ProgramPoint::at(&first_memory),
             Box::new(pointer.clone()),
@@ -6680,11 +6688,11 @@ mod tests {
         .with_generated_load_binding(produced.generated_load_binding().unwrap().clone())
         .with_generated_load_source_event(produced.generated_load_source_events()[0].clone());
 
-        // A fresh arena represents a new epoch. Its empty Memory is
+        // A fresh arena represents a new epoch. Its empty SymbolicMemory is
         // structurally equal to the first one, but its embedded state
         // identity is intentionally different.
         crate::kernel::primitives::start_fresh_memory_arena();
-        let second_memory = crate::kernel::intern_memory(Memory::new());
+        let second_memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let second_load = MachineTerm::MemoryLoad(
             ProgramPoint::at(&second_memory),
             Box::new(pointer),
@@ -6721,7 +6729,7 @@ mod tests {
             .stack_size(1 << 20)
             .spawn(|| {
                 let block = AddressBase::from("global:split_table");
-                let mut memory = Memory::new().with_block(block.clone(), CELLS * 4);
+                let mut memory = SymbolicMemory::new().with_block(block.clone(), CELLS * 4);
                 for index in 0..CELLS {
                     memory = memory.store(
                         Address {
@@ -6766,7 +6774,7 @@ mod tests {
     }
 
     fn logical_pointer_read(
-        memory: &Memory,
+        memory: &SymbolicMemory,
         address: &Address,
         context: &PureFactContext,
     ) -> Address {
@@ -6803,7 +6811,7 @@ mod tests {
         let alias = Address::symbolic(Variable(955_922));
         let target = Address::symbolic(Variable(955_923));
         let right = owner.offset_by_bytes(8);
-        let before = Memory::new().store(
+        let before = SymbolicMemory::new().store(
             right.clone(),
             ProgramValue::typed_pointer(target.clone(), ProgramType::Int64Pointer),
         );
@@ -6821,7 +6829,7 @@ mod tests {
             ConditionTerm::pointer_equal(owner.clone(), alias.clone()),
             true,
         );
-        let read = |memory: &Memory, address: Address, context: &PureFactContext| {
+        let read = |memory: &SymbolicMemory, address: Address, context: &PureFactContext| {
             let paths = evaluate_logical_memory_load_paths(
                 memory,
                 address,
@@ -6880,7 +6888,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let slot = Address::symbolic(Variable(989_960));
         let alias = Address::symbolic(Variable(989_961));
-        let memory = Memory::new().store(
+        let memory = SymbolicMemory::new().store(
             slot.clone(),
             ProgramValue::UInt64(MachineTerm::uint64_constant(7)),
         );
@@ -6916,7 +6924,7 @@ mod tests {
             offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(95_000)), 4),
         };
         let alias = Address::symbolic(Variable(95_001));
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let empty = PureFactContext::new();
         let resources = ResourceContext::new_with_equalities(&empty).unchecked_with_fact(
             ResourceFact::own_memory(MemoryRange::new_with_element_width(
@@ -7024,7 +7032,7 @@ mod tests {
 
     #[test]
     fn logical_pointer_read_definitions_are_not_hypotheses_or_read_authority() {
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let a = Address::symbolic(Variable(92_200));
         let b = Address::symbolic(Variable(92_201));
         let before = PureFactContext::new();
@@ -7072,7 +7080,7 @@ mod tests {
         // Forget the materialized cell without changing its stored value.
         // The typed read recovers the complete pointer, while the separately
         // recorded initialized bytes supply authority to read it.
-        let memory = Memory::new()
+        let memory = SymbolicMemory::new()
             .with_initialized_object(&field, 8)
             .store(field.clone(), stored.clone())
             .without_possible_aliasing_cells(
@@ -7137,11 +7145,11 @@ mod tests {
             }))
             .with_object_class(Some(class.clone()));
         let context = PureFactContext::new();
-        let memory = Memory::new()
+        let memory = SymbolicMemory::new()
             .store(field.clone(), ProgramValue::Pointer(stored.clone()))
             .without_possible_aliasing_cells(&Address::symbolic(Variable(210_191)), 8, &context);
         assert!(memory.known_value(&field).is_none());
-        let read = |memory: &Memory| {
+        let read = |memory: &SymbolicMemory| {
             let mut facts = ExecutionFacts::new();
             let ProgramValue::Pointer(value) = canonicalized_symbolic_load_value_with_identity(
                 memory,
@@ -7217,7 +7225,7 @@ mod tests {
             MemoryRange::new_with_element_width(field.clone(), 0u32.into(), 1u32.into(), 8),
         ));
         let state = ExecutionState::new()
-            .with_memory(Memory::new().store(field.clone(), stored))
+            .with_memory(SymbolicMemory::new().store(field.clone(), stored))
             .with_resource_context(resources)
             .with_local(
                 "word",
@@ -7263,7 +7271,7 @@ mod tests {
             },
         ));
         let context = PureFactContext::new();
-        let read = |memory: &Memory| {
+        let read = |memory: &SymbolicMemory| {
             canonicalized_symbolic_load_value_with_identity(
                 memory,
                 &field,
@@ -7292,7 +7300,7 @@ mod tests {
                 pointer: Box::new(pointer.clone()),
                 kind,
             });
-            let memory = Memory::new()
+            let memory = SymbolicMemory::new()
                 .store(field.clone(), stored.clone())
                 .without_possible_aliasing_cells(
                     &Address::symbolic(Variable(210_193)),
@@ -7306,7 +7314,8 @@ mod tests {
                 ProgramValue::UInt32(0u32.into()),
             );
             assert_ne!(read(&partial), stored);
-            let numeric = Memory::new().store(field.clone(), stored.numeric_value().clone());
+            let numeric =
+                SymbolicMemory::new().store(field.clone(), stored.numeric_value().clone());
             let ProgramValue::PointerInteger(fresh) = read(&numeric) else {
                 panic!("word read")
             };
@@ -7335,7 +7344,7 @@ mod tests {
             pointer: Box::new(pointer.clone()),
             kind: PointerIntegerKind::Exact,
         });
-        let before = Memory::new().store(field.clone(), stored);
+        let before = SymbolicMemory::new().store(field.clone(), stored);
         // Forgetting a cache is not a write to the program's memory.
         let after = before.clone().without_possible_aliasing_cells(
             &Address::symbolic(Variable(210_196)),
@@ -7392,9 +7401,9 @@ mod tests {
             SubobjectBounds {
                 start: address,
                 width: 4u32.into(),
-            },
-        ));
-        let memory = Memory::new()
+            }),
+        );
+        let memory = SymbolicMemory::new()
             .store(field.clone(), ProgramValue::Pointer(stored.clone()))
             .store(other.clone(), ProgramValue::Pointer(stored.clone()));
         let memory = memory
@@ -7406,7 +7415,7 @@ mod tests {
             .materialize_symbolic_cell(field.clone(), ProgramType::Int32)
             .materialize_symbolic_cell(other.clone(), ProgramType::Int32);
         let context = PureFactContext::new();
-        let read = |memory: &Memory, field: &Address| {
+        let read = |memory: &SymbolicMemory, field: &Address| {
             let prefix = memory.known_value(field).expect("cached prefix");
             assert!(matches!(prefix, ProgramValue::Int32(_)));
             let ProgramValue::Pointer(value) = canonicalized_pointer_value_from_int_cell(
@@ -7452,7 +7461,7 @@ mod tests {
         let target = Address::function("callback");
         let replacement = Address::function("replacement");
         let program_type = ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED);
-        let memory = Memory::new().store(
+        let memory = SymbolicMemory::new().store(
             table.offset_by_bytes(8),
             ProgramValue::typed_pointer(target.clone(), program_type),
         );
@@ -7586,7 +7595,7 @@ mod tests {
         // prefix of a pointer: an 8-byte pointer read through it is not the
         // pointer read at `source`, whose name it must not take.
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Memory::new();
+        let base = SymbolicMemory::new();
         let source = Address::symbolic(Variable(940_095));
         let destination = Address::symbolic(Variable(940_096));
         let ProgramValue::Pointer(original) =
@@ -7623,7 +7632,7 @@ mod tests {
     #[test]
     fn specification_pointer_reads_do_not_adopt_fact_supplied_bounds() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let address = Address::symbolic(Variable(989_920));
         let evaluate = |context: &PureFactContext| {
             let paths = evaluate_memory_load_paths(
@@ -7665,7 +7674,7 @@ mod tests {
         let target = Address::symbolic(Variable(989_932));
         let stored = Pointer::new(target.clone(), ProgramType::Int32Pointer)
             .with_bounds(Some(SubobjectBounds::constant(target, 4)));
-        let memory = Memory::new()
+        let memory = SymbolicMemory::new()
             .store(slot.clone(), ProgramValue::Pointer(stored.clone()))
             .without_possible_aliasing_cells(&write, 4, &PureFactContext::new())
             .store(write.clone(), ProgramValue::Int32(7u32.into()));
@@ -7734,7 +7743,7 @@ mod tests {
     #[test]
     fn specification_cached_pointer_prefix_identity_is_fact_stable() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let source = Address::symbolic(Variable(989_910));
         let destination = Address::symbolic(Variable(989_911));
         let read = MachineTerm::MemoryLoad(
@@ -7775,7 +7784,7 @@ mod tests {
     #[test]
     fn specification_program_pointer_reads_retain_their_logical_names() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let a = Address::symbolic(Variable(940_097));
         let b = Address::symbolic(Variable(940_098));
         let context = PureFactContext::new()
@@ -7817,7 +7826,7 @@ mod tests {
     #[test]
     fn logical_cached_raw_pointer_reads_retain_their_load_variables() {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Memory::new();
+        let base = SymbolicMemory::new();
         let origin = intern_memory_ref(&base);
         let a = Address {
             base: AddressBase::ExternalArgument,
@@ -7899,7 +7908,7 @@ mod tests {
 
     #[test]
     fn logical_pointer_read_registration_invalidates_an_earlier_memoized_miss() {
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let a = Address::symbolic(Variable(92_210));
         let b = Address::symbolic(Variable(92_211));
         let before = PureFactContext::new();
@@ -7953,7 +7962,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let slot = Address::symbolic(Variable(92_330));
         let write = Address::symbolic(Variable(92_331));
-        let before = intern_memory(Memory::new());
+        let before = intern_memory(SymbolicMemory::new());
         let load = MachineTerm::MemoryLoad(
             ProgramPoint::at(&before),
             Box::new(slot.clone()),
@@ -8111,7 +8120,7 @@ mod tests {
     fn cached_typed_read_retains_exact_definition_without_admitting_facts() {
         let context = PureFactContext::new();
         let address = Address::symbolic(Variable(92_310));
-        let retained_state = intern_memory(Memory::new());
+        let retained_state = intern_memory(SymbolicMemory::new());
         let load = MachineTerm::MemoryLoad(
             ProgramPoint::at(&retained_state),
             Box::new(address.clone()),
@@ -8152,7 +8161,7 @@ mod tests {
         assert!(sibling.pointers_known_equal(value.address(), &application));
         assert!(sibling.pure_facts().is_empty());
         let declared =
-            intern_memory(Memory::new().with_block(AddressBase::from("global:other"), 8));
+            intern_memory(SymbolicMemory::new().with_block(AddressBase::from("global:other"), 8));
         assert!(
             context
                 .pointers_known_equal(value.address(), &Address::loaded_value(&declared, &address))
@@ -8173,7 +8182,7 @@ mod tests {
     fn cached_pointer_prefix_cannot_recover_bounds_after_an_upper_half_write() {
         let _session = crate::kernel::VerificationSession::enter();
         let address = Address::symbolic(Variable(92_312));
-        let before = Memory::new();
+        let before = SymbolicMemory::new();
         let (variable, _) = load_variable_for_term(&MachineTerm::MemoryLoad(
             ProgramPoint::at(&(intern_memory_ref(&before))),
             Box::new(address.clone()),
@@ -8181,7 +8190,7 @@ mod tests {
         ))
         .unwrap();
         let cached = ProgramValue::Int32(MachineTerm::Variable(variable));
-        let read = |memory: &Memory, context: &PureFactContext| {
+        let read = |memory: &SymbolicMemory, context: &PureFactContext| {
             let ProgramValue::Pointer(value) = canonicalized_pointer_value_from_int_cell(
                 memory,
                 &address,
@@ -8262,7 +8271,7 @@ mod tests {
     fn cached_volatile_pointer_read_has_no_retainable_definition() {
         let context = PureFactContext::new();
         let address = Address::symbolic(Variable(92_311));
-        let retained_state = intern_memory(Memory::new());
+        let retained_state = intern_memory(SymbolicMemory::new());
         let load = MachineTerm::MemoryLoad(
             ProgramPoint::at(&retained_state),
             Box::new(address.clone()),
@@ -8294,7 +8303,7 @@ mod tests {
 
     #[test]
     fn completed_pointer_reads_join_through_later_graph_address_equality() {
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let retained_state = intern_memory(memory.clone());
         let a = Address::symbolic(Variable(92_100));
         let b = Address::symbolic(Variable(92_101));
@@ -8462,11 +8471,11 @@ mod tests {
                 true,
             )
         };
-        let memory = Memory::new().store(
+        let memory = SymbolicMemory::new().store(
             address.clone(),
             ProgramValue::typed_pointer(stored.clone(), ProgramType::Int32Pointer),
         );
-        let read = |memory: Memory, address: &Address, variable, width| {
+        let read = |memory: SymbolicMemory, address: &Address, variable, width| {
             record_load_access_width(&memory, address, width);
             let value = Address::symbolic(Variable(variable));
             empty.register_pointer_read(&value, &intern_memory(memory), address);
@@ -8519,7 +8528,7 @@ mod tests {
         );
         let narrow_address = Address::symbolic(Variable(99_105));
         let narrow = read(
-            Memory::new().store(
+            SymbolicMemory::new().store(
                 narrow_address.clone(),
                 ProgramValue::typed_pointer(stored, ProgramType::Int32Pointer),
             ),
@@ -8537,7 +8546,7 @@ mod tests {
         );
         let scalar_address = Address::symbolic(Variable(99_107));
         let scalar = read(
-            Memory::new().store(
+            SymbolicMemory::new().store(
                 scalar_address.clone(),
                 ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
             ),
@@ -8569,7 +8578,7 @@ mod tests {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(103_002)), 4),
         };
-        let memory = Memory::new().store(
+        let memory = SymbolicMemory::new().store(
             address.clone(),
             ProgramValue::typed_pointer(stored.clone(), ProgramType::Int32Pointer),
         );
@@ -8620,7 +8629,7 @@ mod tests {
             offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(104_002)), 4),
         };
         let stored = Address::symbolic(Variable(104_003));
-        let source = Memory::new()
+        let source = SymbolicMemory::new()
             .with_block_without_derivation("local:projection", 4)
             .store(
                 written.clone(),
@@ -8651,7 +8660,7 @@ mod tests {
     fn symbolic_storage_pointer_cells_share_logical_read_identity() {
         let _session = crate::kernel::VerificationSession::enter();
         let address = Address::symbolic(Variable(190_101));
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         assert!(
             cached_symbolic_storage_cell_value(&memory, &address, ProgramType::Int32Pointer)
                 .is_none()
@@ -8688,7 +8697,7 @@ mod tests {
     fn symbolic_pointer_load_factory_retains_exact_read_definition() {
         let _session = crate::kernel::VerificationSession::enter();
         let address = Address::symbolic(Variable(190_001));
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let ProgramValue::Pointer(value) =
             memory.symbolic_pointer_load(&address, ProgramType::Int32Pointer)
         else {
@@ -8756,11 +8765,12 @@ mod pointer_comparison_tests {
             SubobjectBounds {
                 start: target.clone(),
                 width: 4u32.into(),
-            },
-        ));
-        let memory =
-            intern_memory(Memory::new().store(slot.clone(), ProgramValue::Pointer(stored.clone())));
-        let read = Pointer::new(
+            }),
+        );
+        let memory = intern_memory(
+            SymbolicMemory::new().store(slot.clone(), ProgramValue::Pointer(stored.clone())),
+        );
+        let read = PointerValue::new(
             Address::loaded_value(&memory, &slot),
             ProgramType::Int32Pointer,
         );
@@ -8791,11 +8801,12 @@ mod pointer_comparison_tests {
             SubobjectBounds {
                 start: target.clone(),
                 width: 4u32.into(),
-            },
-        ));
-        let memory =
-            intern_memory(Memory::new().store(slot.clone(), ProgramValue::Pointer(stored.clone())));
-        let read = Pointer::new(
+            }),
+        );
+        let memory = intern_memory(
+            SymbolicMemory::new().store(slot.clone(), ProgramValue::Pointer(stored.clone())),
+        );
+        let read = PointerValue::new(
             Address::loaded_value(&memory, &slot),
             ProgramType::Int32Pointer,
         )
@@ -8822,7 +8833,7 @@ mod pointer_comparison_tests {
             offset: AddressOffset::Constant(0),
         };
         let memory = intern_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .store(
                     slot.clone(),
                     ProgramValue::typed_pointer(target.clone(), ProgramType::Int32Pointer),
@@ -8863,7 +8874,7 @@ mod pointer_read_value_definition_tests {
             offset: AddressOffset::Constant(0),
         };
         let first = crate::kernel::intern_memory(
-            Memory::new().store(unrelated.clone(), ProgramValue::UInt32(1u32.into())),
+            SymbolicMemory::new().store(unrelated.clone(), ProgramValue::UInt32(1u32.into())),
         );
         let named = Address::version_read(&first, &cell);
         let context = PureFactContext::new();
@@ -8898,7 +8909,7 @@ mod pointer_read_value_definition_tests {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::Constant(0),
         };
-        let source = crate::kernel::intern_memory(Memory::new().store(
+        let source = crate::kernel::intern_memory(SymbolicMemory::new().store(
             Address {
                 base: AddressBase::Heap(985_001),
                 offset: AddressOffset::Constant(0),
@@ -8947,7 +8958,7 @@ mod pointer_read_value_definition_tests {
             },
         ));
         let memory = crate::kernel::intern_memory(
-            Memory::new().store(slot.clone(), ProgramValue::Pointer(stored.clone())),
+            SymbolicMemory::new().store(slot.clone(), ProgramValue::Pointer(stored.clone())),
         );
         let named = Pointer::new(
             Address::version_read(&memory, &slot),
@@ -8986,7 +8997,7 @@ fn arithmetic_comparison_normalizes_selected_read_addresses_without_changing_ter
         base: Address::symbolic(Variable(989_785)).base,
         offset: AddressOffset::scaled_int64_node(value, 4, true),
     };
-    let memory = crate::kernel::intern_memory(Memory::new());
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let read = |memory, value| {
         crate::kernel::canonical_form_of_load(memory, pointer(value), LoadKind::Int32)
     };
@@ -9011,7 +9022,7 @@ fn arithmetic_comparison_normalizes_selected_read_addresses_without_changing_ter
             ..
         }
     ));
-    let changed = Memory::new().store(
+    let changed = SymbolicMemory::new().store(
         pointer(index.clone()),
         ProgramValue::Int32(MachineTerm::constant(17)),
     );
@@ -9025,7 +9036,7 @@ fn arithmetic_comparison_normalizes_selected_read_addresses_without_changing_ter
 fn scalar_read_presence_survives_shared_admission_and_registry_reset() {
     use crate::kernel::{IntegerTerm, SharedMachineIntegerTerm, Term};
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = crate::kernel::intern_memory(Memory::new());
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let pointer = Address::symbolic(Variable(997171));
     let name = load_variable_for_exact_cell(&memory, &pointer, LoadKind::Int32, 4);
     let observed = |term| {
@@ -9057,8 +9068,9 @@ mod structural_read_connective_tests {
     fn exact_read_occurrences_match_names_before_stored_value_folding() {
         let _session = VerificationSession::enter();
         let address = Address::symbolic(Variable(989_032));
-        let memory =
-            intern_memory(Memory::new().store(address.clone(), ProgramValue::Int32(37u32.into())));
+        let memory = intern_memory(
+            SymbolicMemory::new().store(address.clone(), ProgramValue::Int32(37u32.into())),
+        );
         let name = load_variable_for_cell(&memory, &address, LoadKind::Int32);
         let read = registered_load_term_for_variable(&name).unwrap();
         let named = MachineTerm::Variable(name);
@@ -9076,8 +9088,9 @@ mod structural_read_connective_tests {
     fn stored_structural_reads_compare_inside_logical_connectives() {
         let _session = VerificationSession::enter();
         let address = Address::symbolic(Variable(989_031));
-        let memory =
-            intern_memory(Memory::new().store(address.clone(), ProgramValue::Int32(37u32.into())));
+        let memory = intern_memory(
+            SymbolicMemory::new().store(address.clone(), ProgramValue::Int32(37u32.into())),
+        );
         let read = MachineTerm::MemoryLoad(
             ProgramPoint::at(&memory),
             Box::new(address),
@@ -9116,7 +9129,7 @@ mod float_conversion_load_tests {
     fn retained_float_conversion_load_detection_keeps_opaque_integer_source_payloads() {
         let _session = crate::kernel::VerificationSession::enter();
         let read = MachineTerm::MemoryLoad(
-            ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
+            ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
             Box::new(Address::symbolic(Variable(999977))),
             LoadKind::Int32,
         );
@@ -9169,8 +9182,8 @@ mod float_memory_handoff_tests {
             ] {
                 let value = ExecutionValue::Shared(root.clone());
                 let native = value.clone().into_native();
-                let address = Memory::local_pointer("float_cell");
-                let memory = Memory::new()
+                let address = SymbolicMemory::local_pointer("float_cell");
+                let memory = SymbolicMemory::new()
                     .with_block(address.base.clone(), format.program_type().byte_width())
                     .store_retained(address.clone(), value);
                 assert_eq!(

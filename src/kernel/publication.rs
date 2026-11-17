@@ -518,7 +518,7 @@ mod tests {
     /// Subscriber rights for flags `0..subscribers`, beside `unrelated`
     /// other flags' publisher rights and as many owned cells.
     fn state(subscribers: usize, unrelated: usize) -> ExecutionState {
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         let mut resources = ResourceContext::new();
         for index in 0..subscribers {
             resources = resources.unchecked_with_fact(right(PublicationSide::Subscriber, index));

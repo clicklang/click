@@ -39,7 +39,7 @@ fn free_uses_the_owned_base_and_retires_every_proven_alias() {
         true,
     ));
     for registered in [false, true] {
-        let mut memory = Memory::new().store(alias.clone(), int32(7));
+        let mut memory = SymbolicMemory::new().store(alias.clone(), int32(7));
         if registered {
             memory = memory
                 .with_heap_allocation_claim(base.clone(), AllocationSize::int32(4))
@@ -119,7 +119,7 @@ fn free_alias_cannot_bypass_an_unresolved_reallocation() {
         ),
         true,
     ));
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .with_heap_allocation_claim(base.clone(), AllocationSize::int32(4))
         .unwrap()
         .with_pending_heap_reallocation(

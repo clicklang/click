@@ -39,11 +39,11 @@ mod tests {
     #[test]
     fn boolean_reads_keep_state_identity_and_exact_source() {
         let _session = crate::kernel::VerificationSession::enter();
-        let before = Memory::new()
+        let before = SymbolicMemory::new()
             .with_block("bool-read", 1)
             .with_block("bool-other", 4);
         let after = before.clone().store(
-            Memory::global_pointer("bool-other"),
+            SymbolicMemory::global_pointer("bool-other"),
             ProgramValue::Int32(MachineTerm::constant(1)),
         );
         let sources = [before, after].map(|memory| {
@@ -83,7 +83,7 @@ mod tests {
             assert!(
                 crate::kernel::memory_history::transport_framed_common_condition(
                     root,
-                    &Memory::new(),
+                    &SymbolicMemory::new(),
                     None
                 )
                 .is_none()
@@ -104,8 +104,8 @@ mod tests {
     #[test]
     fn boolean_reads_preserve_native_substitution_states_and_addresses() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = intern_memory(Memory::new().with_block("bool-memory", 4).store(
-            Memory::global_pointer("bool-memory"),
+        let memory = intern_memory(SymbolicMemory::new().with_block("bool-memory", 4).store(
+            SymbolicMemory::global_pointer("bool-memory"),
             ProgramValue::Int32(MachineTerm::Variable(Variable(999310))),
         ));
         let source = ConditionTerm::BoolLoad(
@@ -165,10 +165,10 @@ mod tests {
     fn boolean_reads_separate_producer_arena_from_native_observation_identity() {
         let first = {
             let _session = crate::kernel::VerificationSession::enter();
-            intern_memory(Memory::new())
+            intern_memory(SymbolicMemory::new())
         };
         let _session = crate::kernel::VerificationSession::enter();
-        let second = intern_memory(Memory::new());
+        let second = intern_memory(SymbolicMemory::new());
         assert_ne!(first.arena_id(), second.arena_id());
         assert_eq!(first, second);
         let roots = [first, second].map(|memory| {

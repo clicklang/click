@@ -976,6 +976,29 @@ pub(in crate::kernel) fn cast_program_value_to_type(
     )
 }
 
+pub(super) fn cast_pointer_value(pointer: PointerValue, target_type: ProgramType) -> PointerValue {
+    // Character-to-character casts retain the selected byte view.
+    // Other casts to bytes, and every void cast, widen that view.
+    let byte_to_byte = matches!(
+        pointer.program_type(),
+        ProgramType::UInt8Pointer | ProgramType::Int8Pointer
+    ) && matches!(
+        target_type,
+        ProgramType::UInt8Pointer | ProgramType::Int8Pointer
+    );
+    let pointer = pointer.with_type(target_type);
+    if !byte_to_byte
+        && matches!(
+            target_type,
+            ProgramType::VoidPointer | ProgramType::UInt8Pointer | ProgramType::Int8Pointer
+        )
+    {
+        pointer.with_root_bounds()
+    } else {
+        pointer
+    }
+}
+
 fn cast_program_value_to_type_with_integer_origin(
     value: ProgramValue,
     target_type: ProgramType,
@@ -1031,30 +1054,10 @@ fn cast_program_value_to_type_with_integer_origin(
                 return Ok(ProgramValue::Pointer(pointer.with_type(target_type)));
             }
             ProgramValue::Pointer(pointer) => {
-                // Character-to-character casts retain the selected byte view.
-                // Other casts to bytes, and every void cast, widen that view.
-                let byte_to_byte = matches!(
-                    pointer.program_type(),
-                    ProgramType::UInt8Pointer | ProgramType::Int8Pointer
-                ) && matches!(
+                return Ok(ProgramValue::Pointer(cast_pointer_value(
+                    pointer,
                     target_type,
-                    ProgramType::UInt8Pointer | ProgramType::Int8Pointer
-                );
-                let pointer = pointer.with_type(target_type);
-                return Ok(ProgramValue::Pointer(
-                    if !byte_to_byte
-                        && matches!(
-                            target_type,
-                            ProgramType::VoidPointer
-                                | ProgramType::UInt8Pointer
-                                | ProgramType::Int8Pointer
-                        )
-                    {
-                        pointer.with_root_bounds()
-                    } else {
-                        pointer
-                    },
-                ));
+                )));
             }
             // An address without a complete representation record reconstructs
             // an opaque provenance. Numeric facts cannot supply pointer bounds.
@@ -1146,7 +1149,7 @@ fn cast_program_value_to_type_with_integer_origin(
 /// converting it to an integer or `_Bool` (by a cast, or implicitly at an
 /// assignment, a `return`, or a call argument) is. The evidence is positive: the pointer's own block holds an
 /// exact deallocated base or an offset into one (see
-/// [`Memory::deallocated_heap_allocation_holding`]). A pointer whose block
+/// [`SymbolicMemory::deallocated_heap_allocation_holding`]). A pointer whose block
 /// is neither shown freed nor shown live keeps its ordinary meaning.
 pub(in crate::kernel) fn freed_pointer_use(
     state: &ExecutionState,
@@ -1291,7 +1294,7 @@ pub(super) fn evaluate_native_expression_paths(
             vec![ExpressionPath {
                 outcome: ExpressionOutcome::Value(
                     ProgramValue::typed_pointer_with_pointee_constant(
-                        Memory::global_pointer(name),
+                        SymbolicMemory::global_pointer(name),
                         pointer_type,
                         metadata.constant,
                     ),
@@ -2884,7 +2887,7 @@ pub(in crate::kernel) fn evaluate_program_lvalue_paths(
                 None => match name.static_id().and_then(|id| id.metadata()) {
                     Some(metadata) if metadata.array_shape.is_none() => LValueOutcome::LValue(
                         LValue::memory_with_qualifiers(
-                            Memory::global_pointer(name),
+                            SymbolicMemory::global_pointer(name),
                             metadata.program_type,
                             metadata.volatile,
                             metadata.pointee_volatile,

@@ -364,11 +364,11 @@ mod tests {
     #[test]
     fn offset_conditions_preserve_narrow_load_authority_and_wide_exact_identity() {
         let _session = crate::kernel::VerificationSession::enter();
-        let before = crate::kernel::Memory::new()
+        let before = crate::kernel::SymbolicMemory::new()
             .with_block("offset-condition", 8)
             .with_block("offset-other", 4);
         let after = before.clone().store(
-            crate::kernel::Memory::global_pointer("offset-other"),
+            crate::kernel::SymbolicMemory::global_pointer("offset-other"),
             ProgramValue::Int32(MachineTerm::constant(1)),
         );
         let memory_a = crate::kernel::intern_memory(before);
@@ -377,7 +377,9 @@ mod tests {
             let condition = |memory| {
                 let value = MachineTerm::MemoryLoad(
                     memory,
-                    Box::new(crate::kernel::Memory::global_pointer("offset-condition")),
+                    Box::new(crate::kernel::SymbolicMemory::global_pointer(
+                        "offset-condition",
+                    )),
                     if wide {
                         LoadKind::Bits64
                     } else {

@@ -1,4 +1,4 @@
-//! Exact identities for synchronous borrowed ownership. Memory authority and
+//! Exact identities for synchronous borrowed ownership. SymbolicMemory authority and
 //! updated values remain in the ordinary resource partition and call result.
 //! This receipt tracks lifetime/dependency, and never mints an owned fact.
 

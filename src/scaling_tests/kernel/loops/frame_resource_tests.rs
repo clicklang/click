@@ -221,11 +221,9 @@ fn explicit_loop_views_keep_scalar_owners_without_visiting_observations() {
         let scalar_owner =
             ResourceFact::own_memory(MemoryRange::new(scalar.clone(), 0u32.into(), 4u32.into()));
         let heap_owner = ResourceFact::own_memory(MemoryRange::new(heap, 0u32.into(), 4u32.into()));
-        let state = ExecutionState::new().with_memory(Memory::new().with_declared_scalar_block(
-            scalar.base,
-            4,
-            ProgramType::Int32,
-        ));
+        let state = ExecutionState::new().with_memory(
+            SymbolicMemory::new().with_declared_scalar_block(scalar.base, 4, ProgramType::Int32),
+        );
         let mut withheld = ResourceContext::new_with_equalities(&assumptions)
             .unchecked_with_fact(scalar_owner.clone())
             .unchecked_with_fact(heap_owner.clone());
@@ -289,7 +287,7 @@ fn explicit_loop_frame_ignores_rejected_heap_owners() {
         let mut withheld =
             ResourceContext::new_with_equalities(&facts).unchecked_with_fact(scalar_owner.clone());
         let mut memory =
-            Memory::new().with_declared_scalar_block(scalar.base, 4, ProgramType::Int32);
+            SymbolicMemory::new().with_declared_scalar_block(scalar.base, 4, ProgramType::Int32);
         let mut heaps = Vec::new();
         for index in 0..count {
             let owner = ResourceFact::own_memory(MemoryRange::new(

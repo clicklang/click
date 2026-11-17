@@ -341,7 +341,7 @@ fn loop_backedge_rejects_divergent_holders_on_one_ledger_root() {
 
 /// Two arm states that share `known` cached cells and differ in one other
 /// cell, as the arms of an `if` that each store once leave them.
-fn arms_beside_known_cells(known: u32) -> (Memory, [ExecutionState; 2]) {
+fn arms_beside_known_cells(known: u32) -> (SymbolicMemory, [ExecutionState; 2]) {
     let known_cell = |index: u32| Address {
         base: "global:known".into(),
         offset: AddressOffset::Constant(4 * i64::from(index)),
@@ -350,7 +350,7 @@ fn arms_beside_known_cells(known: u32) -> (Memory, [ExecutionState; 2]) {
         base: "global:written".into(),
         offset: AddressOffset::Constant(0),
     };
-    let mut memory = Memory::new()
+    let mut memory = SymbolicMemory::new()
         .with_block("global:known", 4 * known)
         .with_block("global:written", 4);
     for index in 0..known {
@@ -455,7 +455,7 @@ fn interface_join_history_uses_checked_arms_before_marker_union() {
         base: "global:branch-value".into(),
         offset: AddressOffset::Constant(0),
     };
-    let base = Memory::new().with_block(pointer.base.clone(), 4);
+    let base = SymbolicMemory::new().with_block(pointer.base.clone(), 4);
     let then_state = ExecutionState::new().with_memory(
         base.clone()
             .store(pointer.clone(), int32(1))

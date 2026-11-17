@@ -74,7 +74,7 @@ fn pointer_domain_queries_read_cached_classes_without_alias_discovery() {
 fn an_unregistered_pointer_domain_does_not_recover_memory_history() {
     for stores in [0u64, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for i in 0..stores {
             memory = memory.store(
                 Address::symbolic(Variable(1_000_000 + i)),

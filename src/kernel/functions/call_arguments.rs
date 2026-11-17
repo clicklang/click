@@ -179,7 +179,7 @@ pub(super) fn complete_aggregate_return(
         return Err(AggregateReturnRefusal::UninitializedRead);
     }
     let frame = state.next_local_frame;
-    let destination = Memory::aggregate_return_pointer(frame);
+    let destination = SymbolicMemory::aggregate_return_pointer(frame);
     state.set_memory(
         state
             .memory
@@ -546,7 +546,7 @@ pub(crate) fn symbolic_call_result(program_type: ProgramType, variable: Variable
 }
 
 pub(in crate::kernel) fn add_memory_store_obligation(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     pointer: &Address,
     value: &ProgramValue,
     mut obligations: Vec<ProofObligation>,
@@ -760,7 +760,7 @@ pub(super) fn append_string_literal_loadable_facts(
         _ => return,
     };
     for literal in function.string_literals() {
-        let base = Memory::string_literal_pointer(literal.identity(), literal.bytes());
+        let base = SymbolicMemory::string_literal_pointer(literal.identity(), literal.bytes());
         let proposition = Proposition::MemoryLoadable {
             memory: state.memory.clone(),
             base,
@@ -901,8 +901,8 @@ fn bind_program_function_arguments_impl(
             if pointer.is_null() {
                 return None;
             }
-            let source = pointer.address().clone();
-            let slot = Memory::frame_local_pointer(frame, parameter.binding_name());
+            let source = pointer.pointer().clone();
+            let slot = SymbolicMemory::frame_local_pointer(frame, parameter.binding_name());
             register_block_alignment(&slot.base, layout.alignment_bytes());
             // A proof's input object holds its own entry values: each field
             // is the read of that field before the object is declared, so
@@ -949,7 +949,7 @@ fn bind_program_function_arguments_impl(
             .with_pointer_pointee_constant(parameter.pointee_is_constant())
             .with_pointer_declared_object_class(parameter.pointee_class());
         if address_taken_parameters.contains(parameter.binding_name()) {
-            let slot = Memory::frame_local_pointer(frame, parameter.binding_name());
+            let slot = SymbolicMemory::frame_local_pointer(frame, parameter.binding_name());
             register_block_alignment(&slot.base, parameter.program_type().abi_alignment());
             callee_state.set_memory(
                 callee_state
@@ -983,7 +983,7 @@ fn bind_program_function_arguments_impl(
                         |source| source.retain_coerced_argument(value.clone()),
                     ),
                     parameter.program_type(),
-                    Memory::value_parameter_pointer(parameter.binding_name()),
+                    SymbolicMemory::value_parameter_pointer(parameter.binding_name()),
                     parameter.is_volatile(),
                     parameter.pointee_is_volatile(),
                     parameter.is_constant(),
@@ -1077,8 +1077,8 @@ pub(super) fn bind_contract_arguments(
             if pointer.is_null() {
                 return None;
             }
-            let source = pointer.address().clone();
-            let slot = Memory::frame_local_pointer(frame, parameter.binding_name());
+            let source = pointer.pointer().clone();
+            let slot = SymbolicMemory::frame_local_pointer(frame, parameter.binding_name());
             register_block_alignment(&slot.base, layout.alignment_bytes());
             callee_state.set_memory(copy_aggregate_fields(
                 callee_state.memory.clone(),
@@ -1112,7 +1112,7 @@ pub(super) fn bind_contract_arguments(
                     |source| source.retain_coerced_argument(value.clone()),
                 ),
                 parameter.program_type(),
-                Memory::value_parameter_pointer(parameter.binding_name()),
+                SymbolicMemory::value_parameter_pointer(parameter.binding_name()),
                 parameter.is_volatile(),
                 parameter.pointee_is_volatile(),
                 parameter.is_constant(),

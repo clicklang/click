@@ -869,7 +869,7 @@ mod exact_word_address_tests {
         use crate::kernel::{KernelTermExport, KernelTermImport};
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Address::symbolic(Variable(985_331));
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let read = |memory| {
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
@@ -1607,7 +1607,7 @@ mod retained_tag_tests {
             offset: AddressOffset::Constant(0),
         };
         let pointer = Address::symbolic(Variable(986030));
-        let memory = Memory::new().with_block("tag-cell", 8);
+        let memory = SymbolicMemory::new().with_block("tag-cell", 8);
         let read = |memory| {
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(crate::kernel::intern_memory(memory))),

@@ -3,7 +3,7 @@
 //! binding and capture avoidance without adding higher-order kernel search.
 use super::*;
 
-/// Memory state selection belongs around application, not inside its delayed body.
+/// SymbolicMemory state selection belongs around application, not inside its delayed body.
 /// Check source literals too, since declaration aliases may be unused.
 pub(super) fn validate_body_state(body: &ContractExpression) -> Result<(), ClickError> {
     if contains_old_expression(body) || contains_at_expression(body) {

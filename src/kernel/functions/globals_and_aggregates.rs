@@ -8,7 +8,7 @@ pub(super) fn initialize_program_function_globals_owned(
     initialize_missing_storage: bool,
 ) -> ExecutionState {
     for literal in function.string_literals() {
-        let slot = Memory::string_literal_pointer(literal.identity(), literal.bytes());
+        let slot = SymbolicMemory::string_literal_pointer(literal.identity(), literal.bytes());
         if !state.memory.has_block(&slot.base) {
             state.set_memory(
                 state
@@ -56,7 +56,7 @@ pub(super) fn initialize_program_function_globals_owned(
         }
     }
     for global in function.global_variables() {
-        let slot = Memory::global_pointer(global.kernel_name());
+        let slot = SymbolicMemory::global_pointer(global.kernel_name());
         register_block_alignment(&slot.base, global.program_type().abi_alignment());
         if !state.memory.has_block(&slot.base) {
             state.set_memory(state.memory.clone().with_classed_block_or_read_only(
@@ -98,7 +98,7 @@ pub(super) fn initialize_program_function_globals_owned(
         }
     }
     for global_array in function.global_arrays() {
-        let slot = Memory::global_pointer(global_array.kernel_name());
+        let slot = SymbolicMemory::global_pointer(global_array.kernel_name());
         register_block_alignment(&slot.base, global_array.element_type().abi_alignment());
         let bytes = global_array
             .length()
@@ -140,7 +140,7 @@ pub(super) fn initialize_program_function_globals_owned(
         }
     }
     for global_aggregate in function.global_aggregates() {
-        let slot = Memory::global_pointer(global_aggregate.kernel_name());
+        let slot = SymbolicMemory::global_pointer(global_aggregate.kernel_name());
         register_block_alignment(&slot.base, global_aggregate.layout().alignment_bytes());
         if !state.memory.has_block(&slot.base) {
             state.set_memory(state.memory.clone().with_classed_block_or_read_only(
@@ -180,7 +180,7 @@ pub(super) fn initialize_program_function_globals_owned(
         }
     }
     for global_aggregate_array in function.global_aggregate_arrays() {
-        let slot = Memory::global_pointer(global_aggregate_array.kernel_name());
+        let slot = SymbolicMemory::global_pointer(global_aggregate_array.kernel_name());
         register_block_alignment(
             &slot.base,
             global_aggregate_array.layout().alignment_bytes(),
@@ -233,7 +233,7 @@ pub(super) fn initialize_program_function_globals_owned(
         }
     }
     for static_local in function.static_variables() {
-        let slot = Memory::static_pointer(function.name(), static_local.kernel_name());
+        let slot = SymbolicMemory::static_pointer(function.name(), static_local.kernel_name());
         register_block_alignment(&slot.base, static_local.program_type().abi_alignment());
         if !state.memory.has_block(&slot.base) {
             state.set_memory(state.memory.clone().with_block_or_read_only(
@@ -283,7 +283,7 @@ pub(super) fn initialize_program_function_globals_owned(
         }
     }
     for static_array in function.static_arrays() {
-        let slot = Memory::static_pointer(function.name(), static_array.kernel_name());
+        let slot = SymbolicMemory::static_pointer(function.name(), static_array.kernel_name());
         register_block_alignment(&slot.base, static_array.element_type().abi_alignment());
         let bytes = static_array
             .length()
@@ -324,7 +324,7 @@ pub(super) fn initialize_program_function_globals_owned(
         }
     }
     for static_aggregate in function.static_aggregates() {
-        let slot = Memory::static_pointer(function.name(), static_aggregate.kernel_name());
+        let slot = SymbolicMemory::static_pointer(function.name(), static_aggregate.kernel_name());
         register_block_alignment(&slot.base, static_aggregate.layout().alignment_bytes());
         if !state.memory.has_block(&slot.base) {
             state.set_memory(state.memory.clone().with_block_or_read_only(
@@ -363,7 +363,8 @@ pub(super) fn initialize_program_function_globals_owned(
         }
     }
     for static_aggregate_array in function.static_aggregate_arrays() {
-        let slot = Memory::static_pointer(function.name(), static_aggregate_array.kernel_name());
+        let slot =
+            SymbolicMemory::static_pointer(function.name(), static_aggregate_array.kernel_name());
         register_block_alignment(
             &slot.base,
             static_aggregate_array.layout().alignment_bytes(),
@@ -422,15 +423,15 @@ pub(super) fn initialize_program_function_globals_owned(
 /// the elements the initializer wrote rather than the declared length: the
 /// elements holding the default are one constant [`CellRun`], and the
 /// written ones are stored over it. Where a run is refused
-/// ([`Memory::with_constant_run`]) every element is stored one by one.
+/// ([`SymbolicMemory::with_constant_run`]) every element is stored one by one.
 ///
 /// [`CellRun`]: crate::kernel::primitives::CellRun
 pub(super) fn store_array_contents(
-    mut memory: Memory,
+    mut memory: SymbolicMemory,
     base: &Address,
     element_type: ProgramType,
     contents: &crate::kernel::ArrayContents,
-) -> Memory {
+) -> SymbolicMemory {
     let element =
         |index: u32| base.offset_by_bytes(index.saturating_mul(element_type.byte_width()));
     if contents.has_default_elements() {
@@ -612,10 +613,10 @@ pub(super) fn aggregate_zero_fields(
 }
 
 pub(super) fn zero_aggregate_fields(
-    mut memory: Memory,
+    mut memory: SymbolicMemory,
     base: &Address,
     layout: &AggregateLayout,
-) -> Memory {
+) -> SymbolicMemory {
     for (field_offset, element_count, element_width, zero) in aggregate_zero_fields(layout) {
         for index in 0..element_count {
             if crate::instrumentation::deadline_exceeded() {
@@ -668,10 +669,10 @@ pub(super) fn zero_union_member_value(program_type: ProgramType) -> Option<Progr
 }
 
 pub(super) fn initialize_aggregate_fields(
-    mut memory: Memory,
+    mut memory: SymbolicMemory,
     base: &Address,
     initializers: &[AggregateInitializer],
-) -> Memory {
+) -> SymbolicMemory {
     for initializer in initializers {
         memory = memory.store(
             base.offset_by_bytes(initializer.offset_bytes()),
@@ -731,11 +732,11 @@ pub(super) fn aggregate_array_zero_runs(
 }
 
 pub(super) fn zero_aggregate_array_fields(
-    mut memory: Memory,
+    mut memory: SymbolicMemory,
     base: &Address,
     layout: &AggregateLayout,
     length: u32,
-) -> Memory {
+) -> SymbolicMemory {
     if let Some(runs) = aggregate_array_zero_runs(layout, length) {
         match memory.with_constant_runs(base, &runs) {
             Ok(filled) => return filled,
@@ -769,7 +770,7 @@ pub(super) fn zero_aggregate_array_fields(
 /// size. One with symbolic bounds keeps the previous treatment: it is the
 /// caller's own stack object either way, and tightening that case belongs
 /// with the range-arithmetic work rather than here.
-pub(super) fn local_view_range_within_block(range: &MemoryRange, memory: &Memory) -> bool {
+pub(super) fn local_view_range_within_block(range: &MemoryRange, memory: &SymbolicMemory) -> bool {
     // Signed, both endpoints. `as_const` answers `u32`, so a start of `-1`
     // arrived as `4294967295` and `end <= start` short-circuited to "in
     // bounds" for every range that begins below its block — the exact
@@ -851,7 +852,7 @@ pub(super) fn aggregate_argument_read_refusal(
 /// uninitialized read instead, matching what member-wise assignment reports
 /// through the ordinary load path.
 pub(super) fn aggregate_copy_reads_uninitialized(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     source: &Address,
     layout: &AggregateLayout,
 ) -> bool {
@@ -970,7 +971,7 @@ pub(super) fn aggregate_copy_reads_uninitialized(
 /// anything else (external or symbolic memory) reads back as an unconstrained
 /// symbolic load rather than stale storage.
 pub(super) fn uninitialized_aggregate_copy_source_cell(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     source_field: &Address,
     element_type: ProgramType,
 ) -> bool {
@@ -1007,7 +1008,7 @@ pub(super) fn uninitialized_aggregate_copy_source_cell(
 /// same: the copy carries its unknown value as the typed load of the source,
 /// as for external storage, so the destination is initialized too.
 pub(super) fn aggregate_copy_source_holds_nothing(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     source_field: &Address,
     element_type: ProgramType,
 ) -> bool {
@@ -1029,11 +1030,11 @@ pub(super) fn aggregate_copy_source_holds_nothing(
 /// `copy_aggregate_fields` is deliberately module-private; new call sites in
 /// other modules must use this checked form.
 pub(in crate::kernel) fn copy_aggregate_fields_checked(
-    memory: Memory,
+    memory: SymbolicMemory,
     source: &Address,
     destination: &Address,
     layout: &AggregateLayout,
-) -> Result<Memory, UndefinedBehavior> {
+) -> Result<SymbolicMemory, UndefinedBehavior> {
     if aggregate_copy_reads_uninitialized(&memory, source, layout) {
         return Err(UndefinedBehavior::UninitializedRead);
     }
@@ -1045,11 +1046,11 @@ pub(in crate::kernel) fn copy_aggregate_fields_checked(
 // reported. Actual call arguments are checked before binding; entry proof
 // images use the raw form because their incoming aggregate values are evaluated.
 pub(super) fn copy_aggregate_fields(
-    mut memory: Memory,
+    mut memory: SymbolicMemory,
     source: &Address,
     destination: &Address,
     layout: &AggregateLayout,
-) -> Memory {
+) -> SymbolicMemory {
     for field in layout.fields() {
         if let ProgramType::UInt32Array(count) = field.program_type() {
             let source_field = source.offset_by_bytes(field.offset_bytes());
@@ -1303,7 +1304,7 @@ pub(super) fn copy_aggregate_fields(
 }
 
 pub(super) fn copy_retained_aggregate_union_member(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     source_field: &Address,
     element_type: ProgramType,
 ) -> Option<ExecutionValue> {

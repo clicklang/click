@@ -5854,7 +5854,7 @@ pub(in crate::kernel) fn subobject_access_refusal(
 /// it is used. An access whose class, or whose object's class, is unknown is
 /// not checked.
 pub(in crate::kernel) fn effective_type_refusal(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     pointer: &Address,
     lvalue: &LValue,
 ) -> Option<UndefinedBehavior> {
@@ -5878,7 +5878,7 @@ pub(in crate::kernel) enum AccessKind {
 
 /// [`effective_type_refusal`] given the lvalue's two classes.
 pub(in crate::kernel) fn effective_type_refusal_of(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     pointer: &Address,
     access: Option<crate::kernel::effective_type::CAccessClass>,
     object_class: Option<crate::kernel::effective_type::CAccessClass>,

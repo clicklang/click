@@ -19,7 +19,7 @@ fn exact_composition_observation_accepts_retained_views_but_not_foreign_ownershi
     let framed = context
         .clone()
         .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
-            Memory::local_pointer("framed_scalar"),
+            SymbolicMemory::local_pointer("framed_scalar"),
             0.into(),
             1.into(),
         )));
@@ -57,7 +57,7 @@ fn source_state() -> (ExecutionState, ResourceFact) {
         .with_local("anchor", crate::kernel::int32(0))
         .with_population_creation_tracking();
     let pointer = state.locals.slot("anchor").unwrap().clone();
-    state.set_memory(Memory::new().with_block(pointer.base.clone(), 4));
+    state.set_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 4));
     state.record_population_storage_creation(pointer.base.clone());
     let description = crate::kernel::ResourceDescription::new(
         "reference".into(),
@@ -89,7 +89,7 @@ fn checked_authority_events_reject_forged_deltas() {
     .unwrap();
     let forged_memory = established
         .clone()
-        .with_memory(Memory::new().with_block("local:forged", 4));
+        .with_memory(SymbolicMemory::new().with_block("local:forged", 4));
     assert!(
         CheckedPopulationAuthorityRewrite::check(
             &before,
@@ -105,8 +105,8 @@ fn checked_authority_events_reject_forged_deltas() {
     let mut forged_event = event.clone();
     forged_event.after_state = forged_memory;
     assert!(forged_event.advance_checked(&before, &facts).is_none());
-    let missing_storage_before = before.clone().with_memory(Memory::new());
-    let missing_storage_after = established.clone().with_memory(Memory::new());
+    let missing_storage_before = before.clone().with_memory(SymbolicMemory::new());
+    let missing_storage_after = established.clone().with_memory(SymbolicMemory::new());
     assert!(
         CheckedPopulationAuthorityRewrite::check(
             &missing_storage_before,
@@ -279,7 +279,7 @@ fn checked_member_events_conserve_one_occurrence_and_reject_forged_deltas() {
             &member,
             true,
             &birth,
-            &one.clone().with_memory(Memory::new()),
+            &one.clone().with_memory(SymbolicMemory::new()),
             &facts,
         )
         .is_err()
@@ -739,7 +739,7 @@ fn checked_member_events_exchange_private_memory_and_reject_duplicate_birth() {
             &one,
             &facts,
             &member,
-            &opened.clone().with_memory(Memory::new()),
+            &opened.clone().with_memory(SymbolicMemory::new()),
             &facts,
             &CheckedCallEvents::default(),
         )

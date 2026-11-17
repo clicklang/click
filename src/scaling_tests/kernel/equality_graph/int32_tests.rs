@@ -66,7 +66,7 @@ fn resolved_four_byte_load_graph_queries_scale_without_fact_index() {
         };
         let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
         let memory = intern_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block("resolved-int32-scale", 4)
                 .store(pointer.clone(), ProgramValue::Int32(sum(var(0)))),
         );
@@ -103,7 +103,7 @@ fn two_resolved_four_byte_load_queries_scale_without_fact_index() {
         };
         let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
         let memory = intern_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block("two-resolved-int32-scale", 8)
                 .store(pointer(0), ProgramValue::Int32(sum(var(0))))
                 .store(pointer(4), ProgramValue::Int32(sum(var(size)))),
@@ -336,7 +336,7 @@ fn scalar_support_tracking_does_not_compare_unrelated_state_contents_across_aren
                 base: "selected".into(),
                 offset: AddressOffset::Constant(0),
             };
-            let mut memory = Memory::new().with_block("selected", 4);
+            let mut memory = SymbolicMemory::new().with_block("selected", 4);
             for i in 0..size {
                 memory = memory.with_block(format!("unrelated-{i}"), 4);
             }
@@ -584,7 +584,7 @@ fn constant_queries_ignore_other_state_candidates() {
             let query = var(880_000);
             let mut context = PureFactContext::new();
             let mut memory =
-                Memory::new().with_block("constant-bridge-scale", 4 * (size as u32 + 1));
+                SymbolicMemory::new().with_block("constant-bridge-scale", 4 * (size as u32 + 1));
             let mut unknown_reads = Vec::new();
             // Every state is separated by a call that may write the cell.
             // The postconditions can consistently equate the first N reads to
@@ -665,7 +665,7 @@ fn unrelated_read_inputs_preserve_the_selected_parameter_partition() {
         let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
             MemoryRange::new(write.clone(), 0u32.into(), 1u32.into()),
         ));
-        let memory = intern_memory(Memory::new());
+        let memory = intern_memory(SymbolicMemory::new());
         let mut context =
             PureFactContext::new().assume_proposition(Proposition::ResourceComposition(resources));
         for i in 0..size {

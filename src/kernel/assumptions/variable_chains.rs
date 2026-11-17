@@ -389,7 +389,7 @@ mod memory_tests {
             base: AddressBase::from("ordered"),
             offset: AddressOffset::scale_int32(MachineTerm::Variable(variable), stride),
         };
-        let mut memory = Memory::new().with_block("ordered", 4096);
+        let mut memory = SymbolicMemory::new().with_block("ordered", 4096);
         for (index, variable) in variables.iter().enumerate() {
             memory = memory.store(pointer(*variable, 4), int32(index as u32));
         }

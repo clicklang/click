@@ -50,7 +50,7 @@ fn loadable_object_provenance_lookup_ignores_unrelated_external_pointers() {
     };
     let target = external(31_070);
     let loadable = |base| Proposition::MemoryLoadable {
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         base,
         bytes: MachineTerm::constant(4),
         wide: false,
@@ -218,9 +218,10 @@ fn stored_pointer_bounds_ignore_unrelated_numeric_classes() {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Address::symbolic(Variable(96_311));
         let stored = subobject_pointer(0, 0, 4);
-        let memory = Memory::new().store(field.clone(), ProgramValue::Pointer(stored.clone()));
-        let read = Pointer::from_read(
-            stored.address().clone(),
+        let memory =
+            SymbolicMemory::new().store(field.clone(), ProgramValue::Pointer(stored.clone()));
+        let read = PointerValue::from_read(
+            stored.pointer().clone(),
             ProgramType::Int32Pointer,
             &crate::kernel::intern_memory_ref(&memory),
             &field,

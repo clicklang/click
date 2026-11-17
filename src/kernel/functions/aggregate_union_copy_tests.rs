@@ -24,7 +24,7 @@ fn copying_a_union_drops_destination_views_absent_from_source() {
             ],
         )],
     );
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .with_block(source.base.clone(), 4)
         .with_block(destination.base.clone(), 4)
         .store_union(
@@ -53,7 +53,9 @@ fn copying_a_union_drops_destination_views_absent_from_source() {
 /// A local `{ int32 tag; union { int32 number; uint8 byte; } }` whose
 /// cached values an unplaced store into the block forgot, the union's
 /// written only when `union_written`.
-fn forgotten_local_packet(union_written: bool) -> (Memory, Address, Address, AggregateLayout) {
+fn forgotten_local_packet(
+    union_written: bool,
+) -> (SymbolicMemory, Address, Address, AggregateLayout) {
     let source = Address {
         base: "local:forgotten-packet-source".into(),
         offset: AddressOffset::Constant(0),
@@ -76,7 +78,7 @@ fn forgotten_local_packet(union_written: bool) -> (Memory, Address, Address, Agg
             ],
         )],
     );
-    let mut memory = Memory::new()
+    let mut memory = SymbolicMemory::new()
         .with_block(source.base.clone(), 8)
         .with_block(destination.base.clone(), 8)
         .store(
@@ -138,9 +140,9 @@ mod scaling_tests {
 #[test]
 fn aggregate_and_union_copies_keep_retained_pointer_producers() {
     let _session = crate::kernel::VerificationSession::enter();
-    let source = Memory::local_pointer("retained_copy_source");
-    let target = Memory::local_pointer("retained_copy_target");
-    let pointer = Pointer::new(
+    let source = SymbolicMemory::local_pointer("retained_copy_source");
+    let target = SymbolicMemory::local_pointer("retained_copy_target");
+    let pointer = PointerValue::new(
         Address::symbolic(Variable(1027800)),
         ProgramType::Int32Pointer,
     )
@@ -153,7 +155,7 @@ fn aggregate_and_union_copies_keep_retained_pointer_producers() {
         ),
         crate::kernel::SharedPointerValue::import(&pointer),
     );
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .with_block(source.base.clone(), 8)
         .with_block(target.base.clone(), 8)
         .store_retained(source.clone(), root.clone().into());

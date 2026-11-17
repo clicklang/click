@@ -63,7 +63,7 @@ fn shared_read_order_bucket_ignores_unrelated_addresses() {
                 Address::symbolic(Variable(993_300 + index as u64))
             };
             let memory = crate::kernel::intern_memory(
-                Memory::new().with_block(format!("order-retained_state-{index}"), 0),
+                SymbolicMemory::new().with_block(format!("order-retained_state-{index}"), 0),
             );
             let read = MachineTerm::MemoryLoad(
                 ProgramPoint::at(&memory),
@@ -132,7 +132,7 @@ fn aligned_shared_sums_check_selected_read_authority_in_linear_work() {
                 true,
             );
         }
-        let before = Memory::new().with_block("framed-sums", 1024);
+        let before = SymbolicMemory::new().with_block("framed-sums", 1024);
         let after = before.clone().store_with_context(
             base.offset_by_elements(write_index, 4),
             ProgramValue::Int32(MachineTerm::constant(9)),

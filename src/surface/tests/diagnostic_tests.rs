@@ -836,7 +836,7 @@ fn execution_effect_diagnostics_omit_raw_memory_states() {
         base: AddressBase::ExternalArgument,
         offset: AddressOffset::Constant(8),
     };
-    let before = Memory::new().store(pointer.clone(), int32(1));
+    let before = SymbolicMemory::new().store(pointer.clone(), int32(1));
     let after = before.clone().store(pointer.clone(), int32(2));
     let facts = vec![
         ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
@@ -869,7 +869,7 @@ fn execution_effect_diagnostics_omit_raw_memory_states() {
         "{description}"
     );
     assert!(description.contains("freed between"), "{description}");
-    assert!(!description.contains("Memory"), "{description}");
+    assert!(!description.contains("SymbolicMemory"), "{description}");
     assert!(
         !description.contains("diagnostic truncated"),
         "{description}"
@@ -1141,14 +1141,14 @@ fn negative_mdtest_failures_include_structured_proof_context() {
             assert!(message.contains("goal:"), "{name}: {message}");
             assert!(message.contains("recent premises"), "{name}: {message}");
         }
-        assert!(!message.contains("Memory {"), "{name}: {message}");
+        assert!(!message.contains("SymbolicMemory {"), "{name}: {message}");
     }
 }
 
 /// An undecided C `if` reported its two condition paths with the kernel
 /// `Debug` of their facts. A condition whose load has not been named by a
 /// load variable — the shape `list_count_live` reaches after its recursive
-/// call — then carries the whole `Memory` state, blocks and heap
+/// call — then carries the whole `SymbolicMemory` state, blocks and heap
 /// included, twice. That is the raw-state dump `AGENTS.md` names. Each path
 /// is now spelled on its own line in the bounded source vocabulary, which is
 /// what says which condition each arm assumes.
@@ -1196,7 +1196,7 @@ int32 pick(struct node* node) {
         message.contains("condition path 0:") && message.contains("condition path 1:"),
         "each arm's assumption should be spelled on its own line: {message}"
     );
-    assert!(!message.contains("Memory {"), "{message}");
+    assert!(!message.contains("SymbolicMemory {"), "{message}");
     assert!(!message.contains("HeapMemory {"), "{message}");
     assert!(!message.contains("MemoryBlock {"), "{message}");
     assert!(message.len() < 8000, "{message}");
@@ -1536,7 +1536,7 @@ fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
         base: AddressBase::Symbolic(Variable(982_001)),
         offset: AddressOffset::Constant(0),
     };
-    let before = Memory::new().with_block(global.base.clone(), 4);
+    let before = SymbolicMemory::new().with_block(global.base.clone(), 4);
     let after = before.clone().store(alias.clone(), int32(1));
     let pre_state = ExecutionState::new().with_memory(before.clone());
     let aliases_global =
@@ -2800,7 +2800,7 @@ fn memory_history_diagnostic_names_the_store_and_limits_its_claim() {
         offset: AddressOffset::Variable(Variable(992001)),
     };
     let written = Address::symbolic(Variable(992002));
-    let before = Memory::new();
+    let before = SymbolicMemory::new();
     let blocked = before.clone().store(
         written.clone(),
         ProgramValue::UInt64(MachineTerm::uint64_constant(42)),
@@ -2812,7 +2812,7 @@ fn memory_history_diagnostic_names_the_store_and_limits_its_claim() {
         },
         int32(1),
     );
-    let load = |memory: &Memory| {
+    let load = |memory: &SymbolicMemory| {
         MachineTerm::MemoryLoad(
             crate::kernel::ProgramPoint::at(&(intern_memory(memory.clone()))),
             Box::new(read.clone()),
@@ -3015,7 +3015,7 @@ fn call_resource_diagnostic_read_shows_state_and_access() {
         reason: "resource `child` argument 1 could not be evaluated: required access authority is unavailable".into(),
         held: None,
         required: Box::new(required),
-        memory: Some(Box::new(crate::kernel::Memory::new())),
+        memory: Some(Box::new(crate::kernel::SymbolicMemory::new())),
     };
     let rendered = super::diagnostics::describe_runtime_error(&error, ParameterBinding::default());
     assert!(
@@ -3380,13 +3380,13 @@ fn native_view_solve_distinguishes_a_rejected_kernel_query() {
 fn pending_call_obligations_use_shared_goal_printer_and_state_legend() {
     let _typed = crate::surface::proof_diagnostics::render::TypedNotationScope::enter();
     use crate::kernel::{
-        Address, AddressOffset, ConditionTerm, MachineTerm, Memory, ProofObligation, Proposition,
-        RuntimeError,
+        Address, AddressOffset, ConditionTerm, MachineTerm, ProofObligation, Proposition,
+        RuntimeError, SymbolicMemory,
     };
     use crate::surface::proof_diagnostics::render::{
         MemoryStateLabels, render_proposition_labeled,
     };
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let pointer = Address {
         base: "pending_read_cell".into(),
         offset: AddressOffset::Constant(0),
@@ -3410,7 +3410,7 @@ fn pending_call_obligations_use_shared_goal_printer_and_state_legend() {
             "reader.contract",
             0,
             &[],
-            &Memory::new(),
+            &SymbolicMemory::new(),
         )),
         7,
         Some(7),
@@ -3454,7 +3454,7 @@ fn pending_call_obligations_use_shared_goal_printer_and_state_legend() {
         "{rendered}"
     );
     assert!(rendered.contains("pending_read_cell"), "{rendered}");
-    assert!(!rendered.contains("Memory {"), "{rendered}");
+    assert!(!rendered.contains("SymbolicMemory {"), "{rendered}");
 }
 
 #[test]
@@ -3534,18 +3534,18 @@ void symbolic(int32* p, const struct callbacks* cb) {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_19")]
 fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_states() {
     use crate::kernel::{
-        Address, AddressBase, AddressOffset, AlgebraicValue, LoadKind, Memory, Pointer,
-        ProgramType, ProgramValue, Resource, Variable, intern_memory,
+        Address, AddressBase, AddressOffset, AlgebraicValue, LoadKind, PointerValue, ProgramType,
+        ProgramValue, Resource, SymbolicMemory, Variable, intern_memory,
     };
     let _session = crate::kernel::VerificationSession::enter();
     let read = Address {
         base: AddressBase::Concrete("child_cell".into()),
         offset: AddressOffset::Constant(0),
     };
-    let before = Memory::new();
+    let before = SymbolicMemory::new();
     let after = before.clone().store(read.clone(), int32(7));
-    let argument = |memory: Memory| {
-        AlgebraicValue::Program(ProgramValue::Pointer(Pointer::new(
+    let argument = |memory: SymbolicMemory| {
+        AlgebraicValue::Program(ProgramValue::Pointer(PointerValue::new(
             Address {
                 base: AddressBase::Concrete("nodes".into()),
                 offset: AddressOffset::scale_int32(
