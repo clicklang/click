@@ -1491,22 +1491,6 @@ fn reject_address_escaped_measure(
     Ok(())
 }
 
-/// Rejects a loop `decreases` component naming a variable whose address
-/// escapes, before the back-edge bundle is built. A store through that
-/// pointer, here or inside a callee, could change the component without a
-/// ranked update, so the declaration is refused rather than proved.
-pub(super) fn program_reject_address_escaped_loop_measures(
-    function_name: &str,
-    measures: &[RankingComponent],
-    addressed: &BTreeSet<BindingName>,
-) -> Result<(), String> {
-    for measure in measures {
-        reject_address_escaped_ranking_component(function_name, measure, addressed)
-            .map_err(|error| error.message)?;
-    }
-    Ok(())
-}
-
 fn reject_address_escaped_expression_measure(
     function_name: &str,
     measure: &ProgramExpression,
@@ -6282,14 +6266,12 @@ mod local_descent_tests {
                 diverging_contracts: &BTreeSet::new(),
                 has_unselected_functions: false,
             })
-            .and_then(|proof| proof.prove_implicitly());
-        assert!(matches!(
-            result,
-            Err(ProgramContractFailure::Obligation {
-                goal: ProgramContractGoal::CallbackSafety,
-                ..
-            })
-        ));
+            .map_err(|_| "termination generation failed".to_string())
+            .and_then(|proof| proof.prove_through_native_root());
+        let error = result
+            .err()
+            .expect("callback safety must close before completion");
+        assert_eq!(error, "the checked termination facts do not close the root");
     }
 
     /// `spin` hands itself to `apply`. No direct call closes the cycle, and

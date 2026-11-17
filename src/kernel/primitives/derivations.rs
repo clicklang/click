@@ -14,35 +14,6 @@ impl Theorem {
 }
 
 impl PropositionDerivation {
-    /// The name of this derivation's top rule, for censuses.
-    pub fn rule_name(&self) -> &'static str {
-        match &self.rule {
-            PropositionDerivationRule::ContextFree => "ContextFree",
-            PropositionDerivationRule::ContextualAtomic { .. } => "ContextualAtomic",
-            PropositionDerivationRule::Explosion { .. } => "Explosion",
-            PropositionDerivationRule::And { .. } => "And",
-            PropositionDerivationRule::AlgebraicConstructorCongruence { .. } => {
-                "AlgebraicConstructorCongruence"
-            }
-            PropositionDerivationRule::AlgebraicConstructorInjectivity { .. } => {
-                "AlgebraicConstructorInjectivity"
-            }
-            PropositionDerivationRule::OrLeft(_) => "OrLeft",
-            PropositionDerivationRule::OrRight(_) => "OrRight",
-            PropositionDerivationRule::DoubleNegation(_) => "DoubleNegation",
-            PropositionDerivationRule::Implies { .. } => "Implies",
-            PropositionDerivationRule::ImpliesFalseAntecedent(_) => "ImpliesFalseAntecedent",
-            PropositionDerivationRule::ForAllBody(_) => "ForAllBody",
-            PropositionDerivationRule::ExistsFromFact { .. } => "ExistsFromFact",
-            PropositionDerivationRule::ExistsFromWitness { .. } => "ExistsFromWitness",
-            PropositionDerivationRule::ForAllLoadableRange { .. } => "ForAllLoadableRange",
-            PropositionDerivationRule::FiniteForAll { .. } => "FiniteForAll",
-            PropositionDerivationRule::SingletonSubstitution { .. } => "SingletonSubstitution",
-            PropositionDerivationRule::DisjunctionCases { .. } => "DisjunctionCases",
-            PropositionDerivationRule::RefutedDisjunction { .. } => "RefutedDisjunction",
-        }
-    }
-
     /// Whether this equality retained exact constants and singleton bounds.
     /// Surface transcription uses only the retained context premises to emit
     /// an ordinary explicit arithmetic proof.
@@ -1710,6 +1681,7 @@ impl ExecutionBudget {
     }
 
     /// Adds the evaluator work inherent in one selected C statement tree.
+    #[cfg(test)]
     pub(crate) fn with_execution_statement_cost(self, statement: &ProgramStatement) -> Self {
         self.with_program_source_cost(execution_statement_source_cost(statement))
     }

@@ -3177,11 +3177,7 @@ impl<'a> TermRewrite<'a> {
                 Term::Algebraic(value) => {
                     collect_algebraic_carriers_seen(value, &mut variables, &mut seen)
                 }
-                Term::ExpressionOutcome(_)
-                | Term::StatementOutcome(_)
-                | Term::FunctionOutcome(_)
-                | Term::Memory(_)
-                | Term::ExecutionState(_) => {}
+                Term::Memory(_) | Term::ExecutionState(_) => {}
             }
             if variables.exhausted() {
                 break;
@@ -3420,16 +3416,12 @@ impl<'a> TermRewrite<'a> {
             Sort::Integer => Some(BindingCarrier::Integer),
             Sort::Algebraic(_) => Some(BindingCarrier::Algebraic),
             Sort::Bitvector32
-            | Sort::Bitvector64
             | Sort::ProgramInt32
             | Sort::ProgramInt64
             | Sort::ProgramInteger(_)
             | Sort::ProgramPointer(_)
             | Sort::ProgramObjectPointer(_, _)
-            | Sort::ProgramValue
-            | Sort::PointerOffset
             | Sort::Condition => Some(BindingCarrier::Program),
-            _ => None,
         };
         let Some(carrier) = carrier else {
             return (variable, self.scoped_proposition(body));

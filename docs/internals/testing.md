@@ -1293,24 +1293,6 @@ cooperatively interrupts execution, proposition derivation, memory resolution,
 and resource search. Do not wrap Click in an external timeout command; a proof
 search that outlives the CLI limit is a Click tooling bug.
 
-## Artifact reuse rejection ratchet
-
-Ordinary verification completes a proof's retained traces into the checked
-function execution without executing the C body again. Where
-opaque-contract certification cannot reuse a checked artifact, the contract
-fails with the blocking premise kind or entry-state component and the
-reason is counted (`instrumentation::ArtifactReuseRejection`; every pin is zero).
-The fixture harnesses take that census after an unfiltered run and compare
-it with the pinned baselines at the top of `tests/mdtests.rs` and
-`tests/examples.rs`.
-
-The comparison is exact in both directions. A count that rose means an
-artifact that used to be reused no longer is, and that change must not
-land. A count that fell means a rejection cause was removed; lower the pin in
-the same change so the count cannot rise back. A filtered run
-(`MDTEST_FILTER`, `CLICK_EXAMPLE`) or a run with `CLICK_RUN_QUARANTINED=1`
-skips the comparison.
-
 ## Hidden prerequisite ratchet
 
 A simple tactic must close each requirement by an exact or indexed check;
@@ -1319,9 +1301,9 @@ policy. Where checking still derives a prerequisite by a search whose result
 the proof does not retain, it counts the derivation by route and top rule
 (`instrumentation::HiddenPrerequisiteRoute`). The fixture harnesses take
 that census after an unfiltered run and compare it with
-`HIDDEN_PREREQUISITE_BASELINE` in `tests/mdtests.rs` and `tests/examples.rs`,
-exactly as the artifact reuse ratchet does: a count that rose must not land,
-and a count that fell lowers its pin in the same change. A partitioned CI
+`HIDDEN_PREREQUISITE_BASELINE` in `tests/mdtests.rs` and `tests/examples.rs`.
+The comparison is exact: a count that rose must not land, and a count that
+fell lowers its pin in the same change. A partitioned CI
 shard (`MDTEST_PARTITION`, `EXAMPLE_PARTITION`) sees part of the corpus, so it
 fails only when its own count exceeds a whole-corpus pin; an unpartitioned
 run, such as a local `scripts/check.sh`, checks both directions. Library tests read

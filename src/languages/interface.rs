@@ -355,10 +355,6 @@ impl CallbackParameter {
 }
 
 impl CallbackInterface {
-    pub fn return_pointee_is_constant(&self) -> bool {
-        self.return_pointee_constant
-    }
-
     pub(crate) fn new(
         return_type: InterfaceType,
         return_struct_name: Option<String>,
@@ -383,17 +379,6 @@ impl CallbackInterface {
 
     pub fn parameters(&self) -> &[CallbackParameter] {
         &self.parameters
-    }
-
-    /// The same signature with every `long long` rank erased to `long`, for
-    /// matching against a Click specification type that does not spell it.
-    pub fn erase_long_rank(&self) -> Self {
-        let mut erased = self.clone();
-        erased.return_type = erased.return_type.erase_long_rank();
-        for parameter in &mut erased.parameters {
-            parameter.interface_type = parameter.interface_type.erase_long_rank();
-        }
-        erased
     }
 }
 
@@ -464,12 +449,6 @@ impl InterfaceType {
             }
             _ => None,
         }
-    }
-
-    /// Whether two types are the same but for `long`/`long long` rank:
-    /// same representation, yet distinct, incompatible C types.
-    pub fn differs_only_in_long_rank(self, other: Self) -> bool {
-        self != other && self.erase_long_rank() == other.erase_long_rank()
     }
 }
 

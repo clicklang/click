@@ -193,8 +193,7 @@ fn startup_contract_cannot_be_packaged_as_an_ordinary_rule() {
             true,
         );
     assert!(program_recursive_function_contract_hypothesis(function.clone()).is_none());
-    assert!(program_external_function_rule(function.clone()).is_none());
-    assert!(program_verified_function_rule(function, &[]).is_none());
+    assert!(program_external_function_rule(function).is_none());
 }
 
 #[test]

@@ -130,37 +130,6 @@ impl std::hash::Hash for ObjectTypeEvidence {
     }
 }
 
-pub(super) fn merge_pointer_results<'a>(
-    results: impl Iterator<Item = Option<&'a PurePointerResult>>,
-) -> Option<Arc<PurePointerResult>> {
-    let mut merged = PurePointerResult {
-        classes: BTreeSet::new(),
-        arguments: BTreeSet::new(),
-    };
-    let mut seen = std::collections::HashSet::new();
-    for result in results {
-        let result = result?;
-        if !seen.insert(result as *const PurePointerResult) {
-            continue;
-        }
-        merged.classes.extend(result.classes.iter().cloned());
-        merged.arguments.extend(&result.arguments);
-    }
-    Some(Arc::new(merged))
-}
-
-pub(super) fn execution_pointer_result(
-    cases: &[Vec<ContractPathSet>],
-) -> Option<Arc<PurePointerResult>> {
-    pointer_result_from_outcomes(
-        cases
-            .iter()
-            .flatten()
-            .flat_map(|set| &set.paths)
-            .map(super::api::path_function_outcome),
-    )
-}
-
 /// Native function proofs retain their producer's outcomes. Reading them
 /// does not parse or re-check the theorem that the same producer emitted.
 pub(in crate::kernel) fn published_execution_pointer_result<'a>(

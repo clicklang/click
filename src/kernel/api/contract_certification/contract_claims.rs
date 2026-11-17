@@ -244,6 +244,39 @@ pub(in crate::kernel) fn memories_match_up_to_cached_reads(left: &Memory, right:
 }
 
 #[cfg(test)]
+fn checked_proposition_index(
+    checked_propositions: &[CheckedFunctionProposition],
+) -> CheckedPropositionIndex<'_> {
+    let mut index = CheckedPropositionIndex::default();
+    for checked in checked_propositions {
+        if let Some(claim) = &checked.claim {
+            if let Some(origin) = &checked.path_origin {
+                index
+                    .by_path
+                    .entry(claim.clone())
+                    .or_default()
+                    .insert(std::sync::Arc::as_ptr(&origin.proposition) as usize);
+            }
+            if let Some(key) = literal_completion_key(checked.specification.outcome()) {
+                index
+                    .by_literal_outcome
+                    .entry(claim.clone())
+                    .or_default()
+                    .entry(key)
+                    .or_default()
+                    .push(checked);
+            }
+            index
+                .by_claim
+                .entry(claim.clone())
+                .or_default()
+                .push(checked);
+        }
+    }
+    index
+}
+
+#[cfg(test)]
 mod cached_read_completion_tests {
     use super::*;
     use crate::kernel::proof::ProofObligation;
@@ -511,6 +544,7 @@ pub fn program_function_outcomes_program_state_definitionally_equal(
 /// Compares the observable program state of two return paths by matching their
 /// certified execution histories. Resource representation remains the
 /// responsibility of the separate resource certificate.
+#[cfg(test)]
 pub fn program_function_outcomes_program_state_equal_by_derivation(
     left: &FunctionOutcome,
     left_facts: &(impl ExecutionFactSource + ?Sized),
@@ -544,6 +578,7 @@ pub fn program_function_outcomes_program_state_equal_by_derivation(
     )
 }
 
+#[cfg(test)]
 fn memories_equal_by_derivation(
     left_final: &Memory,
     left_facts: &(impl ExecutionFactSource + ?Sized),
@@ -601,6 +636,7 @@ fn memories_equal_by_derivation(
 /// edge down to a definitionally equal pair. Each step descends one side's
 /// `base`, whose id is strictly smaller, so the recursion is finite with
 /// no depth cut.
+#[cfg(test)]
 fn memories_equal_by_matching_derivations(
     left: &Memory,
     right: &Memory,
@@ -2636,25 +2672,6 @@ impl<'a> FunctionEnsureGoalContext<'a> {
     }
 }
 
-/// Lower one return ensure, including the facts its loads introduce. Callers
-/// lowering several claims at an unchanged frontier prepare one
-/// `FunctionEnsureGoalContext` instead of reconstructing the views per claim.
-/// With a registered predicate, retain its identity unless the proof has
-/// explicitly unfolded it. `None` means a non-returning outcome or a view/goal
-/// that cannot be reconstructed.
-pub fn program_function_ensure_goals(
-    function: &ProgramFunction,
-    contract_index: usize,
-    caller_state: &ExecutionState,
-    arguments: &[ProgramExpression],
-    outcome: &FunctionOutcome,
-    assumptions: &PureFactContext,
-) -> Option<Vec<ContractClaimGoal>> {
-    FunctionEnsureGoalContext::new(function, caller_state, arguments, outcome, assumptions)?
-        .goals(contract_index)
-        .ok()
-}
-
 /// Lowers one exceptional postcondition at a checked throwing outcome. The
 /// exceptional family observes the thrown `int32` through the kernel's
 /// reserved payload binding and observes the state at the throw boundary.
@@ -2766,13 +2783,6 @@ fn exceptional_goals_at_entry(
             })
             .collect(),
     )
-}
-
-pub fn program_verified_function_contract_claims(
-    function: &ProgramFunction,
-    contract_execution: &FunctionContractExecution,
-) -> Option<Vec<VerifiedFunctionContractClaim>> {
-    collect_function_contract_claims(function, contract_execution, &[], false)
 }
 
 /// Whether a lowered ensure folded to a constant truth: the kernel's own
@@ -2910,38 +2920,6 @@ pub(crate) fn completion_key(proposition: &Proposition) -> Proposition {
     }
 }
 
-fn checked_proposition_index(
-    checked_propositions: &[CheckedFunctionProposition],
-) -> CheckedPropositionIndex<'_> {
-    let mut index = CheckedPropositionIndex::default();
-    for checked in checked_propositions {
-        if let Some(claim) = &checked.claim {
-            if let Some(origin) = &checked.path_origin {
-                index
-                    .by_path
-                    .entry(claim.clone())
-                    .or_default()
-                    .insert(std::sync::Arc::as_ptr(&origin.proposition) as usize);
-            }
-            if let Some(key) = literal_completion_key(checked.specification.outcome()) {
-                index
-                    .by_literal_outcome
-                    .entry(claim.clone())
-                    .or_default()
-                    .entry(key)
-                    .or_default()
-                    .push(checked);
-            }
-            index
-                .by_claim
-                .entry(claim.clone())
-                .or_default()
-                .push(checked);
-        }
-    }
-    index
-}
-
 /// The proof's completed propositions, by the contract claim each closed.
 #[derive(Default)]
 struct CheckedPropositionIndex<'a> {
@@ -3012,236 +2990,6 @@ fn native_literal_completion_key(
     }
 }
 
-/// Compatibility coverage helper for native completion regressions. Source
-/// contract proofs use their persistent whole-contract owner.
-#[cfg(test)]
-pub(crate) fn program_function_contract_claims_from_completions(
-    function: &ProgramFunction,
-    contract_execution: &FunctionContractExecution,
-    checked_propositions: &[CheckedFunctionProposition],
-) -> Option<Vec<VerifiedFunctionContractClaim>> {
-    collect_function_contract_claims(function, contract_execution, checked_propositions, true)
-}
-
-fn collect_function_contract_claims(
-    function: &ProgramFunction,
-    contract_execution: &FunctionContractExecution,
-    checked_propositions: &[CheckedFunctionProposition],
-    require_closing_evidence: bool,
-) -> Option<Vec<VerifiedFunctionContractClaim>> {
-    if !contract_execution.is_complete() {
-        return None;
-    }
-    if require_closing_evidence && !closed_exit_obligations_cover_every_case(contract_execution) {
-        return None;
-    }
-    let timings = crate::instrumentation::enabled();
-    let prepare_started = std::time::Instant::now();
-    let cases = contract_path_set_views(contract_execution, false);
-    let checked_propositions = checked_proposition_index(checked_propositions);
-    let claims = function
-        .contract_claims()
-        .iter()
-        .map(|claim| {
-            let claim_started = std::time::Instant::now();
-            let load_equality_capture =
-                crate::kernel::CheckedLoadEqualityCapture::start_with_call_events(
-                    &contract_execution.checked_call_events,
-                );
-            let operation_name = match claim.target() {
-                FunctionContractClaimTarget::BodySafety => "contract claim: body safety",
-                FunctionContractClaimTarget::EnsureProposition(_) => "contract claim: proposition",
-                FunctionContractClaimTarget::ExceptionalEnsureProposition(_) => {
-                    "contract claim: exceptional proposition"
-                }
-                FunctionContractClaimTarget::EnsureResource(_) => "contract claim: resource",
-                FunctionContractClaimTarget::Effect => "contract claim: effect",
-            };
-            let claim_key = format!("{:?}", claim.key());
-            let holds = crate::instrumentation::measure_operation(
-                function.name(),
-                &claim_key,
-                operation_name,
-                || {
-                    if require_closing_evidence && is_proposition_claim(claim.target()) {
-                        closed_proposition_holds_on_every_case(
-                            claim.target(),
-                            &cases,
-                            &checked_propositions,
-                        )
-                    } else if require_closing_evidence {
-                        closed_resource_effect_claim_holds(claim, &cases)
-                    } else {
-                        claim_holds_on_some_path_set_of_every_case(
-                            function,
-                            claim,
-                            &cases,
-                            &checked_propositions,
-                        )
-                    }
-                },
-            );
-            if timings {
-                crate::instrumentation::emit(
-                    crate::instrumentation::VerificationEvent::ClaimFinished {
-                        function: function.name().to_string(),
-                        key: format!("{:?}", claim.key()),
-                        elapsed: claim_started.elapsed(),
-                    },
-                );
-            }
-            let load_equalities = load_equality_capture.finish();
-            holds.then(|| VerifiedFunctionContractClaim {
-                pointer_result: contract_execution.pointer_result.clone(),
-                function: function.clone(),
-                key: claim.key().clone(),
-                load_equalities,
-                loop_semantics: contract_execution.loop_semantics,
-                applied_tactics: contract_execution.applied_tactics.clone(),
-                checked_callees: contract_execution.checked_callees.clone(),
-            })
-        })
-        .collect::<Option<Vec<_>>>();
-    if timings {
-        crate::instrumentation::emit(
-            crate::instrumentation::VerificationEvent::ClaimPathsPrepared {
-                function: function.name().to_string(),
-                count: cases
-                    .iter()
-                    .flatten()
-                    .filter_map(|view| view.prepared.get())
-                    .filter_map(|prepared| prepared.as_ref().ok())
-                    .map(Vec::len)
-                    .sum(),
-                elapsed: prepare_started.elapsed(),
-            },
-        );
-    }
-    // A case none of whose path sets could be prepared certifies nothing.
-    if cases.iter().any(|alternatives| {
-        alternatives
-            .iter()
-            .all(|view| view.prepared.get().is_some_and(Result::is_err))
-    }) {
-        return None;
-    }
-    claims
-}
-
-/// One path set of a contract execution, prepared for claim checking the
-/// first time a claim is judged over it. A claim the first set certifies
-/// never prepares the second.
-struct ContractPathSetView<'a> {
-    set: &'a ContractPathSet,
-    capture_failure: bool,
-    prepared: std::cell::OnceCell<
-        Result<Vec<CertifiedFunctionClaimPath>, ContractPathPreparationFailure>,
-    >,
-}
-
-impl ContractPathSetView<'_> {
-    fn prepared(
-        &self,
-        function: &ProgramFunction,
-    ) -> &Result<Vec<CertifiedFunctionClaimPath>, ContractPathPreparationFailure> {
-        self.prepared.get_or_init(|| {
-            crate::instrumentation::measure_operation(
-                function.name(),
-                "contract certification",
-                "contract path preparation",
-                || {
-                    self.set
-                        .paths
-                        .iter()
-                        .enumerate()
-                        .map(|(index, path)| {
-                            let checked_resource_claims = self
-                                .set
-                                .checked_resource_claims
-                                .get(index)
-                                .cloned()
-                                .unwrap_or_default();
-                            let checked_resource_transition = self
-                                .set
-                                .checked_resource_transitions
-                                .get(index)
-                                .copied()
-                                .unwrap_or(false);
-                            prepare_function_claim_path(
-                                function,
-                                path,
-                                checked_resource_claims,
-                                checked_resource_transition,
-                                self.set
-                                    .deferred_contract_exits
-                                    .get(index)
-                                    .copied()
-                                    .unwrap_or(false),
-                                self.set
-                                    .deferred_contract_exit_errors
-                                    .get(index)
-                                    .cloned()
-                                    .unwrap_or(None),
-                                self.set
-                                    .checked_returned_resources
-                                    .get(index)
-                                    .cloned()
-                                    .unwrap_or_else(crate::kernel::ResourceContext::new),
-                                self.capture_failure,
-                                self.set
-                                    .boundary_transfers
-                                    .get(index)
-                                    .and_then(Option::as_deref),
-                                None,
-                            )
-                            .map(|mut prepared| {
-                                prepared.completion_path_origin =
-                                    self.set.completion_path_origins.get(index).cloned();
-                                prepared
-                            })
-                            .map_err(|mut failure| {
-                                failure.reason = format!(
-                                    "execution path {index} is invalid: {}",
-                                    failure.reason
-                                );
-                                failure
-                            })
-                        })
-                        .collect()
-                },
-            )
-        })
-    }
-}
-
-fn contract_path_set_views(
-    contract_execution: &FunctionContractExecution,
-    capture_failure: bool,
-) -> Vec<Vec<ContractPathSetView<'_>>> {
-    contract_execution
-        .cases()
-        .iter()
-        .map(|alternatives| {
-            alternatives
-                .iter()
-                .map(|set| ContractPathSetView {
-                    set,
-                    capture_failure,
-                    prepared: std::cell::OnceCell::new(),
-                })
-                .collect()
-        })
-        .collect()
-}
-
-fn is_proposition_claim(target: &FunctionContractClaimTarget) -> bool {
-    matches!(
-        target,
-        FunctionContractClaimTarget::EnsureProposition(_)
-            | FunctionContractClaimTarget::ExceptionalEnsureProposition(_)
-    )
-}
-
 fn closing_path_is_unreachable(path: &SymbolicExecutionPath) -> bool {
     path.post_assumptions
         .as_ref()
@@ -3251,308 +2999,6 @@ fn closing_path_is_unreachable(path: &SymbolicExecutionPath) -> bool {
             path.completion_origin,
             Some(FunctionOutcome::VerificationDiverges)
         )
-}
-
-fn closed_exit_obligations_cover_every_case(execution: &FunctionContractExecution) -> bool {
-    execution
-        .cases
-        .iter()
-        .all(|alternatives| closed_exit_obligations_cover_case(alternatives))
-}
-
-fn closed_exit_obligations_cover_case(alternatives: &[ContractPathSet]) -> bool {
-    alternatives.iter().any(|set| {
-        set.paths.iter().enumerate().all(|(index, path)| {
-            crate::instrumentation::record_deterministic_work(1);
-            closing_path_is_unreachable(path)
-                || set
-                    .closed_exit_obligations
-                    .get(index)
-                    .and_then(Option::as_ref)
-                    .is_some_and(ClosedContractExit::completes_boundary)
-        })
-    })
-}
-
-fn closed_resource_effect_claim_holds(
-    claim: &FunctionContractClaim,
-    cases: &[Vec<ContractPathSetView<'_>>],
-) -> bool {
-    cases.iter().all(|alternatives| {
-        alternatives.iter().any(|view| {
-            view.set.paths.iter().enumerate().all(|(index, path)| {
-                crate::instrumentation::record_deterministic_work(1);
-                closing_path_is_unreachable(path)
-                    || view
-                        .set
-                        .closed_exit_obligations
-                        .get(index)
-                        .and_then(Option::as_ref)
-                        .is_some_and(|completion| completion.covers(claim))
-            })
-        })
-    })
-}
-
-/// Contract closing already proved this clause on its producer-owned paths.
-/// Consume that association without rebuilding states or lowering the clause.
-fn closed_proposition_holds_on_every_case(
-    target: &FunctionContractClaimTarget,
-    cases: &[Vec<ContractPathSetView<'_>>],
-    checked: &CheckedPropositionIndex<'_>,
-) -> bool {
-    let origins = checked.by_path.get(target);
-    cases.iter().all(|alternatives| {
-        alternatives.iter().any(|view| {
-            view.set.paths.iter().enumerate().all(|(index, path)| {
-                crate::instrumentation::record_deterministic_work(1);
-                // The execution producer retains exact contradictions in its
-                // indexed context. An unreachable candidate owes no claim;
-                // outcome splitting likewise creates no goal for it.
-                if path
-                    .post_assumptions
-                    .as_ref()
-                    .unwrap_or(&path.assumptions)
-                    .has_retained_contradiction()
-                {
-                    return true;
-                }
-                if view
-                    .set
-                    .completion_path_origins
-                    .get(index)
-                    .is_some_and(|origin| {
-                        origins.is_some_and(|origins| {
-                            origins
-                                .contains(&(std::sync::Arc::as_ptr(&origin.proposition) as usize))
-                        })
-                    })
-                {
-                    return true;
-                }
-                // Checked proof execution retains the outcome itself. Do not
-                // walk the theorem's premise chain to rediscover its family.
-                matches!(
-                    (target, path.completion_origin.as_ref()),
-                    (_, Some(FunctionOutcome::VerificationDiverges))
-                        | (
-                            FunctionContractClaimTarget::EnsureProposition(_),
-                            Some(FunctionOutcome::Throw { .. })
-                        )
-                        | (
-                            FunctionContractClaimTarget::ExceptionalEnsureProposition(_),
-                            Some(FunctionOutcome::Return { .. })
-                        )
-                )
-            })
-        })
-    })
-}
-
-/// A claim holds when every resource-guard case has one path set on all of
-/// whose paths it holds. Each set is a complete execution of the function
-/// under its case, so one certifying set is authority for the case.
-fn claim_holds_on_some_path_set_of_every_case(
-    function: &ProgramFunction,
-    claim: &FunctionContractClaim,
-    cases: &[Vec<ContractPathSetView<'_>>],
-    checked_propositions: &CheckedPropositionIndex<'_>,
-) -> bool {
-    cases.iter().all(|alternatives| {
-        alternatives.iter().any(|view| {
-            if let FunctionContractClaimTarget::EnsureResource(index) = claim.target()
-                && view.set.checked_resource_claims.len() == view.set.paths.len()
-                && view.set.checked_resource_transitions.len() == view.set.paths.len()
-                && view
-                    .set
-                    .checked_resource_transitions
-                    .iter()
-                    .all(|checked| *checked)
-                && view
-                    .set
-                    .checked_resource_claims
-                    .iter()
-                    .all(|claims| claims.contains(&FunctionContractClaimKey::Ensure(*index)))
-            {
-                // This claim was checked against the completed proof outcome
-                // on every path, including allocation lifetime. It is already
-                // the exact contract claim; preparing the raw path would
-                // repeat the contract exit transition and can lose the proof's
-                // checked post-return resource exchange.
-                return true;
-            }
-            view.prepared(function).as_ref().is_ok_and(|paths| {
-                paths.iter().all(|path| {
-                    function_claim_holds_on_prepared_path(
-                        function,
-                        claim,
-                        path,
-                        checked_propositions,
-                        view.set.completion_origin_state.as_ref(),
-                        None,
-                    )
-                })
-            })
-        })
-    })
-}
-
-/// Reports the exact contract claims that the checked execution frontier does
-/// not establish. This is diagnostic information only: unlike the companion
-/// certification API, it cannot mint proof objects.
-///
-/// `None` means the frontier itself is incomplete or could not be prepared for
-/// claim checking. An empty vector means every claim holds.
-pub fn program_unverified_function_contract_claims(
-    function: &ProgramFunction,
-    contract_execution: &FunctionContractExecution,
-) -> Result<Vec<FunctionContractClaimKey>, String> {
-    unverified_function_contract_claims(function, contract_execution, &[], false)
-        .map_err(|failure| failure.reason)
-}
-
-/// Diagnostic counterpart to checked-proposition-aware finalization. Keeping
-/// the same evidence here ensures a later failing claim does not make an
-/// already checked proposition look unproved in the reported claim list.
-#[cfg(test)]
-pub(crate) fn program_unverified_function_contract_claims_with_checked_propositions(
-    function: &ProgramFunction,
-    contract_execution: &FunctionContractExecution,
-    checked_propositions: &[CheckedFunctionProposition],
-) -> Result<Vec<FunctionContractClaimKey>, String> {
-    program_unverified_function_contract_claims_diagnostic(
-        function,
-        contract_execution,
-        checked_propositions,
-    )
-    .map_err(|failure| failure.reason)
-}
-
-#[cfg(test)]
-pub(crate) fn program_unverified_function_contract_claims_diagnostic(
-    function: &ProgramFunction,
-    contract_execution: &FunctionContractExecution,
-    checked_propositions: &[CheckedFunctionProposition],
-) -> Result<Vec<FunctionContractClaimKey>, ContractPathPreparationFailure> {
-    unverified_function_contract_claims(function, contract_execution, checked_propositions, true)
-}
-
-fn unverified_function_contract_claims(
-    function: &ProgramFunction,
-    contract_execution: &FunctionContractExecution,
-    checked_propositions: &[CheckedFunctionProposition],
-    require_closing_evidence: bool,
-) -> Result<Vec<FunctionContractClaimKey>, ContractPathPreparationFailure> {
-    if !contract_execution.is_complete() {
-        return Err("certification produced no paths".to_string().into());
-    }
-    let cases = contract_path_set_views(contract_execution, true);
-    let checked_propositions = checked_proposition_index(checked_propositions);
-    let mut unverified = missing_function_contract_claim_keys(function);
-    let claim_unverified = function
-        .contract_claims()
-        .iter()
-        .filter(|claim| {
-            if require_closing_evidence && is_proposition_claim(claim.target()) {
-                !closed_proposition_holds_on_every_case(
-                    claim.target(),
-                    &cases,
-                    &checked_propositions,
-                )
-            } else if require_closing_evidence {
-                !closed_resource_effect_claim_holds(claim, &cases)
-            } else {
-                !claim_holds_on_some_path_set_of_every_case(
-                    function,
-                    claim,
-                    &cases,
-                    &checked_propositions,
-                )
-            }
-        })
-        .map(|claim| claim.key().clone())
-        .collect::<Vec<_>>();
-    for key in claim_unverified {
-        if !unverified.contains(&key) {
-            unverified.push(key);
-        }
-    }
-    // A case none of whose path sets could be prepared names the first
-    // reason.
-    for alternatives in &cases {
-        let failures = alternatives
-            .iter()
-            .filter_map(|view| view.prepared.get())
-            .filter_map(|prepared| prepared.as_ref().err())
-            .collect::<Vec<_>>();
-        if !failures.is_empty() && failures.len() == alternatives.len() {
-            return Err((*failures[0]).clone());
-        }
-    }
-    Ok(unverified)
-}
-
-/// Certifies one contract claim only after a kernel-produced complete
-/// execution frontier establishes that exact claim for the exact function.
-pub fn program_verified_function_contract_claim(
-    function: &ProgramFunction,
-    key: FunctionContractClaimKey,
-    execution: &FunctionContractExecution,
-) -> Option<VerifiedFunctionContractClaim> {
-    program_verified_function_contract_claims(function, execution)?
-        .into_iter()
-        .find(|proof| proof.key == key)
-}
-
-/// Packages an opaque rule only after every recorded contract claim has a
-/// certificate for this exact function.
-/// This checks claim coverage and function identity; it does not reconstruct
-/// the symbolic entry chosen by the caller of contract certification. Reusable
-/// rules require certification at an entry representing the declared input
-/// domain. See `docs/internals/kernel.md`, "Source obligations and checked
-/// evidence".
-pub fn program_verified_function_rule(
-    function: ProgramFunction,
-    proofs: &[VerifiedFunctionContractClaim],
-) -> Option<VerifiedFunctionRule> {
-    if function.is_program_entry()
-        || !function.verified_direct_contract_supported()
-        || function.contract_claims().is_empty()
-        || !function_contract_claims_are_complete(&function)
-        || proofs.iter().any(|proof| proof.function != function)
-        || function
-            .contract_claims()
-            .iter()
-            .any(|claim| !proofs.iter().any(|proof| proof.key == *claim.key()))
-    {
-        return None;
-    }
-    // The weakest semantics any claim saw: a loop summarized for one claim
-    // was not shown to exit for that claim.
-    let loop_semantics = if proofs
-        .iter()
-        .all(|proof| proof.loop_semantics == LoopSemantics::ApplyVerifiedRules)
-    {
-        LoopSemantics::ApplyVerifiedRules
-    } else {
-        LoopSemantics::Verify
-    };
-    Some(VerifiedFunctionRule {
-        pointer_result: crate::kernel::object_types::merge_pointer_results(
-            proofs.iter().map(|proof| proof.pointer_result.as_deref()),
-        ),
-        function,
-        descent_completion: None,
-        concrete_loop_exits: None,
-        loop_semantics,
-        checked_callees: crate::kernel::termination::merge_checked_callees(
-            proofs.iter().map(|proof| proof.checked_callees.as_ref()),
-        ),
-        applied_tactics: proofs
-            .iter()
-            .flat_map(|proof| proof.applied_tactics.iter().cloned())
-            .collect(),
-    })
 }
 
 /// Packages a body-less external contract as an opaque assumption. The
@@ -3664,61 +3110,6 @@ fn function_contract_claims_are_complete(function: &ProgramFunction) -> bool {
         && (!function.contract_effect_claim_required()
             || function.contract_mutable().is_empty()
             || targets.contains(&FunctionContractClaimTarget::Effect))
-}
-
-/// Returns diagnostic keys for obligations that have no corresponding claim.
-/// The public key type predates separate proposition/resource vectors, so the
-/// target index is used for an unclaimed diagnostic entry.
-fn missing_function_contract_claim_keys(
-    function: &ProgramFunction,
-) -> Vec<FunctionContractClaimKey> {
-    let claims = function.contract_claims();
-    let mut missing = Vec::new();
-    for index in 0..function.contract_ensures().len() {
-        if !claims.iter().any(|claim| {
-            matches!(
-                claim.target(),
-                FunctionContractClaimTarget::EnsureProposition(claim_index)
-                    if *claim_index == index
-            )
-        }) {
-            missing.push(FunctionContractClaimKey::Ensure(index));
-        }
-    }
-    for index in 0..function.exceptional_ensures().len() {
-        if !claims.iter().any(|claim| {
-            matches!(
-                claim.target(),
-                FunctionContractClaimTarget::ExceptionalEnsureProposition(claim_index)
-                    if *claim_index == index
-            )
-        }) {
-            missing.push(FunctionContractClaimKey::ExceptionalEnsure(index));
-        }
-    }
-    for index in 0..function.resource_ensures().len() {
-        if !claims.iter().any(|claim| {
-            matches!(
-                claim.target(),
-                FunctionContractClaimTarget::EnsureResource(claim_index)
-                    if *claim_index == index
-            )
-        }) {
-            let key = FunctionContractClaimKey::Ensure(index);
-            if !missing.contains(&key) {
-                missing.push(key);
-            }
-        }
-    }
-    if function.contract_effect_claim_required()
-        && !function.contract_mutable().is_empty()
-        && !claims
-            .iter()
-            .any(|claim| matches!(claim.target(), FunctionContractClaimTarget::Effect))
-    {
-        missing.push(FunctionContractClaimKey::Effect(0));
-    }
-    missing
 }
 
 #[cfg(test)]
@@ -4302,8 +3693,8 @@ mod retained_literal_completion_scaling_tests {
 mod contract_closing_tests {
     use super::*;
 
-    pub(super) fn fixture(path_count: usize) -> (ProgramFunction, FunctionContractExecution) {
-        let function = program_function(
+    pub(super) fn fixture() -> ProgramFunction {
+        program_function(
             ProgramType::Int32,
             "closed",
             vec![],
@@ -4323,165 +3714,7 @@ mod contract_closing_tests {
             vec![],
             vec![FunctionContractClaim::ensure_proposition(0, 0)],
             true,
-        );
-        let paths = (0..path_count)
-            .map(|_| SymbolicExecutionPath {
-                call_parameters: None,
-                descent_step: None,
-                completion_origin: None,
-                call_result: None,
-                assumptions: PureFactContext::new(),
-                post_assumptions: None,
-                facts: ExecutionFacts::new(),
-                effect_facts: ExecutionFacts::new(),
-                obligations: vec![],
-                theorem: Theorem::new(Proposition::ProgramFunctionVerifies {
-                    state: Box::new(ExecutionState::new()),
-                    function: Box::new(function.clone()),
-                    arguments: vec![],
-                    outcome: FunctionOutcome::Return {
-                        value: int32(0).into(),
-                        state: Box::new(ExecutionState::new()),
-                    },
-                }),
-                loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
-            })
-            .collect::<Vec<_>>();
-        let set = ContractPathSet {
-            closed_exit_obligations: paths
-                .iter()
-                .enumerate()
-                .map(|(index, path)| Some(ClosedContractExit::fixture(index, path)))
-                .collect(),
-            completion_path_origins: paths.iter().map(|path| path.theorem.clone()).collect(),
-            paths,
-            checked_resource_claims: vec![],
-            checked_resource_transitions: vec![],
-            deferred_contract_exits: vec![],
-            deferred_contract_exit_errors: vec![],
-            checked_returned_resources: vec![],
-            completion_origin_state: None,
-            boundary_transfers: vec![],
-        };
-        let mut execution = FunctionContractExecution::failed("fixture".into());
-        execution.cases = vec![vec![set]];
-        (function, execution)
-    }
-
-    pub(super) fn completions(
-        function: &ProgramFunction,
-        execution: &FunctionContractExecution,
-    ) -> Vec<CheckedFunctionProposition> {
-        execution.cases[0][0]
-            .paths
-            .iter()
-            .map(|path| CheckedFunctionProposition {
-                path_origin: Some(path.theorem.clone()),
-                function: function.clone(),
-                specification: FunctionSpecification::new(
-                    ExecutionState::new(),
-                    vec![],
-                    vec![],
-                    path_function_outcome(path).unwrap().clone(),
-                ),
-                proposition: Proposition::ConditionIs(ConditionTerm::Constant(true), true),
-                claim: Some(FunctionContractClaimTarget::EnsureProposition(0)),
-            })
-            .collect()
-    }
-
-    #[test]
-    fn completed_claims_do_not_reconstruct_or_reprove_postconditions() {
-        let (function, execution) = fixture(2);
-        let proofs = completions(&function, &execution);
-        let cases = contract_path_set_views(&execution, false);
-        assert!(closed_proposition_holds_on_every_case(
-            &FunctionContractClaimTarget::EnsureProposition(0),
-            &cases,
-            &checked_proposition_index(&proofs),
-        ));
-        assert!(
-            cases
-                .iter()
-                .flatten()
-                .all(|view| view.prepared.get().is_none())
-        );
-        assert!(
-            program_function_contract_claims_from_completions(&function, &execution, &proofs)
-                .is_some()
-        );
-        // A trivially true postcondition is still an unclosed obligation when
-        // its proof was not opened for the contract clause.
-        let mut untagged = proofs.clone();
-        for proof in &mut untagged {
-            proof.claim = None;
-        }
-        assert!(
-            program_function_contract_claims_from_completions(&function, &execution, &untagged)
-                .is_none()
-        );
-        // Independent execution-only checking remains a distinct API.
-        assert!(program_verified_function_contract_claims(&function, &execution).is_some());
-        let missing = program_unverified_function_contract_claims_with_checked_propositions(
-            &function, &execution, &untagged,
         )
-        .unwrap();
-        assert_eq!(missing, vec![FunctionContractClaimKey::Ensure(0)]);
-    }
-
-    #[test]
-    fn closing_evidence_must_cover_each_path_and_each_entry_case() {
-        let (function, mut execution) = fixture(2);
-        let proofs = completions(&function, &execution);
-        assert!(
-            program_function_contract_claims_from_completions(&function, &execution, &proofs[..1])
-                .is_none()
-        );
-        let mut wrong_clause = proofs.clone();
-        wrong_clause[1].claim = Some(FunctionContractClaimTarget::EnsureProposition(1));
-        assert!(
-            program_function_contract_claims_from_completions(&function, &execution, &wrong_clause)
-                .is_none()
-        );
-        // An equal-looking theorem from a different producer is not this path.
-        let mut wrong_path = proofs.clone();
-        let original = wrong_path[1].path_origin.as_ref().unwrap();
-        wrong_path[1].path_origin = Some(Theorem::new(original.proposition().clone()));
-        assert!(
-            program_function_contract_claims_from_completions(&function, &execution, &wrong_path)
-                .is_none()
-        );
-        let (_, other_case) = fixture(1);
-        execution
-            .cases
-            .push(other_case.cases.into_iter().next().unwrap());
-        assert!(
-            program_function_contract_claims_from_completions(&function, &execution, &proofs)
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn completed_contracts_require_resource_and_effect_completions() {
-        let (function, mut execution) = fixture(1);
-        let proofs = completions(&function, &execution);
-        assert!(
-            program_function_contract_claims_from_completions(&function, &execution, &proofs)
-                .is_some()
-        );
-        execution.cases[0][0].closed_exit_obligations.clear();
-        assert!(
-            program_function_contract_claims_from_completions(&function, &execution, &proofs)
-                .is_none()
-        );
-        assert!(program_verified_function_contract_claims(&function, &execution).is_some());
-    }
-
-    mod scaling_tests {
-        use super::*;
-        include!(
-            "../../../scaling_tests/kernel/api/contract_certification/contract_claims/closing_tests.rs"
-        );
     }
 }
 
