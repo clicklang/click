@@ -226,34 +226,13 @@ impl FloatStorageKey {
 impl FloatShape {
     fn rank(&self) -> u8 {
         match self {
-            Self::Application(..) => 6,
-            Self::Call(..) => 7,
-            Self::Negate(false, _) => 13,
-            Self::Binary(false, ..) => 14,
-            Self::Negate(true, _) => 15,
-            Self::Binary(true, ..) => 16,
-            Self::Atom(v) => match v {
-                MachineTerm::Constant { .. } => 0,
-                MachineTerm::Variable(_) => 1,
-                MachineTerm::Binary { .. } => 2,
-                MachineTerm::Unary { .. } => 3,
-                MachineTerm::If { .. } => 4,
-                MachineTerm::RangeFold { .. } => 5,
-                MachineTerm::PureFunctionApplication { .. }
-                | MachineTerm::ClickFunctionApplication { .. } => {
-                    unreachable!("projected application")
-                }
-                MachineTerm::AlgebraicMatch { .. } => 8,
-                MachineTerm::MemoryLoad(..) => 9,
-                MachineTerm::PointerAddress(..) => 10,
-                MachineTerm::IntegerToMachine { .. } => 11,
-                MachineTerm::Cast { .. } => 12,
-                MachineTerm::Float32Negate(_)
-                | MachineTerm::Float64Negate(_)
-                | MachineTerm::Float32Binary { .. }
-                | MachineTerm::Float64Binary { .. } => unreachable!("projected arithmetic"),
-                MachineTerm::BoolCast { .. } => 17,
-            },
+            Self::Application(..) => PURE_APPLICATION_RANK,
+            Self::Call(..) => CLICK_APPLICATION_RANK,
+            Self::Negate(false, _) => FLOAT32_NEGATE_RANK,
+            Self::Binary(false, ..) => FLOAT32_BINARY_RANK,
+            Self::Negate(true, _) => FLOAT64_NEGATE_RANK,
+            Self::Binary(true, ..) => FLOAT64_BINARY_RANK,
+            Self::Atom(value) => native_machine_rank(value),
         }
     }
 }

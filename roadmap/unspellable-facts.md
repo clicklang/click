@@ -666,6 +666,12 @@ exports and leave the enclosing native argument cache empty. A 4,096-deep key
 constructs and drops on a 256 KiB stack. All ten regular Boolean/float fixtures
 passed with zero fact-stability differences; quality checks passed.
 
+After upstream added the opaque thread-handle word variant, both Boolean and
+float key ordering use one exhaustive native variant-rank helper. Pairwise
+contract matrices include that opaque carrier without interpreting it as a
+Boolean or float. The updated tree passed all 29 focused execution-value tests,
+all 1,816 scaling tests and quality checks.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential

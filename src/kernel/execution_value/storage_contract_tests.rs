@@ -18,6 +18,7 @@ fn nonnumeric_storage_keys_preserve_native_pairwise_order_and_hash_classes() {
     let _session = VerificationSession::enter();
     let mut values = vec![ProgramValue::Void];
     for word in [
+        MachineTerm::ThreadHandle(crate::kernel::primitives::ThreadHandleId(998696)),
         MachineTerm::Constant {
             format: MachineIntegerType::UInt8,
             bits: 2,
@@ -179,6 +180,12 @@ fn float_operation_keys_preserve_native_order_and_payloads() {
         let integer =
             KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(998691));
         roots.push(KernelTerm::float_convert(format, ProgramType::Int32, integer).unwrap());
+        // A newly added opaque native word keeps its identity and native
+        // ordering even when carried by an unsupported legacy float input.
+        roots.push(KernelTermImport::default().float(
+            format,
+            &MachineTerm::ThreadHandle(crate::kernel::primitives::ThreadHandleId(998696)),
+        ));
         let native = MachineTerm::If {
             condition: Box::new(ConditionTerm::Variable(Variable(998692))),
             then_term: Box::new(MachineTerm::constant(1)),

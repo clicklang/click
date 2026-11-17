@@ -7,24 +7,31 @@ use std::{
     sync::Arc,
 };
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub(in crate::kernel) enum BooleanStorageKey {
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub(in crate::kernel) struct BooleanStorageKey(BooleanKeyKind);
+
+// Keep the word/cast split private: all BoolCast inputs are projected by the
+// constructor, so a raw Word can never alias a projected Cast.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+enum BooleanKeyKind {
     Word(MachineTerm),
     Cast(MachineIntegerType, ConditionStorageKey),
 }
 impl BooleanStorageKey {
     pub(super) fn native(word: &MachineTerm) -> Self {
-        match word {
+        Self(match word {
             MachineTerm::BoolCast { to, value } => {
-                Self::Cast(*to, ConditionStorageKey::native(value))
+                BooleanKeyKind::Cast(*to, ConditionStorageKey::native(value))
             }
-            _ => Self::Word(word.clone()),
-        }
+            _ => BooleanKeyKind::Word(word.clone()),
+        })
     }
     pub(super) fn shared(root: &KernelTerm) -> Self {
         if root.ty() == &KernelType::Program(ProgramType::Bool) {
             return match root.node() {
-                KernelTermNode::Variable(v) => Self::Word(MachineTerm::Variable(*v)),
+                KernelTermNode::Variable(v) => {
+                    Self(BooleanKeyKind::Word(MachineTerm::Variable(*v)))
+                }
                 KernelTermNode::Legacy(value) => {
                     let PureFunctionArgument::Value(ProgramValue::Bool(word)) = value.value()
                     else {
@@ -35,14 +42,70 @@ impl BooleanStorageKey {
                 _ => unreachable!("raw Boolean carrier"),
             };
         }
-        if let Some(value) = BooleanOperandView::Shared(root).constant() {
-            Self::Word(MachineTerm::bool_cast(
-                MachineIntegerType::UInt8,
-                ConditionTerm::Constant(value),
-            ))
-        } else {
-            Self::Cast(MachineIntegerType::UInt8, root.condition_storage_key())
+        Self(
+            if let Some(value) = BooleanOperandView::Shared(root).constant() {
+                BooleanKeyKind::Word(MachineTerm::bool_cast(
+                    MachineIntegerType::UInt8,
+                    ConditionTerm::Constant(value),
+                ))
+            } else {
+                BooleanKeyKind::Cast(MachineIntegerType::UInt8, root.condition_storage_key())
+            },
+        )
+    }
+}
+impl PartialOrd for BooleanStorageKey {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for BooleanStorageKey {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (&self.0, &other.0) {
+            (BooleanKeyKind::Word(a), BooleanKeyKind::Word(b)) => a.cmp(b),
+            (BooleanKeyKind::Cast(at, a), BooleanKeyKind::Cast(bt, b)) => {
+                at.cmp(bt).then_with(|| a.cmp(b))
+            }
+            (BooleanKeyKind::Word(a), BooleanKeyKind::Cast(..)) => {
+                native_machine_rank(a).cmp(&BOOL_CAST_RANK)
+            }
+            (BooleanKeyKind::Cast(..), BooleanKeyKind::Word(b)) => {
+                BOOL_CAST_RANK.cmp(&native_machine_rank(b))
+            }
         }
+    }
+}
+
+// Native MachineTerm variant order, shared by both family projections. The
+// exhaustive match forces a review when a new opaque word variant is added.
+const PURE_APPLICATION_RANK: u8 = 6;
+const CLICK_APPLICATION_RANK: u8 = 7;
+const FLOAT32_NEGATE_RANK: u8 = 13;
+const FLOAT32_BINARY_RANK: u8 = 14;
+const FLOAT64_NEGATE_RANK: u8 = 15;
+const FLOAT64_BINARY_RANK: u8 = 16;
+const BOOL_CAST_RANK: u8 = 17;
+fn native_machine_rank(value: &MachineTerm) -> u8 {
+    match value {
+        MachineTerm::Constant { .. } => 0,
+        MachineTerm::Variable(_) => 1,
+        MachineTerm::Binary { .. } => 2,
+        MachineTerm::Unary { .. } => 3,
+        MachineTerm::If { .. } => 4,
+        MachineTerm::RangeFold { .. } => 5,
+        MachineTerm::PureFunctionApplication { .. } => PURE_APPLICATION_RANK,
+        MachineTerm::ClickFunctionApplication { .. } => CLICK_APPLICATION_RANK,
+        MachineTerm::AlgebraicMatch { .. } => 8,
+        MachineTerm::MemoryLoad(..) => 9,
+        MachineTerm::PointerAddress(..) => 10,
+        MachineTerm::IntegerToMachine { .. } => 11,
+        MachineTerm::Cast { .. } => 12,
+        MachineTerm::Float32Negate(_) => FLOAT32_NEGATE_RANK,
+        MachineTerm::Float32Binary { .. } => FLOAT32_BINARY_RANK,
+        MachineTerm::Float64Negate(_) => FLOAT64_NEGATE_RANK,
+        MachineTerm::Float64Binary { .. } => FLOAT64_BINARY_RANK,
+        MachineTerm::BoolCast { .. } => BOOL_CAST_RANK,
+        MachineTerm::ThreadHandle(_) => 18,
     }
 }
 
