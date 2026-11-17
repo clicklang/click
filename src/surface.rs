@@ -454,7 +454,7 @@ pub(crate) fn loop_iterations_spelling(index: usize) -> String {
 
 /// The Rust accessors a proof reads a loop's iterator through, as written
 /// after `iter.`: a call such as `len()` or a public field such as `start`.
-pub(crate) const RUST_ITERATOR_ACCESSORS: [&str; 12] = [
+pub(crate) const RUST_ITERATOR_ACCESSORS: [&str; 13] = [
     "len()",
     "count",
     "as_slice()",
@@ -462,6 +462,7 @@ pub(crate) const RUST_ITERATOR_ACCESSORS: [&str; 12] = [
     "end",
     "start()",
     "end()",
+    "is_empty()",
     "v",
     "v.len()",
     "rem",
@@ -471,7 +472,7 @@ pub(crate) const RUST_ITERATOR_ACCESSORS: [&str; 12] = [
 
 /// The accessors of an iterator of `kind`, which are Rust's own:
 /// `ExactSizeIterator::len`, `slice::Iter::as_slice`, a `Range`'s `start`
-/// and `end` fields, a `RangeInclusive`'s `start()` and `end()`, and a
+/// and `end` fields, a `RangeInclusive`'s `start()`, `end()`, and `is_empty()`, and a
 /// `ChunksExact`'s fields `v`, `rem` and `chunk_size`.
 pub(crate) fn rust_iterator_accessors(
     kind: crate::languages::interface::RustIteratorKind,
@@ -482,7 +483,9 @@ pub(crate) fn rust_iterator_accessors(
             &["len()", "as_slice()", "count"]
         }
         crate::languages::interface::RustIteratorKind::Range => &["start", "end", "len()"],
-        crate::languages::interface::RustIteratorKind::RangeInclusive => &["start()", "end()"],
+        crate::languages::interface::RustIteratorKind::RangeInclusive => {
+            &["start()", "end()", "is_empty()"]
+        }
         // A crate's own iterator is a struct the program holds: a proof
         // reads its fields through the local, `iter.n`.
         crate::languages::interface::RustIteratorKind::User => &[],
@@ -512,6 +515,28 @@ pub(crate) fn rust_iterator_method(
         (K::Range, "end") => variable("end"),
         (K::RangeInclusive, "start()") => variable("start"),
         (K::RangeInclusive, "end()") => variable("end"),
+        (K::RangeInclusive, "is_empty()") => {
+            let local = |suffix| ContractExpression::ProgramExpression(variable(suffix));
+            let compare = |left, operator, right| ClickProposition::Comparison {
+                left,
+                operator,
+                right,
+            };
+            return proposition_bool_value(ClickProposition::Or(
+                Box::new(compare(
+                    local("done"),
+                    ComparisonOperator::NotEqual,
+                    ContractExpression::ProgramExpression(
+                        crate::kernel::program_expression::int32_literal(0),
+                    ),
+                )),
+                Box::new(compare(
+                    local("start"),
+                    ComparisonOperator::GreaterThan,
+                    local("end"),
+                )),
+            ));
+        }
         (K::Range, "len()") => {
             ProgramExpression::Subtract(Box::new(variable("end")), Box::new(variable("start")))
         }
