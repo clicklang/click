@@ -1712,6 +1712,14 @@ impl LoopConditionFeasibility {
         matches!(self, Self::TrueOnly | Self::Both)
     }
 
+    /// The declared measures that this boundary must read and prove.
+    pub(crate) fn required_ranking_measures(
+        self,
+        declared: &[RankingComponent],
+    ) -> &[RankingComponent] {
+        if self.may_continue() { declared } else { &[] }
+    }
+
     pub(crate) fn may_exit(self) -> bool {
         matches!(self, Self::FalseOnly | Self::Both)
     }
@@ -5280,7 +5288,14 @@ pub(super) fn collect_loop_preservation_summary(
                             facts: condition_facts,
                             obligations: condition_obligations,
                         } = assumption;
-                        let may_continue = matches!(branch, ConditionBranch::Decided(true));
+                        let guard = match branch {
+                            ConditionBranch::Decided(true) => LoopConditionFeasibility::TrueOnly,
+                            ConditionBranch::Decided(false) => LoopConditionFeasibility::FalseOnly,
+                            ConditionBranch::Undecided(_) => {
+                                unreachable!("undecided guard was handled")
+                            }
+                        };
+                        let may_continue = guard.may_continue();
                         let path_assumptions = assumptions_with_path_context(
                             assumptions,
                             &condition_facts,
@@ -5306,18 +5321,15 @@ pub(super) fn collect_loop_preservation_summary(
                                 budget,
                             )?
                         };
-                        // A ranked loop's back edge carries the same
-                        // ranking members the surface bundle spells.
-                        // Only a continuing edge is a back edge.
+                        path_obligations.extend(loop_ranking_obligations_or_refusal(
+                            &next_state,
+                            top_state,
+                            &head.iterations,
+                            guard.required_ranking_measures(ranking_measures),
+                            &path_assumptions,
+                            budget,
+                        ));
                         if may_continue {
-                            path_obligations.extend(loop_ranking_obligations_or_refusal(
-                                &next_state,
-                                top_state,
-                                &head.iterations,
-                                ranking_measures,
-                                &path_assumptions,
-                                budget,
-                            ));
                             // A structural measure is not a ranking
                             // member: the kernel decides the descent
                             // here and reports a refusal obligation

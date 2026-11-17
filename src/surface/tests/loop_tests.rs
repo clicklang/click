@@ -117,56 +117,68 @@ fn expanded_loop_phase_proofs_are_certificates() {
         // Readability certificates name a pointer field through void*.
         ("fork_join_worker_direct_contract", "fill_range"),
     ] {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("mdtests")
-            .join(format!("{filename}.md"));
-        let source = std::fs::read_to_string(&path).unwrap();
-        let fixture = crate::cli::parse_mdtest(&path, &source).unwrap();
-        let sources = fixture
-            .c_sources
-            .iter()
-            .map(|(name, source)| (name.as_str(), source.as_str()))
-            .collect::<Vec<_>>();
-        let click = fixture.click_source.as_deref().unwrap();
-        let verified = verify_c_sources(click, &sources)
-            .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
-        let expanded = expand_checked_grouped_claim(click, &verified, function)
-            .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
-        assert!(
-            !expanded.contains("close_invariants"),
-            "{filename}: {expanded}"
-        );
-        let parsed =
-            crate::surface::verification::parse_click_file_with_c_sources(&expanded, &sources)
-                .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
-        let block = parsed
-            .function_blocks()
-            .iter()
-            .find(|block| block.signature().name() == function)
-            .unwrap_or_else(|| panic!("{filename}: expansion lost `{function}`"));
-        let mut clauses = block.structural_clauses().to_vec();
-        if let Some(tactics) = block.grouped_proof().and_then(SourceProof::tactics) {
-            loop_clauses_in(tactics, &mut clauses);
-        }
-        assert!(!clauses.is_empty(), "{filename}: expansion lost its loop");
-        for clause in &clauses {
-            for (phase, proof) in [
-                ("initialize", clause.initialize_proof()),
-                ("preserve", clause.preserve_proof()),
-            ] {
-                let proof =
-                    proof.unwrap_or_else(|| panic!("{filename}: `{phase}` was not expanded"));
-                let tactics = proof.tactics().unwrap_or_else(|| {
-                    panic!("{filename}: `{phase}` stayed a smart proof: {expanded}")
-                });
-                ProofCertificate::from_proof_tactics(tactics).unwrap_or_else(|error| {
-                    panic!("{filename}: `{phase}` is not a certificate: {error:?}\n{expanded}")
-                });
-            }
-        }
-        verify_c_sources(&expanded, &sources)
-            .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
+        assert_loop_phase_expansion_replays(filename, function);
     }
+}
+
+#[test]
+#[ignore = "nightly: verifies and replays two complete loop fixtures"]
+fn numeric_descent_exit_expansion_replays() {
+    for fixture in [
+        "loop_numeric_descent_on_exit",
+        "loop_numeric_descent_on_generated_exit",
+    ] {
+        assert_loop_phase_expansion_replays(fixture, "fill");
+    }
+}
+
+fn assert_loop_phase_expansion_replays(filename: &str, function: &str) {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests")
+        .join(format!("{filename}.md"));
+    let source = std::fs::read_to_string(&path).unwrap();
+    let fixture = crate::cli::parse_mdtest(&path, &source).unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let click = fixture.click_source.as_deref().unwrap();
+    let verified =
+        verify_c_sources(click, &sources).unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
+    let expanded = expand_checked_grouped_claim(click, &verified, function)
+        .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
+    assert!(
+        !expanded.contains("close_invariants"),
+        "{filename}: {expanded}"
+    );
+    let parsed = crate::surface::verification::parse_click_file_with_c_sources(&expanded, &sources)
+        .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
+    let block = parsed
+        .function_blocks()
+        .iter()
+        .find(|block| block.signature().name() == function)
+        .unwrap_or_else(|| panic!("{filename}: expansion lost `{function}`"));
+    let mut clauses = block.structural_clauses().to_vec();
+    if let Some(tactics) = block.grouped_proof().and_then(SourceProof::tactics) {
+        loop_clauses_in(tactics, &mut clauses);
+    }
+    assert!(!clauses.is_empty(), "{filename}: expansion lost its loop");
+    for clause in &clauses {
+        for (phase, proof) in [
+            ("initialize", clause.initialize_proof()),
+            ("preserve", clause.preserve_proof()),
+        ] {
+            let proof = proof.unwrap_or_else(|| panic!("{filename}: `{phase}` was not expanded"));
+            let tactics = proof.tactics().unwrap_or_else(|| {
+                panic!("{filename}: `{phase}` stayed a smart proof: {expanded}")
+            });
+            ProofCertificate::from_proof_tactics(tactics).unwrap_or_else(|error| {
+                panic!("{filename}: `{phase}` is not a certificate: {error:?}\n{expanded}")
+            });
+        }
+    }
+    verify_c_sources(&expanded, &sources).unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
 }
 
 #[test]
@@ -548,8 +560,8 @@ fn grouped_arithmetic_using_expands_to_checked_certificate() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     let click = fixture.click_source.unwrap();
-    verify_c_sources(&click, &sources).unwrap();
-    let expanded = expand_function_proof_source(&click, &sources, "bump").unwrap();
+    let verified = verify_c_sources(&click, &sources).unwrap();
+    let expanded = expand_checked_grouped_claim(&click, &verified, "bump").unwrap();
     assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
@@ -1393,9 +1405,9 @@ fn frontier_local_loop_verifies_nested_loops_at_their_respective_frontiers() {
         "#;
 
     let sources = [("nested_count.c", c_source)];
-    verify_c_sources(click_source, &sources)
+    let verified = verify_c_sources(click_source, &sources)
         .expect("nested loop proofs should be scoped to their respective frontiers");
-    let expanded = expand_function_proof_source(click_source, &sources, "nested_count")
+    let expanded = expand_checked_grouped_claim(click_source, &verified, "nested_count")
         .expect("nested loop proofs should expand");
     verify_c_sources(&expanded, &sources).expect("expanded nested loops should verify");
     let repeated = expand_function_proof_source(&expanded, &sources, "nested_count")
@@ -2188,14 +2200,8 @@ fn loop_exit_duplicate_invariants_verify_and_reject_false_claims() {
         source.to_owned(),
         source.replace("invariant 1 == 1;", "invariant 0 == 0;"),
     ] {
-        verify_c_sources(&source, &[("count.c", c)]).unwrap();
-        let expanded = expand_c_claim_source(
-            &source,
-            &[("count.c", c)],
-            "count",
-            ContractProofClaim::Grouped,
-        )
-        .unwrap();
+        let verified = verify_c_sources(&source, &[("count.c", c)]).unwrap();
+        let expanded = expand_checked_grouped_claim(&source, &verified, "count").unwrap();
         verify_c_sources(&expanded, &[("count.c", c)]).unwrap();
         let false_claim = source.replace("ensures result == n;", "ensures result == n + 1;");
         let error = verify_c_sources(&false_claim, &[("count.c", c)]).unwrap_err();
@@ -2219,8 +2225,8 @@ fn changed_break_exit_does_not_label_head_invariants_as_exit_facts() {
         invariant 1 == 1;
         invariant forall (k: int32) { k == k };"#,
     );
-    verify_c_sources(&source, &sources).unwrap();
-    let expanded = expand_function_proof_source(&source, &sources, "assign_then_break").unwrap();
+    let verified = verify_c_sources(&source, &sources).unwrap();
+    let expanded = expand_checked_grouped_claim(&source, &verified, "assign_then_break").unwrap();
     verify_c_sources(&expanded, &sources).unwrap();
     for fact in ["r == 0", "at(loop(0).exit, r) == at(loop(0).exit, 0)"] {
         let false_have = source.replace(
