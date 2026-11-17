@@ -774,7 +774,7 @@ mod tests {
         };
         **left = (**left)
             .clone()
-            .with_designation(std::sync::Arc::new(Pointer::symbolic(Variable(8_399_099))));
+            .with_provenance(std::sync::Arc::new(Pointer::symbolic(Variable(8_399_099))));
         assert!(
             wrong_domain
                 .apply(|_| true)

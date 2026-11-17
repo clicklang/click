@@ -2,7 +2,7 @@
 
 `caller` holds `size_metadata(rb_other)` and calls `set_size` for the node
 enclosing `rb_old`. Resource argument identity ignores the view a cast
-selects, but it still compares address and designation: `rb_other` is a
+selects, but it still compares address and provenance: `rb_other` is a
 different pointer, so the held instance does not supply the callee's
 `size_metadata(node as (void *) as (struct rb_node *))`. The positive form, with the
 same node through another view, is

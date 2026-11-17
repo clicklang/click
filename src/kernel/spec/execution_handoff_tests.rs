@@ -458,8 +458,8 @@ fn pointer_lowering_keeps_producers_and_complete_metadata() {
             payload.node().address
         );
         assert_eq!(
-            field.pointer_payload().unwrap().node().designation,
-            payload.node().designation
+            field.pointer_payload().unwrap().node().provenance,
+            payload.node().provenance
         );
         match (root.node(), field.node()) {
             (KernelTermNode::PointerValue { .. }, KernelTermNode::PointerValue { .. }) => {}

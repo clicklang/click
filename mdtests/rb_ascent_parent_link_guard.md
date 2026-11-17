@@ -9,7 +9,7 @@ is the context, `decreases c;`.
 
 The packed-word facts also state the full masked pointer cast, not only its
 numeric address. After `parent = rb_parent(node)`, that relationship identifies
-the held outer frame at the new parent with its designation and bounds intact.
+the held outer frame at the new parent with its provenance and bounds intact.
 
 What is new is where the guard reads. `parent->rb_right` is not the focused
 node's own cell; it belongs to the folded frame `c`, and at a loop head no arm

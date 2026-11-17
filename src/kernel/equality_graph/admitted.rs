@@ -11,11 +11,11 @@ pub(in crate::kernel) struct InputData {
         ConditionTerm,
         crate::persistent::PersistentSet<ConditionTerm>,
     >,
-    pub(in crate::kernel) designation_graph:
-        crate::kernel::pointer_designations::ValueClasses<Pointer>,
-    pub(in crate::kernel) extent_graph: crate::kernel::pointer_designations::ValueClasses<Pointer>,
+    pub(in crate::kernel) provenance_graph:
+        crate::kernel::pointer_provenance::ValueClasses<Pointer>,
+    pub(in crate::kernel) extent_graph: crate::kernel::pointer_provenance::ValueClasses<Pointer>,
     pub(in crate::kernel) pointer_value_classes:
-        crate::kernel::pointer_designations::ValueClasses<PointerValue>,
+        crate::kernel::pointer_provenance::ValueClasses<PointerValue>,
     pub(in crate::kernel) pointer_value_equalities:
         crate::persistent::PersistentSet<(PointerValue, PointerValue)>,
 

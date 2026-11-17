@@ -222,7 +222,7 @@ execute its body (`mdtests/a_program_definition_of_strlen_is_refused.md`,
 
 The modeled `memcpy`, `memcmp` and `memset` take native object pointers through
 their `void *` parameters without source-level byte casts. Lowering supplies
-the byte view their contracts use, retaining pointer designation, subobject
+the byte view their contracts use, retaining pointer provenance, subobject
 bounds and qualifiers. For example, `memcpy(&out, &value, sizeof(out))` copies
 a scalar's representation directly (`mdtests/memcpy_typed_scalar_arguments.md`).
 The ordinary ownership, initialized-source, separation and destination-write

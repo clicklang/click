@@ -195,7 +195,7 @@ fn numeric_pointer_rewrites_preserve_origin_and_selected_extent() {
             panic!("pointer rewrite changed the value's type")
         };
         assert_eq!(result.pointer(), &target);
-        assert_eq!(result.designation(), original.designation());
+        assert_eq!(result.provenance(), original.provenance());
         assert_eq!(result.opaque_extent(), original.opaque_extent());
         assert_eq!(result.extent().unwrap().width, 4u32.into());
         assert_eq!(result.extent().unwrap().start, target);
@@ -225,7 +225,7 @@ fn full_pointer_rewrite_changes_read_storage_without_inventing_its_origin() {
     };
     let expected_origin = Pointer::loaded_value(&memory, q.pointer());
     assert_eq!(changed.pointer(), &other);
-    assert_eq!(changed.designation(), &expected_origin);
+    assert_eq!(changed.provenance(), &expected_origin);
     assert_eq!(changed.opaque_extent(), Some(&expected_origin));
     // The same address-only rewrite cannot substitute a read's full value.
     let mut numeric = TermRewrite::for_pointer_exact(p.pointer(), q.pointer());
@@ -296,7 +296,7 @@ fn memory_relationship_rewrite_transports_only_a_complete_pointer_carrier() {
         panic!("memory")
     };
     assert_eq!(range.base(), target.pointer());
-    assert_eq!(range.designation.as_ref(), source.designation());
+    assert_eq!(range.provenance.as_ref(), source.provenance());
     assert_eq!(range.opaque_extent.as_deref(), source.opaque_extent());
     assert!(!range.carrier_extent_known);
 }
@@ -346,7 +346,7 @@ fn a_full_pointer_rewrite_does_not_adopt_another_read_carrier_at_the_same_addres
         panic!("memory")
     };
     assert_eq!(range.base(), target.pointer());
-    assert_eq!(range.designation.as_ref(), unrelated.designation());
+    assert_eq!(range.provenance.as_ref(), unrelated.provenance());
     assert_eq!(range.opaque_extent.as_deref(), unrelated.opaque_extent());
     assert!(!range.carrier_extent_known);
 }
@@ -378,7 +378,7 @@ fn full_program_argument_pointer_rewrite_reaches_a_displaced_copy() {
         crate::kernel::eval::canonical_offset_term(&actual.pointer().offset),
         crate::kernel::eval::canonical_offset_term(&expected.offset)
     );
-    assert_eq!(actual.designation(), base.designation());
+    assert_eq!(actual.provenance(), base.provenance());
     assert_eq!(actual.opaque_extent(), base.opaque_extent());
 
     let mut numeric = TermRewrite::for_pointer_exact(middle.pointer(), replacement.pointer());
@@ -386,7 +386,7 @@ fn full_program_argument_pointer_rewrite_reaches_a_displaced_copy() {
     else {
         panic!("address rewrite changed type")
     };
-    assert_eq!(address_only.designation(), middle.designation());
+    assert_eq!(address_only.provenance(), middle.provenance());
     assert_eq!(address_only.opaque_extent(), middle.opaque_extent());
 }
 
@@ -412,7 +412,7 @@ fn displaced_symbolic_pointer_rewrite_keeps_selected_bounds() {
         panic!("pointer type")
     };
     assert_eq!(actual.pointer(), &target_address.offset_by_bytes(1));
-    assert_eq!(actual.designation(), target.designation());
+    assert_eq!(actual.provenance(), target.provenance());
     assert_eq!(actual.opaque_extent(), target.opaque_extent());
     assert_eq!(actual.extent(), target.extent());
 
@@ -442,7 +442,7 @@ fn displaced_symbolic_pointer_rewrite_keeps_selected_bounds() {
     else {
         panic!("numeric pointer type")
     };
-    assert_eq!(numeric.designation(), source.designation());
+    assert_eq!(numeric.provenance(), source.provenance());
     assert_eq!(numeric.opaque_extent(), source.opaque_extent());
     assert_eq!(numeric.extent(), source.extent());
 }
@@ -537,7 +537,7 @@ fn displaced_copy_keeps_a_domain_not_named_by_the_full_equality() {
         panic!("pointer type")
     };
     assert_eq!(actual.pointer(), &target.pointer().offset_by_bytes(1));
-    assert_eq!(actual.designation(), original.designation());
+    assert_eq!(actual.provenance(), original.provenance());
     assert_eq!(actual.opaque_extent(), original.opaque_extent());
     assert_eq!(
         actual.extent(),

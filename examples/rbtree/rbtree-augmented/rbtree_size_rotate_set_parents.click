@@ -83,7 +83,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
     requires 0 <= color;
     requires color <= 1;
     requires sized_context_parent_word(c.model, old->__rb_parent_color) == 1;
-    // The numeric word relation does not establish the parent designation.
+    // The numeric word relation does not establish the parent provenance.
     requires ((old->__rb_parent_color & ~3) as (struct rb_node *))
         == sized_context_parent(c.model, 0);
     produces after: sized_link_at(new, root, old((old as (void *) as (struct sized_node *))->size));

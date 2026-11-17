@@ -824,7 +824,7 @@ pub enum MachineTerm {
     /// different values, so they are different terms. See [`LoadKind`].
     MemoryLoad(ProgramPoint, Box<Pointer>, LoadKind),
     /// The physical LP64 address bits of an object pointer. This numeric
-    /// observation carries no designation or selected extent. Complete C
+    /// observation carries no provenance or selected extent. Complete C
     /// integer copies retain that information separately in PointerInteger.
     /// Checked tag identities can recover address bits, never pointer bounds.
     /// The annotation retains the source object class for a later cast and
@@ -2362,7 +2362,7 @@ pub struct PointerValue {
     pointer: Pointer,
     /// The object designated when this value entered. Address aliases never
     /// replace this component; only value transport or substitution maps it.
-    designation: Arc<Pointer>,
+    provenance: Arc<Pointer>,
     /// The opaque containing extent retained through narrowing. A byte/void
     /// view clears it, so that wider view cannot authorize the original input.
     opaque_extent: Option<Arc<Pointer>>,
@@ -2547,7 +2547,7 @@ impl PointerValue {
         };
         Self {
             opaque_extent: (!known_root).then(|| Arc::new(root.clone())),
-            designation: Arc::new(root),
+            provenance: Arc::new(root),
             pointer,
             program_type,
             qualifiers: known_root.then(|| {
@@ -2582,20 +2582,20 @@ impl PointerValue {
         let origin = Arc::new(Pointer::loaded_value(&source, cell));
         value
             .with_opaque_extent(Some(origin.clone()))
-            .with_designation(origin)
+            .with_provenance(origin)
     }
 
     /// The read that introduced this complete pointer's opaque domain when
     /// its numeric address alone names a different read version. This is
     /// the producing read, not an address-alias or preservation query.
     pub(crate) fn complete_read_source(&self) -> Option<(SharedMemory, Pointer)> {
-        if self.opaque_extent() != Some(self.designation())
-            || self.pointer.object_identity() == *self.designation()
+        if self.opaque_extent() != Some(self.provenance())
+            || self.pointer.object_identity() == *self.provenance()
         {
             return None;
         }
         let address_read = self.pointer.as_loaded_value()?;
-        let origin = self.designation().as_loaded_value()?;
+        let origin = self.provenance().as_loaded_value()?;
         if address_read.displacement != PointerOffsetTerm::Constant(0)
             || origin.displacement != PointerOffsetTerm::Constant(0)
             || address_read.defining_address != origin.defining_address
@@ -2605,8 +2605,8 @@ impl PointerValue {
         Some((origin.defining_memory, origin.defining_address))
     }
 
-    pub(crate) fn designation(&self) -> &Pointer {
-        &self.designation
+    pub(crate) fn provenance(&self) -> &Pointer {
+        &self.provenance
     }
 
     pub(in crate::kernel) fn opaque_extent(&self) -> Option<&Pointer> {
@@ -2636,9 +2636,9 @@ impl PointerValue {
         )
     }
 
-    pub(in crate::kernel) fn access_designation(&self) -> (&Pointer, Option<&Pointer>) {
+    pub(in crate::kernel) fn access_provenance(&self) -> (&Pointer, Option<&Pointer>) {
         (
-            self.designation(),
+            self.provenance(),
             if self.extent_is_known() {
                 None
             } else {
@@ -2647,8 +2647,8 @@ impl PointerValue {
         )
     }
 
-    pub(in crate::kernel) fn with_designation(mut self, designation: Arc<Pointer>) -> Self {
-        self.designation = designation;
+    pub(in crate::kernel) fn with_provenance(mut self, provenance: Arc<Pointer>) -> Self {
+        self.provenance = provenance;
         self
     }
 
@@ -2691,7 +2691,7 @@ impl PointerValue {
     pub(crate) fn with_type(self, program_type: ProgramType) -> Self {
         Self {
             pointer: self.pointer,
-            designation: self.designation,
+            provenance: self.provenance,
             opaque_extent: self.opaque_extent,
             program_type,
             qualifiers: self.qualifiers,
@@ -2818,9 +2818,9 @@ impl PointerValue {
     pub(crate) fn map_pointers(&self, mut map: impl FnMut(&Pointer) -> Pointer) -> Self {
         let mut result = self.clone();
         result.pointer = map(&self.pointer);
-        let designation = map(&self.designation);
-        if designation != *self.designation {
-            result.designation = Arc::new(designation);
+        let provenance = map(&self.provenance);
+        if provenance != *self.provenance {
+            result.provenance = Arc::new(provenance);
         }
         result.opaque_extent = self.opaque_extent().map(|origin| Arc::new(map(origin)));
         if let Some(extent) = self.extent() {
@@ -2837,7 +2837,7 @@ impl PointerValue {
         mut map: impl FnMut(&Pointer) -> Option<Pointer>,
     ) -> Option<Self> {
         let pointer = map(&self.pointer)?;
-        let designation = map(&self.designation)?;
+        let provenance = map(&self.provenance)?;
         let opaque_extent = match self.opaque_extent() {
             Some(origin) => Some(Arc::new(map(origin)?)),
             None => None,
@@ -2852,7 +2852,7 @@ impl PointerValue {
         Some(
             self.clone()
                 .with_address(pointer)
-                .with_designation(Arc::new(designation))
+                .with_provenance(Arc::new(provenance))
                 .with_extent(extent)
                 .with_opaque_extent(opaque_extent),
         )
@@ -2861,14 +2861,14 @@ impl PointerValue {
     /// Re-spell physical addresses without changing the value's origin.
     pub(in crate::kernel) fn map_addresses(&self, map: impl FnMut(&Pointer) -> Pointer) -> Self {
         self.map_pointers(map)
-            .with_designation(self.designation.clone())
+            .with_provenance(self.provenance.clone())
             .with_opaque_extent(self.opaque_extent.clone())
     }
 
     /// Every address the value mentions, for variable collection.
     pub(crate) fn pointers(&self) -> impl Iterator<Item = &Pointer> {
         std::iter::once(&self.pointer)
-            .chain(std::iter::once(self.designation.as_ref()))
+            .chain(std::iter::once(self.provenance.as_ref()))
             .chain(self.opaque_extent())
             .chain(self.extent().map(|extent| &extent.start))
     }
@@ -2900,7 +2900,7 @@ impl PointerValue {
     ) {
         (
             &self.pointer,
-            &self.designation,
+            &self.provenance,
             &self.program_type,
             self.pointee_volatile(),
             self.extent_is_known(),
@@ -3772,7 +3772,7 @@ pub struct LValue {
     pub(super) extent_known: bool,
     pub(super) opaque_extent: Option<Arc<Pointer>>,
     pub(super) extent: Option<Arc<SubobjectExtent>>,
-    pub(super) designation: Option<Arc<Pointer>>,
+    pub(super) provenance: Option<Arc<Pointer>>,
     /// The class of the lvalue's type, which the access uses, when the
     /// frontend supplied one.
     pub(super) access_class: Option<crate::kernel::effective_type::CAccessClass>,
@@ -3803,7 +3803,7 @@ pub enum IntegerCastMode {
     /// specification's checked conversion.
     CConversion,
     /// An inserted byte/void view changes the carrier while retaining the
-    /// source pointer's designation and bounds. Authored pointer casts use
+    /// source pointer's provenance and bounds. Authored pointer casts use
     /// the separate explicit conversion rule.
     PointerCoercion,
     /// Legacy exact uint64-to-int64 boundary.
@@ -4187,7 +4187,7 @@ pub enum SpecExpression {
     /// format), the operator's native node, `(a op b) mod 2^N`. Over operands
     /// of another type the operator keeps its promoted reading.
     NarrowArithmetic(Box<SpecExpression>, MachineIntegerType),
-    /// An implicit pointer conversion retains the complete designation.
+    /// An implicit pointer conversion retains the complete provenance.
     PointerCoercion(Box<SpecExpression>, ProgramType),
     If {
         condition: Box<SpecProposition>,
@@ -4252,7 +4252,7 @@ pub enum SpecExpression {
 }
 
 /// The C place operations around a specification-evaluated address base.
-/// Steps are stored outside-in, preserving C subobject designation formation.
+/// Steps are stored outside-in, preserving C subobject provenance formation.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SpecAddressStep {
     Subobject { width: u32 },
@@ -4287,7 +4287,7 @@ impl SpecObjectAddress {
     }
 
     /// Feed the selected base value to the ordinary C address operation.
-    /// All place steps remain syntax, so member designation is formed by the
+    /// All place steps remain syntax, so member provenance is formed by the
     /// same checked transition as a program address, without a fake variable.
     pub(crate) fn program_expression(&self, base: ProgramValue) -> ProgramExpression {
         let mut pointer = ProgramExpression::Value(base);
@@ -5957,10 +5957,10 @@ impl Ord for SegmentValueRuns {
 pub struct MemoryRange {
     pub(super) base: Pointer,
     /// Origin of the value naming the range, independent of address aliases.
-    pub(super) designation: Arc<Pointer>,
-    /// A typed clause also demands this carrier's designation. Raw kernel
+    pub(super) provenance: Arc<Pointer>,
+    /// A typed clause also demands this carrier's provenance. Raw kernel
     /// intervals ask only about physical authority; both retain supplier
-    /// designations through resource algebra and subsequent C access checks.
+    /// provenances through resource algebra and subsequent C access checks.
     pub(super) typed_carrier: bool,
     pub(super) carrier_extent_known: bool,
     pub(super) opaque_extent: Option<Arc<Pointer>>,
@@ -6000,7 +6000,7 @@ impl MemoryRange {
     ) {
         (
             &self.base,
-            &self.designation,
+            &self.provenance,
             self.opaque_extent.as_deref(),
             &self.start_bound,
             &self.end_bound,

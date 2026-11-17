@@ -258,7 +258,7 @@ pub(in crate::kernel) fn substitute_application_address_pointer(
 }
 
 impl TermRewrite<'_> {
-    /// Complete formal-variable substitution, retaining the native designation
+    /// Complete formal-variable substitution, retaining the native provenance
     /// and opaque-domain policy. This entry has no exact-value or fact rewrite.
     fn boolean_pointer_value(
         &mut self,
@@ -280,15 +280,15 @@ impl TermRewrite<'_> {
             offset: PointerOffsetTerm::Constant(0),
         });
         let selected = |address: &A| matches!(address.node().block.native_atom(),PointerBlock::Symbolic(v)|PointerBlock::FunctionSymbolic(v) if *v == from);
-        let replacement = (selected(&p.address) && p.designation.syntax_equal(&base))
+        let replacement = (selected(&p.address) && p.provenance.syntax_equal(&base))
             .then(|| V::import(&PointerValue::new(to.clone(), p.program_type)));
         let target_identity = A::import(&to.object_identity());
-        let designation = if let Some(target) = &replacement {
-            target.node().designation.clone()
-        } else if selected(&p.designation) {
+        let provenance = if let Some(target) = &replacement {
+            target.node().provenance.clone()
+        } else if selected(&p.provenance) {
             target_identity.clone()
         } else {
-            self.boolean_address(&p.designation)?
+            self.boolean_address(&p.provenance)?
         };
         let opaque = match &p.opaque_extent {
             None => None,
@@ -303,7 +303,7 @@ impl TermRewrite<'_> {
             .ok()?
             .node()
             .clone();
-        mapped.designation = designation;
+        mapped.provenance = provenance;
         mapped.opaque_extent = opaque;
         if !p.qualifiers.as_ref().is_some_and(|q| q.extent_known)
             && let Some(replacement) = replacement

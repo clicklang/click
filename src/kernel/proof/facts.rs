@@ -5022,7 +5022,7 @@ mod held_separation_tests {
         };
         Resource::Memory(
             range
-                .with_designation(Arc::new(origin.base().clone()))
+                .with_provenance(Arc::new(origin.base().clone()))
                 .with_opaque_extent(Some(Arc::new(origin.base().clone())), false)
                 .with_typed_carrier(),
         )

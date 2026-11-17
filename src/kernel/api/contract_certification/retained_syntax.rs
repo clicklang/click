@@ -585,7 +585,7 @@ mod tests {
             base.clone().with_pointee_volatile(true),
             base.clone().with_type(ProgramType::VoidPointer),
             base.clone()
-                .with_designation(std::sync::Arc::new(Pointer::symbolic(Variable(999979)))),
+                .with_provenance(std::sync::Arc::new(Pointer::symbolic(Variable(999979)))),
             base.clone()
                 .with_opaque_extent(Some(std::sync::Arc::new(Pointer::symbolic(Variable(
                     999978,
@@ -754,7 +754,7 @@ mod tests {
             .into_shared()
             .unwrap(),
         );
-        value.designation = value.address.clone();
+        value.provenance = value.address.clone();
         let root = KernelTerm::shared_pointer_value(SharedPointerValue::new(value));
         assert!(
             !Comparison::default()

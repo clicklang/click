@@ -292,20 +292,20 @@ mod tests {
         CAccessClass::Struct(CStructClass::opaque("node"))
     }
     #[test]
-    fn declared_designations_supply_type_evidence_without_changing_pointer_views() {
+    fn declared_provenance_supply_type_evidence_without_changing_pointer_views() {
         let object = Pointer {
             block: "declared_node".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
         let memory = Memory::new().with_classed_block(object.block.clone(), Some(class()), 8);
-        let make = |designation| {
+        let make = |provenance| {
             let ProgramValue::Pointer(pointer) = ProgramValue::typed_pointer(
                 Pointer::symbolic(Variable(900_010)),
                 ProgramType::Int32Pointer,
             ) else {
                 unreachable!()
             };
-            ProgramValue::Pointer(pointer.with_designation(Arc::new(designation)))
+            ProgramValue::Pointer(pointer.with_provenance(Arc::new(provenance)))
         };
         let original = make(object.clone());
         let mut refined = original.clone();
@@ -321,7 +321,7 @@ mod tests {
         };
         assert!(after.supports_object_class(&class()));
         assert_eq!(after.pointer(), before.pointer());
-        assert_eq!(after.designation(), before.designation());
+        assert_eq!(after.provenance(), before.provenance());
         assert_eq!(after.extent(), before.extent());
         assert_eq!(after.extent_is_known(), before.extent_is_known());
         assert_eq!(after.opaque_extent(), before.opaque_extent());

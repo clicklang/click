@@ -57,7 +57,7 @@ violation is touching the other thousand facts, functions, states, or
 resources that the operation did not name.
 
 Work must also be deterministic. Candidate buckets and index reconstruction
-iterate in admission order (pointer-class fact sources, pointer designations,
+iterate in admission order (pointer-class fact sources, pointer provenances,
 and opaque-extent aliases each retain an admission ordinal); allocation
 addresses and state hash order never decide which candidate a
 short-circuit search tries first, because that changes charged work between

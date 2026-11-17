@@ -151,7 +151,7 @@ fn restoring_a_loop_frame_retains_complete_pointer_reads_but_not_written_cells()
                 assumptions
                     .clone()
                     .assume_proposition(equality)
-                    .pointer_designations_match(&before, &after)
+                    .pointer_provenance_match(&before, &after)
             );
         }
     }

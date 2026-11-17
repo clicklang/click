@@ -1707,7 +1707,7 @@ Specification addresses such as `&p->field` lower to
 saved-state pointer read stays in the selected memory. Typed, outside-in
 `SpecAddressStep` projections retain C byte offsets and subobject selection;
 the evaluated base feeds the ordinary C address operation, preserving its
-member designation, extent, qualifiers, and checked-address obligations.
+member provenance, extent, qualifiers, and checked-address obligations.
 Evaluation introduces no execution local or lexical binder. The Surface form
 remains the original address expression, including `old(...)`/`at(...)` state
 selectors; no generated operand name or replacement syntax is required.
@@ -2088,7 +2088,7 @@ carriers. Scalar algebraic fields and read addresses keep selected compatibility
 descriptors; memory keys and exact refresh remain separate consumers.
 Projection memos belong to one verification, with iterative construction,
 comparison and disposal for shared or deep algebraic structure.
-Pointer keys preserve the native address/designation/type/volatility/extent
+Pointer keys preserve the native address/provenance/type/volatility/extent
 identity tuple. Offset DAGs use shared child keys and the existing native offset
 index handles, with iterative construction/comparison/disposal and per-session
 memos. Subobject widths retain their selected native structural descriptor;

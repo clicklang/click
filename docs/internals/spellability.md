@@ -440,7 +440,7 @@ remain opaque instead of acquiring an invented value.
 Logical object-pointer reads now retain their version names, including when
 memory stores a complete pointer at the cell. The read's complete stored value
 is related through `EqualityGraph::register_logical_read_values` and the
-producer's read equations; its address, bounds, and designation are not folded
+producer's read equations; its address, bounds, and provenance are not folded
 into the lowered term. The cached-prefix route also excludes logical reads
 from fact-supported recovery, even outside specification scope.
 

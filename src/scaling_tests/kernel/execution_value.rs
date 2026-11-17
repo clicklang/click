@@ -672,7 +672,7 @@ fn pointer_storage_keys_keep_growing_offsets_shared_and_session_scoped() {
                 .unwrap();
         }
         payload.address = SharedPointerAddress::new(payload.address.node().block.clone(), offset);
-        payload.designation = payload.address.clone();
+        payload.provenance = payload.address.clone();
         let root = KernelTerm::shared_pointer_value(SharedPointerValue::new(payload));
         let exports = KernelTermExport::machine_export_count();
         let mut cold = Vec::new();
@@ -739,7 +739,7 @@ fn pointer_storage_comparison_visits_shared_offset_pairs_once() {
             let mut payload = value.node().clone();
             payload.address =
                 SharedPointerAddress::new(payload.address.node().block.clone(), offset);
-            payload.designation = payload.address.clone();
+            payload.provenance = payload.address.clone();
             StoredExecutionValue::from(ExecutionValue::Shared(KernelTerm::shared_pointer_value(
                 SharedPointerValue::new(payload),
             )))

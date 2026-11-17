@@ -331,7 +331,7 @@ pub(super) fn recorded_value(pointer: &SharedPointerValue) -> MemoryErasedPointe
     MemoryErasedPointerValueKey {
         program_type: p.program_type,
         address: state_address(&p.address),
-        designation: state_address(&p.designation),
+        provenance: state_address(&p.provenance),
         opaque_extent: if known {
             None
         } else {
@@ -362,7 +362,7 @@ pub(super) fn alpha_value<const ALLOW_LOADS: bool>(
         pointee_volatile: q.is_some_and(|q| q.volatile),
         pointee_constant: q.is_some_and(|q| q.constant),
         pointer: alpha_address::<ALLOW_LOADS>(&p.address, bindings, next)?,
-        designation: alpha_address::<ALLOW_LOADS>(&p.designation, bindings, next)?,
+        provenance: alpha_address::<ALLOW_LOADS>(&p.provenance, bindings, next)?,
         extent_known: known,
         opaque_extent: if known {
             None
@@ -395,7 +395,7 @@ mod tests {
             offset,
         };
         PointerValue::new(address.clone(), ProgramType::VoidPointer)
-            .with_designation(Arc::new(address.clone()))
+            .with_provenance(Arc::new(address.clone()))
             .with_pointee_volatile(true)
             .with_pointee_constant(true)
             .with_extent(Some(SubobjectExtent {

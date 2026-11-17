@@ -1,5 +1,5 @@
 //! Pointer representation-independent checking policy. Address equality is not
-//! designation or extent evidence. Callers retain the existing checked authority
+//! provenance or extent evidence. Callers retain the existing checked authority
 //! for each relation; these readers neither search nor create evidence.
 use super::*;
 use crate::kernel::{
@@ -9,7 +9,7 @@ use crate::kernel::{
 use std::collections::{HashMap, HashSet};
 
 pub(super) struct Origins<'a, A, W> {
-    pub(super) designation: &'a A,
+    pub(super) provenance: &'a A,
     pub(super) opaque: Option<&'a A>,
     pub(super) extent: Option<(&'a A, &'a W)>,
     pub(super) known: bool,
@@ -17,7 +17,7 @@ pub(super) struct Origins<'a, A, W> {
 impl<'a> Origins<'a, Pointer, MachineTerm> {
     pub(super) fn native(value: &'a PointerValue) -> Self {
         Self {
-            designation: value.designation(),
+            provenance: value.provenance(),
             opaque: value.opaque_extent(),
             extent: value.extent().map(|e| (&e.start, &e.width)),
             known: value.extent_is_known(),
@@ -29,7 +29,7 @@ impl<'a> Origins<'a, SharedPointerAddress, KernelTerm> {
         let p = value.node();
         let q = p.qualifiers.as_ref();
         Self {
-            designation: &p.designation,
+            provenance: &p.provenance,
             opaque: p.opaque_extent.as_ref(),
             extent: q
                 .and_then(|q| q.extent.as_ref())
@@ -40,15 +40,15 @@ impl<'a> Origins<'a, SharedPointerAddress, KernelTerm> {
 }
 /// Each method is a different existing authority, not interchangeable aliases.
 pub(super) trait OriginChecks<A, W> {
-    fn designation(&self, a: &A, b: &A) -> bool;
+    fn provenance(&self, a: &A, b: &A) -> bool;
     fn opaque(&self, a: &A, b: &A) -> bool;
     fn address(&self, a: &A, b: &A) -> bool;
     fn width(&self, a: &W, b: &W) -> bool;
     fn opaque_is_root(&self, a: &A) -> bool;
 }
 impl OriginChecks<Pointer, MachineTerm> for PureFactContext {
-    fn designation(&self, a: &Pointer, b: &Pointer) -> bool {
-        self.designations_equal(a, b)
+    fn provenance(&self, a: &Pointer, b: &Pointer) -> bool {
+        self.provenance_equal(a, b)
     }
     fn opaque(&self, a: &Pointer, b: &Pointer) -> bool {
         self.opaque_extents_equal(a, b)
@@ -68,7 +68,7 @@ pub(super) fn origins_match<A, W>(
     b: Origins<'_, A, W>,
     checks: &impl OriginChecks<A, W>,
 ) -> bool {
-    checks.designation(a.designation, b.designation)
+    checks.provenance(a.provenance, b.provenance)
         && match (a.extent, b.extent) {
             (None, None) if a.known && b.known => true,
             (None, None) if !a.known && !b.known => a
@@ -84,7 +84,7 @@ pub(super) fn access_match<A, W>(
     available: (&A, Option<&A>, bool),
     checks: &impl OriginChecks<A, W>,
 ) -> bool {
-    checks.designation(required.0, available.0)
+    checks.provenance(required.0, available.0)
         && required.1.is_none_or(|extent| match available.1 {
             Some(source) => checks.opaque(extent, source),
             None => available.2 && checks.opaque_is_root(extent),
@@ -260,9 +260,9 @@ mod tests {
         }
     }
     impl OriginChecks<SharedPointerAddress, KernelTerm> for Selected<'_> {
-        fn designation(&self, a: &SharedPointerAddress, b: &SharedPointerAddress) -> bool {
+        fn provenance(&self, a: &SharedPointerAddress, b: &SharedPointerAddress) -> bool {
             self.facts
-                .designations_equal(&self.addresses[a], &self.addresses[b])
+                .provenance_equal(&self.addresses[a], &self.addresses[b])
         }
         fn opaque(&self, a: &SharedPointerAddress, b: &SharedPointerAddress) -> bool {
             self.facts
@@ -372,10 +372,10 @@ mod tests {
         let _session = VerificationSession::enter();
         let a = Pointer::symbolic(Variable(1012000));
         let b = Pointer::symbolic(Variable(1012001));
-        let designation = std::sync::Arc::new(Pointer::symbolic(Variable(1012002)));
+        let provenance = std::sync::Arc::new(Pointer::symbolic(Variable(1012002)));
         let make = |start, width| {
             PointerValue::new(a.clone(), ProgramType::Int32Pointer)
-                .with_designation(designation.clone())
+                .with_provenance(provenance.clone())
                 .with_extent(Some(SubobjectExtent {
                     start,
                     width: MachineTerm::constant(width),
@@ -399,7 +399,7 @@ mod tests {
                 origins_match(Origins::shared(&sl), Origins::shared(&sr), &selected),
                 expected
             );
-            assert_eq!(facts.pointer_designations_match(&left, &right), expected);
+            assert_eq!(facts.pointer_provenance_match(&left, &right), expected);
             assert!(!origins_match(
                 Origins::shared(&sl),
                 Origins::shared(&sw),
@@ -444,21 +444,21 @@ mod tests {
         let sr = SharedPointerValue::import(&read);
         let ss = SharedPointerValue::import(&stored);
         let sb = SharedPointerValue::import(&bounded);
-        let available = SharedPointerAddress::import(&held.designation);
+        let available = SharedPointerAddress::import(&held.provenance);
         for (facts, expected) in [(&before, false), (&after, true), (&bounded_facts, false)] {
             let selected = Selected::new(facts, &[(&read, &sr), (&stored, &ss), (&bounded, &sb)]);
             let origin = Origins::shared(&sr);
             let exports = KernelTermExport::machine_export_count();
             assert_eq!(
                 access_match(
-                    (origin.designation, origin.opaque),
+                    (origin.provenance, origin.opaque),
                     (&available, None, true),
                     &selected
                 ),
                 expected
             );
             assert_eq!(
-                facts.access_designations_match(read.access_designation(), &held),
+                facts.access_provenance_match(read.access_provenance(), &held),
                 expected
             );
             assert_eq!(KernelTermExport::machine_export_count(), exports);

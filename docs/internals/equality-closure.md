@@ -63,7 +63,7 @@ A full pointer-value query also registers its two numeric addresses against
 the current affine block representatives before checking value congruence.
 Earlier address nodes may predate a block alias; without these bridges, the
 query can miss an established equality depending on premise admission order.
-Designation and retained extent remain separate value operands: refreshing
+Provenance and retained extent remain separate value operands: refreshing
 addresses does not establish either identity. The cursor-chain regressions in
 `src/kernel/equality_graph/fact_congruence_tests.rs` combine symbolic loop
 values, a native argument, signed prefix counts and native lengths, with
@@ -1901,7 +1901,7 @@ Complete C pointer-to-integer copies retain nominal type receipts in the
 retains access-class annotation only: its annotation is excluded from numeric
 identity and cannot establish nominal type evidence. Recovering a typed pointer
 from those coordinates still needs the current scope's checked type facts.
-This does not recover a designation, bounds, or memory permission from numbers.
+This does not recover a provenance, bounds, or memory permission from numbers.
 
 ### Numeric coordinates of logical word casts
 
@@ -1910,12 +1910,12 @@ that constructor joins its numeric address to `bits` in the uint64 classes,
 using the existing iterative dependency worklist once per constructor. Byte
 displacements and compatible same-state reads therefore use the same
 classes as the original word. Complete pointer-value applications use the numeric
-address as one operand, alongside independent designation and extent operands;
-address equality cannot merge those other operands. Complete-value comparisons whose designation and
+address as one operand, alongside independent provenance and extent operands;
+address equality cannot merge those other operands. Complete-value comparisons whose provenance and
 bounds already match reduce the remaining zero-offset constructor comparison to
 uint64 equality. The internal constructor does not enter the result-domain
 congruence used for actual pointer-returning pure functions. Numeric definitions
-alone establish no designation, bounds, object type, or memory authority.
+alone establish no provenance, bounds, object type, or memory authority.
 The explicit source control is `tagged_pointer_explicit_round_trip.md`; branch
-scope, displaced addresses, state distinctions, and designation
+scope, displaced addresses, state distinctions, and provenance
 separation are covered by the equality-graph unit tests.

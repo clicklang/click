@@ -74,7 +74,7 @@ impl MemoryStateLabels {
                 if let crate::kernel::ProgramExpression::Value(
                     crate::kernel::ProgramValue::Pointer(value),
                 ) = argument
-                    && value.designation() == pointer
+                    && value.provenance() == pointer
                 {
                     return format!("parameter `{}`", parameter.name());
                 }
@@ -95,8 +95,8 @@ impl MemoryStateLabels {
                     "\n  range identities (same printed footprint, different internal identities):",
                 );
             }
-            let (designation, opaque, known) = range.diagnostic_pointer_metadata();
-            let designation = self.range_object_identity(designation);
+            let (provenance, opaque, known) = range.diagnostic_pointer_metadata();
+            let provenance = self.range_object_identity(provenance);
             let bounds = match (known, opaque) {
                 (true, None) => "known object extent".to_owned(),
                 (true, Some(origin)) => format!(
@@ -120,7 +120,7 @@ impl MemoryStateLabels {
             result.push_str(&format!(
                 "\n    range {}: object identity = {}; bounds = {}",
                 alphabetic_label(label),
-                bounded(designation),
+                bounded(provenance),
                 bounded(bounds)
             ));
         }

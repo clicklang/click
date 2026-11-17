@@ -302,7 +302,7 @@ same way in either form.
 
 A held instance supplies a required one when their arguments are proved
 equal. A pointer argument of a declared resource is compared by address and
-designation, not by the view a cast selects: the resource names the object at
+provenance, not by the view a cast selects: the resource names the object at
 the address, and the view only bounds C accesses through the pointer, which
 the resource's own clauses check when they are evaluated. A kernel token whose
 identity is itself bounds evidence keeps the complete comparison, so a member

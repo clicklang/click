@@ -1104,7 +1104,7 @@ fn cached_pointer_value_keeps_its_defining_coordinates_and_scales() {
             panic!("typed pointer cache")
         };
         assert!(context.pointers_known_equal(actual.pointer(), expected.pointer()));
-        assert!(context.pointer_designations_match(actual, expected));
+        assert!(context.pointer_provenance_match(actual, expected));
         samples.push((work, map_work));
         assert!(
             canonicalized_pointer_value_from_int_cell(
@@ -1478,7 +1478,7 @@ fn complete_pointer_domains_across_cached_observations_scale_with_new_cells() {
                     else {
                         panic!("pointer read")
                     };
-                    assert_eq!(read.access_designation(), original.access_designation());
+                    assert_eq!(read.access_provenance(), original.access_provenance());
                 }
             })
         });

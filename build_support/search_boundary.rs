@@ -688,7 +688,7 @@ impl Boundary<'_> {
         if self.path == "src/kernel/assumptions.rs"
             && ((matches!(
                 self.function.as_str(),
-                "designations_equal" | "opaque_extents_equal"
+                "provenance_equal" | "opaque_extents_equal"
             ) && name == "direct_aliases")
                 || (self.function == "known_value_of_framed_pointer_read"
                     && name == "exact_pointer_aliases"))

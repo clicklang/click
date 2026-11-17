@@ -422,7 +422,7 @@ fn pointer_domain_queries_scale_with_selected_read_definitions() {
                     ProgramValue::typed_pointer(previous.clone(), ProgramType::Int32Pointer),
                 );
                 let read = Pointer::loaded_value(&intern_memory_ref(&memory), &slot);
-                assert!(graph.designations_equal(&read, &target));
+                assert!(graph.provenance_equal(&read, &target));
                 assert!(graph.opaque_extent_is_root(&read));
                 if previous != target {
                     assert!(graph.opaque_extents_equal(&read, &previous));
