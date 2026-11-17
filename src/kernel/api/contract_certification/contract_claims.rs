@@ -2059,7 +2059,7 @@ fn function_claim_holds_on_prepared_path(
                     exit_state.resources(),
                     fact,
                     function.composite_resource_definitions(),
-                    exit_state.memory(),
+                    &exit_state.program_point(),
                     assumptions,
                 )
             }) {
@@ -2677,7 +2677,7 @@ pub(crate) fn program_function_exceptional_ensure_goals(
     let expanded_entry_resources = expand_all_composite_resource_facts(
         entry_state.resources(),
         function.composite_resource_definitions(),
-        entry_state.memory(),
+        &entry_state.program_point(),
         assumptions,
     )?;
     entry_state = entry_state.with_resource_context(expanded_entry_resources);

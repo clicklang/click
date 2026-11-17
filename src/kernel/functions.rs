@@ -11865,7 +11865,7 @@ fn prepare_contract_resource_transfer_unexplained(
                         &ResourceContext::new_with_equalities(assumptions)
                             .unchecked_with_fact(requirement.fact.clone()),
                         interface.composite_resource_definitions(),
-                        callee_state.memory(),
+                        &callee_state.program_point(),
                         assumptions,
                     )
                     .is_some_and(|expanded| expanded.facts().is_empty())
@@ -11929,7 +11929,7 @@ fn prepare_contract_resource_transfer_unexplained(
                         &ResourceContext::new_with_equalities(assumptions)
                             .unchecked_with_fact(requirement.fact.clone()),
                         interface.composite_resource_definitions(),
-                        callee_state.memory(),
+                        &callee_state.program_point(),
                         assumptions,
                     )
                     .is_some_and(|expanded| expanded.facts().is_empty())
@@ -12291,7 +12291,7 @@ fn prepare_contract_resource_transfer_unexplained(
             let body = expand_all_composite_resource_facts(
                 &body,
                 interface.composite_resource_definitions(),
-                callee_state.memory(),
+                &callee_state.program_point(),
                 assumptions,
             )
             .unwrap_or(body);
@@ -12386,7 +12386,7 @@ fn prepare_contract_resource_transfer_unexplained(
         let expanded = expand_all_composite_resource_facts(
             &singleton,
             interface.composite_resource_definitions(),
-            callee_state.memory(),
+            &callee_state.program_point(),
             assumptions,
         )
         .unwrap_or(singleton);
@@ -12517,7 +12517,7 @@ fn prepare_contract_resource_transfer_unexplained(
             &return_resources,
             resource,
             interface.composite_resource_definitions(),
-            caller_state.memory(),
+            &caller_state.program_point(),
             assumptions,
         ) else {
             return Ok(Err(RuntimeError::MissingResource {
@@ -13303,9 +13303,12 @@ fn opened_composite_read_views(
     {
         return Vec::new();
     }
-    let Some(opened) =
-        expand_all_composite_resource_facts(resources, definitions, memory, assumptions)
-    else {
+    let Some(opened) = expand_all_composite_resource_facts(
+        resources,
+        definitions,
+        &crate::kernel::ProgramPoint::of_memory(memory),
+        assumptions,
+    ) else {
         return Vec::new();
     };
     opened
@@ -15841,7 +15844,6 @@ fn construct_composite_resource_body(
     assumptions: &PureFactContext,
     selected: Option<ResourceOccurrenceId>,
 ) -> Option<CompositeBodyConstruction> {
-    let memory = at.memory();
     let Resource::Composite { name, arguments } = composite.resource() else {
         return None;
     };
@@ -16279,10 +16281,10 @@ fn evaluate_composite_resource_body_condition(
 pub(super) fn expand_all_composite_resource_facts(
     context: &ResourceContext,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
-    expand_all_composite_resource_facts_with_composites(context, definitions, memory, assumptions)
+    expand_all_composite_resource_facts_with_composites(context, definitions, at, assumptions)
         .map(|(resources, _)| resources)
 }
 
@@ -16291,7 +16293,7 @@ pub(super) fn expand_all_composite_resource_facts(
 pub(super) fn expand_all_composite_resource_facts_with_composites(
     context: &ResourceContext,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Option<(ResourceContext, Vec<ResourceFact>)> {
     let mut opened = Vec::new();
@@ -16329,7 +16331,7 @@ pub(super) fn expand_all_composite_resource_facts_with_composites(
             .ok()?;
     }
     let (resources, composites) =
-        expand_composite_resource_context(&cached, definitions, memory, assumptions)?;
+        expand_composite_resource_context(&cached, definitions, at, assumptions)?;
     opened.extend(composites);
     Some((resources, opened))
 }
@@ -16388,7 +16390,7 @@ pub(super) fn expand_all_composite_resource_facts_at_state(
 ) -> Option<ResourceContext> {
     let (expanded, _) =
         expand_checked_authority_controls(context, definitions, state, assumptions)?;
-    expand_all_composite_resource_facts(&expanded, definitions, state.memory(), assumptions)
+    expand_all_composite_resource_facts(&expanded, definitions, &state.program_point(), assumptions)
 }
 
 /// Expands only the folded branches needed to expose `target`, leaving
@@ -16613,7 +16615,7 @@ pub(super) fn function_return_resources_definitionally_established(
             claim_return_state.resources(),
             fact,
             definitions,
-            claim_return_state.memory(),
+            &claim_return_state.program_point(),
             &assumptions,
         )
     }) {
@@ -16819,21 +16821,22 @@ pub(super) fn resource_context_satisfies_definitional_fact(
     available: &ResourceContext,
     required: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> bool {
+    let memory = at.memory();
     if available.satisfies_fact(required, assumptions) {
         return true;
     }
     let Some(expanded_available) =
-        expand_all_composite_resource_facts(available, definitions, memory, assumptions)
+        expand_all_composite_resource_facts(available, definitions, at, assumptions)
     else {
         return false;
     };
     let required_context =
         ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(required.clone());
     let Some((required, assembled)) =
-        expand_composite_resource_context(&required_context, definitions, memory, assumptions)
+        expand_composite_resource_context(&required_context, definitions, at, assumptions)
     else {
         return false;
     };
@@ -16964,9 +16967,10 @@ fn consume_resource_fact_definitionally(
     available: &ResourceContext,
     required: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
+    let memory = at.memory();
     fn consume(
         available: &ResourceContext,
         required: &ResourceFact,
@@ -17107,7 +17111,7 @@ pub(super) fn resource_context_definitionally_contains(
             &remaining,
             fact,
             definitions,
-            memory,
+            &crate::kernel::ProgramPoint::of_memory(memory),
             assumptions,
         ) else {
             return false;
@@ -17809,9 +17813,12 @@ pub(in crate::kernel) fn resource_clause_section_supply(
             assumptions,
         ));
     }
-    let Some(expanded) =
-        expand_all_composite_resource_facts(&base, definitions, state.memory(), assumptions)
-    else {
+    let Some(expanded) = expand_all_composite_resource_facts(
+        &base,
+        definitions,
+        &state.program_point(),
+        assumptions,
+    ) else {
         return base.unchecked_with_facts(views);
     };
     views.extend(
@@ -18112,7 +18119,7 @@ fn resource_clause_memory_views(
         expand_all_composite_resource_facts(
             &body_resources,
             definitions,
-            evaluation.memory(),
+            &evaluation.program_point(),
             &evaluation_assumptions,
         )
     } else {
