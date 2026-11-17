@@ -213,7 +213,7 @@ pub(in crate::kernel) fn load_definition_generation() -> u64 {
 }
 
 /// Records the exact source used when load canonicalization constructs a
-/// pointer-observable projection. This is provenance, not a cache: checked
+/// pointer-observable projection. This is a derivation record, not a cache: checked
 /// evidence later names this exact edge and validates it by identity, without
 /// rescanning either state. A canonical projection can be interned from
 /// multiple equivalent sources, so all exact triples remain valid while the
@@ -1235,7 +1235,7 @@ pub(in crate::kernel) fn pointer_in_block_for_memory_resolution(
         &read.defining_address,
         &target.defining_address,
         assumptions,
-    ) && crate::kernel::memory_provenance::pointer_reads_see_one_cell_source(
+    ) && crate::kernel::memory_history::pointer_reads_see_one_cell_source(
         &read,
         &target,
         assumptions,
@@ -2239,7 +2239,7 @@ fn bitvector_terms_equal_for_memory_resolution_unmemoized(
         return false;
     };
     // A load variable is its load for equality reasoning: view it
-    // through the registry so state provenance fires exactly as it would
+    // through the registry so memory-history reasoning fires exactly as it would
     // for the load term, then fall through to the variable-form
     // paths if the load view does not decide.
     let canonical_view = |term: &MachineTerm| {
@@ -4450,7 +4450,7 @@ fn run_has_direct_store_separation(
         contains_access(&run_pointer, run_bytes, range) && contains_access(pointer, bytes, access)
     };
     if fits(left, right) || fits(right, left) {
-        crate::kernel::record_implicit_reasoning_provenance(assumptions, fact);
+        crate::kernel::record_implicit_consulted_premises(assumptions, fact);
         true
     } else {
         false

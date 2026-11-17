@@ -262,7 +262,7 @@ impl<T: Clone> PersistentVector<T> {
     pub(crate) fn iter_mut(
         &mut self,
     ) -> imbl::vector::IterMut<'_, T, imbl::shared_ptr::DefaultSharedPtr> {
-        // This operation explicitly edits every trace/provenance record.
+        // This operation explicitly edits every trace/evidence record.
         // Materialize that output-sized set once; indexed edits stay local.
         if matches!(self.0.entries.as_ref(), PersistentVectorNode::Branch { .. }) {
             let entries = self.iter().cloned().collect();

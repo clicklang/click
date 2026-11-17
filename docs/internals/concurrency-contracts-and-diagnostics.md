@@ -393,7 +393,7 @@ For an unmet proof requirement, use this information order:
 2. **Requires:** the exact Click proposition or resource clause, including access
    mode, arguments, binder identity, and relevant state when needed.
 3. **Available:** a small relevant selection of facts/resources on this path.
-4. **Why it does not suffice:** the specific mismatch, with source provenance.
+4. **Why it does not suffice:** the specific mismatch, with its source origin.
 5. A next investigation or proof step supported by the evidence, if one exists.
 
 The requirement is written in Click terms, not replaced by an English paraphrase.
@@ -407,7 +407,7 @@ satisfy. A checker limitation must be identified separately.
 
 A printed binder such as `g` refers to the existing contract/proof binding, not
 an invitation to declare a fresh resource with that name. When two resources
-have the same printed arguments, retain the binder and source provenance that
+have the same printed arguments, retain the binder and source origin that
 explain why only one can satisfy the obligation. A diagnostic that erases this
 distinction is imprecise even if its resource type is correct.
 
@@ -570,7 +570,7 @@ expose the population total or payload.
 
 Declarations should supply reusable, checked resource summaries so ordinary
 calls and diagnostics visit the relevant inputs and effects, not every mutex,
-resource, or historical state. Diagnostic witnesses retain source provenance
+resource, or historical state. Diagnostic witnesses retain source origins
 when obligations/transfers are built. Rendering a message must not rerun search
 or scan the whole project to reconstruct why a failure occurred.
 

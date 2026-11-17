@@ -561,7 +561,7 @@ impl EvaluatedReturnResources {
         Ok(self)
     }
 
-    /// Capture the occurrence returned by admission, while its provenance is
+    /// Capture the occurrence returned by admission, while its origin is
     /// available. A deferred or unmatched description is never an entry borrow.
     #[cfg(test)]
     pub(super) fn admit(

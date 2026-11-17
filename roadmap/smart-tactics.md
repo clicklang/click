@@ -195,10 +195,10 @@ excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 16 | 33 |
-| `examples/` | 19 | 132 |
+| `mdtests/` | 15 | 31 |
+| `examples/` | 18 | 111 |
 | `library/` | 0 | 0 |
-| Total | 35 | 165 |
+| Total | 33 | 142 |
 
 The 9 mdtests with failure expectations still require migration while retaining
 their semantic refusals. Positive fixtures also supply exact input text
@@ -424,7 +424,7 @@ or consumption route.
 
 The retained summary rule now also binds literal/parameter footprints of
 one-level composite children to consumed input clauses. Unguarded parameter-only borrowed
-children keep entry provenance; conversions, loads, and unmatched footprints
+children keep entry origin; conversions, loads, and unmatched footprints
 retain their boundary checks. Composite scaling grows selected body parts as
 well as retained same-block owners and both alias shapes at 4/16/64.
 Iterated `take`/`scatter` now construct their exposed ownership from the checked

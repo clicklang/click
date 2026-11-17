@@ -34,7 +34,7 @@ struct TraceRetainedPath {
     nested: bool,
     path_index: usize,
     lineage: Vec<TracePathNode>,
-    /// Retain the checked provenance chain until the CLI has rendered it.
+    /// Retain the checked lineage chain until the CLI has rendered it.
     _retained: Box<dyn Any>,
 }
 
@@ -82,7 +82,7 @@ pub(super) struct TraceJoin {
     /// continue. Recorded only while tracing, it selects the arm that holds
     /// a failing path.
     pub arm_paths: Option<[usize; 2]>,
-    /// Keeps arm provenance alive so later proof attempts cannot recycle its
+    /// Keeps arm evidence alive so later proof attempts cannot recycle its
     /// pointer identities.
     pub _retained: Box<dyn Any>,
 }

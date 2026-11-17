@@ -82,7 +82,7 @@ impl<'a> ProofScope<'a> {
     /// The requirement is checked against the body's actual lowered kernel
     /// goal before any presentation is installed.  This keeps a synthesized
     /// spelling from becoming proof authority: a mismatch is rejected while
-    /// the scope (including its semantic state and provenance) remains
+    /// the scope (including its semantic state and lineage) remains
     /// unchanged.  The introduction chain is presentation-only and may be
     /// absent when the lowering did not record one.
     pub(in crate::surface::proof) fn with_reported_goal_introductions(
@@ -219,7 +219,7 @@ impl<'a> ProofScope<'a> {
         let Some(parent) = body.node.parent.as_ref() else {
             return Err(self
                 .root
-                .step_error("nested proof scope produced a root without provenance"));
+                .step_error("nested proof scope produced a root without lineage"));
         };
         if !Arc::ptr_eq(parent, &self.body.node) {
             return Err(self
@@ -317,7 +317,7 @@ impl<'a> ProofScope<'a> {
     }
 
     /// Joins the two completed cases of an in-`Proof` case split as the next
-    /// direct structural node of this scope, with the same provenance check
+    /// direct structural node of this scope, with the same lineage check
     /// as `join_execution_split`.
     pub(in crate::surface::proof) fn join_execution_if_terminal(
         &self,
@@ -328,7 +328,7 @@ impl<'a> ProofScope<'a> {
         let Some(parent) = body.node.parent.as_ref() else {
             return Err(self
                 .root
-                .step_error("case split join produced a root without provenance"));
+                .step_error("case split join produced a root without lineage"));
         };
         if !Arc::ptr_eq(parent, &self.body.node) {
             return Err(self
@@ -360,7 +360,7 @@ impl<'a> ProofScope<'a> {
         let Some(parent) = body.node.parent.as_ref() else {
             return Err(self
                 .root
-                .step_error("execution branch join produced a root without provenance"));
+                .step_error("execution branch join produced a root without lineage"));
         };
         if !Arc::ptr_eq(parent, &self.body.node) {
             return Err(self
@@ -400,7 +400,7 @@ impl<'a> ProofScope<'a> {
         let Some(parent) = body.node.parent.as_ref() else {
             return Err(self
                 .root
-                .step_error("expanded execution branch produced a root without provenance"));
+                .step_error("expanded execution branch produced a root without lineage"));
         };
         if !Arc::ptr_eq(parent, &self.body.node) {
             return Err(self.root.step_error(
@@ -829,7 +829,7 @@ impl<'a> ProofScope<'a> {
 impl<'a> Proof<'a> {
     /// Retain a completed descendant of this focused proposition goal as a `have`.
     /// The checked descendant supplies the evidence; its certificate is only
-    /// serialized provenance and is never executed again.
+    /// serialized evidence and is never executed again.
     ///
     /// `conclusions` are the completed application's other guarantees as the
     /// caller would write them, in the order the application produced them.

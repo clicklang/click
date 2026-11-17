@@ -297,7 +297,7 @@ impl PureFactContext {
         self.observation_comparisons
             .scaled_source(format, operands, truth)
             .is_some_and(|source| {
-                record_implicit_reasoning_provenance(self, source);
+                record_implicit_consulted_premises(self, source);
                 true
             })
     }
@@ -990,7 +990,7 @@ impl PureFactContext {
             });
         }
         if let Some(source) = self.observation_comparisons.source(order, true) {
-            record_implicit_reasoning_provenance(self, source);
+            record_implicit_consulted_premises(self, source);
             true
         } else {
             false
@@ -1100,7 +1100,7 @@ impl PureFactContext {
     /// decision. This deliberately accepts only syntactic edge joins (plus a
     /// context-free constant tail): equality, memory-DAG, quantified, and
     /// derived-edge joins need their own typed evidence before they may be
-    /// exported as certificate provenance.
+    /// exported as certificate premises.
     #[cfg(test)]
     pub(in crate::kernel) fn exact_signed_order_path_evidence(
         &self,
@@ -2665,7 +2665,7 @@ impl PureFactContext {
             let Some(answer) = answer else {
                 continue;
             };
-            record_implicit_reasoning_provenance(self, source);
+            record_implicit_consulted_premises(self, source);
             return Some(answer != negated);
         }
         None

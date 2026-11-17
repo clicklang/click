@@ -724,7 +724,7 @@ pub(crate) fn returned_permission_covers(
             .unchecked_with_fact(permission.clone())
             .satisfies_fact(required, assumptions);
     }
-    crate::kernel::memory_provenance::resources_directly_match(
+    crate::kernel::memory_history::resources_directly_match(
         permission.resource(),
         required.resource(),
         assumptions,
@@ -1330,7 +1330,7 @@ impl LoanRefusalDiagnostic {
     }
 
     /// The source clause and step are populated by callers that have source
-    /// provenance at the point where the kernel refusal is surfaced. They are
+    /// origin at the point where the kernel refusal is surfaced. They are
     /// intentionally numeric and optional so diagnostics cannot retain source
     /// text or an unbounded proof trace.
     pub fn source_clause(&self) -> Option<u32> {
@@ -1849,7 +1849,7 @@ pub(crate) struct StableViewTransferPlan {
     pub(crate) stable_views: Vec<PlannedStableView>,
     pub(crate) memory_effects: Vec<MemoryRange>,
     /// The owned occurrence each reserved requirement in
-    /// `transferred_ownership` was taken out of. This is the provenance the
+    /// `transferred_ownership` was taken out of. This is the reservation support the
     /// call-site effect check reads: a valid resource context is a partition,
     /// so an effect reserved from one owned occurrence and a view lent from a
     /// different one are bytewise disjoint by construction, and only an
@@ -3120,7 +3120,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             continue;
         }
         // The occurrence this reservation is taken out of, read before the
-        // removal below: the transferred hold and the effect provenance both
+        // removal below: the transferred hold and the effect support both
         // name the residual entry that actually supplied the requirement, not
         // an equal-looking owner elsewhere in the caller's partition.
         // A concrete owned footprint is reserved directly from indexed live

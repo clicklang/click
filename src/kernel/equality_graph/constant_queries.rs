@@ -1,8 +1,8 @@
 //! Constant discovery uses shared class annotations. Contextual arithmetic
-//! retains selected exact source premises when implicit provenance is requested.
+//! retains selected exact source premises when implicit consulted premises are requested.
 use super::*;
 use crate::kernel::MachineTerm;
-use crate::kernel::assumptions::record_implicit_reasoning_provenance;
+use crate::kernel::assumptions::record_implicit_consulted_premises;
 use crate::kernel::{
     MachineCastSpelling as Cast, MachineOperandView as V, Proposition, PureFactContext,
 };
@@ -43,7 +43,7 @@ impl EqualityGraph {
             memo: &mut BTreeMap<(bool, u64), Option<u64>>,
         ) -> Option<u64> {
             let epoch = crate::kernel::assumptions::incomplete_reasoning_epoch();
-            if !crate::kernel::assumptions::implicit_reasoning_provenance_capturing()
+            if !crate::kernel::assumptions::implicit_consulted_premises_capturing()
                 && let Some(value) = context.equality_graph.uint64_constant_view(term)
             {
                 return Some(value);
@@ -54,7 +54,7 @@ impl EqualityGraph {
                         (
                             id,
                             term.id(),
-                            crate::kernel::assumptions::implicit_reasoning_provenance_capturing(),
+                            crate::kernel::assumptions::implicit_consulted_premises_capturing(),
                         )
                     }),
                 V::Legacy(_) => None,
@@ -177,7 +177,7 @@ impl EqualityGraph {
                             for (equal, fact) in neighbors.iter() {
                                 value = evaluate(context, V::Legacy(equal), active, memo);
                                 if value.is_some() {
-                                    record_implicit_reasoning_provenance(
+                                    record_implicit_consulted_premises(
                                         context,
                                         &Proposition::ConditionIs(fact.clone(), true),
                                     );
@@ -195,7 +195,7 @@ impl EqualityGraph {
                         {
                             value = evaluate(context, equal, active, memo);
                             if value.is_some() {
-                                record_implicit_reasoning_provenance(context, source);
+                                record_implicit_consulted_premises(context, source);
                                 break;
                             }
                         }
@@ -228,7 +228,7 @@ impl EqualityGraph {
 mod tests {
     use super::*;
     use crate::kernel::assumptions::{
-        capture_implicit_reasoning_provenance, collect_reasoning_provenance,
+        capture_implicit_consulted_premises, collect_consulted_premises,
     };
     use crate::kernel::{
         IntegerTerm, KernelTerm, KernelTermImport, KernelType, SharedMachineIntegerTerm,
@@ -265,7 +265,7 @@ mod tests {
         )
         .unwrap();
         let read = |context: &PureFactContext| {
-            capture_implicit_reasoning_provenance(|| {
+            capture_implicit_consulted_premises(|| {
                 context.wide_constant_from_equalities_view(query.operand_view())
             })
         };
@@ -278,7 +278,7 @@ mod tests {
             Some(14)
         );
         assert_eq!(read(&parent), None);
-        let (value, premises) = collect_reasoning_provenance(|| read(&child));
+        let (value, premises) = collect_consulted_premises(|| read(&child));
         assert_eq!(value, Some(14));
         assert!(premises.contains(&source));
         assert!(premises.contains(&literal));
@@ -315,8 +315,8 @@ mod tests {
             true,
         );
         let context = PureFactContext::new().assume_proposition(source.clone());
-        let (value, sources) = collect_reasoning_provenance(|| {
-            capture_implicit_reasoning_provenance(|| {
+        let (value, sources) = collect_consulted_premises(|| {
+            capture_implicit_consulted_premises(|| {
                 context.wide_constant_from_equalities_view(operand.operand_view())
             })
         });
@@ -388,13 +388,13 @@ mod tests {
             .unwrap();
             let context = PureFactContext::new();
             assert_eq!(
-                capture_implicit_reasoning_provenance(
+                capture_implicit_consulted_premises(
                     || context.wide_constant_from_equalities_view(shared.operand_view())
                 ),
                 Some(expected)
             );
             assert_eq!(
-                capture_implicit_reasoning_provenance(
+                capture_implicit_consulted_premises(
                     || context.wide_constant_from_equalities(&written)
                 ),
                 Some(expected)
@@ -439,13 +439,13 @@ mod tests {
                     .unwrap(),
             )
             .unwrap();
-            let actual = capture_implicit_reasoning_provenance(|| {
+            let actual = capture_implicit_consulted_premises(|| {
                 context.wide_constant_from_equalities_view(shared.operand_view())
             });
             assert_eq!(actual, expected, "{ty:?} {op:?}");
             assert!(!shared.has_boxed_operand());
             assert_eq!(
-                capture_implicit_reasoning_provenance(
+                capture_implicit_consulted_premises(
                     || context.wide_constant_from_equalities(&written)
                 ),
                 expected
@@ -457,7 +457,7 @@ mod tests {
 #[cfg(test)]
 mod scaling_tests {
     use crate::kernel::assumptions::{
-        capture_implicit_reasoning_provenance, collect_reasoning_provenance,
+        capture_implicit_consulted_premises, collect_consulted_premises,
     };
     use crate::kernel::{IntegerTerm, KernelTerm, KernelType, SharedMachineIntegerTerm};
     include!("../../scaling_tests/kernel/equality_graph/constant_queries.rs");

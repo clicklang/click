@@ -295,7 +295,7 @@ fn pointer_read_observations_check_frames_scope_and_scaling() {
     let left = read(&base, &address, LoadPurpose::Logical);
     let right = read(&base, &alias, LoadPurpose::Logical);
     let equal = |left: &Pointer, right: &Pointer, facts: &PureFactContext| {
-        crate::kernel::memory_provenance::pointer_read_has_recorded_value(left, right, facts)
+        crate::kernel::memory_history::pointer_read_has_recorded_value(left, right, facts)
     };
     assert!(equal(&left, &right, &facts));
     assert!(!equal(&left, &right, &empty));
@@ -394,11 +394,11 @@ fn wide_observations_preserve_width_scope_and_selected_query_scaling() {
     assert_eq!(latest_wide_load_observation(&word), Some(first.clone()));
     load_variable_for_term(&second).unwrap();
     let facts = PureFactContext::new();
+    assert!(crate::kernel::memory_history::wide_read_has_recorded_value(
+        &word_term, &second, &facts,
+    ));
     assert!(
-        crate::kernel::memory_provenance::wide_read_has_recorded_value(&word_term, &second, &facts,)
-    );
-    assert!(
-        !crate::kernel::memory_provenance::wide_read_has_recorded_value(
+        !crate::kernel::memory_history::wide_read_has_recorded_value(
             &word_term,
             &load(&second_memory, &other, LoadKind::Bits64),
             &facts,
@@ -409,7 +409,7 @@ fn wide_observations_preserve_width_scope_and_selected_query_scaling() {
         ProgramValue::UInt64(MachineTerm::uint64_constant(9)),
     ));
     assert!(
-        !crate::kernel::memory_provenance::wide_read_has_recorded_value(
+        !crate::kernel::memory_history::wide_read_has_recorded_value(
             &word_term,
             &load(&changed, &pointer, LoadKind::Bits64),
             &facts,
@@ -419,7 +419,7 @@ fn wide_observations_preserve_width_scope_and_selected_query_scaling() {
     let (narrow_word, _) = load_variable_for_term(&narrow).unwrap();
     assert!(latest_wide_load_observation(&narrow_word).is_none());
     assert!(
-        !crate::kernel::memory_provenance::wide_read_has_recorded_value(
+        !crate::kernel::memory_history::wide_read_has_recorded_value(
             &word_term,
             &MachineTerm::Variable(narrow_word),
             &facts,
@@ -432,9 +432,7 @@ fn wide_observations_preserve_width_scope_and_selected_query_scaling() {
             load_variable_for_term(&load(&base, &unrelated, LoadKind::Bits64)).unwrap();
         }
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
-            crate::kernel::memory_provenance::wide_read_has_recorded_value(
-                &word_term, &second, &facts,
-            )
+            crate::kernel::memory_history::wide_read_has_recorded_value(&word_term, &second, &facts)
         });
         assert!(proved);
         if let Some(previous) = previous {
@@ -502,7 +500,7 @@ fn logical_reads_of_a_returned_field_share_checked_alias_identity() {
             .are_int32_equal(left, right),
         "projection identity does not supply an address alias"
     );
-    let capture = crate::kernel::memory_provenance::CheckedLoadEqualityCapture::start();
+    let capture = crate::kernel::memory_history::CheckedLoadEqualityCapture::start();
     assert!(facts.memory_loads_proven_equal(left, right));
     let evidence = capture.finish();
     assert!(!evidence.is_empty());
@@ -525,7 +523,7 @@ fn logical_reads_of_a_returned_field_share_checked_alias_identity() {
             );
         }
         let (valid, units) = crate::instrumentation::measure_deterministic_work(|| {
-            let capture = crate::kernel::memory_provenance::CheckedLoadEqualityCapture::start();
+            let capture = crate::kernel::memory_history::CheckedLoadEqualityCapture::start();
             let equal = context.memory_loads_proven_equal(left, right);
             let evidence = capture.finish();
             equal && !evidence.is_empty() && evidence.iter().all(|proof| proof.checks(&context))
@@ -782,8 +780,7 @@ fn logical_scalar_read_meets_model_cell_through_later_external_alias() {
     let before = empty
         .assume_proposition(Proposition::ResourceComposition(resources))
         .assume_proposition(
-            crate::kernel::memory_provenance::store_value_equation(&memory, &field, &value)
-                .unwrap(),
+            crate::kernel::memory_history::store_value_equation(&memory, &field, &value).unwrap(),
         );
     let read = |memory: &Memory, pointer: Pointer, context: &PureFactContext| {
         let paths = evaluate_logical_memory_load_paths(
@@ -868,12 +865,8 @@ fn logical_scalar_read_meets_model_cell_through_later_external_alias() {
             &changed_value
         ));
         let changed_context = context.clone().assume_proposition(
-            crate::kernel::memory_provenance::store_value_equation(
-                &changed,
-                &field,
-                &changed_value,
-            )
-            .unwrap(),
+            crate::kernel::memory_history::store_value_equation(&changed, &field, &changed_value)
+                .unwrap(),
         );
         assert!(equals(
             read(&changed, queried.clone(), &changed_context),
@@ -1360,18 +1353,14 @@ fn stored_pointer_read_preserves_blocks_and_ignores_unrelated_cells() {
         record_load_access_width(&projected, &address, 8);
         context.register_pointer_read(&read, &intern_memory(projected.clone()), &address);
         let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
-            crate::kernel::memory_provenance::pointer_read_has_stored_value(
-                &read, &stored, &context,
-            )
+            crate::kernel::memory_history::pointer_read_has_stored_value(&read, &stored, &context)
         });
         assert!(equal);
         assert!(
-            !crate::kernel::memory_provenance::pointer_read_has_stored_value(
-                &read, &wrong, &context
-            )
+            !crate::kernel::memory_history::pointer_read_has_stored_value(&read, &wrong, &context)
         );
         assert!(
-            !crate::kernel::memory_provenance::pointer_read_has_stored_value(
+            !crate::kernel::memory_history::pointer_read_has_stored_value(
                 &read.offset_by_bytes(8),
                 &stored,
                 &context
@@ -1387,7 +1376,7 @@ fn stored_pointer_read_preserves_blocks_and_ignores_unrelated_cells() {
         record_load_access_width(&changed, &address, 8);
         context.register_pointer_read(&changed_read, &intern_memory(changed), &address);
         assert!(
-            !crate::kernel::memory_provenance::pointer_read_has_stored_value(
+            !crate::kernel::memory_history::pointer_read_has_stored_value(
                 &changed_read,
                 &stored,
                 &context
@@ -1425,7 +1414,7 @@ fn recorded_pointer_normalization_has_bounded_history_work() {
         record_load_access_width(&memory, &address, 8);
         assumptions.register_pointer_read(&read, &intern_memory(memory.clone()), &address);
         let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
-            crate::kernel::memory_provenance::pointer_read_has_recorded_value(
+            crate::kernel::memory_history::pointer_read_has_recorded_value(
                 &read,
                 &stored,
                 &assumptions,
@@ -1451,7 +1440,7 @@ fn recorded_pointer_normalization_has_bounded_history_work() {
             assumptions.register_pointer_read(&unrelated, &memory, &address);
         }
         let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
-            crate::kernel::memory_provenance::pointer_read_has_recorded_value(
+            crate::kernel::memory_history::pointer_read_has_recorded_value(
                 &read,
                 &stored,
                 &assumptions,
@@ -2197,7 +2186,7 @@ fn structural_index_read_chains_have_near_linear_producer_work() {
                 let mut index = MachineTerm::constant(0);
                 for _ in 0..size {
                     if cold {
-                        crate::kernel::memory_provenance::clear_canonical_form_caches();
+                        crate::kernel::memory_history::clear_canonical_form_caches();
                     }
                     let mut facts = ExecutionFacts::new();
                     index = canonicalized_offset_index_term(index, &mut facts);

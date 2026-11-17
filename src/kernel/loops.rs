@@ -2034,7 +2034,7 @@ pub(super) fn execute_program_loop_exit_paths_with_proven_phases(
     initialization_proven: bool,
     preservation_proven: bool,
     final_exit_candidates: &[LoopFinalExitCandidate],
-    break_exits: &[LoopBreakExit],
+    early_exits: &[LoopEarlyExit],
     return_exits: &[LoopReturnExit],
     budget: &mut ExecutionBudget,
     variables: &mut KernelVariableGenerator,
@@ -2046,7 +2046,7 @@ pub(super) fn execute_program_loop_exit_paths_with_proven_phases(
         execution_context.environment,
         (!preservation_proven).then_some(execution_context.environment),
         final_exit_candidates,
-        break_exits,
+        early_exits,
         return_exits,
         execution_context.semantics,
         initialization_proven,
@@ -4201,7 +4201,7 @@ fn execute_program_loop_exit_paths(
     environment: &ExecutionEnvironment,
     preservation_environment: Option<&ExecutionEnvironment>,
     final_exit_candidates: &[LoopFinalExitCandidate],
-    break_exits: &[LoopBreakExit],
+    early_exits: &[LoopEarlyExit],
     return_exits: &[LoopReturnExit],
     execution_semantics: ExecutionSemantics,
     initialization_proven: bool,
@@ -4269,7 +4269,7 @@ fn execute_program_loop_exit_paths(
     // authority never leaves the head.
     let guard_state = head.guard.clone();
     let whole_loop_effect_summaries = head.summaries.clone();
-    let (preservation_obligations, mut final_exit_paths, body_break_exits) =
+    let (preservation_obligations, mut final_exit_paths, body_early_exits) =
         if let Some(environment) = preservation_environment {
             let summary = collect_loop_preservation_summary(
                 state,
@@ -4288,7 +4288,7 @@ fn execute_program_loop_exit_paths(
             (
                 summary.obligations,
                 summary.final_exit_paths,
-                summary.break_exits,
+                summary.early_exits,
             )
         } else {
             (Vec::new(), Vec::new(), Vec::new())
@@ -4460,14 +4460,14 @@ fn execute_program_loop_exit_paths(
             break;
         }
     }
-    // Every `break` in the body is one more way out of the loop, at the
-    // state that path reached. They are certified exits, so they carry no
+    // Every early iteration exit (break, false test or natural exit) carries
+    // the state that path reached. They are certified exits, so they carry no
     // invariant and no measure, and they join the guard-false exit below
     // rather than exporting a second successor the enclosing frontier would
     // have to choose between.
-    let break_exit_entries = break_exits
+    let early_exit_entries = early_exits
         .iter()
-        .chain(body_break_exits.iter())
+        .chain(body_early_exits.iter())
         .map(|exit| {
             (
                 head.restored_exit_state(exit.state(), assumptions),
@@ -4545,7 +4545,7 @@ fn execute_program_loop_exit_paths(
                 .map(|(facts, obligations, loan_evidence)| {
                     (top_state.clone(), facts, obligations, loan_evidence, None)
                 })
-                .chain(break_exit_entries.iter().cloned())
+                .chain(early_exit_entries.iter().cloned())
                 .collect::<Vec<_>>();
             if let Some(path) = join_loop_exits(
                 &head,
@@ -4565,7 +4565,7 @@ fn execute_program_loop_exit_paths(
         body,
         &Default::default(),
         &binders,
-        break_exit_entries,
+        early_exit_entries,
         assumptions,
         variables,
         budget,
@@ -5098,7 +5098,7 @@ pub(super) struct LoopPreservationSummary {
     /// The body paths that left through `break`, as exits at the states they
     /// reached. The rule joins them with the guard-false exit exactly as it
     /// joins the ones a checked preservation proof reports.
-    pub(super) break_exits: Vec<LoopBreakExit>,
+    pub(super) early_exits: Vec<LoopEarlyExit>,
 }
 
 pub(super) fn collect_loop_preservation_summary(
@@ -5133,7 +5133,7 @@ pub(super) fn collect_loop_preservation_summary(
     let update = continuation.as_deref();
     let mut obligations = Vec::new();
     let mut final_exit_paths = Vec::new();
-    let mut break_exits = Vec::new();
+    let mut early_exits = Vec::new();
     // The body executes from the loop's own resource context; everything the
     // enclosing frame withheld is returned on the way out.
     let top_state = &head.body;
@@ -5418,8 +5418,9 @@ pub(super) fn collect_loop_preservation_summary(
                     }
                 } else {
                     match outcome {
-                        StatementOutcome::Break(next_state) => {
-                            // A `break` is an exit: the invariants are not
+                        StatementOutcome::LoopTestFalse(next_state)
+                        | StatementOutcome::Break(next_state) => {
+                            // A written break or false test exits: invariants are not
                             // closed on it and no measure is required to
                             // decrease on it. What the body wrote on the way
                             // out is still checked against the loop's declared
@@ -5449,8 +5450,8 @@ pub(super) fn collect_loop_preservation_summary(
                                 &exit_facts,
                                 &exit_obligations,
                             );
-                            break_exits.push(
-                                LoopBreakExit::new(
+                            early_exits.push(
+                                LoopEarlyExit::new(
                                     *next_state,
                                     exit_facts
                                         .iter()
@@ -5557,7 +5558,7 @@ pub(super) fn collect_loop_preservation_summary(
     Ok(LoopPreservationSummary {
         obligations,
         final_exit_paths,
-        break_exits,
+        early_exits,
     })
 }
 
@@ -6070,7 +6071,7 @@ pub(super) fn prepare_loop_top_state(
                 let Proposition::MemoryEffectSummary { mutable_ranges, .. } = summary else {
                     return false;
                 };
-                crate::kernel::memory_provenance::typed_ranges_disjoint_from_pointer_evidence(
+                crate::kernel::memory_history::typed_ranges_disjoint_from_pointer_evidence(
                     mutable_ranges,
                     run.base(),
                     bytes,

@@ -453,7 +453,7 @@ theorem only_element(v: int32, x: int32) {
                 r#"
                 theorem bounded() {{
                     ensures forall (x: {ty}) {{ x == x }} by {{
-                        intro() as value;
+                        let value = intro();
                         normalize();
                     }}
                 }}

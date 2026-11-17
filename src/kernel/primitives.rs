@@ -1,7 +1,7 @@
 use super::api::{
     int8, int16, int32, normalize_exact_memory_loads_in_pointer_offset, uint8, uint16, uint32,
 };
-use super::memory_provenance::{AtomicMemoryLoadEqualityEvidence, PointerOffsetEqualityEvidence};
+use super::memory_history::{AtomicMemoryLoadEqualityEvidence, PointerOffsetEqualityEvidence};
 use super::reasoning::{
     collect_or_cases, instantiate_range_fold_step, memory_states_proven_equal_at_pointer,
     pointers_proven_equal_for_memory_resolution, resource_context_has_read,
@@ -2535,6 +2535,7 @@ impl PointerValue {
                     | PointerBlock::ContractException
                     | PointerBlock::StaticObject { .. }
                     | PointerBlock::AutomaticLocal { .. }
+                    | PointerBlock::ReferenceCarrier { .. }
                     | PointerBlock::Concrete(_)
                     | PointerBlock::Heap(_)
                     | PointerBlock::Temporary(_)
@@ -2586,7 +2587,7 @@ impl PointerValue {
 
     /// The read that introduced this complete pointer's opaque domain when
     /// its numeric address alone names a different read version. This is
-    /// producer provenance, not an address-alias or preservation query.
+    /// the producing read, not an address-alias or preservation query.
     pub(crate) fn complete_read_source(&self) -> Option<(SharedMemory, Pointer)> {
         if self.opaque_extent() != Some(self.designation())
             || self.pointer.object_identity() == *self.designation()
@@ -3051,6 +3052,12 @@ pub enum PointerBlock {
         binding: LocalBindingId,
         instance: LocalStorageInstance,
     },
+    /// Internal storage of the pointer carrying a reference, distinct from
+    /// the referent object and from an ordinary address-looking source name.
+    ReferenceCarrier {
+        referent: Arc<BindingName>,
+        instance: LocalStorageInstance,
+    },
     StaticObject {
         binding: StaticBindingId,
     },
@@ -3080,6 +3087,11 @@ impl std::hash::Hash for PointerBlock {
             Self::StaticObject { binding } => {
                 12u64.hash(state);
                 binding.hash(state);
+            }
+            Self::ReferenceCarrier { referent, instance } => {
+                16u64.hash(state);
+                referent.hash(state);
+                instance.hash(state);
             }
             Self::AutomaticLocal { binding, instance } => {
                 11u64.hash(state);
@@ -3197,7 +3209,7 @@ impl PointerBlock {
 
     pub(crate) fn starts_with(&self, prefix: &str) -> bool {
         match self {
-            Self::AutomaticLocal { instance, .. } => {
+            Self::AutomaticLocal { instance, .. } | Self::ReferenceCarrier { instance, .. } => {
                 prefix == "local:"
                     || match instance {
                         LocalStorageInstance::ValueParameter => prefix == "local:value-parameter:",
@@ -3222,6 +3234,7 @@ impl PointerBlock {
             | Self::ContractException
             | Self::StaticObject { .. }
             | Self::AutomaticLocal { .. }
+            | Self::ReferenceCarrier { .. }
             | Self::StringLiteral { .. }
             | Self::Function(_)
             | Self::FunctionSymbolic(_)
@@ -3334,6 +3347,7 @@ impl PointerBlock {
                         | Self::ContractException
                         | Self::StaticObject { .. }
                         | Self::AutomaticLocal { .. }
+                        | Self::ReferenceCarrier { .. }
                         | Self::Concrete(_)
                         | Self::Function(_)
                 )
@@ -3358,6 +3372,7 @@ impl PointerBlock {
                         | Self::ContractResult
                         | Self::ContractException
                         | Self::AutomaticLocal { .. }
+                        | Self::ReferenceCarrier { .. }
                         | Self::StaticObject { .. }
                 ) && matches!(
                     other,
@@ -3365,6 +3380,7 @@ impl PointerBlock {
                         | Self::ContractResult
                         | Self::ContractException
                         | Self::AutomaticLocal { .. }
+                        | Self::ReferenceCarrier { .. }
                         | Self::StaticObject { .. }
                         | Self::Concrete(_)
                 ))
@@ -3374,6 +3390,7 @@ impl PointerBlock {
                         | Self::ContractResult
                         | Self::ContractException
                         | Self::AutomaticLocal { .. }
+                        | Self::ReferenceCarrier { .. }
                         | Self::StaticObject { .. }
                 ) && matches!(self, Self::Concrete(_)))
                 || literal_versus_declared(self, other)
@@ -3437,6 +3454,12 @@ impl std::fmt::Display for PointerBlock {
             Self::ContractResult => formatter.write_str("result.storage()"),
             Self::ContractException => formatter.write_str("exception.storage()"),
             Self::StaticObject { binding } => write!(formatter, "{binding}.storage()"),
+            Self::ReferenceCarrier { referent, instance } => {
+                write!(
+                    formatter,
+                    "reference-carrier({referent}).storage({instance})"
+                )
+            }
             Self::AutomaticLocal { binding, instance } => {
                 write!(formatter, "{}.storage({instance})", binding.canonical())
             }
@@ -3899,7 +3922,7 @@ pub enum ProgramExpression {
         /// The class of the lvalue's C type, which the access uses, when the
         /// frontend supplied one (`design/effective-types.md`).
         access_class: Option<crate::kernel::effective_type::CAccessClass>,
-        /// Source provenance is presentation metadata only. Its comparison
+        /// Source origin is presentation metadata only. Its comparison
         /// traits intentionally ignore the value.
         source: ExpressionLoadSource,
     },
@@ -3937,7 +3960,7 @@ pub enum ProgramExpression {
     },
 }
 
-/// Optional source provenance attached to a typed load. Two expressions that
+/// Optional source origin attached to a typed load. Two expressions that
 /// differ only in this metadata remain equal in kernel collections and caches.
 #[derive(Clone, Debug)]
 pub struct ExpressionLoadSource(Option<Arc<LoadSourceId>>);
@@ -4836,7 +4859,7 @@ impl AlgebraicTermNode {
     ) -> ProgramValue {
         // A value is named by the point its cell was last written, so a
         // read after unrelated stores is the read before them.
-        let memory = crate::kernel::memory_provenance::canonical_value_load_memory(
+        let memory = crate::kernel::memory_history::canonical_value_load_memory(
             &memory,
             &pointer,
             ABSTRACT_VALUE_WIDTH,
@@ -5750,7 +5773,7 @@ pub enum ProgramStatement {
         volatile: bool,
         /// The destination pointer cell's declared pointee qualification.
         pointee_constant: bool,
-        /// Source provenance only; checked memory authority is still required.
+        /// Source origin only; checked memory authority is still required.
         source: super::StatementStoreSource,
     },
     /// Evaluate a compound-assignment or increment target as one lvalue,
@@ -5848,7 +5871,7 @@ pub struct LoopEffectCheck {
     pub(super) effect: LoopEffect,
     pub(super) span: LoopEffectSpan,
     pub(super) context: Option<String>,
-    /// Semantic provenance is typed so diagnostics cannot be mistaken for
+    /// The semantic origin is typed so diagnostics cannot be mistaken for
     /// authority.  Inherited resource frames are replaced by
     /// `validated_ranges` at the function entry before loop proof starts.
     pub(super) origin: LoopEffectOrigin,
@@ -6571,7 +6594,7 @@ impl AggregateLayout {
 /// A [`ProgramFunction`] keeps the implementation body and storage alongside this
 /// value, but all typed call parameters/result metadata, proof binders,
 /// logical clauses, normalized resource terms, effect information, and source
-/// provenance live here.  Keeping this carrier separate from the body is
+/// origins live here.  Keeping this carrier separate from the body is
 /// important for opaque calls: applying a checked summary must not implicitly
 /// execute (or even inspect) the concrete body.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -6748,7 +6771,7 @@ impl ProgramFunction {
     }
 }
 
-/// Source provenance is planning metadata, not part of a function's checked
+/// Source origin is planning metadata, not part of a function's checked
 /// semantic identity. Its vector remains available through the function
 /// accessor, while equality, hashing, and ordering stay neutral so adding a
 /// source map cannot invalidate semantic caches or certificates.
@@ -6785,7 +6808,7 @@ impl Ord for ContractRequirementSources {
     }
 }
 
-// Declaration provenance is retained through instantiation but does not alter
+// Declaration origin is retained through instantiation but does not alter
 // a definition's semantic identity, just like ContractRequirementSources.
 #[derive(Clone, Debug, Default)]
 pub(super) struct PredicateRequirementSource(Option<usize>);
@@ -7334,7 +7357,7 @@ impl VerifiedFunctionRule {
 #[derive(Clone, Debug)]
 pub struct FunctionContract {
     pub(super) name: String,
-    /// Source-name provenance retained only for diagnostics. It is not part
+    /// Source-name origin retained only for diagnostics. It is not part
     /// of the contract identity and cannot alter callback behavior.
     pub(super) callee_name: String,
     pub(super) interface: FunctionContractInterface,
@@ -8065,7 +8088,7 @@ pub enum RuntimeError {
 }
 
 /// The written clause of a refused composite assembly, with the parameter
-/// values at that call. Diagnostic provenance only; it supplies no evidence.
+/// values at that call. Diagnostic metadata only; it supplies no evidence.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct ResourceBodyFactSource {
     pub spelling: String,
@@ -8418,6 +8441,8 @@ pub(super) enum LValueOutcome {
 pub enum StatementOutcome {
     Normal(Box<ExecutionState>),
     Break(Box<ExecutionState>),
+    /// The loop's own test was false; distinct from a written `break`.
+    LoopTestFalse(Box<ExecutionState>),
     Continue(Box<ExecutionState>),
     /// A checked source edge awaiting resumption at its function-owned target.
     Jump {
@@ -8617,7 +8642,7 @@ pub struct ForgottenKnowledge {
     /// something can never re-intern as the state it forgot it from.
     pub(super) forgotten_from: Option<ForgottenFrom>,
     /// Inputs of the most recent branch abstraction. Their exact arena
-    /// identities prevent first-wins provenance from mixing different joins;
+    /// identities prevent first-wins read naming from mixing different joins;
     /// their content hashes keep read names reproducible across sessions.
     /// The persistent set caches its hash and does not retain recursive
     /// state contents. Read projections must retain this identity.
@@ -10449,7 +10474,7 @@ pub(super) struct PopulationEffects {
     /// cannot supply resources to an execution or resource rewrite.
     pub(super) predicate_count_permissions: Option<PredicateCountPermissions>,
 
-    /// Creation provenance is shared out-of-line to keep ExecutionState's recursive
+    /// Creation history is shared out-of-line to keep ExecutionState's recursive
     /// checker stack footprint unchanged. Legacy states use None.
     pub(super) creation: Option<super::population_authority::storage_creation::CreationEvents>,
 }
@@ -10811,7 +10836,7 @@ impl Clone for ResourceContext {
 }
 
 impl ResourceContext {
-    /// Diagnostic provenance only; this never grants ownership or supplies a fact.
+    /// Diagnostic metadata only; this never grants ownership or supplies a fact.
     pub(crate) fn instance_consumption(&self, identity: Variable) -> Option<&InstanceConsumption> {
         self.instance_consumptions.as_ref()?.get(&identity)
     }
@@ -11626,7 +11651,7 @@ impl PublicationRight {
 pub struct MutexIdentity {
     /// `None` is an unbound description at abstract contract entry.
     pub(in crate::kernel) epoch: Option<u64>,
-    /// Bound addresses are immutable diagnostic provenance; only an
+    /// Bound addresses are immutable diagnostic metadata; only an
     /// unbound description's address participates in substitution.
     pub(in crate::kernel) mutex: Pointer,
 }
@@ -11651,7 +11676,7 @@ impl ConditionalMutexGuard {
 }
 
 /// Opaque identity of one use-share resource occurrence. The pointer is
-/// diagnostic provenance, not a constructor for loan authority. Substitution
+/// diagnostic metadata, not a constructor for loan authority. Substitution
 /// must preserve this identity just as it preserves a concrete acquisition.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct MutexUseIdentity {
@@ -12695,7 +12720,7 @@ impl ResourceSpec {
                     {
                         if *state_source == ResourceStateSource::Entry
                             && let ProgramExpression::Variable(name) = argument
-                            && let Some(value) = name.named_in(entry_values)
+                            && let Some(value) = name.metadata_in(entry_values)
                         {
                             *argument = ProgramExpression::Value(value.clone());
                         }
@@ -12846,7 +12871,7 @@ impl ResourceSpec {
     }
 }
 
-// Clause positions are diagnostic provenance, not part of a resource's
+// Clause positions are diagnostic metadata, not part of a resource's
 // identity.  In particular, the same normalized term may occur in a
 // precondition and a postcondition (or in two separately expanded source
 // clauses); changing its source position must not change contract identity,
@@ -14907,7 +14932,7 @@ pub struct ProofObligation {
     pub(super) introductions: Option<Arc<super::LoweringIntroductions>>,
 }
 
-/// Provenance describes the proposition; it never distinguishes two
+/// This metadata describes the proposition; it never distinguishes two
 /// obligations. Comparison, ordering, and hashing therefore read the
 /// checked fields only, so an obligation carrying a recorded chain still
 /// deduplicates against the same obligation built without one.
@@ -14973,12 +14998,12 @@ pub struct ExecutionPureFact {
     pub(super) reference_observation: super::source_access::ReferenceObservationSource,
 }
 
-/// Source events are execution provenance, not part of the proposition's
+/// Source events are execution derivation, not part of the proposition's
 /// semantic identity. Keep them beside the fact while making fact equality
 /// and hashing remain proposition-oriented. Allocate the event list only for
 /// facts carrying source events; ordinary pure facts keep one optional pointer.
 #[derive(Clone, Debug, Default)]
-#[allow(clippy::box_collection)] // Pure facts retain only one optional provenance pointer.
+#[allow(clippy::box_collection)] // Pure facts retain only one optional source-event pointer.
 pub(crate) struct GeneratedLoadSourceEvents(Option<Box<Vec<GeneratedLoadSourceEvent>>>);
 
 impl GeneratedLoadSourceEvents {
@@ -15726,7 +15751,9 @@ impl CallParameters {
             let Some(layout) = parameter.aggregate_layout() else {
                 continue;
             };
-            let slot = entry.locals.aggregate_object_pointer(parameter.name())?;
+            let slot = entry
+                .locals
+                .aggregate_object_pointer(parameter.binding_name().clone())?;
             bound.locals.set_aggregate_object_at(
                 parameter.name().to_string(),
                 layout.clone(),

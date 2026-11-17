@@ -2458,6 +2458,21 @@ multidimensional arrays; each explicit value converts to the unsigned element
 type and omitted elements become zero
 (`mdtests/c_unsigned_array_initializer.md`).
 
+For supported scalar and pointer local-array initializer types, the outer
+bound may be omitted when a non-empty brace initializer determines it:
+`int values[] = {10, 20};` completes to two `int` elements. Runtime initializer
+expressions remain runtime expressions and execute once; only the bound is
+inferred. A completed array's `sizeof` and access bounds use that inferred
+length (`mdtests/c_local_array_initializer_infers_length.md`,
+`mdtests/c_local_array_initializer_inferred_size.md`,
+`mdtests/c_local_array_initializer_inferred_once.md`). Fixed trailing dimensions
+are allowed, as in `int values[][3] = {{1}, {2, 3}};`, and omitted elements
+within each row remain zero-initialized
+(`mdtests/c_local_array_initializer_inferred_nested.md`). An incomplete local
+array without a usable initializer, a missing inner bound, and `sizeof` of
+the array before its type is complete are rejected. Inferred automatic struct
+arrays, string initializers, and designated initializers are not supported.
+
 Scalar local arrays may have multiple fixed dimensions, such as
 `int32 matrix[3][4]`. Click lowers their storage in row-major order while
 retaining the declared element width and each declared dimension. An access

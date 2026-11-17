@@ -156,7 +156,7 @@ pub(in crate::surface::proof) struct CheckedFixedStateFactTransport {
 /// `transport(source, target) using { premises }`.
 ///
 /// Both explicit source check and `Proof::apply_step` call this operation.
-/// It does not mutate surface bookkeeping or proof provenance; it returns the
+/// It does not mutate surface bookkeeping or proof lineage; it returns the
 /// exact checked source and target for those owners to record atomically.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(

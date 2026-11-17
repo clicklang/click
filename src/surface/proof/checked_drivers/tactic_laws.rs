@@ -522,7 +522,7 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
         )
         .map_err(|message| {
             ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: could not lower loop({loop_index}) exit condition provenance: {message}"
+                "`{claim_label}` tactic {tactic_index}: could not lower loop({loop_index}) exit condition: {message}"
             ))
         })?;
         if available_pure_facts.contains(&lowered_exit_condition) {

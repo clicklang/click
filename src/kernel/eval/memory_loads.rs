@@ -811,7 +811,7 @@ fn evaluate_retained_memory_load_case(
             || written.has_initialized_bytes_under(&pointer, value_type.byte_width(), assumptions)
             || assumptions.has_memory_read_defined_evidence(memory, &pointer, value_type));
     // A typed union overlay is the authoritative view for an exact typed
-    // load, including in provenance-sensitive symbolic-load mode. Selecting
+    // load, including in history-sensitive symbolic-load mode. Selecting
     // the raw load first would reinterpret a copied pointer member as an
     // integer and discard its provenance.
     if let Some(value) = memory.known_retained_union_value(&pointer, value_type) {
@@ -833,7 +833,7 @@ fn evaluate_retained_memory_load_case(
         }];
     }
 
-    // Provenance-sensitive lowering asks for the load identity even when this
+    // History-sensitive lowering asks for the load identity even when this
     // state has already materialized the cell's concrete value. Checking
     // `known_value` first would collapse `at(mark, field == 11)` to `true` and
     // erase the address needed for later frame transport.
@@ -1828,7 +1828,7 @@ fn canonicalized_pointer_value_from_int_cell(
     // equalities belong in the graph.
     if purpose != LoadPurpose::Logical
         && !SpecificationReadScope::is_active()
-        && let Some(stored) = crate::kernel::memory_provenance::complete_pointer_read_value(
+        && let Some(stored) = crate::kernel::memory_history::complete_pointer_read_value(
             result.designation(),
             assumptions,
         )
@@ -2067,7 +2067,7 @@ fn canonicalized_retained_symbolic_load_value_with_identity(
     if WordRepresentationScope::keeps_representation()
         && matches!(value_type, ProgramType::Int64 | ProgramType::UInt64)
         && let Some(value @ ProgramValue::PointerInteger(_)) =
-            crate::kernel::memory_provenance::complete_pointer_carrier_read_value(
+            crate::kernel::memory_history::complete_pointer_carrier_read_value(
                 &Pointer::loaded_value(&crate::kernel::intern_memory_ref(memory), &address),
                 assumptions,
             )
@@ -2199,7 +2199,7 @@ fn canonicalized_retained_symbolic_load_value_with_identity(
     if !names_version
         && !SpecificationReadScope::is_active()
         && !assumptions.should_force_symbolic_external_loads()
-        && let Some(stored) = crate::kernel::memory_provenance::complete_pointer_read_retained_value(
+        && let Some(stored) = crate::kernel::memory_history::complete_pointer_read_retained_value(
             complete_read.designation(),
             assumptions,
         )
@@ -3015,7 +3015,7 @@ pub(crate) fn read_over_write_program_value(value: &ProgramValue) -> ProgramValu
 /// The load represented by a load variable minted on this thread.
 /// Reasoning uses this to consult the state lazily: a load variable in
 /// an equality query is viewed as its load exactly where a load term would
-/// have triggered provenance evidence.
+/// have triggered memory-history evidence.
 pub(crate) fn registered_load_for_variable(variable: &Variable) -> Option<(SharedMemory, Pointer)> {
     LOAD_VARIABLE_REGISTRY.with(|registry| {
         registry
@@ -3561,13 +3561,13 @@ pub(crate) fn proposition_mentions_scalar_read(proposition: &Proposition) -> boo
 /// worklists. Shallow terms are memoized; deep terms bypass the recursive
 /// structural key and take the same complete path directly.
 ///
-/// [`canonicalize_atomic_loads`]: crate::kernel::memory_provenance::canonicalize_atomic_loads
+/// [`canonicalize_atomic_loads`]: crate::kernel::memory_history::canonicalize_atomic_loads
 pub(crate) fn canonical_term(term: &MachineTerm) -> MachineTerm {
-    let cacheable = crate::kernel::memory_provenance::term_is_shallow_structural_cache_key(term);
+    let cacheable = crate::kernel::memory_history::term_is_shallow_structural_cache_key(term);
     if cacheable && let Some(hit) = TERM_CACHE.with(|cache| cache.borrow().get(term).cloned()) {
         return hit;
     }
-    let structural = crate::kernel::memory_provenance::canonicalize_atomic_loads(term);
+    let structural = crate::kernel::memory_history::canonicalize_atomic_loads(term);
     // Register the live observation before its projected form can claim the
     // load's origin. Keep the established projected canonical identity.
     if matches!(term, MachineTerm::MemoryLoad(..))
@@ -4614,7 +4614,7 @@ pub(crate) mod duplicate_read_names {
         let empty = PureFactContext::new();
         let duplicate = earlier.iter().any(|earlier| {
             !(stored.is_some() && earlier.memory().known_value(pointer) == stored)
-                && crate::kernel::memory_provenance::checked_atomic_load_equality(
+                && crate::kernel::memory_history::checked_atomic_load_equality(
                     &read(earlier),
                     &read(version),
                     &empty,
@@ -4842,7 +4842,7 @@ pub(crate) fn latest_scalar_read_observation(read: &MachineTerm) -> Option<Machi
     read_observations::latest(read)
 }
 
-/// Returns the load variable for a load term's provenance-stable form.
+/// Returns the load variable for a load term's history-stable form.
 /// The term is first canonicalized without assumptions, resolving cached
 /// cells and state representation differences. The same cell loaded at
 /// different symbolic states therefore shares one load variable whenever
@@ -4881,7 +4881,7 @@ pub(crate) fn load_variable_for_term(bits: &MachineTerm) -> Option<(Variable, Ma
 }
 
 fn load_variable_for_term_uncached(bits: &MachineTerm) -> Option<(Variable, MachineTerm)> {
-    let canonical = crate::kernel::memory_provenance::canonicalize_atomic_loads(bits);
+    let canonical = crate::kernel::memory_history::canonicalize_atomic_loads(bits);
     if let MachineTerm::MemoryLoad(memory, pointer, kind) = &canonical {
         let MachineTerm::MemoryLoad(origin, _, _) = bits else {
             unreachable!("the pattern above matched a memory load");
@@ -5737,7 +5737,7 @@ mod tests {
             crate::kernel::equality_graph::logical_pointer_read_term(pointer.pointer()).is_some()
         );
         assert!(
-            crate::kernel::memory_provenance::checked_pointer_read_endpoint(
+            crate::kernel::memory_history::checked_pointer_read_endpoint(
                 pointer.pointer(),
                 &context
             )
@@ -5755,7 +5755,7 @@ mod tests {
         // variable minted then does.
         assert!(pointer.pointer().as_loaded_value().is_none());
         assert!(
-            crate::kernel::memory_provenance::checked_pointer_read_endpoint(
+            crate::kernel::memory_history::checked_pointer_read_endpoint(
                 pointer.pointer(),
                 &context
             )
@@ -6652,7 +6652,7 @@ mod tests {
     }
 
     #[test]
-    fn transported_equal_equation_from_a_new_epoch_drops_producer_provenance() {
+    fn transported_equal_equation_from_a_new_epoch_drops_producer_source_events() {
         let pointer = Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(20),
@@ -8641,7 +8641,7 @@ mod tests {
             Box::new(address.clone()),
             LoadKind::Int32,
         );
-        let projected = crate::kernel::memory_provenance::canonicalize_atomic_loads_deep(&original);
+        let projected = crate::kernel::memory_history::canonicalize_atomic_loads_deep(&original);
         let MachineTerm::MemoryLoad(projected, _, _) = projected else {
             panic!("an unresolved aliased read must remain a load");
         };

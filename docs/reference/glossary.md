@@ -17,8 +17,8 @@ The proof artifacts are also distinct. A **proof clause** contains source
 syntax, usually a **proof script**. Checking advances the **proof state**
 through checked transitions. Internally, the kernel's persistent **proof
 object** owns that semantic state, its branches, and its focus; separate
-**proof provenance** records the surface-expressible operations that produced
-checked successors. Expansion can serialize selected provenance as an explicit
+**proof lineage** records the surface-expressible operations that produced
+checked successors. Expansion can serialize selected lineage as an explicit
 proof, sometimes called a **certificate**. Some kernel rules also produce typed
 **kernel derivations** as standalone proof authority.
 
@@ -362,7 +362,7 @@ proof](#fixed-state-proof), which can reason about C state without advancing it.
 ### Expansion
 
 Replacement of smart proof syntax with an explicit proof extracted from its
-proof provenance. Click verifies the complete rewritten source. See
+proof lineage. Click verifies the complete rewritten source. See
 [Expansion](../concepts/expansion.md).
 
 ## F
@@ -653,7 +653,7 @@ See [Memory derivation DAG](../internals/memory-dag.md).
 An execution fact retained specifically as evidence about a memory transition,
 such as a mutation summary, a completed free, or theorem-backed fact transport.
 These facts survive the public-execution-fact projection because later frame
-and transport checks need their provenance. They are a subset of execution
+and transport checks need their derivations. They are a subset of execution
 facts, not contract clauses.
 
 ### Memory range
@@ -838,14 +838,14 @@ syntax, a proof mark is not a `step_until` target, and it is not a
 The kernel-owned persistent representation of open proof branches, semantic
 state, and focus during proof construction. Each checked transition returns a
 new proof object that structurally shares unchanged state with its ancestor.
-Surface-language context and proof provenance live outside the kernel handle.
+Surface-language context and proof lineage live outside the kernel handle.
 Proof authors interact with the [proof state](#proof-state), not with this
 implementation object.
 
-### Proof provenance
+### Proof lineage
 
 The language-layer record of which surface-expressible checked operations lead
-from one proof object to a successor. Provenance can be filtered by source
+from one proof object to a successor. Lineage can be filtered by source
 occurrence and serialized as a certificate for expansion. It describes a
 checked transition lineage but is not semantic state or proof authority.
 
@@ -1007,7 +1007,7 @@ A `.click` file associated with existing C source. It adds specifications and
 
 A deterministic proof-state operation checked directly without heuristic
 planning or search. Its accepted surface operation is retained in separate
-proof provenance. Checking must be fast and output-sensitive, using indexed
+proof lineage. Checking must be fast and output-sensitive, using indexed
 ambient context rather than scanning unrelated state. See [Smart and simple
 tactics](../concepts/smart-and-simple-tactics.md).
 

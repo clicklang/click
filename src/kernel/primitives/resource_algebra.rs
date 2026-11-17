@@ -303,7 +303,7 @@ fn extend_related_memory_base_roots(
     ) = match &atom {
         PointerOffsetTerm::Int32Scaled { value, byte_width } => {
             (value, (false, *byte_width, false), &|member| {
-                crate::kernel::memory_provenance::rebuild_scaled_pointer_index(
+                crate::kernel::memory_history::rebuild_scaled_pointer_index(
                     member,
                     *byte_width,
                     None,
@@ -315,7 +315,7 @@ fn extend_related_memory_base_roots(
             byte_width,
             unsigned,
         } => (value, (true, *byte_width, *unsigned), &|member| {
-            crate::kernel::memory_provenance::rebuild_scaled_pointer_index(
+            crate::kernel::memory_history::rebuild_scaled_pointer_index(
                 member,
                 *byte_width,
                 Some(*unsigned),
@@ -670,6 +670,7 @@ impl ResourceContextIndex {
                 PointerBlock::Concrete(_)
                     | PointerBlock::StaticObject { .. }
                     | PointerBlock::AutomaticLocal { .. }
+                    | PointerBlock::ReferenceCarrier { .. }
             ) {
                 result.nonconcrete_memory_count += 1;
             }
@@ -1024,6 +1025,7 @@ impl ResourceContextIndex {
                 PointerBlock::Concrete(_)
                     | PointerBlock::StaticObject { .. }
                     | PointerBlock::AutomaticLocal { .. }
+                    | PointerBlock::ReferenceCarrier { .. }
             ) {
                 result.nonconcrete_memory_count -= 1;
             }
@@ -3831,7 +3833,7 @@ impl ResourceContext {
     /// Reserve a constant-length owned footprint from its live byte fragments. Each
     /// step checks and consumes the actual indexed occurrence; a view, gap,
     /// stale occurrence, or unsupported coordinate proves no ownership. The
-    /// returned provenance retains every supplier rather than inventing a
+    /// returned support retains every supplier rather than inventing a
     /// single owner for the joined range. Work follows the consumed fragments,
     /// with logarithmic queries and edits, not unrelated memory in the block.
     #[cfg(test)]
@@ -4109,7 +4111,7 @@ impl ResourceContext {
     /// A supported projection is not an independent capability. It is an
     /// observation published from one exact owned occurrence, indexed under
     /// it, and dropped when that occurrence is consumed or its memory support
-    /// is invalidated. Provenance decisions therefore use this record instead
+    /// is invalidated. Support decisions therefore use this record instead
     /// of asking whether some owner in the frame happens to satisfy the fact:
     /// an equal owner is not the owner a projection came from, and a view
     /// justified by equality alone would survive that owner's consumption.
@@ -4241,7 +4243,7 @@ impl ResourceContext {
             current = derivation.base().clone();
         }
         if !reached_before {
-            // A provenance barrier (for example an interface join) has no
+            // A history barrier (for example an interface join) has no
             // typed write set.  Only memory-qualified projections are stale;
             // the entry index bounds this conservative cleanup.
             for occurrence in self.storage.support_metadata_by_projection.keys() {

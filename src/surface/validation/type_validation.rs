@@ -4427,6 +4427,10 @@ pub(in crate::surface) fn infer_program_expression_type(
         )),
         ProgramExpression::Value(ProgramValue::Pointer(_)) => None,
         ProgramExpression::Variable(name) => match name {
+            crate::kernel::BindingName::ReferenceCarrier(referent) => variables
+                .get(name)
+                .or_else(|| variables.get(referent.as_ref()))
+                .copied(),
             crate::kernel::BindingName::Named(_) | crate::kernel::BindingName::Generated(_) => {
                 variables.get(name).copied()
             }

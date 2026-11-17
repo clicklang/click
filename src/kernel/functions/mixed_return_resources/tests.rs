@@ -738,7 +738,7 @@ fn raw_composition_does_not_exercise_a_consumed_occurrences_transfer() {
 }
 
 #[test]
-fn single_source_provenance_stays_aligned_after_a_joined_borrow() {
+fn single_source_origin_stays_aligned_after_a_joined_borrow() {
     use crate::kernel::program_expression::{int32_literal, variable};
     let _session = crate::kernel::VerificationSession::enter();
     let facts = PureFactContext::new();
@@ -1575,7 +1575,7 @@ fn composite_children_carry_consumed_sources_selected_before_return_lowering() {
 }
 
 #[test]
-fn invariant_borrowed_children_retain_provenance_without_granting_it_to_descriptions() {
+fn invariant_borrowed_children_retain_origin_without_granting_it_to_descriptions() {
     let facts = PureFactContext::new();
     let pointer = Pointer::symbolic(Variable(8_819_201));
     let function = nested_transfer_function(3);

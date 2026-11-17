@@ -294,7 +294,7 @@ reallocating call added one nested heap-extent proof to relate the two.
 
 Where the cell column names a gate, the answer is one a scope decides rather
 than the edge. `extended_dag_bridging_active` and `explicit_dag_check_active`
-(`src/kernel/memory_provenance.rs`) are scoped flags, set for the duration of
+(`src/kernel/memory_history.rs`) are scoped flags, set for the duration of
 the memory-load prover and of explicit certificate validation and cleared
 outside them. The wider answers are confined to those scopes because the
 narrower ones are what execution pruning, load canonicalization and `solve`
@@ -488,7 +488,7 @@ them without losing every pair the DAG does not connect.
 
 | Site | Class | Note |
 | --- | --- | --- |
-| `memory_load_is_directly_unchanged`, `memories_directly_match_for_pointer_load` `src/kernel/memory_provenance.rs` | disagrees | The transport rule. It already asks the tracker as one disjunct — two states that name the cell by one point hold the same cell — and the rest reads `MemoryMutatesOnly`, `MemoryEffectSummary` and `HeapAllocationFreed` over *stated* endpoints. Its per-write ladder is the same four predicates the rule's `Store` arm uses, applied to a stated write list. |
+| `memory_load_is_directly_unchanged`, `memories_directly_match_for_pointer_load` `src/kernel/memory_history.rs` | disagrees | The transport rule. It already asks the tracker as one disjunct — two states that name the cell by one point hold the same cell — and the rest reads `MemoryMutatesOnly`, `MemoryEffectSummary` and `HeapAllocationFreed` over *stated* endpoints. Its per-write ladder is the same four predicates the rule's `Store` arm uses, applied to a stated write list. |
 | `memories_match_for_pointer_load` `src/kernel/reasoning/memory_resolution.rs` | disagrees | Assumption-free structural agreement about one load: the same forgotten-source identity; equal extents for every object the load may designate plus equal havoc markers; agreement about retirement tombstones and all load-observable heap lifetime, initialization and implicit-zero metadata; and equal cells and union cells under `observable_by_load`. Decides pairs with no common ancestor. |
 | `memory_states_match_for_resolution`, `memory_states_proven_equal_at_pointer`, `memories_match_for_pointer_load_bounded_alias`, `memories_match_for_pointer_load_under_assumptions` `src/kernel/reasoning/memory_resolution.rs` | disagrees | The same question with assumptions: every cell the two states differ on must both miss the load's bytes and be proven distinct from the load. All refuse a load whose own block is `local:`, and all select the cells to check with `cell_is_observable_by_load`, the one filter — *not*, as they used to, by dropping every differing `local:` cell unasked. See below. The second is a thin name for the first, so that a caller asking "are these two states one state as far as this pointer is concerned" reads as that question rather than as a resolution internal. |
 | `state_objects_agree`, `retirements_agree_for_load` | separation | The object half, as against the values in the cells: an extent is what says an object is there and how big it is, and a tombstone is the only record that an automatic object's lifetime ended once its cells are gone. The first is the assumption-carrying comparisons' extent check, and the only extents it leaves out are the ones `local_block_no_pointer_can_reach` allows. The second is the tombstone check, which all four comparisons ask, and it allows a difference only where the load's block is proven distinct from the retired object or no pointer value in the program designates it — two exclusions, each catching what the other does not. A load through a stale alias is exactly the load these comparisons are asked about, which is why neither half may be skipped on a representation. |
@@ -513,7 +513,7 @@ no store happened, and reading it as such made `*q` provably equal to
 `old(q[0])` across a one-byte write into the same `int32`.
 
 So the loads' recorded history is asked first, and it can refuse. One
-memoized query, `recorded_load_history` in `src/kernel/memory_provenance.rs`,
+memoized query, `recorded_load_history` in `src/kernel/memory_history.rs`,
 answers for a pair of states and a pointer:
 
 | Answer | What the history established | What the state routes may do |
@@ -580,7 +580,7 @@ that a fix lands in one of them rather than beside it.
 | `PointerBlock::proven_distinct`, `may_alias`, `observable_by_load`; `Pointer::blocks_proven_distinct`; `block_is_never_address_taken_local` | `src/kernel/primitives.rs` |
 | `pointers_proven_distinct_for_memory_resolution`, `pointers_distinct_through_one_exact_alias`, `never_address_taken_local_versus_pointer_value`, `pointer_offsets_with_common_base_proven_distinct` and its `_distinctness_condition`, `cell_disjoint_from_load_by_constant_offset`, `cell_is_observable_by_load`, `local_block_no_pointer_can_reach` | `src/kernel/reasoning/memory_resolution.rs` |
 | `range_proven_disjoint_from_pointer`, `ranges_proven_disjoint_from_pointer`, `ranges_directly_disjoint_from_pointer`, `pointers_directly_disjoint_by_range`, `pointers_proven_disjoint_by_explicit_range_for_memory_resolution`, `pointers_proven_disjoint_by_shallow_explicit_range` | `src/kernel/assumptions/memory_reasoning.rs` |
-| `typed_store_separated_ranges_evidence`, `typed_range_disjoint_from_pointer_evidence`, `typed_ranges_disjoint_from_pointer_evidence`, `heap_allocation_proven_separate_from_pointer`, `owned_composition_store_separated_evidence` | `src/kernel/memory_provenance.rs` |
+| `typed_store_separated_ranges_evidence`, `typed_range_disjoint_from_pointer_evidence`, `typed_ranges_disjoint_from_pointer_evidence`, `heap_allocation_proven_separate_from_pointer`, `owned_composition_store_separated_evidence` | `src/kernel/memory_history.rs` |
 | `memory_block_may_alias`, `memory_range_overlaps_pointer`, `memory_ranges_overlap`, `proves_resource_separate`, `proves_owned_range_separate_from_pointer_with`, `resources_structurally_separate` | `src/kernel/primitives/resource_algebra.rs` |
 | `MemoryLoadAliasCache::resolution_distinct` | `src/kernel/eval/memory_loads.rs` — a per-load memo over the first of these, not a rule of its own |
 
@@ -930,7 +930,7 @@ says the two hold disjoint bytes; `value` is an `ExternalArgument` address and
 `result` is a pointer a callback returned, so nothing structural relates them
 and no offset cancels, and ownership is the only thing that tells them apart.
 
-`memory_provenance::owned_composition_store_separated_evidence` is the rule:
+`memory_history::owned_composition_store_separated_evidence` is the rule:
 a store is separate from a load when one composition in the context owns the
 written address and the read address through **different members**. Three
 things make it the narrow claim it is.
@@ -962,7 +962,7 @@ things make it the narrow claim it is.
 
 It sits **last**, after every cheaper check, at the four places the
 store-versus-load question is asked: the tracker's `Store` arm, the two
-transport sites in `memory_provenance` (`memories_directly_match_for_pointer_load`
+transport sites in `memory_history` (`memories_directly_match_for_pointer_load`
 and the `MemoryMutatesOnly` arm of `memory_load_is_directly_unchanged`), and
 `Memory::without_possible_aliasing_cells`. The last of those is the one that
 decides `c_contract_executes_acquire`, and it is not optional: once a store has
@@ -1615,7 +1615,7 @@ permitted stores or a transition that drops the fact:
   conditional bodies. `ConstructedReturnBodies` retains each child's producer-assigned ID
   and parent, before normalization. Fixed consumed-input paths are selected
   from contract parameter bindings at entry; invariant borrowed footprints
-  and actual allocation provenance supply the other explicit transfers.
+  and actual allocation origin supply the other explicit transfers.
   Post-call loads do not acquire invariant-borrow authority. Body custody,
   allocation extent and lifetime checks still apply to executed returns.
   Admission uses only the remaining unclassified ownership boundary, so cold
@@ -1676,7 +1676,7 @@ permitted stores or a transition that drops the fact:
   A selected definition's word-origin relations are indexed once, and argument
   identity is hashed once rather than once per witness. A witness-dependent memory description
   receives no invariant-parameter borrow or consumed-input custody. Only its
-  actual fresh-allocation provenance can grant allocation custody. This
+  actual fresh-allocation origin can grant allocation custody. This
   fragment never selects a witness from held composite children. Its optional
   normalization reads written endpoints/exact resource keys, selecting one
   neighbour per key without enumerating aliases or endpoint classes. A missed

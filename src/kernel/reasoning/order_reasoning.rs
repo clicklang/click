@@ -1209,7 +1209,7 @@ fn exact_fold_endpoint_equality(
         let Some(source) = assumptions.selected_comparison_source(&condition, true) else {
             return false;
         };
-        crate::kernel::assumptions::record_implicit_reasoning_provenance(assumptions, source);
+        crate::kernel::assumptions::record_implicit_consulted_premises(assumptions, source);
         true
     };
     stated(condition(left, right)) || stated(condition(right, left))
@@ -1820,12 +1820,9 @@ mod retained_fold_endpoint_tests {
                 )
             };
             assert!(!equal(&empty));
-            let (proved, sources) =
-                crate::kernel::assumptions::collect_reasoning_provenance(|| {
-                    crate::kernel::assumptions::capture_implicit_reasoning_provenance(|| {
-                        equal(&known)
-                    })
-                });
+            let (proved, sources) = crate::kernel::assumptions::collect_consulted_premises(|| {
+                crate::kernel::assumptions::capture_implicit_consulted_premises(|| equal(&known))
+            });
             assert!(proved, "{format:?}");
             assert_eq!(sources, vec![original.clone()]);
             assert!(!equal(&refuted));

@@ -22,8 +22,8 @@ use pinned_clang::{output, pinned_clang, sha256};
 
 const ARCHIVE: &[u8] =
     include_bytes!("../integrations/bitcoin-core-money-range/input-closure.tar.gz");
-const PROVENANCE: &str =
-    include_str!("../integrations/bitcoin-core-money-range/fixture-provenance.json");
+const FIXTURE_MANIFEST: &str =
+    include_str!("../integrations/bitcoin-core-money-range/fixture-manifest.json");
 const COMMAND: &str =
     include_str!("../integrations/bitcoin-core-money-range/feerate-command.json.in");
 const SIDECAR: &str = include_str!("../integrations/bitcoin-core-money-range/MoneyRange.click");
@@ -1630,7 +1630,7 @@ fn pinned_byte_template_metadata_and_span_authority_are_checked() {
 #[test]
 #[ignore = "nightly: 16s in the parallel gate"]
 fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
-    let manifest: serde_json::Value = serde_json::from_str(PROVENANCE).unwrap();
+    let manifest: serde_json::Value = serde_json::from_str(FIXTURE_MANIFEST).unwrap();
     assert_eq!(
         manifest["bitcoin_commit"],
         "9be056a8a72b624dae9623b2f7bded92c2a21c91"
@@ -5095,8 +5095,8 @@ bitcoin_read32_control_case!(
 );
 const STREAMS_SUPPLEMENT: &[u8] =
     include_bytes!("../integrations/bitcoin-core-money-range/streams-input-supplement.tar.gz");
-const STREAMS_PROVENANCE: &str =
-    include_str!("../integrations/bitcoin-core-money-range/streams-input-provenance.json");
+const STREAMS_MANIFEST: &str =
+    include_str!("../integrations/bitcoin-core-money-range/streams-input-manifest.json");
 const SPANREADER_IGNORE_CPP: &str =
     include_str!("../integrations/bitcoin-core-money-range/SpanReaderIgnore.cpp");
 
@@ -5106,14 +5106,16 @@ fn pinned_streams_fixture(name: &str) -> (PathBuf, PreparedCppImport) {
         std::process::id()
     ));
     fs::create_dir(&root).unwrap();
-    let provenance: serde_json::Value = serde_json::from_str(STREAMS_PROVENANCE).unwrap();
+    let streams_manifest: serde_json::Value = serde_json::from_str(STREAMS_MANIFEST).unwrap();
     assert_eq!(
         sha256(ARCHIVE),
-        provenance["base_input_closure_sha256"].as_str().unwrap()
+        streams_manifest["base_input_closure_sha256"]
+            .as_str()
+            .unwrap()
     );
     assert_eq!(
         sha256(STREAMS_SUPPLEMENT),
-        provenance["supplement_sha256"].as_str().unwrap()
+        streams_manifest["supplement_sha256"].as_str().unwrap()
     );
     for (name, bytes) in [
         ("base.tar.gz", ARCHIVE),
@@ -5134,7 +5136,7 @@ fn pinned_streams_fixture(name: &str) -> (PathBuf, PreparedCppImport) {
                 .success()
         );
     }
-    for (path, digest) in provenance["files"].as_object().unwrap() {
+    for (path, digest) in streams_manifest["files"].as_object().unwrap() {
         assert_eq!(
             sha256(&fs::read(root.join(path)).unwrap()),
             digest.as_str().unwrap()

@@ -541,7 +541,7 @@ CI and the merge queue also check each delivered slice.
 | `SpecCallArgument::into_payload`, disabled-retention evaluation and unsupported/native scalar branches | Typed shared call assembly uses `into_typed_call_operand`; native call consumers and parity controls keep explicit payload conversion. Unsupported forms retain their established refusal, rather than gaining inferred types or new semantics. 9l–9q cover retained/native parity, conversion bounds, raw words and complete pointer casts. |
 | `retained_syntax.rs`: mixed algebraic Call/Read arguments | Selected imports preserve the existing common-root argument comparison, which differs from native syntax comparison. 9t explicitly tests that distinction and constant-work refusal of unsupported growing payloads. |
 | `retained_syntax/pointers.rs`: extent widths and opaque index leaves | Width certification preserves native-syntax admission; opaque leaves preserve the old exporter's reading. 9u tests complete metadata, captured memory, unsupported width/index refusal and shared-address DAG scaling. |
-| `contract_claims.rs`, `execution_value.rs`: memory/provenance equality, exceptional-signature checks, exact outcome refresh | These selected consumers retain their existing native equality/admission policies. Storage identity is not substituted for exact native syntax. 9v–9w cover native binding parity, exact refresh refusal, publication ownership and constant-work retained result handoffs. |
+| `contract_claims.rs`, `execution_value.rs`: memory/history equality, exceptional-signature checks, exact outcome refresh | These selected consumers retain their existing native equality/admission policies. Storage identity is not substituted for exact native syntax. 9v–9w cover native binding parity, exact refresh refusal, publication ownership and constant-work retained result handoffs. |
 | `FixedStateFrame`, fixed-state/resource lowering and native theorem bindings | Frames borrow the retained carrier; native allocation/resource/embedded-value consumers request a compatibility view. 9w–9x cover unchanged native outputs, guards, explicit expansion/replay and zero-export retained capture. |
 | `program_evaluate_speprogram_expression_at_state`, strict resource evaluation, resource-field storage | The public native API retains its signature. Strict resource evaluation keeps its distinct checked-load contract. 9y removes the superseded private capture entry point after the final resource-field caller uses the common path, preserving obligations and wrong-type refusal. |
 | Cached native values, native Eq/Ord/Hash and opaque leaves | The 8ad inventory still applies to exact raw C words, complete pointer-integer records, unknown untyped intrinsics and observation descriptors. Removing duplicate native storage and migrating its key consumers is package 10; it is not claimed complete here. |
@@ -897,7 +897,7 @@ are covered. The shared Boolean matcher also restores the native exact-equality
 precedence before load authority: an identical guard, including comparison-format
 equivalences, does not need permission to match its own read. That preliminary
 check reuses the existing immutable machine syntax memo. All 1,679 selected tests
-passed, including every scaling test, memory provenance and shared load-atom
+passed, including every scaling test, memory history and shared load-atom
 comparison selections, with exit status 0. The CI-quality check passed.
 
 8g (merged [PR #2813](https://github.com/clicklang/click/pull/2813)) replaces the whole-condition pointer-offset equality fallback with a typed
@@ -1040,7 +1040,7 @@ preserve the producer root. A byte write that assembles a wider integer keeps
 that integer result, and changed-type conversions keep their existing behavior.
 General native output and replacement of compatibility keys remain later work.
 Validation: all 1,898 integration tests passed, including every scaling test,
-preservation proofs and memory provenance,
+preservation proofs and memory history,
 Boolean storage key agreement, actual statement stores and memory reloads,
 temporary result receipts, byte-view cases and existing pointer handoffs.
 Growing-prefix storage and retrieval perform no operand traversal or numeric
@@ -1604,7 +1604,7 @@ Surface spelling and dependency readers retain their prior payload policies.
 
 7o retains numeric pointer address observations with their exact object-class
 annotations. Explicit numeric projection of a complete pointer-to-integer value
-produces a common observation; its provenance record remains execution metadata.
+produces a common observation; its origin record remains execution metadata.
 Numeric observation identity still ignores annotations, while complete-value
 transport preserves them. Pointer differences keep the existing same-object/stride
 checker and common numeric result admission. Native index admission is unchanged;
@@ -2386,7 +2386,7 @@ The traits cannot yet be deleted. In particular:
   checking-only simplifier memoizes shared DAG nodes; it does not change lowering.
 - Difference-graph offset equality/residue, variable-chain index recognition,
   alignment factor inspection, store-gap roots and scope roots use operand views.
-  Memory/binder walkers select retained leaves; memory provenance preserves
+  Memory/binder walkers select retained leaves; memory history preserves
   first-occurrence candidate order. Proof-fact atom collection reuses its shared
   collector. Load-presence queries use syntax summaries, without enumerating
   growing free-variable sets.
@@ -2532,7 +2532,7 @@ The remaining locations divide into these concrete groups:
 
 | Group | Remaining routes | Disposition |
 | --- | --- | --- |
-| Read/address checking | `memory_resolution` offset matching, exact-index materialization and selected read payloads; `memory_provenance` framed transport and exact-load normalization are closed below | Live checker migration; shared outer arithmetic does not eliminate native address children |
+| Read/address checking | `memory_resolution` offset matching, exact-index materialization and selected read payloads; `memory_history` framed transport and exact-load normalization are closed below | Live checker migration; shared outer arithmetic does not eliminate native address children |
 | Wide indices and shallow pointer checks | Wide access reconstruction, strided-region membership, offset transport and fold-read summaries are closed below; state equivalence and `pointer_block_bounds` remain | Retain width, signedness and exactness rules while closing the remaining callers |
 | Pointer fact/rewrite payloads | `arithmetic_special`, `equality_rewrite`, `fact_reasoning`, pointer-offset substitution and execution facts; state-blind and alpha pointer-index fact keys are closed below | Mixed construction/checking boundaries; migrate expression children without changing pointer semantics |
 | Resource and state construction | quantified cells, memory-base roots, initialized-byte spelling, havoc identity, memory-load range collection | Mixed producer/checker boundaries, not merely printing |
@@ -2862,7 +2862,7 @@ and refusal paths. Cold repeated-child DAGs at 16, 64 and 256 nodes retain
 near-linear deterministic work with zero machine-tree exports through the actual
 pointer-offset entry point, for signed 32-bit and signed/unsigned wide indices.
 The broader selected run passed 1,713 tests, including all nonignored scaling
-tests, memory provenance, rewriting, transport API, documentation and search
+tests, memory history, rewriting, transport API, documentation and search
 boundaries, using the gate's existing 8 MiB test-thread stack. Formatting and
 documentation rendering passed; advisory Vale lint was unavailable. The full
 integration gate and nightly suite were not run locally; CI and the merge queue
@@ -2882,7 +2882,7 @@ exporting their shared arithmetic; rebuilding its normalized chain charges work
 for the selected atoms and produced nodes.
 
 Validation: all 1,721 selected tests passed on the rebased change, including all
-nonignored scaling tests, memory provenance, equality/term rewriting, transport
+nonignored scaling tests, memory history, equality/term rewriting, transport
 API, documentation and search-boundary checks. The run used the existing 8 MiB
 test-thread stack; compilation took 5m07s and tests took 116s (two slow notices).
 The five new regressions cover native constructor parity, state/kind/context

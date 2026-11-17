@@ -533,8 +533,8 @@ fn shared_bound_source_selection_uses_existing_index_across_branches() {
                     .exact_observation_source(&goal, false),
                 None
             );
-            let (_, used) = collect_reasoning_provenance(|| {
-                record_reasoning_provenance(&parent, &Proposition::ConditionIs(goal.clone(), true));
+            let (_, used) = collect_consulted_premises(|| {
+                record_consulted_premises(&parent, &Proposition::ConditionIs(goal.clone(), true));
             });
             assert_eq!(used, vec![source.clone()]);
         });

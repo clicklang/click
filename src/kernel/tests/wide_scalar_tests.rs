@@ -809,7 +809,7 @@ fn wide_cached_load_canonicalization_preserves_kind_and_all_bits() {
             LoadKind::Bits64,
         );
         assert!(
-            !crate::kernel::memory_provenance::wide_loads_have_same_canonical_value(
+            !crate::kernel::memory_history::wide_loads_have_same_canonical_value(
                 &changed,
                 &load(LoadKind::Bits64),
                 &PureFactContext::new()

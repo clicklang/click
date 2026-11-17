@@ -248,7 +248,7 @@ int fill_parallel(int output[4]) {
         have forall (k: int32) {
             first_job.begin <= k and k < first_job.end implies first_job.output[k] == first_job.value
         } by {
-            intro() as k;
+            let k = intro();
             intro();
             have 0 <= k by { rewrite(0, first_job.begin); known(); }
             have k < 2 by { rewrite(2, first_job.end); known(); }
@@ -283,7 +283,7 @@ int fill_parallel(int output[4]) {
     have forall (k: int32) {
         first_job.begin <= k and k < first_job.end implies first_job.output[k] == first_job.value
     } by {
-        intro() as k;
+        let k = intro();
         intro();
         have 0 <= k by { rewrite(0, first_job.begin); known(); }
         have k < 2 by { rewrite(2, first_job.end); known(); }

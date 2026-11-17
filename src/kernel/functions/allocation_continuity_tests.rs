@@ -81,7 +81,7 @@ fn continuity_refuses_extents_of_different_formats() {
 }
 
 #[test]
-fn contract_retirement_invalidates_creation_provenance_even_with_replacement() {
+fn contract_retirement_invalidates_creation_history_even_with_replacement() {
     let base = Pointer {
         block: PointerBlock::Heap(930_100),
         offset: PointerOffsetTerm::Constant(0),

@@ -35,7 +35,7 @@ fn graph_for_memory_query(assumptions: &PureFactContext, pointer: &Pointer) -> E
             offset: PointerOffsetTerm::Constant(0),
         };
         if let Some(stored) =
-            crate::kernel::memory_provenance::checked_pointer_read_stored_value(&read, assumptions)
+            crate::kernel::memory_history::checked_pointer_read_stored_value(&read, assumptions)
         {
             graph.add_checked_read_equality(&read, &stored);
         }
@@ -58,10 +58,8 @@ fn graph_for_memory_query(assumptions: &PureFactContext, pointer: &Pointer) -> E
         if assumptions
             .retained_pointer_read_application(&selected)
             .is_some()
-            && let Some(endpoint) = crate::kernel::memory_provenance::checked_pointer_read_endpoint(
-                &selected,
-                assumptions,
-            )
+            && let Some(endpoint) =
+                crate::kernel::memory_history::checked_pointer_read_endpoint(&selected, assumptions)
         {
             graph.add_checked_read_equality(&selected, &endpoint);
         }
@@ -1295,7 +1293,7 @@ impl MemoryFactEntries {
                             block: root.block,
                             offset: PointerOffsetTerm::add(
                                 root.offset,
-                                crate::kernel::memory_provenance::rebuild_scaled_pointer_index(
+                                crate::kernel::memory_history::rebuild_scaled_pointer_index(
                                     end,
                                     i64::from(available.element_width()),
                                     Some(true),
@@ -2873,10 +2871,9 @@ impl ResourceContext {
         // The derived numeric union is confined to this selected query.
         // Coverage and ownership still check the live supplier before use.
         let graph = assumptions.equality_graph.clone();
-        if let Some(endpoint) = crate::kernel::memory_provenance::checked_pointer_read_endpoint(
-            range.base(),
-            assumptions,
-        ) {
+        if let Some(endpoint) =
+            crate::kernel::memory_history::checked_pointer_read_endpoint(range.base(), assumptions)
+        {
             graph.add_checked_read_equality(range.base(), &endpoint);
         }
         let index =

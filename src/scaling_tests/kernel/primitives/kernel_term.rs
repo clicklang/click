@@ -1225,7 +1225,7 @@ fn refused_boolean_transport_does_not_export_shared_guard_prefixes() {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {
                 assert!(
-                    crate::kernel::memory_provenance::transport_framed_common_condition(
+                    crate::kernel::memory_history::transport_framed_common_condition(
                         &root,
                         &Memory::new(),
                         None
@@ -1260,7 +1260,7 @@ fn boolean_transport_keeps_shared_arithmetic_operands() {
             KernelTerm::boolean_comparison_raw(format, CompareRelation::LessThan, [operand, zero]);
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let actual = crate::kernel::memory_provenance::transport_framed_common_condition(
+            let actual = crate::kernel::memory_history::transport_framed_common_condition(
                 &guard,
                 &Memory::new(),
                 None,

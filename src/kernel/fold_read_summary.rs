@@ -1366,7 +1366,7 @@ fn separated_by_stated_fact(
             let holds =
                 oriented && !assumptions.memory_ranges_overlap_after_base_equality(left, right);
             if holds {
-                crate::kernel::record_implicit_reasoning_provenance(assumptions, proposition);
+                crate::kernel::record_implicit_consulted_premises(assumptions, proposition);
             }
             holds
         })

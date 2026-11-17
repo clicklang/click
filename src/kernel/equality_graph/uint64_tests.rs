@@ -280,7 +280,7 @@ fn a_wide_read_requires_an_explicit_store_equation_even_through_aliases() {
         "an address equality must not import a cached value"
     );
     let equation =
-        crate::kernel::memory_provenance::store_value_equation(after.memory(), &stored_at, &value)
+        crate::kernel::memory_history::store_value_equation(after.memory(), &stored_at, &value)
             .expect("wide store equation");
     let established = aliased.clone().assume_proposition(equation.clone());
     assert!(established.equality_graph.are_uint64_equal(&read, &five));
@@ -332,7 +332,7 @@ fn raw_wide_read_requires_its_explicit_store_equation() {
         "raw reads must not recover cached values"
     );
     let equation =
-        crate::kernel::memory_provenance::store_value_equation(after.memory(), &pointer, &stored)
+        crate::kernel::memory_history::store_value_equation(after.memory(), &pointer, &stored)
             .unwrap();
     let established = empty.clone().assume_proposition(equation);
     assert!(established.equality_graph.are_uint64_equal(&read, &value));

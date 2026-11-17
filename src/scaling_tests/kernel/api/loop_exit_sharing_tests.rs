@@ -10,8 +10,8 @@ fn checked_loop_exit_copies_share_their_fact_storage() {
         let _session = crate::kernel::VerificationSession::enter();
         let facts = vec![Proposition::ConditionIs(ConditionTerm::Constant(true), true); count];
         let state = ExecutionState::new();
-        let (break_exit, break_work) = crate::instrumentation::measure_deterministic_work(|| {
-            LoopBreakExit::new(state.clone(), facts.clone())
+        let (early_exit, break_work) = crate::instrumentation::measure_deterministic_work(|| {
+            LoopEarlyExit::new(state.clone(), facts.clone())
         });
         let (final_exit, final_work) = crate::instrumentation::measure_deterministic_work(|| {
             LoopFinalExitCandidate::new(state.clone(), facts.clone())
@@ -20,10 +20,10 @@ fn checked_loop_exit_copies_share_their_fact_storage() {
         assert!(final_work >= count && final_work <= count * 4 + 32);
         let jump_exit = final_exit.clone().with_jump_target(ControlTargetId(2));
         for _ in 0..16 {
-            let copied_break = break_exit.clone();
+            let copied_break = early_exit.clone();
             let copied_final = final_exit.clone();
             let (LoopExitFacts::Explicit(original), LoopExitFacts::Explicit(copied)) =
-                (break_exit.pure_facts(), copied_break.pure_facts())
+                (early_exit.pure_facts(), copied_break.pure_facts())
             else {
                 unreachable!()
             };
@@ -61,7 +61,7 @@ fn checked_loop_exit_retains_the_store_and_publishes_shared_propositions() {
         let root = PureFactStore::from_ordered(&source);
         let _ = crate::kernel::proof::take_fact_entry_counts();
         let (exit, work) = crate::instrumentation::measure_deterministic_work(|| {
-            LoopBreakExit::from_store(ExecutionState::new(), &root)
+            LoopEarlyExit::from_store(ExecutionState::new(), &root)
         });
         assert!(work <= 32, "size {size}: {work}");
         assert_eq!(crate::kernel::proof::take_fact_entry_counts(), (0, 0));

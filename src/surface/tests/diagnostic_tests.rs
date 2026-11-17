@@ -43,7 +43,7 @@ fn full_and_concise_reports_keep_named_pointer_prerequisites() {
         true,
     );
     let error = ClickError::with_diagnostic(
-        "a generated prerequisite has no Surface spelling",
+        "a generated prerequisite has no Surface form",
         ProofFailureDiagnostic {
             failing_path: None,
             checks: None,
@@ -53,7 +53,7 @@ fn full_and_concise_reports_keep_named_pointer_prerequisites() {
                 source_tactic_path: None,
             },
             claim_label: "link.contract".into(),
-            reason: "a generated prerequisite has no Surface spelling".into(),
+            reason: "a generated prerequisite has no Surface form".into(),
             state: Some(Arc::new(names)),
         },
     )

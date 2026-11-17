@@ -198,3 +198,58 @@ fn nested_conditionals_parse_and_lower_on_a_two_megabyte_stack() {
         );
     }
 }
+
+#[test]
+fn inferred_initializer_parsing_costs_written_elements_not_unrelated_variables() {
+    for unrelated in [0, 64, 256] {
+        for count in [4u32, 16, 64, 256] {
+            let source = format!(
+                "{{{}}}",
+                (0..count)
+                    .map(|i| i.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            );
+            let mut parser = Parser::new(&source, CAbi::SUPPORTED).unwrap();
+            for i in 0..unrelated {
+                parser
+                    .variable_types
+                    .insert(format!("other{i}").into(), InterfaceType::Int32);
+            }
+            let mut values = Vec::new();
+            let mut next = 0;
+            let (length, work) = crate::instrumentation::measure_deterministic_work(|| {
+                parser
+                    .parse_array_initializer_elements("a", None, &[], &mut values, &mut next)
+                    .unwrap()
+            });
+            assert_eq!(length, count);
+            assert_eq!(next, count);
+            assert_eq!(values.len(), count as usize);
+            assert_eq!(work, count as usize, "unrelated={unrelated}, count={count}");
+        }
+    }
+}
+
+#[test]
+fn inferred_initializer_parsing_does_not_expand_omitted_cells() {
+    let mut costs = Vec::new();
+    for inner in [16u32, 4096, 1_048_576] {
+        let mut parser = Parser::new("{{1},{2}}", CAbi::SUPPORTED).unwrap();
+        let mut values = Vec::new();
+        let mut next = 0;
+        let (rows, work) = crate::instrumentation::measure_deterministic_work(|| {
+            parser
+                .parse_array_initializer_elements("a", None, &[inner], &mut values, &mut next)
+                .unwrap()
+        });
+        assert_eq!(rows, 2);
+        assert_eq!(next, 2 * inner);
+        assert_eq!(
+            values.iter().map(|(index, _)| *index).collect::<Vec<_>>(),
+            vec![0, inner]
+        );
+        costs.push(work);
+    }
+    assert_eq!(costs, vec![4, 4, 4]);
+}

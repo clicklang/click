@@ -827,7 +827,7 @@ impl<'a> Proof<'a> {
     /// Returns a handle addressing another open goal of the same state.
     ///
     /// Focus is a cursor: the returned handle shares this proof's semantic
-    /// state and provenance, and checked operations through it advance
+    /// state and outcome_evidence, and checked operations through it advance
     /// exactly the addressed goal.
     /// The single open goal's id, when exactly one goal remains. Split
     /// regressions use it to name the pre-split obligation.
@@ -942,8 +942,8 @@ impl<'a> Proof<'a> {
         let mut goals = Vec::new();
         let mut path_indices = Vec::new();
         for (path_index, path) in checked.paths().iter().enumerate() {
-            let provenance = execution.provenance_for_outcome(path_index);
-            let retained_leaf = provenance
+            let outcome_evidence = execution.evidence_for_outcome(path_index);
+            let retained_leaf = outcome_evidence
                 .checked_leaf_facts
                 .as_deref()
                 .filter(|(candidate, _, _)| candidate.shares_record_with(path))
@@ -1007,7 +1007,7 @@ impl<'a> Proof<'a> {
                         describe_function_outcome(path.outcome(), context.parameter_binding()),
                         describe_last_statement_site(
                             &context.constants.source_layout,
-                            &execution.provenance_for_outcome(path_index).recorded_states,
+                            &execution.evidence_for_outcome(path_index).recorded_states,
                         ),
                     )));
                 }
@@ -1062,8 +1062,8 @@ impl<'a> Proof<'a> {
                     Arc::new(OutcomeProofData::new(
                         outcome_core,
                         OutcomeProofPresentation {
-                            surface_propositions: provenance.surface_propositions,
-                            recorded_states: provenance.recorded_states,
+                            surface_propositions: outcome_evidence.surface_propositions,
+                            recorded_states: outcome_evidence.recorded_states,
                             // A returned path of a summarized loop states its
                             // facts over the loop's iteration identities,
                             // which the loop's exit state binds; the
@@ -1078,16 +1078,16 @@ impl<'a> Proof<'a> {
                                 })
                                 .or_else(|| frontier_anchor.clone()),
                             requirement_surfaces: requirement_surfaces.clone(),
-                            branch_decisions: provenance.branch_decisions,
-                            match_arms: provenance.match_arms,
-                            case_obligations: provenance.case_obligations,
-                            checked_haves: provenance.checked_haves,
-                            call_routes: if provenance.call_routes.is_empty() {
+                            branch_decisions: outcome_evidence.branch_decisions,
+                            match_arms: outcome_evidence.match_arms,
+                            case_obligations: outcome_evidence.case_obligations,
+                            checked_haves: outcome_evidence.checked_haves,
+                            call_routes: if outcome_evidence.call_routes.is_empty() {
                                 call_edges
                                     .map(|edges| vec![edges[path_index]])
                                     .unwrap_or_default()
                             } else {
-                                provenance.call_routes
+                                outcome_evidence.call_routes
                             },
                         },
                     )),
@@ -1331,7 +1331,7 @@ fn describe_last_statement_site(
 /// exit marker mapped to the matching recorded entry. Premises established
 /// across one statement use its entry state as their stable Surface Click
 /// spelling; a retained Proof may carry the equivalent exit state as its most
-/// recent provenance marker. Outcomes and mid-execution judgments
+/// recent outcome_evidence marker. Outcomes and mid-execution judgments
 /// anchor their premises by this one law.
 pub(in crate::surface::proof) fn frontier_premise_anchor(
     execution: &ExecutionProofState,

@@ -1115,7 +1115,7 @@ impl CellStore {
         assumptions: &PureFactContext,
     ) -> Option<Vec<Pointer>> {
         if crate::kernel::reasoning::store_gap::store_gap_skip_disabled()
-            || crate::kernel::assumptions::implicit_reasoning_provenance_capturing()
+            || crate::kernel::assumptions::implicit_consulted_premises_capturing()
             || crate::kernel::assumptions::reasoning_interrupted()
         {
             return None;
@@ -1516,7 +1516,12 @@ impl CellStore {
                 }),
                 Bound::Unbounded,
             ))
-            .take_while(|(key, _)| matches!(key.block, PointerBlock::AutomaticLocal { .. }));
+            .take_while(|(key, _)| {
+                matches!(
+                    key.block,
+                    PointerBlock::AutomaticLocal { .. } | PointerBlock::ReferenceCarrier { .. }
+                )
+            });
         let mut visited = 0usize;
         let rejected = local_cells
             .chain(automatic_cells)
@@ -1572,7 +1577,7 @@ impl CellStore {
         use crate::kernel::assumptions::variable_chains::array_index;
         if bytes == 0
             || crate::kernel::reasoning::store_gap::store_gap_skip_disabled()
-            || crate::kernel::assumptions::implicit_reasoning_provenance_capturing()
+            || crate::kernel::assumptions::implicit_consulted_premises_capturing()
             || crate::kernel::assumptions::reasoning_interrupted()
         {
             return None;

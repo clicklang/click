@@ -746,7 +746,7 @@ fn a_session_reset_empties_the_version_memos() {
         block_version_memo_len() > 0,
         "the walk should have recorded its answer"
     );
-    crate::kernel::memory_provenance::clear_canonical_form_caches();
+    crate::kernel::memory_history::clear_canonical_form_caches();
     assert_eq!(
         block_version_memo_len(),
         0,
@@ -1423,7 +1423,7 @@ fn named_cell_stop_retains_the_decision_made_by_its_walk() {
 fn a_forgotten_observation_retains_only_its_complete_typed_value() {
     use super::cell_source::{CellWalkStop, memory_dag_cell_source_with_stop};
     use crate::kernel::{LoadKind, ProgramType};
-    crate::kernel::memory_provenance::with_extended_dag_bridging(|| {
+    crate::kernel::memory_history::with_extended_dag_bridging(|| {
         let pointer = at(block("global:g"), 0);
         let source = intern_memory(entry_memory());
         let observed = source.memory().clone().materialize_cell_from_source(

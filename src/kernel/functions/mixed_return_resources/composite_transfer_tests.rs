@@ -195,7 +195,7 @@ fn converted_composite_arguments_do_not_authorize_unchanged_child_footprints() {
 }
 
 #[test]
-fn borrowed_parameter_bounded_bodies_keep_entry_footprint_provenance() {
+fn borrowed_parameter_bounded_bodies_keep_entry_footprint_origin() {
     let _session = crate::kernel::VerificationSession::enter();
     let (state, facts, owner) = super::summary_transfer_tests::symbolic_state();
     let head = ResourceFact::own_composite(

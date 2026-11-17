@@ -23,7 +23,7 @@ before following its byte identity, so a checked loop frame does not lose a
 restored pointer value when observation-only states are skipped.
 
 Regression coverage checks complete pointer cells, cached/ordinary read identity,
-upper-half writes, wrong read provenance, and no-write witnesses for pointer
+upper-half writes, wrong read origin, and no-write witnesses for pointer
 runs. The retained-field Markdown fixture also checks a bare before/after read
 equality after unfolding, sibling stores, and a retaining call. Pointer-run
 framing stays bounded as run sizes grow from 16 to 65,536 cells; observation

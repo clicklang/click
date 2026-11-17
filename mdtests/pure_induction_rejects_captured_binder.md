@@ -9,7 +9,7 @@ theorem capture(n: int32) {
     requires n >= 0;
     ensures forall (x: int32) { x == 5 implies forall (y: int32) { y == 5 } }
     by {
-        induct(n) as ih;
+        let ih = induct(n);
         intro();
         intro();
         have forall (z: int32) { z == 5 } by {

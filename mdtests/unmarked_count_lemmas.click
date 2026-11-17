@@ -11,7 +11,7 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, n: int32, hi: int32) {
     requires n <= 1073741823;
     views v[lo..n];
     ensures 0 <= unmarked(v, lo, hi) by {
-        induct(hi) as ih;
+        let ih = induct(hi);
         if hi <= lo {
             unfold(unmarked(v, lo, hi));
             solve();
@@ -63,7 +63,7 @@ theorem unmarked_frame(
         lo <= k and k < m implies a[k] == b[k]
     };
     ensures unmarked(a, lo, hi) == unmarked(b, lo, hi) by {
-        induct(hi) as ih;
+        let ih = induct(hi);
         if hi <= lo {
             unfold(unmarked(a, lo, hi));
             unfold(unmarked(b, lo, hi));
@@ -139,7 +139,7 @@ theorem unmarked_point_update(
         j < k and k < n implies a[k] == b[k]
     };
     ensures unmarked(b, lo, hi) == unmarked(a, lo, hi) - 1 by {
-        induct(hi) as ih;
+        let ih = induct(hi);
         if hi <= lo {
             have j < lo by { solve() using { j < hi; hi <= lo; }; }
             contradiction(lo <= j);

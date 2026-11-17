@@ -31,7 +31,7 @@ fn statement_store_views_only_index_their_delta() {
             let before_contexts = crate::kernel::reasoning::path_facts::context_rebuild_entries();
             let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
                 for index in 0..size {
-                    let mut view = PureFactList::from_statement_store(root.clone());
+                    let mut view = PureFactList::from_produced_store(root.clone());
                     assert!(view.contains(&fact(index, related)));
                     view.push(fact(size + index, related));
                     let child = view.fact_store();

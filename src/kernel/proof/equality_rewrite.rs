@@ -958,7 +958,7 @@ fn rewrite_term(term: &MachineTerm, from: &MachineTerm, to: &MachineTerm) -> Mac
                 rewrite_offset(right, from, to),
             ),
             PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-                crate::kernel::memory_provenance::rebuild_scaled_pointer_index(
+                crate::kernel::memory_history::rebuild_scaled_pointer_index(
                     rewrite_pointer_index(value, from, to),
                     *byte_width,
                     None,
@@ -968,7 +968,7 @@ fn rewrite_term(term: &MachineTerm, from: &MachineTerm, to: &MachineTerm) -> Mac
                 value,
                 byte_width,
                 unsigned,
-            } => crate::kernel::memory_provenance::rebuild_scaled_pointer_index(
+            } => crate::kernel::memory_history::rebuild_scaled_pointer_index(
                 rewrite_pointer_index(value, from, to),
                 *byte_width,
                 Some(*unsigned),
@@ -1547,18 +1547,17 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 // `p->q == r`): rewrite through it, as through the outer
                 // load. Each level is the registered address of one load.
                 PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-                    let rewritten = crate::kernel::memory_provenance::map_shared_pointer_index(
+                    let rewritten = crate::kernel::memory_history::map_shared_pointer_index(
                         value,
                         |leaf| Some(rewrite_term_offset(leaf, left, right)),
                         rebuild_transported_machine_node,
                     )
                     .unwrap_or_else(|| value.clone());
-                    if crate::kernel::memory_provenance::pointer_index_syntax_equal(
-                        value, &rewritten,
-                    ) {
+                    if crate::kernel::memory_history::pointer_index_syntax_equal(value, &rewritten)
+                    {
                         offset.clone()
                     } else {
-                        crate::kernel::memory_provenance::rebuild_scaled_pointer_index(
+                        crate::kernel::memory_history::rebuild_scaled_pointer_index(
                             rewritten,
                             *byte_width,
                             None,
@@ -1570,18 +1569,17 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     byte_width,
                     unsigned,
                 } => {
-                    let rewritten = crate::kernel::memory_provenance::map_shared_pointer_index(
+                    let rewritten = crate::kernel::memory_history::map_shared_pointer_index(
                         value,
                         |leaf| Some(rewrite_term_offset(leaf, left, right)),
                         rebuild_transported_machine_node,
                     )
                     .unwrap_or_else(|| value.clone());
-                    if crate::kernel::memory_provenance::pointer_index_syntax_equal(
-                        value, &rewritten,
-                    ) {
+                    if crate::kernel::memory_history::pointer_index_syntax_equal(value, &rewritten)
+                    {
                         offset.clone()
                     } else {
-                        crate::kernel::memory_provenance::rebuild_scaled_pointer_index(
+                        crate::kernel::memory_history::rebuild_scaled_pointer_index(
                             rewritten,
                             *byte_width,
                             Some(*unsigned),
@@ -1824,7 +1822,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     offset: rewrite_offset(&pointer.offset, left, right),
                 };
                 let rewrite_shared = |value: &SharedMachineIntegerTerm| {
-                    crate::kernel::memory_provenance::map_shared_pointer_index(
+                    crate::kernel::memory_history::map_shared_pointer_index(
                         value,
                         |leaf| Some(rewrite_term(leaf)),
                         rebuild_transported_machine_node,
@@ -2155,7 +2153,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 let rewrite_term =
                     |term: &MachineTerm| rewrite_load_pointers(term, &rewrite_pointer);
                 let rewrite_shared = |value: &SharedMachineIntegerTerm| {
-                    crate::kernel::memory_provenance::map_shared_pointer_index(
+                    crate::kernel::memory_history::map_shared_pointer_index(
                         value,
                         |leaf| Some(rewrite_term(leaf)),
                         rebuild_transported_machine_node,
@@ -2218,7 +2216,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 rewrite_offset_term(right, from, to),
             ),
             PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-                crate::kernel::memory_provenance::rebuild_scaled_pointer_index(
+                crate::kernel::memory_history::rebuild_scaled_pointer_index(
                     rewrite_pointer_index(value, from, to),
                     *byte_width,
                     None,
@@ -2228,7 +2226,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 value,
                 byte_width,
                 unsigned,
-            } => crate::kernel::memory_provenance::rebuild_scaled_pointer_index(
+            } => crate::kernel::memory_history::rebuild_scaled_pointer_index(
                 rewrite_pointer_index(value, from, to),
                 *byte_width,
                 Some(*unsigned),

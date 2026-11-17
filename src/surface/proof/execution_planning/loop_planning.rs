@@ -288,7 +288,7 @@ fn initialize_script_layout<'a>(
 }
 
 /// Source positions derived once with the verification layout. Expansion
-/// consumes retained provenance without interpreting the source layout again.
+/// consumes retained evidence without interpreting the source layout again.
 struct InitializePhaseExpansion {
     helpers: usize,
     individual_bodies: bool,
@@ -904,7 +904,7 @@ pub(in crate::surface::proof) struct LoopPreservationProofResult {
     pub(in crate::surface::proof) final_exit_candidates: Vec<LoopFinalExitCandidate>,
     /// The body paths that left this loop through `break`, each an exit at
     /// its own state. The loop rule joins them with the guard-false exit.
-    pub(in crate::surface::proof) break_exits: Vec<LoopBreakExit>,
+    pub(in crate::surface::proof) early_exits: Vec<LoopEarlyExit>,
     /// The body paths that left the function through `return`, each with
     /// the value it returned and the state it returned in. The loop rule
     /// exports each as a `Return` outcome of the loop statement.
@@ -1203,7 +1203,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         .collect::<Result<Vec<_>, _>>()?;
     let mut certificate_paths = Vec::new();
     let mut final_exit_candidates = Vec::new();
-    let mut break_exits = Vec::new();
+    let mut early_exits = Vec::new();
     // The points each leaving path recorded during its pass, from the start
     // of the pass on: after the loop they name that pass's points.
     let pass_start = enclosing_states.history_mark();
@@ -1215,7 +1215,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     // exit's state and facts first, so a new exit is checked for equality only against
     // exits in its own bucket rather than against every exit recorded so far.
     let mut seen_final_exits = SeenLoopExits::default();
-    let mut seen_break_exits = SeenLoopExits::default();
+    let mut seen_early_exits = SeenLoopExits::default();
 
     let mut nested_loop_rules = Vec::new();
     for (execution, path_certificate) in refuted_match_paths {
@@ -1282,7 +1282,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         // A path that left through `break` is an exit, not a back edge: it
         // owes no invariant and no measure, and the loop rule joins it with
         // the loop's other exits instead of returning it to the head.
-        let is_break_exit = context_frontier.loop_control.is_exit();
+        let is_early_exit = context_frontier.loop_control.is_exit();
         // A path that reached the function exit left through `return`. It is
         // a function-exit path of the enclosing execution in every loop form,
         // and owes neither an invariant nor a measure.
@@ -1364,7 +1364,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         // now becomes a nested proof `if` here instead of recursive search in
         // proposition reasoning.
         let mut leaf = leaf;
-        if is_terminal_return_exit || is_break_exit {
+        if is_terminal_return_exit || is_early_exit {
             // Nothing is closed on an exit path, so nothing is planned here.
         } else if has_retained_invariant_body {
             // A completed body is bound to this exact premise store. Validate
@@ -1388,7 +1388,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 leaf = proved.join()?;
             }
         }
-        let checked = if is_terminal_return_exit || is_break_exit {
+        let checked = if is_terminal_return_exit || is_early_exit {
             leaf.clone()
         } else if invariant_checks.is_empty()
             && ranking_measures.is_empty()
@@ -1568,7 +1568,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             ) {
                 final_exit_candidates.push(exit);
             }
-        } else if is_break_exit {
+        } else if is_early_exit {
             exit_points.push(
                 context_execution
                     .presentation
@@ -1583,10 +1583,10 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 &checked_execution.core.state,
                 &assumptions_from_propositions(checked.facts()),
             );
-            let exit = LoopBreakExit::from_store(state, checked.facts())
+            let exit = LoopEarlyExit::from_store(state, checked.facts())
                 .with_loan_evidence(checked_execution.core.loan_evidence().clone());
-            if seen_break_exits.is_new(exit.state(), exit.pure_facts(), &break_exits, &exit) {
-                break_exits.push(exit);
+            if seen_early_exits.is_new(exit.state(), exit.pure_facts(), &early_exits, &exit) {
+                early_exits.push(exit);
             }
         } else {
             // The body must return to the head it started from, which carries
@@ -1638,7 +1638,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             }
         }
         let closer_tactics = if is_terminal_return_exit
-            || is_break_exit
+            || is_early_exit
             || (invariant_checks.is_empty()
                 && ranking_measures.is_empty()
                 && structural_measure.is_none())
@@ -1728,7 +1728,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         return_proofs,
         certificate,
         final_exit_candidates,
-        break_exits,
+        early_exits,
         return_exits,
         nested_loop_rules,
         exit_points,

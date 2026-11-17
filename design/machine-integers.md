@@ -711,7 +711,7 @@ Progress:
      the unsigned bound of a mask, and the traversals that collect reads or
      variables, detect machine arithmetic or estimate work read either
      format; the structural rewrites that rebuild an operator over
-     rewritten operands (memory provenance, load-pointer rewriting, load
+     rewritten operands (memory history, load-pointer rewriting, load
      expansion, fact-transport erasure) keep the matched format. The signed
      certificate fragment reads `int32` operators and a word's logical
      right shift only, never a `uint32` sign-free one (G7). `unary_wide_term!`
@@ -1205,7 +1205,7 @@ Maintainer direction, 2026-10-25:
   stored word (`MachineTerm::sign_cast32`, in `CType::read_cell`). Every
   load-after-store resolution that answers a load *term* (`read_cell` on a
   `LoadKind`, the materialization and stored-read checks in
-  `memory_resolution.rs`, `memory_provenance.rs`, `contract_claims.rs`,
+  `memory_resolution.rs`, `memory_history.rs`, `contract_claims.rs`,
   `proof/execution.rs` and `loops.rs`) reads the cell's word, which by K1 is
   the same word, so it compares word kinds. Soundness: the read returns the
   same four bytes interpreted in F, which is C's modular conversion between

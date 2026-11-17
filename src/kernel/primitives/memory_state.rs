@@ -48,6 +48,11 @@ fn write_havoc_string(identity: &mut String, tag: &str, value: &str) {
 
 fn write_havoc_block(identity: &mut String, block: PointerBlock) {
     match block {
+        PointerBlock::ReferenceCarrier { referent, instance } => {
+            identity.push_str("bref;");
+            write_havoc_block(identity, Memory::local_pointer(referent.as_ref()).block);
+            let _ = write!(identity, "{instance:?};");
+        }
         PointerBlock::AggregateReturn { frame } => {
             let _ = write!(identity, "breturn{frame};");
         }
@@ -1320,6 +1325,9 @@ pub(crate) fn resource_context_has_symbolic_range_read(
 
 impl LocalEnvironment {
     pub(crate) fn resolve_binding(&self, name: &BindingName) -> BindingName {
+        if matches!(name, BindingName::ReferenceCarrier(_)) {
+            crate::instrumentation::record_deterministic_work(1);
+        }
         if self.visible_names.is_empty() {
             return name.clone();
         }
@@ -1341,7 +1349,8 @@ impl LocalEnvironment {
                 .and_then(|entries| entries.last())
                 .map(|(_, binding)| binding.clone())
                 .unwrap_or_else(|| name.clone()),
-            BindingName::Local(_)
+            BindingName::ReferenceCarrier(_)
+            | BindingName::Local(_)
             | BindingName::Static(_)
             | BindingName::ContractResult
             | BindingName::ContractException
@@ -1355,7 +1364,8 @@ impl LocalEnvironment {
             BindingName::Local(id) => id.spelling()?,
             BindingName::Static(id) => id.spelling(),
             BindingName::Named(name) => name,
-            BindingName::ContractResult
+            BindingName::ReferenceCarrier(_)
+            | BindingName::ContractResult
             | BindingName::ContractException
             | BindingName::Generated(_) => return None,
         };
@@ -4971,7 +4981,7 @@ impl Memory {
     /// This is deliberately separate from loop havoc. The joined heap is the
     /// union of potential live allocations, so making the transition look like
     /// a loop havoc would record a false memory-DAG derivation. The resulting
-    /// state is a provenance barrier instead: no load from before the
+    /// state is a history barrier instead: no load from before the
     /// branch is transported across it. What survives is a value every arm
     /// still caches for the same cell, kept as a cell of the joined state,
     /// and whatever the interface states as a fact.
@@ -7407,7 +7417,7 @@ impl Memory {
                     &normalized_cell_pointer,
                 ))
             {
-                return if crate::kernel::memory_provenance::indexed_store_byte_separation_evidence(
+                return if crate::kernel::memory_history::indexed_store_byte_separation_evidence(
                     &normalized_pointer,
                     bytes,
                     &normalized_cell_pointer,
@@ -7475,7 +7485,7 @@ impl Memory {
                     &normalized_cell_pointer,
                 ))
             {
-                return if crate::kernel::memory_provenance::indexed_store_byte_separation_evidence(
+                return if crate::kernel::memory_history::indexed_store_byte_separation_evidence(
                     &normalized_pointer,
                     bytes,
                     &normalized_cell_pointer,
@@ -7583,6 +7593,10 @@ impl Memory {
     pub(in crate::kernel) fn value_parameter_pointer(name: impl Into<BindingName>) -> Pointer {
         let name = name.into();
         let block = match name {
+            BindingName::ReferenceCarrier(referent) => PointerBlock::ReferenceCarrier {
+                referent,
+                instance: LocalStorageInstance::ValueParameter,
+            },
             BindingName::Local(binding) => PointerBlock::AutomaticLocal {
                 binding,
                 instance: LocalStorageInstance::ValueParameter,
@@ -7604,6 +7618,10 @@ impl Memory {
     pub(in crate::kernel) fn local_pointer(name: impl Into<BindingName>) -> Pointer {
         let name = name.into();
         let block = match name {
+            BindingName::ReferenceCarrier(referent) => PointerBlock::ReferenceCarrier {
+                referent,
+                instance: LocalStorageInstance::Implicit,
+            },
             BindingName::Local(binding) => PointerBlock::AutomaticLocal {
                 binding,
                 instance: LocalStorageInstance::Implicit,
@@ -7626,6 +7644,10 @@ impl Memory {
     ) -> Pointer {
         let name = name.into();
         let block = match name {
+            BindingName::ReferenceCarrier(referent) => PointerBlock::ReferenceCarrier {
+                referent,
+                instance: LocalStorageInstance::Lifetime(lifetime),
+            },
             BindingName::Local(binding) => PointerBlock::AutomaticLocal {
                 binding,
                 instance: LocalStorageInstance::Lifetime(lifetime),
@@ -7648,7 +7670,8 @@ impl Memory {
         let block = match name.into() {
             BindingName::Static(binding) => PointerBlock::StaticObject { binding },
             BindingName::Named(name) => format!("global:{name}").into(),
-            BindingName::Local(_)
+            BindingName::ReferenceCarrier(_)
+            | BindingName::Local(_)
             | BindingName::ContractResult
             | BindingName::ContractException
             | BindingName::Generated(_) => {
@@ -7675,7 +7698,8 @@ impl Memory {
         let block = match name.into() {
             BindingName::Static(binding) => PointerBlock::StaticObject { binding },
             BindingName::Named(name) => format!("static:{function}:{name}").into(),
-            BindingName::Local(_)
+            BindingName::ReferenceCarrier(_)
+            | BindingName::Local(_)
             | BindingName::ContractResult
             | BindingName::ContractException
             | BindingName::Generated(_) => {
@@ -7701,6 +7725,13 @@ impl Memory {
         name: impl Into<BindingName>,
     ) -> Pointer {
         match name.into() {
+            BindingName::ReferenceCarrier(referent) => Pointer {
+                block: PointerBlock::ReferenceCarrier {
+                    referent,
+                    instance: LocalStorageInstance::Frame(frame),
+                },
+                offset: PointerOffsetTerm::Constant(0),
+            },
             BindingName::Local(binding) => Pointer {
                 block: PointerBlock::AutomaticLocal {
                     binding,
@@ -9081,7 +9112,7 @@ impl ExecutionState {
                 return Err("control resource argument has the wrong type".into());
             }
             evaluation.locals.set_typed(
-                parameter.name().to_string(),
+                parameter.binding_name().clone(),
                 value.clone(),
                 parameter.program_type(),
             );
@@ -9800,6 +9831,50 @@ impl ExecutionState {
     /// the iterated-ownership store rule (`plan_iterated_guard_store`) to its
     /// one store. Every other transition keeps the conservative rule.
     pub(crate) fn set_memory_with_checked_stores(&mut self, memory: Memory, stores_checked: bool) {
+        self.replace_memory(memory, stores_checked);
+        let steps = self.memory.pending_steps.take();
+        self.point = self
+            .point
+            .after(super::intern_memory_ref(&self.memory), steps);
+    }
+
+    /// Take `source`'s memory, with [`Self::set_memory`]'s resource
+    /// invalidation, and stand where `source` stands: the steps that made
+    /// that memory were taken on `source`'s path, so this state's path
+    /// continues from there.
+    pub(crate) fn set_memory_of(&mut self, source: &Self) {
+        self.set_memory_continuing(source, source.memory.clone());
+    }
+
+    /// [`Self::set_memory_of`], by value.
+    pub(crate) fn with_memory_of(mut self, source: &Self) -> Self {
+        self.set_memory_of(source);
+        self
+    }
+
+    /// Take `memory`, made from `from`'s memory by the steps in its own log,
+    /// with [`Self::set_memory`]'s resource invalidation: this state's path
+    /// continues from `from`'s point through those steps.
+    pub(crate) fn set_memory_continuing(&mut self, from: &Self, memory: Memory) {
+        let base = from.program_point();
+        self.replace_memory(memory, false);
+        let steps = self.memory.pending_steps.take();
+        let shared = super::intern_memory_ref(&self.memory);
+        self.point = if steps.is_none() && base.shared_memory() == &shared {
+            base.path_link().clone()
+        } else {
+            base.path_link().after(shared, steps)
+        };
+    }
+
+    /// [`Self::set_memory_continuing`], by value.
+    pub(crate) fn with_memory_continuing(mut self, from: &Self, memory: Memory) -> Self {
+        self.set_memory_continuing(from, memory);
+        self
+    }
+
+    /// Replace memory, dropping the resource projections it touches.
+    fn replace_memory(&mut self, memory: Memory, stores_checked: bool) {
         self.resources = self
             .resources
             .clone()
@@ -9809,10 +9884,6 @@ impl ExecutionState {
             self.resources.loan_dependency_state(),
         );
         self.memory = memory;
-        let steps = self.memory.pending_steps.take();
-        self.point = self
-            .point
-            .after(super::intern_memory_ref(&self.memory), steps);
     }
 
     /// The point this state stands at on its path.

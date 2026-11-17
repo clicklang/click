@@ -4097,7 +4097,7 @@ fn joint_planner_partitions_disjoint_write_and_view_ranges_in_any_clause_order()
         caller,
         callee,
     )
-    .expect("a residual fragment of the unique owner retains its provenance");
+    .expect("a residual fragment of the unique owner retains its source occurrence");
     assert!(
         reverse
             .callee_resources

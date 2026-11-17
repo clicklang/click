@@ -2135,7 +2135,7 @@ impl Printer<'_> {
                 if !parameter.is_reference() || base.pointer() != pointer {
                     return None;
                 }
-                let referent = crate::languages::c::syntax::referent_of_carrier(parameter.name())?;
+                let referent = parameter.name();
                 match parameter
                     .pointee_struct_layout()
                     .or_else(|| parameter.struct_layout())

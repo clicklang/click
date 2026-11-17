@@ -545,16 +545,16 @@ mod tests {
                 "by { intro(); solve(); }",
             ),
             (
-                "theorem test(lo: int32, hi: int32, limit: int32) { let p = |x: int32| -> Prop { x < limit }; requires hi <= limit; ensures (lo..hi).all(p) by { intro() as k; intro(); solve(); } }",
-                "by { intro() as k; intro(); solve(); }",
+                "theorem test(lo: int32, hi: int32, limit: int32) { let p = |x: int32| -> Prop { x < limit }; requires hi <= limit; ensures (lo..hi).all(p) by { let k = intro(); intro(); solve(); } }",
+                "by { let k = intro(); intro(); solve(); }",
             ),
             (
                 "theorem test(lo: int32, hi: int32) { let p = |x: int32| -> Prop { x == lo }; requires lo < hi; ensures (lo..hi).any(p) by { witness(lo); solve(); } }",
                 "by { witness(lo); solve(); }",
             ),
             (
-                "theorem test(p: int32*, lo: int32, hi: int32) { let zero = |i: int32| -> Prop { p[i] == 0 }; requires viewable(p[lo..hi]); requires (lo..hi).all(|i| { p[i] == 0 }); ensures (lo..hi).all(zero) by { intro() as k; intro(); solve(); } }",
-                "by { intro() as k; intro(); solve(); }",
+                "theorem test(p: int32*, lo: int32, hi: int32) { let zero = |i: int32| -> Prop { p[i] == 0 }; requires viewable(p[lo..hi]); requires (lo..hi).all(|i| { p[i] == 0 }); ensures (lo..hi).all(zero) by { let k = intro(); intro(); solve(); } }",
+                "by { let k = intro(); intro(); solve(); }",
             ),
             (
                 "theorem test(p: int32*, lo: int32, hi: int32) { let zero = |i: int32| -> Prop { p[i] == 0 }; requires lo < hi; requires viewable(p[lo..hi]); requires p[lo] == 0; ensures (lo..hi).any(zero) by { witness(lo); solve(); } }",

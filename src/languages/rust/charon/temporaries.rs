@@ -220,9 +220,6 @@ fn iterator_definition(statement: &mut S) -> Option<(IteratorKind, &mut String)>
     }
 }
 
-/// The return place MIR writes before `Return`.
-const RETURN_PLACE: &str = "__rust_mir_0";
-
 /// Returns the value MIR writes to the return place where nothing runs
 /// between the write and the return, as `return value` does in C.
 ///
@@ -237,8 +234,8 @@ const RETURN_PLACE: &str = "__rust_mir_0";
 ///
 /// A return place that cleanup follows, that is written more than once, or
 /// that holds a value other than a scalar keeps its local.
-pub(super) fn return_values(locals: &mut Vec<Place>, blocks: &mut [MirBlock]) {
-    let Some(place) = locals.iter().find(|local| local.name == RETURN_PLACE) else {
+pub(super) fn return_values(locals: &mut Vec<Place>, blocks: &mut [MirBlock], return_place: &str) {
+    let Some(place) = locals.iter().find(|local| local.name == return_place) else {
         return;
     };
     if !returned_directly(&place.value_type) {
@@ -256,10 +253,10 @@ pub(super) fn return_values(locals: &mut Vec<Place>, blocks: &mut [MirBlock]) {
         let mut reads = BTreeMap::new();
         let mut named = BTreeSet::new();
         terminator_uses(&block.terminator, &mut reads, &mut named);
-        if reads.contains_key(RETURN_PLACE) || named.contains(RETURN_PLACE) {
+        if reads.contains_key(return_place) || named.contains(return_place) {
             return;
         }
-        if call_destination(&block.terminator).is_some_and(|name| name == RETURN_PLACE) {
+        if call_destination(&block.terminator).is_some_and(|name| name == return_place) {
             if write.is_some() {
                 return;
             }
@@ -269,7 +266,7 @@ pub(super) fn return_values(locals: &mut Vec<Place>, blocks: &mut [MirBlock]) {
             if transparent(statement)
                 || !mentioned_locals(statement)
                     .iter()
-                    .any(|name| name == RETURN_PLACE)
+                    .any(|name| name == return_place)
             {
                 continue;
             }
@@ -319,7 +316,7 @@ pub(super) fn return_values(locals: &mut Vec<Place>, blocks: &mut [MirBlock]) {
             else {
                 return;
             };
-            if name != RETURN_PLACE
+            if name != return_place
                 || !blocks[block].statements[position + 1..]
                     .iter()
                     .all(transparent)
@@ -381,7 +378,7 @@ pub(super) fn return_values(locals: &mut Vec<Place>, blocks: &mut [MirBlock]) {
             };
         }
     }
-    locals.retain(|local| local.name != RETURN_PLACE);
+    locals.retain(|local| local.name != return_place);
 }
 
 /// Whether a value of `value_type` is returned as itself, a scalar.
@@ -1797,7 +1794,7 @@ mod tests {
     /// Runs the return-place pass over `blocks`, with locals `_0` and `x`.
     fn returned(mut blocks: Vec<MirBlock>) -> (Vec<String>, Vec<MirBlock>) {
         let mut locals = ["__rust_mir_0", "x"].map(place).to_vec();
-        super::return_values(&mut locals, &mut blocks);
+        super::return_values(&mut locals, &mut blocks, "__rust_mir_0");
         (locals.into_iter().map(|local| local.name).collect(), blocks)
     }
 

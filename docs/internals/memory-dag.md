@@ -13,7 +13,7 @@ change which C programs Click accepts.
 `SharedMemory` is the stable identity of an interned `Memory` value. The
 arena assigns dense identifiers. A separately stored `MemoryDerivation`
 describes the edge from an already-interned parent to a child state.
-Keeping provenance outside `Memory` means that equality, hashing, and ordering
+Keeping derivations outside `Memory` means that equality, hashing, and ordering
 continue to describe memory values rather than the route used to produce them.
 
 Each map and set inside a state (`blocks`, `cells`, `union_cells`, the
@@ -127,7 +127,7 @@ prepared cells remains distinct from the program-store operation.
 Unresolved scalar program reads name their actual input state, so an explicit
 fact about that state matches the returned value. Temporary cache reduction can
 resolve a read but does not choose the state named by an unresolved scalar
-result. Pointer-read naming retains its existing projection and provenance
+result. Pointer-read naming retains its existing projection and memory-history
 behavior; its cell-version naming walk is a separate removal target.
 
 ## Shared byte separation for stores
@@ -287,7 +287,7 @@ while its first observation in each epoch records the live source again.
 Every recorded parent identifier is smaller than its child identifier. The
 parent must therefore exist first and a derivation cycle can't be constructed.
 Recording is first-wins: if interning finds an existing equal memory value, it
-keeps that node's established provenance.
+keeps that node's established derivation.
 
 An edge whose base is not older than its result is dropped, and a step dropped
 that way is on no recorded history at all. For a step that lost knowledge that
@@ -301,7 +301,7 @@ ancestor and here is one of those stores. `record_memory_derivation` counts
 the edges it drops by kind, and the mdtest harness prints the corpus totals, so
 a new producer that records its steps nowhere is named by a gate run.
 
-Derivations are advisory evidence. Missing provenance can make a reasoning
+Derivations are advisory evidence. A missing derivation can make a reasoning
 query fail to establish an equality, but it can't make an invalid equality
 true. Walks are bounded and fall back to the checked reasoning path
 when an edge is missing or can't be crossed safely.

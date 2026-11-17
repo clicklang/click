@@ -394,7 +394,7 @@ fn reads_of_one_cell_at_both_signednesses_are_related() {
         // size.
         crate::kernel::clear_integer_bridge_memo();
         crate::kernel::eval::clear_load_canonicalization_caches();
-        crate::kernel::memory_provenance::clear_canonical_form_caches();
+        crate::kernel::memory_history::clear_canonical_form_caches();
         let mut graph = EqualityGraph::default();
         for index in 0..unrelated {
             graph.add_int32_equality(&var(500 + index), &var(5_000 + index));
@@ -565,7 +565,7 @@ fn structural_word_read_requires_its_explicit_store_equation() {
         "registering a read must not import its cached value"
     );
     assert!(!empty.equality_graph.are_int32_equal(&read, &value));
-    let equation = crate::kernel::memory_provenance::store_value_equation(
+    let equation = crate::kernel::memory_history::store_value_equation(
         retained_state.memory(),
         &address(993185),
         &ProgramValue::Int32(value.clone()),

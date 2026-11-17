@@ -90,7 +90,7 @@ enum PointerExtent {
 | Address of a declared object `&x`, array decay, `malloc`, string literal | `Root` (already exact: the block is the object) |
 | Typed pointer arithmetic `q + n`, `q - n`, `&q[n]` | same extent as `q` |
 | Copy, local assignment, argument binding, return | same extent |
-| Store to memory, then reload of that exact cell | same extent: cached `CValue::Pointer` cells already return the stored value. The `pointer_read_stored_value` family in `memory_provenance.rs` must return the whole `CPointerValue`, not `Pointer`. |
+| Store to memory, then reload of that exact cell | same extent: cached `CValue::Pointer` cells already return the stored value. The `pointer_read_stored_value` family in `memory_history.rs` must return the whole `CPointerValue`, not `Pointer`. |
 | Reload of an unknown cell, havoc, modular result | Fresh opaque domain; formation and access require matching bounds evidence (Phase C) |
 | Cast to a non-character object pointer type | same extent (a cast neither narrows nor widens; D3) |
 | Cast between character-pointer types | same extent, including signedness changes (D4 refinement) |
