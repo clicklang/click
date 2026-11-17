@@ -499,10 +499,10 @@ fn canonical_term_is_idempotent_at_multiple_term_depths() {
             );
         }
 
-        crate::kernel::memory_provenance::reset_atomic_canonicalization_term_visits();
+        crate::kernel::memory_history::reset_atomic_canonicalization_term_visits();
         crate::kernel::eval::reset_load_substitution_term_visits();
         let once = crate::kernel::eval::canonical_term(&term);
-        let atomic_visits = crate::kernel::memory_provenance::atomic_canonicalization_term_visits();
+        let atomic_visits = crate::kernel::memory_history::atomic_canonicalization_term_visits();
         let substitution_visits = crate::kernel::eval::load_substitution_term_visits();
         assert!(atomic_visits <= 7 * target_depth + 2);
         assert!(substitution_visits <= 7 * target_depth + 2);

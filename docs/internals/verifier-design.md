@@ -36,7 +36,7 @@ removed, so it has to stay small.
 | Symbolic execution | Run statements, calls, and loops on a symbolic state | fast | `src/kernel/eval*`, `src/kernel/functions.rs`, `src/kernel/loops.rs`, `src/kernel/proof/execution.rs` |
 | Fact store | Hold the path's facts in persistent indexes, with the equality closure and the difference graph | fast | `PureFactStore` in `src/kernel/proof/facts.rs`, its `PureFactContext` component in `src/kernel/assumptions.rs`, `src/kernel/equality_graph*`, `src/kernel/difference_graph.rs` |
 | Condition decision | Decide one condition (order, overflow, equality, consistency) from the facts | fast | `PureFactContext::decide`, `src/kernel/assumptions/condition_reasoning/` |
-| Memory | Memory states, the memory derivation DAG, and load and store resolution | fast | `src/kernel/primitives/cell_store.rs`, `src/kernel/reasoning/memory_resolution.rs`, `src/kernel/memory_provenance.rs` |
+| Memory | Memory states, the memory derivation DAG, and load and store resolution | fast | `src/kernel/primitives/cell_store.rs`, `src/kernel/reasoning/memory_resolution.rs`, `src/kernel/memory_history.rs` |
 | Resources | Ownership, views, loans, folds, and separation | fast | `src/kernel/primitives/resource_algebra.rs`, `src/kernel/resource_tracker/`, `src/kernel/loans.rs` |
 | Simple tactics | Apply one checked step to a persistent proof state | fast | `src/kernel/proof/object.rs`, `src/surface/proof/proof_object/`, `src/surface/proof/checked_drivers/` |
 | Proof construction | Construct ordinary proof steps and check local arithmetic primitives | fast | `src/kernel/proof/{object,fact_reasoning,arithmetic_special}.rs`, `src/surface/proof_certificate.rs` |
@@ -140,7 +140,7 @@ rechecking completed entries. The fast operation has a required test-build
 discovery guard. This boundary does not remove discovery from compatibility
 callers or extend the indexed geometry fragment.
 
-Checked call returns retain entry-borrow provenance beside each emitted resource
+Checked call returns retain entry-borrow origin beside each emitted resource
 occurrence, including after guarded clauses are skipped or dependent clauses
 are deferred. Restore these borrows before admitting the other outputs. Produced
 composite frontiers are checked against the restored frame plus the existing
@@ -153,7 +153,7 @@ An entry-borrow marker is recorded only when evaluation retrieves the checked
 entry occurrence; an unmatched or deferred description keeps ordinary admission.
 
 Return construction captures each source occurrence ID from admission alongside
-its entry-borrow provenance. Composition pairs that ID with the destination ID
+its entry-borrow origin. Composition pairs that ID with the destination ID
 returned by restoration or admission. Core projection selects the owned source
 by its occurrence ID and attaches observations to the paired destination; it does
 not enumerate equal descriptions or reconstruct occurrence ranks. Equal resource

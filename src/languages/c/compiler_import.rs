@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::option_profile::OptionProfile;
-use super::provenance::CSourceMap;
+use super::source_map::CSourceMap;
 use super::syntax::PromiseAttributes;
 use super::system_headers::{self, HeaderKind};
 use super::target::{COptimization, CTarget};

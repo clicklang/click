@@ -72,8 +72,8 @@ fn call_frame_retains_a_view_without_scanning_other_views() {
                 let recorded = CallKeptRanges::recorded_on(&after).unwrap();
                 assert!(recorded.holds_access(&target, 4, &assumptions));
                 assert!(!recorded.holds_access(&pointer(999_999), 4, &assumptions));
-                let evidence = crate::kernel::memory_provenance::with_extended_dag_bridging(|| {
-                    crate::kernel::memory_provenance::atomic_memory_load_equality_evidence(
+                let evidence = crate::kernel::memory_history::with_extended_dag_bridging(|| {
+                    crate::kernel::memory_history::atomic_memory_load_equality_evidence(
                         &load(&after),
                         &load(&before),
                         &assumptions,

@@ -113,13 +113,12 @@ fn offset_condition_rewrites_preserve_shared_offset_dags() {
                         &MachineTerm::constant(1),
                     )
                     .unwrap();
-                let transported =
-                    crate::kernel::memory_provenance::transport_framed_common_condition(
-                        &source,
-                        &crate::kernel::Memory::new(),
-                        None,
-                    )
-                    .unwrap();
+                let transported = crate::kernel::memory_history::transport_framed_common_condition(
+                    &source,
+                    &crate::kernel::Memory::new(),
+                    None,
+                )
+                .unwrap();
                 (rewritten, transported)
             });
         assert_eq!(source, rewritten);

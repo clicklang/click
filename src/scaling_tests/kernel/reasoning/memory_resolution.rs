@@ -129,7 +129,7 @@ fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
                     &local, &read, &facts
                 ));
                 assert!(
-                    crate::kernel::memory_provenance::write_access_is_disjoint_from_load(
+                    crate::kernel::memory_history::write_access_is_disjoint_from_load(
                         &local, 4, &read, 4, &facts
                     )
                 );
@@ -149,7 +149,7 @@ fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
             &base, &interior, &facts
         ));
         assert!(
-            !crate::kernel::memory_provenance::write_access_is_disjoint_from_load(
+            !crate::kernel::memory_history::write_access_is_disjoint_from_load(
                 &base, 4, &interior, 4, &facts
             )
         );

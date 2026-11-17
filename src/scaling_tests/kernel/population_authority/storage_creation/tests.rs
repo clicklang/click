@@ -666,7 +666,7 @@ fn opaque_repeated_symbolic_births_compose_and_return_without_scanning_unrelated
         crate::kernel::assumptions::clear_assumption_memos();
         crate::kernel::clear_integer_bridge_memo();
         crate::kernel::eval::clear_load_canonicalization_caches();
-        crate::kernel::memory_provenance::clear_canonical_form_caches();
+        crate::kernel::memory_history::clear_canonical_form_caches();
         let mut entry = CreationEvents::new();
         let mut facts = PureFactContext::new();
         for index in 0..size {

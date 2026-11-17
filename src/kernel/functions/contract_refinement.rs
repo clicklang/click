@@ -695,7 +695,7 @@ pub(super) fn project_refinement_effects(
         return Ok(Ok(FunctionMemoryEffectProjection {
             ranges,
             evidence_facts: evidence_facts.into(),
-            // Explicit segments carry no requirement provenance.
+            // Explicit segments carry no requirement source.
             range_sources: Vec::new(),
         }));
     }

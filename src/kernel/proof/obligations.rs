@@ -15,7 +15,7 @@ use crate::kernel::{
 
 /// Diagnostic evidence returned when an allocation-lifetime obligation could
 /// not be discharged. The allocation is semantic evidence; the optional
-/// holder is diagnostic provenance identifying the declared resource that
+/// holder is diagnostic metadata identifying the declared resource that
 /// still accounts for it. This is deliberately distinct from the open proof
 /// obligation below: a successful check has no leaked-allocation payload.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -237,7 +237,7 @@ impl AsRef<crate::kernel::ExecutionFacts> for OutcomeExecutionFacts {
 ///
 /// The proposition, the root assumptions it was closed under, and the optional
 /// function outcome all come from the root semantic obligation retained by
-/// [`ProofObject`](super::ProofObject); surface provenance cannot manufacture
+/// [`ProofObject`](super::ProofObject); surface lineage cannot manufacture
 /// or retarget this value after completion. Retaining the root facts lets a
 /// theorem constructor check which assumptions the proof actually stood on
 /// instead of re-proving its conclusion. The fact store is persistent, so

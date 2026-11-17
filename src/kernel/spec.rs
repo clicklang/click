@@ -10361,7 +10361,7 @@ fn program_value_uint64_term(value: &ProgramValue) -> Option<MachineTerm> {
 mod integer_budget_tests;
 
 #[cfg(test)]
-mod lowering_provenance_tests;
+mod lowering_head_origin_tests;
 
 #[cfg(test)]
 mod spec_pointer_subtraction_tests;

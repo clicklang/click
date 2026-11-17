@@ -263,18 +263,18 @@ impl ProofCertificate {
         std::sync::Arc::ptr_eq(&self.steps, &other.steps)
     }
 
-    /// Serializes checked proof provenance as a certificate.
+    /// Serializes checked proof lineage as a certificate.
     ///
     /// This is the same admission rule [`Self::from_proof_tactics`] applies to
     /// source tactics: a certificate leaf must be surface-expressible and
     /// simple, and a structured step must own complete explicit child proofs.
     /// The two constructors share [`certificate_step_class`] and
-    /// [`CertificateError`] so provenance cannot smuggle in a leaf that source
+    /// [`CertificateError`] so lineage cannot smuggle in a leaf that source
     /// text could not spell.
     pub(crate) fn from_steps(steps: Vec<ProofStep>) -> Result<Self, ClickError> {
         validate_certificate_steps(&steps, &mut Vec::new()).map_err(|error| {
             ClickError::new(format!(
-                "proof provenance produced {error} as a certificate step, which no explicit \
+                "proof lineage produced {error} as a certificate step, which no explicit \
                  proof can spell"
             ))
         })?;
@@ -299,7 +299,7 @@ impl ProofCertificate {
     ) -> Result<Self, ClickError> {
         validate_certificate_steps(&steps, &mut Vec::new()).map_err(|error| {
             ClickError::new(format!(
-                "proof provenance produced {error} as a certificate step, which no explicit \
+                "proof lineage produced {error} as a certificate step, which no explicit \
                  proof can spell"
             ))
         })?;

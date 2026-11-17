@@ -449,7 +449,7 @@ fn interface_join_does_not_visit_locals_its_arms_share() {
 }
 
 #[test]
-fn interface_join_provenance_uses_checked_arms_before_marker_union() {
+fn interface_join_history_uses_checked_arms_before_marker_union() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Pointer {
         block: "global:branch-value".into(),

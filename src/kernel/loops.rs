@@ -6070,7 +6070,7 @@ pub(super) fn prepare_loop_top_state(
                 let Proposition::MemoryEffectSummary { mutable_ranges, .. } = summary else {
                     return false;
                 };
-                crate::kernel::memory_provenance::typed_ranges_disjoint_from_pointer_evidence(
+                crate::kernel::memory_history::typed_ranges_disjoint_from_pointer_evidence(
                     mutable_ranges,
                     run.base(),
                     bytes,

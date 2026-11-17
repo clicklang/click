@@ -1,7 +1,7 @@
 # `intro()` names a range quantifier's variable in a `have` between statements
 
 A `have` stated between C statements is lowered at the execution frontier,
-which records no lowering provenance for its binders. `intro()` still names
+which records no lowering head chain for its binders. `intro()` still names
 a range quantifier's variable as written, so the body can cite it: here
 `instantiate` specializes `memset`'s postcondition at `k` and the value
 conjunct closes the goal.

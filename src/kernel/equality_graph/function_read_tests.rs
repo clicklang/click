@@ -42,7 +42,7 @@ fn function_pointer_read_requires_explicit_store_equation() {
             "cached value leaked, alias={aliased}"
         );
         let equation =
-            crate::kernel::memory_provenance::store_value_equation(memory.memory(), &slot, &stored)
+            crate::kernel::memory_history::store_value_equation(memory.memory(), &slot, &stored)
                 .expect("function store equation");
         let facts = empty.clone().assume_proposition(equation.clone());
         assert!(facts.pointers_known_equal(&read, &target));
@@ -66,7 +66,7 @@ fn function_pointer_read_requires_explicit_store_equation() {
         let new_read = function_read(&after, &query);
         assert!(!facts.pointers_known_equal(&new_read, &Pointer::function("replacement")));
         let updated = facts.assume_proposition(
-            crate::kernel::memory_provenance::store_value_equation(
+            crate::kernel::memory_history::store_value_equation(
                 after.memory(),
                 &slot,
                 &replacement,

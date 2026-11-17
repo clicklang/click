@@ -319,7 +319,7 @@ impl Boundary<'_> {
                     | "descends_from"
             )
         {
-            self.errors.push(format!("{}: {}: loan provenance must retain split origins, not reconstruct them by search or history ({name})", self.path, self.function));
+            self.errors.push(format!("{}: {}: loan sources must retain split origins, not reconstruct them by search or history ({name})", self.path, self.function));
         }
         if self.path == "src/kernel/loans.rs"
             && (name == "view_occurrences_for_fact"

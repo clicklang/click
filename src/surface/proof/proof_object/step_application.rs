@@ -1304,7 +1304,7 @@ impl<'a> Proof<'a> {
                         }
                         surface.and_then(written_universal_body).map(Arc::new)
                     }
-                    // No lowering provenance was recorded for this goal, so
+                    // No lowering head chain was recorded for this goal, so
                     // refine the written form structurally, as before.
                     (None, PropositionIntroduction::Implication, Some(surface)) => {
                         surface_implication_parts(surface)
@@ -1340,7 +1340,7 @@ impl<'a> Proof<'a> {
                         }
                         Some(Arc::new(body.as_ref().clone()))
                     }
-                    // A range quantifier stated where no lowering provenance
+                    // A range quantifier stated where no lowering head chain
                     // was recorded (a `have` at an execution frontier) names
                     // its variable like a written `forall`. Its range guard
                     // is the next introduction, so the remaining written goal

@@ -17,7 +17,7 @@
 
 use super::cell_source::{MemoryDagAssumptionKind, MemoryDagHopJustification};
 use super::{SeparationCheck, TrackedResource};
-use crate::kernel::memory_provenance::*;
+use crate::kernel::memory_history::*;
 use crate::kernel::primitives::*;
 use crate::kernel::reasoning::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
@@ -735,7 +735,7 @@ fn store_cell_effect(
         // when consuming the hop; no alias/history search enters the proof.
         hop(MemoryDagHopJustification::StoreAliasedByteSeparation { write: aligned })
     } else if let Some(justification) =
-        crate::kernel::memory_provenance::indexed_store_byte_separation_evidence(
+        crate::kernel::memory_history::indexed_store_byte_separation_evidence(
             write,
             value.byte_width(),
             pointer,

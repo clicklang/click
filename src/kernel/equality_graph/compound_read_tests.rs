@@ -51,7 +51,7 @@ fn compound_read_queries_require_explicit_equations() {
             "{format:?}: compound query imported a cached value"
         );
         let equation =
-            crate::kernel::memory_provenance::store_value_equation(memory.memory(), &slot, &value)
+            crate::kernel::memory_history::store_value_equation(memory.memory(), &slot, &value)
                 .unwrap();
         let facts = empty.clone().assume_proposition(equation);
         assert!(

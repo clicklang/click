@@ -257,7 +257,7 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
 
 #[test]
 fn composition_store_separation_uses_checked_aliases_without_scanning_other_owners() {
-    use crate::kernel::memory_provenance::owned_composition_store_separated_evidence;
+    use crate::kernel::memory_history::owned_composition_store_separated_evidence;
 
     let parameter = |id| Pointer {
         block: PointerBlock::ExternalArgument,
@@ -618,7 +618,7 @@ fn store_separation_without_an_owner_reads_only_listed_compositions() {
         admitted.push(last);
         let (newest, oldest) = (object(size - 1), object(0));
         let (separated, used) = crate::instrumentation::measure_deterministic_work(|| {
-            crate::kernel::memory_provenance::owned_composition_store_separated_evidence(
+            crate::kernel::memory_history::owned_composition_store_separated_evidence(
                 &newest, 4, &oldest, 4, &context,
             )
             .is_some()
@@ -626,7 +626,7 @@ fn store_separation_without_an_owner_reads_only_listed_compositions() {
         assert!(separated, "size={size}");
         proved.push(used);
         let (separated, used) = crate::instrumentation::measure_deterministic_work(|| {
-            crate::kernel::memory_provenance::owned_composition_store_separated_evidence(
+            crate::kernel::memory_history::owned_composition_store_separated_evidence(
                 &newest, 4, &unowned, 4, &context,
             )
             .is_some()
@@ -669,7 +669,7 @@ fn store_separation_work_is_independent_of_earlier_compositions() {
             let footprint = context.owned_store_footprint(&last, 4);
             (
                 context.access_owned_apart_from_store(&footprint, &last, &first, 4),
-                crate::kernel::memory_provenance::owned_composition_store_separated_evidence(
+                crate::kernel::memory_history::owned_composition_store_separated_evidence(
                     &last, 4, &first, 4, &context,
                 )
                 .is_some(),
@@ -931,7 +931,7 @@ fn rechecked_kept_frame_checks_selected_equality_without_rebuilding_foreign_inpu
 
 #[test]
 fn one_owned_member_does_not_trigger_store_alias_reasoning() {
-    use crate::kernel::memory_provenance::{
+    use crate::kernel::memory_history::{
         count_composition_store_alias_queries, owned_composition_store_separated_evidence,
     };
 

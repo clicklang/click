@@ -897,7 +897,7 @@ fn graph_aliased_range_membership_checks_complete_access_and_scales() {
     // A named call can leave a store's pointer connected to the selected
     // range by two equalities. Check that local graph evidence frames the
     // complete access without enumerating unrelated aliases.
-    use crate::kernel::memory_provenance::typed_store_separated_ranges_evidence;
+    use crate::kernel::memory_history::typed_store_separated_ranges_evidence;
     let _session = crate::kernel::VerificationSession::enter();
     let base = |id| Pointer {
         block: PointerBlock::ExternalArgument,
@@ -1256,7 +1256,7 @@ fn indexed_byte_separation_ignores_unrelated_external_ranges() {
         }
         context = context.assume_proposition(separate(p.clone(), q.clone()));
         let (proof, work) = crate::instrumentation::measure_deterministic_work(|| {
-            crate::kernel::memory_provenance::indexed_store_byte_separation_evidence(
+            crate::kernel::memory_history::indexed_store_byte_separation_evidence(
                 &q, 8, &p, 8, &context,
             )
         });
@@ -1297,7 +1297,7 @@ fn numeric_byte_geometry_ignores_unrelated_address_classes() {
         }
         context = context.assume_proposition(numeric_alias(q.clone(), p.offset_by_bytes(8)));
         let (proof, work) = crate::instrumentation::measure_deterministic_work(|| {
-            crate::kernel::memory_provenance::indexed_store_byte_separation_evidence(
+            crate::kernel::memory_history::indexed_store_byte_separation_evidence(
                 &q, 8, &p, 8, &context,
             )
         });
@@ -1423,7 +1423,7 @@ fn direct_pointer_projection_dependencies_scale_with_the_selected_chain() {
             true,
         );
         for _ in 0..size {
-            let projected = crate::kernel::memory_provenance::canonical_value_load_memory(
+            let projected = crate::kernel::memory_history::canonical_value_load_memory(
                 &source,
                 &left,
                 crate::kernel::C_POINTER_BYTE_WIDTH,
@@ -1450,7 +1450,7 @@ fn direct_pointer_projection_dependencies_scale_with_the_selected_chain() {
             intern_memory(Memory::new().with_block_without_derivation("local:projection-frame", 4));
         for i in 0..size {
             let address = Pointer::symbolic(Variable(99_000 + i));
-            let projected = crate::kernel::memory_provenance::canonical_value_load_memory(
+            let projected = crate::kernel::memory_history::canonical_value_load_memory(
                 &source,
                 &address,
                 crate::kernel::C_POINTER_BYTE_WIDTH,
@@ -1458,7 +1458,7 @@ fn direct_pointer_projection_dependencies_scale_with_the_selected_chain() {
             Pointer::loaded_value(&projected, &address);
         }
         let address = Pointer::symbolic(Variable(98_380));
-        let projected = crate::kernel::memory_provenance::canonical_value_load_memory(
+        let projected = crate::kernel::memory_history::canonical_value_load_memory(
             &source,
             &address,
             crate::kernel::C_POINTER_BYTE_WIDTH,

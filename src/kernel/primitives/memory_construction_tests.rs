@@ -34,7 +34,7 @@ fn memory_constructions_cover_non_transition_producers() {
     let memory = Memory::new()
         .with_block("local:construction", 16)
         .store(pointer.clone(), ProgramValue::Int32(7.into()));
-    let projected = crate::kernel::memory_provenance::canonical_program_memory_for_pointer_load(
+    let projected = crate::kernel::memory_history::canonical_program_memory_for_pointer_load(
         &memory,
         &Pointer::symbolic(Variable(990_810)),
     );
@@ -47,7 +47,7 @@ fn memory_constructions_cover_non_transition_producers() {
     ));
     let variants = [
         projected,
-        crate::kernel::memory_provenance::canonical_memory_deep(&memory),
+        crate::kernel::memory_history::canonical_memory_deep(&memory),
         memory.without_cell(&pointer),
         memory.clone().with_uninitialized_object(pointer.clone(), 4),
         memory.clone().with_block_without_derivation("synthetic", 4),

@@ -885,7 +885,7 @@ impl<'a> Proof<'a> {
                 // At a call successor, a synthesized `old(...)` names the
                 // callee's entry state, while the same surface syntax in
                 // the caller names the caller's function entry. Do not cache
-                // that ambiguous spelling as caller provenance. Explicit
+                // that ambiguous spelling as caller-state origin. Explicit
                 // MemoryState-qualified forms (including proof marks) retain the exact
                 // call-frontier identity needed to name such a fact later.
                 if proposition_contains_old_expression(&surface) {
@@ -1390,11 +1390,7 @@ impl<'a> Proof<'a> {
                 .iter()
                 .enumerate()
                 .map(|(index, path)| {
-                    if execution
-                        .provenance_for_outcome(index)
-                        .loop_return
-                        .is_some()
-                    {
+                    if execution.evidence_for_outcome(index).loop_return.is_some() {
                         path.clone()
                     } else {
                         crate::kernel::program_function_execution_candidate_with_additional_facts(
@@ -1942,7 +1938,7 @@ impl<'a> Proof<'a> {
         for fact in &added {
             proof_facts = proof_facts.with_kernel_checked_fact(fact.clone());
         }
-        // Retain the expanded loop clause as checked provenance so
+        // Retain the expanded loop clause as checked evidence so
         // whole-claim expansion serializes it without consulting the
         // transitional builder record.
         let loop_step = ProofCertificate::from_proof_tactics(std::slice::from_ref(

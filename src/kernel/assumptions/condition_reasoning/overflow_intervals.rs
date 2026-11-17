@@ -296,7 +296,7 @@ impl PureFactContext {
             return true;
         }
         if let Some(source) = self.stated_overflow_source(query, truth) {
-            record_implicit_reasoning_provenance(self, source);
+            record_implicit_consulted_premises(self, source);
             return true;
         }
         query.format == MachineIntegerType::Int32
@@ -368,7 +368,7 @@ impl PureFactContext {
             .and_then(|graph| graph.decide_overflow_query(query))
         {
             if let Some(source) = self.stated_overflow_source(query, value) {
-                record_implicit_reasoning_provenance(self, source);
+                record_implicit_consulted_premises(self, source);
             }
             return Some(value);
         }
@@ -385,14 +385,14 @@ impl PureFactContext {
                     })
         }) {
             for bound in &bounds {
-                record_implicit_reasoning_provenance(self, bound);
+                record_implicit_consulted_premises(self, bound);
             }
             return Some(false);
         }
         let operation = query.operation_kind();
         for truth in [true, false] {
             if let Some(source) = self.stated_overflow_source(query, truth) {
-                record_implicit_reasoning_provenance(self, source);
+                record_implicit_consulted_premises(self, source);
                 return Some(truth);
             }
         }
@@ -403,7 +403,7 @@ impl PureFactContext {
                 MachineIntegerType::Int32 if operand.variable().is_some() => self
                     .indexed_exact_int32_constant_view(operand)
                     .map(|(value, source)| {
-                        record_implicit_reasoning_provenance(self, &source);
+                        record_implicit_consulted_premises(self, &source);
                         MachineTerm::constant(value as u32)
                     }),
                 MachineIntegerType::Int32 => self
@@ -489,7 +489,7 @@ impl PureFactContext {
                     let strict = self.checked_order_bounds.strict_upper_view(left);
                     let direct = self.checked_order_bounds.upper_below_max_view(left);
                     if let Some(source) = strict.as_ref().or(direct.as_ref()) {
-                        record_implicit_reasoning_provenance(self, source);
+                        record_implicit_consulted_premises(self, source);
                     }
                     if strict.is_some()
                         || direct.is_some()
@@ -2454,8 +2454,8 @@ mod shared_overflow_query_tests {
         );
         let parent = PureFactContext::new();
         let child = parent.clone().assume_proposition(source.clone());
-        let (answer, sources) = collect_reasoning_provenance(|| {
-            capture_implicit_reasoning_provenance(|| child.decide_overflow_query(&query))
+        let (answer, sources) = collect_consulted_premises(|| {
+            capture_implicit_consulted_premises(|| child.decide_overflow_query(&query))
         });
         assert_eq!(answer, Some(false));
         assert!(sources.contains(&source));

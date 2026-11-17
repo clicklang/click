@@ -1187,7 +1187,7 @@ fn a_checked_interface_join_does_not_reconstruct_a_calls_havoc() {
         called.state = after_state.clone().into();
         called.effect_facts.push(effect);
         // The statement recorder retains exactly one effect for this call.
-        // Its checked walk is the join's provenance for the effect stream.
+        // Its checked walk is the join's record of the effect stream.
         let steps = [CheckedMemoryStep {
             before: memory,
             after,

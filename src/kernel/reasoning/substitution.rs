@@ -1506,7 +1506,7 @@ fn walk_pure_function_argument<S: VariableSubstitution + ?Sized>(
             PureFunctionArgument::Integer(s.integer(value.as_ref()).into())
         }
         PureFunctionArgument::SharedMachine(value) => PureFunctionArgument::SharedMachine(
-            crate::kernel::memory_provenance::map_shared_pointer_index_with_fold(
+            crate::kernel::memory_history::map_shared_pointer_index_with_fold(
                 value,
                 |leaf| Some(s.bitvector(leaf)),
                 crate::kernel::proof::equality_rewrite::rebuild_normalized_machine_node,
@@ -5420,11 +5420,11 @@ fn map_common_substitution_offsets(
         // The native offset substitution preserves the old index
         // on an unsupported rewrite and preserves unchanged spelling.
         let mapped = map_machine(&value, index.ty()).unwrap_or_else(|| index.clone());
-        if crate::kernel::memory_provenance::pointer_index_syntax_equal(&index, &mapped) {
+        if crate::kernel::memory_history::pointer_index_syntax_equal(&index, &mapped) {
             return Ok(original.clone());
         }
         Ok(O::import(
-            &crate::kernel::memory_provenance::rebuild_scaled_pointer_index(mapped, width, wide),
+            &crate::kernel::memory_history::rebuild_scaled_pointer_index(mapped, width, wide),
         ))
     })
 }
@@ -5441,7 +5441,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
     let mut machine_results = std::collections::HashMap::new();
     let mut map_machine = |argument: &KernelTerm, format: MachineIntegerType| {
         let operand = crate::kernel::MachineOperandView::Shared(argument).retain(format);
-        crate::kernel::memory_provenance::map_shared_machine_substitution_with_cache(
+        crate::kernel::memory_history::map_shared_machine_substitution_with_cache(
             &operand,
             |leaf| Some(substitute_bitvector_variable(leaf, from, to)),
             crate::kernel::proof::equality_rewrite::rebuild_normalized_machine_node,
@@ -6108,7 +6108,7 @@ fn substitute_bitvector_variable_in_pointer_offset_cow<'a>(
             }
         }
         PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-            let rewritten = crate::kernel::memory_provenance::map_shared_pointer_index_with_fold(
+            let rewritten = crate::kernel::memory_history::map_shared_pointer_index_with_fold(
                 value,
                 |leaf| Some(substitute_bitvector_variable(leaf, from, to)),
                 crate::kernel::proof::equality_rewrite::rebuild_normalized_machine_node,
@@ -6125,17 +6125,15 @@ fn substitute_bitvector_variable_in_pointer_offset_cow<'a>(
             )
             .unwrap_or_else(|| value.clone());
             let unchanged =
-                crate::kernel::memory_provenance::pointer_index_syntax_equal(value, &rewritten);
+                crate::kernel::memory_history::pointer_index_syntax_equal(value, &rewritten);
             if unchanged {
                 Cow::Borrowed(offset)
             } else {
-                Cow::Owned(
-                    crate::kernel::memory_provenance::rebuild_scaled_pointer_index(
-                        rewritten,
-                        *byte_width,
-                        None,
-                    ),
-                )
+                Cow::Owned(crate::kernel::memory_history::rebuild_scaled_pointer_index(
+                    rewritten,
+                    *byte_width,
+                    None,
+                ))
             }
         }
         PointerOffsetTerm::Int64Scaled {
@@ -6143,7 +6141,7 @@ fn substitute_bitvector_variable_in_pointer_offset_cow<'a>(
             byte_width,
             unsigned,
         } => {
-            let rewritten = crate::kernel::memory_provenance::map_shared_pointer_index_with_fold(
+            let rewritten = crate::kernel::memory_history::map_shared_pointer_index_with_fold(
                 value,
                 |leaf| Some(substitute_bitvector_variable(leaf, from, to)),
                 crate::kernel::proof::equality_rewrite::rebuild_normalized_machine_node,
@@ -6160,17 +6158,15 @@ fn substitute_bitvector_variable_in_pointer_offset_cow<'a>(
             )
             .unwrap_or_else(|| value.clone());
             let unchanged =
-                crate::kernel::memory_provenance::pointer_index_syntax_equal(value, &rewritten);
+                crate::kernel::memory_history::pointer_index_syntax_equal(value, &rewritten);
             if unchanged {
                 Cow::Borrowed(offset)
             } else {
-                Cow::Owned(
-                    crate::kernel::memory_provenance::rebuild_scaled_pointer_index(
-                        rewritten,
-                        *byte_width,
-                        Some(*unsigned),
-                    ),
-                )
+                Cow::Owned(crate::kernel::memory_history::rebuild_scaled_pointer_index(
+                    rewritten,
+                    *byte_width,
+                    Some(*unsigned),
+                ))
             }
         }
     }

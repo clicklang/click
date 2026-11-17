@@ -153,12 +153,8 @@ fn narrow_store_equation_queries_do_not_walk_alias_classes_or_unrelated_cells() 
                 facts = facts
                     .assume_condition(ConditionTerm::pointer_equal(query.clone(), cell(0)), true);
                 facts = facts.assume_proposition(
-                    crate::kernel::memory_provenance::store_value_equation(
-                        &memory,
-                        &cell(0),
-                        &stored,
-                    )
-                    .unwrap(),
+                    crate::kernel::memory_history::store_value_equation(&memory, &cell(0), &stored)
+                        .unwrap(),
                 );
                 let memory = intern_memory(memory);
                 let kind = LoadKind::of_value(&stored).unwrap();

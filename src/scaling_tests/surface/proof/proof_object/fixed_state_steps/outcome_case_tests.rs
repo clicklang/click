@@ -39,7 +39,7 @@ fn nested_case_partition_reuses_decisions_without_relowering_or_forking() {
                 value: false,
             });
         }
-        let provenance = OutcomeProvenance {
+        let outcome_evidence = OutcomeEvidence {
             terminal_statement_case: None,
             checked_leaf_facts: None,
             loop_return: None,
@@ -61,13 +61,13 @@ fn nested_case_partition_reuses_decisions_without_relowering_or_forking() {
                 &root,
                 &root,
                 &mut Vec::new(),
-                provenance,
+                outcome_evidence,
                 &|_, _, _| panic!("a recorded case must not be lowered again"),
                 &|_, _, _, _| unreachable!("the partition has no `match`"),
                 &|_, _, _, _, _| unreachable!("recorded decisions need no proof"),
-                &mut |facts, provenance| {
+                &mut |facts, outcome_evidence| {
                     assert!(facts.is_empty(), "no invented case facts");
-                    assert_eq!(provenance.branch_decisions.iter().count(), size);
+                    assert_eq!(outcome_evidence.branch_decisions.iter().count(), size);
                     leaves += 1;
                 },
             )
@@ -150,7 +150,7 @@ fn flat_haves_before_a_case_use_linear_work_and_constant_traversal_stack() {
                 next: (index + 1 < size).then_some(index + 1),
             })
             .collect::<Vec<_>>();
-        let provenance = OutcomeProvenance {
+        let outcome_evidence = OutcomeEvidence {
             terminal_statement_case: None,
             checked_leaf_facts: None,
             loop_return: None,
@@ -173,7 +173,7 @@ fn flat_haves_before_a_case_use_linear_work_and_constant_traversal_stack() {
                 &root,
                 &root,
                 &mut vec![],
-                provenance,
+                outcome_evidence,
                 &|_, _, _| unreachable!(),
                 &|_, _, _, _| unreachable!(),
                 &|_, written, _, _, _| {
@@ -184,9 +184,9 @@ fn flat_haves_before_a_case_use_linear_work_and_constant_traversal_stack() {
                         ProofCertificate::from_steps(vec![]).unwrap(),
                     ))
                 },
-                &mut |facts, provenance| {
+                &mut |facts, outcome_evidence| {
                     assert_eq!(facts.len(), size);
-                    assert!(provenance.checked_haves.get(&(size - 1)).is_some());
+                    assert!(outcome_evidence.checked_haves.get(&(size - 1)).is_some());
                     leaves += 1;
                 },
             )

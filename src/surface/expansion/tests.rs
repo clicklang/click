@@ -1461,7 +1461,7 @@ int32 nested_nonnegative(int32 x, int32 flag) {
     assert_eq!(flat_units, 1, "the nested script should retain one Proof");
     let retained = verified[0]
         .expanded_proof_tactics()
-        .expect("the nested proof should retain surface provenance");
+        .expect("the nested proof should retain surface evidence");
     fn count_branches(tactics: &[ProofTactic]) -> usize {
         tactics
             .iter()

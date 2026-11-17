@@ -767,7 +767,7 @@ pub(super) enum MemoryDagLoadEqualityReason {
 pub(crate) enum AtomicMemoryLoadEqualityEvidence {
     SameCell(MemoryDagLoadEqualityEvidence),
     /// One or both load endpoints are pointer-observable canonical
-    /// projections. The projection edge is producer-known provenance; the
+    /// projections. The projection edge is producer-known derivation; the
     /// ordinary DAG walk begins at its retained source.
     SameCellViaCanonicalProjection {
         equality: MemoryDagLoadEqualityEvidence,
@@ -2452,7 +2452,7 @@ pub(in crate::kernel) fn typed_range_disjoint_from_pointer_evidence(
     {
         let membership =
             AccessInRangeEvidence::for_access(pointer, bytes, access_member, assumptions)?;
-        crate::kernel::record_implicit_reasoning_provenance(
+        crate::kernel::record_implicit_consulted_premises(
             assumptions,
             &Proposition::ResourceComposition(resources.clone()),
         );
@@ -2491,7 +2491,7 @@ pub(in crate::kernel) fn typed_range_disjoint_from_pointer_evidence(
             else {
                 continue;
             };
-            crate::kernel::record_implicit_reasoning_provenance(assumptions, fact);
+            crate::kernel::record_implicit_consulted_premises(assumptions, fact);
             return Some(RangeDisjointFromPointerEvidence::ExactSeparationFact(
                 Box::new(SeparatedRangeEvidence {
                     fact: fact.clone(),
@@ -2591,7 +2591,7 @@ pub(in crate::kernel) fn indexed_store_byte_separation_evidence(
         if assumptions.memory_ranges_overlap_after_base_equality(left, right) {
             return None;
         }
-        crate::kernel::record_implicit_reasoning_provenance(assumptions, proposition);
+        crate::kernel::record_implicit_consulted_premises(assumptions, proposition);
         Some(MemoryDagHopJustification::StoreSeparatedRanges {
             authority: StoreSeparatedRangesAuthority::ExactProposition(proposition.clone()),
             left: left.clone(),
@@ -2687,7 +2687,7 @@ pub(in crate::kernel) fn typed_store_separated_ranges_evidence(
             if assumptions.memory_ranges_overlap_after_base_equality(left, right) {
                 return None;
             }
-            crate::kernel::record_implicit_reasoning_provenance(assumptions, proposition);
+            crate::kernel::record_implicit_consulted_premises(assumptions, proposition);
             Some(MemoryDagHopJustification::StoreSeparatedRanges {
                 authority: StoreSeparatedRangesAuthority::ExactProposition(proposition.clone()),
                 left: left.clone(),
@@ -2739,7 +2739,7 @@ pub(in crate::kernel) fn typed_store_separated_ranges_evidence(
         AccessInRangeEvidence::for_access(write, write_bytes, left, assumptions)?;
     let load_membership =
         AccessInRangeEvidence::for_access(pointer, load_bytes, right, assumptions)?;
-    crate::kernel::record_implicit_reasoning_provenance(
+    crate::kernel::record_implicit_consulted_premises(
         assumptions,
         &Proposition::ResourceComposition(resources.clone()),
     );
@@ -2912,7 +2912,7 @@ fn owned_composition_store_separated_evidence_impl(
                 if assumptions.memory_ranges_overlap_after_base_equality(&left, &right) {
                     return None;
                 }
-                crate::kernel::record_implicit_reasoning_provenance(
+                crate::kernel::record_implicit_consulted_premises(
                     assumptions,
                     &Proposition::ResourceComposition(resources.clone()),
                 );
@@ -4503,7 +4503,7 @@ fn memory_load_is_directly_unchanged(
                 _ => false,
             };
             if proved {
-                crate::kernel::record_implicit_reasoning_provenance(assumptions, proposition);
+                crate::kernel::record_implicit_consulted_premises(assumptions, proposition);
             }
             proved
         })
@@ -4735,8 +4735,8 @@ fn prove_program_condition_fact_transport_with_assumptions(
     // expansion stack.
     match fact {
         Proposition::ConditionIs(condition, value) => {
-            let (transported, premises) = crate::kernel::collect_reasoning_provenance(|| {
-                crate::kernel::capture_implicit_reasoning_provenance(|| {
+            let (transported, premises) = crate::kernel::collect_consulted_premises(|| {
+                crate::kernel::capture_implicit_consulted_premises(|| {
                     transport_framed_atomic_condition(condition, after, assumptions)
                 })
             });
@@ -4744,7 +4744,7 @@ fn prove_program_condition_fact_transport_with_assumptions(
             if &transported == condition {
                 return None;
             }
-            // As with target-directed transport, provenance is a candidate
+            // As with target-directed transport, the recorded derivation is a candidate
             // dependency list, not proof authority. Re-run the exact rewrite
             // using only those facts (and the explicit source premise) before
             // placing the list in a theorem.
@@ -4968,7 +4968,7 @@ pub(crate) fn atomic_canonicalization_term_visits() -> usize {
     ATOMIC_CANONICALIZATION_TERM_VISITS.with(std::cell::Cell::get)
 }
 
-pub(crate) fn clear_provenance_memos() {
+pub(crate) fn clear_load_equality_memos() {
     DAG_LOAD_EQUALITY_POSITIVE_MEMO.with(|memo| memo.borrow_mut().clear());
     DAG_LOAD_EQUALITY_UNPROVEN_MEMO.with(|memo| memo.borrow_mut().clear());
 }
@@ -6217,7 +6217,7 @@ mod condition_fact_graph_equivalence_tests {
     #[cfg(test)]
     mod scaling_tests {
         include!(
-            "../scaling_tests/kernel/memory_provenance/condition_fact_graph_equivalence_tests.rs"
+            "../scaling_tests/kernel/memory_history/condition_fact_graph_equivalence_tests.rs"
         );
     }
 }
@@ -8508,7 +8508,7 @@ mod opaque_pointer_frame_tests {
 
     #[cfg(test)]
     mod scaling_tests {
-        include!("../scaling_tests/kernel/memory_provenance/opaque_pointer_frame_tests.rs");
+        include!("../scaling_tests/kernel/memory_history/opaque_pointer_frame_tests.rs");
     }
 }
 
@@ -8559,7 +8559,7 @@ mod canonical_numeric_run_tests {
 
     #[cfg(test)]
     mod scaling_tests {
-        include!("../scaling_tests/kernel/memory_provenance/canonical_numeric_run_tests.rs");
+        include!("../scaling_tests/kernel/memory_history/canonical_numeric_run_tests.rs");
     }
 }
 
@@ -8569,7 +8569,7 @@ mod pointer_store_endpoint_tests {
 
     #[cfg(test)]
     mod scaling_tests {
-        include!("../scaling_tests/kernel/memory_provenance/pointer_store_endpoint_tests.rs");
+        include!("../scaling_tests/kernel/memory_history/pointer_store_endpoint_tests.rs");
     }
 }
 
@@ -8744,7 +8744,7 @@ mod borrow_partition_tests {
 
     #[cfg(test)]
     mod scaling_tests {
-        include!("../scaling_tests/kernel/memory_provenance/borrow_partition_tests.rs");
+        include!("../scaling_tests/kernel/memory_history/borrow_partition_tests.rs");
     }
 }
 
@@ -8842,7 +8842,7 @@ mod reversed_history_queries {
     }
 
     mod scaling_tests {
-        include!("../scaling_tests/kernel/memory_provenance/reversed_history_queries.rs");
+        include!("../scaling_tests/kernel/memory_history/reversed_history_queries.rs");
     }
 }
 
@@ -9120,13 +9120,13 @@ fn a_store_equation_admitted_before_a_typed_read_joins_reads_at_equal_indexes() 
 #[cfg(test)]
 mod store_equation_width_tests {
     use super::*;
-    include!("../scaling_tests/kernel/memory_provenance/store_equation_width_tests.rs");
+    include!("../scaling_tests/kernel/memory_history/store_equation_width_tests.rs");
 }
 
 #[cfg(test)]
 mod range_scan_accounting_tests {
     use super::*;
-    include!("../scaling_tests/kernel/memory_provenance/range_scan_accounting_tests.rs");
+    include!("../scaling_tests/kernel/memory_history/range_scan_accounting_tests.rs");
 }
 
 #[cfg(test)]
@@ -9246,7 +9246,7 @@ mod retained_offset_evidence_tests {
 
     mod scaling_tests {
         use super::*;
-        include!("../scaling_tests/kernel/memory_provenance/retained_offset_evidence_tests.rs");
+        include!("../scaling_tests/kernel/memory_history/retained_offset_evidence_tests.rs");
     }
 }
 

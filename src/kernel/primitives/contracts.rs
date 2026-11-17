@@ -3965,10 +3965,10 @@ impl ExecutionEnvironment {
             { return false; }
             // A rule stepped under the very context it was certified under
             // finds each prerequisite exactly there: the two hold the same
-            // fact sets by identity. Asking each still records reasoning
-            // provenance, so a capture asks them all.
+            // fact sets by identity. Asking each still records consulted
+            // premises, so a capture asks them all.
             let same_context = || {
-                !crate::kernel::assumptions::implicit_reasoning_provenance_capturing()
+                !crate::kernel::assumptions::implicit_consulted_premises_capturing()
                     && rule.required_assumptions.holds_the_facts_of(assumptions)
             };
             let assumptions_match = || same_context() || rule

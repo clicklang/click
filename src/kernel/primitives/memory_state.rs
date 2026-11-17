@@ -4981,7 +4981,7 @@ impl Memory {
     /// This is deliberately separate from loop havoc. The joined heap is the
     /// union of potential live allocations, so making the transition look like
     /// a loop havoc would record a false memory-DAG derivation. The resulting
-    /// state is a provenance barrier instead: no load from before the
+    /// state is a history barrier instead: no load from before the
     /// branch is transported across it. What survives is a value every arm
     /// still caches for the same cell, kept as a cell of the joined state,
     /// and whatever the interface states as a fact.
@@ -7417,7 +7417,7 @@ impl Memory {
                     &normalized_cell_pointer,
                 ))
             {
-                return if crate::kernel::memory_provenance::indexed_store_byte_separation_evidence(
+                return if crate::kernel::memory_history::indexed_store_byte_separation_evidence(
                     &normalized_pointer,
                     bytes,
                     &normalized_cell_pointer,
@@ -7485,7 +7485,7 @@ impl Memory {
                     &normalized_cell_pointer,
                 ))
             {
-                return if crate::kernel::memory_provenance::indexed_store_byte_separation_evidence(
+                return if crate::kernel::memory_history::indexed_store_byte_separation_evidence(
                     &normalized_pointer,
                     bytes,
                     &normalized_cell_pointer,

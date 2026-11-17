@@ -4715,7 +4715,7 @@ mod memory_state_alpha_tests {
             4,
             &memory,
         );
-        // The load registry keeps the provenance-projected state used by
+        // The load registry keeps the history-projected state used by
         // the minted variable.  Use those exact identities for the explicit
         // forms below; the original `memory` may project to a different DAG
         // version even though it names the same source cell.

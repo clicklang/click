@@ -153,7 +153,7 @@ specific mismatch. A write refused while a directly held view covers its range
 names that view and explains that it permits reading only. Range-bound misses
 keep their compared endpoints and the exact false or unestablished inequality.
 Include the C and contract/proof locations when known;
-do not invent missing locations or provenance. A refusal of a C step follows
+do not invent missing locations or source origins. A refusal of a C step follows
 its `C operation` line, which prints the operation as Click checked it, with
 a `C statement at file:line:column` line quoting the statement as written.
 The C frontend records each statement's site beside its source execution

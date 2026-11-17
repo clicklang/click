@@ -8,7 +8,7 @@ use super::loans::{
     BorrowedContractInputBacking, LoanLedger, LoanRefusal, LoanRefusalDiagnostic,
     LoanRefusalOperation, LoanRefusalSubject, LoanViewBinding, LoanViewBindings,
 };
-pub(super) use super::memory_provenance::*;
+pub(super) use super::memory_history::*;
 use super::prelude::*;
 pub(super) use super::resource_tracker::cell_source::*;
 use crate::instrumentation::ArtifactReuseRejection;
@@ -402,7 +402,7 @@ pub(crate) fn program_condition_fact_target_reaches_in_context(
     };
     // The source is fully represented by this context (or is a tautology).
     // Different reflexive source spellings must not repeat the same failed
-    // target question. Successes still run and record their own provenance.
+    // target question. Successes still run and record their own consulted premises.
     super::closure_memoized_fact_check(
         super::ClosureFactCheck::ConditionTarget,
         &[target],
@@ -422,15 +422,15 @@ pub fn prove_program_condition_fact_target_transport(
     target: &Proposition,
     assumptions: &PureFactContext,
 ) -> Option<Theorem> {
-    let (proved, premises) = crate::kernel::collect_reasoning_provenance(|| {
-        crate::kernel::capture_implicit_reasoning_provenance(|| {
+    let (proved, premises) = crate::kernel::collect_consulted_premises(|| {
+        crate::kernel::capture_implicit_consulted_premises(|| {
             program_condition_fact_target_reaches_in_context(source, target, assumptions)
         })
     });
     if !proved {
         return None;
     }
-    // Provenance collection proposes an output-sized premise set; it is not
+    // Consulted-premise collection proposes an output-sized premise set; it is not
     // itself authority. Recheck against only that set plus the explicit
     // source, so an unrecorded ambient dependency can only make construction
     // fail, never disappear into the exported theorem.
@@ -3178,7 +3178,7 @@ pub fn program_lower_spec_proposition_at_state(
     assumptions: &PureFactContext,
 ) -> Result<(Proposition, Vec<Proposition>, Vec<Proposition>), String> {
     let (proposition, facts, obligations, _) =
-        program_lower_spec_proposition_at_state_with_provenance(
+        program_lower_spec_proposition_at_state_with_head_origins(
             state,
             proposition,
             entry_state,
@@ -3187,13 +3187,13 @@ pub fn program_lower_spec_proposition_at_state(
     Ok((proposition, facts, obligations))
 }
 
-/// [`program_lower_spec_proposition_at_state`], also reporting the head chain of
-/// the lowered proposition: which of its outermost nodes this lowering
-/// inserted as a guard, which were written, and the exact kernel variable
+/// [`program_lower_spec_proposition_at_state`], also reporting the origin of
+/// each node in the lowered proposition's head chain: which of its outermost
+/// nodes this lowering inserted as a guard, which were written, and the exact kernel variable
 /// each written universal bound its written name to. A proof that
 /// introduces the head of this goal reads the record instead of inferring
 /// the correspondence from the shape the written syntax happens to share.
-pub fn program_lower_spec_proposition_at_state_with_provenance(
+pub fn program_lower_spec_proposition_at_state_with_head_origins(
     state: &ExecutionState,
     proposition: &SpecProposition,
     entry_state: Option<&ExecutionState>,

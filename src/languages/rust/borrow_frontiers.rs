@@ -44,7 +44,7 @@ pub struct CheckedExecutedScalarReferenceAccess<'a, 'e> {
 }
 
 /// A completed borrow assignment and its checked store ending on one selected
-/// execution path. This is execution provenance, not a loan-recovery right.
+/// execution path. This is an execution record, not a loan-recovery right.
 #[derive(Debug)]
 pub struct CheckedExecutedScalarReferenceEnd<'a, 'e> {
     certificate: &'a CheckedScalarReferenceEnd<'a>,

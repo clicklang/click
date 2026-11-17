@@ -87,7 +87,7 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
         assert!(work < 2000, "size={size}, work={work}");
         samples.push(work);
         assert_eq!(
-            crate::kernel::memory_provenance::checked_pointer_read_endpoint(&current, &context),
+            crate::kernel::memory_history::checked_pointer_read_endpoint(&current, &context),
             Some(source.clone()),
             "the complete-cell certificate must recover this exact stored value",
         );

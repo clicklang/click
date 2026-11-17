@@ -64,7 +64,7 @@
 pub(in crate::kernel) mod cell_source;
 pub(in crate::kernel) mod step_effect;
 
-use crate::kernel::memory_provenance::with_extended_dag_bridging;
+use crate::kernel::memory_history::with_extended_dag_bridging;
 pub(crate) use crate::kernel::primitives::ProgramPoint;
 use crate::kernel::primitives::program_point::{PathLink, ProgramPointId};
 use crate::kernel::primitives::*;

@@ -305,7 +305,7 @@ fn later_pointer_read_definition_work(count: u32, unrelated: u64) -> usize {
         intern_memory(Memory::new().store(other.clone(), ProgramValue::UInt32(0u32.into())));
     let name = |memory: &SharedMemory, cell: &Pointer| {
         Pointer::loaded_value(
-            &crate::kernel::memory_provenance::canonical_value_load_memory(memory, cell, 8),
+            &crate::kernel::memory_history::canonical_value_load_memory(memory, cell, 8),
             cell,
         )
     };

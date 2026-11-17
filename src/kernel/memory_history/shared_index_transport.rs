@@ -988,6 +988,6 @@ mod tests {
 
     mod scaling_tests {
         use super::*;
-        include!("../../scaling_tests/kernel/memory_provenance/shared_index_transport.rs");
+        include!("../../scaling_tests/kernel/memory_history/shared_index_transport.rs");
     }
 }

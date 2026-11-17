@@ -831,13 +831,21 @@ fn advance_execution_proof_statement(
                         let lowered_exit_condition = lower_fixed_state_proposition(
                             &exit_condition,
                             &transition.pure_facts,
-                            ParameterBinding::new(environment.parsed_function.parameters(), environment.arguments),
-                            FixedStateFrame::new(environment.initial_state, exit_state, None, &recorded_states),
+                            ParameterBinding::new(
+                                environment.parsed_function.parameters(),
+                                environment.arguments,
+                            ),
+                            FixedStateFrame::new(
+                                environment.initial_state,
+                                exit_state,
+                                None,
+                                &recorded_states,
+                            ),
                             environment.spec_definitions,
                         )
                         .map_err(|message| {
                             ClickError::new(format!(
-                                "could not lower loop({loop_index}) exit condition provenance: {message}"
+                                "could not lower loop({loop_index}) exit condition: {message}"
                             ))
                         })?;
                         if transition.pure_facts.contains(&lowered_exit_condition) {

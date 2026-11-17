@@ -506,7 +506,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// candidate on a fixed-state proof.
     ///
     /// Requirement selection probes the current persistent fact indexes. It
-    /// returns only a `ProofStep`; theorem conclusions and provenance
+    /// returns only a `ProofStep`; theorem conclusions and lineage
     /// are created later, if and only if the caller submits that step to
     /// `apply_step` on this same proof.
     pub(in crate::surface::proof) fn select_fixed_state_theorem_application_step(
@@ -534,7 +534,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// Untrusted smart-tactic query for one explicit theorem step at the
     /// current execution frontier. The query can inspect the immutable proof
     /// and return syntax, but only `apply_step` can add the conclusion or
-    /// advance provenance.
+    /// advance the lineage.
     pub(in crate::surface::proof) fn select_execution_theorem_application_step(
         search_input: &Proof<'a>,
         application: &TheoremApplication,

@@ -36,7 +36,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             .execution_start_state(&execution.core.state)
             .clone();
         let mut paths = Vec::with_capacity(checked.paths().len() * 2);
-        let mut outcome_provenance = Vec::with_capacity(checked.paths().len() * 2);
+        let mut outcome_evidence = Vec::with_capacity(checked.paths().len() * 2);
         // The retained evidence traces fork with the candidates so they
         // stay zipped for completion; each forked copy records its arm.
         let mut evidence_plan = Vec::with_capacity(checked.paths().len());
@@ -62,8 +62,8 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             .and_then(|root| driver_proof.facts().introduced_since(root));
         for (path_index, path) in checked.paths().iter().enumerate() {
             check_verification_deadline()?;
-            let mut provenance = execution.provenance_for_outcome(path_index);
-            let retained = provenance
+            let mut path_evidence = execution.evidence_for_outcome(path_index);
+            let retained = path_evidence
                 .checked_leaf_facts
                 .as_deref()
                 .filter(|(candidate, _, _)| candidate.shares_record_with(path))
@@ -83,11 +83,11 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     )
                 });
             if retained.is_none() {
-                provenance.checked_leaf_facts = None;
+                path_evidence.checked_leaf_facts = None;
             }
             let FunctionOutcome::Return { value, state } = path.outcome() else {
                 paths.push(path.clone());
-                outcome_provenance.push(provenance);
+                outcome_evidence.push(path_evidence);
                 evidence_plan.push(OutcomeEvidenceFork::Keep);
                 continue;
             };
@@ -109,7 +109,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         facts.with_kernel_checked_fact(fact.clone())
                     })
             });
-            let retained_states = provenance.recorded_states.clone();
+            let retained_states = path_evidence.recorded_states.clone();
             let match_cases = |source: &ProofMatch,
                                query: &PureFactStore,
                                authority: &PureFactStore,
@@ -131,7 +131,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 driver_proof.facts(),
                 &query,
                 &mut path_facts,
-                provenance,
+                path_evidence,
                 &|condition, facts, bindings| {
                     let scoped = driver_proof.with_surface_local_scope(
                         bindings.unwrap_or(&driver_proof.state.locals().values),
@@ -172,7 +172,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     })
                 },
                 &match_cases,
-                &|surface, written, facts, provenance, bindings| {
+                &|surface, written, facts, path_evidence, bindings| {
                     let result = (|| {
                         let native_value = value.native();
                         let fixed = Proof::for_fixed_state(
@@ -185,10 +185,10 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                                 &pre_state,
                                 state,
                                 Some(&native_value),
-                                &provenance.recorded_states,
+                                &path_evidence.recorded_states,
                             ),
                             frontier_premise_anchor(&execution),
-                            &provenance.surface_propositions,
+                            &path_evidence.surface_propositions,
                             context.spec_definitions,
                             context.theorem_environment,
                             &execution.core.effect_facts,
@@ -236,7 +236,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     }
                     result
                 },
-                &mut |facts, mut provenance| {
+                &mut |facts, mut path_evidence| {
                     let additional = facts[base_len..]
                         .iter()
                         .cloned()
@@ -253,11 +253,11 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                             .fold(retained.clone(), |facts, fact| {
                                 facts.with_kernel_checked_fact(fact.clone())
                             });
-                        provenance.checked_leaf_facts =
+                        path_evidence.checked_leaf_facts =
                             Some(Arc::new((published.clone(), facts, *holds_effects)));
                     }
                     paths.push(published);
-                    outcome_provenance.push(provenance);
+                    outcome_evidence.push(path_evidence);
                 },
             )
             .map_err(|error| {
@@ -284,7 +284,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         execution.core.frontier.position = FrontierPosition::FunctionExit {
             execution: candidates,
         };
-        execution.presentation.outcome_provenance = outcome_provenance.into();
+        execution.presentation.outcome_evidence = outcome_evidence.into();
         execution.presentation.partitioned_post_execution_tactics =
             execution.presentation.post_execution_tactics.clone();
         let transition = driver_proof.checked_execution_transition(

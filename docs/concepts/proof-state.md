@@ -21,7 +21,7 @@ checked state. [Smart and simple tactics](smart-and-simple-tactics.md) defines
 both.
 
 Internally, Click represents this persistent semantic state with a kernel proof
-object. Separate language-layer proof provenance records the
+object. Separate language-layer proof lineage records the
 surface-expressible operations that produced its checked successors. Cheap
 structural sharing lets a smart tactic try alternatives without copying the
 complete state. Neither object is a separate artifact that proof authors

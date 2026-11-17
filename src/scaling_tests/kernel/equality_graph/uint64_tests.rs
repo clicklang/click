@@ -122,7 +122,7 @@ fn an_aliased_read_uses_its_store_equation_without_scanning_unrelated_cells_or_a
         let read = word(&memory, &read_at, 8);
         let stored = MachineTerm::uint64_constant(size);
         context = context.assume_proposition(
-            crate::kernel::memory_provenance::store_value_equation(
+            crate::kernel::memory_history::store_value_equation(
                 memory.memory(),
                 &cell(size),
                 &ProgramValue::UInt64(stored.clone()),
@@ -163,7 +163,7 @@ fn an_aliased_read_query_does_not_walk_its_own_alias_class() {
             context = context.assume_proposition(alias(&link(i), &link(i - 1)));
         }
         context = context.assume_proposition(
-            crate::kernel::memory_provenance::store_value_equation(
+            crate::kernel::memory_history::store_value_equation(
                 memory.memory(),
                 &stored_at,
                 &ProgramValue::UInt64(MachineTerm::uint64_constant(7)),

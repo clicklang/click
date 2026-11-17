@@ -1234,7 +1234,7 @@ fn removing_a_supplier_registers_its_late_read_definition() {
 fn remove_suppliers_with_late_read_definition(register_query: bool) {
     let _session = crate::kernel::VerificationSession::enter();
     let name = |memory: &SharedMemory, address: &Pointer| {
-        crate::kernel::memory_provenance::canonical_value_load_memory(memory, address, 8);
+        crate::kernel::memory_history::canonical_value_load_memory(memory, address, 8);
         Pointer::canonical_loaded_value(memory, address)
     };
     let cell = Pointer {
