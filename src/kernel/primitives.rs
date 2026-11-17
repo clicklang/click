@@ -14512,6 +14512,13 @@ pub struct PureFactContext {
         super::assumptions::UniversalConclusionKey,
         crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
     >,
+    /// One retained source per alpha/load identity of an explicit universal
+    /// equality or its selected operand. Range-guard checking never enumerates
+    /// the context's equality universals.
+    pub(super) universal_equality_sources: crate::persistent::PersistentMap<
+        crate::kernel::proof::PropositionIdentityKey,
+        (std::sync::Arc<Proposition>, bool),
+    >,
     pub(super) condition_facts: super::fact_collections::FactMap<ConditionTerm, bool>,
     pub(super) signed_variable_chains: super::assumptions::variable_chains::VariableChains,
     /// Incremental adjacency for conditions whose variables can be read

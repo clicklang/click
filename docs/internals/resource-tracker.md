@@ -1842,15 +1842,16 @@ The automatic call-return checklist is:
 | --- | --- | --- |
 | `EvaluatedReturnResources::admit_clause` | Independently evaluated raw output clauses lack a checked partition between their new ownership occurrences. | Construct the output partition incrementally from producer evidence; unsupported geometry refuses promptly or requires explicit separation. |
 | `construct_composite_resource_body` | Constructed child IDs and witnesses survive, but child composition still uses incremental legacy admission; the unselected expansion route uses full composition. | Carry the internal partition with the selected body, using bounded checks only for genuinely new child relationships. |
-| `PreparedReturnComposition::finish` | Transfers restore supported borrows/consumed memory, but pending descriptions still need admission against the retained frame. | Every pending output has an explicit origin and a bounded boundary check, or a bounded refusal. |
+| `PreparedReturnComposition::finish` | Pending descriptions retain their established internal composition; the constructor now checks only their boundary against the restored frame and keeps that successor. Unsupported geometry still uses compatibility discovery. | Every pending output has an explicit origin and a bounded boundary check, or a bounded refusal. |
 | `produced_composite_frontier_conflict` | Maintained indexes do not cover every symbolic/alias geometry against retained owners. Unsupported checks call `returned_boundary_conflict_with_legacy_discovery`. | Define the supported geometry and evidence; accept via indexed coordinates/separation, otherwise refuse without searching. |
-| `recover_candidate_stable_view_resources` | Selected loan backing survives, but composing the recovered escrow still calls legacy admission. | Retain the partition/restoration relationship of the withheld occurrences through escrow recovery. |
+| `StableViewTransferPlan::recover_returned_views` | Recovery constructs directly into the actual return residual, admitting each escrow once and carrying recovered hold occurrence IDs to publication. Missing output/escrow geometry still uses legacy admission. | Establish unsupported boundaries from a retained transfer rule or explicit separation, or refuse promptly. |
+| Worker completion and loop-frame exchange | Checked output groups and exit occurrences now survive composition without temporary checked contexts or reinsertion. A boundary with today's parent or withheld loop frame can still require compatibility discovery. | Carry the actual destination relationship or perform a bounded boundary check, with no output-group revalidation. |
 | `project_return_resource_cores` and the legacy arm of `produced_composite_frontier_conflict` | Unconstructed families are expanded from descriptions again. The classifier records `legacy`, rather than a reusable checked body. | Each classifier outcome carries a reusable body/frontier, deliberately opaque ownership, or a bounded refusal. Unsupported language shapes do not all need implementation. |
 
 `try_compose_with_legacy_discovery_and_occurrences` first calls
 `admit_without_discovery`. Only `Unsupported` resumes discovery; indexed
 conflicts already refuse. `PendingOwnershipAdmission::resume_legacy_discovery`
-and `returned_boundary_conflict_with_legacy_discovery` converge on
+and the returned/certified-group boundary adapters converge on
 `legacy_memory_boundary_conflict`, which can enumerate ownership candidates
 and reason along aliases. These internal dispatch edges are frozen too.
 
