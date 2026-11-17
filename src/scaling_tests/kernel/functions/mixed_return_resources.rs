@@ -288,6 +288,7 @@ fn mixed_occurrence_transfers_ignore_ambient_aliases_and_owners() {
             frame.synchronize_memory_equalities(&facts);
             let evaluated =
                 super::tests::evaluate_mixed_scalar(&function, &state, &transfer, &facts).unwrap();
+
             let ((destination, mappings), work) =
                 crate::instrumentation::measure_deterministic_work(|| {
                     let _fast = crate::kernel::search::FastOperationScope::enter(
@@ -399,6 +400,8 @@ fn selected_scalar_transfers_scale_with_the_return_delta() {
         let (resources, emitted) = ResourceContext::new_with_equalities(&facts)
             .unchecked_with_facts_and_occurrences(pieces);
         let mut evaluated = EvaluatedReturnResources {
+            unclassified: resources.clone(),
+            selected_inputs: BTreeSet::new(),
             resources,
             occurrences: emitted
                 .into_iter()
@@ -545,6 +548,8 @@ fn fixed_range_transfer_work_ignores_length_aliases_and_retained_owners() {
             let (resources, inserted) = ResourceContext::new_with_equalities(&facts)
                 .unchecked_with_facts_and_occurrences([output.clone()]);
             let mut evaluated = EvaluatedReturnResources {
+                unclassified: resources.clone(),
+                selected_inputs: BTreeSet::new(),
                 resources,
                 occurrences: vec![EvaluatedReturnOccurrence {
                     clause: None,
@@ -709,6 +714,8 @@ fn fresh_allocation_return_work_scales_with_selected_return_pieces() {
         let (resources, inserted) = ResourceContext::new_with_equalities(&facts)
             .unchecked_with_facts_and_occurrences(pieces);
         let mut evaluated = EvaluatedReturnResources {
+            unclassified: resources.clone(),
+            selected_inputs: BTreeSet::new(),
             resources,
             occurrences: inserted
                 .iter()
@@ -1291,6 +1298,9 @@ fn unsupported_body_boundary_does_not_revalidate_the_retained_frame() {
                     assert!(matches!(admission, FlatBodyAdmission::Unsupported));
                 }
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    let _fast = crate::kernel::search::FastOperationScope::enter(
+                        "bounded composite boundary",
+                    );
                     let error = produced_composite_frontier_conflict(
                         &frame,
                         std::iter::once((
@@ -1304,7 +1314,9 @@ fn unsupported_body_boundary_does_not_revalidate_the_retained_frame() {
                         &Memory::new(),
                         &facts,
                     );
-                    if overlap {
+                    if axis != "cold related" {
+                        assert!(matches!(error, Some(RuntimeError::FunctionContract(_))));
+                    } else if overlap {
                         let Some(RuntimeError::ProducedCompositeOverlapsHeldResource {
                             piece,
                             held: selected,
@@ -1923,4 +1935,161 @@ fn ordinary_return_construction_and_normalization_ignore_alias_history() {
             );
         }
     }
+}
+
+#[test]
+fn output_partitions_and_caller_admission_scale_with_the_delta_not_history() {
+    for axis in ["outputs", "owners", "bounds", "aliases"] {
+        let mut samples = Vec::new();
+        for count in [4u32, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let p = Pointer::symbolic(Variable(8_916_000));
+            let n = MachineTerm::Variable(Variable(8_916_001));
+            let mut facts = PureFactContext::new()
+                .assume_condition(
+                    ConditionTerm::signed_less_equal(1u32.into(), n.clone()),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::signed_less_equal(n.clone(), 8u32.into()),
+                    true,
+                );
+            for index in 0..count {
+                if axis == "bounds" {
+                    facts = facts.assume_condition(
+                        ConditionTerm::signed_less_equal(n.clone(), (100 + index).into()),
+                        true,
+                    );
+                } else if axis == "aliases" {
+                    facts = facts.assume_condition(
+                        ConditionTerm::pointer_equal(
+                            p.clone(),
+                            Pointer::symbolic(Variable(8_916_100 + u64::from(index))),
+                        ),
+                        true,
+                    );
+                }
+            }
+            let owner = |start, end| {
+                ResourceFact::own_memory(MemoryRange::new_with_element_width(
+                    p.clone(),
+                    start,
+                    end,
+                    1,
+                ))
+            };
+            let mut frame = ResourceContext::new_with_equalities(&facts);
+            for index in 0..if axis == "owners" { count } else { 1 } {
+                frame = frame.unchecked_with_fact(owner(
+                    (1000 + index * 4).into(),
+                    (1002 + index * 4).into(),
+                ));
+            }
+            frame.synchronize_memory_equalities(&facts);
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let _fast = crate::kernel::search::FastOperationScope::enter(
+                    "bounded output partition delta",
+                );
+                let mut outputs = EvaluatedReturnResources::new(&facts);
+                if axis == "outputs" {
+                    for index in 0..count {
+                        outputs = outputs
+                            .admit(
+                                owner((index * 2).into(), (index * 2 + 1).into()),
+                                ReturnOwnershipOrigin::Description,
+                                &facts,
+                            )
+                            .unwrap();
+                    }
+                } else {
+                    outputs = outputs
+                        .admit(
+                            owner(0u32.into(), n.clone()),
+                            ReturnOwnershipOrigin::Description,
+                            &facts,
+                        )
+                        .unwrap()
+                        .admit(
+                            owner(n.clone(), 16u32.into()),
+                            ReturnOwnershipOrigin::Description,
+                            &facts,
+                        )
+                        .unwrap();
+                }
+                let prepared = outputs
+                    .restore_entry_borrows(
+                        frame.clone(),
+                        ReturnResourceComposition::ValidateDescriptions,
+                        &facts,
+                    )
+                    .unwrap();
+                let (joined, transfers) = prepared.finish(&facts).unwrap();
+                assert_eq!(
+                    transfers.len(),
+                    if axis == "outputs" { count as usize } else { 2 }
+                );
+                assert_eq!(joined.facts().len(), frame.facts().len() + transfers.len());
+            });
+            samples.push(work);
+        }
+        if axis == "outputs" {
+            assert!(samples[2] <= samples[0] * 24 + 128, "{axis}: {samples:?}");
+        } else {
+            assert!(
+                samples.iter().all(|work| *work <= samples[0] + 64),
+                "{axis}: {samples:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn pending_return_refusal_does_not_walk_symbolic_owners() {
+    let mut samples = Vec::new();
+    for count in [4u32, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let p = Pointer::symbolic(Variable(8_917_000));
+        let facts = PureFactContext::new();
+        let mut frame = ResourceContext::new_with_equalities(&facts);
+        for index in 0..count {
+            frame = frame.unchecked_with_fact(ResourceFact::own_memory(
+                MemoryRange::new_with_element_width(
+                    p.clone(),
+                    (index * 4 + 100).into(),
+                    MachineTerm::Variable(Variable(8_917_100 + u64::from(index))),
+                    1,
+                ),
+            ));
+        }
+        let output = ResourceFact::own_memory(MemoryRange::new_with_element_width(
+            p,
+            0u32.into(),
+            1u32.into(),
+            1,
+        ));
+        let outputs = EvaluatedReturnResources::new(&facts)
+            .admit(output, ReturnOwnershipOrigin::Description, &facts)
+            .unwrap();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let _fast =
+                crate::kernel::search::FastOperationScope::enter("bounded symbolic frame refusal");
+            let prepared = outputs
+                .restore_entry_borrows(
+                    frame.clone(),
+                    ReturnResourceComposition::ValidateDescriptions,
+                    &facts,
+                )
+                .unwrap();
+            assert!(matches!(
+                prepared.finish(&facts),
+                Err(ResourceContextValidityError::UnsupportedOwnershipBoundary)
+            ));
+        });
+        assert_eq!(frame.facts().len(), count as usize);
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 32),
+        "{samples:?}"
+    );
 }

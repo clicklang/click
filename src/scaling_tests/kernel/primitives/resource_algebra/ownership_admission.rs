@@ -35,7 +35,7 @@ fn unsupported_admission_never_discovers_related_owners_or_aliases() {
             resources.synchronize_memory_equalities(&facts);
             let output = ResourceFact::own_memory(MemoryRange::new_with_element_width(
                 pointer(0),
-                4u32.into(),
+                2u32.into(),
                 MachineTerm::Variable(Variable(8_790_000)),
                 1,
             ));
@@ -125,5 +125,101 @@ fn first_ownership_queries_use_produced_indexes_and_direct_symbolic_bounds() {
                 "symbolic={symbolic}, bounded={bounded}: {samples:?}"
             );
         }
+    }
+}
+
+#[test]
+fn symbolic_endpoint_refusal_does_not_follow_a_growing_order_chain() {
+    let mut samples = Vec::new();
+    for count in [4u64, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let variable = |index| MachineTerm::Variable(Variable(8_919_000 + index));
+        let mut facts = PureFactContext::new();
+        for index in 0..count {
+            facts = facts.assume_condition(
+                ConditionTerm::signed_less_equal(variable(index), variable(index + 1)),
+                true,
+            );
+        }
+        let held = ResourceFact::own_memory(MemoryRange::new_with_element_width(
+            Pointer::symbolic(Variable(8_919_100)),
+            0u32.into(),
+            variable(0),
+            1,
+        ));
+        let query = ResourceFact::own_memory(MemoryRange::new_with_element_width(
+            Pointer::symbolic(Variable(8_919_100)),
+            variable(count),
+            100u32.into(),
+            1,
+        ));
+        let context = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(held);
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let _fast =
+                crate::kernel::search::FastOperationScope::enter("bounded endpoint chain refusal");
+            assert!(matches!(
+                context.clone().admit_without_discovery([query], &facts),
+                OwnershipAdmission::Unsupported(_)
+            ));
+        });
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 32),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn cold_automatic_return_boundaries_do_not_visit_other_allocations() {
+    for overlap in [false, true] {
+        let mut samples = Vec::new();
+        for count in [4u32, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let local = |index| Pointer {
+                block: PointerBlock::Concrete(format!("local:bounded_return_{index}")),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            let owner = |base, start: u32, end: u32| {
+                ResourceFact::own_memory(MemoryRange::new_with_element_width(
+                    base,
+                    start.into(),
+                    end.into(),
+                    1,
+                ))
+            };
+            let mut facts = PureFactContext::new();
+            for index in 0..count {
+                facts = facts.assume_condition(
+                    ConditionTerm::pointer_equal(
+                        local(0),
+                        Pointer::symbolic(Variable(8_920_000 + u64::from(index))),
+                    ),
+                    true,
+                );
+            }
+            let mut frame = ResourceContext::new();
+            for index in 0..count {
+                frame = frame.unchecked_with_fact(owner(local(index), 0, 4));
+            }
+            let output = owner(local(if overlap { 0 } else { count }), 0, 4);
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let _fast =
+                    crate::kernel::search::FastOperationScope::enter("cold automatic return delta");
+                let result = frame.admit_returned_frontier(&[output], &facts);
+                assert_eq!(
+                    matches!(result, FlatBodyAdmission::Conflict { .. }),
+                    overlap
+                );
+                if !overlap {
+                    assert!(matches!(result, FlatBodyAdmission::Admitted));
+                }
+            });
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 32),
+            "overlap={overlap}: {samples:?}"
+        );
     }
 }

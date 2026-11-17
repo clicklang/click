@@ -43,6 +43,7 @@ const QUARANTINED: &[(&str, &str)] = &[];
 /// libraries stay in the gate so it checks both sides of their imports. Run
 /// one with `MDTEST_FILTER=<name>`.
 const NIGHTLY: &[&str] = &[
+    "symbolic_output_partitions_rejoin_a_retained_frame.md", // 3.8s focused: symbolic flat/composite partitions beside retained memory
     "shared_loop_test_and_update.md", // 1.2s focused: ranked pre/post-test call proofs
     "shared_loop_post_test_ends_body_scope.md", // 0.8s focused: post-test after an expired body array
     "a_fixed_range_transfer_preserves_the_retained_tail.md", // 0.55s focused: typed byte-range call and return

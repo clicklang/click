@@ -2192,6 +2192,9 @@ fn program_function_contract_entry_facts(
         .observable_facts(&assumptions)
         .map_err(|error| {
             let detail = match error {
+                ResourceContextValidityError::UnsupportedOwnershipBoundary => {
+                    "ownership separation lacks indexed evidence"
+                }
                 ResourceContextValidityError::DuplicateOwnedResourceFact(_) => {
                     "the same resource is owned twice"
                 }

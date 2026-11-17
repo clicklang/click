@@ -79,6 +79,33 @@ impl Boundary<'_> {
         {
             self.errors.push(format!("{}: legacy loop preparation belongs only to the explicit independent-input adapter", self.path));
         }
+        if self.path == "src/kernel/primitives/memory_equality_index.rs"
+            && self.function == "constant_owned_overlap"
+            && name == "decide"
+        {
+            self.errors.push(format!(
+                "{}: ownership endpoints require exact facts or direct indexed bounds",
+                self.path
+            ));
+        }
+        if ((self.path == "src/kernel/functions/mixed_return_resources.rs"
+            && matches!(self.function.as_str(), "admit_clause" | "finish"))
+            || (self.path == "src/kernel/functions.rs"
+                && matches!(
+                    self.function.as_str(),
+                    "produced_composite_frontier_conflict" | "construct_composite_resource_body"
+                )))
+            && matches!(
+                name,
+                "try_compose_with_legacy_discovery_and_occurrences"
+                    | "returned_boundary_conflict_with_legacy_discovery"
+                    | "resume_legacy_discovery"
+                    | "legacy_memory_boundary_conflict"
+                    | "validity_error"
+            )
+        {
+            self.errors.push(format!("{}: {} must construct ownership partitions and check only bounded boundaries ({name})", self.path, self.function));
+        }
         if (self.path == "src/kernel/functions/mixed_return_resources.rs"
             && self.function == "build"
             && name == "normalized")

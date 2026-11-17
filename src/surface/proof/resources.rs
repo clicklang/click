@@ -2859,6 +2859,7 @@ fn describe_resource_context_validity_error(
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
     match error {
+        ResourceContextValidityError::UnsupportedOwnershipBoundary => error.to_string(),
         ResourceContextValidityError::InvalidExclusiveAccess(_) => {
             "field-bearing resource instances and mutex guards require exclusive ownership with quantity one".into()
         }

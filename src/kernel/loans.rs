@@ -2583,6 +2583,7 @@ fn composition_conflict(
 ) -> StableViewPlanError {
     use crate::kernel::primitives::ResourceContextValidityError as Invalid;
     match error {
+        Invalid::UnsupportedOwnershipBoundary => StableViewPlanError::UnsupportedPartition,
         Invalid::DuplicateOwnedResourceFact(_)
         | Invalid::OverlappingOwnedMemoryResources { .. } => {
             StableViewPlanError::ConflictingRequirement(composed.clone())

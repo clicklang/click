@@ -11754,6 +11754,8 @@ impl ResourceInstance {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ResourceContextValidityError {
+    /// The bounded checker lacks indexed evidence; this is not an overlap claim.
+    UnsupportedOwnershipBoundary,
     InvalidExclusiveAccess(ResourceFact),
     DuplicateOwnedResourceFact(ResourceFact),
     OverlappingOwnedMemoryResources {
@@ -11765,6 +11767,7 @@ pub enum ResourceContextValidityError {
 impl std::fmt::Display for ResourceContextValidityError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
+            Self::UnsupportedOwnershipBoundary => "ownership separation is outside the indexed checking fragment; provide explicit separation or a supported resource frontier",
             Self::InvalidExclusiveAccess(_) => {
                 "field-bearing resource instances and mutex guards require exclusive ownership with quantity one"
             }

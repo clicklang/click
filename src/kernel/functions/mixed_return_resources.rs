@@ -15,6 +15,7 @@ pub(super) struct ConsumedCellReturn {
 pub(super) struct ConsumedCellReturns {
     direct: BTreeMap<usize, ConsumedCellReturn>,
     children: BTreeMap<Vec<usize>, ConsumedCellReturn>,
+    borrowed: BTreeMap<usize, ResourceOccurrenceId>,
 }
 
 impl ConsumedCellReturns {
@@ -30,12 +31,16 @@ impl ConsumedCellReturns {
             .map(|parameter| parameter.binding_name())
             .collect::<BTreeSet<_>>();
         let mut inputs = BTreeMap::<FixedMemoryKey, VecDeque<ConsumedCellReturn>>::new();
+        let mut borrowed = BTreeMap::<FixedMemoryKey, VecDeque<ResourceOccurrenceId>>::new();
         for (checked, source) in plan
             .transferred_ownership
             .iter()
             .zip(&plan.transferred_ownership_sources)
         {
-            if checked.role != ResourceTransferRole::Consume {
+            if !matches!(
+                checked.role,
+                ResourceTransferRole::Consume | ResourceTransferRole::Borrow
+            ) {
                 continue;
             }
             let Some(input) = checked
@@ -44,8 +49,7 @@ impl ConsumedCellReturns {
             else {
                 continue;
             };
-            let Some(key) = fixed_memory_key(input, &parameters, ResourceTransferRole::Consume)
-            else {
+            let Some(key) = fixed_memory_key(input, &parameters, checked.role) else {
                 continue;
             };
             let Some(source) = source else { continue };
@@ -58,10 +62,14 @@ impl ConsumedCellReturns {
             {
                 continue;
             }
-            inputs
-                .entry(key)
-                .or_default()
-                .push_back(ConsumedCellReturn { input: *source });
+            if checked.role == ResourceTransferRole::Borrow {
+                borrowed.entry(key).or_default().push_back(*source);
+            } else {
+                inputs
+                    .entry(key)
+                    .or_default()
+                    .push_back(ConsumedCellReturn { input: *source });
+            }
         }
         let mut outputs = Self::default();
         let bindings = parameters
@@ -69,6 +77,15 @@ impl ConsumedCellReturns {
             .map(|name| ((*name).clone(), (*name).clone()))
             .collect();
         for (index, output) in interface.resource_ensures().iter().enumerate() {
+            if output.role() == ResourceTransferRole::Borrow
+                && output.state_source() == ResourceStateSource::Entry
+                && let Some(key) =
+                    fixed_memory_key(output, &parameters, ResourceTransferRole::Borrow)
+                && let Some(input) = borrowed.get_mut(&key).and_then(VecDeque::pop_front)
+            {
+                outputs.borrowed.insert(index, input);
+                continue;
+            }
             if output.role() != ResourceTransferRole::Produce
                 || output.state_source() != ResourceStateSource::Post
                 || output.guard().is_some()
@@ -326,6 +343,10 @@ pub(super) struct EvaluatedReturnOccurrence {
 pub(super) struct EvaluatedReturnResources {
     pub(super) resources: ResourceContext,
     pub(super) occurrences: Vec<EvaluatedReturnOccurrence>,
+    // The unknown subset is itself a checked partition. Selected members of
+    // the same checked call-input partition need only meet this new boundary.
+    unclassified: ResourceContext,
+    selected_inputs: BTreeSet<ResourceOccurrenceId>,
 }
 
 /// One insertion's explicit source-to-destination relationship.
@@ -338,6 +359,7 @@ pub(in crate::kernel) struct ReturnResourceTransfer {
 }
 
 pub(super) struct PreparedReturnComposition {
+    retained: ResourceContext,
     pub(super) frame: ResourceContext,
     pub(super) pending: ResourceContext,
     pub(super) entry_borrow_outputs: ResourceContext,
@@ -351,6 +373,8 @@ impl EvaluatedReturnResources {
         Self {
             resources: ResourceContext::new_with_equalities(assumptions),
             occurrences: Vec::new(),
+            unclassified: ResourceContext::new_with_equalities(assumptions),
+            selected_inputs: BTreeSet::new(),
         }
     }
 
@@ -363,7 +387,7 @@ impl EvaluatedReturnResources {
         origin: ReturnOwnershipOrigin,
         assumptions: &PureFactContext,
     ) -> Result<Self, ResourceContextValidityError> {
-        self.admit_clause(fact, origin, None, assumptions)
+        self.admit_clause(fact, origin, None, None, assumptions)
     }
 
     pub(super) fn admit_clause(
@@ -371,11 +395,45 @@ impl EvaluatedReturnResources {
         fact: ResourceFact,
         origin: ReturnOwnershipOrigin,
         clause: Option<usize>,
+        input_partition: Option<&ConsumedCellReturns>,
         assumptions: &PureFactContext,
     ) -> Result<Self, ResourceContextValidityError> {
-        let (resources, mut inserted) = self
-            .resources
-            .try_compose_with_legacy_discovery_and_occurrences([fact], assumptions)?;
+        let selected = clause
+            .zip(input_partition)
+            .and_then(|(clause, plan)| match origin {
+                ReturnOwnershipOrigin::EntryBorrow => plan.borrowed.get(&clause).copied(),
+                ReturnOwnershipOrigin::ConsumedCell(input)
+                    if plan.direct.get(&clause) == Some(&input) =>
+                {
+                    Some(input.input)
+                }
+                _ => None,
+            });
+        let (resources, mut inserted) = if let Some(input) = selected {
+            if !self.selected_inputs.insert(input) {
+                return Err(ResourceContextValidityError::DuplicateOwnedResourceFact(
+                    fact,
+                ));
+            }
+            // The plan issued these distinct, fixed-footprint occurrences from
+            // one checked input partition. Do not rediscover their pairwise
+            // separation from the output pointer descriptions.
+            ResourceContext::admit_returned_partition(
+                ReturnedOwnershipPartition {
+                    retained: self.unclassified.clone(),
+                    frame: self.resources,
+                    outputs: ResourceContext::new_with_equalities(assumptions)
+                        .unchecked_with_fact(fact),
+                },
+                assumptions,
+            )?
+        } else {
+            let (resources, inserted) = self
+                .resources
+                .try_compose_without_discovery_and_occurrences([fact.clone()], assumptions)?;
+            self.unclassified = self.unclassified.unchecked_with_fact(fact);
+            (resources, inserted)
+        };
         let (_, source) = inserted.pop().expect("one admitted return occurrence");
         self.resources = resources;
         self.occurrences.push(EvaluatedReturnOccurrence {
@@ -418,6 +476,7 @@ impl EvaluatedReturnResources {
             .all(|entry| entry.origin == ReturnOwnershipOrigin::Description)
         {
             return Ok(PreparedReturnComposition {
+                retained: frame.clone(),
                 frame,
                 pending: self.resources.clone(),
                 entry_borrow_outputs: ResourceContext::new_with_equalities(assumptions),
@@ -426,6 +485,7 @@ impl EvaluatedReturnResources {
                 occurrences,
             });
         }
+        let retained = frame.clone();
         let mut frame = frame;
         let mut borrowed = ResourceContext::new_with_equalities(assumptions);
         let mut borrowed_sources = Vec::new();
@@ -493,6 +553,7 @@ impl EvaluatedReturnResources {
             );
         }
         Ok(PreparedReturnComposition {
+            retained,
             frame,
             pending,
             entry_borrow_outputs,
@@ -500,6 +561,21 @@ impl EvaluatedReturnResources {
             restored,
             occurrences,
         })
+    }
+}
+
+/// Produced only from the checked output context or a subset of its occurrences.
+/// The caller checks its boundary, never reconstructs its internal partition.
+pub(in crate::kernel) struct ReturnedOwnershipPartition {
+    retained: ResourceContext,
+    frame: ResourceContext,
+    outputs: ResourceContext,
+}
+impl ReturnedOwnershipPartition {
+    pub(in crate::kernel) fn into_parts(
+        self,
+    ) -> (ResourceContext, ResourceContext, ResourceContext) {
+        (self.retained, self.frame, self.outputs)
     }
 }
 
@@ -511,11 +587,14 @@ impl PreparedReturnComposition {
         let (frame, inserted) = if self.pending.facts().is_empty() {
             (self.frame, Vec::new())
         } else {
-            self.frame
-                .try_compose_with_legacy_discovery_and_occurrences(
-                    self.pending.facts().iter().cloned(),
-                    assumptions,
-                )?
+            ResourceContext::admit_returned_partition(
+                ReturnedOwnershipPartition {
+                    retained: self.retained,
+                    frame: self.frame,
+                    outputs: self.pending,
+                },
+                assumptions,
+            )?
         };
         // Restore by the producer's selected identity. Ordinary insertions
         // retain pending order, so this preserves actual emitted order even
@@ -649,9 +728,6 @@ impl ConstructedReturnBodies {
                 )? {
                     specialized_returns::Construction::Body(body) => {
                         bodies.insert(occurrence.source, *body);
-                    }
-                    specialized_returns::Construction::Unsupported => {
-                        legacy.insert(occurrence.source);
                     }
                 }
                 continue;

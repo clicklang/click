@@ -1646,12 +1646,9 @@ fn ownership_fallback_inventory_rejects_new_routes_and_hidden_references() {
 
 #[test]
 fn ownership_fallback_inventory_pins_callers_and_reference_counts() {
-    let path = "src/kernel/functions/mixed_return_resources.rs";
+    let path = "src/kernel/loans/local_references/memory.rs";
     let target = "try_compose_with_legacy_discovery_and_occurrences";
-    for (owner, name) in [
-        ("EvaluatedReturnResources", "admit_clause"),
-        ("PreparedReturnComposition", "finish"),
-    ] {
+    for (owner, name) in [("ExecutionState", "local_scalar_access_resources")] {
         let source = format!("impl {owner} {{ fn {name}(c: C) {{ c.{target}(); }} }}");
         let file = syn::parse_file(&source).unwrap();
         let key = format!("{path}\tlegacy-caller\t{owner}::{name}\t{target}");
@@ -1668,4 +1665,49 @@ fn ownership_fallback_inventory_pins_callers_and_reference_counts() {
                 .any(|error| error.contains(&key) && error.contains("2 references"))
         );
     }
+}
+
+#[test]
+fn migrated_return_partitions_and_boundaries_cannot_restore_legacy_search() {
+    for (path, function) in [
+        (
+            "src/kernel/functions/mixed_return_resources.rs",
+            "admit_clause",
+        ),
+        ("src/kernel/functions/mixed_return_resources.rs", "finish"),
+        (
+            "src/kernel/functions.rs",
+            "construct_composite_resource_body",
+        ),
+        (
+            "src/kernel/functions.rs",
+            "produced_composite_frontier_conflict",
+        ),
+    ] {
+        for target in [
+            "try_compose_with_legacy_discovery_and_occurrences",
+            "returned_boundary_conflict_with_legacy_discovery",
+            "resume_legacy_discovery",
+            "legacy_memory_boundary_conflict",
+            "validity_error",
+        ] {
+            for source in [
+                format!("fn {function}(c:C) {{ c.{target}(); }}"),
+                format!("fn {function}(c:C) {{ hidden!(c.{target}()); }}"),
+            ] {
+                assert!(boundary::check_source(path, &source).is_err(), "{source}");
+            }
+        }
+    }
+}
+
+#[test]
+fn ownership_endpoint_checks_cannot_reconstruct_order_paths() {
+    assert!(
+        boundary::check_source(
+            "src/kernel/primitives/memory_equality_index.rs",
+            "fn constant_owned_overlap(c:C) { c.decide(condition); }"
+        )
+        .is_err()
+    );
 }

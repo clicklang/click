@@ -892,6 +892,7 @@ fn a_borrowed_composites_post_footprint_cannot_overlap_a_transferred_cell() {
     let transfers = ConsumedCellReturns {
         direct: BTreeMap::from([(1, selected)]),
         children: BTreeMap::new(),
+        borrowed: BTreeMap::new(),
     };
     let result = evaluate_contract_return_resources(
         &ResourceContext::new_with_equalities(&facts),
@@ -1431,7 +1432,7 @@ fn flat_body_admission_uses_cold_coordinates_but_refuses_general_geometry() {
     ));
     let symbolic = ResourceFact::own_memory(MemoryRange::new(
         pointer,
-        4u32.into(),
+        0u32.into(),
         MachineTerm::Variable(Variable(8_819_103)),
     ));
     let general = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(symbolic);

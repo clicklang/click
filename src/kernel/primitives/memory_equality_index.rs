@@ -1447,8 +1447,10 @@ impl MemoryQuery<'_> {
 impl ResourceContext {
     /// The raw producer already maintains interval trees and origin counts.
     /// When every held owner is in this exact block and has this exact origin,
-    /// no graph preparation or alias recovery is needed. Other blocks remain
-    /// unsupported here: a loaded query can acquire a cross-block definition.
+    /// no graph preparation or alias recovery is needed. A partition consisting
+    /// only of physical automatic owners also selects by storage identity.
+    /// Other mixed blocks remain unsupported: a loaded query can acquire a
+    /// cross-block definition.
     fn structural_owned_overlap(
         &self,
         fact: &ResourceFact,
@@ -1458,7 +1460,20 @@ impl ResourceContext {
         let Some(range) = fact.memory_own_range() else {
             return Unsupported;
         };
-        if assumptions.has_pointer_block_aliases()
+        let blocks = &self.storage.index.owned_memory_by_block;
+        // Physical automatic-storage identities remain distinct when facts
+        // alias pointer values to them. The existing index certifies that no
+        // opaque owner is hidden outside this storage partition. Result and
+        // exception bookkeeping slots are not physical automatic objects.
+        let automatic_partition = range.base().block.is_local_block()
+            && !matches!(
+                range.base().block,
+                PointerBlock::ContractResult | PointerBlock::ContractException
+            )
+            && self.storage.index.owned_automatic_memory_by_block.len() == blocks.len()
+            && !blocks.contains_key(&PointerBlock::ContractResult)
+            && !blocks.contains_key(&PointerBlock::ContractException);
+        if (assumptions.has_pointer_block_aliases() && !automatic_partition)
             || matches!(range.base().block, PointerBlock::StringLiteral { .. })
         {
             return Unsupported;
@@ -1471,12 +1486,16 @@ impl ResourceContext {
         if start >= end {
             return Clear;
         }
-        let blocks = &self.storage.index.owned_memory_by_block;
-        if blocks.len() != 1 {
+        // Select only this storage block's intervals, never every allocation.
+        if blocks.len() != 1 && !automatic_partition {
             return Unsupported;
         }
         let Some(members) = blocks.get(&origin.block) else {
-            return Unsupported;
+            return if automatic_partition {
+                Clear
+            } else {
+                Unsupported
+            };
         };
         if self
             .storage
@@ -1591,6 +1610,26 @@ impl ResourceContext {
         if let decided @ (Clear | Overlap(_)) = self.structural_owned_overlap(fact, assumptions) {
             return decided;
         }
+        // A singleton is a bounded source, even when its endpoints are symbolic.
+        // Exact bases and widths put both intervals in the same coordinates;
+        // only written endpoint equality or direct indexed order is needed.
+        // Do not iterate a larger base bucket looking for this special case.
+        if self.flat_owned_memory_ranges().len() == 1 {
+            let (held, ()) = self
+                .flat_owned_memory_ranges()
+                .iter()
+                .next()
+                .expect("singleton owner");
+            if held.base() == range.base()
+                && held.element_width() == range.element_width()
+                && let (Some((left_start, left_end)), Some((right_start, right_end))) =
+                    (held.int32_bounds(), range.int32_bounds())
+                && (direct_endpoint_separation(left_end, right_start, assumptions)
+                    || direct_endpoint_separation(right_end, left_start, assumptions))
+            {
+                return Clear;
+            }
+        }
         let Some(extent) = read_extent(fact) else {
             // This recursive query has constant endpoints and cannot repeat
             // the symbolic-bound route.
@@ -1665,11 +1704,10 @@ impl ResourceContext {
             return Unsupported;
         }
         let Some(bucket) = index.addresses.classes.get(&start.representative) else {
-            return if start.offset.is_constant() && end.offset.is_constant() {
-                Clear
-            } else {
-                Unsupported
-            };
+            // Complete registration and affine coverage were established above.
+            // No held memory has this representative, so the query's offset
+            // need not be constant to establish this empty boundary.
+            return Clear;
         };
         if bucket.general_coordinates != 0 || bucket.write_intervals.len() != bucket.owners.len() {
             return Unsupported;
@@ -3235,5 +3273,34 @@ mod tests {
     #[cfg(test)]
     mod scaling_tests {
         include!("../../scaling_tests/kernel/primitives/memory_equality_index/tests.rs");
+    }
+}
+
+/// Exact facts and direct extrema only: never ask the general condition
+/// decision engine to reconstruct an order path for ownership admission.
+fn direct_endpoint_separation(
+    end: &MachineTerm,
+    start: &MachineTerm,
+    assumptions: &PureFactContext,
+) -> bool {
+    if end == start
+        || assumptions.exact_condition_value(&ConditionTerm::signed_less_equal(
+            end.clone(),
+            start.clone(),
+        )) == Some(true)
+    {
+        return true;
+    }
+    let interval = |term: &MachineTerm| {
+        term.as_const()
+            .map(|value| {
+                let value = i64::from(value as i32);
+                (value, value)
+            })
+            .or_else(|| assumptions.indexed_constant_interval(term))
+    };
+    match (interval(end), interval(start)) {
+        (Some((_, upper)), Some((lower, _))) => upper <= lower,
+        _ => false,
     }
 }

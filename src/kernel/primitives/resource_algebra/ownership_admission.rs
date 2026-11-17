@@ -29,8 +29,8 @@ pub(crate) struct PendingOwnershipAdmission<'a> {
 }
 
 /// The only new obligation for a constructed flat composite body is its
-/// boundary with the retained caller frame. Unsupported geometry stays on
-/// the compatibility path; it never counts as established separation.
+/// boundary with the retained caller frame. Unsupported geometry is an
+/// explicit bounded refusal; it never counts as established separation.
 pub(crate) enum FlatBodyAdmission {
     Admitted,
     Conflict {
@@ -55,31 +55,112 @@ impl ResourceContext {
         #[cfg(test)]
         let _fast =
             crate::kernel::search::FastOperationScope::enter("returned flat body admission");
-        for piece in body.boundary() {
+        self.admit_returned_frontier(body.boundary(), assumptions)
+    }
+
+    /// Check just the boundary against this retained partition. This operation
+    /// does not insert the frontier or compare its already checked leaves.
+    pub(in crate::kernel) fn admit_returned_frontier(
+        &self,
+        frontier: &[ResourceFact],
+        assumptions: &PureFactContext,
+    ) -> FlatBodyAdmission {
+        for piece in frontier {
             let _checking =
                 crate::instrumentation::CheckingWorkScope::new("admit returned ownership leaf", 1);
             crate::instrumentation::record_deterministic_work(1);
-            if let Some(entry) = self.exclusive_boundary_owner(piece) {
-                return FlatBodyAdmission::Conflict {
-                    piece: Box::new(piece.clone()),
-                    held: Box::new(self.fact(entry).clone()),
-                };
-            }
-            if piece.memory_own_range().is_none() {
-                continue;
-            }
-            match self.constant_owned_overlap(piece, assumptions) {
-                ConstantOwnedOverlap::Clear => {}
-                ConstantOwnedOverlap::Overlap(entry) => {
-                    return FlatBodyAdmission::Conflict {
-                        piece: Box::new(piece.clone()),
-                        held: Box::new(self.fact(entry).clone()),
-                    };
-                }
-                ConstantOwnedOverlap::Unsupported => return FlatBodyAdmission::Unsupported,
+            match self.admit_ownership_boundary(piece, assumptions) {
+                FlatBodyAdmission::Admitted => {}
+                refusal => return refusal,
             }
         }
         FlatBodyAdmission::Admitted
+    }
+
+    fn admit_ownership_boundary(
+        &self,
+        piece: &ResourceFact,
+        assumptions: &PureFactContext,
+    ) -> FlatBodyAdmission {
+        if let Some(entry) = self.exclusive_boundary_owner(piece) {
+            return FlatBodyAdmission::Conflict {
+                piece: Box::new(piece.clone()),
+                held: Box::new(self.fact(entry).clone()),
+            };
+        }
+        if piece.memory_own_range().is_none() {
+            return FlatBodyAdmission::Admitted;
+        }
+        match self.constant_owned_overlap(piece, assumptions) {
+            ConstantOwnedOverlap::Clear => FlatBodyAdmission::Admitted,
+            ConstantOwnedOverlap::Overlap(entry) => FlatBodyAdmission::Conflict {
+                piece: Box::new(piece.clone()),
+                held: Box::new(self.fact(entry).clone()),
+            },
+            ConstantOwnedOverlap::Unsupported => FlatBodyAdmission::Unsupported,
+        }
+    }
+
+    /// Construct a valid output partition using bounded indexed admission.
+    pub(in crate::kernel) fn try_compose_without_discovery_and_occurrences(
+        self,
+        facts: impl IntoIterator<Item = ResourceFact>,
+        assumptions: &PureFactContext,
+    ) -> Result<(Self, Vec<(ResourceFact, ResourceOccurrenceId)>), ResourceContextValidityError>
+    {
+        match self.admit_without_discovery(facts, assumptions) {
+            OwnershipAdmission::Admitted { context, inserted } => Ok((context, inserted)),
+            OwnershipAdmission::Conflict(error) => Err(error),
+            OwnershipAdmission::Unsupported(_) => {
+                Err(ResourceContextValidityError::UnsupportedOwnershipBoundary)
+            }
+        }
+    }
+
+    /// Consume the producer's partition. Only relationships with the original
+    /// frame are new; checking against progressively inserted outputs would
+    /// unnecessarily replay their internal separation obligations.
+    pub(in crate::kernel) fn admit_returned_partition(
+        transfer: crate::kernel::functions::ReturnedOwnershipPartition,
+        assumptions: &PureFactContext,
+    ) -> Result<(Self, Vec<(ResourceFact, ResourceOccurrenceId)>), ResourceContextValidityError>
+    {
+        #[cfg(test)]
+        let _fast = crate::kernel::search::FastOperationScope::enter("returned output partition");
+        let (retained, mut frame, outputs) = transfer.into_parts();
+        if frame.storage.facts.is_empty() {
+            frame.synchronize_memory_equalities(assumptions);
+        }
+        for piece in outputs.facts() {
+            let _checking =
+                crate::instrumentation::CheckingWorkScope::new("returned output boundary", 1);
+            crate::instrumentation::record_deterministic_work(1);
+            match retained.admit_ownership_boundary(piece, assumptions) {
+                FlatBodyAdmission::Admitted => {}
+                FlatBodyAdmission::Unsupported => {
+                    return Err(ResourceContextValidityError::UnsupportedOwnershipBoundary);
+                }
+                FlatBodyAdmission::Conflict { piece, held } => {
+                    return Err(match (held.memory_own_range(), piece.memory_own_range()) {
+                        (Some(left), Some(right)) => {
+                            ResourceContextValidityError::OverlappingOwnedMemoryResources {
+                                left: left.clone(),
+                                right: right.clone(),
+                            }
+                        }
+                        _ => ResourceContextValidityError::DuplicateOwnedResourceFact(*piece),
+                    });
+                }
+            }
+        }
+        let mut inserted = Vec::with_capacity(outputs.facts().len());
+        for fact in outputs.facts() {
+            let entry = frame.storage.next_entry_id;
+            frame.insert_fact(fact.clone());
+            inserted.push((fact.clone(), frame.occurrence(entry)));
+        }
+        frame.advance_prepared_memory_equalities(assumptions);
+        Ok((frame, inserted))
     }
 
     /// Select one retained exclusive owner by the explicit resource identity.

@@ -31,6 +31,7 @@ use mixed_return_resources::{
 };
 pub(in crate::kernel) use mixed_return_resources::{
     ConstructedReturnBody, ReturnResourceTransfer, ReturnedConsumedCell, ReturnedFreshAllocation,
+    ReturnedOwnershipPartition,
 };
 #[cfg(test)]
 mod produced_argument_supply_tests;
@@ -13199,6 +13200,7 @@ fn evaluate_contract_return_resource_context(
             resource.clone(),
             composition.origin_for_return(clause_index, return_entry_borrow, &resource),
             Some(clause_index),
+            composition.consumed_children(),
             assumptions,
         ) {
             Ok(evaluated) => evaluated,
@@ -13224,6 +13226,7 @@ fn evaluate_contract_return_resource_context(
                         fact.clone(),
                         composition.origin_for_return(clause_index, false, &fact),
                         Some(clause_index),
+                        composition.consumed_children(),
                         assumptions,
                     ) {
                         Ok(evaluated) => evaluated,
@@ -13639,9 +13642,11 @@ fn produced_composite_frontier_conflict<'a>(
                         held,
                     });
                 }
-                // Cold indexes and symbolic/general coordinates retain the
-                // boundary-only compatibility query below. A miss is not admission.
-                FlatBodyAdmission::Unsupported => {}
+                FlatBodyAdmission::Unsupported => {
+                    return Some(resource_context_runtime_error(
+                        ResourceContextValidityError::UnsupportedOwnershipBoundary,
+                    ));
+                }
             }
         }
         let legacy_frontier;
@@ -13696,16 +13701,21 @@ fn produced_composite_frontier_conflict<'a>(
         }
         // Construction established the body's internal partition. Only its
         // boundary with the retained caller frame is new information.
-        let Some((piece, held)) =
-            destination.returned_boundary_conflict_with_legacy_discovery(frontier, assumptions)
-        else {
-            continue;
-        };
-        return Some(RuntimeError::ProducedCompositeOverlapsHeldResource {
-            produced: Box::new(produced.clone()),
-            piece: Box::new(piece),
-            held: Box::new(held),
-        });
+        match destination.admit_returned_frontier(frontier, assumptions) {
+            FlatBodyAdmission::Admitted => {}
+            FlatBodyAdmission::Unsupported => {
+                return Some(resource_context_runtime_error(
+                    ResourceContextValidityError::UnsupportedOwnershipBoundary,
+                ));
+            }
+            FlatBodyAdmission::Conflict { piece, held } => {
+                return Some(RuntimeError::ProducedCompositeOverlapsHeldResource {
+                    produced: Box::new(produced.clone()),
+                    piece,
+                    held,
+                });
+            }
+        }
     }
     None
 }
@@ -15957,7 +15967,7 @@ fn construct_composite_resource_body(
         || {
             if selected.is_some() {
                 ResourceContext::new_with_equalities(assumptions)
-                    .try_compose_with_legacy_discovery_and_occurrences(child_facts, assumptions)
+                    .try_compose_without_discovery_and_occurrences(child_facts, assumptions)
                     .map(|(context, _)| context.normalized_without_discovery(assumptions))
             } else {
                 ResourceContext::new().try_compose_with_facts(child_facts, assumptions)
@@ -18792,6 +18802,7 @@ fn resource_clause_cycle_runtime_error(
 
 fn resource_context_runtime_error(error: ResourceContextValidityError) -> RuntimeError {
     match error {
+        ResourceContextValidityError::UnsupportedOwnershipBoundary => RuntimeError::FunctionContract(error.to_string()),
         ResourceContextValidityError::DuplicateOwnedResourceFact(resource) => {
             RuntimeError::DuplicateResource { resource: Box::new(resource) }
         }

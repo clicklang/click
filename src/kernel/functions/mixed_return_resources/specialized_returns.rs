@@ -4,7 +4,6 @@ use super::*;
 
 pub(super) enum Construction {
     Body(Box<ConstructedReturnBody>),
-    Unsupported,
 }
 
 #[derive(Clone, Copy)]
@@ -310,9 +309,7 @@ pub(super) fn construct(
             OwnershipAdmission::Conflict(_) => {
                 return None;
             }
-            OwnershipAdmission::Unsupported(_) => {
-                return Some(Construction::Unsupported);
-            }
+            OwnershipAdmission::Unsupported(_) => return None,
         };
         context = next;
         let child = emitted[0].1;
