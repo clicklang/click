@@ -4008,6 +4008,40 @@ fn whole_claim_expansion_keeps_a_call_steps_empty_binder_map() {
     assert!(expanded.contains("step(inner, {});"), "{expanded}");
 }
 
+#[test]
+#[ignore = "nightly: cold replay of two default call binding proofs"]
+fn bare_step_call_result_bindings_expand_and_replay() {
+    for (fixture, binding) in [
+        ("mdtests/c_static_function.md", "let { result: r } = step()"),
+        (
+            "mdtests/step_binds_call_result_with_default_resource.md",
+            "let { result: saved } = step()",
+        ),
+    ] {
+        let (source, owned_sources) = mdtest_sources(fixture);
+        let sources = crate::cli::source_refs(&owned_sources);
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "run.contract")
+            .unwrap_or_else(|error| panic!("{fixture}: {error}"));
+        assert!(expanded.contains(binding), "{expanded}");
+        without_implicit_solve_for_claim("run.contract", || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: {error}"));
+    }
+
+    let (source, owned_sources) = mdtest_sources("mdtests/call_result_discarded.md");
+    let sources = crate::cli::source_refs(&owned_sources);
+    let source = source.replace("step(classify, { })", "step()");
+    let error = verify_c_sources(&source, &sources)
+        .expect_err("discarding a C call result leaves no value to bind");
+    assert!(
+        error
+            .message()
+            .contains("requires a scalar assignment or a used call result"),
+        "{error}"
+    );
+}
+
 /// The loop back edge needs both the current zero and the previous entry's
 /// one. The shared rewrite search must retain that entry when spelling its
 /// selected equality, including in a cold expanded proof.
