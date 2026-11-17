@@ -54,7 +54,8 @@ const NIGHTLY: &[&str] = &[
     "aliased_packaged_views_keep_their_selected_whole_loan.md", // 0.71s focused: selected whole-loan recovery
     "multiple_witnesses_survive_checked_calls.md", // 1.07s focused: repeated calls with two recorded witnesses
     "symbolic_return_boundary_uses_explicit_bounds.md", // 0.78s focused: symbolic return beside retained memory
-    "integer_migration_routes.md",                      // 0.9s: signed/native routes and rounding
+    "symbolic_output_partitions_rejoin_a_retained_frame.md", // 3.8s focused: symbolic flat/composite partitions beside retained memory
+    "integer_migration_routes.md", // 0.9s: signed/native routes and rounding
     "aggregate_expression_results_are_named_by_their_source_steps.md", // 1.61s focused
     "aggregate_result_storage_ends_at_the_statement_exit.md", // 0.82s focused in parallel
     // 0.78s focused, 0.57s in the parallel gate; the automatic-array refusal
