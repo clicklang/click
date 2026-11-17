@@ -343,11 +343,22 @@ fn example_projects() {
         // that never finishes, and a slow project is visible while it runs.
         eprintln!("example project `{}` started", project.display());
         let started = std::time::Instant::now();
-        run_example_in_thread(project)?;
+        let result = run_example_in_thread(project);
+        let seconds = started.elapsed().as_secs_f64();
+        click::nightly_report::record(
+            "examples",
+            &click::nightly_report::NightlyResult {
+                kind: "example",
+                name: &example_name(&examples_dir, project),
+                passed: result.is_ok(),
+                seconds,
+                message: result.as_ref().err().map(String::as_str),
+            },
+        );
+        result?;
         eprintln!(
-            "example project `{}` verified in {:.2}s",
+            "example project `{}` verified in {seconds:.2}s",
             project.display(),
-            started.elapsed().as_secs_f64()
         );
         Ok(())
     });
