@@ -8,8 +8,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use crate::instrumentation::{self, TacticEvent, VerificationEvent};
-#[cfg(test)]
-use crate::kernel::program_verified_function_rule;
 use crate::kernel::proof::PropositionSource;
 use crate::kernel::{
     AlgebraicValue, BitvectorEqualityDerivationStep, CheckedFunctionExecution,

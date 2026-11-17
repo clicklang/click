@@ -2,7 +2,6 @@
 src/kernel/api.rs	import	::	expand_composite_resource_fact_with_children	1
 src/kernel/api.rs	legacy-caller	::execution_state_with_borrowed_contract_inputs	try_compose_with_facts_delaying_normalization	1
 src/kernel/api.rs	legacy-caller	::install_borrowed_contract_inputs	expand_composite_resource_fact_with_children	1
-src/kernel/api.rs	legacy-caller	::prove_prepared_function_contract_execution_paths	expand_all_composite_resource_facts_at_state	1
 src/kernel/api/contract_certification.rs	legacy-caller	::prepare_function_contract_entry_cases	expand_all_composite_resource_facts_at_state	1
 src/kernel/api/contract_certification.rs	legacy-caller	::program_function_contract_entry_facts	expand_all_composite_resource_facts_at_state	2
 src/kernel/api/contract_certification/contract_claims.rs	legacy-caller	::prepare_closing_path	expand_all_composite_resource_facts_at_state	1

@@ -3596,10 +3596,6 @@ impl PureFactContext {
         EXACT_CONSTANT_FACT_VISITS.with(|visits| visits.set(0));
     }
 
-    pub(in crate::kernel) fn has_same_reasoning_policy(&self, other: &Self) -> bool {
-        self.reasoning_policy == other.reasoning_policy
-    }
-
     fn fingerprint<T: std::hash::Hash>(tag: u64, value: &T) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         std::hash::Hasher::write_u64(&mut hasher, tag);

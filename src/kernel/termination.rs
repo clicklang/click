@@ -6266,14 +6266,12 @@ mod local_descent_tests {
                 diverging_contracts: &BTreeSet::new(),
                 has_unselected_functions: false,
             })
-            .and_then(|proof| proof.prove_implicitly());
-        assert!(matches!(
-            result,
-            Err(ProgramContractFailure::Obligation {
-                goal: ProgramContractGoal::CallbackSafety,
-                ..
-            })
-        ));
+            .map_err(|_| "termination generation failed".to_string())
+            .and_then(|proof| proof.prove_through_native_root());
+        let error = result
+            .err()
+            .expect("callback safety must close before completion");
+        assert_eq!(error, "the checked termination facts do not close the root");
     }
 
     /// `spin` hands itself to `apply`. No direct call closes the cycle, and

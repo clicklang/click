@@ -8683,14 +8683,6 @@ pub(in crate::surface) fn program_contract_failure(
             ))
             .at_declaration(name)
         }
-        #[cfg(test)]
-        ProgramContractFailure::MissingReturnEvidence(name) => {
-            let name = name.split_once('#').map_or(name.as_str(), |(name, _)| name);
-            ClickError::new(format!(
-                "contract proof for `{name}` still owes its program termination obligation"
-            ))
-            .at_declaration(name)
-        }
         ProgramContractFailure::Analysis(error) => {
             let located = ClickError::new(format!("could not certify C termination: {error}"));
             match error.function() {

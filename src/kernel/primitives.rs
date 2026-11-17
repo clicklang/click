@@ -7715,27 +7715,6 @@ pub struct TerminationError {
 
 impl VerifiedFunctionTerminationRule {}
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct VerifiedFunctionContractClaim {
-    pub(super) pointer_result: Option<Arc<PurePointerResult>>,
-
-    pub(super) function: ProgramFunction,
-    pub(super) key: FunctionContractClaimKey,
-    /// Exact load equalities consumed while checking this claim. Keeping the
-    /// witnesses on the proof object makes contract finalization the owner of
-    /// its equality decisions rather than relying on an ambient prover later.
-    pub(super) load_equalities: Vec<super::CheckedLoadEquality>,
-    /// The loop semantics of the certification this claim came from.
-    pub(super) loop_semantics: LoopSemantics,
-    /// The user-defined tactics the certification this claim came from
-    /// applied.
-    pub(super) applied_tactics: std::collections::BTreeSet<String>,
-    /// Complete conservative call dependencies from kernel-checked execution.
-    /// None retains source-call analysis; a present empty set proves no calls.
-    /// Shared across claims and certificate reuse, never copied per step.
-    pub(super) checked_callees: Option<Arc<BTreeSet<String>>>,
-}
-
 /// Kernel-checked evidence that a checked proof discharged one proposition at
 /// one exact function outcome. Contract finalization finds this evidence by
 /// the claim it closed and matches it to the path it was completed on.
@@ -7751,8 +7730,6 @@ pub(crate) struct CheckedFunctionProposition {
     /// identity through to here. `None` for any other proposition.
     pub(super) claim: Option<FunctionContractClaimTarget>,
 }
-
-impl VerifiedFunctionContractClaim {}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VerifiedLoopRule {
@@ -15078,97 +15055,6 @@ pub struct SymbolicExecution {
     pub(super) limit: Option<ExecutionLimit>,
 }
 
-/// One complete path set contract certification may judge a claim over: a
-/// checked execution reused at the contract's entry, or the kernel's own
-/// execution when no artifact was supplied. Its paths jointly cover the function from the
-/// entry they name, so a claim that holds on every one of them holds.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ContractPathSet {
-    pub(super) closed_exit_obligations: Vec<Option<super::ClosedContractExit>>,
-    /// Producer path identities, retained across authorized entry rebasing.
-    pub(super) completion_path_origins: Vec<Theorem>,
-    pub(super) paths: Vec<SymbolicExecutionPath>,
-    /// Exact resource claims checked for each path.  The vector is parallel
-    /// to `paths`; an entry names only claims whose surface proof crossed the
-    /// kernel resource/lifetime checker for that path.
-    pub(super) checked_resource_claims: Vec<Vec<FunctionContractClaimKey>>,
-    pub(super) checked_resource_transitions: Vec<bool>,
-    /// Paths whose contract exit resource transition was deferred because a
-    /// conditional produced effect was not decided by the proof entry facts.
-    /// Contract certification must resolve these paths under an exhaustive
-    /// guard case before using their post-state.
-    pub(super) deferred_contract_exits: Vec<bool>,
-    /// Exact boundary error retained for each deferred path. A deferred marker
-    /// is valid only when this records the conditional-effect selection error
-    /// that caused the deferral.
-    pub(super) deferred_contract_exit_errors: Vec<Option<RuntimeError>>,
-    /// Resource facts projected from native outcome completions for each
-    /// path. Deferred exit resolution composes these facts into the body
-    /// outcome before applying the remaining conditional boundary effect.
-    pub(super) checked_returned_resources: Vec<ResourceContext>,
-    /// The caller state the reused artifact's proof ran at, when its paths
-    /// were rebased onto this contract's caller state. A claim the proof
-    /// completed at that state certifies the rebased path: the rebase
-    /// checked the two entry representations definitionally equal.
-    pub(super) completion_origin_state: Option<ExecutionState>,
-    /// Authenticated entry custody for each path, including partitioned proofs.
-    pub(super) boundary_transfers:
-        Vec<Option<Arc<super::functions::CheckedBoundaryResourceTransfer>>>,
-}
-
-/// A complete function frontier produced from only the exact function's
-/// contract entry state and requirements.
-///
-/// Unlike [`SymbolicExecution`], this type is accepted as evidence when
-/// certifying an opaque function rule. Its fields are kernel-private so callers
-/// cannot turn an execution performed under arbitrary assumptions into
-/// contract evidence.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct FunctionContractExecution {
-    pub(super) pointer_result: Option<Arc<PurePointerResult>>,
-
-    /// One entry per resource-guard case of the contract, each listing every
-    /// path set available for that case. A claim holds when, in every case,
-    /// one path set certifies it on all of its paths: each set is a complete
-    /// execution of the function under the case, so any one is authority for
-    /// it. The sets differ only in how the proofs that produced them
-    /// structured the paths (a proof that joins two arms publishes the
-    /// joined path; another publishes each arm), and a claim completed on
-    /// one proof's outcome is matched against that proof's paths.
-    pub(super) cases: Vec<Vec<ContractPathSet>>,
-    /// Why certification produced no paths: either no supplied checked
-    /// artifact could be reused, or the contract entry context itself could
-    /// not be built. Callers report it; it carries no authority.
-    pub(super) reuse_diagnostic: Option<String>,
-    /// The entry premise the contract context could not authorize, when that
-    /// is why reuse was refused. The kernel names its *kind* in
-    /// `reuse_diagnostic`; a reader needs the premise itself to know which
-    /// fact is missing, and only the caller can spell it in the user's names.
-    /// It carries no authority either — it is the refused premise, not a
-    /// granted one.
-    pub(super) reuse_unauthorized_premise: Option<Proposition>,
-    /// The resources the contract entry held where that premise was refused.
-    /// A refused loadability premise is a claim about these, so a reader
-    /// needs them beside it to see which range the premise fell outside.
-    pub(super) reuse_entry_resources: Vec<ResourceFact>,
-    /// The pure facts of the contract context that premise was refused in:
-    /// what it was checked against.
-    pub(super) reuse_context_facts: Vec<Proposition>,
-    pub(super) checked_call_events: super::proof::CheckedCallEvents,
-    /// How this certification ran the function's loops. Under
-    /// `ApplyVerifiedRules` a loop is either run concretely to its exit or
-    /// replaced by a verified loop rule, and one with neither yields no
-    /// paths; under `Verify` an annotated loop may be summarized without
-    /// ever exiting. The termination check reads this to know which.
-    pub(super) loop_semantics: LoopSemantics,
-    /// The user-defined tactics the certified proofs applied.
-    pub(super) applied_tactics: std::collections::BTreeSet<String>,
-    /// Complete conservative call dependencies from kernel-checked execution.
-    /// None retains source-call analysis; a present empty set proves no calls.
-    /// Shared across claims and certificate reuse, never copied per step.
-    pub(super) checked_callees: Option<Arc<BTreeSet<String>>>,
-}
-
 /// A kernel-created record of one exact whole-function execution judgment.
 /// Opened-contract executions retain their producer's entry authority;
 /// whole-contract admission consumes it without rechecking premises or entry
@@ -15234,52 +15120,6 @@ pub enum FunctionContractExecutionMode {
     ExecuteLoops,
 }
 
-impl FunctionContractExecution {
-    /// An empty certification that carries why it produced no paths. A
-    /// diagnostic is not authority: the result is still empty and certifies
-    /// nothing.
-    pub(crate) fn failed(diagnostic: String) -> Self {
-        Self {
-            pointer_result: None,
-            cases: Vec::new(),
-            reuse_diagnostic: Some(diagnostic),
-            reuse_unauthorized_premise: None,
-            reuse_entry_resources: Vec::new(),
-            reuse_context_facts: Vec::new(),
-            checked_call_events: Default::default(),
-            loop_semantics: LoopSemantics::Verify,
-            checked_callees: None,
-            applied_tactics: Default::default(),
-        }
-    }
-
-    /// Every path across every case and path set.
-    pub fn path_count(&self) -> usize {
-        self.cases.iter().flatten().map(|set| set.paths.len()).sum()
-    }
-
-    /// Whether every resource-guard case has a path set to judge claims
-    /// over.
-    pub(crate) fn is_complete(&self) -> bool {
-        !self.cases.is_empty()
-            && self
-                .cases
-                .iter()
-                .all(|alternatives| !alternatives.is_empty())
-    }
-
-    pub(crate) fn cases(&self) -> &[Vec<ContractPathSet>] {
-        &self.cases
-    }
-
-    /// Why certification produced no paths although checked artifacts were
-    /// supplied: the premise kind or entry-state component that blocked
-    /// reuse.
-    pub fn reuse_diagnostic(&self) -> Option<&str> {
-        self.reuse_diagnostic.as_deref()
-    }
-}
-
 impl CheckedFunctionExecution {
     pub fn paths(&self) -> &[SymbolicExecutionPath] {
         self.execution.paths()
@@ -15289,12 +15129,6 @@ impl CheckedFunctionExecution {
         self.boundary_transfer
             .as_deref()
             .map_or(&self.function, |transfer| transfer.checked_function())
-    }
-
-    pub(crate) fn boundary_transfer(
-        &self,
-    ) -> Option<&Arc<super::functions::CheckedBoundaryResourceTransfer>> {
-        self.boundary_transfer.as_ref()
     }
 
     pub(crate) fn function_arguments(&self) -> &[ProgramExpression] {

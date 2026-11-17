@@ -5,7 +5,6 @@ use crate::kernel::{
     MachineOperandView as Operand, MachineUnaryOp, SharedMachineIntegerTerm,
 };
 use crate::kernel::{MachineCastSpelling, cast_term};
-use crate::kernel::{bits32_constant, constant_u32};
 
 mod contract_claims;
 mod input_initialization;
@@ -19,11 +18,7 @@ pub use contract_claims::*;
 pub(crate) struct PreparedContractEntryCases {
     identity: Arc<()>,
     pub(super) guard_cases: Vec<Vec<Proposition>>,
-    pub(super) state: ExecutionState,
     pub(super) function: ProgramFunction,
-    pub(super) arguments: Vec<ProgramExpression>,
-    pub(super) byte_order: Proposition,
-    pub(super) raw_entry_state: ExecutionState,
     pub(super) closing_entry: Arc<RetainedClosingEntry>,
     closing_footprint: std::sync::OnceLock<RetainedClosingFootprint>,
     pub(super) cases: Vec<PreparedContractEntryCase>,
@@ -31,7 +26,9 @@ pub(crate) struct PreparedContractEntryCases {
 
 #[derive(Clone, Debug)]
 pub(super) struct PreparedContractEntryCase {
+    #[cfg(test)]
     pub(super) assumptions: PureFactContext,
+    #[cfg(test)]
     pub(super) entry_state: ExecutionState,
     pub(super) closing_entry: Arc<RetainedClosingEntry>,
 }
@@ -142,7 +139,9 @@ pub(crate) fn prepare_function_contract_entry_cases(
         let closing_case =
             Arc::new(closing_entry.for_case(function, entry_state.clone(), assumptions.clone()));
         cases.push(PreparedContractEntryCase {
+            #[cfg(test)]
             assumptions,
+            #[cfg(test)]
             entry_state,
             closing_entry: closing_case,
         });
@@ -150,25 +149,11 @@ pub(crate) fn prepare_function_contract_entry_cases(
     Ok(PreparedContractEntryCases {
         identity: Arc::new(()),
         guard_cases: resource_condition_cases,
-        state: state.clone(),
         function: function.clone(),
-        arguments: arguments.to_vec(),
-        byte_order,
-        raw_entry_state,
         closing_entry,
         closing_footprint: std::sync::OnceLock::new(),
         cases,
     })
-}
-
-#[cfg(test)]
-thread_local! {
-    static GUARD_CASE_BUILDS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
-#[cfg(test)]
-fn guard_case_builds() -> usize {
-    GUARD_CASE_BUILDS.with(std::cell::Cell::get)
 }
 
 /// Returns an exhaustive set of proof-only cases for undecided guards on
@@ -185,8 +170,6 @@ pub(crate) fn contract_resource_condition_cases(
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
 ) -> Option<Vec<Vec<Proposition>>> {
-    #[cfg(test)]
-    GUARD_CASE_BUILDS.with(|count| count.set(count.get() + 1));
     let entry_state = program_function_entry_state(caller_state, function, arguments)?;
     let mut budget = ExecutionBudget::beside_live_state();
     let required_resources = evaluate_function_resource_context(
@@ -3372,128 +3355,6 @@ fn names_of_one_cell_framed(
         })
 }
 
-fn match_quantified_int32_term(
-    pattern: &MachineTerm,
-    target: &MachineTerm,
-    binders: &BTreeSet<Variable>,
-    substitutions: &mut BTreeMap<Variable, MachineTerm>,
-) -> bool {
-    if let MachineTerm::Variable(variable) = pattern
-        && binders.contains(variable)
-    {
-        return match substitutions.get(variable) {
-            Some(existing) => existing == target,
-            None => {
-                substitutions.insert(*variable, target.clone());
-                true
-            }
-        };
-    }
-    if let (Some((operator, pattern_left, pattern_right)), Some((other, target_left, target_right))) =
-        (pattern.as_binary(), target.as_binary())
-        && operator == other
-        && operator.is_bitvector32()
-    {
-        return match_quantified_int32_term(pattern_left, target_left, binders, substitutions)
-            && match_quantified_int32_term(pattern_right, target_right, binders, substitutions);
-    }
-    match (pattern, target) {
-        (bits32_constant!(left), bits32_constant!(right)) => {
-            constant_u32(*left) == constant_u32(*right)
-        }
-        (MachineTerm::Variable(left), MachineTerm::Variable(right)) => left == right,
-        (
-            unary_term!(Bits32 @ pattern_format, BitwiseNot, pattern),
-            unary_term!(Bits32 @ target_format, BitwiseNot, target),
-        ) if pattern_format == target_format => {
-            match_quantified_int32_term(pattern, target, binders, substitutions)
-        }
-        _ => pattern == target,
-    }
-}
-
-/// Instantiates every binder in one closed theorem from its condition
-/// conclusion. Matching is a single structural pass; premises are then
-/// certified normally under the resulting exact substitution.
-pub(super) fn certification_proves_condition_from_verified_pure_implication(
-    assumptions: &PureFactContext,
-    fact: &Proposition,
-    target: &ConditionTerm,
-    target_value: bool,
-) -> bool {
-    let mut binder_order = Vec::new();
-    let mut body = fact;
-    while let Proposition::ForAll {
-        var, body: inner, ..
-    } = body
-    {
-        binder_order.push(*var);
-        body = inner;
-    }
-    if binder_order.is_empty() {
-        return false;
-    }
-    let mut premises = Vec::new();
-    while let Proposition::Implies(premise, rest) = body {
-        premises.push(premise.as_ref().clone());
-        body = rest;
-    }
-    let Proposition::ConditionIs(pattern, pattern_value) = body else {
-        return false;
-    };
-    if *pattern_value != target_value {
-        return false;
-    }
-    let binders = binder_order.iter().copied().collect::<BTreeSet<_>>();
-    let mut substitutions = BTreeMap::new();
-    let matched = match (pattern, target) {
-        (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                left: pattern_left,
-                right: pattern_right,
-            },
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                left: target_left,
-                right: target_right,
-            },
-        )
-        | (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterEqual,
-                left: pattern_left,
-                right: pattern_right,
-            },
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterEqual,
-                left: target_left,
-                right: target_right,
-            },
-        ) => {
-            match_quantified_int32_term(pattern_left, target_left, &binders, &mut substitutions)
-                && match_quantified_int32_term(
-                    pattern_right,
-                    target_right,
-                    &binders,
-                    &mut substitutions,
-                )
-        }
-        _ => false,
-    };
-    if !matched || substitutions.len() != binders.len() {
-        return false;
-    }
-    premises.into_iter().all(|premise| {
-        let premise = substitute_bitvector_variables_in_proposition(&premise, &substitutions);
-        PureFactContext::settles_exactly(assumptions, &premise)
-    })
-}
-
 pub(super) fn resources_certify_loadability(
     state: &ExecutionState,
     resources: &ResourceContext,
@@ -3801,57 +3662,6 @@ mod prepared_entry_cases_tests {
             .map(|case| case.entry_state.resources().facts().len())
             .collect::<Vec<_>>();
         assert_eq!(token_counts, vec![2, 1, 1, 0]);
-        let core = opened.into_execution_core();
-        // Registration can inspect missing coverage, but must not invent new cases.
-        let before = guard_case_builds();
-        for _ in 0..2 {
-            let execution = prove_prepared_function_contract_execution_paths(
-                &prepared,
-                function.clone(),
-                ExecutionEnvironment::new(),
-                ExecutionSemantics::APPLY_VERIFIED_RULES,
-                FunctionContractExecutionMode::VerifyLoops,
-                &[],
-                &[],
-            );
-            assert_eq!(execution.cases.len(), 4);
-            assert!(
-                !execution.is_complete(),
-                "unproved cases do not become completed coverage"
-            );
-        }
-        assert_eq!(
-            guard_case_builds(),
-            before,
-            "registration consumes the retained alternatives"
-        );
-        let _ = core;
-        let foreign = program_function(
-            ProgramType::Int32,
-            "other",
-            vec![],
-            program_return(crate::kernel::program_expression::int32_literal(0)),
-        );
-        let refused = prove_prepared_function_contract_execution_paths(
-            &prepared,
-            foreign,
-            ExecutionEnvironment::new(),
-            ExecutionSemantics::APPLY_VERIFIED_RULES,
-            FunctionContractExecutionMode::VerifyLoops,
-            &[],
-            &[],
-        );
-        assert!(!refused.is_complete());
-        assert!(
-            refused
-                .reuse_diagnostic()
-                .unwrap()
-                .contains("another function or target")
-        );
-    }
-
-    mod scaling_tests {
-        include!("../../scaling_tests/kernel/api/contract_certification/prepared_entry_cases.rs");
     }
 }
 

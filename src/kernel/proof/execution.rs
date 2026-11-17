@@ -358,25 +358,6 @@ impl crate::kernel::CheckedFunctionExecution {
     pub(crate) fn open_outcome(&self, index: usize) -> Option<super::OutcomeProofCore> {
         self.published_outcome(index).open_core()
     }
-
-    #[cfg(test)]
-    pub(crate) fn with_closed_exit_obligations(
-        mut self,
-        completions: Vec<crate::kernel::ClosedContractExit>,
-    ) -> Result<Self, &'static str> {
-        for completion in completions {
-            let index = completion.path_index();
-            let path = self
-                .paths()
-                .get(index)
-                .ok_or("contract closing selected an unknown path")?;
-            if !completion.matches_path(path) {
-                return Err("contract closing belongs to a different producer path");
-            }
-            self.closed_exit_obligations[index] = Some(completion);
-        }
-        Ok(self)
-    }
 }
 
 /// Why [`ExecutionProofCore::checked_return_path`] refused a path: the
@@ -671,17 +652,6 @@ impl CheckedCallEvents {
         let mut events = Self::default();
         events.insert(event);
         events
-    }
-
-    pub(crate) fn extend(&mut self, other: &Self) {
-        for group in &other.groups {
-            for id in group.active.iter() {
-                self.insert(&CheckedCallEvent {
-                    registry: group.registry.clone(),
-                    id: *id,
-                });
-            }
-        }
     }
 
     pub(crate) fn contains(&self, event: &CheckedCallEvent) -> bool {

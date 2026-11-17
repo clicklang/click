@@ -2255,6 +2255,7 @@ fn capture_avoiding_algebraic_quantifier_body(
 /// fresh variable first, then install the requested replacements in a second
 /// pass.  The ordinary substitution routine handles capture avoidance at each
 /// quantifier boundary.
+#[cfg(test)]
 pub(in crate::kernel) fn substitute_bitvector_variables_in_proposition(
     proposition: &Proposition,
     substitutions: &BTreeMap<Variable, MachineTerm>,

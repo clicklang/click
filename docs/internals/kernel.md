@@ -163,11 +163,8 @@ operations use the entry retained by the proof, including checked storage
 authorities. Successful completion introduces no additional claim, resource,
 effect, or entry-coverage checks.
 
-The independent execution-only APIs accept execution artifacts without a
-completed ordinary contract root. Their artifact reuse, premise authorization,
-entry-case coverage, and rule-packaging checks belong to that separate API;
-they are not stages after an ordinary proof completes. See
-[Proof objects](proof-objects.md) for the retained evidence and completion flow.
+See [Proof objects](proof-objects.md) for the retained evidence and
+completion flow.
 
 A proof about one call and a proof of a function contract have different
 scopes. Checking a body at `x = 0` can establish a property of that call. To
@@ -181,9 +178,10 @@ When investigating a suspected boundary violation, identify the exact judgment
 and its premises, the operation that issued the evidence, and which inputs the
 caller was responsible for constructing. Kernel tests can access private
 constructors and helpers, unlike Surface proofs. In particular,
-`certify_contract_with_kernel_artifacts` accepts a test's state and arguments;
-it does not run Surface entry lowering. Acceptance of a rule in such a test is
-not, by itself, a demonstration that Click verified a false source claim.
+`program_recursive_function_contract_hypothesis` packages a test function's
+contract as a rule without checking its body. Acceptance of a rule in such a
+test is not, by itself, a demonstration that Click verified a false source
+claim.
 Conversely, a kernel API that violates its stated judgment is a defect even
 without a Surface reproducer. Neither the `verified` prefix nor membership in
 the trusted implementation settles that question.
@@ -224,7 +222,7 @@ Opaque function rules have a narrower boundary:
 
 - the rule is bound to the complete `ProgramFunction`, including its lowered body,
   contract, exact claim targets, resource definitions, and execution metadata;
-- `FunctionContractExecution` can only be created by the kernel from the
+- a contract's checked execution can only be created by the kernel from the
   exact function's entry state and contract-derived assumptions. The kernel
   builds the contract entry (`program_function_contract_entry`): its lowering of
   each `requires` clause, the parameters' ranges, and what the entry
@@ -351,7 +349,7 @@ to certify a contract whose function declares a measure. `checked_function_execu
 refuses such an execution outright as well. What is left for the termination
 judgment is that the obligations were reachable and complete: the certified
 `ProgramFunction` must carry the measure (the plan names only the measure's source text, and
-`program_verified_function_rule` binds every claim to the same `ProgramFunction`), the
+the completed contract root packages its rule for the same `ProgramFunction`), the
 component's only recursive edge must be the self-call, and the function must
 not have an inline body. Both are refusals by name; `decreases <int32
 parameter>` still ranks those shapes.
@@ -628,10 +626,8 @@ In `src/kernel/`:
 - `ProofObligation`, `ExecutionPureFact`: obligations and facts produced during symbolic
   execution.
 - `Theorem`: abstract proven proposition.
-- `FunctionContractExecution`: kernel-produced complete execution evidence
-  used only for exact opaque-contract certification.
-- `VerifiedFunctionContractClaim`, `VerifiedFunctionRule`: unforgeable
-  evidence for one exact claim and for a complete exact opaque contract.
+- `VerifiedFunctionRule`: unforgeable evidence for a complete exact opaque
+  contract.
 - `FunctionTerminationPlan`, `VerifiedFunctionTerminationRule`: respectively
   an untrusted ranking proposal and separate kernel-checked evidence that the
   exact partially-correct function returns.
