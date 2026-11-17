@@ -786,3 +786,30 @@ constness and sibling authority are retained. Direct Boolean condition calls now
 locked-header ordinary executable calls now retain per-function source provenance.
 Scalar-call result conversions preserve the callee type before the wrapper's
 `CAmount` alias conversion. The composition proof above uses these features.
+
+### SpanReader exception propagation
+
+`SpanReaderIgnore.cpp` is a fixture harness that includes the unchanged
+Bitcoin `streams.h` at the same v31.1 commit. `SpanReaderIgnore.click` states
+both outcomes of `SpanReader::ignore` and its modular caller, without a
+precondition excluding malformed input. Success advances the descriptor;
+failure throws exactly the opaque `std::ios_base::failure` and leaves the
+descriptor unchanged. The caller receives its borrowed memory on either exit.
+
+`streams-input-supplement.tar.gz` adds only the missing original Bitcoin,
+libstdc++ and Clang resource headers. It leaves `input-closure.tar.gz`
+unchanged. `streams-input-provenance.json` pins each supplemental file and
+both archives. The extra libstdc++ header comes from the same SHA-256-pinned
+Debian package as the original fixture. Clang's resource headers are relocated
+inside the dependency root so `size_t` retains its actual declaration identity
+and a locked declaration span. `SpanReaderIgnore-command.json.in` keeps the
+original target and semantic flags while selecting the pinned headers explicitly
+with `-nostdinc` and system include paths, avoiding two copies of Clang's
+`include_next` headers in one search chain. Their license is in `clang-resource.copyright`.
+`make-streams-fixture.py` regenerates the
+supplement from the pinned checkout, Debian package and Clang resources.
+
+The selected `ios_failure` profile explicitly assumes allocation failure
+terminates and trusts the pinned standard exception construction and runtime
+storage/destruction. It exposes no message or class layout. Typed catches and
+`SpanReader::read` are later slices; see `roadmap/cpp-exceptions.md`.

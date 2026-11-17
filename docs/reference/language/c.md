@@ -220,6 +220,14 @@ A `static` function of the same name is the program's own, and its calls
 execute its body (`mdtests/a_program_definition_of_strlen_is_refused.md`,
 `mdtests/a_static_function_named_strlen_is_the_programs_own.md`).
 
+The modeled `memcpy`, `memcmp` and `memset` take native object pointers through
+their `void *` parameters without source-level byte casts. Lowering supplies
+the byte view their contracts use, retaining pointer designation, subobject
+bounds and qualifiers. For example, `memcpy(&out, &value, sizeof(out))` copies
+a scalar's representation directly (`mdtests/memcpy_typed_scalar_arguments.md`).
+The ordinary ownership, initialized-source, separation and destination-write
+requirements still apply.
+
 A [compiler import](../cli/import.md#clicks-system-headers) searches the same
 headers, with the same text, in the place of the C library's: after the
 project's `-iquote`, `-I`, and `-isystem` directories, as GCC orders them. It

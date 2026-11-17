@@ -1584,7 +1584,7 @@ fn prepare_closing_path(
             &mut post_state,
             CONTRACT_EXCEPTION,
             value,
-            ProgramType::Int32,
+            value.native().program_type(),
         );
     } else if function.return_type() != ProgramType::Void {
         bind_contract_exit_value(
@@ -2011,7 +2011,11 @@ fn function_claim_holds_on_prepared_path(
             obligations_hold && lowered_goal_is_constant_true(&path.proposition)
         }
         FunctionContractClaimTarget::EnsureResource(index) => {
-            if !matches!(outcome, FunctionOutcome::Return { .. }) {
+            if !matches!(outcome, FunctionOutcome::Return { .. })
+                && !matches!(outcome, FunctionOutcome::Throw { .. }
+                    if function.resource_ensures().get(*index).is_some_and(|resource|
+                        resource.role() == ResourceTransferRole::Borrow))
+            {
                 return true;
             }
             // The proof already checked this exact resource claim, including
@@ -2729,7 +2733,7 @@ fn exceptional_goals_at_entry(
         &mut post_state,
         CONTRACT_EXCEPTION,
         value,
-        ProgramType::Int32,
+        value.native().program_type(),
     );
     let lowering_assumptions = assumptions
         .clone()

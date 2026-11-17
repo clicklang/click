@@ -48,6 +48,7 @@ mod guarded_consequents;
 pub(in crate::surface) mod program_termination;
 mod pure_theorems;
 pub(in crate::surface) use pure_theorems::kernel_law_index_types;
+mod raise_lower_audit;
 mod raise_lower_census;
 mod resources;
 mod selected_arithmetic;
@@ -1780,22 +1781,20 @@ impl<'a> FunctionClaimRef<'a> {
     }
 
     pub(super) fn applies_to(self, outcome: &FunctionOutcome) -> bool {
-        matches!(
-            (self, outcome),
+        match (self, outcome) {
             (Self::Ensure(_, _), FunctionOutcome::Return { .. })
-                | (Self::ExceptionalEnsure(_, _), FunctionOutcome::Throw { .. })
-        )
+            | (Self::ExceptionalEnsure(_, _), FunctionOutcome::Throw { .. }) => true,
+            (Self::Ensure(_, clause), FunctionOutcome::Throw { .. }) => clause.borrowed(),
+            _ => false,
+        }
     }
 
     pub(super) fn is_vacuous_for(self, outcome: &FunctionOutcome) -> bool {
-        matches!(
-            (self, outcome),
-            (Self::Ensure(_, _), FunctionOutcome::Throw { .. })
-                | (
-                    Self::ExceptionalEnsure(_, _),
-                    FunctionOutcome::Return { .. }
-                )
-        )
+        match (self, outcome) {
+            (Self::Ensure(_, clause), FunctionOutcome::Throw { .. }) => !clause.borrowed(),
+            (Self::ExceptionalEnsure(_, _), FunctionOutcome::Return { .. }) => true,
+            _ => false,
+        }
     }
 
     fn verified_claim(self) -> VerifiedClaim {

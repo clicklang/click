@@ -414,6 +414,74 @@ impl<'a> Proof<'a> {
         }
     }
 
+    /// Under `CLICK_RAISE_LOWER`, raises each fact this step added, and the
+    /// goal it leaves focused, at the step's fixed state, lowers the spelling
+    /// again, and records how the round trip ended.
+    fn record_raise_lower_audit(&self, next: &Self, tactic: &str) {
+        use crate::surface::proof::raise_lower_audit::{self as audit, RoundTrip};
+        use crate::surface::proof::raise_lower_census::kind;
+        if next.focused_branch().is_none() || next.focused_discharged() {
+            return;
+        }
+        let added = self
+            .focused_branch()
+            .zip(next.focused_branch())
+            .and_then(|(before, after)| after.state.facts.introduced_since(&before.state.facts));
+        let added = added
+            .as_deref()
+            .unwrap_or_else(|| next.state().added_facts());
+        let facts = added
+            .iter()
+            .filter(|fact| !fact.is_kernel_authority())
+            .take(64)
+            .map(|fact| ("fact", fact));
+        let goal = next.goal().map(|goal| ("goal", goal));
+        for (role, original) in facts.chain(goal) {
+            let scope = crate::surface::proof::attempt::search_scope("raise-lower audit");
+            let (outcome, spelling, lowered) = crate::instrumentation::without_charging(|| {
+                let Some(view) = next.premise_fixed_state_view() else {
+                    return (RoundTrip::NoState, String::new(), String::new());
+                };
+                let Some(surface) =
+                    crate::surface::proof::surface_synthesis::synthesize_surface_proposition(
+                        original,
+                        view.parameter_binding,
+                        view.fixed_state.state,
+                    )
+                else {
+                    return (RoundTrip::Unraised, String::new(), String::new());
+                };
+                let spelling = crate::surface::printing::source_click_proposition(&surface);
+                let lowered =
+                    crate::surface::proof::execution_planning::without_open_obligation_probe(
+                        || next.lower_surface_proposition_direct(&surface, "raise-lower audit"),
+                    );
+                match lowered {
+                    Err(_) => (RoundTrip::Unlowered, spelling, String::new()),
+                    Ok(lowered) => match audit::classify(original, &lowered) {
+                        RoundTrip::Differs => (
+                            RoundTrip::Differs,
+                            spelling,
+                            next.render_diagnostic_proposition(&lowered),
+                        ),
+                        outcome => (outcome, spelling, String::new()),
+                    },
+                }
+            });
+            drop(scope.finish());
+            audit::record(
+                outcome,
+                role,
+                &kind(original),
+                self.claim_label(),
+                tactic,
+                &next.render_diagnostic_proposition(original),
+                &spelling,
+                &lowered,
+            );
+        }
+    }
+
     /// Retain the call spelling for a checked call in the proof trace.
     fn trace_call_source(
         &self,

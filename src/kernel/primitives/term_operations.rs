@@ -4138,6 +4138,7 @@ impl ProgramType {
         let signature = match exceptional_signature {
             ExceptionalSignature::None => signature,
             ExceptionalSignature::Int32 => signature | (1u128 << 79),
+            ExceptionalSignature::Opaque(_) => return CallbackSignature::UNSPECIFIED,
         };
         CallbackSignature::from_encoded(signature)
     }

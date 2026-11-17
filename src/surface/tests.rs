@@ -1406,7 +1406,7 @@ fn contract_resource_handles_are_named_body_clauses() {
         ("contract int32 C() { owns cell: missing(); }", ""),
         (
             "contract int32 C(int32* p) throws int32 { owns cell: marker(p); }",
-            "exceptional contracts with resources",
+            "throwing contracts support borrowed memory",
         ),
     ] {
         let error = parser::parse(&format!("{header} {invalid}"))

@@ -4,6 +4,52 @@
 
 use super::*;
 
+/// Adapting one memory-library argument reads declarations by name, not by
+/// walking the declaration set. The measured work is independent of unrelated
+/// globals and declarations and proportional to the explicit argument count.
+#[test]
+fn memory_library_argument_adaptation_ignores_unrelated_declarations() {
+    let mut samples = Vec::new();
+    for count in [16, 64, 256, 1024] {
+        let mut source = String::from("void *memcpy(void *d, const void *s, unsigned long n);");
+        for index in 0..count {
+            source.push_str(&format!("int g{index}; int f{index}(int x);"));
+        }
+        let unit = Parser::new(&source, CAbi::SUPPORTED)
+            .unwrap()
+            .parse_translation_unit()
+            .unwrap();
+        let mut parser = Parser::new("", CAbi::SUPPORTED).unwrap();
+        parser.function_declarations = unit.function_declarations;
+        for index in 0..count {
+            parser
+                .variable_types
+                .insert(format!("g{index}").into(), InterfaceType::Int32);
+        }
+        parser
+            .variable_types
+            .insert("value".into(), InterfaceType::UInt32);
+        for calls in [1, 8, 32] {
+            let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+                for _ in 0..calls {
+                    let mut argument =
+                        CExpression::AddressOf(Box::new(CExpression::Variable("value".into())));
+                    parser.adapt_library_memory_argument(Some("memcpy"), 0, &mut argument);
+                    assert!(matches!(
+                        argument,
+                        CExpression::Cast {
+                            explicit_qualification: false,
+                            ..
+                        }
+                    ));
+                }
+            });
+            assert_eq!(work, calls, "unrelated={count}, calls={calls}");
+            samples.push((calls, work));
+        }
+    }
+}
+
 #[test]
 fn explicit_embedded_layout_work_tracks_materialized_leaves() {
     for size in [8u32, 32, 128, 256] {
@@ -40,7 +86,12 @@ fn explicit_embedded_layout_work_tracks_materialized_leaves() {
             layouts
         });
         assert_eq!(layouts.len(), size as usize);
-        assert_eq!(work, (size * (size - 1) / 2) as usize);
+        // Each embedded leaf is materialized once. The direct nominal-field
+        // index additionally visits each declared field: one in R0, two in
+        // every later record. Its work is linear in these explicit inputs.
+        let leaves = size * (size - 1) / 2;
+        let declared_fields = 2 * size - 1;
+        assert_eq!(work, (leaves + declared_fields) as usize);
     }
 }
 
