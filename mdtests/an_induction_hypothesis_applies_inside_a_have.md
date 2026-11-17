@@ -21,7 +21,7 @@ function cd(n: int32) -> int32
 theorem block_have(n: int32) {
     requires n >= 0;
     ensures cd(n) == 0 by {
-        induct(n) as ih;
+        let ih = induct(n);
         if n <= 0 {
             unfold(cd(n));
             normalize() using { n <= 0; };
@@ -39,7 +39,7 @@ theorem block_have(n: int32) {
 theorem bare_have(n: int32) {
     requires n >= 0;
     ensures cd(n) == 0 by {
-        induct(n) as ih;
+        let ih = induct(n);
         if n <= 0 {
             unfold(cd(n));
             normalize() using { n <= 0; };

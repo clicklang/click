@@ -9,7 +9,7 @@ function full_width_count(n: uint64) -> Integer {
 
 theorem full_width_count_is_its_length(n: uint64) {
     ensures full_width_count(n) == to_integer(n) by {
-        induct(n) as ih;
+        let ih = induct(n);
         if n <= 0u64 {
             unfold(full_width_count(n));
             have n == 0u64 by solve() using { n <= 0u64; };

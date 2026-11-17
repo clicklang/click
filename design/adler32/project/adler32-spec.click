@@ -45,7 +45,7 @@ theorem adler_weighted_append(bytes: uint8[], n: int32, weight_end: int32) {
 theorem adler_weight_shift(bytes: uint8[], n: int32, w0: int32, w1: int32) {
  requires 0 <= n;
  ensures adler_weighted_sum(bytes, n, w1) - adler_weighted_sum(bytes, n, w0) == (to_integer(w1) - to_integer(w0)) * adler_byte_sum(bytes, n) by {
-  induct(n) as ih;
+  let ih = induct(n);
   if n <= 0 {
    unfold(adler_weighted_sum(bytes, n, w1));
    unfold(adler_weighted_sum(bytes, n, w0));
@@ -115,7 +115,7 @@ theorem adler_byte_bounds(value: uint8) {
 theorem adler_sum_nonnegative(bytes: uint8[], n: int32) {
  requires 0 <= n;
  ensures 0 <= adler_byte_sum(bytes, n) by {
-  induct(n) as ih;
+  let ih = induct(n);
   if n <= 0 {
    unfold(adler_byte_sum(bytes, n));
    solve() using { adler_byte_sum(bytes, n) == 0; };
@@ -135,7 +135,7 @@ theorem adler_sum_nonnegative(bytes: uint8[], n: int32) {
 theorem adler_weighted_nonnegative(bytes: uint8[], n: int32) {
  requires 0 <= n;
  ensures 0 <= adler_weighted_sum(bytes, n, n) by {
-  induct(n) as ih;
+  let ih = induct(n);
   if n <= 0 {
    unfold(adler_weighted_sum(bytes, n, n));
    solve() using { adler_weighted_sum(bytes, n, n) == 0; };
@@ -434,7 +434,7 @@ theorem adler_sum_concat(bytes: uint8[], prefix: int32, suffix: int32) {
  requires to_integer(prefix) <= to_integer(2147483647 - suffix);
  requires defined(prefix + suffix);
  ensures adler_byte_sum(bytes, prefix + suffix) == adler_byte_sum(bytes, prefix) + adler_byte_sum(bytes + prefix, suffix) by {
-  induct(suffix) as ih;
+  let ih = induct(suffix);
   if suffix <= 0 {
    have suffix == 0 by { solve() using { 0 <= suffix; suffix <= 0; }; }
    have to_integer(prefix + suffix) == to_integer(prefix) by { rewrite(suffix, 0); normalize(); }
@@ -508,7 +508,7 @@ theorem adler_weighted_concat(bytes: uint8[], prefix: int32, suffix: int32, weig
  requires defined(prefix + suffix);
  requires defined(weight_end - prefix);
  ensures adler_weighted_sum(bytes, prefix + suffix, weight_end) == adler_weighted_sum(bytes, prefix, weight_end) + adler_weighted_sum(bytes + prefix, suffix, weight_end - prefix) by {
-  induct(suffix) as ih;
+  let ih = induct(suffix);
   have to_integer(weight_end - prefix) == to_integer(weight_end) - to_integer(prefix);
   if suffix <= 0 {
    have suffix == 0 by { solve() using { 0 <= suffix; suffix <= 0; }; }
@@ -628,7 +628,7 @@ theorem adler_spec_a_concat(bytes: uint8[], prefix: int32, suffix: int32, a0: In
 theorem adler_sum_upper(bytes: uint8[], n: int32) {
  requires 0 <= n;
  ensures adler_byte_sum(bytes, n) <= 255 * to_integer(n) by {
-  induct(n) as ih;
+  let ih = induct(n);
   if n <= 0 {
    have n == 0 by { solve() using { 0 <= n; n <= 0; }; }
    apply(adler_sum_empty(bytes, 0));
@@ -906,7 +906,7 @@ theorem adler_sums_extensional(left: uint8[], right: uint8[], bound: int32, n: i
  requires n <= bound;
  requires forall (k: int32) { 0 <= k and k < bound implies left[k] == right[k] };
  ensures adler_byte_sum(left, n) == adler_byte_sum(right, n) and adler_weighted_sum(left, n, weight) == adler_weighted_sum(right, n, weight) by {
-  induct(n) as ih;
+  let ih = induct(n);
   if n <= 0 {
    apply(adler_sum_empty(left, weight));
    apply(adler_sum_empty(right, weight));

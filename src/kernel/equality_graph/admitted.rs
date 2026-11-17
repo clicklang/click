@@ -22,8 +22,6 @@ pub(in crate::kernel) struct InputData {
     /// Conservative source-dependency selectors for parameter-store shortcuts.
     /// These record syntax, not equality classes or permission authority.
     pub(in crate::kernel) scalar_dependencies: crate::persistent::PersistentSet<Variable>,
-    /// Whether an admitted scalar input has a deferred (state) dependency.
-    pub(in crate::kernel) scalar_deferred_inputs: bool,
     /// Canonical edge receipts retain admission-time spellings.
     pub(in crate::kernel) uint64_input_edges:
         crate::persistent::PersistentMap<ConditionTerm, (super::MachineAtom, super::MachineAtom)>,

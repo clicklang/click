@@ -44,7 +44,7 @@ theorem adler_weighted_append_u64(bytes: uint8[], n: uint64, weight_end: Integer
 
 theorem adler_weight_shift_u64(bytes: uint8[], n: uint64, w0: Integer, w1: Integer) {
  ensures adler_weighted_sum_u64(bytes, n, w1) - adler_weighted_sum_u64(bytes, n, w0) == (w1 - w0) * adler_byte_sum_u64(bytes, n) by {
-  induct(n) as ih;
+  let ih = induct(n);
   if n <= 0u64 {
    have n == 0u64 by solve() using { n <= 0u64; };
    rewrite(n, 0u64);
@@ -117,7 +117,7 @@ theorem adler_byte_bounds_u64(value: uint8) {
 
 theorem adler_sum_nonnegative_u64(bytes: uint8[], n: uint64) {
  ensures 0 <= adler_byte_sum_u64(bytes, n) by {
-  induct(n) as ih;
+  let ih = induct(n);
   if n <= 0u64 {
    have n == 0u64 by solve() using { n <= 0u64; };
    rewrite(n, 0u64);
@@ -137,7 +137,7 @@ theorem adler_sum_nonnegative_u64(bytes: uint8[], n: uint64) {
 }
 theorem adler_weighted_nonnegative_u64(bytes: uint8[], n: uint64) {
  ensures 0 <= adler_weighted_sum_u64(bytes, n, to_integer(n)) by {
-  induct(n) as ih;
+  let ih = induct(n);
   if n <= 0u64 {
    have n == 0u64 by solve() using { n <= 0u64; };
    rewrite(n, 0u64);
@@ -422,7 +422,7 @@ theorem adler_byte_offset_association_u64(bytes: uint8[], prefix: uint64, suffix
 theorem adler_sum_concat_u64(bytes: uint8[], prefix: uint64, suffix: uint64) {
  requires to_integer(prefix) + to_integer(suffix) <= 18446744073709551615;
  ensures adler_byte_sum_u64(bytes, prefix + suffix) == adler_byte_sum_u64(bytes, prefix) + adler_byte_sum_u64(bytes + prefix, suffix) by {
-  induct(suffix) as ih;
+  let ih = induct(suffix);
   if suffix <= 0u64 {
    have suffix == 0u64 by solve() using { suffix <= 0u64; };
    have to_integer(prefix + suffix) == to_integer(prefix) by { rewrite(suffix, 0u64); normalize(); }
@@ -483,7 +483,7 @@ theorem adler_sum_concat_u64(bytes: uint8[], prefix: uint64, suffix: uint64) {
 theorem adler_weighted_concat_u64(bytes: uint8[], prefix: uint64, suffix: uint64, weight_end: Integer) {
  requires to_integer(prefix) + to_integer(suffix) <= 18446744073709551615;
  ensures adler_weighted_sum_u64(bytes, prefix + suffix, weight_end) == adler_weighted_sum_u64(bytes, prefix, weight_end) + adler_weighted_sum_u64(bytes + prefix, suffix, weight_end - to_integer(prefix)) by {
-  induct(suffix) as ih;
+  let ih = induct(suffix);
   if suffix <= 0u64 {
    have suffix == 0u64 by solve() using { suffix <= 0u64; };
    have to_integer(prefix + suffix) == to_integer(prefix) by { rewrite(suffix, 0u64); normalize(); }
@@ -585,7 +585,7 @@ theorem adler_spec_a_concat_u64(bytes: uint8[], prefix: uint64, suffix: uint64, 
 
 theorem adler_sum_upper_u64(bytes: uint8[], n: uint64) {
  ensures adler_byte_sum_u64(bytes, n) <= 255 * to_integer(n) by {
-  induct(n) as ih;
+  let ih = induct(n);
   if n <= 0u64 {
    have n == 0u64 by solve() using { n <= 0u64; };
    apply(adler_sum_empty_u64(bytes, 0));
@@ -819,7 +819,7 @@ theorem adler_sums_extensional_u64(left: uint8[], right: uint8[], bound: uint64,
  requires n <= bound;
  requires forall (k: uint64) { k < bound implies left[k] == right[k] };
  ensures adler_byte_sum_u64(left, n) == adler_byte_sum_u64(right, n) and adler_weighted_sum_u64(left, n, weight) == adler_weighted_sum_u64(right, n, weight) by {
-  induct(n) as ih;
+  let ih = induct(n);
   if n <= 0u64 {
    apply(adler_sum_empty_u64(left, weight));
    apply(adler_sum_empty_u64(right, weight));

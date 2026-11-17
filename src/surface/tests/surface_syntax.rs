@@ -1040,7 +1040,7 @@ fn parses_and_prints_pure_induction_tactics() {
         theorem induction_shape(n: int32) {
             requires n >= 0;
             ensures n == n by {
-                induct(n) as ih;
+                let ih = induct(n);
                 apply(ih(n - 1));
                 solve();
             }

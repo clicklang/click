@@ -221,6 +221,7 @@ impl MemoryStateLabels {
             match &pointer.block {
                 PointerBlock::Concrete(name) => format!("object `{}`", short(name)),
                 block @ (PointerBlock::AutomaticLocal { .. }
+                | PointerBlock::ReferenceCarrier { .. }
                 | PointerBlock::StaticObject { .. }) => format!("object `{block}`"),
                 PointerBlock::Symbolic(variable) | PointerBlock::ExternalObject(variable) => {
                     format!(

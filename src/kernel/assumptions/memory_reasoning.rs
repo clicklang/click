@@ -3659,6 +3659,7 @@ impl PureFactContext {
                             PointerBlock::Heap(_)
                                 | PointerBlock::StaticObject { .. }
                                 | PointerBlock::AutomaticLocal { .. }
+                                | PointerBlock::ReferenceCarrier { .. }
                                 | PointerBlock::Temporary(_)
                                 | PointerBlock::StringLiteral { .. }
                         )

@@ -4,7 +4,7 @@
 theorem bad_same(n: int32) {
     requires n >= 0;
     ensures n == n by {
-        induct(n) as ih;
+        let ih = induct(n);
         apply(ih(n));
         solve();
     }

@@ -37,7 +37,8 @@ fn pointer_block_payload(block: &PointerBlock) -> Option<usize> {
         | PointerBlock::ContractException
         | PointerBlock::AggregateReturn { .. }
         | PointerBlock::StaticObject { .. }
-        | PointerBlock::AutomaticLocal { .. } => 1,
+        | PointerBlock::AutomaticLocal { .. }
+        | PointerBlock::ReferenceCarrier { .. } => 1,
         PointerBlock::Concrete(name) | PointerBlock::Function(name) => {
             1usize.checked_add(name.len())?
         }
@@ -274,12 +275,14 @@ fn pointer_block_equal(left: &PointerBlock, right: &PointerBlock) -> bool {
             | PointerBlock::ContractException
             | PointerBlock::AggregateReturn { .. }
             | PointerBlock::StaticObject { .. }
-            | PointerBlock::AutomaticLocal { .. },
+            | PointerBlock::AutomaticLocal { .. }
+            | PointerBlock::ReferenceCarrier { .. },
             PointerBlock::ContractResult
             | PointerBlock::ContractException
             | PointerBlock::AggregateReturn { .. }
             | PointerBlock::StaticObject { .. }
-            | PointerBlock::AutomaticLocal { .. },
+            | PointerBlock::AutomaticLocal { .. }
+            | PointerBlock::ReferenceCarrier { .. },
         ) => left == right,
         _ => false,
     }

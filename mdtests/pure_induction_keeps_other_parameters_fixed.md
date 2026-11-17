@@ -13,7 +13,7 @@ function add_after_countdown(n: int32, extra: int32) -> int32
 theorem add_after_countdown_returns_extra(n: int32, extra: int32) {
     requires n >= 0;
     ensures add_after_countdown(n, extra) == extra by {
-        induct(n) as ih;
+        let ih = induct(n);
         if n <= 0 {
             unfold(add_after_countdown(n, extra));
             normalize() using { n <= 0; };

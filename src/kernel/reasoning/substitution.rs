@@ -1240,6 +1240,9 @@ fn walk_execution_statement_outcome<S: VariableSubstitution + ?Sized>(
         StatementOutcome::Normal(state) => {
             StatementOutcome::Normal(Box::new(walk_execution_state(state, s)))
         }
+        StatementOutcome::LoopTestFalse(state) => {
+            StatementOutcome::LoopTestFalse(Box::new(walk_execution_state(state, s)))
+        }
         StatementOutcome::Break(state) => {
             StatementOutcome::Break(Box::new(walk_execution_state(state, s)))
         }
@@ -2873,6 +2876,7 @@ pub(in crate::kernel) fn collect_statement_outcome_bound_variables(
 ) {
     match outcome {
         StatementOutcome::Normal(state)
+        | StatementOutcome::LoopTestFalse(state)
         | StatementOutcome::Break(state)
         | StatementOutcome::Continue(state)
         | StatementOutcome::Jump { state, .. } => {
@@ -3098,6 +3102,7 @@ fn collect_pointer_bound_variables(pointer: &Pointer, variables: &mut BTreeSet<V
         | PointerBlock::AggregateReturn { .. }
         | PointerBlock::StaticObject { .. }
         | PointerBlock::AutomaticLocal { .. }
+        | PointerBlock::ReferenceCarrier { .. }
         | PointerBlock::Concrete(_)
         | PointerBlock::StringLiteral { .. }
         | PointerBlock::Function(_)
@@ -7879,6 +7884,7 @@ fn substitute_pointer_variable_in_spec_proposition(
     to: &Pointer,
 ) -> SpecProposition {
     match proposition {
+        SpecProposition::Truth(value) => SpecProposition::Truth(*value),
         SpecProposition::ForAllInteger {
             name,
             variable,

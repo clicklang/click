@@ -209,7 +209,8 @@ impl StorageProvenance {
             PointerBlock::ContractResult
             | PointerBlock::ContractException
             | PointerBlock::AggregateReturn { .. }
-            | PointerBlock::AutomaticLocal { .. } => Self::Local,
+            | PointerBlock::AutomaticLocal { .. }
+            | PointerBlock::ReferenceCarrier { .. } => Self::Local,
             PointerBlock::Concrete(name) if PointerBlock::is_local_name(name) => Self::Local,
             PointerBlock::StaticObject { .. } | PointerBlock::Concrete(_) => Self::Global,
             PointerBlock::Heap(_) | PointerBlock::Temporary(_) => Self::Fresh,
@@ -936,6 +937,7 @@ fn may_alias_automatic_storage(block: &super::PointerBlock) -> bool {
         | PointerBlock::AggregateReturn { .. }
         | PointerBlock::StaticObject { .. }
         | PointerBlock::AutomaticLocal { .. }
+        | PointerBlock::ReferenceCarrier { .. }
         | PointerBlock::Concrete(_)
         | PointerBlock::ExternalArgument
         | PointerBlock::ExternalObject(_)
@@ -3292,6 +3294,7 @@ mod tests {
         let outcomes = [
             StatementOutcome::Normal(Box::new(state.clone())),
             StatementOutcome::Break(Box::new(state.clone())),
+            StatementOutcome::LoopTestFalse(Box::new(state.clone())),
             StatementOutcome::Continue(Box::new(state.clone())),
             StatementOutcome::Return {
                 value: int32(0).into(),

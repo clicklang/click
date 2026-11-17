@@ -162,6 +162,15 @@ pub(crate) fn literal_native_comparison_value(condition: &ConditionTerm) -> Opti
     else {
         return None;
     };
+    // Wide equality reads no sign and is filed at `int64` whatever its
+    // literals' signedness (`ConditionTerm::int64_equal`): compare the bits.
+    if *format == MachineIntegerType::Int64
+        && *relation == crate::kernel::CompareRelation::Equal
+        && let (Some(left), Some(right)) =
+            (left.bitvector64_as_const(), right.bitvector64_as_const())
+    {
+        return Some(left == right);
+    }
     if !matches!(
         format,
         MachineIntegerType::Int8
@@ -188,8 +197,24 @@ pub(crate) fn literal_native_comparison_value(condition: &ConditionTerm) -> Opti
     }
 }
 
-/// Preserve closed orders and wide equalities during logical lowering. Inspect
-/// only the two literal roots; deciding their truth belongs to checking.
+/// The value of a closed condition from its literal roots alone: a constant,
+/// a closed native comparison ([`literal_native_comparison_value`]), or a
+/// `bool` equality of two constants. Lowering retains the last two as
+/// written; checking and exact matching decide them here.
+pub(crate) fn closed_condition_value(condition: &ConditionTerm) -> Option<bool> {
+    match condition {
+        ConditionTerm::Constant(value) => Some(*value),
+        ConditionTerm::BoolEqual(left, right) => match (left.as_ref(), right.as_ref()) {
+            (ConditionTerm::Constant(left), ConditionTerm::Constant(right)) => Some(left == right),
+            _ => None,
+        },
+        condition => literal_native_comparison_value(condition),
+    }
+}
+
+/// Preserve a closed native comparison during logical lowering. Inspect only
+/// the two literal roots; deciding their truth belongs to checking
+/// ([`literal_native_comparison_value`]).
 pub(crate) fn logical_condition_for_operand_views(
     format: MachineIntegerType,
     relation: crate::kernel::CompareRelation,
@@ -204,9 +229,6 @@ fn closed_comparison_for_operand_views(
     relation: crate::kernel::CompareRelation,
     operands: [crate::kernel::MachineOperandView<'_>; 2],
 ) -> Option<ConditionTerm> {
-    if relation == crate::kernel::CompareRelation::Equal && format.format().bits() != 64 {
-        return None;
-    }
     let [Some(left), Some(right)] = operands.map(|operand| operand.literal()) else {
         return None;
     };
@@ -217,13 +239,15 @@ fn closed_comparison_for_operand_views(
     } else {
         [left, right]
     };
-    // Wide equality compares words, and its established native filing format
-    // is Int64 even when the literal operands are unsigned.
-    let format = if relation == crate::kernel::CompareRelation::Equal {
-        MachineIntegerType::Int64
-    } else {
-        format
-    };
+    // Wide equality compares words, and its established native filing
+    // format is Int64 even when the literal operands are unsigned
+    // (`ConditionTerm::int64_equal`). Narrower equality keeps its format.
+    let format =
+        if relation == crate::kernel::CompareRelation::Equal && format.format().bits() == 64 {
+            MachineIntegerType::Int64
+        } else {
+            format
+        };
     Some(ConditionTerm::Compare {
         format,
         relation,

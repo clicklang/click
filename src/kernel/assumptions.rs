@@ -2602,6 +2602,7 @@ fn collect_term_memory_loads(
         },
         Term::StatementOutcome(outcome) => match outcome.as_ref() {
             StatementOutcome::Normal(state)
+            | StatementOutcome::LoopTestFalse(state)
             | StatementOutcome::Break(state)
             | StatementOutcome::Continue(state)
             | StatementOutcome::Jump { state, .. } => {
@@ -4874,7 +4875,6 @@ impl PureFactContext {
         }
         self.equality_graph.admitted.scalar_evidence_inputs = Default::default();
         self.equality_graph.admitted.scalar_dependencies = Default::default();
-        self.equality_graph.admitted.scalar_deferred_inputs = false;
         self.equality_graph.admitted.scalar_evidence_keys = Default::default();
         self.equality_graph.admitted.bitvector64_equality_facts =
             crate::persistent::PersistentMap::default();
@@ -4902,7 +4902,6 @@ impl PureFactContext {
     fn rebuild_condition_match_indexes(&mut self) {
         self.equality_graph.admitted.scalar_evidence_inputs = Default::default();
         self.equality_graph.admitted.scalar_dependencies = Default::default();
-        self.equality_graph.admitted.scalar_deferred_inputs = false;
         self.equality_graph.admitted.scalar_evidence_keys = Default::default();
         let prior_typed_reads = self
             .equality_graph
