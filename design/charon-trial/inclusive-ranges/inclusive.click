@@ -9,10 +9,12 @@ fn count_through(n: u32) -> u32 {
     loop {
         decreases n + 1 - total;
         invariant total <= n + 1;
+        invariant iter.is_empty() == false implies iter.end() == n;
         invariant to_integer(total) == (if iter.is_empty() { to_integer(n) + 1 } else { to_integer(iter.start()) });
         preserve by {
             mark iteration;
             have iter.is_empty() == false;
+            have iter.end() == n;
             have total == iter.start();
             have iter.start() <= n;
             have total <= 4294967294u32;
@@ -24,6 +26,11 @@ fn count_through(n: u32) -> u32 {
                 have iter.start() <= n;
                 have iter.is_empty() == false;
                 have total <= n + 1;
+                have iter.end() == n;
+                have iter.is_empty() == false implies iter.end() == n by {
+                    intro();
+                    known();
+                }
             } else {
                 have iter.start() == n;
                 step_until(back_edge());
@@ -31,6 +38,11 @@ fn count_through(n: u32) -> u32 {
                 have to_integer(total) == to_integer(at(iteration, total)) + 1;
                 have total == n + 1;
                 have total <= n + 1;
+                have not (iter.is_empty() == false);
+                have iter.is_empty() == false implies iter.end() == n by {
+                    intro();
+                    contradiction(iter.is_empty() == false);
+                }
             }
         }
     }
@@ -62,6 +74,10 @@ fn every_byte() -> u32 {
                 have to_integer(iter.start()) == to_integer(at(iteration, iter.start())) + 1;
                 have to_integer(total) == to_integer(iter.start());
                 have total == (iter.start() as u32);
+                have iter.is_empty() implies total == 256u32 by {
+                    intro();
+                    contradiction(iter.is_empty() == false);
+                }
             } else {
                 have iter.start() == 255u8;
                 step_until(back_edge());
@@ -70,7 +86,15 @@ fn every_byte() -> u32 {
                 have to_integer(at(iteration, total)) == 255;
                 have to_integer(total) == 256;
                 have total == 256u32;
+                have iter.is_empty() implies total == 256u32 by {
+                    intro();
+                    known();
+                }
             }
         }
     }
+    have loop(0).iter.is_empty();
+    have total == 256u32;
+    step_until(function.exit);
+    solve();
 }

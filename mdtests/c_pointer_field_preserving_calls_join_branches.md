@@ -104,13 +104,13 @@ int32 vector_replace_if(
 
     ensures replace != 0 implies result == replacement;
 } by {
-    step();
-    step();
-    step();
+    step_until(statement(3));
     branch {
+        step();
         step();
         have replace != 0 implies selected == replacement;
     } else {
+        step();
         step();
         have replace != 0 implies selected == replacement by {
             intro();

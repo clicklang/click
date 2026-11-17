@@ -1267,21 +1267,32 @@ fn synthesize_surface_pointer_address(
 ) -> Option<ContractExpression> {
     let operand =
         synthesize_surface_pointer_expression(pointer, parameter_binding, state, bound_variables)?;
-    Some(crate::surface::lowering::contract_c_unary(
-        operand,
-        ProgramExpression::Cast {
-            expression: Box::new(ProgramExpression::Value(ProgramValue::typed_pointer(
+    // The address is spelled over the operand's own C expression when it has
+    // one, such as a parameter name; only a Surface-only operand keeps the
+    // operand beside a cast of the value it denotes.
+    let (operand, expression) = match operand {
+        ContractExpression::ProgramExpression(expression) => (None, expression),
+        operand => (
+            Some(operand),
+            ProgramExpression::Value(ProgramValue::typed_pointer(
                 pointer.clone(),
                 ProgramType::VoidPointer,
-            ))),
-            target_type: ProgramType::UInt64,
-            integer_mode: crate::kernel::IntegerCastMode::Standard,
-            pointee_struct: None,
-            pointee_volatile: false,
-            pointee_constant: false,
-            explicit_qualification: false,
-        },
-    ))
+            )),
+        ),
+    };
+    let cast = ProgramExpression::Cast {
+        expression: Box::new(expression),
+        target_type: ProgramType::UInt64,
+        integer_mode: crate::kernel::IntegerCastMode::Standard,
+        pointee_struct: None,
+        pointee_volatile: false,
+        pointee_constant: false,
+        explicit_qualification: false,
+    };
+    Some(match operand {
+        None => ContractExpression::ProgramExpression(cast),
+        Some(operand) => crate::surface::lowering::contract_c_unary(operand, cast),
+    })
 }
 
 pub(in crate::surface) fn synthesize_surface_value(
