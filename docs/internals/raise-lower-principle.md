@@ -458,6 +458,11 @@ DAGs or selecting an arm from ambient facts. Other result families retain their 
 selected-arm behavior; literal Boolean and closed 32-bit equality guards keep
 their normal forms.
 
+Checked rewriting reconstructs native 32-bit comparisons with word-form literal
+operands, matching logical lowering even when selecting a conditional's unsigned
+literal arm. This touches only operand roots, preserves nested arithmetic and the
+comparison node, and leaves truth evaluation to checking.
+
 Generated comparison operands that are negative `int64` literals keep an explicit
 `as int64` cast, including under `old` and `at`. Their printed unary minus would
 otherwise reparse as mathematical Integer arithmetic and change the comparison
