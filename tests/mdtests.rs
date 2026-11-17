@@ -43,6 +43,7 @@ const QUARANTINED: &[(&str, &str)] = &[];
 /// libraries stay in the gate so it checks both sides of their imports. Run
 /// one with `MDTEST_FILTER=<name>`.
 const NIGHTLY: &[&str] = &[
+    "pointer_offset_explicit_bridge.md", // 0.81s focused: explicit scalar-pointer law applications
     "nested_conditional_explicit_arm_equations.md", // 0.89s focused: arithmetic, observations and casts
     "widened_unsigned_sum_returned_identity.md",    // 1.19s focused: explicit returned-sum identity
     "widened_unsigned_sum_observation_identity.md", // 0.63s focused: widening and reassociation

@@ -4,6 +4,8 @@ Pointer translation needs a pointer relation and exact Integer displacements.
 The association helpers additionally expose signed/unsigned addition guards.
 
 ```click
+import click::integer;
+
 theorem translated_i32(p: int32*, q: int32*, a: int32, b: int32, c: int32, d: int32) {
     requires p + a == q + b;
     requires to_integer(c) - to_integer(a) == to_integer(d) - to_integer(b);
