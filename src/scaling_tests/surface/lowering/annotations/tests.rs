@@ -143,16 +143,17 @@ fn putting_a_lowered_loop_in_place_reads_its_path_not_the_loops_before_it() {
         let body = function.body();
         let paths = KernelLoopPaths::of(body);
         let replacement = ProgramStatement::Loop {
-            test: None,
+            test: crate::kernel::LoopTestRegion::expression(
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::LoopTestPosition::BeforeBody,
+            ),
             update: None,
-            condition: crate::kernel::program_expression::int32_literal(0),
             invariant: Vec::new(),
             invariant_checks: Vec::new(),
             effect_checks: Vec::new(),
             resource_specs: Vec::new(),
             ranking_measures: Vec::new(),
             structural_measure: None,
-            do_while: false,
             backedge_target: None,
             natural_exit_target: None,
             body: Box::new(ProgramStatement::Skip),

@@ -5768,11 +5768,10 @@ pub enum ProgramStatement {
     },
     /// Shared loop form for structured loops and checked natural cycles.
     Loop {
-        /// The loop's shared effectful test, outside the body scope.
-        test: Option<LoopTestRegion>,
+        /// The loop's one test region, outside the body scope.
+        test: LoopTestRegion,
         /// Shared update region, entered after leaving the body scope.
         update: Option<std::sync::Arc<ProgramStatement>>,
-        condition: ProgramExpression,
         invariant: Vec<Proposition>,
         invariant_checks: Vec<LoopInvariantCheck>,
         effect_checks: Vec<LoopEffectCheck>,
@@ -5794,9 +5793,6 @@ pub enum ProgramStatement {
         /// a direct contained child, in the exact resource definition, of the
         /// instance it held at the loop head.
         structural_measure: Option<String>,
-        /// Whether the body runs before the first condition check, as in C's
-        /// `do ... while` statement.
-        do_while: bool,
         /// When present, this is a proof-only natural cycle whose source body
         /// retains a checked `goto` to the target. The matching jump is the
         /// back edge; ordinary completion of the body is the cycle exit.
@@ -5826,7 +5822,7 @@ pub enum LoopTestPosition {
     AfterBody,
 }
 
-/// The one shared source region that prepares and decides an effectful test.
+/// Every loop has one test region: optional preparation, a decision and cleanup.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct LoopTestRegion {
     pub statement: std::sync::Arc<ProgramStatement>,

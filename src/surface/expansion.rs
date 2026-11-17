@@ -2161,11 +2161,13 @@ fn returning_then_arms(statement: &ProgramStatement) -> BTreeSet<usize> {
                 then_returns.zip(else_returns).map(|(a, b)| a && b)
             }
             ProgramStatement::Loop {
-                test, update, body, ..
+                test: loop_test,
+                update,
+                body,
+                ..
             } => {
-                for region in
-                    crate::kernel::program_loop_regions(body, update.as_deref(), test.as_ref())
-                {
+                let (_, _, test) = loop_test.execution_parts();
+                for region in crate::kernel::program_loop_regions(body, update.as_deref(), test) {
                     visit(region, index, returns, catches_exceptions);
                 }
                 None

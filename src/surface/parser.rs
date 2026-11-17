@@ -1422,7 +1422,7 @@ impl ProgramLayouts {
                     } => pending.extend(crate::kernel::program_loop_regions(
                         body,
                         update.as_deref(),
-                        test.as_ref(),
+                        Some(test),
                     )),
                     ProgramStatement::Switch { cases, .. } => {
                         pending.extend(cases.iter().map(|case| case.body.as_ref()))
