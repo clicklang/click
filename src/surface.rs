@@ -3505,10 +3505,6 @@ fn surface_parameter_binding(binding: &crate::kernel::BindingName) -> crate::ker
     }
 }
 
-/// How many recorded memories on each side of a load's own the raiser
-/// checks for it.
-const MEMORY_POINTS_NEAR: usize = 4;
-
 /// The identity of a symbolic model-field value, independent of its carrier.
 fn model_field_variable(value: &crate::kernel::AlgebraicValue) -> Option<crate::kernel::Variable> {
     use crate::kernel::{AlgebraicTermNode, AlgebraicValue, MachineTerm};
@@ -3772,84 +3768,6 @@ thread_local! {
 #[cfg(test)]
 fn recorded_state_node_allocations() -> usize {
     RECORDED_STATE_NODE_ALLOCATIONS.with(std::cell::Cell::get)
-}
-
-/// A lazy bounded traversal of the persistent state tree. Each visited
-/// node consumes work and checks cancellation, including tombstones/exits.
-struct RecordedStateRange<'a> {
-    stack: Vec<&'a RecordedStateNode>,
-    lower: ProgramPointSelector,
-    upper: ProgramPointSelector,
-    descending: bool,
-    stopped: bool,
-}
-
-impl<'a> RecordedStateRange<'a> {
-    fn new(
-        root: Option<&'a RecordedStateNode>,
-        lower: ProgramPointSelector,
-        upper: ProgramPointSelector,
-        descending: bool,
-    ) -> Self {
-        let mut result = Self {
-            stack: Vec::new(),
-            lower,
-            upper,
-            descending,
-            stopped: false,
-        };
-        result.seek(root);
-        result
-    }
-
-    fn seek(&mut self, mut node: Option<&'a RecordedStateNode>) {
-        while let Some(current) = node {
-            if crate::instrumentation::deadline_exceeded() {
-                self.stopped = true;
-                self.stack.clear();
-                return;
-            }
-            if current.selector < self.lower {
-                node = current.right.as_deref();
-            } else if current.selector > self.upper {
-                node = current.left.as_deref();
-            } else {
-                self.stack.push(current);
-                node = if self.descending {
-                    current.right.as_deref()
-                } else {
-                    current.left.as_deref()
-                };
-            }
-        }
-    }
-}
-
-impl<'a> Iterator for RecordedStateRange<'a> {
-    type Item = (&'a ProgramPointSelector, &'a ExecutionState);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        while !self.stopped {
-            if crate::instrumentation::deadline_exceeded() {
-                self.stopped = true;
-                self.stack.clear();
-                return None;
-            }
-            let node = self.stack.pop()?;
-            self.seek(if self.descending {
-                node.left.as_deref()
-            } else {
-                node.right.as_deref()
-            });
-            if self.stopped {
-                return None;
-            }
-            if let Some(state) = &node.state {
-                return Some((&node.selector, state));
-            }
-        }
-        None
-    }
 }
 
 impl RecordedStates {
@@ -4626,6 +4544,22 @@ impl RecordedStates {
         Some((selector, self.get_exact(selector)?))
     }
 
+    /// The recorded point a read of `pointer` in `memory` is made at, with its
+    /// state. A read names the canonical projection of the memory it reads
+    /// (`reasoning::memory_resolution`), which no point records; the kernel
+    /// records the memory each projection was built from when it builds it,
+    /// so the read is made at the point recording that source. Two lookups.
+    fn point_reading_load(
+        &self,
+        memory: &crate::kernel::SharedMemory,
+        pointer: &crate::kernel::Pointer,
+    ) -> Option<(&ProgramPointSelector, &ExecutionState)> {
+        self.point_reading_memory(memory).or_else(|| {
+            let source = crate::kernel::load_projection_source(memory, pointer)?;
+            self.point_reading_memory(&source)
+        })
+    }
+
     /// A recorded point at which a scalar local held exactly `term`, the
     /// local's name, and that point's state: one index range over the
     /// locals that held a term of this fingerprint, each checked there.
@@ -4781,35 +4715,6 @@ impl RecordedStates {
     fn allocation_result(&self, pointer: &crate::kernel::Pointer) -> Option<CodeRegionRef> {
         crate::instrumentation::record_deterministic_work(1);
         self.allocation_results.get(pointer).cloned()
-    }
-
-    /// The recorded points whose memories are nearest `memory` in the order
-    /// memories were made, with their states: those at or after it, nearest
-    /// first, where a read made in `memory` between recorded points (inside
-    /// a call's region) is next recorded, then those before it, newest
-    /// first, where a read made after the last recorded point still read
-    /// the same bytes. A memory equal to an earlier one shares its identity,
-    /// so the order is not exact; the caller checks each for the unchanged
-    /// read. At most [`MEMORY_POINTS_NEAR`] are offered on each side.
-    fn points_near_memory(
-        &self,
-        memory: &crate::kernel::SharedMemory,
-    ) -> impl Iterator<Item = (&ProgramPointSelector, &ExecutionState)> {
-        let identity = memory.read_identity();
-        let after = self
-            .memory_points
-            .range(identity..)
-            .take_while(move |(found, _)| found.0 == identity.0)
-            .take(MEMORY_POINTS_NEAR);
-        let before = self
-            .memory_points
-            .range(..identity)
-            .rev()
-            .take_while(move |(found, _)| found.0 == identity.0)
-            .take(MEMORY_POINTS_NEAR);
-        after
-            .chain(before)
-            .filter_map(|(_, selector)| Some((selector, self.get_exact(selector)?)))
     }
 
     /// The recorded points at which some local held a pointer into `block`,
@@ -5109,39 +5014,6 @@ impl RecordedStates {
 
     fn keys_newest_first(&self) -> impl Iterator<Item = &ProgramPointSelector> {
         self.iter_newest_first().map(|(selector, _)| selector)
-    }
-
-    /// Statement entries at/before the anchor in reverse order, then later
-    /// entries in forward order. Seek through the persistent tree rather than
-    /// materializing and sorting every state before the first candidate.
-    fn statement_entries_nearest(
-        &self,
-        anchor: usize,
-    ) -> impl Iterator<Item = (&ProgramPointRef, &ExecutionState)> {
-        let selector = |index, kind| {
-            ProgramPointSelector::ProgramPoint(ProgramPointRef {
-                region: CodeRegionRef::Region(index),
-                kind,
-            })
-        };
-        RecordedStateRange::new(
-            self.version.root.as_deref(),
-            selector(0, ProgramPointKind::Entry),
-            selector(anchor, ProgramPointKind::Entry),
-            true,
-        )
-        .chain(RecordedStateRange::new(
-            self.version.root.as_deref(),
-            selector(anchor, ProgramPointKind::Exit),
-            selector(usize::MAX, ProgramPointKind::Exit),
-            false,
-        ))
-        .filter_map(|(selector, state)| match selector {
-            ProgramPointSelector::ProgramPoint(point) if point.kind == ProgramPointKind::Entry => {
-                Some((point, state))
-            }
-            _ => None,
-        })
     }
 
     /// Bounded, newest-first source points for diagnostic reconstruction.
