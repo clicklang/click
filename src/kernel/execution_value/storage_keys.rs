@@ -285,3 +285,43 @@ impl Drop for ConditionStorageKey {
         }
     }
 }
+
+thread_local! {
+    // Syntax is immutable across state restores, but a fresh verification must
+    // pay for its own selected key construction regardless of earlier runs.
+    static CONDITION_KEYS: std::cell::RefCell<crate::id_hash::U64Map<ConditionStorageKey>> = Default::default();
+}
+pub(in crate::kernel) fn clear_session_key_memos() {
+    CONDITION_KEYS.with(|keys| keys.borrow_mut().clear());
+}
+pub(in crate::kernel) fn condition_for_root(source: &KernelTerm) -> ConditionStorageKey {
+    CONDITION_KEYS.with(|keys| {
+        let mut pending = vec![(source, false)];
+        while let Some((root, finish)) = pending.pop() {
+            if keys.borrow().contains_key(&root.id()) {
+                continue;
+            }
+            if !finish {
+                match root.node() {
+                    KernelTermNode::BoolIf { arguments } => {
+                        pending.push((root, true));
+                        pending.extend(arguments.iter().rev().map(|child| (child, false)));
+                        continue;
+                    }
+                    KernelTermNode::BoolEqual { arguments } => {
+                        pending.push((root, true));
+                        pending.extend(arguments.iter().rev().map(|child| (child, false)));
+                        continue;
+                    }
+                    _ => {}
+                }
+            }
+            let key = ConditionStorageKey::shared(root);
+            keys.borrow_mut().insert(root.id(), key);
+        }
+        keys.borrow()
+            .get(&source.id())
+            .expect("condition storage key")
+            .clone()
+    })
+}

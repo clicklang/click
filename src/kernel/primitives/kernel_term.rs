@@ -317,8 +317,6 @@ struct TermData {
     integer: Mutex<WeakIntegerTerm>,
     machine_leaf: MachineLeafCache,
     argument_leaf: std::sync::OnceLock<Box<PureFunctionArgument>>,
-    condition_storage_key:
-        std::sync::OnceLock<crate::kernel::execution_value::storage_keys::ConditionStorageKey>,
 }
 
 struct NodeKeyData {
@@ -704,7 +702,6 @@ impl Interner {
             integer: Mutex::default(),
             machine_leaf: Default::default(),
             argument_leaf: Default::default(),
-            condition_storage_key: Default::default(),
         });
         self.terms.insert(key.clone(), Arc::downgrade(&value));
         self.cleanup.push_back(key);
@@ -726,35 +723,7 @@ impl KernelTerm {
     pub(in crate::kernel) fn condition_storage_key(
         &self,
     ) -> crate::kernel::execution_value::storage_keys::ConditionStorageKey {
-        let mut pending = vec![(self, false)];
-        while let Some((root, finish)) = pending.pop() {
-            if root.0.condition_storage_key.get().is_some() {
-                continue;
-            }
-            if !finish {
-                match root.node() {
-                    KernelTermNode::BoolIf { arguments } => {
-                        pending.push((root, true));
-                        pending.extend(arguments.iter().rev().map(|child| (child, false)));
-                        continue;
-                    }
-                    KernelTermNode::BoolEqual { arguments } => {
-                        pending.push((root, true));
-                        pending.extend(arguments.iter().rev().map(|child| (child, false)));
-                        continue;
-                    }
-                    _ => {}
-                }
-            }
-            root.0.condition_storage_key.get_or_init(|| {
-                crate::kernel::execution_value::storage_keys::ConditionStorageKey::shared(root)
-            });
-        }
-        self.0
-            .condition_storage_key
-            .get()
-            .expect("condition storage key")
-            .clone()
+        crate::kernel::execution_value::storage_keys::condition_for_root(self)
     }
     #[cfg(test)]
     pub(crate) fn has_cached_native_argument(&self) -> bool {
