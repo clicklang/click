@@ -8964,7 +8964,7 @@ fn evaluate_spec_if_paths_in(
         let retained_comparison = !budget.machine_result_production_disabled
             && match &condition_path.proposition {
                 Proposition::ConditionIs(condition, _)
-                    if crate::kernel::machine_integer::comparison::is_simple_bitwise_comparison(
+                    if crate::kernel::machine_integer::comparison::is_bounded_bit_comparison(
                         condition,
                     ) =>
                 {

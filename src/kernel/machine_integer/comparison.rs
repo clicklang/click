@@ -212,7 +212,7 @@ pub(crate) fn closed_condition_value(condition: &ConditionTerm) -> Option<bool> 
     }
 }
 
-/// Preserve literal, same-variable, and bounded bitwise comparisons during
+/// Preserve literal, same-variable, and bounded bit operations in comparisons during
 /// logical lowering. Inspect only operand roots; checking decides truth.
 pub(crate) fn logical_condition_for_operand_views(
     format: MachineIntegerType,
@@ -240,7 +240,7 @@ fn retained_comparison_for_operand_views(
         if !matches!(format.format().bits(), 32 | 64) {
             return None;
         }
-        let [left, right] = operands.map(simple_bitwise_operand);
+        let [left, right] = operands.map(bounded_bit_operand);
         if left.is_none() && right.is_none() {
             return None;
         }
@@ -273,10 +273,10 @@ fn retained_comparison_for_operand_views(
     })
 }
 
-/// Whether logical lowering retained a comparison containing a bounded bitwise
-/// operand. Conditional evaluation must retain it even when checking can decide
+/// Whether logical lowering retained a comparison containing a bounded bit
+/// operation. Conditional evaluation must retain it even when checking can decide
 /// its truth intrinsically (a mask bound or reflexive operands, for example).
-pub(crate) fn is_simple_bitwise_comparison(condition: &crate::kernel::ConditionTerm) -> bool {
+pub(crate) fn is_bounded_bit_comparison(condition: &crate::kernel::ConditionTerm) -> bool {
     let crate::kernel::ConditionTerm::Compare {
         format,
         left,
@@ -290,8 +290,8 @@ pub(crate) fn is_simple_bitwise_comparison(condition: &crate::kernel::ConditionT
         return false;
     }
     use crate::kernel::MachineOperandView as V;
-    let a = simple_bitwise_operand(V::Legacy(left));
-    let b = simple_bitwise_operand(V::Legacy(right));
+    let a = bounded_bit_operand(V::Legacy(left));
+    let b = bounded_bit_operand(V::Legacy(right));
     (a.is_some() || b.is_some())
         && (a.is_some() || comparison_leaf_operand(V::Legacy(left)).is_some())
         && (b.is_some() || comparison_leaf_operand(V::Legacy(right)).is_some())
@@ -304,9 +304,9 @@ fn comparison_leaf_operand(operand: crate::kernel::MachineOperandView<'_>) -> Op
         .or_else(|| operand.variable().copied().map(MachineTerm::Variable))
 }
 
-/// One bitwise operation over literal or variable leaves has bounded size, including on a
-/// rejected nested arithmetic input. Keep its exact operator format/payloads.
-fn simple_bitwise_operand(operand: crate::kernel::MachineOperandView<'_>) -> Option<MachineTerm> {
+/// Read a single bitwise operation or an in-range fixed-count right shift.
+/// Inspect only immediate leaves and preserve their original formats.
+fn bounded_bit_operand(operand: crate::kernel::MachineOperandView<'_>) -> Option<MachineTerm> {
     if let Some((format, op @ crate::kernel::MachineUnaryOp::BitwiseNot, child)) = operand.unary()
         && matches!(format.format().bits(), 32 | 64)
     {
@@ -318,15 +318,17 @@ fn simple_bitwise_operand(operand: crate::kernel::MachineOperandView<'_>) -> Opt
         });
     }
     let (format, operator, arguments) = operand.binary()?;
-    if !matches!(format.format().bits(), 32 | 64)
-        || !matches!(
-            operator,
-            crate::kernel::MachineBinaryOp::BitwiseAnd
-                | crate::kernel::MachineBinaryOp::BitwiseOr
-                | crate::kernel::MachineBinaryOp::BitwiseXor
-        )
-    {
+    let width = format.format().bits();
+    if !matches!(width, 32 | 64) {
         return None;
+    }
+    use crate::kernel::MachineBinaryOp as O;
+    match operator {
+        O::BitwiseAnd | O::BitwiseOr | O::BitwiseXor => {}
+        O::ShiftRight
+            if super::bounds::constant_shift_count(arguments[1])
+                .is_some_and(|count| count < width) => {}
+        _ => return None,
     }
     crate::instrumentation::record_deterministic_work(1);
     Some(MachineTerm::Binary {
@@ -357,7 +359,7 @@ fn conditional_atom(root: &crate::kernel::KernelTerm) -> Option<MachineTerm> {
     }
     crate::instrumentation::record_deterministic_work(1);
     let atom = |root: &crate::kernel::KernelTerm| {
-        comparison_leaf_operand(V::Shared(root)).or_else(|| simple_bitwise_operand(V::Shared(root)))
+        comparison_leaf_operand(V::Shared(root)).or_else(|| bounded_bit_operand(V::Shared(root)))
     };
     let condition = match arguments[0].node() {
         N::Variable(variable) => ConditionTerm::Variable(*variable),

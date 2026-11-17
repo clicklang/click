@@ -218,7 +218,7 @@ fn bitwise_conditional_arms_read_only_fixed_roots() {
 }
 
 #[test]
-fn bitwise_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
+fn bit_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
     use crate::kernel::{
         KernelTerm, KernelTermExport, KernelType, MachineBinaryOp as O, MachineOperandView as V,
     };
@@ -266,10 +266,33 @@ fn bitwise_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                 complement(arithmetic.clone()),
                 complement(complement(variable.clone())),
             );
+            let shift = |left, count| {
+                KernelTerm::machine_binary_shared(format, O::ShiftRight, [left, count])
+            };
+            let shift_cases = [
+                (
+                    shift(variable.clone(), literal(1)),
+                    shift(arithmetic.clone(), literal(1)),
+                    shift(variable.clone(), other.clone()),
+                ),
+                (
+                    shift(
+                        variable.clone(),
+                        literal(u64::from(format.format().bits()) - 1),
+                    ),
+                    shift(variable.clone(), literal(u64::from(format.format().bits()))),
+                    shift(
+                        variable.clone(),
+                        literal(u64::from(format.format().bits()) + 1),
+                    ),
+                ),
+            ];
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                for (hit, left_miss, right_miss) in
-                    binary_cases.iter().chain(std::iter::once(&unary_case))
+                for (hit, left_miss, right_miss) in binary_cases
+                    .iter()
+                    .chain(std::iter::once(&unary_case))
+                    .chain(&shift_cases)
                 {
                     for operands in [
                         [V::Shared(hit), V::Shared(&other)],
@@ -277,7 +300,7 @@ fn bitwise_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                     ] {
                         let condition =
                             logical_condition_for_operand_views(format, R::Equal, operands);
-                        assert!(is_simple_bitwise_comparison(&condition));
+                        assert!(is_bounded_bit_comparison(&condition));
                         let guard =
                             crate::kernel::KernelTermImport::default().condition(&condition);
                         let conditional = KernelTerm::machine_if_shared(
@@ -292,7 +315,7 @@ fn bitwise_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                             R::Equal,
                             [V::Shared(miss), V::Shared(&other)],
                         );
-                        assert!(!is_simple_bitwise_comparison(&condition));
+                        assert!(!is_bounded_bit_comparison(&condition));
                     }
                 }
             });
