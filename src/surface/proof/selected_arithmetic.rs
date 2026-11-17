@@ -677,7 +677,8 @@ theorem shift_bound(v: uint64) {{
             let expanded =
                 crate::surface::expand_c_tactic_source_at(&source, &[], line + 1, column + 1)
                     .unwrap();
-            assert!(expanded.contains("normalize();"), "{expanded}");
+            assert!(!expanded.contains("normalize("), "{expanded}");
+            assert!(!expanded.contains("solve("), "{expanded}");
             assert!(!expanded.contains("operation_bound"), "{expanded}");
             without_implicit_solve(|| crate::surface::verify_click_theorems(&expanded)).unwrap();
             let missing = source.replace(&format!("    requires {premise};\n"), "");
