@@ -1,6 +1,51 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: helper fold preservation and cold replay"]
+fn fold_through_a_helper_survives_the_endpoint_store_without_transport() {
+    let (source, sources) =
+        mdtest_sources("mdtests/fold_read_transport_rejects_an_opaque_helper.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    assert!(!source.contains("transport("));
+    with_proof_trace("set_end", || {
+        verify_c_sources(&source, &sources).unwrap_or_else(|error| {
+            panic!(
+                "{}\n{}",
+                error.report(),
+                error.trace_context_report().unwrap_or_default()
+            )
+        });
+    });
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "same_through.ensures_0")
+        .unwrap_or_else(|error| {
+            panic!(
+                "{}
+{source}",
+                error.report()
+            )
+        });
+    let expanded = expand_c_claim_source_by_label(&expanded, &sources, "set_end.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    for label in ["same_through.ensures_0", "set_end.contract"] {
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+
+    let overlapping = sources[0].1.replace("v[i] = 1;", "v[0] = 1;");
+    assert_ne!(overlapping, sources[0].1);
+    let report = verify_c_sources(&source, &[(sources[0].0, overlapping.as_str())])
+        .unwrap_err()
+        .report();
+    assert!(report.contains("footprint"), "{report}");
+}
+
+#[test]
 #[ignore = "nightly: viewability diagnostic and saved-premise replay"]
 fn earlier_viewable_premise_keeps_its_point_without_transport() {
     let (source, sources) =
