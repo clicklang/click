@@ -105,6 +105,13 @@ impl LoopBoundary {
         self.guard.may_exit()
     }
 
+    pub(super) fn required_ranking_measures<'m>(
+        &self,
+        declared: &'m [crate::kernel::RankingComponent],
+    ) -> &'m [crate::kernel::RankingComponent] {
+        self.guard.required_ranking_measures(declared)
+    }
+
     /// Compatible exits are covered by the invariant-head abstraction.
     /// A distinct partition is retained only for an established false guard.
     pub(super) fn explicit_exit_state(&self) -> Option<&ExecutionState> {
