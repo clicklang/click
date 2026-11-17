@@ -3,7 +3,7 @@
 use super::completion::{ProgramContractGoal, ProgramState, ProvedProgramContracts};
 use super::obligations::{TerminationCallObligation, TerminationObligations};
 use super::*;
-use crate::kernel::proof::ProofFacts;
+use crate::kernel::proof::PureFactStore;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT_SCOPE: AtomicU64 = AtomicU64::new(1);
@@ -286,7 +286,7 @@ impl OrdinaryTerminationScope {
     }
     fn status(
         &self,
-        facts: &ProofFacts,
+        facts: &PureFactStore,
         kind: TerminationAtomKind,
         name: &str,
     ) -> Result<bool, String> {
@@ -322,7 +322,7 @@ impl OrdinaryTerminationScope {
     pub(crate) fn check(
         &self,
         step: &TerminationCheck,
-        facts: &ProofFacts,
+        facts: &PureFactStore,
     ) -> Result<(Vec<Proposition>, TerminationCheckReport), String> {
         let mut output = Vec::new();
         let mut report = TerminationCheckReport::default();
@@ -544,7 +544,7 @@ impl OrdinaryTerminationScope {
     pub(crate) fn plan(
         &self,
         goal: &Proposition,
-        facts: &ProofFacts,
+        facts: &PureFactStore,
     ) -> Result<Vec<TerminationCheck>, String> {
         let mut stack = Vec::new();
         let mut propositions = vec![goal];
@@ -759,7 +759,7 @@ mod tests {
         let scope = scope(2);
         let mut proof = Proof::for_program_termination((), scope.clone(), ());
         assert!(proof.finish_program_termination().is_err());
-        for step in scope.plan(scope.goal(), &ProofFacts::default()).unwrap() {
+        for step in scope.plan(scope.goal(), &PureFactStore::default()).unwrap() {
             proof = proof.check_termination(&step).unwrap().0;
         }
         assert!(
@@ -784,7 +784,7 @@ mod tests {
     fn another_scope_cannot_supply_termination_premises() {
         let first = scope(1);
         let second = scope(1);
-        let facts = ProofFacts::default()
+        let facts = PureFactStore::default()
             .with_fact(first.atom(TerminationAtomKind::Local, "leaf0").unwrap());
         assert!(
             second

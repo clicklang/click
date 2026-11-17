@@ -5,7 +5,7 @@
 //! branch's obligation and semantic payload, but cannot construct or reuse
 //! identities independently of this collection.
 
-use super::ProofFacts;
+use super::PureFactStore;
 use crate::persistent::PersistentMap;
 use std::sync::Arc;
 
@@ -16,7 +16,7 @@ use std::sync::Arc;
 /// never interprets `E` as evidence.
 #[derive(Clone)]
 pub(crate) struct ProofBranchState<E> {
-    pub(crate) facts: ProofFacts,
+    pub(crate) facts: PureFactStore,
     pub(crate) execution: Option<Arc<E>>,
 }
 

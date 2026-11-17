@@ -33,11 +33,11 @@ fn seeded_edge_justification(
 
 #[test]
 fn rewritten_integer_observations_preserve_binders_and_selected_goal_work() {
-    use crate::kernel::proof::ProofFacts;
+    use crate::kernel::proof::PureFactStore;
     let variable = Variable(989_002);
     let word = MachineTerm::Variable(variable);
     let one = MachineTerm::constant(1);
-    let facts = ProofFacts::from_ordered(&[Proposition::ConditionIs(
+    let facts = PureFactStore::from_ordered(&[Proposition::ConditionIs(
         ConditionTerm::equal(word.clone(), one.clone()),
         true,
     )]);
@@ -77,7 +77,7 @@ fn rewritten_integer_observations_preserve_binders_and_selected_goal_work() {
 
 #[test]
 fn rewritten_goal_comparison_visits_only_the_selected_proposition() {
-    let facts = crate::kernel::proof::ProofFacts::default();
+    let facts = crate::kernel::proof::PureFactStore::default();
     for size in [4, 8, 16, 32] {
         let leaf = Proposition::ConditionIs(
             ConditionTerm::equal(MachineTerm::constant(0), MachineTerm::constant(0)),

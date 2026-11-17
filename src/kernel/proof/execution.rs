@@ -7,7 +7,7 @@
 mod return_producer;
 pub(crate) use return_producer::CheckedReturnSeed;
 
-use super::{PersistentOrderedSet, PersistentSequence, ProofFacts, SharedValue};
+use super::{PersistentOrderedSet, PersistentSequence, PureFactStore, SharedValue};
 use crate::kernel::population_authority::storage_creation::{
     CheckedPopulationAuthorityExchange, CheckedPopulationMemberExchange,
 };
@@ -327,7 +327,7 @@ impl CheckedReturnContext {
 #[derive(Clone)]
 pub(crate) struct CheckedReturnProposition {
     proof: super::CheckedProposition,
-    base: ProofFacts,
+    base: PureFactStore,
     context: Arc<CheckedReturnContext>,
 }
 
@@ -389,7 +389,7 @@ pub(crate) struct ReturnPathRefusal {
 impl CheckedReturnProposition {
     fn check(
         proof: super::CheckedProposition,
-        base: &ProofFacts,
+        base: &PureFactStore,
         context: Arc<CheckedReturnContext>,
     ) -> Result<Self, String> {
         let FunctionOutcome::Return { value, state } = &context.published else {
@@ -431,13 +431,13 @@ pub(crate) struct CheckedTacticApplication {
     name: String,
     before_state: ExecutionState,
     pub(crate) after_state: ExecutionState,
-    pub(crate) after_facts: ProofFacts,
+    pub(crate) after_facts: PureFactStore,
 }
 
 impl CheckedTacticApplication {
     fn check(
         before_state: &ExecutionState,
-        before_facts: &ProofFacts,
+        before_facts: &PureFactStore,
         name: &str,
         arguments: &[crate::kernel::ProgramValue],
         environment: &crate::kernel::ExecutionEnvironment,
@@ -774,8 +774,8 @@ impl Eq for CheckedCallEvents {}
 pub(crate) struct CheckedResourceRewrite {
     before_state: ExecutionState,
     pub(crate) after_state: ExecutionState,
-    pub(crate) before_facts: ProofFacts,
-    pub(crate) after_facts: ProofFacts,
+    pub(crate) before_facts: PureFactStore,
+    pub(crate) after_facts: PureFactStore,
     definition: CompositeResourceDefinition,
     consumption_contract: Option<Arc<CheckedFunctionEntry>>,
     return_context: Option<Arc<CheckedReturnContext>>,
@@ -826,8 +826,8 @@ struct ReturnResourceObservation {
 pub(crate) struct CheckedPopulationAuthorityRewrite {
     before_state: ExecutionState,
     after_state: ExecutionState,
-    before_facts: ProofFacts,
-    after_facts: ProofFacts,
+    before_facts: PureFactStore,
+    after_facts: PureFactStore,
     selected: ResourceFact,
     establish: bool,
     witness: CheckedPopulationAuthorityExchange,
@@ -839,8 +839,8 @@ pub(crate) struct CheckedPopulationAuthorityRewrite {
 pub(crate) struct CheckedPopulationMemberRewrite {
     before_state: ExecutionState,
     after_state: ExecutionState,
-    before_facts: ProofFacts,
-    after_facts: ProofFacts,
+    before_facts: PureFactStore,
+    after_facts: PureFactStore,
     selected: ResourceFact,
     produce: bool,
     definition: CompositeResourceDefinition,
@@ -969,12 +969,12 @@ impl CheckedPopulationAuthorityRewrite {
 
     fn check(
         before_state: &ExecutionState,
-        before_facts: &ProofFacts,
+        before_facts: &PureFactStore,
         selected: &ResourceFact,
         establish: bool,
         witness: &CheckedPopulationAuthorityExchange,
         after_state: &ExecutionState,
-        after_facts: &ProofFacts,
+        after_facts: &PureFactStore,
     ) -> Result<Self, String> {
         checks_population_authority_exchange(
             before_state,
@@ -1001,7 +1001,11 @@ impl CheckedPopulationAuthorityRewrite {
         })
     }
 
-    fn advance_checked(&self, state: &ExecutionState, facts: &ProofFacts) -> Option<ProofFacts> {
+    fn advance_checked(
+        &self,
+        state: &ExecutionState,
+        facts: &PureFactStore,
+    ) -> Option<PureFactStore> {
         if state.memory.diagnostic_identity() != self.before_state.memory.diagnostic_identity()
             || !state.shares_non_memory_storage_with(&self.before_state)
             || facts.introduced_since(&self.before_facts).is_none()
@@ -1186,12 +1190,12 @@ impl CheckedPopulationMemberRewrite {
     fn check(
         function: &ProgramFunction,
         before_state: &ExecutionState,
-        before_facts: &ProofFacts,
+        before_facts: &PureFactStore,
         selected: &ResourceFact,
         produce: bool,
         witness: &CheckedPopulationMemberExchange,
         after_state: &ExecutionState,
-        after_facts: &ProofFacts,
+        after_facts: &PureFactStore,
     ) -> Result<Self, String> {
         let Resource::Composite { name, .. } = selected.resource() else {
             return Err("population member rewrite requires a declared resource".into());
@@ -1504,10 +1508,10 @@ impl CheckedResourceRewrite {
     fn check(
         function: &ProgramFunction,
         before_state: &ExecutionState,
-        before_facts: &ProofFacts,
+        before_facts: &PureFactStore,
         selected: &ResourceFact,
         after_state: &ExecutionState,
-        after_facts: &ProofFacts,
+        after_facts: &PureFactStore,
         call_events: &CheckedCallEvents,
     ) -> Result<Self, String> {
         Self::check_with_children(
@@ -1525,10 +1529,10 @@ impl CheckedResourceRewrite {
     #[allow(clippy::too_many_arguments)]
     fn check_authority_wrapper(
         before_state: &ExecutionState,
-        before_facts: &ProofFacts,
+        before_facts: &PureFactStore,
         selected: &ResourceFact,
         after_state: &ExecutionState,
-        after_facts: &ProofFacts,
+        after_facts: &PureFactStore,
         definition: &CompositeResourceDefinition,
         selected_children: Option<Arc<[(String, Variable)]>>,
     ) -> Result<Self, String> {
@@ -1790,10 +1794,10 @@ impl CheckedResourceRewrite {
     #[allow(clippy::too_many_arguments)]
     fn check_transfer_wrapper(
         before_state: &ExecutionState,
-        before_facts: &ProofFacts,
+        before_facts: &PureFactStore,
         selected: &ResourceFact,
         after_state: &ExecutionState,
-        after_facts: &ProofFacts,
+        after_facts: &PureFactStore,
         definition: &CompositeResourceDefinition,
         selected_children: Option<Arc<[(String, Variable)]>>,
     ) -> Result<Self, String> {
@@ -1986,10 +1990,10 @@ impl CheckedResourceRewrite {
     fn check_with_children(
         function: &ProgramFunction,
         before_state: &ExecutionState,
-        before_facts: &ProofFacts,
+        before_facts: &PureFactStore,
         selected: &ResourceFact,
         after_state: &ExecutionState,
-        after_facts: &ProofFacts,
+        after_facts: &PureFactStore,
         call_events: &CheckedCallEvents,
         selected_children: Option<Arc<[(String, Variable)]>>,
     ) -> Result<Self, String> {
@@ -2011,10 +2015,10 @@ impl CheckedResourceRewrite {
     fn check_with_children_diagnostic(
         function: &ProgramFunction,
         before_state: &ExecutionState,
-        before_facts: &ProofFacts,
+        before_facts: &PureFactStore,
         selected: &ResourceFact,
         after_state: &ExecutionState,
-        after_facts: &ProofFacts,
+        after_facts: &PureFactStore,
         call_events: &CheckedCallEvents,
         selected_children: Option<Arc<[(String, Variable)]>>,
         loan_holds: &[crate::kernel::CheckedLoanTransition],
@@ -2074,10 +2078,10 @@ impl CheckedResourceRewrite {
     fn check_with_return_observation(
         function: &ProgramFunction,
         before_state: &ExecutionState,
-        before_facts: &ProofFacts,
+        before_facts: &PureFactStore,
         selected: &ResourceFact,
         after_state: &ExecutionState,
-        after_facts: &ProofFacts,
+        after_facts: &PureFactStore,
         call_events: &CheckedCallEvents,
         selected_children: Option<Arc<[(String, Variable)]>>,
         return_observation: Option<Arc<ReturnResourceObservation>>,
@@ -2107,10 +2111,10 @@ impl CheckedResourceRewrite {
     fn check_with_children_recording(
         function: &ProgramFunction,
         before_state: &ExecutionState,
-        before_facts: &ProofFacts,
+        before_facts: &PureFactStore,
         selected: &ResourceFact,
         after_state: &ExecutionState,
-        after_facts: &ProofFacts,
+        after_facts: &PureFactStore,
         call_events: &CheckedCallEvents,
         selected_children: Option<Arc<[(String, Variable)]>>,
         rejected_fact: &mut Option<Arc<RejectedResourceRewriteFact>>,
@@ -2697,7 +2701,7 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
 fn checked_borrowing_fold_hold(
     function: &ProgramFunction,
     before_state: &ExecutionState,
-    before_facts: &ProofFacts,
+    before_facts: &PureFactStore,
     selected: &ResourceFact,
     after_state: &ExecutionState,
     loan_holds: &[crate::kernel::CheckedLoanTransition],
@@ -2830,10 +2834,10 @@ impl CheckedResourceObservation {
     fn check(
         function: &ProgramFunction,
         before_state: &ExecutionState,
-        before_facts: &ProofFacts,
+        before_facts: &PureFactStore,
         observed: &ResourceFact,
         after_state: &ExecutionState,
-        after_facts: &ProofFacts,
+        after_facts: &PureFactStore,
         derivations: &PersistentOrderedSet<Theorem>,
         call_events: &CheckedCallEvents,
     ) -> Result<Self, &'static str> {
@@ -3282,7 +3286,7 @@ pub(crate) enum OpenedEntryFactSource {
 #[derive(Clone)]
 pub(crate) struct OpenedContractEntry {
     entry: Arc<CheckedFunctionEntry>,
-    facts: ProofFacts,
+    facts: PureFactStore,
     source_origins: Vec<Option<OpenedEntryFactSource>>,
     cases: Arc<crate::kernel::PreparedContractEntryCases>,
     contract_root: Option<crate::kernel::WholeContractRoot>,
@@ -3350,7 +3354,7 @@ impl OpenedContractEntry {
             )
             .map_err(RuntimeError::FunctionContract)?,
         );
-        let mut facts = ProofFacts::from_ordered(&propositions);
+        let mut facts = PureFactStore::from_ordered(&propositions);
         facts.prepare_entry_resources(caller_state.resources());
         let entry_state =
             crate::kernel::program_function_entry_state(caller_state, function, arguments)
@@ -3411,7 +3415,7 @@ impl OpenedContractEntry {
         &self.cases
     }
 
-    pub(crate) fn facts(&self) -> &ProofFacts {
+    pub(crate) fn facts(&self) -> &PureFactStore {
         &self.facts
     }
 
@@ -3475,7 +3479,7 @@ impl OpenedContractEntry {
 /// premises about this value and nothing else. A constructor equation for the
 /// variable is the case itself, so it is skipped.
 fn matched_value_premise_instances(
-    facts: &ProofFacts,
+    facts: &PureFactStore,
     variable: Variable,
     constructor: &crate::kernel::AlgebraicTerm,
 ) -> Vec<Proposition> {
@@ -3523,7 +3527,7 @@ fn matched_value_premise_instances(
 #[derive(Clone)]
 pub(crate) struct CheckedProofCasePartition {
     identity: Arc<()>,
-    root_facts: ProofFacts,
+    root_facts: PureFactStore,
     case_facts: Vec<Proposition>,
     /// The exact delta each arm adds to `root_facts`: its constructor case,
     /// followed by any facts checked for the one resource field that was
@@ -3533,7 +3537,7 @@ pub(crate) struct CheckedProofCasePartition {
     arm_additions: Vec<Vec<Proposition>>,
     /// The indexed contexts constructed while deriving those exact deltas.
     /// Entering an arm shares its context rather than admitting it again.
-    arm_contexts: Vec<ProofFacts>,
+    arm_contexts: Vec<PureFactStore>,
     /// Ordered declaration correspondence, including clauses whose exact
     /// proposition was already in the arm's fact store.
     arm_body_clauses: Vec<Vec<crate::kernel::functions::ResourceBodyClauseRecord>>,
@@ -3561,7 +3565,7 @@ pub(crate) enum OutcomeEvidenceFork {
 /// facts, and how its trace continues.
 pub(crate) struct OutcomeForkArm {
     pub(crate) case: usize,
-    pub(crate) facts: ProofFacts,
+    pub(crate) facts: PureFactStore,
     pub(crate) then: OutcomeEvidenceFork,
 }
 
@@ -3569,7 +3573,7 @@ impl OutcomeEvidenceFork {
     /// The split of a two-case partition, such as a proof `if` or `cases`.
     pub(crate) fn binary(
         partition: Arc<CheckedProofCasePartition>,
-        arm_facts: [ProofFacts; 2],
+        arm_facts: [PureFactStore; 2],
         then: [OutcomeEvidenceFork; 2],
     ) -> Self {
         let [first, second] = then;
@@ -3608,14 +3612,14 @@ fn outcome_fork_count(fork: &OutcomeEvidenceFork) -> usize {
 pub(crate) struct CheckedProofCaseArm {
     partition: Arc<CheckedProofCasePartition>,
     arm_index: usize,
-    facts: ProofFacts,
+    facts: PureFactStore,
 }
 
 /// Whether two logical cases cover every state `root_facts` admits: they
 /// are complementary, as a proof `if` splits, or their disjunction is an
 /// exact available fact, as `cases` splits.
 pub(crate) fn proof_cases_are_exhaustive(
-    root_facts: &ProofFacts,
+    root_facts: &PureFactStore,
     then_fact: &Proposition,
     else_fact: &Proposition,
 ) -> bool {
@@ -3666,7 +3670,7 @@ impl CheckedProofCasePartition {
     pub(crate) fn excluding_constructor_case_in(
         &self,
         index: usize,
-        arm_facts: &ProofFacts,
+        arm_facts: &PureFactStore,
         fact: Proposition,
     ) -> Option<Arc<Self>> {
         self.witness_scope.as_ref()?;
@@ -3696,7 +3700,7 @@ impl CheckedProofCasePartition {
         self.arm_body_clauses.get(index).map(Vec::as_slice)
     }
 
-    pub(crate) fn facts_for_case(&self, index: usize) -> Option<ProofFacts> {
+    pub(crate) fn facts_for_case(&self, index: usize) -> Option<PureFactStore> {
         self.arm_contexts.get(index).cloned()
     }
 
@@ -3705,11 +3709,11 @@ impl CheckedProofCasePartition {
     /// the arm's context from here rather than from its own branch: the
     /// partition may carry model facts the frontier's premises force on the
     /// scrutinee's instance (A26, gap 57b), and those belong to every arm.
-    pub(crate) fn root_facts(&self) -> &ProofFacts {
+    pub(crate) fn root_facts(&self) -> &PureFactStore {
         &self.root_facts
     }
     pub(crate) fn check(
-        root_facts: &ProofFacts,
+        root_facts: &PureFactStore,
         then_fact: Proposition,
         else_fact: Proposition,
     ) -> Option<Arc<Self>> {
@@ -3798,7 +3802,7 @@ pub(crate) struct CheckedProofCaseJoin {
     joined_state: ExecutionState,
     /// The facts the proof holds after the join: the partition's root facts,
     /// and what every arm established or the interface admits.
-    joined_facts: ProofFacts,
+    joined_facts: PureFactStore,
     /// Present when the arms ended in different states and were merged
     /// through an explicit `ensuring` interface.
     interface: Option<CheckedProofCaseJoinInterface>,
@@ -3819,7 +3823,7 @@ struct CheckedProofCaseJoinInterface {
 struct CheckedProofCaseJoinArm {
     /// The cases of the partition this arm stands for.
     cases: Vec<usize>,
-    facts: ProofFacts,
+    facts: PureFactStore,
     events: Vec<CheckedExecutionEvent>,
 }
 
@@ -3840,7 +3844,7 @@ impl CheckedProofCaseJoinArm {
 /// covers, and the facts its own facts must extend.
 fn case_join_arm_entry(
     events: &[CheckedExecutionEvent],
-) -> Option<(&Arc<CheckedProofCasePartition>, Vec<usize>, &ProofFacts)> {
+) -> Option<(&Arc<CheckedProofCasePartition>, Vec<usize>, &PureFactStore)> {
     match events.first()? {
         CheckedExecutionEvent::ProofCase(entered) if entered.is_valid() => {
             Some((&entered.partition, vec![entered.arm_index], &entered.facts))
@@ -3869,7 +3873,7 @@ impl CheckedProofCaseJoin {
     /// with `same_state` to the same state.
     fn walk_arms(
         parent: &ExecutionProofCore,
-        arms: &[(&ExecutionProofCore, &ProofFacts)],
+        arms: &[(&ExecutionProofCore, &PureFactStore)],
         function: &ProgramFunction,
         arguments: &[ProgramExpression],
         same_state: bool,
@@ -3966,10 +3970,10 @@ impl CheckedProofCaseJoin {
     /// adds to the partition's root facts only what every arm established.
     fn check(
         parent: &ExecutionProofCore,
-        arms: &[(&ExecutionProofCore, &ProofFacts)],
+        arms: &[(&ExecutionProofCore, &PureFactStore)],
         function: &ProgramFunction,
         arguments: &[ProgramExpression],
-        successor_facts: &ProofFacts,
+        successor_facts: &PureFactStore,
     ) -> Result<Self, &'static str> {
         let WalkedCaseArms {
             partition,
@@ -4016,15 +4020,15 @@ impl CheckedProofCaseJoin {
     #[allow(clippy::too_many_arguments)]
     fn construct_interface(
         parent: &ExecutionProofCore,
-        root_facts: &ProofFacts,
-        arms: [(&ExecutionProofCore, &ProofFacts); 2],
+        root_facts: &PureFactStore,
+        arms: [(&ExecutionProofCore, &PureFactStore); 2],
         function: &ProgramFunction,
         arguments: &[ProgramExpression],
         interface_specs: &[SpecProposition],
         interface_resource_specs: &[ResourceSpec],
         arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
         joined_state: &ExecutionState,
-        successor_facts: &ProofFacts,
+        successor_facts: &PureFactStore,
         old_reference: Option<&ExecutionState>,
     ) -> Result<Self, &'static str> {
         let WalkedCaseArms {
@@ -4258,10 +4262,10 @@ struct InterfaceJoinResources {
 fn interface_join_resources(
     parent: &ExecutionProofCore,
     arms: [&ExecutionProofCore; 2],
-    arm_facts: [&ProofFacts; 2],
+    arm_facts: [&PureFactStore; 2],
     interface_resource_specs: &[ResourceSpec],
     joined_state: &ExecutionState,
-    successor_facts: &ProofFacts,
+    successor_facts: &PureFactStore,
 ) -> Result<InterfaceJoinResources, &'static str> {
     let mut arm_interface_resources = [Vec::new(), Vec::new()];
     let mut successor_interface_resources = Vec::new();
@@ -4375,15 +4379,15 @@ struct CheckedInterfaceAbstraction {
 
 #[allow(clippy::too_many_arguments)]
 fn construct_interface_abstraction(
-    root_facts: &ProofFacts,
+    root_facts: &PureFactStore,
     split_state: &ExecutionState,
     parent: &ExecutionProofCore,
     arms: [&ExecutionProofCore; 2],
-    arm_facts: [&ProofFacts; 2],
+    arm_facts: [&PureFactStore; 2],
     interface_specs: &[SpecProposition],
     interface_resource_specs: &[ResourceSpec],
     joined_state: &ExecutionState,
-    successor_facts: &ProofFacts,
+    successor_facts: &PureFactStore,
     old_reference: Option<&ExecutionState>,
 ) -> Result<CheckedInterfaceAbstraction, &'static str> {
     let sibling_states = [arms[0].reached_state(), arms[1].reached_state()];
@@ -4590,7 +4594,7 @@ pub(crate) struct CheckedExecutionBranch {
     split: CheckedBranchSplit,
     arms: [CheckedExecutionBranchArm; 2],
     joined_state: ExecutionState,
-    interface_successor_facts: Option<ProofFacts>,
+    interface_successor_facts: Option<PureFactStore>,
     interface_execution_facts: crate::kernel::ExecutionFacts,
     interface_effect_facts: crate::kernel::ExecutionFacts,
     interface_resource_definitions: Option<Vec<crate::kernel::CompositeResourceDefinition>>,
@@ -4606,7 +4610,7 @@ pub(crate) struct CheckedExecutionBranch {
 
 #[derive(Clone)]
 struct CheckedExecutionBranchArm {
-    facts: ProofFacts,
+    facts: PureFactStore,
     events: Vec<CheckedExecutionEvent>,
 }
 
@@ -4615,7 +4619,7 @@ fn branch_split_starts_at_parent(
     split_state: &ExecutionState,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
-    root_facts: &ProofFacts,
+    root_facts: &PureFactStore,
 ) -> bool {
     if split_state == parent.reached_state() {
         return true;
@@ -4651,9 +4655,9 @@ impl CheckedExecutionBranch {
     #[allow(clippy::too_many_arguments)]
     fn check(
         split: CheckedBranchSplit,
-        root_facts: &ProofFacts,
+        root_facts: &PureFactStore,
         arm_theorems: [&Theorem; 2],
-        arm_facts: [&ProofFacts; 2],
+        arm_facts: [&PureFactStore; 2],
         parent: &ExecutionProofCore,
         arms: [&ExecutionProofCore; 2],
         function: &ProgramFunction,
@@ -4759,9 +4763,9 @@ impl CheckedExecutionBranch {
     #[allow(clippy::too_many_arguments)]
     fn construct_interface(
         split: CheckedBranchSplit,
-        root_facts: &ProofFacts,
+        root_facts: &PureFactStore,
         arm_theorems: [&Theorem; 2],
-        arm_facts: [&ProofFacts; 2],
+        arm_facts: [&PureFactStore; 2],
         parent: &ExecutionProofCore,
         arms: [&ExecutionProofCore; 2],
         function: &ProgramFunction,
@@ -4770,7 +4774,7 @@ impl CheckedExecutionBranch {
         interface_resource_specs: &[ResourceSpec],
         arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
         joined_state: &ExecutionState,
-        successor_facts: &ProofFacts,
+        successor_facts: &PureFactStore,
         old_reference: Option<&ExecutionState>,
     ) -> Result<Self, &'static str> {
         if !branch_split_starts_at_parent(parent, &split.state, function, arguments, root_facts) {
@@ -4935,7 +4939,7 @@ impl CheckedExecutionBranch {
         &self.arms[index].events
     }
 
-    pub(crate) fn interface_successor_facts(&self) -> Option<&ProofFacts> {
+    pub(crate) fn interface_successor_facts(&self) -> Option<&PureFactStore> {
         self.interface_successor_facts.as_ref()
     }
 
@@ -5139,7 +5143,7 @@ fn checked_interface_effect_facts(
     split_state: &ExecutionState,
     joined_state: &ExecutionState,
     arms: [&ExecutionProofCore; 2],
-    arm_facts: [&ProofFacts; 2],
+    arm_facts: [&PureFactStore; 2],
     arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
 ) -> Result<crate::kernel::ExecutionFacts, &'static str> {
     checked_interface_effect_facts_along(
@@ -5222,7 +5226,7 @@ fn checked_interface_effect_facts_along(
     split_state: &ExecutionState,
     joined_state: &ExecutionState,
     arms: [&ExecutionProofCore; 2],
-    arm_facts: [&ProofFacts; 2],
+    arm_facts: [&PureFactStore; 2],
     arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
     arm_memory_steps: Option<[&[CheckedMemoryStep]; 2]>,
 ) -> Result<crate::kernel::ExecutionFacts, &'static str> {
@@ -5409,7 +5413,7 @@ fn interface_resources_guard_heap_frees(
     function: &ProgramFunction,
     arm_resources: &[Vec<ResourceFact>; 2],
     arm_states: [&ExecutionState; 2],
-    arm_facts: [&ProofFacts; 2],
+    arm_facts: [&PureFactStore; 2],
     heap_frees: &[Vec<(Pointer, crate::kernel::HeapExtent)>; 2],
 ) -> bool {
     let has_allocation = |arm_index: usize, base: &Pointer, bytes: &crate::kernel::HeapExtent| {
@@ -5519,7 +5523,7 @@ fn interface_spec_paths_with(
 fn evaluate_interface_resource_spec(
     spec: &ResourceSpec,
     state: &ExecutionState,
-    facts: &ProofFacts,
+    facts: &PureFactStore,
 ) -> Option<ResourceFact> {
     (crate::kernel::functions::evaluate_function_resource_spec(
         state,
@@ -5550,7 +5554,7 @@ struct CheckedInterfaceLowering {
     spec: Arc<SpecProposition>,
     retained_state: ExecutionState,
     reference: ExecutionState,
-    facts: ProofFacts,
+    facts: PureFactStore,
     path: Arc<crate::kernel::spec::SpecPropositionPath>,
     proofs: Arc<Vec<super::CheckedProposition>>,
     /// At the abstract successor only: the typed-call domains the lowering
@@ -5603,7 +5607,7 @@ impl CheckedInterfaceLowering {
         spec: &SpecProposition,
         state: &ExecutionState,
         reference_state: &ExecutionState,
-        facts: &ProofFacts,
+        facts: &PureFactStore,
         access: &InterfaceReadPremises,
     ) -> Option<Self> {
         // Lower each arm's interface fact as a `have` of the same text in
@@ -5624,7 +5628,7 @@ impl CheckedInterfaceLowering {
         spec: &SpecProposition,
         state: &ExecutionState,
         reference_state: &ExecutionState,
-        facts: &ProofFacts,
+        facts: &PureFactStore,
         access: &InterfaceReadPremises,
         assumptions: &PureFactContext,
         successor: bool,
@@ -5876,7 +5880,7 @@ pub(crate) struct CheckedBranchSplit {
     branch_statement: ProgramStatement,
     continuation: Option<ProgramStatement>,
     condition: ProgramExpression,
-    root_facts: ProofFacts,
+    root_facts: PureFactStore,
     paths: Vec<CheckedBranchPath>,
 }
 
@@ -5895,7 +5899,7 @@ pub(crate) enum CheckedBranchSplitError {
 pub(crate) struct CheckedCallOutcomeSplit {
     state: ExecutionState,
     statement: ProgramStatement,
-    root_facts: ProofFacts,
+    root_facts: PureFactStore,
     normal: StatementOutcome,
     exceptional: StatementOutcome,
 }
@@ -5915,7 +5919,7 @@ impl CheckedCallOutcomeSplit {
     pub(crate) fn from_certified_transitions(
         state: ExecutionState,
         statement: ProgramStatement,
-        root_facts: &ProofFacts,
+        root_facts: &PureFactStore,
         normal_theorem: &Theorem,
         normal: &StatementOutcome,
         normal_path_facts: &[Proposition],
@@ -5986,7 +5990,7 @@ impl CheckedCallOutcomeSplit {
         &self,
         state: &ExecutionState,
         statement: &ProgramStatement,
-        root_facts: &ProofFacts,
+        root_facts: &PureFactStore,
         normal: &Theorem,
         exceptional: &Theorem,
     ) -> bool {
@@ -6025,7 +6029,7 @@ impl CheckedBranchSplit {
         state: ExecutionState,
         branch_statement: ProgramStatement,
         continuation: Option<ProgramStatement>,
-        root_facts: &ProofFacts,
+        root_facts: &PureFactStore,
     ) -> Result<Self, CheckedBranchSplitError> {
         let ProgramStatement::If { condition, .. } = &branch_statement else {
             return Err(CheckedBranchSplitError::InvalidEvidence);
@@ -6083,7 +6087,7 @@ impl CheckedBranchSplit {
         &self.paths
     }
 
-    fn has_exact_root(&self, root_facts: &ProofFacts) -> bool {
+    fn has_exact_root(&self, root_facts: &PureFactStore) -> bool {
         self.root_facts
             .introduced_since(root_facts)
             .is_some_and(|delta| delta.is_empty())
@@ -6096,9 +6100,9 @@ impl CheckedBranchSplit {
         &self,
         state: &ExecutionState,
         condition: &ProgramExpression,
-        root_facts: &ProofFacts,
+        root_facts: &PureFactStore,
         arm_theorems: [Option<&Theorem>; 2],
-        arm_facts: [Option<&ProofFacts>; 2],
+        arm_facts: [Option<&PureFactStore>; 2],
     ) -> bool {
         if &self.state != state || &self.condition != condition || !self.has_exact_root(root_facts)
         {
@@ -6317,7 +6321,7 @@ pub(crate) struct PendingLoopReturnPath {
     pub(crate) outcome: FunctionOutcome,
     pub(crate) execution_facts: ExecutionFacts,
     pub(crate) obligations: Vec<crate::kernel::ProofObligation>,
-    pub(crate) pure_facts: ProofFacts,
+    pub(crate) pure_facts: PureFactStore,
     pub(crate) loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
 }
 
@@ -6403,7 +6407,7 @@ pub(crate) struct ExecutionProofCore {
     /// Completed pure proofs awaiting a resource exchange that needs them.
     return_pending_propositions: crate::persistent::PersistentMap<
         usize,
-        PersistentSequence<(super::CheckedProposition, ProofFacts)>,
+        PersistentSequence<(super::CheckedProposition, PureFactStore)>,
     >,
     /// Post-return exchanges indexed by the selected outcome. Forking a
     /// focused outcome must not copy or modify its sibling traces.
@@ -6418,7 +6422,7 @@ pub(crate) struct ExecutionProofCore {
     /// The proof's facts at the checked entry, whose context the entry was
     /// checked under. A retained return proof's facts descend from it, so
     /// completion checks only what the proof introduced since.
-    entry_facts: Option<ProofFacts>,
+    entry_facts: Option<PureFactStore>,
     pub(crate) frontier_loop_rules: PersistentSequence<VerifiedLoopRule>,
     pub(crate) execution_abstraction: bool,
     pub(crate) concrete_loop_execution: bool,
@@ -6455,7 +6459,7 @@ pub(crate) struct CheckedLoopInvariantLowerings {
     /// the retained body also closed. Validation compares them exactly, so a
     /// body checked before a `decreases` clause existed cannot be reused.
     pub(super) ranking_measures: Vec<crate::kernel::RankingComponent>,
-    pub(super) facts: super::ProofFacts,
+    pub(super) facts: super::PureFactStore,
     pub(super) effects: crate::kernel::ExecutionFacts,
 }
 
@@ -6744,7 +6748,7 @@ fn ground_comparison_premise_holds(premise: &Proposition) -> bool {
 /// Branch evidence names its exact arm context. Do not derive a missing
 /// prerequisite from other facts at the join. Literal comparisons and
 /// integer reflexivity are context-free rules, not premise search.
-pub(crate) fn checked_branch_fact_is_available(facts: &ProofFacts, fact: &Proposition) -> bool {
+pub(crate) fn checked_branch_fact_is_available(facts: &PureFactStore, fact: &Proposition) -> bool {
     crate::instrumentation::record_deterministic_work(1);
     facts.contains(fact)
         || facts.assumptions().proves_exact(fact)
@@ -6766,7 +6770,10 @@ pub(crate) fn checked_branch_fact_is_available(facts: &ProofFacts, fact: &Propos
 /// The pointer congruence fragment may give a field read another spelling
 /// in the same checked arm. This normalizes just the named positive equality;
 /// it neither searches premises nor proves a missing read/safety obligation.
-pub(super) fn checked_interface_pointer_equality(facts: &ProofFacts, goal: &Proposition) -> bool {
+pub(super) fn checked_interface_pointer_equality(
+    facts: &PureFactStore,
+    goal: &Proposition,
+) -> bool {
     matches!(
         goal,
         Proposition::ConditionIs(
@@ -6779,7 +6786,7 @@ pub(super) fn checked_interface_pointer_equality(facts: &ProofFacts, goal: &Prop
 }
 
 #[cfg(test)]
-fn checked_evidence_premises_hold(theorem: &Theorem, facts: &ProofFacts) -> bool {
+fn checked_evidence_premises_hold(theorem: &Theorem, facts: &PureFactStore) -> bool {
     checked_evidence_premises_hold_in(theorem, facts.assumptions())
 }
 
@@ -7561,7 +7568,7 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
     events: &[E],
     assumptions: &PureFactContext,
     checked_void_fallthrough: bool,
-    entry_facts: Option<&ProofFacts>,
+    entry_facts: Option<&PureFactStore>,
     unjustified: &mut Option<Proposition>,
 ) -> Result<
     (
@@ -7577,7 +7584,7 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
     let mut completed: Option<(StatementOutcome, PureFactContext)> = None;
     let mut return_origin = None;
     let mut return_context: Option<Arc<CheckedReturnContext>> = None;
-    let mut proposition_base: Option<&ProofFacts> = None;
+    let mut proposition_base: Option<&PureFactStore> = None;
     let mut fallthrough = None;
     // Only the last checked statement can be the function's implicit return.
     // Earlier normal statements may still have resource exchanges before a
@@ -8312,7 +8319,7 @@ impl ExecutionProofCore {
     }
 
     /// The entry facts while the proof has not left its checked entry.
-    pub(crate) fn entry_facts_at_entry(&self) -> Option<&ProofFacts> {
+    pub(crate) fn entry_facts_at_entry(&self) -> Option<&PureFactStore> {
         (self.frontier.is_at_function_entry()
             && self.execution_evidence.len() == 1
             && self.execution_evidence[0].is_empty())
@@ -8901,7 +8908,7 @@ impl ExecutionProofCore {
         outcome: FunctionOutcome,
         completed_execution_facts: ExecutionFacts,
         completed_obligations: Vec<crate::kernel::ProofObligation>,
-        pure_facts: ProofFacts,
+        pure_facts: PureFactStore,
         loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
         loop_index: Option<usize>,
         return_index: usize,
@@ -8982,7 +8989,10 @@ impl ExecutionProofCore {
     /// The proof's fact base on a completed returned path of a summarized
     /// loop, by its index among this execution's paths; `None` for every
     /// other path, whose base is the proof's own facts.
-    pub(crate) fn pending_loop_return_pure_facts(&self, path_index: usize) -> Option<&ProofFacts> {
+    pub(crate) fn pending_loop_return_pure_facts(
+        &self,
+        path_index: usize,
+    ) -> Option<&PureFactStore> {
         let start = self.pending_loop_return_start?;
         path_index
             .checked_sub(start)
@@ -9196,7 +9206,7 @@ impl ExecutionProofCore {
 
     /// A local context for a presentation containing exactly these admitted
     /// cases. The caller still checks every selected premise against its
-    /// ProofFacts; presentation never supplies semantic authority.
+    /// PureFactStore; presentation never supplies semantic authority.
     pub(crate) fn checked_step_case_context(&self, count: usize) -> Option<PureFactContext> {
         (self.checked_step_cases.0 == count).then(|| self.checked_step_cases.1.clone())
     }
@@ -10083,7 +10093,7 @@ impl ExecutionProofCore {
         &mut self,
         partition: Arc<CheckedProofCasePartition>,
         arm_index: usize,
-        facts: ProofFacts,
+        facts: PureFactStore,
     ) -> bool {
         // A generative constructor witness belongs to the exact state its
         // partition was issued against: no C step may run between the split
@@ -10119,10 +10129,10 @@ impl ExecutionProofCore {
     pub(crate) fn record_proof_case_join(
         &mut self,
         parent: &ExecutionProofCore,
-        arms: &[(&ExecutionProofCore, &ProofFacts)],
+        arms: &[(&ExecutionProofCore, &PureFactStore)],
         function: &ProgramFunction,
         arguments: &[ProgramExpression],
-        successor_facts: &ProofFacts,
+        successor_facts: &PureFactStore,
     ) -> Result<bool, &'static str> {
         let join = CheckedProofCaseJoin::check(parent, arms, function, arguments, successor_facts)?;
         let changed_execution = join.arms_changed_execution();
@@ -10150,15 +10160,15 @@ impl ExecutionProofCore {
     pub(crate) fn record_interface_proof_case_join(
         &mut self,
         parent: &ExecutionProofCore,
-        root_facts: &ProofFacts,
-        arms: [(&ExecutionProofCore, &ProofFacts); 2],
+        root_facts: &PureFactStore,
+        arms: [(&ExecutionProofCore, &PureFactStore); 2],
         function: &ProgramFunction,
         arguments: &[ProgramExpression],
         interface_specs: &[SpecProposition],
         interface_resource_specs: &[ResourceSpec],
         arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
         joined_state: &ExecutionState,
-        successor_facts: &ProofFacts,
+        successor_facts: &PureFactStore,
         old_reference: Option<&ExecutionState>,
     ) -> Result<crate::kernel::ExecutionFacts, &'static str> {
         let join = CheckedProofCaseJoin::construct_interface(
@@ -10276,7 +10286,7 @@ impl ExecutionProofCore {
     /// per candidate as before.
     pub(crate) fn algebraic_case_partition(
         &self,
-        facts: &ProofFacts,
+        facts: &PureFactStore,
         value: &crate::kernel::AlgebraicTerm,
         environment: &crate::kernel::ExecutionEnvironment,
         definitions: &[crate::kernel::CompositeResourceDefinition],
@@ -10492,11 +10502,11 @@ impl ExecutionProofCore {
     /// concluded that the refutation rule would not publish at those sites.
     fn model_arm_refutations_for(
         &self,
-        facts: &ProofFacts,
+        facts: &PureFactStore,
         value: &crate::kernel::AlgebraicTerm,
         definitions: &[crate::kernel::CompositeResourceDefinition],
         matched_resource_field: Option<&crate::kernel::ResourceFieldProjection>,
-    ) -> ProofFacts {
+    ) -> PureFactStore {
         let crate::kernel::AlgebraicTermNode::Variable(variable) = value.node else {
             return facts.clone();
         };
@@ -10680,7 +10690,7 @@ impl ExecutionProofCore {
     /// step's operands.
     pub(crate) fn record_iterated_step(
         &mut self,
-        before_facts: &ProofFacts,
+        before_facts: &PureFactStore,
         step: crate::kernel::IteratedStep,
     ) -> Result<ExecutionState, String> {
         if self.evidence_completed {
@@ -10705,10 +10715,10 @@ impl ExecutionProofCore {
         &mut self,
         function: &ProgramFunction,
         arguments: &[ProgramExpression],
-        before_facts: &ProofFacts,
+        before_facts: &PureFactStore,
         observed: &ResourceFact,
         after_state: &ExecutionState,
-        after_facts: &ProofFacts,
+        after_facts: &PureFactStore,
     ) -> Result<(), &'static str> {
         if self.evidence_completed {
             return Err("a resource observation was recorded after the trace completed");
@@ -10755,11 +10765,11 @@ impl ExecutionProofCore {
         &mut self,
         function: &ProgramFunction,
         function_arguments: &[ProgramExpression],
-        before_facts: &ProofFacts,
+        before_facts: &PureFactStore,
         name: &str,
         arguments: &[crate::kernel::ProgramValue],
         environment: &crate::kernel::ExecutionEnvironment,
-    ) -> Result<(ExecutionState, ProofFacts), crate::kernel::functions::TacticApplicationRefusal>
+    ) -> Result<(ExecutionState, PureFactStore), crate::kernel::functions::TacticApplicationRefusal>
     {
         use crate::kernel::functions::TacticApplicationRefusal::Refused;
         if let Some(opened) = &self.descent {
@@ -10821,10 +10831,10 @@ impl ExecutionProofCore {
         &mut self,
         function: &ProgramFunction,
         arguments: &[ProgramExpression],
-        before_facts: &ProofFacts,
+        before_facts: &PureFactStore,
         selected: &ResourceFact,
         after_state: &ExecutionState,
-        after_facts: &ProofFacts,
+        after_facts: &PureFactStore,
     ) -> Result<(), String> {
         self.record_resource_rewrite_with_children(
             function,
@@ -10842,12 +10852,12 @@ impl ExecutionProofCore {
     /// creation witness and its exact resource and state exchange.
     pub(crate) fn record_population_authority_rewrite(
         &mut self,
-        before_facts: &ProofFacts,
+        before_facts: &PureFactStore,
         selected: &ResourceFact,
         establish: bool,
         witness: &CheckedPopulationAuthorityExchange,
         after_state: &ExecutionState,
-        after_facts: &ProofFacts,
+        after_facts: &PureFactStore,
     ) -> Result<(), String> {
         if self.evidence_completed
             || (self.frontier.is_at_function_entry() && !self.frontier.entry_member_prefix)
@@ -10878,12 +10888,12 @@ impl ExecutionProofCore {
         &mut self,
         function: &ProgramFunction,
         arguments: &[ProgramExpression],
-        before_facts: &ProofFacts,
+        before_facts: &PureFactStore,
         selected: &ResourceFact,
         produce: bool,
         witness: &CheckedPopulationMemberExchange,
         after_state: &ExecutionState,
-        after_facts: &ProofFacts,
+        after_facts: &PureFactStore,
     ) -> Result<Option<ExecutionState>, String> {
         if self.evidence_completed {
             return Err("population member rewrite requires an active function body".into());
@@ -10957,13 +10967,13 @@ impl ExecutionProofCore {
         &mut self,
         function: &ProgramFunction,
         arguments: &[ProgramExpression],
-        before_facts: &ProofFacts,
+        before_facts: &PureFactStore,
         instance: &crate::kernel::ResourceInstance,
         selected_children: Option<Arc<[(String, Variable)]>>,
     ) -> Result<
         (
             crate::kernel::functions::ResourceInstanceRewriteResult,
-            ProofFacts,
+            PureFactStore,
         ),
         crate::kernel::ResourceRewriteRefusal,
     > {
@@ -10984,14 +10994,14 @@ impl ExecutionProofCore {
         &mut self,
         function: &ProgramFunction,
         arguments: &[ProgramExpression],
-        before_facts: &ProofFacts,
+        before_facts: &PureFactStore,
         instance: &crate::kernel::ResourceInstance,
         selected_children: Option<Arc<[(String, Variable)]>>,
         assumptions: &PureFactContext,
     ) -> Result<
         (
             crate::kernel::functions::ResourceInstanceRewriteResult,
-            ProofFacts,
+            PureFactStore,
         ),
         crate::kernel::ResourceRewriteRefusal,
     > {
@@ -11086,8 +11096,8 @@ impl ExecutionProofCore {
     pub(crate) fn prepare_return_definition_fold(
         &mut self,
         path_index: usize,
-        before: &ProofFacts,
-        after: &ProofFacts,
+        before: &PureFactStore,
+        after: &PureFactStore,
     ) {
         if self.prepared_return_fold.is_none() {
             self.prepared_return_fold = Some(Arc::new(PreparedReturnFold {
@@ -11103,8 +11113,8 @@ impl ExecutionProofCore {
     pub(crate) fn finish_prepared_return_fold(
         &mut self,
         proved: &Self,
-        proved_facts: &ProofFacts,
-    ) -> Result<ProofFacts, String> {
+        proved_facts: &PureFactStore,
+    ) -> Result<PureFactStore, String> {
         let _timing = crate::instrumentation::OperationTiming::new(
             "fold",
             "resource fold",
@@ -11153,7 +11163,10 @@ impl ExecutionProofCore {
 
     /// The driver has discharged the body obligations at the original
     /// frontier. Attach that context and append only the retained exchange.
-    pub(crate) fn finish_prepared_instance_fold(&mut self, proved: &ProofFacts) -> ProofFacts {
+    pub(crate) fn finish_prepared_instance_fold(
+        &mut self,
+        proved: &PureFactStore,
+    ) -> PureFactStore {
         let _timing = crate::instrumentation::OperationTiming::new(
             "fold",
             "resource fold",
@@ -11187,10 +11200,10 @@ impl ExecutionProofCore {
         &mut self,
         function: &ProgramFunction,
         arguments: &[ProgramExpression],
-        before_facts: &ProofFacts,
+        before_facts: &PureFactStore,
         selected: &ResourceFact,
         after_state: &ExecutionState,
-        after_facts: &ProofFacts,
+        after_facts: &PureFactStore,
         selected_children: Option<Arc<[(String, Variable)]>>,
     ) -> Result<(), ResourceRewriteCheckError> {
         self.record_resource_rewrite_with_loan_holds(
@@ -11214,10 +11227,10 @@ impl ExecutionProofCore {
         &mut self,
         function: &ProgramFunction,
         arguments: &[ProgramExpression],
-        before_facts: &ProofFacts,
+        before_facts: &PureFactStore,
         selected: &ResourceFact,
         after_state: &ExecutionState,
-        after_facts: &ProofFacts,
+        after_facts: &PureFactStore,
         selected_children: Option<Arc<[(String, Variable)]>>,
         loan_holds: &[crate::kernel::CheckedLoanTransition],
         defer: bool,
@@ -11281,9 +11294,9 @@ impl ExecutionProofCore {
         &mut self,
         function: &ProgramFunction,
         path_index: usize,
-        before_facts: &ProofFacts,
+        before_facts: &PureFactStore,
         selected: &ResourceFact,
-        after_facts: &ProofFacts,
+        after_facts: &PureFactStore,
     ) -> Result<(), String> {
         self.record_return_resource_rewrite_with_children(
             function,
@@ -11303,7 +11316,7 @@ impl ExecutionProofCore {
         &mut self,
         path_index: usize,
         proof: super::CheckedProposition,
-        base: &ProofFacts,
+        base: &PureFactStore,
     ) -> Result<(), String> {
         // Contract refinements also use outcome goals, but their proofs are
         // certified by the refinement rule rather than a retained C trace.
@@ -11406,14 +11419,14 @@ impl ExecutionProofCore {
         &mut self,
         function: &ProgramFunction,
         path_index: usize,
-        before_facts: &ProofFacts,
+        before_facts: &PureFactStore,
         instance: &crate::kernel::ResourceInstance,
         unfold: bool,
         selected_children: Option<Arc<[(String, Variable)]>>,
     ) -> Result<
         (
             crate::kernel::functions::ResourceInstanceRewriteResult,
-            ProofFacts,
+            PureFactStore,
         ),
         crate::kernel::ResourceRewriteRefusal,
     > {
@@ -11433,7 +11446,7 @@ impl ExecutionProofCore {
         &mut self,
         function: &ProgramFunction,
         path_index: usize,
-        before_facts: &ProofFacts,
+        before_facts: &PureFactStore,
         instance: &crate::kernel::ResourceInstance,
         unfold: bool,
         selected_children: Option<Arc<[(String, Variable)]>>,
@@ -11441,7 +11454,7 @@ impl ExecutionProofCore {
     ) -> Result<
         (
             crate::kernel::functions::ResourceInstanceRewriteResult,
-            ProofFacts,
+            PureFactStore,
         ),
         crate::kernel::ResourceRewriteRefusal,
     > {
@@ -11509,9 +11522,9 @@ impl ExecutionProofCore {
         &mut self,
         function: &ProgramFunction,
         path_index: usize,
-        before_facts: &ProofFacts,
+        before_facts: &PureFactStore,
         selected: &ResourceFact,
-        after_facts: &ProofFacts,
+        after_facts: &PureFactStore,
         unfold: bool,
         selected_children: Option<Arc<[(String, Variable)]>>,
         observed: Option<(
@@ -11633,11 +11646,11 @@ impl ExecutionProofCore {
         &mut self,
         function: &ProgramFunction,
         path_index: usize,
-        before_facts: &ProofFacts,
+        before_facts: &PureFactStore,
         selected: &ResourceFact,
         outcome: &super::OutcomeProofCore,
         after_state: &ExecutionState,
-        after_facts: &ProofFacts,
+        after_facts: &PureFactStore,
         published_facts: &[Proposition],
         defer: bool,
     ) -> Result<(), String> {
@@ -11785,9 +11798,9 @@ impl ExecutionProofCore {
     pub(crate) fn record_exhaustive_branch_join(
         &mut self,
         split: CheckedBranchSplit,
-        root_facts: &ProofFacts,
+        root_facts: &PureFactStore,
         arm_theorems: [&Theorem; 2],
-        arm_facts: [&ProofFacts; 2],
+        arm_facts: [&PureFactStore; 2],
         parent: &ExecutionProofCore,
         arms: [&ExecutionProofCore; 2],
         function: &ProgramFunction,
@@ -11829,9 +11842,9 @@ impl ExecutionProofCore {
     pub(crate) fn record_interface_branch_join(
         &mut self,
         split: CheckedBranchSplit,
-        root_facts: &ProofFacts,
+        root_facts: &PureFactStore,
         arm_theorems: [&Theorem; 2],
-        arm_facts: [&ProofFacts; 2],
+        arm_facts: [&PureFactStore; 2],
         parent: &ExecutionProofCore,
         arms: [&ExecutionProofCore; 2],
         function: &ProgramFunction,
@@ -11840,7 +11853,7 @@ impl ExecutionProofCore {
         interface_resource_specs: &[ResourceSpec],
         arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
         joined_state: &ExecutionState,
-        successor_facts: &ProofFacts,
+        successor_facts: &PureFactStore,
         old_reference: Option<&ExecutionState>,
     ) -> Result<crate::kernel::ExecutionFacts, &'static str> {
         let parent_trace = match parent.execution_evidence.as_slice() {

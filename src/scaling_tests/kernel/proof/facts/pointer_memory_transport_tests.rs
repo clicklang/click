@@ -41,7 +41,7 @@ fn full_pointer_fact_transport_checks_designations_and_the_whole_read() {
     let wrong_state = fact(pointer(&overwritten));
     let mut samples = Vec::new();
     for size in [4u64, 16, 64, 256] {
-        let mut facts = ProofFacts::from_ordered(std::slice::from_ref(&source));
+        let mut facts = PureFactStore::from_ordered(std::slice::from_ref(&source));
         for index in 0..size {
             facts = facts.with_fact(Proposition::ConditionIs(
                 ConditionTerm::equal(

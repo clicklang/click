@@ -95,7 +95,7 @@ pub(super) struct SurfaceRecord {
     /// execution path. This separate persistent index lets a strict statement
     /// retry recognize an explicitly retained prerequisite leaf without
     /// scanning the ambient proof context.
-    pub(super) retained_have_facts: ProofFacts,
+    pub(super) retained_have_facts: PureFactStore,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -1485,7 +1485,7 @@ impl PostExecutionTactic {
 #[derive(Clone)]
 pub(super) struct PlannedLoopReturns {
     pub(super) paths: Arc<Vec<Arc<LoopReturnProof>>>,
-    pub(super) entry_facts: ProofFacts,
+    pub(super) entry_facts: PureFactStore,
 }
 
 /// Surface ownership of one returned loop path. It grants no proof authority:

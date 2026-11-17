@@ -9,7 +9,7 @@ fn claim_requirements_use_indexed_facts_and_scale_with_their_output() {
             ConditionTerm::equal(variable.clone(), MachineTerm::constant(7)),
             true,
         );
-        let mut facts = ProofFacts::from_ordered(std::slice::from_ref(&required));
+        let mut facts = PureFactStore::from_ordered(std::slice::from_ref(&required));
         for index in 0..size {
             for left in [
                 variable.clone(),

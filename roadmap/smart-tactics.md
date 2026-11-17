@@ -422,6 +422,20 @@ diagnostic above. The executed-body regressions cover alias/body/frame growth,
 selected splits and duplicate refusal; this does not close every raw-admission
 or consumption route.
 
+The retained summary rule now also binds literal/parameter footprints of
+one-level composite children to consumed input clauses. Unguarded parameter-only borrowed
+children keep entry provenance; conversions, loads, and unmatched footprints
+retain their boundary checks. Composite scaling grows selected body parts as
+well as retained same-block owners and both alias shapes at 4/16/64.
+Iterated `take`/`scatter` now construct their exposed ownership from the checked
+hole/guard exchange without admission or block normalization; their exposure
+regression grows retained owners and aliases and retains occurrence support.
+Scatter installation is measured separately from its existing guard preparation,
+whose alias growth remains open; this is not a whole-scatter bound.
+Call escrow recovery, suspended/worker recovery, and loop-frame exchange still
+need producer-owned evidence against their actual destination frames. See the
+caller audit in [verification efficiency](../docs/internals/verification-efficiency.md#iterated-exposure-and-the-remaining-callers).
+
 Hold one inserted owner and one relevant neighbor fixed. Independently grow
 same-block owners, owned blocks, coordinate origins and exact/offset aliases;
 use symbolic bounds and different origins, not just the indexed constant case.

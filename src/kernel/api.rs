@@ -484,7 +484,7 @@ pub struct LoopPreservationContext {
 #[derive(Clone)]
 pub(crate) enum LoopExitFacts {
     Explicit(std::sync::Arc<[Proposition]>),
-    Retained(std::sync::Arc<crate::kernel::proof::ProofFacts>),
+    Retained(std::sync::Arc<crate::kernel::proof::PureFactStore>),
 }
 impl std::fmt::Debug for LoopExitFacts {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -563,10 +563,10 @@ impl crate::kernel::proof::PropositionSource for LoopExitFacts {
             Self::Retained(facts) => facts.exact_available(required),
         }
     }
-    fn ordered_proof_facts(&self) -> crate::kernel::proof::ProofFacts {
+    fn ordered_fact_store(&self) -> crate::kernel::proof::PureFactStore {
         match self {
-            Self::Explicit(facts) => facts.as_ref().ordered_proof_facts(),
-            Self::Retained(facts) => facts.ordered_proof_facts(),
+            Self::Explicit(facts) => facts.as_ref().ordered_fact_store(),
+            Self::Retained(facts) => facts.ordered_fact_store(),
         }
     }
     fn propositions(&self) -> impl Iterator<Item = &Proposition> {
@@ -578,9 +578,9 @@ impl crate::kernel::proof::PropositionSource for LoopExitFacts {
             Self::Retained(facts) => facts.assumptions().clone(),
         }
     }
-    fn indexed_proof_facts(&self) -> crate::kernel::proof::ProofFacts {
+    fn fact_store(&self) -> crate::kernel::proof::PureFactStore {
         match self {
-            Self::Explicit(facts) => crate::kernel::proof::ProofFacts::from_ordered(facts),
+            Self::Explicit(facts) => facts.as_ref().fact_store(),
             Self::Retained(facts) => (**facts).clone(),
         }
     }
@@ -600,9 +600,9 @@ pub(crate) struct LoopFinalExitCandidate {
 }
 
 impl LoopFinalExitCandidate {
-    pub(crate) fn from_proof_facts(
+    pub(crate) fn from_store(
         state: ExecutionState,
-        facts: &crate::kernel::proof::ProofFacts,
+        facts: &crate::kernel::proof::PureFactStore,
     ) -> Self {
         Self {
             state,
@@ -687,9 +687,9 @@ impl LoopBreakExit {
     }
 
     /// Retain the checked context alongside the exact facts it indexed.
-    pub(crate) fn from_proof_facts(
+    pub(crate) fn from_store(
         state: ExecutionState,
-        facts: &crate::kernel::proof::ProofFacts,
+        facts: &crate::kernel::proof::PureFactStore,
     ) -> Self {
         Self {
             state,
@@ -748,10 +748,10 @@ pub(crate) struct LoopReturnExit {
 }
 
 impl LoopReturnExit {
-    pub(crate) fn from_proof_facts(
+    pub(crate) fn from_store(
         value: impl Into<StoredExecutionValue>,
         state: ExecutionState,
-        facts: &crate::kernel::proof::ProofFacts,
+        facts: &crate::kernel::proof::PureFactStore,
     ) -> Self {
         Self {
             value: value.into(),
@@ -792,16 +792,16 @@ mod loop_exit_sharing_tests {
 
     #[test]
     fn retained_exit_context_records_opposite_truth_without_changing_parent() {
-        use crate::kernel::proof::ProofFacts;
+        use crate::kernel::proof::PureFactStore;
         let condition = ConditionTerm::equal(
             MachineTerm::Variable(Variable(9_901_100)),
             MachineTerm::constant(0),
         );
         let before = Proposition::ConditionIs(condition.clone(), true);
         let after = Proposition::ConditionIs(condition, false);
-        let ambient = ProofFacts::from_ordered(std::slice::from_ref(&before));
-        let path = ProofFacts::from_ordered(std::slice::from_ref(&after));
-        let exit = LoopFinalExitCandidate::from_proof_facts(ExecutionState::new(), &path);
+        let ambient = PureFactStore::from_ordered(std::slice::from_ref(&before));
+        let path = PureFactStore::from_ordered(std::slice::from_ref(&after));
+        let exit = LoopFinalExitCandidate::from_store(ExecutionState::new(), &path);
         let joined = exit.pure_facts().context_with(ambient.assumptions());
         assert!(joined.is_inconsistent());
         assert!(!ambient.assumptions().is_inconsistent());
@@ -871,9 +871,9 @@ impl LoopPreservationContext {
     pub(crate) fn restored_exit(
         &self,
         state: &ExecutionState,
-        facts: &crate::kernel::proof::ProofFacts,
+        facts: &crate::kernel::proof::PureFactStore,
         assumptions: &PureFactContext,
-    ) -> (ExecutionState, crate::kernel::proof::ProofFacts) {
+    ) -> (ExecutionState, crate::kernel::proof::PureFactStore) {
         (self.restored_exit_state(state, assumptions), facts.clone())
     }
 
@@ -907,9 +907,9 @@ impl LoopPreservationContext {
     pub(crate) fn restored_return(
         &self,
         state: &ExecutionState,
-        facts: &crate::kernel::proof::ProofFacts,
+        facts: &crate::kernel::proof::PureFactStore,
         assumptions: &PureFactContext,
-    ) -> (ExecutionState, crate::kernel::proof::ProofFacts) {
+    ) -> (ExecutionState, crate::kernel::proof::PureFactStore) {
         let restored = self.exit_frame.as_ref().map_or_else(
             || state.clone(),
             |frame| {
@@ -5824,11 +5824,11 @@ mod proof_case_evidence_tests {
     use super::*;
     use crate::kernel::proof::{
         CheckedProofCasePartition, ExecutionFrontier, ExecutionProofCore, OutcomeEvidenceFork,
-        OutcomeForkArm, ProofFacts,
+        OutcomeForkArm, PureFactStore,
     };
 
     fn case_partition(
-        root: &ProofFacts,
+        root: &PureFactStore,
     ) -> (Arc<CheckedProofCasePartition>, Proposition, Proposition) {
         let then_fact = Proposition::Predicate {
             name: "case".to_string(),
@@ -5915,7 +5915,7 @@ mod proof_case_evidence_tests {
 
     #[test]
     fn proof_case_family_requires_both_arms_once_per_path() {
-        let root = ProofFacts::default();
+        let root = PureFactStore::default();
         let (partition, then_fact, else_fact) = case_partition(&root);
         let mut then_core =
             ExecutionProofCore::at_entry(ExecutionState::new(), ExecutionFrontier::default());
@@ -5949,11 +5949,11 @@ mod proof_case_evidence_tests {
     /// A core at function entry and its two arms, each having entered its
     /// case of `partition` and then established `shared` and its own fact.
     fn joinable_arms(
-        root: &ProofFacts,
+        root: &PureFactStore,
         partition: &Arc<CheckedProofCasePartition>,
         case_facts: [&Proposition; 2],
         shared: &Proposition,
-    ) -> (ExecutionProofCore, [(ExecutionProofCore, ProofFacts); 2]) {
+    ) -> (ExecutionProofCore, [(ExecutionProofCore, PureFactStore); 2]) {
         let parent =
             ExecutionProofCore::at_entry(ExecutionState::new(), ExecutionFrontier::default());
         let arms = [0, 1].map(|index| {
@@ -5980,7 +5980,7 @@ mod proof_case_evidence_tests {
 
     #[test]
     fn case_join_rejoins_the_arms_with_only_the_facts_they_share() {
-        let root = ProofFacts::default();
+        let root = PureFactStore::default();
         let (partition, then_fact, else_fact) = case_partition(&root);
         let shared = Proposition::Predicate {
             name: "shared".to_string(),
@@ -6010,7 +6010,7 @@ mod proof_case_evidence_tests {
 
         // A successor may keep only what every arm established: not a case
         // fact, and not one arm's own fact.
-        let refused = |successor: ProofFacts| {
+        let refused = |successor: PureFactStore| {
             parent
                 .clone()
                 .record_proof_case_join(&parent, &arms, &function, &[], &successor)
@@ -6027,7 +6027,7 @@ mod proof_case_evidence_tests {
 
     #[test]
     fn case_join_refuses_arms_that_do_not_belong_together() {
-        let root = ProofFacts::default();
+        let root = PureFactStore::default();
         let (partition, then_fact, else_fact) = case_partition(&root);
         let shared = Proposition::Predicate {
             name: "shared".to_string(),
@@ -6036,7 +6036,7 @@ mod proof_case_evidence_tests {
         let (parent, [(then_core, then_facts), (else_core, else_facts)]) =
             joinable_arms(&root, &partition, [&then_fact, &else_fact], &shared);
         let function = join_test_function();
-        let refused = |arms: &[(&ExecutionProofCore, &ProofFacts)]| {
+        let refused = |arms: &[(&ExecutionProofCore, &PureFactStore)]| {
             parent
                 .clone()
                 .record_proof_case_join(&parent, arms, &function, &[], &root)
@@ -6073,7 +6073,7 @@ mod proof_case_evidence_tests {
     /// the cases it left out still need paths of their own.
     #[test]
     fn a_join_of_some_cases_leaves_the_others_owed() {
-        let root = ProofFacts::default();
+        let root = PureFactStore::default();
         let (partition, then_fact, else_fact) = case_partition(&root);
         let mut then_core =
             ExecutionProofCore::at_entry(ExecutionState::new(), ExecutionFrontier::default());
@@ -6093,7 +6093,7 @@ mod proof_case_evidence_tests {
 
     #[test]
     fn outcome_evidence_fork_splits_traces_in_candidate_order() {
-        let root = ProofFacts::default();
+        let root = PureFactStore::default();
         let (partition, then_fact, else_fact) = case_partition(&root);
         let mut core =
             ExecutionProofCore::at_entry(ExecutionState::new(), ExecutionFrontier::default());
@@ -6196,7 +6196,7 @@ mod proof_case_evidence_tests {
 
     #[test]
     fn nested_outcome_evidence_is_exhaustive_and_rejects_corrupt_inner_arms() {
-        let root = ProofFacts::default();
+        let root = PureFactStore::default();
         let (outer, positive, negative) = case_partition(&root);
         let outer_facts = [root.with_fact(positive), root.with_fact(negative)];
         let inner_positive = Proposition::Predicate {

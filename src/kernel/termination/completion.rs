@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::kernel::ContractBodyProof;
-use crate::kernel::proof::{BranchId, ProofBranch, ProofBranchState, ProofFacts, ProofObject};
+use crate::kernel::proof::{BranchId, ProofBranch, ProofBranchState, ProofObject, PureFactStore};
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub(crate) enum ProgramContractGoal {
@@ -67,7 +67,7 @@ fn branch(goal: ProgramContractGoal) -> ProofBranch<ProgramContractGoal, ()> {
     ProofBranch::new(
         goal,
         ProofBranchState {
-            facts: ProofFacts::default(),
+            facts: PureFactStore::default(),
             execution: None,
         },
     )

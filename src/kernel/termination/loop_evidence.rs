@@ -855,7 +855,7 @@ pub(super) mod tests {
             ProofBranch::new(
                 crate::kernel::proof::ProofObligation::FunctionOutcome(outcome),
                 ProofBranchState {
-                    facts: ProofFacts::default(),
+                    facts: PureFactStore::default(),
                     execution: None,
                 },
             ),

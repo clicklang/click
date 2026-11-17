@@ -15,7 +15,7 @@ fn invariant_body_evidence_requires_exact_complete_root_and_context() {
     };
     type TestProof =
         ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ProofExecutionState<()>>;
-    let root = |facts: ProofFacts, core: ExecutionProofCore| -> TestProof {
+    let root = |facts: PureFactStore, core: ExecutionProofCore| -> TestProof {
         ProofObject::root(
             (),
             ProofBranch::new(
@@ -40,7 +40,7 @@ fn invariant_body_evidence_requires_exact_complete_root_and_context() {
     });
     let entry = ExecutionState::new();
     let samples = [16, 32, 64, 128].map(|size| {
-        let facts = ProofFacts::from_ordered(
+        let facts = PureFactStore::from_ordered(
             &(0..size)
                 .map(|i| Proposition::Predicate {
                     name: format!("unrelated_{i}"),
@@ -168,7 +168,7 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
     // One entry state: every state below must be the very same state,
     // creation ledger included.
     let entry = ExecutionState::new().with_population_creation_tracking();
-    let root = |facts: ProofFacts, core: ExecutionProofCore| -> TestProof {
+    let root = |facts: PureFactStore, core: ExecutionProofCore| -> TestProof {
         ProofObject::root(
             (),
             ProofBranch::new(
@@ -202,7 +202,7 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
     ];
     let mut samples = Vec::new();
     for size in [16, 32, 64, 128] {
-        let facts = ProofFacts::from_ordered(
+        let facts = PureFactStore::from_ordered(
             &(0..size)
                 .map(|i| Proposition::Predicate {
                     name: format!("unrelated_{i}"),
@@ -371,7 +371,7 @@ fn pure_match_and_payload_freshening_ignore_unrelated_facts() {
     let value = pure_match_value(1);
     let mut costs = Vec::new();
     for size in [16, 64, 256] {
-        let facts = ProofFacts::from_ordered(
+        let facts = PureFactStore::from_ordered(
             &(0..size)
                 .map(|i| Proposition::Predicate {
                     name: format!("unrelated_match_{i}"),
@@ -431,7 +431,7 @@ fn pure_match_constructor_obligation_work_is_linear_in_the_family() {
                     (),
                 )),
                 ProofBranchState {
-                    facts: ProofFacts::from_ordered(&[]),
+                    facts: PureFactStore::from_ordered(&[]),
                     execution: None,
                 },
             ),
@@ -483,7 +483,7 @@ fn typed_universal_intro_adds_fresh_bounds_without_scanning_ambient_facts() {
             ProofBranch::new(
                 ProofObligation::Proposition(PropositionObligation::new(goal.clone(), ())),
                 ProofBranchState {
-                    facts: ProofFacts::from_ordered(&ambient),
+                    facts: PureFactStore::from_ordered(&ambient),
                     execution: None,
                 },
             ),
@@ -526,7 +526,7 @@ fn known_computation_work_ignores_related_and_unrelated_facts() {
     for size in [16u64, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let variable = IntegerTerm::var(Variable(882_000));
-        let facts = ProofFacts::from_ordered(
+        let facts = PureFactStore::from_ordered(
             &(0..size)
                 .flat_map(|i| {
                     [
@@ -597,7 +597,7 @@ fn known_computation_work_is_linear_in_shared_integer_terms() {
                 ConditionTerm::IntegerGreaterThan(successor.into(), term),
                 true,
             ),
-            ProofFacts::default(),
+            PureFactStore::default(),
         );
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             proof.apply_known(PropositionKnownContext::Exact)
@@ -639,7 +639,7 @@ fn apply_fact_uses_only_selected_implication_and_evidence() {
             ProofBranch::new(
                 ProofObligation::Proposition(PropositionObligation::new(conclusion.clone(), ())),
                 ProofBranchState {
-                    facts: ProofFacts::from_ordered(&facts),
+                    facts: PureFactStore::from_ordered(&facts),
                     execution: None,
                 },
             ),
@@ -715,7 +715,7 @@ fn known_quantified_identity_uses_selected_keys() {
                 arguments: vec![],
             });
         }
-        let facts = ProofFacts::from_ordered(&facts);
+        let facts = PureFactStore::from_ordered(&facts);
         let root = |goal| -> TestProof {
             ProofObject::root(
                 (),
@@ -799,7 +799,7 @@ fn apply_fact_quantified_sources_use_selected_alpha_keys() {
             ProofBranch::new(
                 ProofObligation::Proposition(PropositionObligation::new(goal, ())),
                 ProofBranchState {
-                    facts: ProofFacts::from_ordered(&facts),
+                    facts: PureFactStore::from_ordered(&facts),
                     execution: None,
                 },
             ),
@@ -883,7 +883,7 @@ fn known_compound_comparison_work_is_linear_in_selected_clauses() {
             Proposition::Or(Box::new(leaf(0)), Box::new(leaf(1)))
         };
         let sources = (0..size).map(|id| clause(id, false)).collect::<Vec<_>>();
-        let facts = ProofFacts::from_ordered(&sources);
+        let facts = PureFactStore::from_ordered(&sources);
         let goal = (1..size).fold(clause(0, true), |goal, id| {
             Proposition::And(Box::new(goal), Box::new(clause(id, true)))
         });

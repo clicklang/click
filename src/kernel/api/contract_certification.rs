@@ -3838,7 +3838,7 @@ mod entry_authority_tests {
     use super::*;
     use crate::kernel::proof::{
         FunctionOutcomeObligation, OpenedContractEntry, OutcomeProofState, ProofBranch,
-        ProofBranchState, ProofFacts, ProofObject, ProofObligation,
+        ProofBranchState, ProofObject, ProofObligation, PureFactStore,
     };
 
     pub(super) fn checked_execution(
@@ -3952,7 +3952,7 @@ mod entry_authority_tests {
             ProofBranch::new(
                 ProofObligation::FunctionOutcome(goal),
                 ProofBranchState {
-                    facts: ProofFacts::default(),
+                    facts: PureFactStore::default(),
                     execution: None,
                 },
             ),

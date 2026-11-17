@@ -32,7 +32,7 @@ fn wide_equality_decision_uses_only_its_indexed_component() {
                 )
             })
             .collect::<Vec<_>>();
-        let facts = ProofFacts::from_ordered(&unrelated)
+        let facts = PureFactStore::from_ordered(&unrelated)
             .with_kernel_checked_fact(equality(left.clone(), middle.clone()))
             .with_kernel_checked_fact(equality(middle.clone(), MachineTerm::uint64_constant(7)));
         let (proved, measured) = crate::instrumentation::measure_deterministic_work(|| {
@@ -65,7 +65,7 @@ fn a_narrow_equality_does_not_decide_a_wide_one() {
         },
         true,
     );
-    let narrow = ProofFacts::from_ordered(&[
+    let narrow = PureFactStore::from_ordered(&[
         Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -118,7 +118,7 @@ fn quantified_loadable_alpha_query_ignores_unrelated_state_size() {
             Some(Variable(209_001)),
             4,
         );
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&source));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&source));
         let (matched, measured) = crate::instrumentation::measure_deterministic_work(|| {
             facts.matching_quantified_fact(&required)
         });
@@ -285,7 +285,7 @@ fn memory_erased_same_bucket_lookup_scales_without_deep_dedup() {
             },
             true,
         );
-        let proof_facts = ProofFacts::from_ordered(&facts);
+        let proof_facts = PureFactStore::from_ordered(&facts);
         let key = memory_erased_proposition_key(&required);
         let bucket_len = proof_facts
             .by_memory_erased
@@ -331,7 +331,7 @@ fn proper_conjunct_observation_keys_ignore_unrelated_facts() {
             .collect();
         for (source, requested) in [(&native, &retained), (&retained, &native)] {
             let facts =
-                ProofFacts::from_ordered(&unrelated).with_kernel_checked_fact(Proposition::And(
+                PureFactStore::from_ordered(&unrelated).with_kernel_checked_fact(Proposition::And(
                     Box::new(source.clone()),
                     Box::new(Proposition::ConditionIs(
                         ConditionTerm::Constant(true),
@@ -346,7 +346,7 @@ fn proper_conjunct_observation_keys_ignore_unrelated_facts() {
             assert!(!facts.contains_proper_conjunct(&opposite));
             assert_eq!(KernelTermExport::machine_export_count(), exports);
             assert!(
-                !ProofFacts::from_ordered(std::slice::from_ref(source))
+                !PureFactStore::from_ordered(std::slice::from_ref(source))
                     .contains_proper_conjunct(requested)
             );
             work.push(cost);
@@ -428,7 +428,7 @@ fn exact_call_lookup_retains_shared_argument_prefixes() {
         ))));
         let requested = fact(call(PureFunctionArgument::SharedMachine(retained)));
         assert_ne!(source, requested);
-        let facts = ProofFacts::from_ordered(&[source]);
+        let facts = PureFactStore::from_ordered(&[source]);
         let exports = KernelTermExport::machine_export_count();
         let (available, work) =
             crate::instrumentation::measure_deterministic_work(|| facts.contains(&requested));

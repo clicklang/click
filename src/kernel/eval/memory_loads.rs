@@ -2618,7 +2618,7 @@ thread_local! {
 /// differ only by a read on one side and its stored value on the other are
 /// one fact. Exact matching therefore compares comparison forms: the fact
 /// stores file each fact under its comparison form as well as its own
-/// (`ProofFacts::with_fact`, `PureFactContext::assume_condition_once`), an
+/// (`PureFactStore::with_fact`, `PureFactContext::assume_condition_once`), an
 /// exact lookup also asks for the comparison form of what it looks up, and a
 /// kernel rule that compares a stated term with the one it derives compares
 /// their comparison forms. This is the one place the authority enters
@@ -3662,7 +3662,7 @@ pub(crate) fn check_canonical_at_creation(condition: &ConditionTerm, value: bool
         "assumptions_from_propositions",
         "assumptions_with_path_context",
         "assumptions_with_propositions",
-        "ProofFacts::",
+        "PureFactStore::",
         "atomic_derivation_premises",
         "derive_proposition",
         "::proves",
@@ -7424,7 +7424,7 @@ mod tests {
                 .is_empty()
         );
         let mut published =
-            crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&alias));
+            crate::kernel::proof::PureFactStore::from_ordered(std::slice::from_ref(&alias));
         for fact in &path.facts {
             published = published.with_kernel_checked_fact(fact.proposition().clone());
         }
@@ -8361,7 +8361,7 @@ mod tests {
     /// cited value relation; offsets alone and stale/partial stores do not suffice.
     #[test]
     fn normalize_recorded_pointer_values_checks_selected_facts_and_width() {
-        use crate::kernel::proof::ProofFacts;
+        use crate::kernel::proof::PureFactStore;
         use crate::kernel::proof::fact_reasoning::normalize_using_conditions;
         let _session = crate::kernel::VerificationSession::enter();
         let address = Pointer::symbolic(Variable(99_100));
@@ -8386,7 +8386,7 @@ mod tests {
         };
         let value = read(memory.clone(), &address, 99_103, 8);
         let premise = equality(&stored, &Pointer::null());
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&premise));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&premise));
         for goal in [
             equality(&value, &Pointer::null()),
             equality(&Pointer::null(), &value),
@@ -8395,7 +8395,7 @@ mod tests {
                 normalize_using_conditions(&goal, std::slice::from_ref(&premise), &facts).is_ok()
             );
             assert!(
-                normalize_using_conditions(&goal, &[], &ProofFacts::from_ordered(&[])).is_err()
+                normalize_using_conditions(&goal, &[], &PureFactStore::from_ordered(&[])).is_err()
             );
         }
         assert!(
@@ -8461,7 +8461,7 @@ mod tests {
             normalize_using_conditions(
                 &equality(&scalar, &Pointer::null()),
                 &[],
-                &ProofFacts::from_ordered(&[])
+                &PureFactStore::from_ordered(&[])
             )
             .is_err()
         );
@@ -8471,11 +8471,11 @@ mod tests {
     /// needs an exact typed read, including its stride and unambiguous origin.
     #[test]
     fn normalize_recorded_pointer_reads_checks_definition() {
-        use crate::kernel::proof::ProofFacts;
+        use crate::kernel::proof::PureFactStore;
         use crate::kernel::proof::fact_reasoning::normalize_using_conditions;
         let _session = crate::kernel::VerificationSession::enter();
         let context = PureFactContext::new();
-        let facts = ProofFacts::from_ordered(&[]);
+        let facts = PureFactStore::from_ordered(&[]);
         let address = Pointer::symbolic(Variable(103_001));
         let stored = Pointer {
             block: PointerBlock::ExternalArgument,
@@ -8519,7 +8519,7 @@ mod tests {
     /// execution source. The selected alias is still required to find its store.
     #[test]
     fn normalize_recorded_pointer_value_follows_exact_projection_source() {
-        use crate::kernel::proof::ProofFacts;
+        use crate::kernel::proof::PureFactStore;
         use crate::kernel::proof::fact_reasoning::normalize_using_conditions;
         let _session = crate::kernel::VerificationSession::enter();
         let context = PureFactContext::new();
@@ -8555,9 +8555,9 @@ mod tests {
         context.register_pointer_read(&read, projected.shared_memory(), &address);
         let alias = Proposition::ConditionIs(ConditionTerm::pointer_equal(address, written), true);
         let goal = Proposition::ConditionIs(ConditionTerm::pointer_equal(read, stored), true);
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&alias));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&alias));
         assert!(normalize_using_conditions(&goal, std::slice::from_ref(&alias), &facts).is_ok());
-        assert!(normalize_using_conditions(&goal, &[], &ProofFacts::from_ordered(&[])).is_err());
+        assert!(normalize_using_conditions(&goal, &[], &PureFactStore::from_ordered(&[])).is_err());
     }
     #[test]
     fn symbolic_storage_pointer_cells_share_logical_read_identity() {
