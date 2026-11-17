@@ -1161,7 +1161,7 @@ mod tests {
         ))];
         render::enter_ambient_naming(
             crate::surface::ParameterBinding::new(&parameters, &arguments),
-            &Memory::new(),
+            &crate::kernel::ExecutionState::new(),
         );
         let failure = unspelled_test_failure(&[unspelled_test_fact(variable)]);
         render::clear_ambient_naming();

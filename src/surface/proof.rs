@@ -1987,7 +1987,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         .with_index(&parameter_index);
     crate::surface::proof_diagnostics::render::enter_ambient_naming(
         ParameterBinding::new(parsed_function.parameters(), &arguments),
-        state.memory(),
+        &state,
     );
     crate::surface::diagnostics::enter_ambient_object_fields(parsed_function);
     let mut observed_population_families = BTreeSet::new();

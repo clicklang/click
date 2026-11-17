@@ -610,6 +610,26 @@ impl Printer<'_> {
                 Some(atom(format!("<{place} is writable ({byte_width} bytes)>")))
             }
             Proposition::MemoryReadDefined {
+                at: Some(id),
+                pointer,
+                ..
+            } => {
+                let (point, naming) = self.labels.definedness_point_context(*id);
+                let Some(point) = point else {
+                    return Some(atom(format!("defined({})", self.place_at(pointer, depth))));
+                };
+                let place = naming
+                    .as_deref()
+                    .and_then(|(parameters, arguments)| {
+                        crate::surface::diagnostics::diagnostic_source_cell(
+                            pointer,
+                            ParameterBinding::new(parameters, arguments),
+                        )
+                    })
+                    .unwrap_or_else(|| format!("*{}", self.labels.placeholder_pointer(pointer)));
+                Some(atom(format!("at({point}, defined({place}))")))
+            }
+            Proposition::MemoryReadDefined {
                 memory, pointer, ..
             } => {
                 let place = self.place_read_in(memory, |printer| {
@@ -3224,6 +3244,51 @@ mod tests {
             source(&fact, &mut labels),
             "to_integer((a + b) * (a - b)) >= a and (a & b) == 0 implies not ((a & b) == 0)"
         );
+    }
+
+    #[test]
+    fn definedness_distinguishes_points_with_identical_memory() {
+        use crate::surface::{ProgramPointSelector, RecordedStates};
+
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer::symbolic(Variable(7));
+        let pointer_value = ProgramValue::Pointer(PointerValue::new(
+            pointer.clone(),
+            ProgramType::Int32Pointer,
+        ));
+        let before = ExecutionState::new()
+            .with_local("before_ptr", pointer_value.clone())
+            .with_memory(Memory::new());
+        let current = ExecutionState::new()
+            .with_local("current_ptr", pointer_value)
+            .with_memory(before.memory().clone());
+        assert!(before.memory().same_storage_roots(current.memory()));
+        assert!(before.observation_point_id().is_some());
+        assert!(current.observation_point_id().is_some());
+        assert_ne!(
+            before.observation_point_id(),
+            current.observation_point_id()
+        );
+
+        let mut recorded = RecordedStates::new();
+        recorded.insert(ProgramPointSelector::Mark("before".into()), before.clone());
+        let mut labels = MemoryStateLabels::with_state(ParameterBinding::default(), &current);
+        labels.recorded_states(&recorded);
+        let defined_at = |state: &ExecutionState| Proposition::MemoryReadDefined {
+            at: state.observation_point_id(),
+            memory: before.memory().clone(),
+            pointer: pointer.clone(),
+            value_type: ProgramType::Int32,
+        };
+        let historical = source(&defined_at(&before), &mut labels);
+        assert!(
+            historical.starts_with("at(before, defined("),
+            "{historical}"
+        );
+        assert!(historical.contains("before_ptr"), "{historical}");
+        let now = source(&defined_at(&current), &mut labels);
+        assert!(now.starts_with("defined("), "{now}");
+        assert!(now.contains("current_ptr"), "{now}");
     }
 
     #[test]

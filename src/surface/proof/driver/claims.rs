@@ -561,7 +561,7 @@ fn prove_claims_by_checked_tactics(
     // parameters for diagnostics as building it would have.
     crate::surface::proof_diagnostics::render::enter_ambient_naming(
         ParameterBinding::new(parsed_function.parameters(), &arguments),
-        state.memory(),
+        &state,
     );
     crate::surface::diagnostics::enter_ambient_object_fields(parsed_function);
     let opened_entry = shared_entry.get_or_open(|| {

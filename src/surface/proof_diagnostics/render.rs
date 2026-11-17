@@ -57,6 +57,12 @@ pub(crate) struct MemoryStateLabels {
     pointer_values: HashMap<Pointer, usize>,
     pointer_sources: HashMap<Pointer, String>,
     source_memories: Vec<(Memory, String, std::sync::Arc<NamingTables>)>,
+    current_point: Option<crate::kernel::program_point::ProgramPointId>,
+    source_points: HashMap<
+        crate::kernel::program_point::ProgramPointId,
+        (String, std::sync::Arc<NamingTables>),
+    >,
+    unnamed_points: HashMap<crate::kernel::program_point::ProgramPointId, usize>,
     /// Persistent source-point index, consulted only while printing. Older
     /// loop heads must not lose their name when the recent display fills up.
     recorded_states: Option<crate::surface::RecordedStates>,
@@ -230,7 +236,7 @@ impl MemoryStateLabels {
     /// A read of the verified function's entry memory spells as `old(...)`,
     /// against the parameters' entry values.
     fn register_ambient_entry(&mut self) {
-        let Some((memory, tables)) = AMBIENT_ENTRY.with(|entry| entry.borrow().clone()) else {
+        let Some((memory, tables, id)) = AMBIENT_ENTRY.with(|entry| entry.borrow().clone()) else {
             return;
         };
         if self.source_memories.len() < MAX_MEMORY_STATE_LABELS
@@ -239,6 +245,10 @@ impl MemoryStateLabels {
                 .iter()
                 .any(|(_, point, _)| point == ENTRY_POINT)
         {
+            if let Some(id) = id {
+                self.source_points
+                    .insert(id, (ENTRY_POINT.into(), tables.clone()));
+            }
             self.source_memories
                 .push((memory, ENTRY_POINT.into(), tables));
         }
@@ -350,6 +360,7 @@ impl MemoryStateLabels {
     }
 
     pub(crate) fn register_current_state(&mut self, state: &ExecutionState) {
+        self.current_point = state.observation_point_id();
         let (names, values) = crate::surface::diagnostics::local_naming_tables(state);
         let current = Self::naming(ParameterBinding::new(&names, &values));
         // A reassigned parameter's entry value is not its current value.
@@ -426,9 +437,46 @@ impl MemoryStateLabels {
     pub(crate) fn source_state(&mut self, state: &ExecutionState, point: String) {
         if self.source_memories.len() < MAX_MEMORY_STATE_LABELS {
             let tables = crate::surface::diagnostics::local_naming_tables(state);
+            let tables = std::sync::Arc::new(tables);
+            if let Some(id) = state.observation_point_id() {
+                self.source_points
+                    .insert(id, (point.clone(), tables.clone()));
+            }
             self.source_memories
-                .push((state.memory().clone(), point, std::sync::Arc::new(tables)));
+                .push((state.memory().clone(), point, tables));
         }
+    }
+
+    /// Resolve the observation's existing point identity. The memory
+    /// naming table is for values and cannot distinguish equal-memory points.
+    fn definedness_point_context(
+        &mut self,
+        id: crate::kernel::program_point::ProgramPointId,
+    ) -> (Option<String>, Option<std::sync::Arc<NamingTables>>) {
+        if self.current_point == Some(id) {
+            return (None, self.naming.clone());
+        }
+        if let Some((name, tables)) = self.source_points.get(&id) {
+            return (Some(name.clone()), Some(tables.clone()));
+        }
+        if let Some(points) = &self.recorded_states
+            && let Some(selector) = points.point_name(id)
+            && let Some(state) = points.get_exact(selector)
+            && state.observation_point_id() == Some(id)
+        {
+            return (
+                Some(crate::surface::diagnostics::describe_program_point_selector(selector)),
+                Some(std::sync::Arc::new(
+                    crate::surface::diagnostics::local_naming_tables(state),
+                )),
+            );
+        }
+        let next = self.unnamed_points.len();
+        let label = *self.unnamed_points.entry(id).or_insert(next);
+        (
+            Some(format!("<unrecorded point {}>", alphabetic_label(label))),
+            None,
+        )
     }
 
     fn source_memory_context(&self, memory: &Memory) -> Option<(&str, &NamingTables)> {
@@ -912,7 +960,13 @@ type NamingTables = (
 /// terminal proof state takes precedence; this preserves ambient names when
 /// a search-only error is rendered after the verification session unwinds.
 #[derive(Clone, Default)]
-pub(crate) struct CapturedNaming(Option<(Memory, std::sync::Arc<NamingTables>)>);
+pub(crate) struct CapturedNaming(Option<EntryNaming>);
+
+type EntryNaming = (
+    Memory,
+    std::sync::Arc<NamingTables>,
+    Option<crate::kernel::program_point::ProgramPointId>,
+);
 
 impl std::fmt::Debug for CapturedNaming {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -926,7 +980,7 @@ impl PartialEq for CapturedNaming {
     fn eq(&self, other: &Self) -> bool {
         match (&self.0, &other.0) {
             (None, None) => true,
-            (Some((_, left)), Some((_, right))) => std::sync::Arc::ptr_eq(left, right),
+            (Some((_, left, _)), Some((_, right, _))) => std::sync::Arc::ptr_eq(left, right),
             _ => false,
         }
     }
@@ -943,7 +997,7 @@ impl CapturedNaming {
         if labels.naming.is_some() {
             return;
         }
-        let Some((memory, tables)) = &self.0 else {
+        let Some((memory, tables, id)) = &self.0 else {
             return;
         };
         labels.register_naming(ParameterBinding::new(&tables.0, &tables.1));
@@ -954,6 +1008,11 @@ impl CapturedNaming {
                 .iter()
                 .any(|(_, point, _)| point == ENTRY_POINT)
         {
+            if let Some(id) = id {
+                labels
+                    .source_points
+                    .insert(*id, (ENTRY_POINT.into(), tables.clone()));
+            }
             labels
                 .source_memories
                 .push((memory.clone(), ENTRY_POINT.into(), tables.clone()));
@@ -997,7 +1056,7 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
     /// That function's entry memory, so a read of it spells as `old(...)`.
     /// One retained handle per verified function; diagnostics only.
-    static AMBIENT_ENTRY: std::cell::RefCell<Option<(Memory, std::sync::Arc<NamingTables>)>> =
+    static AMBIENT_ENTRY: std::cell::RefCell<Option<EntryNaming>> =
         const { std::cell::RefCell::new(None) };
     /// Set while a `--trace-proof` trace is rendered: traces keep their
     /// typed notation, which names each read's width and state.
@@ -1006,13 +1065,18 @@ thread_local! {
 
 /// Starts verifying a C function whose parameters hold `arguments` in the
 /// memory `entry`.
-pub(crate) fn enter_ambient_naming(parameter_binding: ParameterBinding<'_>, entry: &Memory) {
+pub(crate) fn enter_ambient_naming(
+    parameter_binding: ParameterBinding<'_>,
+    entry: &ExecutionState,
+) {
     let tables = std::sync::Arc::new((
         parameter_binding.parameters.to_vec(),
         parameter_binding.arguments.to_vec(),
     ));
     AMBIENT_NAMING.with(|naming| *naming.borrow_mut() = Some(tables.clone()));
-    AMBIENT_ENTRY.with(|slot| *slot.borrow_mut() = Some((entry.clone(), tables)));
+    AMBIENT_ENTRY.with(|slot| {
+        *slot.borrow_mut() = Some((entry.memory().clone(), tables, entry.observation_point_id()))
+    });
 }
 
 pub(crate) fn clear_ambient_naming() {
@@ -1489,9 +1553,17 @@ impl Renderer<'_> {
                 self.fmt(format_args!(", bytes={byte_width})"));
             }
             Proposition::MemoryReadDefined {
-                memory, pointer, ..
+                at,
+                memory,
+                pointer,
+                ..
             } => {
                 self.push("defined-read(");
+                if let Some(id) = at {
+                    let (point, _) = self.labels.definedness_point_context(*id);
+                    self.push(point.as_deref().unwrap_or("current"));
+                    self.push(", ");
+                }
                 self.memory(memory);
                 self.push(", ");
                 self.pointer(pointer);
