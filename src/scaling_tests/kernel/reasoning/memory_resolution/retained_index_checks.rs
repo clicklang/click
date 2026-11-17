@@ -29,7 +29,7 @@ fn retained_index_checks_scale_with_growing_prefixes_without_exports() {
                     }
                 };
                 if capturing {
-                    crate::kernel::assumptions::capture_implicit_reasoning_provenance(run);
+                    crate::kernel::assumptions::capture_implicit_consulted_premises(run);
                 } else {
                     run();
                 }

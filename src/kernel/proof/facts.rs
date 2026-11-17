@@ -627,7 +627,7 @@ impl PureFactStore {
                                 _ => None,
                             };
                             raw(a).zip(raw(b)).is_some_and(|(a, b)|
-                                crate::kernel::memory_provenance::checked_recorded_atomic_load_equality(
+                                crate::kernel::memory_history::checked_recorded_atomic_load_equality(
                                     &a, &b, self.assumptions()))
                         };
                         if !self.pure_known_available(&selected)
@@ -702,7 +702,7 @@ impl PureFactStore {
                 &self.load_equalities_mentioning(&selected),
                 self.assumptions(),
             )
-            || crate::kernel::memory_provenance::checked_stored_origin_operand_equality(
+            || crate::kernel::memory_history::checked_stored_origin_operand_equality(
                 a,
                 b,
                 self.assumptions(),
@@ -742,7 +742,7 @@ struct IntegerConditionAlphaCandidate {
     proposition: Proposition,
 }
 
-/// A bounded-comparison selector for equality rewrite provenance. Complex
+/// A bounded-comparison selector for equality rewrite derivations. Complex
 /// arithmetic operands remain on the kernel-derivation path; this index covers
 /// the atomic value/state operands that outcome arithmetic rewrites need.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -1323,7 +1323,8 @@ impl PureFactStore {
     }
 
     fn available_as_written(&self, fact: &Proposition) -> bool {
-        self.contains(fact)
+        closed_condition_holds(fact)
+            || self.contains(fact)
             || self.assumptions.contains_known(fact)
             || self.contains_opposite_constant_polarity(fact)
     }
@@ -1369,6 +1370,31 @@ impl PureFactStore {
     }
 
     pub(in crate::kernel) fn with_fact(&self, fact: Proposition) -> Self {
+        // A closed comparison that holds, which lowering retains as written
+        // (`3 == 3`), carries no information the context can use: checking
+        // decides it from its literals (`available_as_written`). It is still
+        // a held fact with its own spelling, so membership and the ordered
+        // delta record it, but it needs no search index, mentions no
+        // variable, and adds nothing to the reasoning context.
+        if closed_condition_holds(&fact) {
+            if self.top_level_exact.contains(&fact) {
+                return self.clone();
+            }
+            let fact = Arc::new(fact);
+            let mut ordered = self.ordered.clone();
+            ordered.push(Arc::clone(&fact));
+            return Self {
+                ordered,
+                top_level_exact: self.top_level_exact.with_value(Arc::clone(&fact)),
+                presentation: {
+                    let mut presentation = self.presentation.clone();
+                    presentation.append(fact.clone());
+                    presentation
+                },
+                exact: self.exact.with_value(fact),
+                ..self.clone()
+            };
+        }
         if self.top_level_exact.contains(&fact) {
             return self.clone();
         }
@@ -2139,7 +2165,7 @@ impl PureFactStore {
 
         // A checked Integer comparison may contain range-fold binders freshly
         // allocated by the preceding rewrite. Return the stored proposition
-        // so callers retain the source fact and its certificate provenance;
+        // so callers retain the source fact and its certificate evidence;
         // do not synthesize the requested presentation here.
         if let Some(candidate) = self.matching_integer_condition_alpha_fact(required) {
             return Some(candidate);
@@ -3143,6 +3169,16 @@ pub(crate) fn is_definedness_guard(proposition: &Proposition) -> bool {
         ),
         _ => false,
     }
+}
+
+/// A closed comparison that holds: decided from its literal roots alone
+/// (`machine_integer::comparison::closed_condition_value`). The constant
+/// `true` itself is an ordinary fact and is not included.
+fn closed_condition_holds(fact: &Proposition) -> bool {
+    matches!(fact, Proposition::ConditionIs(condition, value)
+        if !matches!(condition, ConditionTerm::Constant(_))
+            && crate::kernel::machine_integer::comparison::closed_condition_value(condition)
+                == Some(*value))
 }
 
 fn index_guarded_implication_fact(

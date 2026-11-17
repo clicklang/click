@@ -94,7 +94,7 @@ impl KernelFold {
             let result = result.filter(|_| refusal.is_none())?;
             let retained =
                 SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, result)?;
-            value = crate::kernel::memory_provenance::map_shared_pointer_index(
+            value = crate::kernel::memory_history::map_shared_pointer_index(
                 &retained,
                 |leaf| Some(leaf.clone()),
                 crate::kernel::proof::equality_rewrite::rebuild_normalized_machine_node,

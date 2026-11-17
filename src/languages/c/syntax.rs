@@ -17,8 +17,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::source::{SourcePosition, SourcePositionCursor};
 
-use super::provenance::CSourceMap;
 use super::source::ExpandedLineMap;
+use super::source_map::CSourceMap;
 pub use super::target::{LongRank, PlainChar};
 
 /// Stable documentation IDs for the accepted C surface. This registry
@@ -949,6 +949,19 @@ impl CGlobalAggregate {
             )
         })
     }
+}
+
+fn supports_local_array_initializer(interface_type: InterfaceType) -> bool {
+    matches!(
+        interface_type,
+        InterfaceType::Int32Array(_)
+            | InterfaceType::UInt32Array(_)
+            | InterfaceType::CharArray(_, _)
+            | InterfaceType::UInt8Array(_)
+            | InterfaceType::Float32Array(_)
+            | InterfaceType::Float64Array(_)
+            | InterfaceType::PointerArray(_, _, _)
+    )
 }
 
 fn array_type_for_element(element_type: InterfaceType, length: u32) -> Option<InterfaceType> {
@@ -3004,7 +3017,7 @@ pub enum CExpression {
         field_struct_name: Option<String>,
         function_pointer_signature: Option<CallbackInterface>,
         array_shape: Option<Vec<u32>>,
-        /// Source provenance minted by the C parser.  This is absent on
+        /// Source origin minted by the C parser.  This is absent on
         /// parser-synthesized field loads used by aggregate copies.
         source: Option<CFieldSource>,
         /// The member access through the containing struct, for the
@@ -3733,7 +3746,7 @@ fn collect_natural_cycle_goto_targets<'a>(statement: &'a CStatement, targets: &m
 }
 
 impl CExpression {
-    /// Returns parser-minted provenance for a source-level scalar field load.
+    /// Returns parser-minted source origin for a source-level scalar field load.
     /// Synthesized aggregate-copy loads and all non-field expressions return
     /// `None`.
     pub fn field_source(&self) -> Option<&CFieldSource> {
@@ -3827,25 +3840,6 @@ impl CUnionField {
                     | InterfaceType::UInt8PointerPointer
             )
     }
-}
-
-/// The name of the pointer that carries a reference parameter. A reference
-/// names an object, and what the function receives is that object's address,
-/// so the pointer is spelled as the address: `&value` for `int& value`. The
-/// name is not an identifier, which keeps it apart from every source name,
-/// and it prints the way the address is written.
-pub fn reference_carrier_name(referent: &str) -> String {
-    format!("&{referent}")
-}
-
-/// The object a reference carrier refers to: `value` for `&value`.
-pub fn referent_of_carrier(carrier: &str) -> Option<&str> {
-    carrier.strip_prefix('&').filter(|name| {
-        !name.is_empty()
-            && name
-                .chars()
-                .all(|character| character.is_alphanumeric() || character == '_')
-    })
 }
 
 impl InterfaceType {
@@ -10686,7 +10680,7 @@ impl Parser {
     }
 
     fn typeof_has_exact_struct_identity(&self, expression: &CExpression) -> bool {
-        // Layout provenance can survive a pointer cast, but GNU type
+        // Layout origin can survive a pointer cast, but GNU type
         // compatibility asks for the C type of the expression itself.
         match expression {
             CExpression::Variable(name) => self.variable_struct_values.contains_key(name),
@@ -10745,6 +10739,11 @@ impl Parser {
 
         let expression = self.parse_expression_allow_direct_aggregate()?;
         self.expect(Token::RParen)?;
+        if let CExpression::Variable(name) = &expression
+            && self.incomplete_array_names.contains(name)
+        {
+            return Err(self.error_here("GNU `typeof` of an incomplete array is not supported"));
+        }
         let struct_name = self
             .struct_pointer_name(&expression)
             .or_else(|| self.aggregate_struct_name(&expression));
@@ -11071,9 +11070,9 @@ impl Parser {
     fn parse_local_array_shape(
         &mut self,
         parsed_type: &ParsedType,
-    ) -> Result<(InterfaceType, Option<Vec<u32>>), CSyntaxError> {
+    ) -> Result<(InterfaceType, Option<Vec<u32>>, bool), CSyntaxError> {
         if self.peek() != Some(&Token::LBracket) {
-            return Ok((parsed_type.interface_type, None));
+            return Ok((parsed_type.interface_type, None, false));
         }
         let (element_width, element_name, struct_array) = if is_plain_struct_type(parsed_type) {
             let struct_name = parsed_type
@@ -11108,37 +11107,58 @@ impl Parser {
         }
 
         let mut dimensions = Vec::new();
+        let mut incomplete = false;
         let mut element_count = 1u32;
         while self.peek() == Some(&Token::LBracket) {
             self.position += 1;
-            let length = match self.next() {
-                Some(Token::Number(number)) => {
-                    let length = parse_integer_literal_magnitude(&number).map_err(|reason| {
-                        self.error_here(format!("invalid array length `{number}`: {reason}"))
-                    })?;
-                    let length = u32::try_from(length).map_err(|_| {
-                        self.error_here(format!("array length `{number}` is out of range"))
-                    })?;
-                    if length == 0 {
-                        return Err(self.error_here("local arrays must have positive length"));
+            let length = if self.peek() == Some(&Token::RBracket) {
+                if !dimensions.is_empty() {
+                    return Err(self.error_here("only the outer local array bound may be omitted"));
+                }
+                if struct_array {
+                    return Err(self.error_here(
+                        "inferred automatic arrays of struct values are not supported",
+                    ));
+                }
+                incomplete = true;
+                0
+            } else {
+                match self.next() {
+                    Some(Token::Number(number)) => {
+                        let length =
+                            parse_integer_literal_magnitude(&number).map_err(|reason| {
+                                self.error_here(format!(
+                                    "invalid array length `{number}`: {reason}"
+                                ))
+                            })?;
+                        let length = u32::try_from(length).map_err(|_| {
+                            self.error_here(format!("array length `{number}` is out of range"))
+                        })?;
+                        if length == 0 {
+                            return Err(self.error_here("local arrays must have positive length"));
+                        }
+                        length
                     }
-                    length
-                }
-                Some(token) => {
-                    return Err(self.error_at_previous(format!(
-                        "expected local array length, got {}",
-                        token.describe()
-                    )));
-                }
-                None => {
-                    return Err(self.error_here("expected local array length, got end of input"));
+                    Some(token) => {
+                        return Err(self.error_at_previous(format!(
+                            "expected local array length, got {}",
+                            token.describe()
+                        )));
+                    }
+                    None => {
+                        return Err(
+                            self.error_here("expected local array length, got end of input")
+                        );
+                    }
                 }
             };
-            element_count = element_count.checked_mul(length).ok_or_else(|| {
-                self.error_here(format!(
-                    "array dimensions are too large for {element_name} elements"
-                ))
-            })?;
+            if length != 0 {
+                element_count = element_count.checked_mul(length).ok_or_else(|| {
+                    self.error_here(format!(
+                        "array dimensions are too large for {element_name} elements"
+                    ))
+                })?;
+            }
             dimensions.push(length);
             self.expect(Token::RBracket)?;
         }
@@ -11156,14 +11176,22 @@ impl Parser {
         } else {
             element_count
         };
-        let shape = (struct_array || dimensions.len() > 1).then_some(dimensions);
+        let shape = (incomplete || struct_array || dimensions.len() > 1).then_some(dimensions);
         let array_type = if struct_array {
             InterfaceType::UInt8Array(array_length)
         } else {
-            array_type_for_element(parsed_type.interface_type, array_length)
-                .expect("validated local array element type")
+            array_type_for_element(
+                parsed_type.interface_type,
+                if incomplete { 0 } else { array_length },
+            )
+            .expect("validated local array element type")
         };
-        Ok((array_type, shape))
+        if incomplete && !supports_local_array_initializer(array_type) {
+            return Err(self.error_here(
+                "inferred local array element type does not support automatic initialization",
+            ));
+        }
+        Ok((array_type, shape, incomplete))
     }
 
     /// Opens the statement as written that starts here: the next child of the
@@ -12261,7 +12289,7 @@ impl Parser {
                     } else if matches!(self.peek(), Some(Token::Ident(_)))
                         && !matches!(
                             self.peek_ident(),
-                            Some("__builtin_types_compatible_p" | "__builtin_offsetof")
+                            Some("sizeof" | "__builtin_types_compatible_p" | "__builtin_offsetof")
                         )
                         && self.peek_next() == Some(&Token::LParen)
                     {
@@ -12288,7 +12316,8 @@ impl Parser {
                 self.position += 1;
                 continue;
             }
-            let (mut interface_type, array_shape) = self.parse_local_array_shape(&parsed_type)?;
+            let (mut interface_type, mut array_shape, incomplete_array) =
+                self.parse_local_array_shape(&parsed_type)?;
             if parsed_type.is_volatile
                 && (array_shape.is_some()
                     || matches!(
@@ -12393,6 +12422,57 @@ impl Parser {
                         .or_insert_with(|| Some(struct_name.clone()));
                 }
             }
+            let mut inferred_initializer = None;
+            if incomplete_array {
+                if object_constant {
+                    return Err(self.error_here("const automatic array initialization is outside the scalar initialization slice"));
+                }
+                if self.peek() != Some(&Token::Equal) || self.peek_next() != Some(&Token::LBrace) {
+                    return Err(
+                        self.error_here("inferred local arrays require a brace initializer")
+                    );
+                }
+                self.position += 1;
+                self.incomplete_array_names.insert(name.clone());
+                let mut shape = array_shape
+                    .take()
+                    .expect("incomplete array retains its shape");
+                let mut written = Vec::new();
+                let mut next = 0;
+                shape[0] = self.parse_array_initializer_elements(
+                    name.source_name(),
+                    None,
+                    &shape[1..],
+                    &mut written,
+                    &mut next,
+                )?;
+                if shape[0] == 0 {
+                    return Err(
+                        self.error_here("inferred local arrays require a non-empty initializer")
+                    );
+                }
+                let length = array_shape_element_count(&shape)
+                    .filter(|length| {
+                        length
+                            .checked_mul(parsed_type.interface_type.abi_size_bytes())
+                            .is_some()
+                    })
+                    .ok_or_else(|| {
+                        self.error_here("inferred local array dimensions are too large")
+                    })?;
+                interface_type = array_type_for_element(parsed_type.interface_type, length)
+                    .expect("validated inferred array element type");
+                self.variable_types.insert(name.clone(), interface_type);
+                self.incomplete_array_names.remove(&name);
+                if shape.len() > 1 {
+                    self.variable_array_shapes
+                        .insert(name.clone(), shape.clone());
+                    array_shape = Some(shape);
+                } else {
+                    self.variable_array_shapes.remove(&name);
+                }
+                inferred_initializer = Some((length, written));
+            }
             let declaration = CStatement::Declare {
                 interface_type,
                 name: name.clone().into(),
@@ -12406,42 +12486,45 @@ impl Parser {
                     .local_declared_class(interface_type, parsed_type.struct_name.as_deref()),
                 site: CSite::NONE,
             };
-            let statement = if self.peek() == Some(&Token::Equal) {
-                self.position += 1;
-                if matches!(
-                    interface_type,
-                    InterfaceType::Int32Array(_)
-                        | InterfaceType::UInt32Array(_)
-                        | InterfaceType::CharArray(_, _)
-                        | InterfaceType::UInt8Array(_)
-                        | InterfaceType::Float32Array(_)
-                        | InterfaceType::Float64Array(_)
-                        | InterfaceType::PointerArray(_, _, _)
-                ) {
+            let statement = if inferred_initializer.is_some() || self.peek() == Some(&Token::Equal)
+            {
+                if inferred_initializer.is_none() {
+                    self.position += 1;
+                }
+                if supports_local_array_initializer(interface_type) {
                     if object_constant {
                         return Err(self.error_here("const automatic array initialization is outside the scalar initialization slice"));
                     }
                     // A volatile object keeps one access per element.
                     let compact = !object_volatile && !pointee_volatile;
-                    let (zero_fill, initializer) = if is_plain_struct_type(&parsed_type) {
-                        let struct_name = parsed_type.struct_name.as_deref().unwrap();
-                        let dimensions = array_shape.as_deref().expect(
-                            "local struct array initializers retain their declared dimensions",
-                        );
-                        self.parse_local_struct_array_initializer(
-                            &name,
-                            struct_name,
-                            dimensions,
-                            compact,
-                        )?
-                    } else {
-                        self.parse_local_array_initializer(
-                            &name,
-                            interface_type,
-                            array_shape.as_deref(),
-                            compact,
-                        )?
-                    };
+                    let (zero_fill, initializer) =
+                        if let Some((length, written)) = inferred_initializer {
+                            self.finish_local_array_initializer(
+                                &name,
+                                parsed_type.interface_type,
+                                length,
+                                written,
+                                compact,
+                            )
+                        } else if is_plain_struct_type(&parsed_type) {
+                            let struct_name = parsed_type.struct_name.as_deref().unwrap();
+                            let dimensions = array_shape.as_deref().expect(
+                                "local struct array initializers retain their declared dimensions",
+                            );
+                            self.parse_local_struct_array_initializer(
+                                &name,
+                                struct_name,
+                                dimensions,
+                                compact,
+                            )?
+                        } else {
+                            self.parse_local_array_initializer(
+                                &name,
+                                interface_type,
+                                array_shape.as_deref(),
+                                compact,
+                            )?
+                        };
                     let declaration = match declaration {
                         CStatement::Declare {
                             interface_type,
@@ -12472,7 +12555,7 @@ impl Parser {
                     && matches!(self.peek(), Some(Token::Ident(_)))
                     && !matches!(
                         self.peek_ident(),
-                        Some("__builtin_types_compatible_p" | "__builtin_offsetof")
+                        Some("sizeof" | "__builtin_types_compatible_p" | "__builtin_offsetof")
                     )
                     && self.peek_next() == Some(&Token::LParen)
                 {
@@ -13215,7 +13298,7 @@ impl Parser {
             if matches!(self.peek(), Some(Token::Ident(_)))
                 && !matches!(
                     self.peek_ident(),
-                    Some("__builtin_types_compatible_p" | "__builtin_offsetof")
+                    Some("sizeof" | "__builtin_types_compatible_p" | "__builtin_offsetof")
                 )
                 && self.peek_next() == Some(&Token::LParen)
             {
@@ -13235,7 +13318,7 @@ impl Parser {
                 if matches!(self.peek(), Some(Token::Ident(_)))
                     && !matches!(
                         self.peek_ident(),
-                        Some("__builtin_types_compatible_p" | "__builtin_offsetof")
+                        Some("sizeof" | "__builtin_types_compatible_p" | "__builtin_offsetof")
                     )
                     && self.peek_next() == Some(&Token::LParen)
                 {
@@ -19289,6 +19372,11 @@ impl Parser {
                 // its type is used, as for GNU `typeof`.
                 let operand = self.parse_expression_allow_direct_aggregate()?;
                 self.expect(Token::RParen)?;
+                if let CExpression::Variable(name) = &operand
+                    && self.incomplete_array_names.contains(name)
+                {
+                    return Err(self.error_here("`sizeof` requires a complete array type"));
+                }
                 // A complete array object, such as `char tmp[12]` or a
                 // string literal, is not converted to a pointer here: its
                 // size is the whole array's (C11 6.3.2.1p3, 6.5.3.4p2).

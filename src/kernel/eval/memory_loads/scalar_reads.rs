@@ -86,7 +86,7 @@ pub(super) fn select_comparison_identity(
         kind: original_kind,
         narrow_bytes,
     } = read;
-    let canonical = crate::kernel::memory_provenance::canonicalize_atomic_loads(bits);
+    let canonical = crate::kernel::memory_history::canonicalize_atomic_loads(bits);
     let candidate = match &canonical {
         MachineTerm::Variable(variable) => registered_load_term_for_variable(variable)
             .filter(

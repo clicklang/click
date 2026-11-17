@@ -913,7 +913,7 @@ pub(super) fn with_implicit_tail(tactics: &[ProofTactic]) -> (Vec<ProofTactic>, 
 }
 
 /// An explicit grouped proof script. The completed proof unit is accepted
-/// directly; retained provenance is serialized only for expansion.
+/// directly; retained evidence is serialized only for expansion.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface) fn prove_claims_by_grouped_script(
     expansion_capture: Option<&mut ExpansionCapture>,
@@ -1923,7 +1923,7 @@ fn path_case_facts(
     cases
 }
 
-/// Serializes retained checked Proof provenance as surface steps. This is a
+/// Serializes retained checked Proof lineage as surface steps. This is a
 /// structural serialization, not a semantic search or reconstruction.
 fn surface_steps_from_checked_proof(proof: &Proof<'_>) -> Result<Vec<ProofStep>, ClickError> {
     ProofCertificate::from_steps(proof.certificate().steps().to_vec())

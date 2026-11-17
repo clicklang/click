@@ -870,7 +870,7 @@ fn symbolic_max_function_call_reports_branch_facts() {
 }
 
 #[test]
-fn execution_provenance_matches_only_equivalent_call_havoc() {
+fn execution_derivation_matches_only_equivalent_call_havoc() {
     let assumptions = PureFactContext::new();
     let base = Memory::new().with_block("arc", 16);
     let first_range = memory_range(arc_pointer(0), 0, 1);
@@ -910,7 +910,7 @@ fn execution_provenance_matches_only_equivalent_call_havoc() {
     };
 
     assert!(
-        program_function_outcomes_program_state_equal_by_execution_provenance(
+        program_function_outcomes_program_state_equal_by_derivation(
             &left,
             &[],
             &equivalent,
@@ -920,7 +920,7 @@ fn execution_provenance_matches_only_equivalent_call_havoc() {
         "fresh marker names should not distinguish the same call havoc"
     );
     assert!(
-        !program_function_outcomes_program_state_equal_by_execution_provenance(
+        !program_function_outcomes_program_state_equal_by_derivation(
             &left,
             &[],
             &different,

@@ -3980,7 +3980,7 @@ mod tests {
             .unwrap();
         }
         crate::surface::verify_c_sources(
-            "theorem unsigned_prefix(n: uint64) { ensures n == n by { have 0u64 <= n; induct(n) as ih; known(); } }", &[],
+            "theorem unsigned_prefix(n: uint64) { ensures n == n by { have 0u64 <= n; let ih = induct(n); known(); } }", &[],
         ).unwrap();
         for (invalid, diagnostic) in [
             (
@@ -3991,13 +3991,16 @@ mod tests {
                 "ih",
             ),
             (
-                source.replace("induct(n) as ih;", "induct(n) as ih; induct(n) as another;"),
+                source.replace(
+                    "let ih = induct(n);",
+                    "let ih = induct(n); let another = induct(n);",
+                ),
                 "only one top-level",
             ),
             (
                 source.replace(
                     "have n == n;",
-                    "have n == n by { induct(n) as ih; known(); }",
+                    "have n == n by { let ih = induct(n); known(); }",
                 ),
                 "only one top-level",
             ),
@@ -4007,7 +4010,7 @@ mod tests {
             assert!(error.message().contains(diagnostic), "{}", error.report());
             assert!(!error.message().contains("budget"), "{}", error.report());
         }
-        let changed_goal = "theorem changed_goal(n: int32) { requires n >= 0; ensures n >= 0 implies n >= 0 by { intro(); induct(n) as ih; known(); } }";
+        let changed_goal = "theorem changed_goal(n: int32) { requires n >= 0; ensures n >= 0 implies n >= 0 by { intro(); let ih = induct(n); known(); } }";
         let error = crate::surface::verify_c_sources(changed_goal, &[])
             .expect_err("induction still targets the original theorem goal");
         assert!(
@@ -4230,7 +4233,7 @@ mod tests {
     fn pure_instantiate_in_numeric_induction_retains_completion() {
         let source = INSTANTIATE_BOUND.replace("0 <= x", "x >= 0").replace(
             "ensures x <= upper by {",
-            "ensures x <= upper by { induct(x) as ih;",
+            "ensures x <= upper by { let ih = induct(x);",
         );
         let source = source.replace(
             "instantiate(forall",

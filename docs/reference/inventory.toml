@@ -3594,8 +3594,8 @@ id = "glossary.proof-branch"
 path = "reference/glossary.md#proof-branch"
 
 [[item]]
-id = "glossary.proof-provenance"
-path = "reference/glossary.md#proof-provenance"
+id = "glossary.proof-lineage"
+path = "reference/glossary.md#proof-lineage"
 
 [[item]]
 id = "glossary.resource-projection"

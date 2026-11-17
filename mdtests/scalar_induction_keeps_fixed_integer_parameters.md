@@ -14,7 +14,7 @@ theorem carry_seed_returns_the_same_integer(n: int32, seed: Integer) {
     requires 0 <= n;
     requires 0 < seed;
     ensures carry_seed(n, seed) == seed by {
-        induct(n) as ih;
+        let ih = induct(n);
         if n <= 0 {
             unfold(carry_seed(n, seed));
             normalize();

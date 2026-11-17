@@ -2910,7 +2910,7 @@ fn execute_step_from_frontier_position_selecting_path(
     if transitions.len() > 1
         && !descended_try
         && let Some(path_cases) = path_cases
-        && statement_successors_are_path_cases(&step_statement, &transitions)
+        && statement_successors_are_path_cases(&transitions)
     {
         execution.core.next_opaque_call = next_opaque_call_before_step;
         *path_cases = transitions;
@@ -3129,8 +3129,7 @@ fn execute_step_from_frontier_position_selecting_path(
             .with_kind(kind)
             .with_runtime_missing_resource(error));
             }
-            let path_case_split =
-                statement_successors_are_path_cases(&step_statement, &transitions);
+            let path_case_split = statement_successors_are_path_cases(&transitions);
             let split_condition = if path_case_split {
                 let cases = transitions
                     .iter()
@@ -3420,6 +3419,7 @@ fn execute_step_from_frontier_position_selecting_path(
     };
     match &mut outcome {
         StatementOutcome::Normal(state)
+        | StatementOutcome::LoopTestFalse(state)
         | StatementOutcome::Break(state)
         | StatementOutcome::Continue(state)
         | StatementOutcome::Return { state, .. }
@@ -3457,6 +3457,7 @@ fn execute_step_from_frontier_position_selecting_path(
         .record_effect(execution.core.last_footprint.as_ref());
     if let Some(statement_exit_state) = match &outcome {
         StatementOutcome::Normal(state)
+        | StatementOutcome::LoopTestFalse(state)
         | StatementOutcome::Break(state)
         | StatementOutcome::Continue(state)
         | StatementOutcome::Jump { state, .. }
@@ -3507,6 +3508,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 ProgramPointKind::Exit,
                 match &outcome {
                     StatementOutcome::Normal(state)
+                    | StatementOutcome::LoopTestFalse(state)
                     | StatementOutcome::Break(state)
                     | StatementOutcome::Continue(state)
                     | StatementOutcome::Jump { state, .. }
@@ -3684,12 +3686,15 @@ fn execute_step_from_frontier_position_selecting_path(
                 execution.core.state = execution_state.into();
             }
         }
-        StatementOutcome::Break(next_state) | StatementOutcome::Continue(next_state) => {
+        StatementOutcome::LoopTestFalse(next_state)
+        | StatementOutcome::Break(next_state)
+        | StatementOutcome::Continue(next_state) => {
             // The control statement's own successor facts are this path's:
             // `if (i == 3) break;` leaves the loop knowing `i == 3`, and a
             // `break` exit that lost its guard would state nothing at all.
+            // A false test likewise keeps the facts from its decision.
             // The frontier itself was advanced when the evidence was
-            // recorded: inside a loop-body region both controls reach its
+            // recorded: inside a loop-body region these controls reach its
             // typed boundary, and a concretely executed loop resumes at its
             // own continuation.
             *available_pure_facts = successor_pure_facts;
@@ -3957,21 +3962,18 @@ pub(super) const BOUNDED_EXECUTE_SPLIT_LIMIT: usize = 1_024;
 /// cases apart.
 /// A loop's own test has two such cases: true continues the pass, false
 /// leaves the loop, whose outcome is the loop's exit.
-fn statement_successors_are_path_cases(
-    statement: &ProgramStatement,
-    transitions: &[CertifiedStatementTransition],
-) -> bool {
+fn statement_successors_are_path_cases(transitions: &[CertifiedStatementTransition]) -> bool {
     let facts = transitions
         .iter()
         .map(|transition| transition.path_facts.as_slice())
         .collect::<Vec<_>>();
-    let loop_test = matches!(statement, ProgramStatement::LoopTest { .. });
     transitions.iter().all(|transition| {
-        (matches!(
+        matches!(
             transition.outcome,
-            StatementOutcome::Normal(_) | StatementOutcome::Return { .. }
-        ) || (loop_test && matches!(transition.outcome, StatementOutcome::Break(_))))
-            && !distinguishing_path_facts(&transition.path_facts, &facts).is_empty()
+            StatementOutcome::Normal(_)
+                | StatementOutcome::Return { .. }
+                | StatementOutcome::LoopTestFalse(_)
+        ) && !distinguishing_path_facts(&transition.path_facts, &facts).is_empty()
     })
 }
 

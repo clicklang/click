@@ -166,9 +166,9 @@ proof-context growth still need adapter/kernel regressions.
    modules, dependencies, and library models in prepared inputs. Charon's
    artifact version alone is insufficient. Use its typed library/schema for a
    production adapter rather than the probe's minimal JSON field inspection.
-2. **Actual MIR phase provenance.** Charon's selected MIR phase can fall back
+2. **Actual MIR phase origin.** Charon's selected MIR phase can fall back
    to optimized MIR if an earlier body is unavailable; dependencies can only
-   expose optimized MIR. The global option is not per-body provenance. Require
+   expose optimized MIR. The global option is not per-body origin. Require
    explicit phase evidence or a justified policy for every accepted fallback.
    Reject partial artifacts and missing required bodies.
 3. **Checked semantic mapping.** Preserve checks, typed places/projections,

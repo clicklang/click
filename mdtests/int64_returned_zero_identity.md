@@ -1,7 +1,7 @@
 # Signed 64-bit returned-zero identities
 
 A modular helper's zero result can be added to any int64, including either
-extreme. The common kernel retains the helper equality as proof provenance.
+extreme. The common kernel retains the helper equality as proof evidence.
 
 ```c filename=int64_returned_zero_identity.c
 int64_t zero64(void) { return 0; }

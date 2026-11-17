@@ -754,7 +754,7 @@ fn named_pointer_read_definitions_follow_later_observations() {
     let _session = crate::kernel::VerificationSession::enter();
     let name = |memory: &SharedMemory, cell: &Pointer| {
         Pointer::loaded_value(
-            &crate::kernel::memory_provenance::canonical_value_load_memory(memory, cell, 8),
+            &crate::kernel::memory_history::canonical_value_load_memory(memory, cell, 8),
             cell,
         )
     };
@@ -812,7 +812,7 @@ fn structural_pointer_read_definitions_keep_domains_and_reject_partial_writes() 
         ProgramValue::UInt32(1u32.into()),
     ));
     let named_memory =
-        crate::kernel::memory_provenance::canonical_value_load_memory(&memory, &cell, 8);
+        crate::kernel::memory_history::canonical_value_load_memory(&memory, &cell, 8);
     let named = PointerValue::new(
         Pointer::loaded_value(&named_memory, &cell),
         ProgramType::Int32Pointer,
@@ -833,7 +833,7 @@ fn structural_pointer_read_definitions_keep_domains_and_reject_partial_writes() 
             .store(cell.offset_by_bytes(4), ProgramValue::UInt32(9u32.into())),
     );
     let changed_memory =
-        crate::kernel::memory_provenance::canonical_value_load_memory(&changed, &cell, 8);
+        crate::kernel::memory_history::canonical_value_load_memory(&changed, &cell, 8);
     let changed = PointerValue::new(
         Pointer::loaded_value(&changed_memory, &cell),
         ProgramType::Int32Pointer,

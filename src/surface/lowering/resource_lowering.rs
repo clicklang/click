@@ -1441,7 +1441,7 @@ pub(in crate::surface) fn requirement_propositions_with_assumptions(
 
 /// One fact emitted while lowering the function's written requirement list.
 ///
-/// This is construction-time provenance, before later entry-context passes
+/// This is a construction-time record, before later entry-context passes
 /// add resource observations or definedness consequences.  Keeping the outer
 /// source ordinal here avoids trying to reconstruct it from the final fact
 /// vector, whose ordering deliberately differs from requirement order.

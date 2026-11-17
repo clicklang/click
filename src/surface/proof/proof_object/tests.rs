@@ -1393,7 +1393,7 @@ fn focused_case_split_partitions_by_attribution_and_rejects_foreign_joins() {
     );
 
     // The legitimate join partitions by recorded attribution and retains
-    // one structured step whose parent is the pre-split provenance.
+    // one structured step whose parent is the pre-split lineage.
     let joined = both_closed
         .join_focused_cases(&marker, split, ids, disjunction.clone())
         .expect("both recorded arms are discharged");
@@ -1479,7 +1479,7 @@ fn attempt_reports_deadline_failure_instead_of_a_rejection() {
 }
 
 #[test]
-fn proof_failure_preserves_ancestor_and_selected_provenance() {
+fn proof_failure_preserves_ancestor_and_selected_lineage() {
     let goal = indexed_fact(7);
     let theorem_context = PureTheoremContext {
         diagnostic_names: Default::default(),
@@ -1566,7 +1566,7 @@ fn branch_identity_is_stable_across_fork_refinement_and_closure() {
         .expect("intro should refine the implication goal");
     assert_eq!(introduced.sole_branch_id(), Some(root_id));
     assert_eq!(introduced.branches_next_id(), root.branches_next_id());
-    // Provenance records which goal each step advanced: certificate
+    // Lineage records which goal each step advanced: certificate
     // extraction partitions interleaved multi-goal derivations by this
     // attribution rather than inferring ownership from final states.
     assert_eq!(introduced.node.focused_branch, root_id);
@@ -3645,7 +3645,7 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
 }
 
 #[test]
-fn initial_entry_provenance_keeps_nonzero_requirement_identity_after_derived_insertions() {
+fn initial_entry_origins_keep_nonzero_requirement_identity_after_derived_insertions() {
     let click_file = crate::surface::parse(
         r#"
             predicate selected(x: int32) {
@@ -3678,7 +3678,7 @@ fn initial_entry_provenance_keeps_nonzero_requirement_identity_after_derived_ins
         "source identity",
         Some(&owner),
     )
-    .expect("entry context should retain exact requirement provenance");
+    .expect("entry context should retain exact requirement origins");
 
     assert_eq!(context.pure_facts.len(), context.entry_fact_origins.len());
     let selected = context
@@ -4678,7 +4678,7 @@ fn smart_retry_retains_checked_have_and_exact_step_after_injected_refusal() {
 
     // This injected requirement is already present in the fixture's fact
     // context, so the test intentionally checks retention mechanics and exact
-    // step provenance, not semantic necessity of the Have.
+    // step lineage, not semantic necessity of the Have.
     let unsupported = Proposition::Predicate {
         name: "unrepresentable".to_string(),
         arguments: Vec::new(),
@@ -5577,7 +5577,7 @@ fn branch_theorem_search_retains_checked_arm_steps_and_scales() {
         // The cross-arm nested-splice rejection is structural in the
         // sibling form: a scope join produces one direct successor of
         // the arm that opened it, so there is no operation that could
-        // publish it into the sibling; the scope provenance regressions
+        // publish it into the sibling; the scope lineage regressions
         // pin that law.
         let before_nested = fact_node_allocations();
         let nested_branches = split
@@ -10995,7 +10995,7 @@ fn close_invariants_is_a_transactional_constant_local_proof_step() {
         // The closure request is a semantic-core update, not a certificate
         // leaf. `close_invariants() by`, carrying the checked body, is the only
         // step that records a closure; a bare request spells nothing a proof
-        // could write, so it contributes no provenance of its own.
+        // could write, so it contributes no lineage of its own.
         assert!(closed.certificate().steps().is_empty());
         let execution = closed
             .execution()
@@ -11288,11 +11288,11 @@ fn execution_proof_if_split_is_logarithmic_in_unrelated_facts() {
             .unwrap()
             .join_focused_execution_if_terminal(&inner_record)
             .unwrap();
-        let inner_provenance = inner_completed
+        let inner_evidence = inner_completed
             .execution()
             .unwrap()
             .presentation
-            .outcome_provenance
+            .outcome_evidence
             .clone();
         let nested_completed = inner_completed
             .focus_execution_if_arm(&record, false)
@@ -11306,7 +11306,7 @@ fn execution_proof_if_split_is_logarithmic_in_unrelated_facts() {
             .join_focused_execution_if_terminal(&record)
             .unwrap();
         let nested_execution = nested_completed.execution().unwrap();
-        let paths = &nested_execution.presentation.outcome_provenance;
+        let paths = &nested_execution.presentation.outcome_evidence;
         assert_eq!(paths.len(), 3);
         for (index, inner_value) in [true, false].into_iter().enumerate() {
             let decisions = &paths[index].branch_decisions;
@@ -11319,7 +11319,7 @@ fn execution_proof_if_split_is_logarithmic_in_unrelated_facts() {
             assert!(
                 decisions
                     .ordered
-                    .shares_tail_with(&inner_provenance[index].branch_decisions.ordered)
+                    .shares_tail_with(&inner_evidence[index].branch_decisions.ordered)
             );
             let ordered = decisions.iter().collect::<Vec<_>>();
             assert_eq!(ordered.len(), 2);
@@ -11683,7 +11683,7 @@ fn cursor_execution_branch_join_retains_structural_reads_without_bindings() {
     );
     let terminal_view = joined
         .finalization_view()
-        .expect("terminal cursor outcome should retain its provenance");
+        .expect("terminal cursor outcome should retain its evidence");
     let outcome_count = terminal_view
         .frontier
         .execution()
@@ -13651,16 +13651,16 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
         }
 
         assert_eq!(
-            execution.presentation.outcome_provenance.len(),
+            execution.presentation.outcome_evidence.len(),
             outcome_paths.len(),
-            "every terminal outcome must retain one atomic provenance record"
+            "every terminal outcome must retain one atomic evidence record"
         );
         assert!(
             execution
                 .presentation
-                .outcome_provenance
+                .outcome_evidence
                 .iter()
-                .all(|provenance| !provenance.branch_decisions.is_empty())
+                .all(|outcome_evidence| !outcome_evidence.branch_decisions.is_empty())
         );
         let outcome_fact_sizes = outcome_paths
             .iter()
@@ -13678,9 +13678,9 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
         assert!(
             execution
                 .presentation
-                .outcome_provenance
+                .outcome_evidence
                 .iter()
-                .all(|provenance| provenance.checked_leaf_facts.is_some())
+                .all(|outcome_evidence| outcome_evidence.checked_leaf_facts.is_some())
         );
         let (outcomes, ids, _) = joined.split_function_outcomes().unwrap();
         assert_eq!(ids.len(), 2);
@@ -13715,8 +13715,8 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
         let forked_paths = forked_execution.core.frontier.execution().unwrap().paths();
         assert_eq!(forked_paths.len(), 4);
         for (index, path) in forked_paths.iter().enumerate() {
-            let provenance = forked_execution.provenance_for_outcome(index);
-            let (candidate, facts, _) = provenance.checked_leaf_facts.as_deref().unwrap();
+            let outcome_evidence = forked_execution.evidence_for_outcome(index);
+            let (candidate, facts, _) = outcome_evidence.checked_leaf_facts.as_deref().unwrap();
             assert!(candidate.shares_record_with(path));
             for fact in path.facts() {
                 assert!(facts.contains(fact.proposition()));
@@ -13740,8 +13740,10 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
             .state
             .clone()
             .edit_frontier_presentation(|presentation| {
-                for (index, provenance) in presentation.outcome_provenance.iter_mut().enumerate() {
-                    Arc::make_mut(provenance.checked_leaf_facts.as_mut().unwrap()).0 =
+                for (index, outcome_evidence) in
+                    presentation.outcome_evidence.iter_mut().enumerate()
+                {
+                    Arc::make_mut(outcome_evidence.checked_leaf_facts.as_mut().unwrap()).0 =
                         outcome_paths[1 - index].clone();
                 }
             })

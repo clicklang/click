@@ -217,7 +217,7 @@ in that selector, while other arguments and memory versions remain. Matching
 checks all pointer arguments through equality closure with equal C types and
 all other arguments exactly, including the complete C state. This supplies
 pointer substitution only, without unfolding or state transport. Exact
-membership still controls admission and provenance.
+membership still controls admission and consulted premises.
 
 The same bucket mechanism indexes nominal callback witnesses by contract name.
 Call selection checks the declared contract's exact function signature, as
@@ -335,7 +335,7 @@ another pointer alias nested in a packed parent/color equation.
 
 `PureFactContext::contains_known` is the semantic lookup used by proof-fact
 availability and `known`. Exact membership remains a separate operation
-for premise admission and provenance checks. Lookup first checks
+for premise admission and consulted-premise checks. Lookup first checks
 the exact index, then asks the same scoped graph used by equality consumers.
 It performs no unfolding or implication search.
 
@@ -1596,7 +1596,7 @@ Producer families publish as follows:
 | Stable-view planning and loan entailment | Fresh callee and single-supplier contexts start published. Binding checks that intentionally exclude ambient facts use one empty proof context for both construction and entailment. |
 | Kernel execution certificates and population authority exchanges | Checked temporary child, authority, and support contexts start published under the certificate's local facts. Path preparation publishes explicitly substituted exit resources once before individual claims query the output. |
 | Loop body reset and borrowed contract input installation | Fresh live contexts capture the current assumptions; selected-view/instance deltas retain their parent's publication. |
-| Surface dynamic view dependencies, checked returned-resource receipts, and compact composition propositions | Fresh contexts capture the same assumptions used to check their occurrences or receipts. Existing occurrence and loan provenance is preserved. |
+| Surface dynamic view dependencies, checked returned-resource receipts, and compact composition propositions | Fresh contexts capture the same assumptions used to check their occurrences or receipts. Existing occurrence and loan source is preserved. |
 
 Existing checked constructors in composite projection, owned-frontier expansion,
 frontier coverage, mutex transfer, and object-comparison support remain unchanged.
@@ -1825,16 +1825,29 @@ roots. Folding uses application dependency hooks and reindexes affected uses
 when a class learns a literal. Ordinary integer operators use those same applications for nonliteral
 congruence, with typed curried applications for the remaining conversions and
 wide operators. Full-width constant discovery first asks the shared class engine;
-contextual folding and implicit-provenance collection retain exact source
+contextual folding and implicit consulted-premise collection retain exact source
 premises. None of these operations grants memory access or state transport.
 
 Restriction resets the closure and refiles only the selected facts. Branch clones
 share persistent input roots and fork subsequent changes. Pointer-predicate source handles are retained with
 the service so reconstruction cannot import facts from a sibling context.
 Atomic condition matching checks only the selected forms for full-width
-sources. Parameter-store shortcuts consult selected coordinate dependencies;
-complex deferred load dependencies conservatively use ordinary store reasoning.
-Unrelated ordinary scalar or offset premises do not disable these paths.
+sources. Parameter-store shortcuts consult selected coordinate dependencies.
+An admitted read equality records its written coordinate variables without
+inspecting the values cached in its memory state. There is no global read/state
+dependency flag: unrelated read, scalar, or offset premises do not disable the
+shortcut. A source mentioning the selected coordinate, or a read in the selected
+offset itself, still uses ordinary store reasoning. Atomic parameter bases also
+exclude registered loaded-pointer variables. The alias and ownership checks are
+unchanged.
+
+`unrelated_read_inputs_preserve_the_selected_parameter_partition` checks fixed
+query work as unrelated read facts grow, with controls for a relevant equality,
+a read-valued offset, and sibling-context isolation.
+`sequential_owned_parameter_stores_ignore_earlier_cached_fields` checks bounded
+per-store work beside growing scalar/pointer cells with an unrelated read fact;
+`a_cached_parameter_partition_does_not_hide_aliases_or_wide_cells` also checks
+that explicit read equations connecting parameter coordinates invalidate aliases.
 
 Memory authorization, contextual
 state reasoning, and explicit tactic search remain separate judgments with

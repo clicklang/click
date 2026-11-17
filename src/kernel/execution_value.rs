@@ -1036,7 +1036,7 @@ mod tests {
             let origin =
                 Pointer::loaded_value(&crate::kernel::intern_memory_ref(retained_state), &address);
             let recovered =
-                crate::kernel::memory_provenance::complete_pointer_carrier_read_retained_value(
+                crate::kernel::memory_history::complete_pointer_carrier_read_retained_value(
                     &origin,
                     &PureFactContext::new(),
                 )

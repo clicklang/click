@@ -1550,6 +1550,14 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             assumptions,
             budget,
         ),
+        // A written literal is the constant condition itself; no comparison
+        // is formed or folded.
+        SpecProposition::Truth(value) => Ok(vec![SpecPropositionPath {
+            proposition: Proposition::ConditionIs(ConditionTerm::Constant(*value), true),
+            facts: ExecutionFacts::new(),
+            obligations: Vec::new(),
+            introductions: Vec::new(),
+        }]),
         SpecProposition::FloatClassification {
             expression,
             classification,
@@ -9899,10 +9907,15 @@ fn bool_comparison_proposition(
     };
     let literal = MachineTerm::bool_constant_value;
     match (literal(left_term), literal(right_term)) {
+        // Two literals keep their comparison; checking decides it
+        // (`closed_condition_value`).
         (Some(left), Some(right)) => {
             return Some(Ok(Proposition::ConditionIs(
-                ConditionTerm::Constant((left == right) == equal),
-                true,
+                ConditionTerm::BoolEqual(
+                    Box::new(ConditionTerm::Constant(left)),
+                    Box::new(ConditionTerm::Constant(right)),
+                ),
+                equal,
             )));
         }
         (Some(constant), None) => {
@@ -10348,7 +10361,7 @@ fn program_value_uint64_term(value: &ProgramValue) -> Option<MachineTerm> {
 mod integer_budget_tests;
 
 #[cfg(test)]
-mod lowering_provenance_tests;
+mod lowering_head_origin_tests;
 
 #[cfg(test)]
 mod spec_pointer_subtraction_tests;

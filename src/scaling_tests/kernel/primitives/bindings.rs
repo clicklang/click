@@ -33,3 +33,54 @@ fn temporary_binding_access_skips_unrelated_locals() {
         "indexed temporary operations: {samples:?}"
     );
 }
+
+#[test]
+fn reference_carrier_lookups_ignore_unrelated_and_shadowed_bindings() {
+    let mut lookup_costs = Vec::new();
+    for size in [16u32, 64, 256, 1024] {
+        let owner = LocalFunctionId::new(Some("references.cpp".into()), "f".into());
+        let mut locals = LocalEnvironment::default();
+        let mut carriers = Vec::new();
+        for ordinal in 0..size {
+            let declaration = LocalBindingId::new(owner.clone(), false, ordinal, Some("x".into()));
+            let carrier = BindingName::reference_carrier(BindingName::Local(declaration));
+            locals.set(carrier.clone(), int32(ordinal));
+            carriers.push(carrier);
+        }
+        let branch = locals.clone();
+        let (_, work) =
+            crate::instrumentation::measure_deterministic_work(|| {
+                assert_eq!(
+                    locals.get(&carriers[0]).unwrap().native().as_ref(),
+                    &int32(0)
+                );
+                assert_eq!(
+                    locals
+                        .get(carriers.last().unwrap())
+                        .unwrap()
+                        .native()
+                        .as_ref(),
+                    &int32(size - 1)
+                );
+                let absent = BindingName::reference_carrier(BindingName::Local(
+                    LocalBindingId::new(owner.clone(), false, size, Some("x".into())),
+                ));
+                assert!(locals.get(&absent).is_none());
+            });
+        lookup_costs.push(work);
+        locals.set(carriers[0].clone(), int32(7));
+        assert_eq!(
+            branch.get(&carriers[0]).unwrap().native().as_ref(),
+            &int32(0)
+        );
+        assert_eq!(
+            locals.get(&carriers[0]).unwrap().native().as_ref(),
+            &int32(7)
+        );
+    }
+    assert!(lookup_costs.iter().all(|work| *work > 0));
+    assert!(
+        lookup_costs.iter().all(|work| *work == lookup_costs[0]),
+        "{lookup_costs:?}"
+    );
+}

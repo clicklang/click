@@ -422,5 +422,5 @@ mod tests {
 }
 #[cfg(test)]
 mod scaling_tests {
-    include!("../../scaling_tests/kernel/memory_provenance/shared_pointer_transport.rs");
+    include!("../../scaling_tests/kernel/memory_history/shared_pointer_transport.rs");
 }

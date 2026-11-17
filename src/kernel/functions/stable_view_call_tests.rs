@@ -1759,7 +1759,7 @@ fn recover_with_extra_returned_view(
 #[test]
 fn candidate_accepts_a_returned_view_projected_from_a_returned_owner() {
     let resources = recover_with_extra_returned_view(true)
-        .expect("a checked projection of the returned owner has provenance");
+        .expect("a checked projection of the returned owner has a lending source");
     let projected = ResourceFact::view_memory(MemoryRange::new(
         pointer(),
         MachineTerm::constant(1),
@@ -1771,7 +1771,7 @@ fn candidate_accepts_a_returned_view_projected_from_a_returned_owner() {
 #[test]
 fn candidate_rejects_a_returned_view_that_only_an_equal_owner_satisfies() {
     let error = recover_with_extra_returned_view(false)
-        .expect_err("fact equality against an owner is not provenance");
+        .expect_err("fact equality against an owner is not a lending source");
     assert!(
         matches!(&error, RuntimeError::UnbackedReturnedView { .. }),
         "unexpected refusal: {error}"
@@ -1783,7 +1783,7 @@ fn candidate_rejects_a_returned_view_that_only_an_equal_owner_satisfies() {
 /// contract input view no borrowed root and `intrinsic_read_views`
 /// supplies such a requirement with no ledger transition, both by this
 /// block test, so a call that merely carries one across its boundary has
-/// provenance for it. Everything else about the two calls below is the
+/// a lending source for it. Everything else about the two calls below is the
 /// same; only the carried block's mutability differs.
 fn recover_with_a_carried_view_of_another_block(
     read_only: bool,
@@ -1858,7 +1858,7 @@ fn candidate_accepts_a_carried_view_of_read_only_storage() {
 #[test]
 fn candidate_rejects_a_carried_view_of_mutable_storage() {
     let error = recover_with_a_carried_view_of_another_block(false)
-        .expect_err("a view of mutable storage the caller never lent has no provenance");
+        .expect_err("a view of mutable storage the caller never lent has no lending source");
     // The refusal carries the carried view itself, so the surface can
     // name it rather than print a kernel dump of it.
     let carried = ResourceFact::view_memory(MemoryRange::new(
@@ -2167,7 +2167,7 @@ fn viewer_and_writer(name: &str) -> ProgramFunction {
 /// ranges share a block with an unknown offset relation, so the
 /// arithmetic oracle can order neither. A valid resource context is a
 /// partition, so distinct owned occurrences are bytewise disjoint by
-/// construction and the call is accepted on that provenance alone. This
+/// construction and the call is accepted on that reservation support alone. This
 /// is, in miniature, the shape of a rotation callback that reads its
 /// argument's child augmentation.
 #[test]
@@ -2243,7 +2243,7 @@ fn candidate_allows_a_mutable_effect_reserved_from_another_owned_occurrence() {
 /// The same-occurrence case is not weakened. Here one caller occurrence
 /// has to serve both requirements: the exclusive reservation takes the
 /// owned bytes out of it first, and the overlapping view it would also
-/// have to back is no longer there. Provenance settles nothing, because
+/// have to back is no longer there. Reservation support settles nothing, because
 /// the effect and the view would be the same partition element, and the
 /// call is refused rather than accepted on a support comparison.
 #[test]
@@ -2820,9 +2820,19 @@ fn refused_composite_assembly_retains_the_failed_source_clause() {
     else {
         panic!("the failed body fact must retain its source");
     };
+    // The cell holds 7: lowering retains the closed comparison `7 == 0`
+    // rather than folding it to `false`.
     assert_eq!(
         *fact,
-        Proposition::ConditionIs(ConditionTerm::Constant(false), true)
+        Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: crate::kernel::MachineIntegerType::Int32,
+                relation: crate::kernel::CompareRelation::Equal,
+                left: Box::new(MachineTerm::constant(7)),
+                right: Box::new(MachineTerm::constant(0)),
+            },
+            true
+        )
     );
     assert_eq!(source.spelling, "*p == 0");
     assert_eq!(

@@ -1008,14 +1008,14 @@ impl<'a> Proof<'a> {
     }
 
     /// The focused universal goal with its binder respelled `name`, for
-    /// `intro() as name`. The name must be new here: nothing is shadowed.
+    /// `let name = intro()`. The name must be new here: nothing is shadowed.
     fn universal_goal_renamed_for_intro(
         &self,
         name: &SurfaceBinder,
     ) -> Result<ClickProposition, ClickError> {
         if !matches!(self.goal(), Some(Proposition::ForAll { .. })) {
             return Err(self.step_error(format!(
-                "`intro() as {name}` names the variable of a `forall` goal; this goal introduces a fact, which has no name, so write `intro();`"
+                "`let {name} = intro()` names the variable of a `forall` goal; this goal introduces a fact, which has no name, so write `intro();`"
             )));
         }
         // A range quantifier keeps its variable in the lambda:
@@ -1030,7 +1030,7 @@ impl<'a> Proof<'a> {
             Some(ClickProposition::RangeAll { item, body, .. }) => (item, body, false),
             _ => {
                 return Err(self.step_error(format!(
-                    "`intro() as {name}` requires a goal written as `forall (x: T) {{ ... }}` or `(lo..hi).all(|x| {{ ... }})`; write `intro();` to keep the name this goal's quantifier has"
+                    "`let {name} = intro()` requires a goal written as `forall (x: T) {{ ... }}` or `(lo..hi).all(|x| {{ ... }})`; write `intro();` to keep the name this goal's quantifier has"
                 )));
             }
         };
@@ -1046,7 +1046,7 @@ impl<'a> Proof<'a> {
                     .is_some_and(|goal| goal.surface_bindings.get(name).is_some());
             if bound {
                 return Err(self.step_error(format!(
-                    "`{name}` is already introduced here; use `intro() as binder(N)` with a fresh identity"
+                    "`{name}` is already introduced here; use `let binder(N) = intro()` with a fresh identity"
                 )));
             }
         }
@@ -1072,7 +1072,7 @@ impl<'a> Proof<'a> {
                 });
         if in_scope {
             return Err(self.step_error(format!(
-                "`intro() as {name}`: `{name}` is already in scope here; choose a name that is not"
+                "`let {name} = intro()`: `{name}` is already in scope here; choose a name that is not"
             )));
         }
         let replacement = match (c_typed, name.written()) {
@@ -1107,7 +1107,7 @@ impl<'a> Proof<'a> {
         &self,
         rename: Option<SurfaceBinder>,
     ) -> Result<KernelProofHandle, ClickError> {
-        // `intro() as name` respells the universal goal's binder before the
+        // `let name = intro()` respells the universal goal's binder before the
         // ordinary introduction runs, so every binding below is made under
         // the chosen name and the remaining goal is written in terms of it.
         let renamed_surface = rename
@@ -1304,7 +1304,7 @@ impl<'a> Proof<'a> {
                         }
                         surface.and_then(written_universal_body).map(Arc::new)
                     }
-                    // No lowering provenance was recorded for this goal, so
+                    // No lowering head chain was recorded for this goal, so
                     // refine the written form structurally, as before.
                     (None, PropositionIntroduction::Implication, Some(surface)) => {
                         surface_implication_parts(surface)
@@ -1340,7 +1340,7 @@ impl<'a> Proof<'a> {
                         }
                         Some(Arc::new(body.as_ref().clone()))
                     }
-                    // A range quantifier stated where no lowering provenance
+                    // A range quantifier stated where no lowering head chain
                     // was recorded (a `have` at an execution frontier) names
                     // its variable like a written `forall`. Its range guard
                     // is the next introduction, so the remaining written goal
@@ -1391,7 +1391,7 @@ impl<'a> Proof<'a> {
                     // A negation's body becomes a fact and the goal `false`,
                     // spelled so a later step that closes it can be retained.
                     (_, PropositionIntroduction::Negation, _) => Some(Arc::new(
-                        crate::surface::bool_truth(crate::surface::bool_literal(false)),
+                        ClickProposition::Value(crate::surface::bool_literal(false)),
                     )),
                     _ => None,
                 };
@@ -1462,7 +1462,7 @@ impl<'a> Proof<'a> {
             for fact in state.state().added_facts() {
                 let surface = super::super::surface_synthesis::synthesize_surface_proposition_with_bound_variable_names(
                     fact, ParameterBinding::default(), &source_state, &names,
-                ).ok_or_else(|| self.step_error("an introduced type bound has no Surface spelling"))?;
+                ).ok_or_else(|| self.step_error("an introduced type bound has no Surface form"))?;
                 locals
                     .surface_facts
                     .record_lowering(&surface, fact)

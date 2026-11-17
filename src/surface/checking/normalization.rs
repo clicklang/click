@@ -334,6 +334,14 @@ pub(in crate::surface) fn normalize_condition_without_assumptions(
             Some(left.as_const()? >= right.as_const()?)
         }
         ConditionTerm::Constant(value) => Some(*value),
+        // A closed comparison, native at any width or of two `bool`
+        // literals, which lowering retains.
+        condition @ (ConditionTerm::Compare { .. } | ConditionTerm::BoolEqual(..))
+            if let Some(value) =
+                crate::kernel::machine_integer::comparison::closed_condition_value(condition) =>
+        {
+            Some(value)
+        }
         ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right } => {
             let left = normalize_bitvector(left);
             let right = normalize_bitvector(right);

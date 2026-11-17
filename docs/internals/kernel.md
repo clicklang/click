@@ -97,7 +97,7 @@ Kernel files:
   closing rules are named `ProofObject` operations that return opaque checked
   successors. Proposition case splits and closed-arm joins likewise allocate
   and validate their branch identities inside `ProofObject`; the language
-  retains only arm provenance and diagnostics. Logical execution-frontier
+  retains only arm evidence and diagnostics. Logical execution-frontier
   cases reuse that split while sharing the unchanged checked execution core;
   proof-level execution `if` accepts only opaque per-arm presentation and
   clones semantic execution state inside the kernel. Presentation-only
@@ -1680,7 +1680,7 @@ layout leaves a scope. The layout indexes normal and abrupt exits once; each
 exit visits only the declarations it retires. The event retains the exact
 before and after states; branch validation and return certification check the
 retirement. This includes a `for` initializer's scope. The saved loop-exit
-state still names its final index for proof provenance; the subsequent
+state still names its final index for proof lineage; the subsequent
 execution state has retired its storage.
 
 A loop owns one test region and an optional shared update. A plain test region

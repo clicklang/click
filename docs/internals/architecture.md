@@ -26,6 +26,11 @@ scopes before entering that continuation. A `break` or function exit skips it.
 The evaluator and execution frontier follow the same regions; invariant and ranking
 obligations close only after the continuation reaches the backedge. A false
 post-test instead supplies a loop exit with its own state and facts.
+A test's false decision produces `StatementOutcome::LoopTestFalse`, separately
+from a written `break`. Both leave the selected loop, but the proof boundary
+retains the reason directly as `TestFalse` or `Break`. Sequences, scopes and
+switches preserve a test exit; only its loop consumes it. Test temporaries end
+on either decision before its outcome is published.
 
 Checked concrete loop entry records explicit `continue` and `break`
 destinations. Each keeps the driver's local source position separately from
@@ -84,7 +89,7 @@ never whichever available fact happens to raise to that same text.
 The kernel's persistent `ProofObject` owns typed obligations, facts, symbolic
 program execution, resources, focus, and checked successor authority. A
 Surface-layer `Proof` pairs that opaque handle with checking context and
-Surface provenance. Explicit tactics request named simple or structural
+Surface lineage. Explicit tactics request named simple or structural
 operations. Smart planners try the same operations transactionally on
 persistent `Proof` descendants; they can't construct semantic successors
 directly. Kernel APIs expose the primitive logical, execution, memory, and
@@ -116,7 +121,7 @@ captured.
 
 `ProofCertificate` is the current structured form for a surface-expressible
 explicit proof. In the intended architecture it is serialization: expansion
-extracts attributed operations from checked `Proof` provenance only when proof
+extracts attributed operations from checked `Proof` lineage only when proof
 text or an inspection result is requested. Scalar return expressions can
 produce distinct outcomes without a written C branch; certificate synthesis
 separates their different endings with a guard each outcome decides. Guards
@@ -206,8 +211,11 @@ Class types use an elaborated `struct Name` identity distinct from generic
 type parameters. Construction has no trusted user-constructor contract;
 nontrivial copying, destruction and class handlers remain refused.
 
-C++ record-reference locals reuse the parameter carrier (`&name`) and retain
-the record layout in the imported function's local struct-pointer metadata.
+C++ references use a typed `BindingName::ReferenceCarrier` of the referent
+binding. Carrier values and their frame/lifetime storage retain that structural
+identity; the source name remains `name` and its address still spells `&name`.
+Record-reference locals retain the record layout in the imported function's
+local struct-pointer metadata.
 Surface therefore resolves `name.field` as a record place, without treating the
 alias as a new object or granting memory authority. Binding through a record
 pointer uses checked address formation on a byte-array lvalue of the complete

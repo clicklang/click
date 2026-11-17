@@ -874,7 +874,7 @@ fn successful_heap_allocation_is_fresh_from_every_existing_block() {
 /// block but the first, so a fact about `p[3]` crossed a `free(p)`.
 mod a_free_reaches_every_element_of_its_block {
     use super::*;
-    use crate::kernel::memory_provenance::with_extended_dag_bridging;
+    use crate::kernel::memory_history::with_extended_dag_bridging;
     use crate::kernel::resource_tracker::{
         TrackedResource,
         step_effect::{Evidence, Separation, StepEffect, affects},

@@ -17,15 +17,16 @@ impl PureFactContext {
         if let (ConditionTerm::PointerValueEqual(a, b), ConditionTerm::PointerValueEqual(c, d)) =
             (left, right)
         {
-            let same_value = |a: &PointerValue, b: &PointerValue| {
-                a.program_type() == b.program_type()
+            let same_value =
+                |a: &PointerValue, b: &PointerValue| {
+                    a.program_type() == b.program_type()
                     && self.pointer_designations_match(a, b)
                     && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
                         a.pointer(), b.pointer(), self,
-                    ) || crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+                    ) || crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
                         a.pointer(), b.pointer(), self,
                     ))
-            };
+                };
             return same_value(a, c) && same_value(b, d);
         }
         conditions_equal_with_load_atoms(left, right, &|left, right| {
@@ -48,15 +49,16 @@ impl PureFactContext {
         if let (ConditionTerm::PointerValueEqual(a, b), ConditionTerm::PointerValueEqual(c, d)) =
             (left, right)
         {
-            let same_value = |a: &PointerValue, b: &PointerValue| {
-                a.program_type() == b.program_type()
+            let same_value =
+                |a: &PointerValue, b: &PointerValue| {
+                    a.program_type() == b.program_type()
                     && self.pointer_designations_match(a, b)
                     && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
                         a.pointer(), b.pointer(), self,
-                    ) || crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+                    ) || crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
                         a.pointer(), b.pointer(), self,
                     ))
-            };
+                };
             return same_value(a, c) && same_value(b, d);
         }
         conditions_equal_with_load_atoms(left, right, &|left, right| {
@@ -161,11 +163,11 @@ impl PureFactContext {
                 ) else {
                     return false;
                 };
-                crate::kernel::memory_provenance::checked_recorded_atomic_load_equality(
+                crate::kernel::memory_history::checked_recorded_atomic_load_equality(
                     &left, &right, self,
                 )
             };
-            crate::kernel::memory_provenance::checked_origin_load_equality(left, right, self)
+            crate::kernel::memory_history::checked_origin_load_equality(left, right, self)
                 || atomic()
         };
         if checked_load_equality(left, right) {
@@ -229,7 +231,7 @@ impl PureFactContext {
                             && memories_match_for_pointer_load(after, left, pointer);
                     matches
                         && writes.iter().all(|(write, bytes)| {
-                            crate::kernel::memory_provenance::write_access_is_disjoint_from_load(
+                            crate::kernel::memory_history::write_access_is_disjoint_from_load(
                                 write,
                                 *bytes,
                                 pointer,
@@ -488,7 +490,7 @@ impl PureFactContext {
                         // Keeping a possibly aliasing run unresolved is
                         // conservative. Only a whole-range separation proof
                         // permits falling through to an unrecorded load.
-                        unresolved_alias |= crate::kernel::memory_provenance::typed_ranges_disjoint_from_pointer_evidence(
+                        unresolved_alias |= crate::kernel::memory_history::typed_ranges_disjoint_from_pointer_evidence(
                             &[run.range()], pointer, byte_width, self,
                         ).is_none();
                     }

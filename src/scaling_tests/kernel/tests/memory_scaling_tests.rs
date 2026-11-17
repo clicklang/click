@@ -2183,7 +2183,8 @@ fn hashing_a_memory_fact_is_constant_in_the_memory_size() {
 
 /// Stores to a sequence of separately owned parameter fields must not revisit
 /// cached fields of earlier objects. Check both scalar and pointer contents;
-/// the latter reproduces the linked-node shape from the bug report.
+/// the latter reproduces the linked-node shape from the bug report. An
+/// unrelated admitted read equality must not disable the parameter partition.
 #[test]
 fn sequential_owned_parameter_stores_ignore_earlier_cached_fields() {
     let mut samples = Vec::new();
@@ -2208,8 +2209,17 @@ fn sequential_owned_parameter_stores_ignore_earlier_cached_fields() {
                         4u32.into(),
                     )))
                 });
+            let unrelated = MachineTerm::MemoryLoad(
+                ProgramPoint::at(&intern_memory(Memory::new())),
+                Box::new(Pointer::symbolic(Variable(970_000))),
+                LoadKind::Int32,
+            );
             let assumptions = PureFactContext::new()
-                .assume_proposition(Proposition::ResourceComposition(composition));
+                .assume_proposition(Proposition::ResourceComposition(composition))
+                .assume_condition(
+                    ConditionTerm::equal(unrelated, MachineTerm::constant(7)),
+                    true,
+                );
             let mut memory = Memory::new();
             let mut largest = 0;
             for (index, object) in objects.iter().enumerate() {
@@ -2236,6 +2246,7 @@ fn sequential_owned_parameter_stores_ignore_earlier_cached_fields() {
             samples.push((pointer_values, count, largest));
         }
     }
+    eprintln!("pointer contents, cell count, largest store work: {samples:?}");
     assert!(
         samples.iter().all(|(_, _, work)| *work <= 100),
         "a field store visited unrelated cached objects: {samples:?}"
@@ -2843,11 +2854,11 @@ fn pointer_frame_through_seeded_cells_ignores_run_length() {
         let mut work = Vec::new();
         for _ in 0..3 {
             let (equal, units) = crate::instrumentation::measure_deterministic_work(|| {
-                crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+                crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
                     &before,
                     &seeded_read,
                     &context,
-                ) && crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+                ) && crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
                     &seeded_read,
                     &after,
                     &context,
@@ -2867,7 +2878,7 @@ fn pointer_frame_through_seeded_cells_ignores_run_length() {
                     .store(address, ProgramValue::Int32(9u32.into())),
             );
             assert!(
-                !crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+                !crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
                     &before,
                     &Pointer::loaded_value(&changed, &field),
                     &context,
@@ -2883,14 +2894,14 @@ fn pointer_frame_through_seeded_cells_ignores_run_length() {
             ),
         ));
         assert!(
-            !crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+            !crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
                 &before,
                 &Pointer::loaded_value(&changed, &field),
                 &context,
             )
         );
         assert!(
-            !crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+            !crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
                 &before,
                 &after.offset_by_bytes(4),
                 &context,
@@ -3070,7 +3081,7 @@ fn cold_pointer_frame_refusals_do_not_scan_history() {
             let before = Pointer::loaded_value(&initial, &field);
             let after = Pointer::loaded_value(&current, &field);
             let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
-                crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+                crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
                     &before, &after, &facts,
                 )
             });

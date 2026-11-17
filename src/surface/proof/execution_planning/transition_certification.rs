@@ -548,7 +548,7 @@ pub(in crate::surface::proof) fn certified_loop_exit_transitions_with_proven_pha
     initialization_proven: bool,
     preservation_proven: bool,
     final_exit_candidates: &[LoopFinalExitCandidate],
-    break_exits: &[LoopBreakExit],
+    early_exits: &[LoopEarlyExit],
     return_exits: &[LoopReturnExit],
     next_opaque_call: &mut u64,
     next_kernel_variable: &mut u64,
@@ -562,7 +562,7 @@ pub(in crate::surface::proof) fn certified_loop_exit_transitions_with_proven_pha
     // Exit facts are retained behind shared slices, so these copies move one
     // handle per exit rather than cloning each exit's whole proposition list.
     crate::instrumentation::record_deterministic_work(
-        final_exit_candidates.len() + break_exits.len() + return_exits.len(),
+        final_exit_candidates.len() + early_exits.len() + return_exits.len(),
     );
     let (execution, loop_rule) = prove_symbolic_loop_exit_with_proven_phases_using_budget(
         state.clone(),
@@ -572,7 +572,7 @@ pub(in crate::surface::proof) fn certified_loop_exit_transitions_with_proven_pha
         initialization_proven,
         preservation_proven,
         final_exit_candidates.to_vec(),
-        break_exits.to_vec(),
+        early_exits.to_vec(),
         return_exits.to_vec(),
         &mut budget,
     );

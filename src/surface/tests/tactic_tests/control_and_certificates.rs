@@ -1125,7 +1125,7 @@ fn tactic_certificate_rejects_a_bare_invariant_closure() {
     assert_eq!(error.path(), &[CertificatePathSegment::Tactic(0)]);
 }
 
-/// Serialized provenance is admitted by the same rule as source text: a
+/// Serialized evidence is admitted by the same rule as source text: a
 /// structural `loop` step whose phase was never planned is a smart proof, and
 /// `from_steps` refuses it exactly as `from_proof_tactics` refuses an omitted
 /// `preserve by`.

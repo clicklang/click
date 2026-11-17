@@ -62,7 +62,7 @@ accepts equality of canonical forms directly.
 `index == old(owner->len)`, a store crossing justified by pointer
 distinctness, an arithmetic bound. These require a fact in the proof context,
 and any use of one in a derivation must occur through a checked proof
-operation with retained provenance. No comparator, tactic, or search may
+operation with retained evidence. No comparator, tactic, or search may
 silently consume a proved equality while answering a question that should be
 definitional.
 

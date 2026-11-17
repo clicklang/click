@@ -811,7 +811,7 @@ fn evaluate_retained_memory_load_case(
             || written.has_initialized_bytes_under(&pointer, value_type.byte_width(), assumptions)
             || assumptions.has_memory_read_defined_evidence(memory, &pointer, value_type));
     // A typed union overlay is the authoritative view for an exact typed
-    // load, including in provenance-sensitive symbolic-load mode. Selecting
+    // load, including in history-sensitive symbolic-load mode. Selecting
     // the raw load first would reinterpret a copied pointer member as an
     // integer and discard its provenance.
     if let Some(value) = memory.known_retained_union_value(&pointer, value_type) {
@@ -833,7 +833,7 @@ fn evaluate_retained_memory_load_case(
         }];
     }
 
-    // Provenance-sensitive lowering asks for the load identity even when this
+    // History-sensitive lowering asks for the load identity even when this
     // state has already materialized the cell's concrete value. Checking
     // `known_value` first would collapse `at(mark, field == 11)` to `true` and
     // erase the address needed for later frame transport.
@@ -1828,7 +1828,7 @@ fn canonicalized_pointer_value_from_int_cell(
     // equalities belong in the graph.
     if purpose != LoadPurpose::Logical
         && !SpecificationReadScope::is_active()
-        && let Some(stored) = crate::kernel::memory_provenance::complete_pointer_read_value(
+        && let Some(stored) = crate::kernel::memory_history::complete_pointer_read_value(
             result.designation(),
             assumptions,
         )
@@ -2067,7 +2067,7 @@ fn canonicalized_retained_symbolic_load_value_with_identity(
     if WordRepresentationScope::keeps_representation()
         && matches!(value_type, ProgramType::Int64 | ProgramType::UInt64)
         && let Some(value @ ProgramValue::PointerInteger(_)) =
-            crate::kernel::memory_provenance::complete_pointer_carrier_read_value(
+            crate::kernel::memory_history::complete_pointer_carrier_read_value(
                 &Pointer::loaded_value(&crate::kernel::intern_memory_ref(memory), &address),
                 assumptions,
             )
@@ -2199,7 +2199,7 @@ fn canonicalized_retained_symbolic_load_value_with_identity(
     if !names_version
         && !SpecificationReadScope::is_active()
         && !assumptions.should_force_symbolic_external_loads()
-        && let Some(stored) = crate::kernel::memory_provenance::complete_pointer_read_retained_value(
+        && let Some(stored) = crate::kernel::memory_history::complete_pointer_read_retained_value(
             complete_read.designation(),
             assumptions,
         )
@@ -2623,16 +2623,36 @@ thread_local! {
 /// kernel rule that compares a stated term with the one it derives compares
 /// their comparison forms. This is the one place the authority enters
 /// matching; a check does not resolve reads on its own.
+///
+/// A closed comparison, which lowering retains as written (`1u64 == 0u64`,
+/// `true == false`), has the comparison form of the constant it decides, so
+/// it matches the folded `false` a kernel constructor produced for the same
+/// fact. Only the two literal roots are inspected.
 pub(crate) fn comparison_form(proposition: &Proposition) -> Option<Proposition> {
+    if let Proposition::ConditionIs(condition, value) = proposition
+        && let Some(decided) =
+            crate::kernel::machine_integer::comparison::closed_condition_value(condition)
+    {
+        return Some(Proposition::ConditionIs(
+            ConditionTerm::Constant(decided),
+            *value,
+        ));
+    }
     if crate::instrumentation::deadline_exceeded_with_work(0) {
         return None;
     }
     if let Some(result) = COMPARISON_FORMS.with(|cache| cache.borrow().get(proposition).cloned()) {
         return result;
     }
-    let result = comparison_form_uncached(proposition);
+    let mut result = comparison_form_uncached(proposition);
     if crate::instrumentation::deadline_exceeded_with_work(0) {
         return None;
+    }
+    // A closed comparison nested under connectives or binders, such as the
+    // antecedent of `0 == 0 implies x == 1`, stands for the constant it
+    // decides, as the top-level case above does.
+    if let Some(decided) = decide_closed_conditions(result.as_ref().unwrap_or(proposition)) {
+        result = Some(decided);
     }
     COMPARISON_FORMS.with(|cache| {
         let mut cache = cache.borrow_mut();
@@ -2642,6 +2662,64 @@ pub(crate) fn comparison_form(proposition: &Proposition) -> Option<Proposition> 
         cache.insert(proposition.clone(), result.clone());
     });
     result
+}
+
+/// `proposition` with each closed comparison under its connectives and
+/// binders replaced by the constant it decides from its literal roots, or
+/// `None` when it contains none. Visits only the proposition's own nodes.
+///
+/// Uncharged, like the rest of the comparison form: the form is memoized, so
+/// charging its walk would make the same lookup cost differ by cache state.
+fn decide_closed_conditions(proposition: &Proposition) -> Option<Proposition> {
+    let pair = |left: &Proposition, right: &Proposition| {
+        let decided_left = decide_closed_conditions(left);
+        let decided_right = decide_closed_conditions(right);
+        (decided_left.is_some() || decided_right.is_some()).then(|| {
+            (
+                Box::new(decided_left.unwrap_or_else(|| left.clone())),
+                Box::new(decided_right.unwrap_or_else(|| right.clone())),
+            )
+        })
+    };
+    match proposition {
+        Proposition::ConditionIs(condition, value)
+            if !matches!(condition, ConditionTerm::Constant(_)) =>
+        {
+            crate::kernel::machine_integer::comparison::closed_condition_value(condition)
+                .map(|decided| Proposition::ConditionIs(ConditionTerm::Constant(decided), *value))
+        }
+        Proposition::And(left, right) => pair(left, right).map(|(l, r)| Proposition::And(l, r)),
+        Proposition::Or(left, right) => pair(left, right).map(|(l, r)| Proposition::Or(l, r)),
+        Proposition::Implies(left, right) => {
+            pair(left, right).map(|(l, r)| Proposition::Implies(l, r))
+        }
+        Proposition::Not(body) => {
+            decide_closed_conditions(body).map(|body| Proposition::Not(Box::new(body)))
+        }
+        Proposition::ForAll {
+            name,
+            var,
+            sort,
+            body,
+        } => decide_closed_conditions(body).map(|body| Proposition::ForAll {
+            name: name.clone(),
+            var: *var,
+            sort: sort.clone(),
+            body: Box::new(body),
+        }),
+        Proposition::Exists {
+            name,
+            var,
+            sort,
+            body,
+        } => decide_closed_conditions(body).map(|body| Proposition::Exists {
+            name: name.clone(),
+            var: *var,
+            sort: sort.clone(),
+            body: Box::new(body),
+        }),
+        _ => None,
+    }
 }
 
 fn comparison_form_uncached(proposition: &Proposition) -> Option<Proposition> {
@@ -2937,7 +3015,7 @@ pub(crate) fn read_over_write_program_value(value: &ProgramValue) -> ProgramValu
 /// The load represented by a load variable minted on this thread.
 /// Reasoning uses this to consult the state lazily: a load variable in
 /// an equality query is viewed as its load exactly where a load term would
-/// have triggered provenance evidence.
+/// have triggered memory-history evidence.
 pub(crate) fn registered_load_for_variable(variable: &Variable) -> Option<(SharedMemory, Pointer)> {
     LOAD_VARIABLE_REGISTRY.with(|registry| {
         registry
@@ -3483,13 +3561,13 @@ pub(crate) fn proposition_mentions_scalar_read(proposition: &Proposition) -> boo
 /// worklists. Shallow terms are memoized; deep terms bypass the recursive
 /// structural key and take the same complete path directly.
 ///
-/// [`canonicalize_atomic_loads`]: crate::kernel::memory_provenance::canonicalize_atomic_loads
+/// [`canonicalize_atomic_loads`]: crate::kernel::memory_history::canonicalize_atomic_loads
 pub(crate) fn canonical_term(term: &MachineTerm) -> MachineTerm {
-    let cacheable = crate::kernel::memory_provenance::term_is_shallow_structural_cache_key(term);
+    let cacheable = crate::kernel::memory_history::term_is_shallow_structural_cache_key(term);
     if cacheable && let Some(hit) = TERM_CACHE.with(|cache| cache.borrow().get(term).cloned()) {
         return hit;
     }
-    let structural = crate::kernel::memory_provenance::canonicalize_atomic_loads(term);
+    let structural = crate::kernel::memory_history::canonicalize_atomic_loads(term);
     // Register the live observation before its projected form can claim the
     // load's origin. Keep the established projected canonical identity.
     if matches!(term, MachineTerm::MemoryLoad(..))
@@ -4536,7 +4614,7 @@ pub(crate) mod duplicate_read_names {
         let empty = PureFactContext::new();
         let duplicate = earlier.iter().any(|earlier| {
             !(stored.is_some() && earlier.memory().known_value(pointer) == stored)
-                && crate::kernel::memory_provenance::checked_atomic_load_equality(
+                && crate::kernel::memory_history::checked_atomic_load_equality(
                     &read(earlier),
                     &read(version),
                     &empty,
@@ -4764,7 +4842,7 @@ pub(crate) fn latest_scalar_read_observation(read: &MachineTerm) -> Option<Machi
     read_observations::latest(read)
 }
 
-/// Returns the load variable for a load term's provenance-stable form.
+/// Returns the load variable for a load term's history-stable form.
 /// The term is first canonicalized without assumptions, resolving cached
 /// cells and state representation differences. The same cell loaded at
 /// different symbolic states therefore shares one load variable whenever
@@ -4803,7 +4881,7 @@ pub(crate) fn load_variable_for_term(bits: &MachineTerm) -> Option<(Variable, Ma
 }
 
 fn load_variable_for_term_uncached(bits: &MachineTerm) -> Option<(Variable, MachineTerm)> {
-    let canonical = crate::kernel::memory_provenance::canonicalize_atomic_loads(bits);
+    let canonical = crate::kernel::memory_history::canonicalize_atomic_loads(bits);
     if let MachineTerm::MemoryLoad(memory, pointer, kind) = &canonical {
         let MachineTerm::MemoryLoad(origin, _, _) = bits else {
             unreachable!("the pattern above matched a memory load");
@@ -5659,7 +5737,7 @@ mod tests {
             crate::kernel::equality_graph::logical_pointer_read_term(pointer.pointer()).is_some()
         );
         assert!(
-            crate::kernel::memory_provenance::checked_pointer_read_endpoint(
+            crate::kernel::memory_history::checked_pointer_read_endpoint(
                 pointer.pointer(),
                 &context
             )
@@ -5677,7 +5755,7 @@ mod tests {
         // variable minted then does.
         assert!(pointer.pointer().as_loaded_value().is_none());
         assert!(
-            crate::kernel::memory_provenance::checked_pointer_read_endpoint(
+            crate::kernel::memory_history::checked_pointer_read_endpoint(
                 pointer.pointer(),
                 &context
             )
@@ -6574,7 +6652,7 @@ mod tests {
     }
 
     #[test]
-    fn transported_equal_equation_from_a_new_epoch_drops_producer_provenance() {
+    fn transported_equal_equation_from_a_new_epoch_drops_producer_source_events() {
         let pointer = Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(20),
@@ -8563,7 +8641,7 @@ mod tests {
             Box::new(address.clone()),
             LoadKind::Int32,
         );
-        let projected = crate::kernel::memory_provenance::canonicalize_atomic_loads_deep(&original);
+        let projected = crate::kernel::memory_history::canonicalize_atomic_loads_deep(&original);
         let MachineTerm::MemoryLoad(projected, _, _) = projected else {
             panic!("an unresolved aliased read must remain a load");
         };

@@ -8,7 +8,7 @@ theorem direct_proposition_lambda(x: Integer) {
 theorem range_lambda_values(lo: int32, hi: int32, limit: int32) {
     let below: fn(int32) -> Prop = |k: int32| -> Prop { k < limit };
     requires hi <= limit;
-    ensures (lo..hi).all(below) by { intro() as k; intro(); solve(); }
+    ensures (lo..hi).all(below) by { let k = intro(); intro(); solve(); }
 }
 theorem quantified_proposition_lambdas(value: Integer) {
     ensures (|x: Integer| -> Prop { forall (y: Integer) { x + y == y + x } })(value) by {
@@ -43,7 +43,7 @@ theorem existential_range_lambda(lo: int32, hi: int32) {
 theorem wide_range_predicates(lo: uint64, hi: uint64) {
     let identity: fn(uint64) -> Prop = |x: uint64| -> Prop { x == x };
     requires lo < hi;
-    ensures (lo..hi).all(identity) by { intro() as index; intro(); solve(); }
+    ensures (lo..hi).all(identity) by { let index = intro(); intro(); solve(); }
     ensures (lo..hi).any(identity) by { witness(lo); solve(); }
 }
 

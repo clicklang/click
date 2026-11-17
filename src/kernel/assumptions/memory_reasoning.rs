@@ -270,7 +270,7 @@ impl PureFactContext {
                 if facts.contains(&premise)
                     && !candidate.blocks_proven_distinct(pointer)
                     && self.pointers_known_equal(candidate, pointer)
-                    && crate::kernel::memory_provenance::typed_read_has_same_memory_source(
+                    && crate::kernel::memory_history::typed_read_has_same_memory_source(
                         before,
                         memory,
                         candidate,
@@ -300,7 +300,7 @@ impl PureFactContext {
             }
             before == memory
                 || before.read_region_identity(source) == memory.read_region_identity(source)
-                    && crate::kernel::memory_provenance::typed_read_has_same_memory_source(
+                    && crate::kernel::memory_history::typed_read_has_same_memory_source(
                         before,
                         memory,
                         source,
@@ -679,7 +679,7 @@ impl PureFactContext {
             self.proves_memory_loadable_inner(memory, base, bytes)
         });
         if proved {
-            record_implicit_reasoning_provenance(
+            record_implicit_consulted_premises(
                 self,
                 &Proposition::MemoryLoadable {
                     memory: memory.clone(),
@@ -2052,7 +2052,7 @@ impl PureFactContext {
     /// member and every byte of this access through a different one.
     ///
     /// This is the partition law of a valid composition, the one
-    /// [`crate::kernel::memory_provenance::owned_composition_store_separated_evidence`]
+    /// [`crate::kernel::memory_history::owned_composition_store_separated_evidence`]
     /// and [`Self::composition_separated_members`] already apply; only the
     /// route to the two members differs. Both memberships
     /// are full, assumption-checked containments of the whole access, not
@@ -2131,7 +2131,7 @@ impl PureFactContext {
         if self.pointers_proven_equal_ignoring_memory_separation(pointer, write) {
             return false;
         }
-        record_implicit_reasoning_provenance(
+        record_implicit_consulted_premises(
             self,
             &Proposition::ResourceComposition((*resources).clone()),
         );
@@ -2421,7 +2421,7 @@ impl PureFactContext {
                 let proved = proved
                     && !self.memory_ranges_overlap_after_base_equality(left_range, right_range);
                 if proved {
-                    record_implicit_reasoning_provenance(self, proposition);
+                    record_implicit_consulted_premises(self, proposition);
                 }
                 proved
             })
@@ -2436,7 +2436,7 @@ impl PureFactContext {
                     },
                 )
                 .inspect(|(resources, _, _)| {
-                    record_implicit_reasoning_provenance(
+                    record_implicit_consulted_premises(
                         self,
                         &Proposition::ResourceComposition((*resources).clone()),
                     );
@@ -2587,7 +2587,7 @@ impl PureFactContext {
         // loads and is deliberately the more expensive second phase.
         let mut candidates = self.memory_separation_candidates(&left.block, &right.block);
         let record_candidate = |proposition: &Proposition| {
-            record_implicit_reasoning_provenance(self, proposition);
+            record_implicit_consulted_premises(self, proposition);
         };
         // The same law asked of each held composition, with a phase's own
         // membership relation: two owned members, one holding each pointer.
@@ -2606,7 +2606,7 @@ impl PureFactContext {
                 },
             );
             if let Some((resources, _, _)) = found {
-                record_implicit_reasoning_provenance(
+                record_implicit_consulted_premises(
                     self,
                     &Proposition::ResourceComposition(resources.clone()),
                 );
@@ -2694,7 +2694,7 @@ impl PureFactContext {
                     .any(|resources| {
                         let proved = resources.proves_owned_pointers_separate_shallow(left, right);
                         if proved {
-                            record_implicit_reasoning_provenance(
+                            record_implicit_consulted_premises(
                                 self,
                                 &Proposition::ResourceComposition(resources.clone()),
                             );
@@ -2739,7 +2739,7 @@ impl PureFactContext {
                             },
                         );
                         if proved {
-                            record_implicit_reasoning_provenance(
+                            record_implicit_consulted_premises(
                                 self,
                                 &Proposition::ResourceComposition(resources.clone()),
                             );
@@ -3528,7 +3528,7 @@ impl PureFactContext {
                     || (covers(fact_left, right, right_bytes)
                         && covers(fact_right, left, left_bytes));
                 if entails {
-                    record_implicit_reasoning_provenance(self, proposition);
+                    record_implicit_consulted_premises(self, proposition);
                 }
                 entails
             })
@@ -3659,6 +3659,7 @@ impl PureFactContext {
                             PointerBlock::Heap(_)
                                 | PointerBlock::StaticObject { .. }
                                 | PointerBlock::AutomaticLocal { .. }
+                                | PointerBlock::ReferenceCarrier { .. }
                                 | PointerBlock::Temporary(_)
                                 | PointerBlock::StringLiteral { .. }
                         )
@@ -3710,7 +3711,7 @@ impl PureFactContext {
                 self.separated_address_classes
                     .exact_spans(left, right, &self.equality_graph)
         {
-            record_implicit_reasoning_provenance(self, &fact);
+            record_implicit_consulted_premises(self, &fact);
             return true;
         }
         if let (Resource::Memory(a), Resource::Memory(b)) = (left, right)
@@ -4365,8 +4366,7 @@ impl PureFactContext {
         byte_width: u32,
         element_width: u32,
     ) -> Option<bool> {
-        let length =
-            crate::kernel::memory_provenance::access_element_span(byte_width, element_width)?;
+        let length = crate::kernel::memory_history::access_element_span(byte_width, element_width)?;
         Some(
             index
                 .checked_add(length)
@@ -4519,7 +4519,7 @@ impl PureFactContext {
             return false;
         };
         let width = range.element_width();
-        let Some(span) = crate::kernel::memory_provenance::access_element_span(bytes, width)
+        let Some(span) = crate::kernel::memory_history::access_element_span(bytes, width)
             .and_then(|span| u64::try_from(span).ok())
         else {
             return false;
@@ -4872,7 +4872,7 @@ impl PureFactContext {
                     })
                 };
                 if covered {
-                    record_reasoning_provenance(self, fact);
+                    record_consulted_premises(self, fact);
                 }
                 covered
             })
@@ -5248,7 +5248,7 @@ impl PureFactContext {
                 }
                 _ => false,
             }) {
-                record_implicit_reasoning_provenance(self, proposition);
+                record_implicit_consulted_premises(self, proposition);
                 return true;
             }
 
@@ -5476,7 +5476,7 @@ impl PureFactContext {
                     _ => false,
                 })
         {
-            record_implicit_reasoning_provenance(self, proposition);
+            record_implicit_consulted_premises(self, proposition);
             return true;
         }
         if let Some(index) = self.direct_pointer_element_index_from_base_with_width(
@@ -5514,7 +5514,7 @@ impl PureFactContext {
             // `ad1a0050`/`b92ab3c0` are what reading a wrapped sum as an order
             // costs. The range's upper side needs no length, because an access
             // at or above `end` extends away from the range.
-            let single_element = crate::kernel::memory_provenance::access_element_span(
+            let single_element = crate::kernel::memory_history::access_element_span(
                 byte_width,
                 range.element_width(),
             ) == Some(1);

@@ -155,6 +155,7 @@ impl ExecutionEvidence {
                         StatementOutcome::Normal(state)
                         | StatementOutcome::Return { state, .. }
                         | StatementOutcome::Throw { state, .. }
+                        | StatementOutcome::LoopTestFalse(state)
                         | StatementOutcome::Break(state)
                         | StatementOutcome::Continue(state)
                         | StatementOutcome::Jump { state, .. } => Some(Arc::new(*state.clone())),
@@ -1273,7 +1274,7 @@ fn memory_only_adds_named_cells(
         } else if rebased.union_cells != before.union_cells {
             "union cells"
         } else if rebased.forgotten != before.forgotten {
-            "forgotten-cell provenance"
+            "forgotten-cell history"
         } else if rebased.heap.initialized != before.heap.initialized {
             "initialized bytes"
         } else {
@@ -1715,7 +1716,7 @@ impl CheckedResourceRewrite {
                 return Err("authority control argument type mismatch".into());
             }
             evaluation.locals.set_typed(
-                parameter.name().to_string(),
+                parameter.binding_name().clone(),
                 value.clone(),
                 parameter.program_type(),
             );
@@ -5238,7 +5239,7 @@ fn checked_interface_effect_facts_along(
         // The arm's checked walk and exact effect stream already account
         // for each statement's writes. Combine their recorded footprints;
         // do not reconstruct those same stores or call havocs at the join.
-        // Without that provenance, retain the standalone coverage checks.
+        // Without that record, retain the standalone coverage checks.
         let chained = arm_memory_steps.is_some_and(|steps| {
             arm_effects_follow_memory_steps(
                 steps[arm_index],
@@ -6541,6 +6542,7 @@ fn statement_call_havoc_views(theorem: &Theorem) -> Vec<crate::kernel::SharedMem
     };
     let after = match outcome {
         StatementOutcome::Normal(state)
+        | StatementOutcome::LoopTestFalse(state)
         | StatementOutcome::Break(state)
         | StatementOutcome::Continue(state)
         | StatementOutcome::Jump { state, .. }
@@ -7267,6 +7269,7 @@ fn check_evidence_events(
             if let Some(outcome) = &mut completed {
                 let returned = match outcome {
                     StatementOutcome::Normal(state)
+                    | StatementOutcome::LoopTestFalse(state)
                     | StatementOutcome::Break(state)
                     | StatementOutcome::Continue(state)
                     | StatementOutcome::Return { state, .. }
@@ -7356,7 +7359,8 @@ fn check_evidence_events(
                         state = *next_state;
                         remaining = tail;
                     }
-                    outcome @ (StatementOutcome::Break(_)
+                    outcome @ (StatementOutcome::LoopTestFalse(_)
+                    | StatementOutcome::Break(_)
                     | StatementOutcome::Continue(_)
                     | StatementOutcome::Return { .. }
                     | StatementOutcome::Throw { .. }
@@ -7652,7 +7656,8 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
                             fallthrough = Some((returning, context));
                         }
                     }
-                    StatementOutcome::Break(_)
+                    StatementOutcome::LoopTestFalse(_)
+                    | StatementOutcome::Break(_)
                     | StatementOutcome::Continue(_)
                     | StatementOutcome::Jump { .. } => {
                         fallthrough = None;
@@ -8572,6 +8577,7 @@ impl ExecutionProofCore {
         let after = match &outcome {
             StatementOutcome::Normal(state)
             | StatementOutcome::Return { state, .. }
+            | StatementOutcome::LoopTestFalse(state)
             | StatementOutcome::Break(state)
             | StatementOutcome::Continue(state)
             | StatementOutcome::Jump { state, .. }
@@ -8612,7 +8618,9 @@ impl ExecutionProofCore {
             .flatten();
         if matches!(
             &outcome,
-            StatementOutcome::Break(_) | StatementOutcome::Continue(_)
+            StatementOutcome::LoopTestFalse(_)
+                | StatementOutcome::Break(_)
+                | StatementOutcome::Continue(_)
         ) {
             self.leave_loop_control_scopes();
         }
@@ -8622,13 +8630,8 @@ impl ExecutionProofCore {
             && (self.frontier.in_loop_body
                 || matches!(self.frontier.region, ExecutionRegionKind::LoopBody))
         {
-            let at_loop_test = matches!(
-                checked_evidence_conclusion(&theorem),
-                Proposition::ProgramStatementVerifies { statement, .. }
-                    if matches!(statement.as_ref(), ProgramStatement::LoopTest { .. })
-            );
             match &outcome {
-                StatementOutcome::Break(_) if at_loop_test => Some(LoopControlExit::TestFalse),
+                StatementOutcome::LoopTestFalse(_) => Some(LoopControlExit::TestFalse),
                 StatementOutcome::Break(_) => Some(LoopControlExit::Break),
                 StatementOutcome::Continue(_) => Some(LoopControlExit::Continue),
                 _ => None,
@@ -8723,14 +8726,16 @@ impl ExecutionProofCore {
                 self.evidence_state = Some(*state);
                 self.evidence_completed = false;
             }
-            StatementOutcome::Break(state) | StatementOutcome::Continue(state)
+            StatementOutcome::LoopTestFalse(state)
+            | StatementOutcome::Break(state)
+            | StatementOutcome::Continue(state)
                 if region_loop_control.is_some() =>
             {
                 // A loop-preservation proof executes one body iteration in a
-                // bounded region. Both controls reach that region's typed
-                // boundary, and the path stops there: the enclosing loop rule
-                // consumes the distinction, certifying a `break` as an exit
-                // and a `continue` as the back edge. A continuation on this
+                // bounded region. Each control reaches that region's typed
+                // boundary, and the path stops there. The enclosing loop rule
+                // retains the distinct exit reason: break or false test exits,
+                // while continue reaches the back edge. A continuation on this
                 // frontier means the innermost loop is a concretely executed
                 // one this region contains, which is resumed below instead.
                 self.evidence_try_stack.clear();
@@ -8740,7 +8745,7 @@ impl ExecutionProofCore {
                 self.evidence_state = Some(*state);
                 self.evidence_completed = true;
             }
-            StatementOutcome::Break(state) => {
+            StatementOutcome::LoopTestFalse(state) | StatementOutcome::Break(state) => {
                 let source_after = self.advance_loop_control(false)?;
                 self.evidence_source = source_after;
                 self.evidence_state = Some(*state);

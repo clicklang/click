@@ -275,7 +275,7 @@ fn outcome_path_count(proof: &Proof<'_>) -> usize {
 /// no certificate step of its own, so the drivers that support it route it
 /// through `apply_close_invariants_body`, which retains the checked body as a
 /// `close_invariants() by` step. It stays outside the frontier's leaf admissions
-/// so no driver can record a bare closure request as certificate provenance.
+/// so no driver can record a bare closure request as certificate evidence.
 fn closes_loop_invariants(tactic: &ProofTactic) -> bool {
     matches!(
         tactic,

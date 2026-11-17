@@ -1378,7 +1378,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         let assumptions = search_input.facts().assumptions();
         let literal = |term: &MachineTerm| matches!(term, bits32_constant!(_) | int64_constant!(_));
-        if !literal(left) && !literal(right) {
+        // A closed comparison, which lowering retains, is false whatever the
+        // facts: like the goal `false`, only a refutation of the context
+        // proves it, which the strategies after this one search for.
+        if !literal(left) && !literal(right)
+            || crate::kernel::machine_integer::comparison::closed_condition_value(condition)
+                .is_some()
+        {
             return false;
         }
         !assumptions.is_inconsistent()
@@ -6091,8 +6097,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     &BTreeMap::new(),
                 )
                 .ok_or_else(|| {
-                    search_input
-                        .step_error("a separation restriction source has no Surface spelling")
+                    search_input.step_error("a separation restriction source has no Surface form")
                 })
             };
             let (a, b) = (source(a)?, source(b)?);
@@ -8383,7 +8388,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// (`value <= C` with `C <= c`), the shape a loop's negated guard leaves
     /// on its counter. The proof cites only facts it establishes itself, two
     /// nested `have`s closed by the direct logical closer, so the context
-    /// bound needs no Surface spelling; the transitivity theorem then closes
+    /// bound needs no Surface form; the transitivity theorem then closes
     /// the goal.
     pub(in crate::surface::proof) fn try_selected_constant_bound_weakening(
         search_input: &Proof<'a>,
@@ -10304,7 +10309,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // conjunction (commonly after `unfold(predicate)`). Materialize that
         // leaf through an explicit `have`/`known` proof before
         // asking the restricted planner to use it. The returned descendant
-        // therefore owns both the semantic fact and the Surface provenance;
+        // therefore owns both the semantic fact and the Surface evidence;
         // expansion does not need to reconstruct and check a certificate to
         // justify the premise later.
         let mut proof = search_input.clone();
@@ -11006,7 +11011,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         // The planner selects only Surface-expressible explicit operations.
         // Apply those through the same recursive Proof driver used by
-        // authoritative source scripts; the plan is provenance input, not an
+        // authoritative source scripts; the plan is evidence input, not an
         // independently interpreted semantic certificate.
         let checked = search_input.driver().try_generated_linear_script(&tactics);
         if matches!(goal, Proposition::MemoryLoadable { .. })
@@ -11302,7 +11307,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     // `join` publishes the checked proposition into the exact
                     // enclosing frontier.  Reapply the original step value so a
                     // future StepContract follows precisely the same contract
-                    // selection and certificate provenance as the refused step.
+                    // selection and certificate lineage as the refused step.
                     proof = closed.join()?;
                     match proof.driver().apply_step(step.clone()) {
                         Ok(next) => return Ok(next),

@@ -37,7 +37,7 @@ checked. Each one costs completeness, expansion, or a readable report.
   `None`, or to dropping the fact.
 - **Name a value where it is introduced.** A step that introduces a fresh
   value or memory state (a call result, a havoc, an allocation, a state
-  between recorded points) gives it a name from its provenance at that
+  between recorded points) gives it a name from its origin at that
   point. Do not recover a name later from whatever locals happen to hold the
   value. A non-void call's result is `<region>.result`, including calls whose
   source discards the return value. The checked call transition retains the
@@ -332,20 +332,21 @@ speller, which searches recorded spellings first and keeps only one that
 lowers back. It observes the steps the [census](#measuring-the-gap) does; a
 fact a `have` publishes to its enclosing proof is not among them.
 
-Baseline (2026-11-16, ordinary mdtest corpus, both runs passing):
+Baseline (2026-11-17, ordinary mdtest corpus, both runs passing):
 
 - Fact stability: 0 `differs`, 0 `paths:N`, 371 `refused` lines in 19
   fixtures; 338 of them come from
   `mutex_resource_quantity_requires_conservation` (`uint32` comparisons).
-- Round trip: 54,642 records. Of the 11,058 spellings the raiser produced,
-  9,343 were `same`, 658 `polarity`, 814 `differs` and 243 `unlowered`;
-  9,478 terms were `unraised` and 34,106 had `no-state` (mostly termination predicates). Recurring `differs`
-  shapes: an entry read raised through a current name (`old(*result) ==
-  7` spelled `result->value == 7`, lowering to `old(*next) == 7`); a
-  closed literal comparison lowering folds to a constant
-  (`-2147483648i64 == 2147483648i64` to `false`); casts spelled
+- Round trip: 55,035 records. Of the 11,198 spellings the raiser produced,
+  9,539 were `same`, 663 `polarity`, 754 `differs` and 242 `unlowered`;
+  9,514 terms were `unraised` and 34,323 had `no-state` (mostly
+  termination predicates). Recurring `differs` shapes: an entry read
+  raised through a current name (`old(*result) == 7` spelled
+  `result->value == 7`, lowering to `old(*next) == 7`); a reflexive
+  comparison lowering folds (`p == p` to `true`); casts spelled
   differently on the two sides of an equality; and `to_integer(...)` terms
-  raised as `let` bindings or bare machine arithmetic.
+  raised as `let` bindings or bare machine arithmetic. Closed literal
+  comparisons no longer fold (814 `differs` on 2026-11-16).
 
 ## Lowering is structural
 
@@ -371,16 +372,36 @@ the one the text names.
   value. The version walk below is that case.
 - Not allowed: substituting a known-equal term, constant-folding a
   comparison the facts decide, dropping a decided guard or disjunct, or
-  choosing a term by known provenance. Equalities stay in the equality graph
+  choosing a term by known origin. Equalities stay in the equality graph
   and the comparison form, which every check consults.
 
-Closed native order comparisons at 8, 16, 32, and 64 bits retain their comparison
-node, format, and literal operands during logical lowering. Their truth is
-established by checking, including when exact rewriting removed the last
-variable before the comparison was printed. This does not change literal
-arithmetic evaluation or the existing 32-bit equality normal forms. Closed
-64-bit equalities also retain their comparison node, filed at the native
-sign-free word-equality format `Int64` with their literal operand payloads.
+Lowering never folds a comparison of two literals.
+
+- Closed native comparisons at 8, 16, 32, and 64 bits, order and equality
+  alike, retain their comparison node, format, and literal operands:
+  `1u64 == 0u64` lowers to that comparison, not to `false`. A retained
+  64-bit equality is filed at `int64`, as the folding constructor files a
+  symbolic one, and is decided by its bits.
+- A comparison of two `bool` literals, `true == false`, retains a
+  `BoolEqual` of the two constants.
+- A written `true` or `false` is a literal proposition, not `literal ==
+  true`: it lowers directly to the constant condition
+  (`SpecProposition::Truth`). The raiser spells a constant condition the
+  same way, so `false` round-trips without a comparison.
+
+Checking decides a closed condition from its literal roots with
+`machine_integer::comparison::closed_condition_value`: exact matching
+through the comparison form (so `contradiction(1 == 0)` matches a held
+`false`), requirement matching, `normalize`, and assumption-free
+normalization. A closed goal is false or true whatever the facts, so `solve`
+treats a false one like the goal `false` and refutes the path. Regressions:
+`mdtests/closed_machine_order_comparisons.md`,
+`mdtests/closed_machine_equality_comparisons.md`,
+`mdtests/an_infeasible_path_with_a_closed_order_goal_closes.md`, and the
+`closed_*` and `a_constant_condition_raises_*` unit tests in
+`surface::proof::surface_synthesis`. This does not change literal arithmetic
+evaluation, and the shared comparison constructors used by checking still
+fold.
 
 Machine conditionals with closed 32/64-bit order guards or closed 64-bit
 equality guards retain their `if` node and guard during logical lowering.
@@ -511,7 +532,7 @@ term ([the raise-lower principle](#the-raise-lower-principle)).
 kind, and groups the differences by where the two terms first diverge. It
 does not observe C execution, which may depend on facts.
 Historical defects included comparisons folded using facts, pointer and aliased
-reads resolved through known values, comparison kinds chosen by provenance,
+reads resolved through known values, comparison kinds chosen by origin,
 and decided guards dropped. Such equalities belong in checking, not in the
 term lowering produces.
 

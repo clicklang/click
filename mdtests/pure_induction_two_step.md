@@ -10,7 +10,7 @@ function by_two(n: int32) -> int32
 theorem by_two_is_zero(n: int32) {
     requires n >= 0;
     ensures by_two(n) == 0 by {
-        induct(n) as ih;
+        let ih = induct(n);
         if n <= 1 {
             unfold(by_two(n));
             normalize() using { n <= 1; };

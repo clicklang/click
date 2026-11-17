@@ -3104,7 +3104,7 @@ pub(super) fn prove_claim_by_solve(
 }
 
 /// An explicit per-claim proof script. The completed proof unit is the
-/// semantic result; retained provenance is serialized only for expansion.
+/// semantic result; retained evidence is serialized only for expansion.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn prove_claim_by_script(
     expansion_capture: Option<&mut ExpansionCapture>,
