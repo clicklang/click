@@ -284,7 +284,7 @@ mod pointer_trace_tests {
         assert_eq!(
             immutable_field_hint(
                 &hint(
-                    ContractExpression::CBinding("zid".into()),
+                    ContractExpression::ProgramBinding("zid".into()),
                     ProgramType::Int32Pointer
                 ),
                 &address,

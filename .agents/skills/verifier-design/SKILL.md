@@ -11,7 +11,7 @@ skill is the procedure for applying them.
 Use **program point** for the location passed to `at`, **version point**
 for a read's identity selected by the assumption-free memory walk, and
 **recorded symbolic state** for an `ExecutionState` retained on a proof path.
-A `Memory` or `SharedMemory` value is a **memory state**, which can contain
+A `SymbolicMemory` or `SharedMemory` value is a **memory state**, which can contain
 partial or abstract information. See the vocabulary in
 `docs/concepts/memory-model.md`.
 Externally defined API symbols and opaque import-profile identifiers retain

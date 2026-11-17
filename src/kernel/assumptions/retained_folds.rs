@@ -1,12 +1,12 @@
 //! Read dependencies of the explicitly selected common fold children.
-//! Memory state checks, opaque-call refusals and address handling stay in the
+//! SymbolicMemory state checks, opaque-call refusals and address handling stay in the
 //! existing leaf readers; no registry or memory history is searched here.
 use super::*;
 use crate::kernel::{KernelFold, KernelTermNode, KernelType};
 
 pub(super) fn collect_fold_memory_loads(
     fold: &KernelFold,
-    current_memory: &Memory,
+    current_memory: &SymbolicMemory,
     loads: &mut Vec<(Address, u32)>,
     width: Option<u32>,
     seen_integers: &mut BTreeSet<u64>,
@@ -30,7 +30,7 @@ pub(super) fn collect_fold_memory_loads(
 
 pub(super) fn collect_common_memory_loads(
     mut pending: Vec<(&KernelTerm, Option<u32>)>,
-    current_memory: &Memory,
+    current_memory: &SymbolicMemory,
     loads: &mut Vec<(Address, u32)>,
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
@@ -291,7 +291,7 @@ mod tests {
             };
             let operand = KernelTerm::variable(KernelType::Program(source), Variable(999973));
             let root = KernelTerm::numeric_float_convert(target, source, operand).unwrap();
-            let current = Memory::new();
+            let current = SymbolicMemory::new();
             let expected = collect_bitvector_memory_loads_with_width(
                 &native,
                 &current,
@@ -319,7 +319,7 @@ mod tests {
             MachineIntegerType::UInt64,
         ] {
             let _session = crate::kernel::VerificationSession::enter();
-            let current = Memory::new();
+            let current = SymbolicMemory::new();
             let pointer = Address::symbolic(Variable(991510));
             let source = IntegerTerm::RangeFold {
                 index: IntegerRangeFoldIndex::Integer {
@@ -367,7 +367,7 @@ mod tests {
     #[test]
     fn retained_fold_read_collection_preserves_states_widths_and_opaque_refusals() {
         let _session = crate::kernel::VerificationSession::enter();
-        let current = Memory::new();
+        let current = SymbolicMemory::new();
         let memory = crate::kernel::intern_memory_ref(&current);
         let pointer = Address::symbolic(Variable(991501));
         let read = MachineTerm::MemoryLoad(
@@ -444,7 +444,7 @@ mod offset_condition_tests {
     #[test]
     fn offset_condition_dependencies_preserve_widths() {
         let _session = crate::kernel::VerificationSession::enter();
-        let current = Memory::new();
+        let current = SymbolicMemory::new();
         let read = |id, kind| {
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(&current))),
@@ -489,7 +489,7 @@ mod boolean_read_tests {
     #[test]
     fn boolean_reads_keep_own_and_index_dependency_widths() {
         let _session = crate::kernel::VerificationSession::enter();
-        let current = Memory::new().with_block("bool-index", 4);
+        let current = SymbolicMemory::new().with_block("bool-index", 4);
         let memory = crate::kernel::intern_memory(current.clone());
         let source = ConditionTerm::BoolLoad(
             memory.clone(),
@@ -498,7 +498,7 @@ mod boolean_read_tests {
                 offset: AddressOffset::scaled_int32_node(
                     MachineTerm::MemoryLoad(
                         ProgramPoint::at(&memory),
-                        Box::new(Memory::global_pointer("bool-index")),
+                        Box::new(SymbolicMemory::global_pointer("bool-index")),
                         LoadKind::Int32,
                     ),
                     4,

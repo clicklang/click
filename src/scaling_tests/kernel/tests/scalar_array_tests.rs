@@ -135,7 +135,7 @@ fn compact_array_regions_copy_and_overwrite_preserve_neighbors_and_scale() {
         let target = pointer("local:region-target", 4);
         let context = PureFactContext::new();
         let (memory, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let memory = Memory::new()
+            let memory = SymbolicMemory::new()
                 .with_block(source.base.clone(), bytes + 8)
                 .with_block(target.base.clone(), bytes + 8)
                 .store(
@@ -264,7 +264,7 @@ fn scalar_array_state_region_does_not_scan_unrelated_sibling_cells() {
         let _session = crate::kernel::VerificationSession::enter();
         let source = pointer("local:siblings", 4);
         let target = pointer("local:target", 0);
-        let mut memory = Memory::new()
+        let mut memory = SymbolicMemory::new()
             .with_block(source.base.clone(), (siblings + 5) * 4)
             .with_block(target.base.clone(), 16)
             .write_scalar_array_region(

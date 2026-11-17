@@ -2137,8 +2137,8 @@ mod tests {
     use crate::kernel::proof::facts::PureFactStore;
     use crate::kernel::proof::quantified_equivalence_index_key;
     use crate::kernel::{
-        Address, AddressBase, AddressOffset, Memory, MemoryRange, ProgramValue, Resource, Variable,
-        intern_memory, load_variable_for_cell_with_origin,
+        Address, AddressBase, AddressOffset, MemoryRange, ProgramValue, Resource, SymbolicMemory,
+        Variable, intern_memory, load_variable_for_cell_with_origin,
     };
 
     fn footprint_alias_fixture() -> (Proposition, Proposition, Proposition) {
@@ -2326,7 +2326,7 @@ mod tests {
             base: "p".into(),
             offset: AddressOffset::Constant(0),
         };
-        let before = intern_memory(Memory::new().with_block("p", 4));
+        let before = intern_memory(SymbolicMemory::new().with_block("p", 4));
         let after = intern_memory(before.as_ref().clone().store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(9)),
@@ -2384,7 +2384,7 @@ mod tests {
                 Box::new(AddressOffset::Constant(4)),
             ),
         };
-        let memory = intern_memory(Memory::new().store(
+        let memory = intern_memory(SymbolicMemory::new().store(
             nested_cell.clone(),
             ProgramValue::Int32(MachineTerm::constant(7)),
         ));
@@ -2435,7 +2435,7 @@ mod tests {
             base: "cell".into(),
             offset: AddressOffset::Constant(0),
         };
-        let memory = Memory::new().with_block("cell", 4).store(
+        let memory = SymbolicMemory::new().with_block("cell", 4).store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::Variable(Variable(11))),
         );
@@ -2458,7 +2458,7 @@ mod tests {
             )),
         };
         // Both formulas name the same state, but 11 is bound inside its
-        // stored value only in the first formula. Memory state identity plus an
+        // stored value only in the first formula. SymbolicMemory state identity plus an
         // outer-binder key cannot establish their equivalence.
         assert!(!quantified_binder_equivalent(
             &proposition(11),
@@ -2476,7 +2476,7 @@ mod tests {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::Constant(4),
         };
-        let before = Memory::new();
+        let before = SymbolicMemory::new();
         let after = before.clone().store(
             written.clone(),
             ProgramValue::Int32(MachineTerm::constant(1)),
@@ -2487,7 +2487,7 @@ mod tests {
                 after: after.clone(),
                 writes: vec![(written, 4)],
             });
-        // The canonical memories are the cells' versions. Memory states that
+        // The canonical memories are the cells' versions. SymbolicMemory states that
         // differ only by a declared block or a write to another cell share
         // a version, so a synthetic marker block would not separate these
         // load variables; a write to the queried cell does (the second pair).
@@ -2519,7 +2519,7 @@ mod tests {
         // The explicit derivation check must reject this pair without entering
         // the global state-comparison planner.
         let loaded = preserved;
-        let changed_before = Memory::new().store(
+        let changed_before = SymbolicMemory::new().store(
             loaded.clone(),
             ProgramValue::Int32(MachineTerm::constant(1)),
         );
@@ -2690,7 +2690,7 @@ mod tests {
     fn algebraic_binder_renaming_with_structural_reads_uses_its_own_sort() {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = AlgebraicType::parameter("Fuel".into());
-        let before = intern_memory(Memory::new().with_block("p", 4));
+        let before = intern_memory(SymbolicMemory::new().with_block("p", 4));
         let pointer = Address {
             base: "p".into(),
             offset: AddressOffset::Constant(0),
@@ -2742,7 +2742,7 @@ mod tests {
         // variables represent. A bound index inside a load variable keys by
         // binder ordinal, so renamed binders share a bucket with each other
         // and with the same universal written in load terms.
-        let memory = intern_memory(Memory::new().with_block("p", 12));
+        let memory = intern_memory(SymbolicMemory::new().with_block("p", 12));
         let cell = |index: Variable| {
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&memory),
@@ -2850,17 +2850,17 @@ mod tests {
         };
         let phase_field = owner_field(4);
         let cell_field = owner_field(8);
-        let load = |memory: &Memory, pointer: &Address| {
+        let load = |memory: &SymbolicMemory, pointer: &Address| {
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(intern_memory(memory.clone()))),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             )
         };
-        let empty = Memory::new();
+        let empty = SymbolicMemory::new();
         // The form recorded when the resource body was unfolded: the cell
         // pointer read through the call-havoc state.
-        let havoc = Memory::new().with_block("havoc:1000000", 0);
+        let havoc = SymbolicMemory::new().with_block("havoc:1000000", 0);
         // The form carried by the recorded execution facts: the same
         // loads read through the branch-entry memory with its retained cells.
         let entry = empty
@@ -2873,8 +2873,9 @@ mod tests {
                 owner_base.clone(),
                 ProgramValue::Int32(load(&empty, &owner_base)),
             );
-        let cell_element_offset =
-            |memory: &Memory| AddressOffset::scaled_int32_node(load(memory, &cell_field), 4);
+        let cell_element_offset = |memory: &SymbolicMemory| {
+            AddressOffset::scaled_int32_node(load(memory, &cell_field), 4)
+        };
         // The fold-state form reads the cell pointer through a memory
         // that still carries the `owner->cell[0] = owner->phase` store, whose
         // written address is itself written through a loaded pointer, so no
@@ -2886,8 +2887,8 @@ mod tests {
             },
             ProgramValue::Int32(load(&havoc, &owner_base)),
         );
-        let separation =
-            |left_start: u32, left_end: u32, cell_memory: &Memory| Proposition::ResourceSeparate {
+        let separation = |left_start: u32, left_end: u32, cell_memory: &SymbolicMemory| {
+            Proposition::ResourceSeparate {
                 left: Box::new(Resource::Memory(MemoryRange::new(
                     owner_base.clone(),
                     MachineTerm::constant(left_start),
@@ -2901,7 +2902,8 @@ mod tests {
                     MachineTerm::constant(0),
                     MachineTerm::constant(1),
                 ))),
-            };
+            }
+        };
         let required = separation(0, 4, &folded);
         let available = separation(0, 4, &havoc);
 
@@ -3468,8 +3470,8 @@ mod integer_reflexivity_tests {
     use crate::kernel::proof::PureFactStore;
     use crate::kernel::{
         Address, AddressOffset, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType,
-        MachineTerm, Memory, ProgramValue, SharedIntegerRangeEndpoint, SharedMachineIntegerTerm,
-        Variable,
+        MachineTerm, ProgramValue, SharedIntegerRangeEndpoint, SharedMachineIntegerTerm,
+        SymbolicMemory, Variable,
     };
 
     #[test]
@@ -3646,7 +3648,7 @@ mod integer_reflexivity_tests {
     #[test]
     fn listed_loaded_fold_premises_allow_only_bound_renaming() {
         let _session = VerificationSession::enter();
-        let before = intern_memory(Memory::new().with_block("listed-fold", 16));
+        let before = intern_memory(SymbolicMemory::new().with_block("listed-fold", 16));
         let after = intern_memory(before.as_ref().clone().store(
             Address {
                 base: "listed-fold".into(),
@@ -3798,7 +3800,8 @@ mod integer_reflexivity_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let a = Address::symbolic(Variable(96_110));
         let b = Address::symbolic(Variable(96_111));
-        let before = crate::kernel::intern_memory(Memory::new().with_block("normalize-graph", 8));
+        let before =
+            crate::kernel::intern_memory(SymbolicMemory::new().with_block("normalize-graph", 8));
         let after = crate::kernel::intern_memory(
             before
                 .memory()
@@ -3885,7 +3888,7 @@ mod integer_reflexivity_tests {
             offset: AddressOffset::Constant(0),
         };
         let before = crate::kernel::intern_memory(
-            Memory::new().with_block("normalize-fold-retained_state", 8),
+            SymbolicMemory::new().with_block("normalize-fold-retained_state", 8),
         );
         let after = crate::kernel::intern_memory(before.as_ref().clone().store(
             pointer.clone(),
@@ -4196,7 +4199,7 @@ mod uint64_loop_tests {
 #[cfg(test)]
 mod wide_range_reader_tests {
     use super::*;
-    // Memory state equality cannot reinterpret unequal native bounds as signed bits.
+    // SymbolicMemory state equality cannot reinterpret unequal native bounds as signed bits.
     #[test]
     fn wide_separations_compare_structurally_without_signed_state_transport() {
         let base = Address::symbolic(Variable(984_800));
@@ -4365,7 +4368,7 @@ mod annotated_address_condition_tests {
             offset: AddressOffset::Constant(0),
         };
         let before = intern_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block("annotated-address-index", 4)
                 .store(cell.clone(), ProgramValue::Int32(MachineTerm::constant(0))),
         );

@@ -191,13 +191,13 @@ mod tests {
     #[test]
     fn common_fold_keys_preserve_state_identity() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = crate::kernel::Memory::new();
+        let memory = crate::kernel::SymbolicMemory::new();
         let pointer = Address::symbolic(Variable(101));
         let later = memory.clone().store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(1)),
         );
-        let fold = |memory: &crate::kernel::Memory| {
+        let fold = |memory: &crate::kernel::SymbolicMemory| {
             let native = machine_fold(
                 81,
                 82,

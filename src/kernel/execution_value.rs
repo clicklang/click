@@ -513,7 +513,7 @@ enum StoredIdentity<'a> {
     Machine(&'a SharedMachineIntegerTerm),
     Native(NativeStorageIdentity<'a>),
 }
-/// Local machine keys own shared observation handles. Memory cells reuse the
+/// Local machine keys own shared observation handles. SymbolicMemory cells reuse the
 /// structural family projections and leave native numeric carriers explicit.
 #[derive(Debug)]
 enum StoredKey {
@@ -717,7 +717,7 @@ mod tests {
             KernelTerm::variable(KernelType::Algebraic(ty.clone()), Variable(999764)),
             KernelTerm::algebraic_read(
                 ty.clone(),
-                intern_memory(Memory::new()),
+                intern_memory(SymbolicMemory::new()),
                 SharedAddress::import(&Address::symbolic(Variable(999765))),
             ),
         ];
@@ -796,8 +796,8 @@ mod tests {
                     native_stored.cmp(&StoredExecutionValue::from(other))
                 );
             }
-            let address = Memory::local_pointer("stored_bool");
-            let memory = Memory::new()
+            let address = SymbolicMemory::local_pointer("stored_bool");
+            let memory = SymbolicMemory::new()
                 .with_block(address.base.clone(), 1)
                 .store_retained(address.clone(), cell.into_value());
             assert_eq!(
@@ -1005,7 +1005,7 @@ mod tests {
     #[test]
     fn pointer_store_history_keeps_the_root_after_cache_forgetting() {
         let _session = crate::kernel::VerificationSession::enter();
-        let address = Memory::local_pointer("retained_pointer_cell");
+        let address = SymbolicMemory::local_pointer("retained_pointer_cell");
         let pointer = PointerValue::new(
             Address::symbolic(Variable(1027600)),
             ProgramType::Int32Pointer,
@@ -1019,7 +1019,7 @@ mod tests {
             ),
             SharedPointerValue::import(&pointer),
         );
-        let memory = Memory::new()
+        let memory = SymbolicMemory::new()
             .with_block(address.base.clone(), C_POINTER_BYTE_WIDTH)
             .store_retained(address.clone(), ExecutionValue::Shared(root.clone()));
         assert_eq!(

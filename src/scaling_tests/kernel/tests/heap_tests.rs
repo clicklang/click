@@ -6,7 +6,7 @@ use super::*;
 
 #[test]
 fn aliased_read_validity_lookup_ignores_unrelated_facts() {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let pointer = Address {
         base: AddressBase::Heap(941_000),
         offset: AddressOffset::Constant(0),
@@ -54,7 +54,7 @@ fn aliased_read_validity_lookup_ignores_unrelated_facts() {
 
 #[test]
 fn read_validity_lookup_ignores_unrelated_cells() {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let pointer = Address {
         base: AddressBase::ExternalArgument,
         offset: AddressOffset::Constant(0),
@@ -99,7 +99,7 @@ fn unknown_read_validity_does_not_resolve_unrelated_cells() {
     };
     let mut samples = Vec::new();
     for count in [0, 16, 64, 256] {
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for index in 0..count {
             memory = memory.store(
                 Address {
@@ -129,7 +129,7 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
     };
     let mut samples = Vec::new();
     for count in [8, 16, 32, 64] {
-        let mut memory = Memory::new().with_block(address.base.clone(), 4);
+        let mut memory = SymbolicMemory::new().with_block(address.base.clone(), 4);
         let mut assumptions = PureFactContext::new();
         for index in 0..count {
             assumptions = assumptions.assume_proposition(Proposition::MemoryReadDefined {
@@ -261,6 +261,81 @@ fn free_allocation_discovery_ignores_unrelated_resource_tokens() {
 }
 
 #[test]
+fn heap_free_loan_obligation_ignores_unrelated_aliases_and_loans() {
+    let _session = VerificationSession::enter();
+    let state = successful_heap_allocation_state();
+    let free = program_heap_free(crate::kernel::program_expression::variable("p"));
+    let backing_base = Address::symbolic(Variable(949_000));
+    for grow_aliases in [true, false] {
+        let mut samples = Vec::new();
+        for count in [4, 16, 64] {
+            let mut ledger = LoanLedger::new();
+            let owner = ledger.fresh_participant().unwrap();
+            let reader = ledger.fresh_participant().unwrap();
+            let mut assumptions = PureFactContext::new();
+            if grow_aliases {
+                for i in 0..count {
+                    assumptions = assumptions.assume_condition(
+                        ConditionTerm::pointer_equal(
+                            backing_base.clone(),
+                            Address::symbolic(Variable(950_000 + i)),
+                        ),
+                        true,
+                    );
+                }
+            }
+            for i in 0..if grow_aliases { 1 } else { count } {
+                let backing = ResourceFact::own_memory(MemoryRange::new(
+                    Address::symbolic(Variable(949_000 + i)),
+                    0.into(),
+                    1.into(),
+                ));
+                let occurrence = ResourceContext::new()
+                    .unchecked_with_fact(backing.clone())
+                    .unique_owned_occurrence_for_fact(&backing)
+                    .unwrap()
+                    .0;
+                let opening = ledger.lend(owner, reader, occurrence, backing).unwrap();
+                ledger = ledger.apply(&opening.transition).unwrap();
+            }
+            let state = state.clone().with_loan_ledger(Some(ledger));
+            let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+                execute_execution_statement_paths(
+                    &state,
+                    &free,
+                    &assumptions,
+                    ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
+                    &mut ExecutionBudget::default(),
+                )
+                .unwrap()
+            });
+            let [
+                StatementExecutionPath {
+                    outcome: StatementOutcome::Normal(_),
+                    obligations,
+                    ..
+                },
+            ] = paths.as_slice()
+            else {
+                panic!("expected one conditional free path: {paths:?}");
+            };
+            let [obligation] = obligations.as_slice() else {
+                panic!("expected one loan obligation");
+            };
+            assert!(matches!(
+                obligation.proposition(),
+                Proposition::ResourceSeparate { .. }
+            ));
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 32),
+            "{grow_aliases}: {samples:?}"
+        );
+    }
+}
+
+#[test]
 fn realloc_reference_check_ignores_unrelated_resource_tokens() {
     let _session = crate::kernel::VerificationSession::enter();
     let mut samples = Vec::new();
@@ -322,7 +397,7 @@ fn typed_pending_heap_binding_uses_the_allocation_delta() {
     );
     let mut samples = Vec::new();
     for count in [16, 64, 256, 1024] {
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for index in 0..count {
             memory = memory.with_pending_typed_heap_allocation(
                 Address::symbolic(Variable(950_000 + index)),
@@ -366,7 +441,7 @@ fn free_ownership_lookup_ignores_unrelated_resources() {
     let assumptions = PureFactContext::new();
     let mut samples = Vec::new();
     for count in [0, 16, 64, 256] {
-        let memory = Memory::new()
+        let memory = SymbolicMemory::new()
             .with_heap_allocation_claim(base.clone(), AllocationSize::int32(4))
             .unwrap()
             .store(cell.clone(), int32(7));
@@ -397,7 +472,7 @@ fn sequential_frees_preserving_one_owned_cell_stay_near_linear() {
         let cell = Address::symbolic(Variable(948_000));
         let range =
             |p: Address| ResourceFact::own_memory(MemoryRange::new(p, 0u32.into(), 1u32.into()));
-        let mut memory = Memory::new().store(cell.clone(), int32(7));
+        let mut memory = SymbolicMemory::new().store(cell.clone(), int32(7));
         let mut ownership = ResourceContext::new().unchecked_with_fact(range(cell.clone()));
         let bases = (0..count)
             .map(|index| Address {
@@ -440,7 +515,7 @@ fn sequential_free_pointer_frames_stay_near_linear() {
         let _session = crate::kernel::VerificationSession::enter();
         let cell = Address::symbolic(Variable(951_000));
         let value = Address::symbolic(Variable(951_001));
-        let mut memory = Memory::new().store(cell.clone(), ProgramValue::pointer(value));
+        let mut memory = SymbolicMemory::new().store(cell.clone(), ProgramValue::pointer(value));
         let mut resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
             MemoryRange::new_with_element_width(cell.clone(), 0u32.into(), 1u32.into(), 8),
         ));
@@ -509,7 +584,7 @@ fn typed_validity_uses_one_storage_anchor_among_many_aliases() {
             offset: AddressOffset::Constant(0),
         };
         let query = Address::symbolic(Variable(960_000));
-        let mut memory = Memory::new()
+        let mut memory = SymbolicMemory::new()
             .with_block(base.base.clone(), 8)
             .store(base.offset_by_bytes(4), int32(7));
         let mut facts = PureFactContext::new();

@@ -67,6 +67,10 @@ Kernel files:
 - `reasoning.rs`: deterministic proof helpers, finite forall/range reasoning,
   substitutions, execution-derived pure facts, and obligation plumbing.
 - `spec.rs`: `SpecExpression`/`SpecProposition` lowering and evaluation.
+  `spec/integer_result.rs` retains one common Integer root through evaluator
+  paths, arithmetic, conditionals and fold initial/body production. Native
+  comparison, capture and ranking outputs use explicit compatibility reads;
+  deferred bindings and fold endpoints remain separate storage boundaries.
 - `eval.rs`: program expression/statement evaluation and memory operations.
 - `loops.rs`: loop verification, loop effects, loop havoc, and invariant
   helpers.
@@ -604,7 +608,7 @@ In `src/kernel/`:
   `int32`, whose order its canonical words compare exactly, so a fact has
   one representation. Every other order is filed at its own format: a `uint32`
   order is `Compare { format: UInt32, .. }` of the operands' words.
-- `ProgramValue`, `ProgramType`, `Address`, `Memory`, `ExecutionState`: C semantic state,
+- `ProgramValue`, `ProgramType`, `Address`, `SymbolicMemory`, `ExecutionState`: C semantic state,
   including the non-object `Void` return value, scalar `int8`, `int16`, `int32`,
   `uint8`, `uint16`, `uint32`, `int64`, and `uint64`, pointers, and typed
   memory loads/stores.
@@ -1448,9 +1452,16 @@ value, or the next free spelling (`result_`) when a source local has that name;
 names its capture of a return value that destructors follow the same way,
 with a numeric suffix on a collision.
 
+`temporaries::substitute_literals` puts a temporary assigned once with an
+unchanging value back at every read, in any block: a literal, a copy of a
+parameter the body never writes, moves or borrows, or a reference borrowing a
+place rooted at a local, whose address rustc keeps for the borrow's life. A
+reborrow `&mut *t` of such a borrow is the borrow itself, and `*&p` is `p`;
+each value is resolved once, so a chain of reborrows costs its length.
+
 `temporaries::remove_unused` removes a temporary the body never names apart
-from its storage markers, and a `()` temporary that is only a call's
-destination, which the call never writes.
+from its storage markers and its writes of pure values, and a `()` temporary
+that is only a call's destination, which the call never writes.
 
 These still stay a temporary:
 
@@ -1748,7 +1759,7 @@ raises to `exception.storage()` and grants no storage or ownership. Neither `exc
 name `__click_exception` is decoded into a kernel identity, so a source
 variable of either name cannot replace the payload or alias its slot.
 
-Bare `result` lowers to that typed binding, while `c(result)` resolves the
+Bare `result` lowers to that typed binding, while `program::result` resolves the
 source C binding, including inside casts, field projections, and array indices.
 Kernel post-state reconstruction and fixed-state proof lowering preserve a
 same-named parameter's value.

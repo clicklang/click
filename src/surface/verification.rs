@@ -4312,7 +4312,7 @@ pub(in crate::surface) fn termination_measure_source(expression: &ContractExpres
     match expression {
         ContractExpression::IntegerLiteral(literal) => literal.clone(),
         ContractExpression::Binding(name)
-        | ContractExpression::CBinding(name)
+        | ContractExpression::ProgramBinding(name)
         | ContractExpression::QualifiedC { name, .. } => name.clone(),
         ContractExpression::ProgramExpression(expression) => {
             crate::kernel::ranking_measure_identity(
@@ -4386,7 +4386,7 @@ fn termination_measure_binder_name(measure: &TerminationMeasure) -> Option<&str>
     };
     match component {
         ContractExpression::Binding(name)
-        | ContractExpression::CBinding(name)
+        | ContractExpression::ProgramBinding(name)
         | ContractExpression::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) => Some(name),
@@ -7060,7 +7060,7 @@ pub(in crate::surface) fn substitute_contract_segment(
         surface => surface.clone(),
     };
     // Preserve resolved C spellings unless a component actually refers to
-    // the return name. Its surface form then distinguishes `c(result)`.
+    // the return name. Its surface form then distinguishes `program::result`.
     if substitutions.is_contract_result_binding()
         && let ContractSegmentSurface::Range { base, start, end }
         | ContractSegmentSurface::StructRange {

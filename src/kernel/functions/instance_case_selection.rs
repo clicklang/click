@@ -211,7 +211,7 @@ pub(super) fn matched_resource_instance_case_read_projection(
 /// evidence contributes nothing.
 /// A returned named head carries its verified body's pure invariants. Only
 /// the explicit outputs are visited, after ensures have selected their model.
-/// Memory state readability and containment follow the exact owned head; no child
+/// SymbolicMemory state readability and containment follow the exact owned head; no child
 /// ownership or permanent view is published.
 pub(super) fn checked_returned_instance_body_facts(
     outputs: &ResourceContext,

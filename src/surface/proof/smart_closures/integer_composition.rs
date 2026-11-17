@@ -1514,7 +1514,7 @@ mod tests {
         let mut context = PureTheoremContext {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
-            memory: Memory::new(),
+            memory: SymbolicMemory::new(),
             values: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
             array_refs: BTreeMap::new(),

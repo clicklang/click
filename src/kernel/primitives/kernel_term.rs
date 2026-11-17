@@ -898,6 +898,9 @@ impl KernelTerm {
     pub fn variable(ty: KernelType, variable: Variable) -> Self {
         Self::intern(ty, KernelTermNode::Variable(variable))
     }
+    pub(crate) fn integer_if_raw(arguments: [Self; 3]) -> Self {
+        Self::intern(KernelType::Integer, KernelTermNode::IntegerIf { arguments })
+    }
     pub fn integer_operation(
         operator: KernelIntegerOperator,
         arguments: Vec<Self>,
@@ -1374,7 +1377,7 @@ mod tests {
             "opaque_argument".into(),
             vec![PureFunctionArgument::Value(ProgramValue::Int32(
                 MachineTerm::MemoryLoad(
-                    ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
                     Box::new(Address::symbolic(Variable(87654328))),
                     LoadKind::Int32,
                 ),

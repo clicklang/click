@@ -452,7 +452,7 @@ unselected reads and invalid shifts. Checking selects the arm when needed.
 The comparison boundary recognizes conditionals guarded by a Boolean variable
 or a 32/64-bit comparison over literal/variable operands or one bitwise
 operation over those leaves, with literal/variable
-arms or one bitwise operation (`&`, `|`, `^`) over literal/variable arm operands,
+arms or one bitwise operation (`&`, `|`, `^`, `~`) over literal/variable arm operands,
 as fixed-size native atoms. Standalone comparisons use the same bounded
 bitwise operands. Even intrinsically decided bitwise guards retain their
 conditional; checking selects the arm. Bitwise recognition reads only the operation and

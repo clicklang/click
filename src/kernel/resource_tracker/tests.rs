@@ -20,12 +20,12 @@ fn one() -> ProgramValue {
     ProgramValue::Int32(MachineTerm::constant(1))
 }
 
-fn point(memory: &Memory) -> ProgramPoint {
+fn point(memory: &SymbolicMemory) -> ProgramPoint {
     ProgramPoint::at(&intern_memory(memory.clone()))
 }
 
-fn entry_memory() -> Memory {
-    Memory::new()
+fn entry_memory() -> SymbolicMemory {
+    SymbolicMemory::new()
         .with_block(block("global:g"), 16)
         .with_block(block("global:h"), 16)
         .with_block(block("local:f:i"), 4)
@@ -685,14 +685,14 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
     let after = entry
         .clone()
         .store(at(AddressBase::Symbolic(Variable(80)), 0), one());
-    let load = |memory: &Memory| {
+    let load = |memory: &SymbolicMemory| {
         MachineTerm::MemoryLoad(
             ProgramPoint::at(&(intern_memory(memory.clone()))),
             Box::new(cell.clone()),
             crate::kernel::LoadKind::Int32,
         )
     };
-    let fact = |memory: &Memory| {
+    let fact = |memory: &SymbolicMemory| {
         Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -955,7 +955,7 @@ mod footprints {
 
     /// The rule's answer for the step that produced `after`, asked about a
     /// footprint that is `Some(ranges)` when the kernel could name it.
-    fn effect(after: &Memory, ranges: Option<&[MemoryRange]>) -> StepEffect {
+    fn effect(after: &SymbolicMemory, ranges: Option<&[MemoryRange]>) -> StepEffect {
         let produced = intern_memory(after.clone());
         let derivation = produced
             .derivation()
@@ -1244,7 +1244,7 @@ fn branch_join_identity_retains_inputs_through_read_projection() {
     assert!(unchanged.known_value(&cell).is_none());
     assert!(changed.known_value(&cell).is_none());
     assert_ne!(unchanged, changed);
-    let project = |memory: &Memory| {
+    let project = |memory: &SymbolicMemory| {
         crate::kernel::reasoning::memory_resolution::canonical_memory_for_pointer_load(
             memory, &cell,
         )
@@ -1388,7 +1388,7 @@ fn named_cell_stop_retains_the_decision_made_by_its_walk() {
     let _session = crate::kernel::VerificationSession::enter();
     let read = Address::symbolic(crate::kernel::Variable(981_201));
     let write = Address::symbolic(crate::kernel::Variable(981_202));
-    let memory = intern_memory(Memory::new().store(write.clone(), one()));
+    let memory = intern_memory(SymbolicMemory::new().store(write.clone(), one()));
     let here = ProgramPoint::at(&memory);
     let named = last_same_named_cell(&read, 4, &here).expect("named cell");
     assert!(matches!(
@@ -1520,8 +1520,9 @@ fn a_cell_version_point_is_the_same_whichever_point_is_asked_first() {
     );
     let after_store = after_loop.clone().store(at(block("global:h"), 4), one());
     let cell = at(block("global:h"), 0);
-    let ask =
-        |memory: &Memory| cell_last_same_version_point(&intern_memory(memory.clone()), &cell, 4);
+    let ask = |memory: &SymbolicMemory| {
+        cell_last_same_version_point(&intern_memory(memory.clone()), &cell, 4)
+    };
     clear_version_memos();
     let store_first = (ask(&after_store), ask(&after_loop));
     clear_version_memos();
@@ -1711,7 +1712,7 @@ fn path_of_stores(start: &ExecutionState, stores: &[(&str, u32)]) -> Vec<Executi
 }
 
 fn start_with(names: &[&str]) -> ExecutionState {
-    let memory = names.iter().fold(Memory::new(), |memory, name| {
+    let memory = names.iter().fold(SymbolicMemory::new(), |memory, name| {
         memory.with_block(block(name), 4)
     });
     ExecutionState::default().with_memory(memory)

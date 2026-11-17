@@ -883,7 +883,7 @@ pub(in crate::surface) fn walk_written_expressions(
         | ContractExpression::Binding(_)
         | ContractExpression::QualifiedC { .. }
         | ContractExpression::ProgramExpression(_)
-        | ContractExpression::CBinding(_)
+        | ContractExpression::ProgramBinding(_)
         | ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. }

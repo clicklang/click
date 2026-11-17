@@ -326,7 +326,7 @@ mod tests {
             start: parent.pointer().clone(),
             width: 4u32.into(),
         }));
-        let retained_state = crate::kernel::intern_memory(Memory::new());
+        let retained_state = crate::kernel::intern_memory(SymbolicMemory::new());
         let cell = Address::symbolic(Variable(824_002));
         let read_address = Address::symbolic(Variable(824_003));
         let read = PointerValue::from_read(
@@ -346,7 +346,7 @@ mod tests {
     fn equal_storage_addresses_preserve_a_complete_pointer_reads_provenance() {
         let a = value(825_001);
         let b = value(825_002);
-        let retained_state = crate::kernel::intern_memory(Memory::new());
+        let retained_state = crate::kernel::intern_memory(SymbolicMemory::new());
         let x = PointerValue::from_read(
             Address::symbolic(Variable(825_003)),
             ProgramType::Int32Pointer,

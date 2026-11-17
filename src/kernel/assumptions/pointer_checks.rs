@@ -286,8 +286,8 @@ mod tests {
     #[test]
     fn shared_load_atom_equality_keeps_narrow_and_wide_native_policies() {
         let _session = VerificationSession::enter();
-        let cell = Memory::global_pointer("shared-check-index");
-        let before = Memory::new().with_block("shared-check-index", 16);
+        let cell = SymbolicMemory::global_pointer("shared-check-index");
+        let before = SymbolicMemory::new().with_block("shared-check-index", 16);
         let after = before
             .clone()
             .store(cell.clone(), ProgramValue::Int32(MachineTerm::constant(9)));
@@ -355,8 +355,8 @@ mod tests {
     fn shared_loaded_blocks_use_the_existing_selected_load_authority() {
         let _session = VerificationSession::enter();
         let cell = Address::symbolic(Variable(1012050));
-        let before = crate::kernel::intern_memory(Memory::new());
-        let after = crate::kernel::intern_memory(Memory::new().with_block("different", 8));
+        let before = crate::kernel::intern_memory(SymbolicMemory::new());
+        let after = crate::kernel::intern_memory(SymbolicMemory::new().with_block("different", 8));
         let a = SharedAddress::import(&Address::loaded_value(&before, &cell));
         let b = SharedAddress::import(&Address::loaded_value(&after, &cell));
         assert!(shared_addresses_equal_with_load_atoms(&a, &a, &|_, _| {
@@ -411,7 +411,7 @@ mod tests {
     #[test]
     fn shared_access_keeps_complete_value_and_root_bounds_authority() {
         let _session = VerificationSession::enter();
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let cell = Address::symbolic(Variable(1012100));
         let read = PointerValue::from_read(
             Address::loaded_value(&memory, &cell),

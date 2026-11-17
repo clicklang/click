@@ -1367,7 +1367,7 @@ fn rewrite_contract_expression_exact(
         ContractExpression::QualifiedC { .. }
         | ContractExpression::ProgramExpression(_)
         | ContractExpression::Field { .. }
-        | ContractExpression::CBinding(_)
+        | ContractExpression::ProgramBinding(_)
         | ContractExpression::ResourceWildcard => (expression.clone(), false),
         ContractExpression::ArrayIndex {
             base,
@@ -1745,7 +1745,7 @@ fn substitute_resource_subject(
                     .iter()
                     .any(|value| contract_expression_as_program_expression(value).is_none())
                 {
-                    // Memory state-valued arguments are Surface expressions, not
+                    // SymbolicMemory state-valued arguments are Surface expressions, not
                     // C fragments. Retain them in the same resource form used
                     // by written `memory(old(p)[lo..hi])` facts.
                     let at_state = |value| match segment.state {
@@ -2716,7 +2716,7 @@ fn collect_contract_expression_referenced_bindings_one<N: ReferencedBinding>(
                 collect_contract_expression_referenced_bindings(index, names);
             }
         }
-        ContractExpression::Binding(name) | ContractExpression::CBinding(name) => {
+        ContractExpression::Binding(name) | ContractExpression::ProgramBinding(name) => {
             names.insert(name.clone().into());
         }
         ContractExpression::ResourceCount(resource) => {
@@ -3387,7 +3387,7 @@ pub(in crate::surface) fn contract_expression_has_explicit_program_result_refere
     let mut pending = vec![expression];
     while let Some(expression) = pending.pop() {
         match expression {
-            ContractExpression::CBinding(name) if name == "result" => return true,
+            ContractExpression::ProgramBinding(name) if name == "result" => return true,
             ContractExpression::CUnary { operand, .. }
             | ContractExpression::Field { base: operand, .. }
             | ContractExpression::Negate(operand)
@@ -3652,7 +3652,7 @@ pub(in crate::surface) fn elaborate_character_byte_views(
                             crate::kernel::BindingName::Named(name),
                         ))
                         | ContractExpression::Binding(name)
-                        | ContractExpression::CBinding(name) => Some(name),
+                        | ContractExpression::ProgramBinding(name) => Some(name),
                         _ => None,
                     };
                     match (named, parameter.click_type()) {
@@ -3747,7 +3747,7 @@ pub(in crate::surface) fn contract_expression_has_explicit_program_result_base(
 ) -> bool {
     loop {
         match expression {
-            ContractExpression::CBinding(name) => return name == "result",
+            ContractExpression::ProgramBinding(name) => return name == "result",
             ContractExpression::CUnary { operand: base, .. }
             | ContractExpression::Field { base, .. }
             | ContractExpression::ArrayIndex { base, .. }
@@ -3987,7 +3987,7 @@ fn substitute_contract_expression_node(
             Box::new(substitute_contract_expression_in(left, substitutions)?),
             Box::new(substitute_contract_expression_in(right, substitutions)?),
         )),
-        ContractExpression::QualifiedC { .. } | ContractExpression::CBinding(_) => {
+        ContractExpression::QualifiedC { .. } | ContractExpression::ProgramBinding(_) => {
             Ok(expression.clone())
         }
         ContractExpression::ArrayIndex {
@@ -4072,7 +4072,7 @@ fn substitute_contract_expression_node(
             pointee_struct,
         } => {
             let substituted_base = substitute_contract_expression_in(base, substitutions)?;
-            // Memory state field lowering uses the Surface base and only the
+            // SymbolicMemory state field lowering uses the Surface base and only the
             // operation/type shape of `lowered`. An `old(...)` base cannot
             // be embedded in the cached C fragment.
             // A call's parameter object is read at that call's parameter
@@ -4864,7 +4864,7 @@ pub(in crate::surface) fn contract_expression_as_program_expression_resolving_fi
             contract_expression_as_program_expression(operand)?,
         )),
         ContractExpression::Field { lowered, .. } => Some(lowered.clone()),
-        ContractExpression::Binding(name) | ContractExpression::CBinding(name) => {
+        ContractExpression::Binding(name) | ContractExpression::ProgramBinding(name) => {
             Some(ProgramExpression::Variable((name.clone()).into()))
         }
         ContractExpression::ResourceCount(_) => None,
@@ -5001,7 +5001,7 @@ pub(in crate::surface) fn contract_expression_to_program_expression(
             contract_expression_to_program_expression(operand)?,
         )),
         ContractExpression::Field { lowered, .. } => Some(lowered.clone()),
-        ContractExpression::Binding(name) | ContractExpression::CBinding(name) => {
+        ContractExpression::Binding(name) | ContractExpression::ProgramBinding(name) => {
             Some(ProgramExpression::Variable((name.clone()).into()))
         }
         ContractExpression::ResourceCount(_) => None,

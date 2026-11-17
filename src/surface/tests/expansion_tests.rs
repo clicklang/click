@@ -1,6 +1,45 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: C string viewability and call authority"]
+fn cstr_viewability_without_transport_does_not_supply_call_authority() {
+    let (source, sources) = mdtest_sources("mdtests/cstr_dynamic_invalidated_transport.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    assert!(!source.contains("transport("));
+    with_proof_trace("read_terminator", || {
+        let error = verify_c_sources(&source, &sources).unwrap_err();
+        assert!(
+            error
+                .message()
+                .contains("call to `strlen` needs a held `cstr_at` instance to give `n` its value"),
+            "{}\n{}",
+            error.report(),
+            error.trace_context_report().unwrap_or_default()
+        );
+    });
+
+    // Use the caller's length directly in the control so the whole proof,
+    // including witness construction and the self-assignment, can finish.
+    let stripped_call = sources[0]
+        .1
+        .replace("length = strlen(bytes);", "length = known_len;");
+    assert_ne!(sources[0].1, stripped_call);
+    let control = [(sources[0].0, stripped_call.as_str())];
+    verify_c_sources(&source, &control).unwrap_or_else(|error| panic!("{}", error.report()));
+    let label = "read_terminator.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &control, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &control).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 #[ignore = "nightly: viewability restriction expansion and cold replay"]
 fn viewable_requirement_supports_a_narrower_span_without_transport() {
     let (source, sources) =
@@ -15562,9 +15601,9 @@ fn qualified_static_struct_startup_and_expansion() {
     let parsed = super::super::verification::parse_verified_sources(&file, &map).unwrap();
     let state = parsed["main"].1.program_entry_state.as_ref().unwrap();
     assert_eq!(
-        state
-            .memory()
-            .load(&Memory::global_pointer("state#file-static:counter.c")),
+        state.memory().load(&SymbolicMemory::global_pointer(
+            "state#file-static:counter.c"
+        )),
         ExpressionOutcome::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(7)))
     );
     let verified_for_expansion = verify_c_sources(source, &sources).unwrap();
@@ -23243,4 +23282,25 @@ fn returned_member_domain_access_expands_and_replays() {
     ] {
         assert!(verify_c_sources(&bad, &sources).is_err());
     }
+}
+
+#[test]
+#[ignore = "nightly: fold model expansion and replay"]
+fn integer_fold_zero_contribution_expansion_replays_without_search() {
+    use crate::surface::{verify_c_sources, without_implicit_solve};
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/fold_read_solve_extends_endpoint_with_zero_contribution.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let crate::cli::VerificationInput::Bundle(sources) =
+        crate::cli::prepare_mdtest_inputs(&fixture).unwrap()
+    else {
+        panic!("C bundle")
+    };
+    let source = fixture.click_source.as_ref().unwrap();
+    let refs = crate::cli::source_refs(&sources);
+    let verified = verify_c_sources(source, &refs).unwrap();
+    let expanded = verified[0].expanded_proof_source().unwrap();
+    let start = source.find("} by {").unwrap() + 2;
+    let replay = format!("{}{}", &source[..start], expanded);
+    without_implicit_solve(|| verify_c_sources(&replay, &refs)).unwrap();
 }

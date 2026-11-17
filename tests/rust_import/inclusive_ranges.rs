@@ -2,10 +2,7 @@ use super::*;
 
 const SIDECAR: &str = include_str!("../../design/charon-trial/inclusive-ranges/inclusive.click");
 
-/// A `for` over `start..=end` holds the range's bounds and whether it has
-/// yielded `end`: it yields `end` once and stops, even at the type's maximum,
-/// and verifies from ordinary invariants over `iter_start`, `iter_end` and
-/// `iter_done`.
+/// Inclusive ranges yield their endpoint once, even at the type's maximum.
 #[test]
 fn charon_inclusive_range_loops_yield_their_end_once() {
     let p = Project::from_fixture("design/charon-trial/inclusive-ranges");
@@ -39,25 +36,25 @@ fn every_byte() -> u32 {
     step_until(loop(0));
     loop {
         decreases 256u32 - total;
-        invariant iter_end == 255u8;
         invariant total <= 256u32;
-        invariant iter_done == 0 implies total == (iter_start as u32);
-        invariant iter_done != 0 implies iter_start == 255u8 and total == 256u32;
+        invariant iter.is_empty() == false implies iter.end() == 255u8;
+        invariant iter.is_empty() == false implies total == (iter.start() as u32);
+        invariant iter.is_empty() implies total == 256u32;
         preserve by {
             mark iteration;
-            have total == (iter_start as u32);
-            if at(iteration, iter_start) < 255u8 {
+            have iter.is_empty() == false;
+            have total == (iter.start() as u32);
+            if at(iteration, iter.start()) < 255u8 {
                 step_until(back_edge());
-                have iter_done == 0;
+                have iter.is_empty() == false;
                 have to_integer(total) == to_integer(at(iteration, total)) + 1;
-                have to_integer(iter_start) == to_integer(at(iteration, iter_start)) + 1;
-                have to_integer(total) == to_integer(iter_start);
-                have total == (iter_start as u32);
+                have to_integer(iter.start()) == to_integer(at(iteration, iter.start())) + 1;
+                have to_integer(total) == to_integer(iter.start());
+                have total == (iter.start() as u32);
             } else {
-                have iter_start == 255u8;
+                have iter.start() == 255u8;
                 step_until(back_edge());
-                have iter_done == 1;
-                have iter_start == 255u8;
+                have iter.is_empty();
                 have to_integer(total) == to_integer(at(iteration, total)) + 1;
                 have to_integer(at(iteration, total)) == 255;
                 have to_integer(total) == 256;

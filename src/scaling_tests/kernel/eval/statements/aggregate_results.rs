@@ -8,7 +8,7 @@ fn aggregate_step_results_cost_their_fields_instead_of_unrelated_state() {
             let (mut state, source, layout) = fixture(fields);
             if unrelated {
                 for i in 0..size {
-                    let pointer = Memory::local_pointer(format!("other{i}"));
+                    let pointer = SymbolicMemory::local_pointer(format!("other{i}"));
                     state.set_memory(
                         state
                             .memory
@@ -52,7 +52,7 @@ fn opaque_exception_creation_ignores_unrelated_memory_and_types() {
         let mut state = ExecutionState::new();
         for index in 0..size {
             TypeParameterName::intern(&format!("Unrelated{index}"));
-            let pointer = Memory::local_pointer(format!("other{index}"));
+            let pointer = SymbolicMemory::local_pointer(format!("other{index}"));
             state.set_memory(
                 state
                     .memory

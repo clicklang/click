@@ -60,8 +60,8 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 // These operation tests also exercise kernel proposition search explicitly.
 use crate::kernel::{
     Address, AddressBase, AddressOffset, ComparisonOperator, CompositeResourceDefinition,
-    MachineTerm, Memory, ProgramType, ProgramValue, ResourceAccessMode, ResourceFact, ResourceSpec,
-    SpecExpression, int32, program_function,
+    MachineTerm, ProgramType, ProgramValue, ResourceAccessMode, ResourceFact, ResourceSpec,
+    SpecExpression, SymbolicMemory, int32, program_function,
 };
 
 /// One arm state holding a checked view rooted in a fresh loan.
@@ -502,7 +502,7 @@ fn constructor_partition_freshness_is_indexed_and_output_linear() {
 
 #[test]
 fn cached_body_loadability_preserves_exact_range_and_state_barriers() {
-    let before = Memory::new();
+    let before = SymbolicMemory::new();
     let at = |block: &str| Address {
         base: block.into(),
         offset: crate::kernel::AddressOffset::Constant(0),
@@ -809,7 +809,7 @@ fn return_proposition_rejects_sibling_assumptions_and_other_memory() {
     }
     let (function, mut events) = returned_proposition_trace(&state, &sibling);
     let mut other_state = state.clone();
-    other_state.memory = Memory::new().with_block("other_memory_state", 4);
+    other_state.memory = SymbolicMemory::new().with_block("other_memory_state", 4);
     let other_context = returned_proposition_context(&other_state);
     let wrong_state =
         returned_proposition_event(&other_context, &other_state, &sibling, &sibling, fact);
@@ -866,7 +866,7 @@ fn return_proposition_checks_resource_compositions_without_granting_ownership() 
 #[test]
 fn return_proposition_accepts_materialized_reads_without_widening_or_value_facts() {
     let pointer = Address::symbolic(Variable(42));
-    let memory = Memory::new().store(pointer.clone(), int32(7));
+    let memory = SymbolicMemory::new().store(pointer.clone(), int32(7));
     let state = ExecutionState::new().with_memory(memory.clone());
     let empty = PureFactStore::default();
     let (function, original) = returned_proposition_trace(&state, &empty);
@@ -900,7 +900,11 @@ fn return_proposition_accepts_materialized_reads_without_widening_or_value_facts
             false,
         ),
         (
-            read(Memory::new(), pointer.clone(), MachineTerm::constant(4)),
+            read(
+                SymbolicMemory::new(),
+                pointer.clone(),
+                MachineTerm::constant(4),
+            ),
             false,
         ),
         (
@@ -936,11 +940,11 @@ fn return_proposition_accepts_materialized_reads_without_widening_or_value_facts
 fn return_proposition_accepts_the_store_loadability_of_a_pointer_cell() {
     let pointer = Address::symbolic(Variable(42));
     let value = ProgramValue::pointer(Address::symbolic(Variable(43)));
-    let memory = Memory::new().store(pointer.clone(), value.clone());
+    let memory = SymbolicMemory::new().store(pointer.clone(), value.clone());
     let state = ExecutionState::new().with_memory(memory.clone());
     let empty = PureFactStore::default();
     let store = crate::kernel::ExecutionPureFact::certified_store(
-        Memory::new(),
+        SymbolicMemory::new(),
         memory,
         pointer,
         value,
@@ -1057,14 +1061,14 @@ fn return_argument_facts_do_not_project_mutable_memory_invariants() {
         crate::kernel::functions::evaluate_composite_resource_fact_propositions(
             &held,
             std::slice::from_ref(&definition),
-            &Memory::new(),
+            &SymbolicMemory::new(),
             &ResourceContext::new(),
             &PureFactContext::new().require_owned_expression_loads()
         )
         .is_none()
     );
     let state = ExecutionState::new()
-        .with_memory(Memory::new().store(pointer, int32(9)))
+        .with_memory(SymbolicMemory::new().store(pointer, int32(9)))
         .with_resource_context(ResourceContext::new().unchecked_with_fact(held));
     let empty = PureFactStore::default();
     let false_fact = Proposition::ConditionIs(
@@ -1117,7 +1121,9 @@ fn return_composite_presentations_reject_other_execution_paths() {
     };
     assert!(check_trace(Box::new(rewrite.clone())).is_ok());
     Arc::make_mut(rewrite.return_presentation.as_mut().unwrap()).context =
-        returned_proposition_context(&before.with_memory(Memory::new().with_block("other", 4)));
+        returned_proposition_context(
+            &before.with_memory(SymbolicMemory::new().with_block("other", 4)),
+        );
     assert_eq!(
         check_trace(Box::new(rewrite)).err(),
         Some("return composite presentation belongs to a different execution path")
@@ -1312,7 +1318,7 @@ fn return_resource_observations_construct_successors_and_reject_other_paths() {
     }
     let mut wrong_path = checked;
     let mut other = before.clone();
-    other.memory = Memory::new().with_block("other", 4);
+    other.memory = SymbolicMemory::new().with_block("other", 4);
     Arc::make_mut(wrong_path.return_observation.as_mut().unwrap()).context =
         returned_proposition_context(&other);
     let mut invalid = events;
@@ -1596,7 +1602,8 @@ fn checked_call_event_must_name_a_call_introduced_by_its_statement() {
         offset: AddressOffset::Constant(0),
     };
     let range = MemoryRange::new(pointer, MachineTerm::constant(0), MachineTerm::constant(1));
-    let before = ExecutionState::new().with_memory(Memory::new().with_block("arg-memory", 4));
+    let before =
+        ExecutionState::new().with_memory(SymbolicMemory::new().with_block("arg-memory", 4));
     let after = before
         .clone()
         .with_memory(before.memory().clone().with_call_memory_havoc(
@@ -1643,9 +1650,9 @@ fn checked_call_event_must_name_a_call_introduced_by_its_statement() {
 
 #[test]
 fn checked_call_authority_is_path_local_across_forks() {
-    let ancestor_view = crate::kernel::intern_memory(Memory::new());
+    let ancestor_view = crate::kernel::intern_memory(SymbolicMemory::new());
     let sibling_view = crate::kernel::intern_memory(
-        Memory::new().with_block_without_derivation("local:sibling", 4),
+        SymbolicMemory::new().with_block_without_derivation("local:sibling", 4),
     );
     let mut ancestor = CheckedCallEvents::default();
     ancestor.new_event(ancestor_view);
@@ -1668,7 +1675,8 @@ fn checked_call_view_lookup_does_not_scan_unrelated_events() {
         let mut selected = None;
         for index in 0..event_count {
             let view = crate::kernel::intern_memory(
-                Memory::new().with_block_without_derivation(format!("local:call-{index}"), 4),
+                SymbolicMemory::new()
+                    .with_block_without_derivation(format!("local:call-{index}"), 4),
             );
             let event = events.new_event(view.clone());
             if index + 1 == event_count {
@@ -1712,7 +1720,7 @@ fn interface_pointer_congruence_preserves_scope_and_read_obligations() {
     assert!(!checked_interface_pointer_equality(
         &arm,
         &Proposition::MemoryLoadable {
-            memory: Memory::new(),
+            memory: SymbolicMemory::new(),
             base: a,
             bytes: MachineTerm::constant(8),
             wide: false,
@@ -1818,7 +1826,7 @@ fn checked_function_entry_rebase_rejects_semantic_memory_and_population_changes(
         offset: AddressOffset::Constant(0),
     };
     let caller = ExecutionState::new()
-        .with_memory(Memory::new().store(
+        .with_memory(SymbolicMemory::new().store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(1)),
         ))
@@ -1840,9 +1848,9 @@ fn checked_function_entry_rebase_rejects_semantic_memory_and_population_changes(
         Some(entry_state)
     );
 
-    let changed_memory = caller
-        .clone()
-        .with_memory(Memory::new().store(pointer, ProgramValue::Int32(MachineTerm::constant(2))));
+    let changed_memory = caller.clone().with_memory(
+        SymbolicMemory::new().store(pointer, ProgramValue::Int32(MachineTerm::constant(2))),
+    );
     assert!(
         checked
             .entry_state_for(&changed_memory, &function, &[], &assumptions)
@@ -1970,9 +1978,9 @@ fn checked_composite_events_reject_forged_resources_facts_memory_and_definitions
         base: AddressBase::ExternalArgument,
         offset: AddressOffset::Constant(0),
     };
-    let changed_memory = observed
-        .clone()
-        .with_memory(Memory::new().store(pointer, ProgramValue::Int32(MachineTerm::constant(1))));
+    let changed_memory = observed.clone().with_memory(
+        SymbolicMemory::new().store(pointer, ProgramValue::Int32(MachineTerm::constant(1))),
+    );
     assert!(
         CheckedResourceObservation::check(
             &function,
@@ -2238,8 +2246,8 @@ fn checked_interface_effects_require_memory_diff_coverage() {
         Err("an interface arm memory effect does not cover its memory diff")
     );
 
-    let erased_before =
-        ExecutionState::new().with_memory(Memory::new().store(changed_pointer.clone(), int32(1)));
+    let erased_before = ExecutionState::new()
+        .with_memory(SymbolicMemory::new().store(changed_pointer.clone(), int32(1)));
     let erased_after = erased_before.clone().with_memory(
         erased_before
             .memory()
@@ -2279,7 +2287,7 @@ fn conditional_heap_free_is_checked_as_a_guarded_lifetime_join() {
         offset: AddressOffset::Constant(0),
     };
     let before = ExecutionState::new().with_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_heap_allocation_claim(
                 allocation_base.clone(),
                 crate::kernel::AllocationSize::int32(16),
@@ -2779,8 +2787,8 @@ fn interface_assertion_requires_an_available_proof_not_derivability() {
 
 #[test]
 fn interface_load_definition_rejects_wrong_variable_address_and_state() {
-    use crate::kernel::{Address, ConditionTerm, Memory};
-    let memory = crate::kernel::intern_memory(Memory::new());
+    use crate::kernel::{Address, ConditionTerm, SymbolicMemory};
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let pointer = Address {
         base: "interface_definition".into(),
         offset: AddressOffset::Constant(0),
@@ -2828,7 +2836,7 @@ fn interface_load_definition_rejects_wrong_variable_address_and_state() {
     let wrong_state = equation(
         variable,
         crate::kernel::ProgramPoint::at(
-            &(crate::kernel::intern_memory(Memory::new().with_block("different", 4))),
+            &(crate::kernel::intern_memory(SymbolicMemory::new().with_block("different", 4))),
         ),
         pointer,
     );
@@ -3044,10 +3052,10 @@ mod scaling_tests {
 
 #[test]
 fn named_pointer_cell_requires_its_complete_read_and_provenance() {
-    use crate::kernel::{Address, LoadKind, Memory, VerificationSession};
+    use crate::kernel::{Address, LoadKind, SymbolicMemory, VerificationSession};
     let _session = VerificationSession::enter();
     let address = Address::symbolic(Variable(986_101));
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let name = crate::kernel::canonical_form_of_load(
         crate::kernel::intern_memory(memory.clone()),
         address.clone(),

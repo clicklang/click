@@ -636,7 +636,7 @@ fn array_argument_state_lookup_ignores_unrelated_recorded_history() {
     let selected = ExecutionState::new()
         .with_local("p", pointer.clone())
         .with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block("selected-array-memory", 4)
                 .store(cell.clone(), int32(1)),
         );
@@ -661,14 +661,14 @@ fn array_argument_state_lookup_ignores_unrelated_recorded_history() {
                     kind: ProgramPointKind::Exit,
                 },
                 selected.clone().with_memory(
-                    Memory::new()
+                    SymbolicMemory::new()
                         .with_block("selected-array-memory", 4)
                         .store(cell.clone(), int32(index as u32 + 1)),
                 ),
             );
         }
         let current = selected.clone().with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block("selected-array-memory", 4)
                 .store(cell.clone(), int32(u32::MAX)),
         );

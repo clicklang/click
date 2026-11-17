@@ -73,7 +73,7 @@ pub(super) fn surface_logical_children(
     }
 }
 
-/// Flatten only explicit sequence syntax. Memory state wrappers apply to each
+/// Flatten only explicit sequence syntax. SymbolicMemory state wrappers apply to each
 /// element; no value evaluation or fact-dependent simplification participates.
 fn written_sequence_elements(expression: &ContractExpression) -> Option<Vec<ContractExpression>> {
     let mut pending = vec![(expression, Vec::<Option<ProgramPointSelector>>::new())];
@@ -5133,7 +5133,7 @@ pub(super) fn contract_expression_mentions_program_local(
             contract_expression_mentions_program_local(left, parameter_names)
                 || contract_expression_mentions_program_local(right, parameter_names)
         }
-        ContractExpression::CBinding(_) | ContractExpression::ResourceWildcard => false,
+        ContractExpression::ProgramBinding(_) | ContractExpression::ResourceWildcard => false,
         ContractExpression::ResourceCount(resource) => match resource.as_ref() {
             ResourceClause::Declared { arguments, .. } => arguments.iter().any(|argument| {
                 contract_expression_mentions_program_local(argument, parameter_names)
@@ -5222,7 +5222,7 @@ mod selected_premise_tests {
         };
 
         let goal = Proposition::MemoryLoadable {
-            memory: Memory::new(),
+            memory: SymbolicMemory::new(),
             base: Address {
                 base: AddressBase::ExternalArgument,
                 offset: AddressOffset::Constant(0),

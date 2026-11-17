@@ -176,7 +176,7 @@ fn shared_pointer_load_footprints_keep_depth_refusal_without_tree_expansion() {
         let _session = crate::kernel::VerificationSession::enter();
         let address = Address::symbolic(Variable(1081401));
         let memory = crate::kernel::intern_memory(
-            Memory::new().store(address.clone(), crate::kernel::int32(7)),
+            SymbolicMemory::new().store(address.clone(), crate::kernel::int32(7)),
         );
         let load = MachineTerm::MemoryLoad(
             ProgramPoint::at(&memory),

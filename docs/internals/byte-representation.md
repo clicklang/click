@@ -317,7 +317,7 @@ The copied source cells are found with one range query over the copied
 block and span (`representation_copy_cell_moves`), and the byte view's
 containing cell with a query over the at most seven constant offsets below
 the access (`containing_integer_cell`). Neither scans memory, other blocks,
-or old states. Each planted cell pays the ordinary `Memory::store` cost.
+or old states. Each planted cell pays the ordinary `SymbolicMemory::store` cost.
 The regressions measure deterministic work at four or more sizes, under the
 [efficiency contract](verification-efficiency.md):
 

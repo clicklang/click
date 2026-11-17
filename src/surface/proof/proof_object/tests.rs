@@ -483,7 +483,7 @@ fn pure_identity_fixture() -> PureTheoremContext {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -522,7 +522,7 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
                 )),
             )),
             Box::new(Proposition::MemoryLoadable {
-                memory: Memory::new().with_block("sum", 16),
+                memory: SymbolicMemory::new().with_block("sum", 16),
                 base: pointer,
                 bytes: MachineTerm::Variable(Variable(30)),
                 wide: false,
@@ -647,7 +647,7 @@ fn atomic_conjunct_extraction_requires_exact_selected_premise_on_small_stack() {
                 base: "atomic-extract-cell".into(),
                 offset: AddressOffset::Constant(0),
             };
-            let old_memory = Memory::new().with_block("atomic-extract-cell", 4).store(
+            let old_memory = SymbolicMemory::new().with_block("atomic-extract-cell", 4).store(
                 pointer.clone(),
                 ProgramValue::Int32(MachineTerm::Variable(Variable(8_000_100))),
             );
@@ -1042,7 +1042,7 @@ fn both_and_preserves_exact_binders_and_saved_states() {
         base: "cell".into(),
         offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new().with_block("cell", 4).store(
+    let memory = SymbolicMemory::new().with_block("cell", 4).store(
         pointer.clone(),
         ProgramValue::Int32(MachineTerm::Variable(Variable(11))),
     );
@@ -1485,7 +1485,7 @@ fn proof_failure_preserves_ancestor_and_selected_lineage() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
         requires: vec![goal.clone()],
@@ -1531,7 +1531,7 @@ fn branch_identity_is_stable_across_fork_refinement_and_closure() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -1597,7 +1597,7 @@ fn certificate_suffix_requires_an_exact_shared_ancestor() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -1672,7 +1672,7 @@ fn have_scope_publishes_only_a_completed_checked_body() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -1770,7 +1770,7 @@ fn pure_have_presentation_root(surface: ClickProposition) -> Proof<'static> {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -2130,7 +2130,7 @@ fn smart_have_scope_and_explicit_step_scale_with_local_output() {
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let kernel = lower_pure_theorem_proposition(
         "smart have scaling",
         &proposition,
@@ -2390,7 +2390,7 @@ fn persistent_fact_lookup_scales_logarithmically() {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
-            memory: Memory::new(),
+            memory: SymbolicMemory::new(),
             values: BTreeMap::new(),
             array_refs: BTreeMap::new(),
             requires,
@@ -2688,7 +2688,7 @@ fn proposition_unfold_uses_indexed_facts_and_persistent_local_state() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -3212,7 +3212,7 @@ fn proof_if_fork_and_join_work_is_logarithmic_in_unrelated_facts() {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
-            memory: Memory::new(),
+            memory: SymbolicMemory::new(),
             values: BTreeMap::new(),
             array_refs: BTreeMap::new(),
             requires,
@@ -3774,7 +3774,7 @@ fn pure_rewrite_uses_indexed_equality_availability_without_changing_facts() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         values,
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -3936,7 +3936,7 @@ fn surface_rewrite_retains_structural_successor_and_scales() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         values,
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -4041,7 +4041,7 @@ fn apply_fact_uses_selected_implication_and_alpha_equivalent_antecedent() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         values: BTreeMap::from([(
             "x".to_string(),
             ProgramValue::Int32(MachineTerm::Variable(Variable(8_000_000))),
@@ -5145,7 +5145,7 @@ fn assert_static_array_retry_uses_recorded_qualified_source(block: &str, name: &
     let arguments = [ProgramExpression::Value(ProgramValue::Int32(
         MachineTerm::constant(7),
     ))];
-    let state = ExecutionState::new().with_memory(Memory::new().with_block(
+    let state = ExecutionState::new().with_memory(SymbolicMemory::new().with_block(
         block,
         4 * u32::try_from(cells).expect("test array size should fit in a block"),
     ));
@@ -6302,7 +6302,7 @@ fn pure_signed_order_solve_builds_its_certificate_with_logarithmic_local_updates
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard order theorems should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let terms = [
         MachineTerm::Variable(Variable(8_150_000)),
         MachineTerm::Variable(Variable(8_150_001)),
@@ -6445,7 +6445,7 @@ fn pure_equality_refinement_solve_applies_one_rewrite_with_logarithmic_local_upd
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let value = MachineTerm::Variable(Variable(8_174_000));
     let named = [value.clone()];
     let named_values = named_int32_values(&named);
@@ -6535,7 +6535,7 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let selected_term = MachineTerm::Variable(Variable(8_174_050));
     let named = [selected_term.clone()];
     let named_values = named_int32_values(&named);
@@ -6648,7 +6648,7 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let left = MachineTerm::Variable(Variable(8_174_060));
     let right = MachineTerm::Variable(Variable(8_174_061));
     let named = [left.clone(), right.clone()];
@@ -9140,7 +9140,7 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let left = ProgramValue::Int32(MachineTerm::Variable(Variable(8_200_000)));
     let right = ProgramValue::Int32(MachineTerm::Variable(Variable(8_200_001)));
     let premise = ClickProposition::Comparison {
@@ -9283,7 +9283,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let left = ProgramValue::Int32(MachineTerm::Variable(Variable(8_210_000)));
     let right = ProgramValue::Int32(MachineTerm::Variable(Variable(8_210_001)));
     let premise = ClickProposition::Comparison {
@@ -10114,9 +10114,9 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
     let state =
         empty_state.with_resource_context(ResourceContext::new().unchecked_with_fact(lowered));
     let reflexive = ClickProposition::Comparison {
-        left: ContractExpression::CBinding("x".to_string()),
+        left: ContractExpression::ProgramBinding("x".to_string()),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CBinding("x".to_string()),
+        right: ContractExpression::ProgramBinding("x".to_string()),
     };
     let _exposed_reflexive = ClickProposition::Comparison {
         left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
@@ -11783,10 +11783,10 @@ fn generated_load_source_event_fixture(
         },
         crate::kernel::GeneratedLoadBinding::Exact {
             variable: Variable(variable.into()),
-            retained_state: crate::kernel::MemoryStateIdentity::of(&Memory::new()),
+            retained_state: crate::kernel::MemoryStateIdentity::of(&SymbolicMemory::new()),
             pointer: pointer.clone(),
             load: MachineTerm::MemoryLoad(
-                crate::kernel::ProgramPoint::of_memory(&Memory::new()),
+                crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new()),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -14296,7 +14296,7 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
         offset: AddressOffset::Constant(0),
     };
     let target = Address::function("callback");
-    let memory = Memory::new().store(
+    let memory = SymbolicMemory::new().store(
         table.clone(),
         ProgramValue::typed_pointer(target.clone(), interface_type),
     );
