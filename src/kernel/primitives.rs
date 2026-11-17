@@ -14915,7 +14915,7 @@ impl PartialOrd for ProofObligation {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct ExecutionPureFact {
-    pub(super) proposition: Proposition,
+    pub(super) proposition: Arc<Proposition>,
     pub(super) public: bool,
     pub(super) certified: bool,
     /// A value equation derived by a logical read, not a condition selecting

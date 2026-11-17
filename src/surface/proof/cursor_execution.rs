@@ -65,7 +65,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                         describe_click_proposition(written_fact),
                         describe_missing_pure_fact(
                             &fact,
-                            &concrete_facts.to_vec(),
+                            &concrete_facts,
                             state.resources().facts(),
                             parameter_binding,
                             &[]
@@ -103,7 +103,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                         "`{claim_label}` tactic {tactic_index}: `branch ensuring` did not establish resource fact: {}",
                         describe_missing_resource_fact(
                             &expected,
-                            &concrete_facts.to_vec(),
+                            &concrete_facts,
                             state.resources().facts(),
                             parameter_binding,
                             &[]
@@ -480,11 +480,15 @@ fn resource_is_direct_observed_core(
 /// so listing the slice alone shows `pure facts: []` beside a `requires` the
 /// step did see. List the context the kernel checked against.
 fn listed_context_pure_facts(
-    delta: &[Proposition],
+    delta: &(impl PropositionSource + ?Sized),
     context: Option<&PureFactContext>,
 ) -> Vec<Proposition> {
     const LIMIT: usize = 32;
-    let mut facts = delta.iter().take(LIMIT).cloned().collect::<Vec<_>>();
+    let mut facts = delta
+        .propositions()
+        .take(LIMIT)
+        .cloned()
+        .collect::<Vec<_>>();
     if let Some(context) = context {
         facts.extend(context.diagnostic_fact_sample(LIMIT - facts.len(), 0).0);
     }
@@ -494,7 +498,7 @@ fn listed_context_pure_facts(
 }
 
 fn describe_step_proof_context(
-    delta: &[Proposition],
+    delta: &(impl PropositionSource + ?Sized),
     context: Option<&PureFactContext>,
     resources: &[ResourceFact],
     binding: ParameterBinding<'_>,
@@ -510,7 +514,7 @@ fn describe_step_proof_context(
         let (conditions, propositions) = context.fact_counts();
         conditions + propositions
     });
-    if total.saturating_add(delta.len()) > 32 {
+    if total.saturating_add(delta.propositions().take(33).count()) > 32 {
         description.push_str(
             "\n  pure facts shown are a bounded sample of the context and statement facts",
         );
@@ -1567,7 +1571,7 @@ pub(super) fn route_throw_to_handler(
     context: Option<&PureFactContext>,
     throw_value: &ProgramValue,
     thrown_state: &ExecutionState,
-    throw_facts: &[Proposition],
+    throw_facts: &PureFactList,
 ) -> Result<bool, ClickError> {
     let handler = loop {
         match execution.core.frontier.continuations.pop() {
@@ -1593,7 +1597,7 @@ pub(super) fn route_throw_to_handler(
     // declare the handler binding, then assign the thrown value. The
     // handler binding is always `int32` by `TryCatchInt32` semantics.
     let mut state = thrown_state.clone();
-    let mut facts = PureFactList::from(throw_facts.to_vec());
+    let mut facts = throw_facts.clone();
     for statement in [
         program_declare(handler.binding.clone(), crate::kernel::ProgramType::Int32),
         program_assign(
@@ -3245,7 +3249,7 @@ fn execute_step_from_frontier_position_selecting_path(
             let mut returned_facts = loop_index
                 .and_then(|index| execution.presentation.loop_return_proofs.get(&index))
                 .map(|planned| planned.entry_facts.clone())
-                .unwrap_or_else(|| ProofFacts::from_source(&*available_pure_facts));
+                .unwrap_or_else(|| available_pure_facts.proof_facts());
             for fact in returned.pure_facts.iter() {
                 if !returned_facts.contains(fact) {
                     returned_facts = returned_facts.with_kernel_checked_fact(fact.clone());
