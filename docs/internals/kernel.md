@@ -1463,7 +1463,11 @@ unchanging value back at every read, in any block: a literal, a copy of a
 parameter the body never writes, moves or borrows, or a reference borrowing a
 place rooted at a local, whose address rustc keeps for the borrow's life. A
 reborrow `&mut *t` of such a borrow is the borrow itself, and `*&p` is `p`;
-each value is resolved once, so a chain of reborrows costs its length.
+each value is resolved once, so a chain of reborrows costs its length. A
+shared borrow of a shared slice local is that slice, as `split_at` and
+`chunks_exact` read it; the length or a conversion of an unchanging value is
+unchanging; and a shared borrow of a reference or slice parameter does not
+change it.
 
 `temporaries::remove_unused` removes a temporary the body never names apart
 from its storage markers and its writes of pure values, and a `()` temporary
