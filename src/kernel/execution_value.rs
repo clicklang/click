@@ -2,7 +2,9 @@
 //! Compatibility reads are explicit; a shared value owns only its common root.
 use super::prelude::*;
 pub(in crate::kernel) mod storage_keys;
-use storage_keys::{BooleanStorageKey, FloatStorageKey, NativeStorageIdentity};
+use storage_keys::{
+    AlgebraicStorageKey, BooleanStorageKey, FloatStorageKey, NativeStorageIdentity,
+};
 
 #[derive(Clone, Debug, Eq)]
 pub enum ExecutionValue {
@@ -481,6 +483,7 @@ enum StoredIdentity<'a> {
 #[derive(Debug)]
 enum StoredKey {
     Machine(SharedMachineIntegerTerm),
+    Algebraic(AlgebraicStorageKey),
     Boolean(BooleanStorageKey),
     Float32(FloatStorageKey),
     Float64(FloatStorageKey),
@@ -488,6 +491,9 @@ enum StoredKey {
 }
 impl StoredKey {
     fn for_value(value: &ExecutionValue) -> Self {
+        if let Some(root) = value.algebraic() {
+            return Self::Algebraic(storage_keys::algebraic_for_root(&root));
+        }
         if let Some(view) = value.float() {
             let key = match view {
                 FloatOperandView::Native(_, term) => FloatStorageKey::native(term),
@@ -531,6 +537,9 @@ impl StoredExecutionValue {
             .get_or_init(|| StoredKey::for_value(&self.0.value))
         {
             StoredKey::Machine(identity) => StoredIdentity::Machine(identity),
+            StoredKey::Algebraic(key) => {
+                StoredIdentity::Native(NativeStorageIdentity::Algebraic(key))
+            }
             StoredKey::Boolean(key) => StoredIdentity::Native(NativeStorageIdentity::Boolean(key)),
             StoredKey::Float32(key) => StoredIdentity::Native(NativeStorageIdentity::Float32(key)),
             StoredKey::Float64(key) => StoredIdentity::Native(NativeStorageIdentity::Float64(key)),

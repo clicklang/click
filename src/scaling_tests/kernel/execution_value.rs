@@ -554,3 +554,95 @@ fn float_storage_key_work_is_independent_of_prior_verifications() {
         );
     }
 }
+
+#[test]
+fn algebraic_storage_keys_keep_growing_dags_shared_and_session_scoped() {
+    use std::hash::Hash;
+    let mut previous = None;
+    for size in [16, 64, 256] {
+        let native = KernelMatch::test_scrutinee(vec![]);
+        let mut root = KernelTermImport::default().algebraic(&native);
+        for _ in 0..size {
+            root = KernelConstructor {
+                algebraic_type: native.algebraic_type.clone(),
+                variant: "Shared".into(),
+                fields: vec![root.clone(), root],
+            }
+            .into_term();
+        }
+        let mut cold = Vec::new();
+        let exports = KernelTermExport::algebraic_export_count();
+        for _ in 0..2 {
+            let _session = crate::kernel::VerificationSession::enter();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let value = StoredExecutionValue::from(ExecutionValue::Shared(root.clone()));
+                value.hash(&mut std::collections::hash_map::DefaultHasher::new());
+            });
+            cold.push(work);
+            let _nested = crate::kernel::VerificationSession::enter();
+            let (_, warm) = crate::instrumentation::measure_deterministic_work(|| {
+                let value = StoredExecutionValue::from(ExecutionValue::Shared(root.clone()));
+                for _ in 0..32 {
+                    value.hash(&mut std::collections::hash_map::DefaultHasher::new());
+                }
+            });
+            assert_eq!(warm, 0);
+        }
+        assert!(cold[0] > 0);
+        assert_eq!(cold[0], cold[1]);
+        assert_eq!(KernelTermExport::algebraic_export_count(), exports);
+        assert!(!root.has_cached_native_argument());
+        if let Some(previous) = previous {
+            assert!(cold[0] <= 5 * previous, "{previous} -> {}", cold[0]);
+        }
+        previous = Some(cold[0]);
+    }
+}
+
+#[test]
+fn algebraic_storage_comparison_visits_shared_pairs_once() {
+    use std::hash::Hash;
+    let mut previous = None;
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let native = KernelMatch::test_scrutinee(vec![]);
+        let pointer = PointerValue::new(
+            Pointer::symbolic(Variable(998740)),
+            ProgramType::Int32Pointer,
+        );
+        let mut roots = [pointer.clone(), pointer.with_pointee_constant(true)].map(|pointer| {
+            KernelConstructor {
+                algebraic_type: native.algebraic_type.clone(),
+                variant: "Pointer".into(),
+                fields: vec![
+                    ExecutionValue::retain_formed_pointer(ProgramValue::Pointer(pointer))
+                        .common_operand(),
+                ],
+            }
+            .into_term()
+        });
+        for _ in 0..size {
+            roots = roots.map(|root| {
+                KernelConstructor {
+                    algebraic_type: native.algebraic_type.clone(),
+                    variant: "Shared".into(),
+                    fields: vec![root.clone(), root],
+                }
+                .into_term()
+            });
+        }
+        assert_ne!(roots[0], roots[1]);
+        let values = roots.map(|root| StoredExecutionValue::from(ExecutionValue::Shared(root)));
+        for value in &values {
+            value.hash(&mut std::collections::hash_map::DefaultHasher::new());
+        }
+        let (order, work) =
+            crate::instrumentation::measure_deterministic_work(|| values[0].cmp(&values[1]));
+        assert!(order.is_eq());
+        assert!(work > 0);
+        if let Some(previous) = previous {
+            assert!(work <= 5 * previous, "{previous} -> {work}");
+        }
+        previous = Some(work);
+    }
+}
