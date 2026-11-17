@@ -5482,10 +5482,10 @@ fn prepare_verified_function_call<'a>(
         .zip(application_value_arguments)
     {
         entry_state.locals.set_typed_qualified_with_all_qualifiers(
-            parameter.name().to_string(),
+            parameter.binding_name().clone(),
             value.clone(),
             parameter.program_type(),
-            Memory::value_parameter_pointer(parameter.name()),
+            Memory::value_parameter_pointer(parameter.binding_name()),
             false,
             false,
             false,
@@ -8275,7 +8275,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
                 return false;
             }
             evaluation.locals.set_typed(
-                parameter.name().to_owned(),
+                parameter.binding_name().clone(),
                 value.clone(),
                 parameter.program_type(),
             );
@@ -10171,7 +10171,7 @@ fn evaluate_resource_population_body_resources(
                 return Ok(Err(RuntimeError::TypeMismatch));
             }
             population_state.locals.set_typed(
-                parameter.name().to_string(),
+                parameter.binding_name().clone(),
                 argument.clone(),
                 parameter.program_type(),
             );
@@ -10600,7 +10600,7 @@ fn composite_definition_facts_hold(
             return Ok(false);
         }
         state.locals.set_typed(
-            parameter.name().to_string(),
+            parameter.binding_name().clone(),
             argument.clone(),
             parameter.program_type(),
         );
@@ -11140,7 +11140,7 @@ fn with_private_aggregate_parameter_owners(
     for parameter in interface.parameters() {
         crate::instrumentation::record_deterministic_work(1);
         if let Some(layout) = parameter.aggregate_layout()
-            && let Some(slot) = callee.locals.slot(parameter.name())
+            && let Some(slot) = callee.locals.slot(parameter.binding_name().clone())
         {
             resources = resources
                 .unchecked_with_fact(private_aggregate_storage_owner(slot.clone(), layout));
@@ -15819,7 +15819,7 @@ fn construct_composite_resource_body(
             return None;
         }
         state.locals.set_typed(
-            parameter.name().to_string(),
+            parameter.binding_name().clone(),
             argument.clone(),
             parameter.program_type(),
         );
@@ -16788,7 +16788,7 @@ pub(super) fn assembled_composite_body_facts_hold(
             return false;
         }
         state.locals.set_typed(
-            parameter.name().to_string(),
+            parameter.binding_name().clone(),
             argument.clone(),
             parameter.program_type(),
         );

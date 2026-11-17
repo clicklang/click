@@ -249,7 +249,7 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
                     return None;
                 }
                 population_state.locals.set_typed(
-                    parameter.name().to_string(),
+                    parameter.binding_name().clone(),
                     argument.clone(),
                     parameter.program_type(),
                 );
@@ -280,7 +280,7 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
                 return None;
             }
             population_state.locals.set_typed(
-                parameter.name().to_string(),
+                parameter.binding_name().clone(),
                 argument.clone(),
                 parameter.program_type(),
             );
@@ -454,7 +454,7 @@ pub(in crate::kernel) fn evaluate_composite_resource_relation_propositions(
             return None;
         }
         state.locals.set_typed(
-            parameter.name().to_string(),
+            parameter.binding_name().clone(),
             argument.clone(),
             parameter.program_type(),
         );
@@ -543,7 +543,7 @@ pub(in crate::kernel) fn evaluate_composite_resource_memory_ranges(
             return None;
         }
         state.locals.set_typed(
-            parameter.name().to_string(),
+            parameter.binding_name().clone(),
             argument.clone(),
             parameter.program_type(),
         );
@@ -712,7 +712,7 @@ pub(super) fn instantiate_composite_resource_facts_with_state(
             return None;
         }
         state.locals.set_typed(
-            parameter.name().to_string(),
+            parameter.binding_name().clone(),
             argument.clone(),
             parameter.program_type(),
         );

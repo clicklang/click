@@ -180,7 +180,11 @@ impl MemoryStateLabels {
                 continue;
             };
             if let crate::kernel::ProgramValue::Pointer(pointer) = value {
-                labels.immutable_pointer_name(pointer.pointer(), parameter.name());
+                labels.immutable_pointer_name(
+                    pointer.pointer(),
+                    &crate::surface::surface_parameter_binding(parameter.binding_name())
+                        .to_string(),
+                );
             }
             let term = match value.numeric_value() {
                 crate::kernel::ProgramValue::Bool(term)
@@ -2389,6 +2393,9 @@ impl Renderer<'_> {
         }
         self.push("pointer(");
         match &p.block {
+            crate::kernel::PointerBlock::ReferenceCarrier { referent, instance } => self.fmt(
+                format_args!("reference carrier of {referent} [{instance:?}]"),
+            ),
             crate::kernel::PointerBlock::AggregateReturn { frame } => {
                 self.fmt(format_args!("result.storage(frame, {frame})"))
             }

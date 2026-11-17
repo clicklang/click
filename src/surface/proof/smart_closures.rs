@@ -4323,7 +4323,9 @@ fn source_backed_call_requirement_surface(
             (
                 parameters
                     .iter()
-                    .map(|parameter| parameter.name().to_string())
+                    .map(|parameter| {
+                        crate::surface::surface_parameter_binding(&parameter.binding_name())
+                    })
                     .collect::<Vec<_>>(),
                 parameters
                     .iter()
@@ -4358,7 +4360,9 @@ fn source_backed_call_requirement_surface(
                 function
                     .parameters()
                     .iter()
-                    .map(|parameter| parameter.name().to_string())
+                    .map(|parameter| {
+                        crate::surface::surface_parameter_binding(&parameter.binding_name())
+                    })
                     .collect::<Vec<_>>(),
                 function
                     .parameters()
@@ -4416,7 +4420,7 @@ fn source_backed_call_requirement_surface(
         for parameter in &aggregate_parameters {
             bound.locals().aggregate_layout(parameter)?;
             substitutions.insert(
-                parameter.clone(),
+                parameter.clone().into(),
                 ContractExpression::RegionParameter {
                     region: point.region.clone(),
                     name: parameter.clone(),
@@ -4458,7 +4462,7 @@ fn source_backed_call_requirement_surface(
                 crate::kernel::program_local_source_name(local).to_owned(),
             ))
         };
-        substitutions.insert(name.clone(), expression);
+        substitutions.insert(name.clone().into(), expression);
     }
     // Match contract lowering: adapt a signed character argument to the
     // predicate's byte parameter before substituting the call arguments.
@@ -4469,7 +4473,7 @@ fn source_backed_call_requirement_surface(
         &|name| {
             let slot = source_parameter_names
                 .iter()
-                .position(|parameter| parameter == name)?;
+                .position(|parameter| parameter.source_name() == name)?;
             match source_parameter_types[slot]? {
                 crate::kernel::ProgramType::Int8Pointer => Some(InterfaceType::Int8Pointer),
                 crate::kernel::ProgramType::Int8Array(size) => Some(InterfaceType::Int8Array(size)),
@@ -4719,10 +4723,12 @@ fn caller_parameter_as_argument(
                 expected,
             ) =>
         {
-            crate::surface::lowering::character_byte_view(parameter.name())
+            crate::surface::lowering::character_byte_view(
+                crate::surface::surface_parameter_binding(parameter.binding_name()),
+            )
         }
         _ => ContractExpression::ProgramExpression(ProgramExpression::Variable(
-            (parameter.name().to_string()).into(),
+            crate::surface::surface_parameter_binding(parameter.binding_name()),
         )),
     }
 }

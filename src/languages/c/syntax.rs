@@ -3829,25 +3829,6 @@ impl CUnionField {
     }
 }
 
-/// The name of the pointer that carries a reference parameter. A reference
-/// names an object, and what the function receives is that object's address,
-/// so the pointer is spelled as the address: `&value` for `int& value`. The
-/// name is not an identifier, which keeps it apart from every source name,
-/// and it prints the way the address is written.
-pub fn reference_carrier_name(referent: &str) -> String {
-    format!("&{referent}")
-}
-
-/// The object a reference carrier refers to: `value` for `&value`.
-pub fn referent_of_carrier(carrier: &str) -> Option<&str> {
-    carrier.strip_prefix('&').filter(|name| {
-        !name.is_empty()
-            && name
-                .chars()
-                .all(|character| character.is_alphanumeric() || character == '_')
-    })
-}
-
 impl InterfaceType {
     /// The access class of an object or lvalue of this type, or of an
     /// array's elements (`design/effective-types.md`). `int *` and `int **`

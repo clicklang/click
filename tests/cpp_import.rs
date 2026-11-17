@@ -6186,7 +6186,11 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
     assert_eq!(function.name(), "increment");
     assert_eq!(function.return_type(), ProgramType::Int32);
     assert_eq!(function.parameters().len(), 1);
-    assert_eq!(function.parameters()[0].name(), "&value");
+    assert_eq!(function.parameters()[0].name(), "value");
+    assert_eq!(
+        function.parameters()[0].binding_name(),
+        &click::kernel::BindingName::reference_carrier("value")
+    );
     assert_eq!(
         function.parameters()[0].program_type(),
         ProgramType::Int32Pointer
@@ -6203,7 +6207,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
                     volatile: false,
                     pointee_constant: false,
                     ..
-                } if pointer.is_named("&value")
+                } if pointer.reference_referent().is_some_and(|name| name.is_named("value"))
                     && matches!(
                         left.as_ref(),
                         ProgramExpression::TypedLoad {
@@ -6211,7 +6215,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
                             value_type: ProgramType::Int32,
                             volatile: false,
                             ..
-                        } if matches!(pointer.as_ref(), ProgramExpression::Variable(name) if name.is_named("&value"))
+                        } if matches!(pointer.as_ref(), ProgramExpression::Variable(name) if name.reference_referent().is_some_and(|name| name.is_named("value")))
                     )
                     && matches!(right.as_ref(), ProgramExpression::Value(value) if value == &int32(1))
             )
@@ -6222,7 +6226,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
                     value_type: ProgramType::Int32,
                     volatile: false,
                     ..
-                }) if matches!(pointer.as_ref(), ProgramExpression::Variable(name) if name.is_named("&value"))
+                }) if matches!(pointer.as_ref(), ProgramExpression::Variable(name) if name.reference_referent().is_some_and(|name| name.is_named("value")))
             ) }
     ));
 

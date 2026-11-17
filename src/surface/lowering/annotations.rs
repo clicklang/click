@@ -2748,17 +2748,23 @@ pub(in crate::surface) fn function_contract_summary(
     let mut context = SpecElaborationContext::for_function_contract();
     // Parameters shadow file-scope spellings in both current and old clauses.
     // Keep them as C bindings, not loads from same-named global storage.
-    context
-        .values
-        .extend(parsed_function.parameters().iter().map(|parameter| {
-            let name = parameter.name().to_string();
-            (
-                name.clone(),
-                SpecExpression::ProgramExpression(ProgramExpression::Variable(
-                    parameter.binding_name().clone(),
-                )),
-            )
-        }));
+    context.values.extend(
+        parsed_function
+            .parameters()
+            .iter()
+            .filter(|parameter| !parameter.is_reference())
+            .map(|parameter| {
+                // Reference expressions already retain their typed carrier. They
+                // are program bindings, never lexical aliases of pointer values.
+                let name = parameter.name().to_owned();
+                (
+                    name,
+                    SpecExpression::ProgramExpression(ProgramExpression::Variable(
+                        parameter.binding_name().clone(),
+                    )),
+                )
+            }),
+    );
     let all_predicates = spec_definitions
         .predicates
         .definitions
@@ -3758,7 +3764,7 @@ impl AnnotationLowerer<'_> {
                 .pointee_type()
                 .or_else(|| self.result_type.array_element_type());
         }
-        if name.named().is_none() {
+        if name.unresolved_name().is_none() {
             return name
                 .program_type()
                 .and_then(|ty| ty.pointee_type().or_else(|| ty.array_element_type()));
@@ -3772,7 +3778,7 @@ impl AnnotationLowerer<'_> {
                     // its element type, as a fixed-state proof reads it.
                     .or_else(|| state.locals().array_object_element_type(&name))
             })
-            .or_else(|| name.named_in(&self.pointer_element_types).copied())
+            .or_else(|| name.metadata_in(&self.pointer_element_types).copied())
     }
 
     /// Attach the same checked loop clauses to compiler-lowered statements.
@@ -5682,13 +5688,13 @@ impl AnnotationLowerer<'_> {
         if name == crate::kernel::CONTRACT_RESULT {
             return Some(self.result_type);
         }
-        if name.named().is_none() {
+        if name.unresolved_name().is_none() {
             return name.program_type();
         }
-        name.named_in(&self.program_parameter_types)
+        name.metadata_in(&self.program_parameter_types)
             .copied()
             .or_else(|| {
-                name.named_in(&self.entry_values)
+                name.metadata_in(&self.entry_values)
                     .map(ProgramValue::program_type)
             })
             .or_else(|| {
@@ -7580,7 +7586,7 @@ impl AnnotationLowerer<'_> {
                 .and_then(|ty| ty.interface_type())
                 .map(|ty| ty.to_kernel_type());
         }
-        if name.named().is_none() {
+        if name.unresolved_name().is_none() {
             return name.program_type();
         }
         if name.named_in(&environment.algebraic_values).is_some() {
@@ -7589,10 +7595,10 @@ impl AnnotationLowerer<'_> {
         if name.is_named("result") {
             Some(self.result_type)
         } else {
-            name.named_in(&self.program_parameter_types)
+            name.metadata_in(&self.program_parameter_types)
                 .copied()
                 .or_else(|| {
-                    name.named_in(&self.entry_values)
+                    name.metadata_in(&self.entry_values)
                         .map(ProgramValue::program_type)
                         .or_else(|| {
                             self.local_type_state
@@ -8588,7 +8594,7 @@ impl AnnotationLowerer<'_> {
                 .byte_width());
         }
         if let ProgramExpression::Variable(name) = &segment.base
-            && let Some(width) = name.named_in(&self.parameter_pointer_element_widths)
+            && let Some(width) = name.metadata_in(&self.parameter_pointer_element_widths)
         {
             return Ok(*width);
         }
@@ -9350,6 +9356,35 @@ impl AnnotationLowerer<'_> {
                 })
         {
             return Ok(SpecExpression::Value(value));
+        }
+        // Reference carriers are program bindings, outside the lexical binder
+        // namespace. Their pointer is fixed when the reference is initialized;
+        // old-state reads change the referent's memory, never that pointer.
+        if let Some(referent) = name.reference_referent() {
+            let state = environment.reference_state.as_ref().or_else(|| {
+                if environment.at_function_entry {
+                    Some(self.entry_state)
+                } else {
+                    self.local_type_state
+                }
+            });
+            if let Some(value) = state
+                .and_then(|state| state.locals().get(&name))
+                .map(|value| value.clone().into_native())
+                .or_else(|| {
+                    referent
+                        .named()
+                        .and_then(|name| self.entry_values.get(name))
+                        .cloned()
+                })
+            {
+                return Ok(SpecExpression::Value(value));
+            }
+            if environment.function_contract {
+                return Ok(SpecExpression::ProgramExpression(
+                    ProgramExpression::Variable(name),
+                ));
+            }
         }
         if name == crate::kernel::CONTRACT_RESULT
             && let Some(value) = &environment.contract_result
@@ -10362,7 +10397,7 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Option<u32> {
         if let ProgramExpression::Variable(name) = expression
-            && let Some(width) = name.named_in(&self.parameter_pointer_element_widths)
+            && let Some(width) = name.metadata_in(&self.parameter_pointer_element_widths)
         {
             return Some(*width);
         }
@@ -10403,7 +10438,7 @@ impl AnnotationLowerer<'_> {
                 target_type.pointee_type().map(ProgramType::byte_width)
             }
             ProgramExpression::Variable(name) => name
-                .named_in(&self.parameter_pointer_element_widths)
+                .metadata_in(&self.parameter_pointer_element_widths)
                 .copied()
                 .or_else(|| {
                     name.named_in(&environment.array_refs)
