@@ -72,7 +72,7 @@ void mark_at(int32 *v, int32 *m, int32 n) {
         witness(at(entry, m[0]));
         known();
     }
-    obtain (end: int32) { end == at(entry, m[0]) };
+    let end = obtain(exists (end: int32) { end == at(entry, m[0]) });
     have zeros(at(entry, v), 0, end) == zeros(at(entry, v), 0, end) by normalize();
     have 0 <= 0 by { normalize(); }
     have 0 <= end by { known(); }

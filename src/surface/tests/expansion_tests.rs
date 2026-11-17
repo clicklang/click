@@ -2815,7 +2815,7 @@ theorem integer_forall_logical_solve() {
 theorem integer_exists_choose() {
     requires exists (z: Integer) { z == z };
     ensures chosen: exists (k: Integer) { k == k } by {
-        obtain (candidate: Integer) { candidate == candidate };
+        let candidate = obtain(exists (candidate: Integer) { candidate == candidate });
         witness(candidate);
         known();
     }
@@ -2841,7 +2841,7 @@ theorem integer_exists_choose() {
             // directly. The expanded claim must still verify below.
         } else {
             assert!(
-                expanded.contains("obtain (candidate: Integer) { candidate == candidate }"),
+                expanded.contains("let candidate = obtain(exists (candidate: Integer) { candidate == candidate });"),
                 "{label}: {expanded}"
             );
             assert!(
@@ -2867,9 +2867,9 @@ theorem guarded_integer_exists(value: int32) {
     ensures branched: exists (k: Integer) {
         k == to_integer(if value > 0 { value } else { value + 1 })
     } by {
-        obtain (candidate: Integer) {
+        let candidate = obtain(exists (candidate: Integer) {
             candidate == to_integer(if value > 0 { value } else { value + 1 })
-        };
+        });
         witness(candidate);
         known();
     }
@@ -5884,7 +5884,7 @@ fn post_execution_choose_and_witness_share_the_retained_outcome_proof() {
             requires exists (k: int32) { k == x };
             ensures exists (j: int32) { j == result } by {
                 step_until(function.exit);
-                obtain (k: int32) { k == x };
+                let k = obtain(exists (k: int32) { k == x });
                 witness(k);
                 solve();
             }
@@ -5907,7 +5907,7 @@ fn post_execution_choose_and_witness_share_the_retained_outcome_proof() {
     )
     .expect("the retained choose/witness Proof should serialize");
     assert!(
-        expanded.contains("obtain (k: int32) { k == x };"),
+        expanded.contains("let k = obtain(exists (k: int32) { k == x });"),
         "{expanded}"
     );
     assert!(expanded.contains("witness(k);"), "{expanded}");

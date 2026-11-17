@@ -10044,8 +10044,31 @@ impl Parser {
             self.expect(Token::Semicolon)?;
             return self.named_intro(binder);
         }
+        if self.peek() == Some(&Token::LParen) {
+            self.position += 1;
+            let mut names = vec![self.expect_ident("existential witness name")?];
+            self.expect(Token::Comma)?;
+            loop {
+                names.push(self.expect_ident("existential witness name")?);
+                if self.peek() != Some(&Token::Comma) {
+                    break;
+                }
+                self.position += 1;
+            }
+            self.expect(Token::RParen)?;
+            self.expect(Token::Equal)?;
+            self.expect_ident_spelling("obtain")?;
+            return self.parse_obtain(names);
+        }
         let output = self.parse_let_output_pattern()?;
         self.expect(Token::Equal)?;
+        if self.peek_ident() == Some("obtain") && !self.tactic_names.contains("obtain") {
+            self.position += 1;
+            let CallOutputPattern::Single(name) = output else {
+                return Err(self.error("use positional witness names on the left of `obtain`"));
+            };
+            return self.parse_obtain(vec![name]);
+        }
         if matches!(self.peek_ident(), Some("intro" | "induct"))
             && !self.tactic_names.contains(self.peek_ident().unwrap())
         {
@@ -10381,105 +10404,42 @@ impl Parser {
         }
     }
 
-    /// `obtain (name: Type, ...) { P }` opens an available
-    /// `exists (name: Type, ...) { P }`, binding its typed names.
-    fn parse_obtain(&mut self) -> Result<ProofTactic, ClickError> {
+    /// Parse the source before adding any of the output names to scope.
+    #[inline(never)]
+    fn parse_obtain(&mut self, names: Vec<String>) -> Result<ProofTactic, ClickError> {
         self.expect(Token::LParen)?;
-        let mut bindings = Vec::new();
-        loop {
-            let name = self.expect_ident("existential binding name")?;
-            if is_c_type_keyword(&name)
-                || self.names.contains(NameKind::ProofBinder, &name)
-                || bindings.iter().any(|(bound, _)| bound == &name)
-            {
+        let proposition = self.parse_proposition()?;
+        self.expect(Token::RParen)?;
+        self.expect(Token::Semicolon)?;
+        let mut source = match &proposition {
+            ClickProposition::At { proposition, .. } => proposition.as_ref(),
+            proposition => proposition,
+        };
+        let mut bindings = Vec::with_capacity(names.len());
+        let previous_integer_context = self.integer_literal_context;
+        for name in names {
+            let ClickProposition::Exists {
+                click_type, body, ..
+            } = source
+            else {
+                return Err(self.error(
+                    "`obtain` needs an existential proposition with at least one binder per output",
+                ));
+            };
+            self.refuse_cast_type_binder(&name)?;
+            if self.names.contains(NameKind::ProofBinder, &name) {
                 return Err(self.error(format!("`{name}` is already in scope")));
             }
-            self.expect(Token::Colon)?;
-            let (click_type, parsed_type) = self.parse_click_type()?;
-            if parsed_type
-                .as_ref()
-                .is_some_and(|parsed| parsed.struct_name.is_some() && !parsed.struct_pointer)
-            {
-                return Err(self.error("only pointer-to-struct types are supported"));
-            }
-            if matches!(
-                click_type,
-                ClickType::Function { .. } | ClickType::Parameter(_)
-            ) {
-                return Err(self.error(
-                    "existential binding type must be a concrete C, Integer, or algebraic type",
-                ));
-            }
-            bindings.push((name, click_type));
-            if self.peek() != Some(&Token::Comma) {
-                break;
-            }
-            self.position += 1;
+            self.bind_proof_name(&name, false)?;
+            let integer = *click_type == ClickType::Integer;
+            self.names
+                .set_scoped(NameKind::ContractBinding, &name, !integer);
+            self.names.set_scoped(NameKind::IntegerLet, &name, integer);
+            self.names.insert(NameKind::ProofBinder, name.clone());
+            bindings.push((name, click_type.clone()));
+            source = body;
         }
-        self.expect(Token::RParen)?;
-        self.expect(Token::LBrace)?;
-        let previous_integer_context = self.integer_literal_context;
-        for (name, click_type) in &bindings {
-            self.bind_proof_name(name, false)?;
-            match click_type {
-                ClickType::Resource => {
-                    return Err(
-                        self.error("Resource is currently supported only for theorem parameters")
-                    );
-                }
-                ClickType::Integer => {
-                    self.names
-                        .set_scoped(NameKind::ContractBinding, name, false);
-                    self.names.set_scoped(NameKind::IntegerLet, name, true);
-                    self.integer_literal_context = true;
-                }
-                ClickType::Program(_)
-                | ClickType::CObjectPointer { .. }
-                | ClickType::Algebraic(_) => {
-                    self.names.set_scoped(NameKind::IntegerLet, name, false);
-                    self.names.set_scoped(NameKind::ContractBinding, name, true);
-                    self.integer_literal_context = false;
-                }
-                ClickType::Proposition | ClickType::Function { .. } | ClickType::Parameter(_) => {
-                    unreachable!("rejected above")
-                }
-            }
-        }
-        let body = self.parse_proposition()?;
-        self.expect(Token::RBrace)?;
-        self.skip_redundant_semicolon();
         self.integer_literal_context = previous_integer_context;
-        self.names.extend(
-            NameKind::ProofBinder,
-            bindings.iter().map(|(name, _)| name.clone()),
-        );
-        // The state is independent of the newly bound variables, so
-        // `exists x. at(S, P(x))` is stated at the source as
-        // `at(S, exists x. P(x))`. This preserves the exact fact identity of
-        // an existential recorded at a past program point.
-        let (program_point, body) = match body {
-            ClickProposition::At {
-                selector,
-                proposition,
-            } => (Some(selector), *proposition),
-            body => (None, body),
-        };
-        let proposition = bindings
-            .iter()
-            .rev()
-            .fold(body, |body, (name, click_type)| ClickProposition::Exists {
-                click_type: click_type.clone(),
-                name: name.clone().into(),
-                written_name: None,
-                body: Box::new(body),
-            });
-        let proposition = match program_point {
-            Some(selector) => ClickProposition::At {
-                selector,
-                proposition: Box::new(proposition),
-            },
-            None => proposition,
-        };
         Ok(ProofTactic::LetSatisfy(ProofLetSatisfy {
             bindings,
             proposition,
@@ -11269,7 +11229,7 @@ impl Parser {
                 }
                 ProofTactic::Witness(ProofWitness::new(values))
             }
-            "obtain" => return self.parse_obtain(),
+            "obtain" => return Err(self.error("write `let name = obtain(exists (k: Type) { P });` to name an existential witness")) ,
             "check_termination_local" => {
                 self.expect(Token::LParen)?;
                 let function = self.expect_string("function name")?;
@@ -18226,7 +18186,7 @@ mod tactic_classification_tests {
         ),
         ("observe-resource", "observe(reference(p));"),
         ("witness", "witness(1);"),
-        ("obtain", "obtain (x: Integer) { x == x }"),
+        ("obtain", "let x = obtain(exists (k: Integer) { k == k });"),
         ("known", "known();"),
         ("normalize", "normalize();"),
         ("normalize-using", "normalize() using { x == 1; };"),

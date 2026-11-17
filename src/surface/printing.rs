@@ -1093,40 +1093,20 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             ),
         ),
         ProofTactic::LetSatisfy(binding) => {
-            let bindings = binding
+            let names = binding
                 .bindings
                 .iter()
-                .map(|(name, click_type)| {
-                    format!("{name}: {}", validation::describe_click_type(click_type))
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            let (retained_state, mut body) = match &binding.proposition {
-                ClickProposition::At {
-                    selector,
-                    proposition,
-                } => (Some(selector), proposition.as_ref()),
-                proposition => (None, proposition),
+                .map(|(name, _)| name.as_str())
+                .collect::<Vec<_>>();
+            let pattern = match names.as_slice() {
+                [name] => name.to_string(),
+                _ => format!("({})", names.join(", ")),
             };
-            for _ in &binding.bindings {
-                let ClickProposition::Exists { body: inner, .. } = body else {
-                    unreachable!("let-satisfy source contains its declared binders")
-                };
-                body = inner;
-            }
-            let body = if let Some(selector) = retained_state {
-                format!(
-                    "at({}, {})",
-                    describe_program_point_selector(selector),
-                    source_click_proposition(body)
-                )
-            } else {
-                source_click_proposition(body)
-            };
+            let source = source_click_proposition(&binding.proposition);
             line(
                 output,
                 &prefix,
-                &format!("obtain ({bindings}) {{ {body} }}"),
+                &format!("let {pattern} = obtain({source});"),
             );
         }
         ProofTactic::CheckTerminationLocal(function) => line(
