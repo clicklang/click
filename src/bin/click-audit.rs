@@ -729,6 +729,7 @@ fn prepare_audit(arguments: &Arguments, deadline: Instant) -> Result<AuditInvent
                     return Err(failure);
                 }
                 println!("  smart-site inventory FAILED: {failure}");
+                record_audit_failure(&path.display().to_string(), &message);
                 discovery_failures.push(failure);
             }
         }
@@ -765,6 +766,8 @@ fn prepare_audit(arguments: &Arguments, deadline: Instant) -> Result<AuditInvent
     )?;
     for failure in &implicit_failures {
         println!("  implicit-solve discovery FAILED: {failure}");
+        let (path, message) = failure.split_once(": ").unwrap_or((failure, failure));
+        record_audit_failure(path, message);
     }
     println!(
         "  {} claims proved by the implicit closer with no smart site",
@@ -950,6 +953,7 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
                     println!("FAIL");
                     println!("    {}", message.replace('\n', "\n    "));
                     print_resume(&arguments, site);
+                    record_audit_failure(&site.click_path.display().to_string(), &message);
                     session_failures += 1;
                     if !arguments.keep_going {
                         break;
@@ -1031,6 +1035,7 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
                     println!("FAIL");
                     println!("    {}", message.replace('\n', "\n    "));
                     print_resume(&arguments, site);
+                    record_audit_failure(&format_location(&site_location(site)), &message);
                     claim_failures += 1;
                     attempted_sites += claim_sites;
                     if !arguments.keep_going {
@@ -1105,6 +1110,7 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
                 }
                 println!("    {}", message.replace('\n', "\n    "));
                 print_resume(&arguments, site);
+                record_audit_failure(&format_location(&site_location(site)), &message);
                 site_failures += 1;
                 stop = !arguments.keep_going;
             }
@@ -1171,6 +1177,7 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
                             failed.tactic_name
                         );
                         println!("    {}", message.replace('\n', "\n    "));
+                        record_audit_failure(&format_location(&site_location(failed)), message);
                     }
                     print_resume(&arguments, &selected[pending[failures[0].0].0]);
                     audited_sites += pending.len() - failures.len();
@@ -1913,6 +1920,28 @@ fn format_location(location: &SourceLocation) -> String {
         location.line,
         location.column
     )
+}
+
+/// Records one audit failure for the nightly report, by the location
+/// `click audit --claim` selects (or the source path, for a failure before
+/// any claim ran).
+fn record_audit_failure(name: &str, message: &str) {
+    // Relative to where the audit ran, so the command reproduces it in
+    // another checkout.
+    let relative = std::env::current_dir().ok().and_then(|directory| {
+        name.strip_prefix(&format!("{}/", directory.display()))
+            .map(str::to_string)
+    });
+    click::nightly_report::record(
+        "audit",
+        &click::nightly_report::NightlyResult {
+            kind: "audit",
+            name: relative.as_deref().unwrap_or(name),
+            passed: false,
+            seconds: 0.0,
+            message: Some(message),
+        },
+    );
 }
 
 fn print_resume(arguments: &Arguments, site: &AuditSite) {

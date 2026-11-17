@@ -68,7 +68,6 @@
 - [Architecture](internals/architecture.md)
 - [Surface names and source printing](internals/source-names-and-printing.md)
 - [Raise-lower principle](internals/raise-lower-principle.md)
-- [Legacy raising reference](internals/spellability.md)
 - [The verification pipeline](concepts/verification-pipeline.md)
 - [Surface Click and Kernel Click](concepts/surface-and-kernel.md)
 - [Proof landscape](concepts/proof-landscape.md)
