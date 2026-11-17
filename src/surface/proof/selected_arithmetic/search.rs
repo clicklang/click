@@ -1486,7 +1486,26 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         .driver()
                         .apply_step(ProofStep::Contradiction(refutation.fact.clone()))
                 })();
-                Ok(attempt::candidate_outcome(refuted)?.filter(Proof::focused_discharged))
+                if let Some(closed) =
+                    attempt::candidate_outcome(refuted)?.filter(Proof::focused_discharged)
+                {
+                    return Ok(Some(closed));
+                }
+
+                // Some unfolds expose constructor matches as well as conditionals.
+                // Keep the checked route when arm equations cannot express the
+                // whole reduction.
+                let mut steps = vec![ProofStep::UnfoldFunction(refutation.application.clone())];
+                steps.extend(unfolds.iter().cloned().map(ProofStep::UnfoldFunction));
+                steps.push(ProofStep::NormalizeUsing(taken.to_vec()));
+                let checked = search_input
+                    .driver()
+                    .apply_step(have(refutation.differs.clone(), steps))
+                    .and_then(|next| {
+                        next.driver()
+                            .apply_step(ProofStep::Contradiction(refutation.fact.clone()))
+                    });
+                Ok(attempt::candidate_outcome(checked)?.filter(Proof::focused_discharged))
             }
             DefinitionPlan::Split {
                 condition,

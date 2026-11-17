@@ -7205,6 +7205,7 @@ fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Opt
     #[derive(Clone, Copy)]
     enum ArithmeticProofShape {
         Direct,
+        IncrementDefinedness,
         ComposedNegatedSuccessor,
         ChainedIncrementUpper,
     }
@@ -7368,14 +7369,14 @@ fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Opt
             "increment definedness",
             &definedness_premise,
             &kernel_definedness_premise,
-            ArithmeticProofShape::Direct,
+            ArithmeticProofShape::IncrementDefinedness,
         ),
         (
             lower(&surface_one_plus_defined_goal),
             "one-plus definedness",
             &definedness_premise,
             &kernel_definedness_premise,
-            ArithmeticProofShape::Direct,
+            ArithmeticProofShape::IncrementDefinedness,
         ),
         (
             lower(&surface_one_plus_strict_goal),
@@ -7481,7 +7482,9 @@ fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Opt
             let allocations = fact_node_allocations() - before;
             let logarithmic_height = (u32::BITS - size.leading_zeros()) as usize;
             let allocation_per_step = match shape {
-                ArithmeticProofShape::Direct => 64 * logarithmic_height + 256,
+                ArithmeticProofShape::Direct | ArithmeticProofShape::IncrementDefinedness => {
+                    64 * logarithmic_height + 256
+                }
                 ArithmeticProofShape::ComposedNegatedSuccessor
                 | ArithmeticProofShape::ChainedIncrementUpper => 96 * logarithmic_height + 384,
             };
@@ -7536,10 +7539,17 @@ fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Opt
                 panic!("restricted solve should retain the checked typed {label} rule")
             });
             let restricted_allocations = fact_node_allocations() - before_restricted;
+            let proof_work = ordinary_arithmetic_work_size(pure_closed.certificate().steps())
+                .expect("ordinary restricted arithmetic output");
             let allocation_bound = allocation_per_step
-                * ordinary_arithmetic_work_size(pure_closed.certificate().steps())
-                    .expect("ordinary restricted arithmetic output")
-                    .max(1);
+                * match shape {
+                    // The named increment theorem publishes the whole signed domain at
+                    // once. Use a fixed allowance for that application and the commuted
+                    // case's additional equality proof. The former composed increment
+                    // proof received 81 units under the per-step allowance.
+                    ArithmeticProofShape::IncrementDefinedness => 24,
+                    _ => proof_work.max(1),
+                };
             assert!(
                 restricted_allocations <= allocation_bound,
                 "size {size} restricted {label} solve allocated {restricted_allocations} persistent nodes (bound {allocation_bound})"

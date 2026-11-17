@@ -2222,10 +2222,11 @@ Arithmetic automation expands to ordinary proofs. Arithmetic operations correspo
 
 Integer composition plans expand their premise, addition, scaling, and
 equality-direction nodes into ordinary `have`, `apply(...) using`, `rewrite`,
-and explicit `normalize()` steps. Each intermediate fact is established once;
-later nodes reuse it. Context-free identities relate the plan's flat affine
-forms to the written operands, so expansion does not re-enter arithmetic
-search. Integer antisymmetry uses `integer::le_antisymmetric`.
+and `known()` steps. Each intermediate fact is established once and later
+nodes reuse it. Context-free identities relate the plan's flat affine forms
+to the written operands. Expansion uses checked `normalize()` when the
+bounded algebra emitter cannot spell an identity. Integer antisymmetry uses
+`integer::le_antisymmetric`.
 
 Strict Integer premises and goals use the successor-order law. Linear
 refutations that use the negated goal once become direct compositions;
@@ -2249,6 +2250,8 @@ For example, from `flag == true`, `known()` proves
 `(if flag { Some(x) } else { None }) == Some(x)`. Nested selections expose
 one arm at a time and retain each proof as an explicit rewrite. A Boolean
 comparison with a literal can also use the selected arm's exact truth fact.
+Definition refutations whose unfolding also needs constructor-match reduction
+can retain a checked `normalize() using` step with the selected branch facts.
 See [the explicit arm proofs](https://github.com/clicklang/click/blob/master/mdtests/non_numeric_conditional_arm_equations.md).
 
 Scalar signed interval claims, operation bounds, and narrowed casts expand

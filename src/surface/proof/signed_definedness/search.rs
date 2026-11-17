@@ -332,6 +332,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(goal) = search_input.goal() else {
             return Ok(None);
         };
+        if matches!(search_input.context.as_ref(), ProofContext::Pure(_))
+            && let Some(tactics) = plan_int32_increment_definedness_theorem(goal, premise_pairs)
+            && let Some(closed) = attempt::candidate_outcome(
+                search_input.driver().try_generated_linear_script(&tactics),
+            )?
+            .flatten()
+        {
+            return Ok(Some(closed));
+        }
         use crate::kernel::proof::arithmetic_special::{
             signed_constant_bound_on_view, signed_definedness_query,
         };

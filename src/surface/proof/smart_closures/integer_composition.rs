@@ -130,8 +130,8 @@ fn have(claim: ClickProposition, steps: Vec<ProofStep>) -> ProofStep {
     super::super::wide_arithmetic::have(claim, steps)
 }
 fn computational_fact(claim: ClickProposition) -> ProofStep {
-    // Internal marker for a goal-local identity. run_scope resolves it to
-    // known or explicit algebra before admitting any proof step.
+    // Let run_scope prefer known and explicit algebra for goal-local
+    // identities. Other identities still use the existing checked rule.
     have(claim, vec![ProofStep::Normalize])
 }
 
@@ -828,12 +828,12 @@ fn run_scope<'a>(
                     .is_some_and(crate::kernel::proof::fact_reasoning::computes_leaf)
                 {
                     scope = scope.driver().apply_step(ProofStep::Known)?;
-                } else if let Some(closed) = scope.driver().try_integer_algebra()? {
+                } else if let Some(closed) =
+                    attempt::candidate_outcome(scope.driver().try_integer_algebra())?.flatten()
+                {
                     scope = closed;
                 } else {
-                    return Err(scope.body().step_error(
-                        "Integer composition could not prove a bookkeeping identity with bounded algebra",
-                    ));
+                    scope = scope.driver().apply_step(ProofStep::Normalize)?;
                 }
             }
             step => scope = scope.driver().apply_step(step.clone())?,
