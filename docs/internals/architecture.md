@@ -27,6 +27,15 @@ The evaluator and execution frontier follow the same regions; invariant and rank
 obligations close only after the continuation reaches the backedge. A false
 post-test instead supplies a loop exit with its own state and facts.
 
+Checked concrete loop entry records explicit `continue` and `break`
+destinations. Each keeps the driver's local source position separately from
+the kernel's full evidence cursor, which includes enclosing loop and function
+tails. The continuation code comes from that checked source construction.
+Transfers discard only the inner lexical continuations they leave, restore the
+recorded try-stack depth, and follow the chosen destination; they do not search
+remaining statements for a structurally matching loop. Continuing through an
+update retains the loop frame until that continuation finishes.
+
 Source layout indexes each update/test once and records the continuation entry
 directly. Persistent lexical-scope exit lists distinguish leaving the body on
 `continue` from leaving the function on `return`, including transfers emitted

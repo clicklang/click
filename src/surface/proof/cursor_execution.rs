@@ -880,7 +880,6 @@ fn execute_concrete_loop_head_step(
         update.as_deref(),
         test,
     ));
-    let update = crate::kernel::program_loop_continuation(update.as_deref(), test);
     let update_index = proof_context
         .constants
         .source_layout
@@ -943,24 +942,31 @@ fn execute_concrete_loop_head_step(
                 .recorded_states
                 .record_effect(execution.core.last_footprint.as_ref());
         }
-        let loop_head = match remaining {
-            Some(remaining) => program_seq(loop_head, remaining),
+        let loop_sources =
+            execution
+                .core
+                .enter_post_test_loop_body(function)
+                .map_err(|refusal| {
+                    ClickError::new(describe_evidence_refusal(&refusal, parameter_binding))
+                })?;
+        let after_loop = remaining.map(Arc::new);
+        let loop_head = match &after_loop {
+            Some(remaining) => ProgramStatement::seq(Arc::new(loop_head), remaining.clone()),
             None => loop_head,
         };
-        execution
-            .core
-            .frontier
-            .continuations
-            .push(ProofExecutionContinuation {
-                continue_region: update
-                    .as_ref()
-                    .zip(update_index)
-                    .map(|(update, index)| (update.clone(), index)),
-                remaining: Some(loop_head.into()),
-                next_statement_index: statement_index,
-                loop_exit_statement_index: continuation_node,
-                exceptional: None,
-            });
+        execution.core.frontier.continuations.push(
+            ProofExecutionContinuation::loop_body(
+                loop_head.into(),
+                statement_index,
+                after_loop,
+                continuation_node,
+                update_index,
+                loop_sources,
+            )
+            .map_err(|refusal| {
+                ClickError::new(describe_evidence_refusal(&refusal, parameter_binding))
+            })?,
+        );
         execution.core.frontier.next_statement_index = proof_context.constants.source_layout
             .loop_body_entry(loop_index)
             .ok_or_else(|| {
@@ -1010,9 +1016,9 @@ fn execute_concrete_loop_head_step(
         .into_iter()
         .next()
         .expect("one condition transition was required");
-    execution
+    let loop_sources = execution
         .core
-        .record_condition_transition(
+        .record_loop_condition_transition(
             function,
             arguments,
             condition_transition.theorem.clone(),
@@ -1028,25 +1034,25 @@ fn execute_concrete_loop_head_step(
         })?;
     *available_pure_facts = condition_transition.pure_facts;
 
-    if condition_transition.is_true {
-        let loop_head = match remaining {
-            Some(remaining) => program_seq(loop_head, remaining),
+    if let Some(loop_sources) = loop_sources {
+        let after_loop = remaining.map(Arc::new);
+        let loop_head = match &after_loop {
+            Some(remaining) => ProgramStatement::seq(Arc::new(loop_head), remaining.clone()),
             None => loop_head,
         };
-        execution
-            .core
-            .frontier
-            .continuations
-            .push(ProofExecutionContinuation {
-                continue_region: update
-                    .as_ref()
-                    .zip(update_index)
-                    .map(|(update, index)| (update.clone(), index)),
-                remaining: Some(loop_head.into()),
-                next_statement_index: statement_index,
-                loop_exit_statement_index: continuation_node,
-                exceptional: None,
-            });
+        execution.core.frontier.continuations.push(
+            ProofExecutionContinuation::loop_body(
+                loop_head.into(),
+                statement_index,
+                after_loop,
+                continuation_node,
+                update_index,
+                loop_sources,
+            )
+            .map_err(|refusal| {
+                ClickError::new(describe_evidence_refusal(&refusal, parameter_binding))
+            })?,
+        );
         execution.core.frontier.next_statement_index = proof_context.constants.source_layout
             .loop_body_entry(loop_index)
             .ok_or_else(|| {
@@ -1838,10 +1844,9 @@ pub(super) fn prepare_call_outcome_split(
             .frontier
             .continuations
             .push(ProofExecutionContinuation {
-                continue_region: None,
+                loop_control: None,
                 remaining: remaining.map(Arc::new),
                 next_statement_index: after_try_statement_index,
-                loop_exit_statement_index: after_try_statement_index,
                 exceptional: Some(ExceptionalContinuation {
                     binding: binding.clone(),
                     handler: Arc::new((**handler).clone()),
@@ -2341,10 +2346,9 @@ fn execute_step_from_frontier_position_selecting_path(
             .frontier
             .continuations
             .push(ProofExecutionContinuation {
-                continue_region: None,
+                loop_control: None,
                 remaining: remaining.map(Arc::new),
                 next_statement_index: after_try,
-                loop_exit_statement_index: after_try,
                 exceptional: Some(ExceptionalContinuation {
                     binding: binding.clone(),
                     handler: Arc::new((**handler).clone()),
