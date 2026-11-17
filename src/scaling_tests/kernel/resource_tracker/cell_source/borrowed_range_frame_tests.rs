@@ -95,14 +95,14 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
         );
         // Exercise the complete explicit equality certificate, including
         // the actual LoopHavoc edge and all eight descriptor-read bytes.
-        let before = Memory::new();
+        let before = SymbolicMemory::new();
         let after = before.clone().with_loop_memory_havoc_preserving_loans(
             Variable(9_897_004),
             &std::collections::BTreeSet::new(),
             Some(std::slice::from_ref(&backing)),
             None,
         );
-        let load = |memory: &Memory| {
+        let load = |memory: &SymbolicMemory| {
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                 Box::new(field.clone()),

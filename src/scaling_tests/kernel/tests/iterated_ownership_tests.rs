@@ -87,7 +87,7 @@ fn unfolding_the_declaring_resource_is_constant_in_the_range_size() {
             .into(),
         });
         let context = ResourceContext::new().unchecked_with_fact(folded.clone());
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let assumptions = PureFactContext::new();
         let (expanded, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::functions::expand_composite_resource_fact(

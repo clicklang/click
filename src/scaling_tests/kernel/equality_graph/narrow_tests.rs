@@ -146,7 +146,7 @@ fn narrow_store_equation_query_scaling(sizes: [u64; 4]) {
                     offset: AddressOffset::Constant(i * 4),
                 };
                 let stored = narrow_stored_value(format, 7);
-                let mut memory = Memory::new().with_block("narrow", (size as u32 + 1) * 4);
+                let mut memory = SymbolicMemory::new().with_block("narrow", (size as u32 + 1) * 4);
                 let mut facts = PureFactContext::new();
                 for i in 1..=size {
                     memory = memory.store(cell(i as i64), narrow_stored_value(format, 3));

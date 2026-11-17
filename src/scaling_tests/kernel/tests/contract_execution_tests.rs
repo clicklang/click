@@ -10,7 +10,7 @@ fn certification_of_algebraic_witness_ignores_unrelated_quantifiers() {
     for size in [32, 64, 128, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = AlgebraicType::parameter("Path".into());
-        let memory = Memory::new().with_block("graph", 4);
+        let memory = SymbolicMemory::new().with_block("graph", 4);
         let mut facts = PureFactContext::new().assume_proposition(path_exists_at_program_point(
             &ty,
             100,
@@ -51,7 +51,7 @@ fn conditional_universal_certification_ignores_unrelated_facts() {
     for size in [32, 64, 128, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = AlgebraicType::parameter("Path".into());
-        let memory = Memory::new().with_block("graph", 4);
+        let memory = SymbolicMemory::new().with_block("graph", 4);
         let mut facts = PureFactContext::new().assume_proposition(conditional_path_universal(
             &ty,
             100,
@@ -238,7 +238,7 @@ fn automatic_scalar_ownership_work_is_independent_of_unrelated_storage() {
         // a distinct constant fast path; warm read caches can otherwise make
         // later cases cheaper and hide the injected scan control.
         let _session = crate::kernel::VerificationSession::enter();
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         let mut resources = ResourceContext::new();
         for index in 0..count {
             let pointer = Address {

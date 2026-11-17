@@ -88,7 +88,7 @@ impl Gen {
             0 => SpecPoint::Current,
             1 => SpecPoint::FunctionEntry,
             2 => SpecPoint::LoopEntry,
-            _ => SpecPoint::At(ProgramPoint::of_memory(&Memory::new())),
+            _ => SpecPoint::At(ProgramPoint::of_memory(&SymbolicMemory::new())),
         }
     }
 

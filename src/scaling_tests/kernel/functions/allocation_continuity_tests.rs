@@ -37,7 +37,7 @@ fn allocating_call_does_not_expand_the_callers_kept_objects() {
     let samples = [16, 64, 256]
         .into_iter()
         .map(|size| {
-            let mut memory = Memory::new();
+            let mut memory = SymbolicMemory::new();
             let mut kept = ResourceContext::new();
             for index in 0..size {
                 let object = heap(931_000 + index as u64);

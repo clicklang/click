@@ -6,7 +6,7 @@
 //! fresh `malloc` storage, a range it holds as `uninitialized(...)`) must have
 //! initialized every byte first. A callee that writes the range before it
 //! reads it holds it as `uninitialized(p[a..b])` instead, which this check
-//! skips. Memory with no initialization history, such as the caller's own
+//! skips. SymbolicMemory with no initialization history, such as the caller's own
 //! input ranges, is initialized by its own contract.
 
 use super::*;
@@ -22,7 +22,7 @@ const DEFINED_EVIDENCE_ELEMENT_LIMIT: u32 = 4096;
 /// copy carries each byte's initialization across, as C allows for the
 /// indeterminate bytes of an object representation.
 pub(super) fn uninitialized_call_input<'a>(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     interface: &FunctionContractInterface,
     inputs: impl Iterator<Item = &'a CheckedResourceFact>,
     representation_copy: bool,
@@ -94,7 +94,7 @@ fn root_parameter(expression: &ProgramExpression) -> Option<&BindingName> {
 /// Whether every byte of `range` that holds a value is initialized in
 /// `memory`; see the module comment.
 pub(crate) fn memory_range_is_initialized(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     range: &MemoryRange,
     value_runs: Option<&[(u32, u32)]>,
     assumptions: &PureFactContext,
@@ -170,7 +170,7 @@ fn check_range_initialization(
 /// The bytes written, or each `width`-byte element of them written or
 /// `defined` by a fact such as a callee's `ensures defined(p[k])`.
 fn bytes_are_initialized(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     start: &Address,
     bytes: u32,
     width: u32,
@@ -182,7 +182,12 @@ fn bytes_are_initialized(
 
 /// The initialization record covers the bytes, or a cell cached at exactly
 /// this address does: a cell is evidence its bytes were written.
-fn written(memory: &Memory, start: &Address, bytes: u32, assumptions: &PureFactContext) -> bool {
+fn written(
+    memory: &SymbolicMemory,
+    start: &Address,
+    bytes: u32,
+    assumptions: &PureFactContext,
+) -> bool {
     memory.has_initialized_bytes_under(start, bytes, assumptions)
         || memory
             .known_value(start)
@@ -192,7 +197,7 @@ fn written(memory: &Memory, start: &Address, bytes: u32, assumptions: &PureFactC
 /// Each element written, or `defined` by a fact such as a callee's
 /// `ensures defined(p[k])`.
 fn elements_are_initialized(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     start: &Address,
     bytes: u32,
     width: u32,

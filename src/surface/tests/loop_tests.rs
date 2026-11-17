@@ -450,7 +450,7 @@ fn migrated_negative_loop_fixtures_reach_the_decrease_check() {
             error.message().len() <= 64 * 1024,
             "diagnostic exceeded report cap"
         );
-        assert!(!error.message().contains("Memory {"));
+        assert!(!error.message().contains("SymbolicMemory {"));
         assert!(!error.message().contains("ExecutionState {"));
         if error.message().contains("goal:") {
             assert!(error.message().contains("recent premises"));
@@ -2680,7 +2680,7 @@ fn recorded_states_find_the_point_reading_a_memory() {
     let memory = |index: u32| {
         let pointer = Address::symbolic(Variable(97_400 + u64::from(index)));
         crate::kernel::intern_memory(
-            Memory::new().store(pointer, ProgramValue::Int32(MachineTerm::constant(index))),
+            SymbolicMemory::new().store(pointer, ProgramValue::Int32(MachineTerm::constant(index))),
         )
     };
     let state = |memory: &crate::kernel::SharedMemory| {

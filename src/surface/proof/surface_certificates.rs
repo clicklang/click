@@ -73,7 +73,7 @@ pub(super) fn surface_logical_children(
     }
 }
 
-/// Flatten only explicit sequence syntax. Memory state wrappers apply to each
+/// Flatten only explicit sequence syntax. SymbolicMemory state wrappers apply to each
 /// element; no value evaluation or fact-dependent simplification participates.
 fn written_sequence_elements(expression: &ContractExpression) -> Option<Vec<ContractExpression>> {
     let mut pending = vec![(expression, Vec::<Option<ProgramPointSelector>>::new())];
@@ -5222,7 +5222,7 @@ mod selected_premise_tests {
         };
 
         let goal = Proposition::MemoryLoadable {
-            memory: Memory::new(),
+            memory: SymbolicMemory::new(),
             base: Address {
                 base: AddressBase::ExternalArgument,
                 offset: AddressOffset::Constant(0),

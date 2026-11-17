@@ -23,9 +23,9 @@ use super::functions::suspend_verified_worker;
 use super::loans::{LoanLedger, LoanViewBinding, LoanViewBindings, StableViewTransferPlan};
 use super::{
     Address, AddressBase, ConditionTerm, ExecutionBudget, ExecutionEnvironment, ExecutionPureFact,
-    ExecutionResult, ExecutionState, MachineTerm, Memory, MemoryRange, ProgramValue, Proposition,
-    PureFactContext, ResourceContext, ResourceFact, RuntimeError, VerifiedFunctionRule,
-    VerifiedFunctionTerminationRule,
+    ExecutionResult, ExecutionState, MachineTerm, MemoryRange, ProgramValue, Proposition,
+    PureFactContext, ResourceContext, ResourceFact, RuntimeError, SymbolicMemory,
+    VerifiedFunctionRule, VerifiedFunctionTerminationRule,
 };
 
 pub(super) use super::ThreadHandleId as ThreadHandle;
@@ -43,7 +43,7 @@ pub(super) enum JoinRuntimeAssumption {
 pub(super) struct WorkerCompletion {
     plan: StableViewTransferPlan,
     outputs: ResourceContext,
-    memory: Memory,
+    memory: SymbolicMemory,
     effects: Vec<MemoryRange>,
     facts: crate::kernel::ExecutionFacts,
     mutex_ledger: Option<super::mutexes::MutexLedger>,
@@ -84,7 +84,7 @@ impl WorkerCompletion {
     pub(super) fn checked(
         plan: StableViewTransferPlan,
         outputs: ResourceContext,
-        memory: Memory,
+        memory: SymbolicMemory,
         effects: Vec<MemoryRange>,
         facts: crate::kernel::ExecutionFacts,
         mutex_ledger: Option<super::mutexes::MutexLedger>,
@@ -175,7 +175,7 @@ struct PendingThreadCreateStorage {
     status: MachineTerm,
     handle_slot: Address,
     handle_value: ProgramValue,
-    success_memory: Memory,
+    success_memory: SymbolicMemory,
     success: PendingCreateAuthority,
     failure: PendingCreateAuthority,
     deltas: PersistentMap<u64, PendingThreadMemoryDelta>,
@@ -267,7 +267,7 @@ impl PendingThreadCreate {
         resources: impl Fn(&ResourceContext) -> ResourceContext,
         pointer: impl Fn(&Address) -> Address,
         value: impl Fn(&ProgramValue) -> ProgramValue,
-        memory: impl Fn(&Memory) -> Memory,
+        memory: impl Fn(&SymbolicMemory) -> SymbolicMemory,
     ) -> Self {
         let storage = &self.storage;
         let map_authority = |authority: &PendingCreateAuthority| PendingCreateAuthority {

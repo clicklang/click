@@ -302,7 +302,7 @@ fn compound_load_condition_hits_and_misses_ignore_other_facts() {
                 let _session = crate::kernel::VerificationSession::enter();
                 let var = |id| MachineTerm::Variable(Variable(id));
                 let raw = MachineTerm::MemoryLoad(
-                    ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
                     Box::new(Address::symbolic(Variable(997_000))),
                     crate::kernel::LoadKind::Int32,
                 );

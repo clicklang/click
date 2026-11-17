@@ -221,6 +221,9 @@ impl CheckedScalarReferenceEnd<'_> {
             })
             .collect()
     }
+    pub fn import_identity(&self) -> &str {
+        self.import_identity
+    }
     pub fn function(&self) -> &Function {
         self.function
     }
@@ -1192,7 +1195,7 @@ mod tests {
             base: "executed-child".into(),
             offset: crate::kernel::AddressOffset::Constant(0),
         };
-        let memory = Memory::new()
+        let memory = SymbolicMemory::new()
             .with_block(pointer.base.clone(), if owned { 4 } else { 0 })
             .store(pointer.clone(), int32(4));
         let state = ExecutionState::new()

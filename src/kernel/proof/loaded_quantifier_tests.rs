@@ -1,6 +1,8 @@
 use super::*;
 use crate::kernel::proof::PureFactStore;
-use crate::kernel::{Address, AddressOffset, LoadKind, Memory, ProgramValue, intern_memory};
+use crate::kernel::{
+    Address, AddressOffset, LoadKind, ProgramValue, SymbolicMemory, intern_memory,
+};
 
 fn loaded_fact(memory: &SharedMemory, binder: Variable, shared: bool) -> Proposition {
     loaded_fact_of_format(memory, binder, shared, MachineIntegerType::Int32)
@@ -71,7 +73,7 @@ fn loaded_fact_of_format(
 #[test]
 fn loaded_quantifier_matches_shared_guard_but_keeps_exact_read_and_binder() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = intern_memory(Memory::new().with_block("loaded-quantifier", 64));
+    let memory = intern_memory(SymbolicMemory::new().with_block("loaded-quantifier", 64));
     let native = loaded_fact(&memory, Variable(920_001), false);
     let shared = loaded_fact(&memory, Variable(920_002), true);
     for (source, requested) in [(&native, &shared), (&shared, &native)] {
@@ -145,13 +147,17 @@ fn loaded_quantifier_matches_shared_guard_but_keeps_exact_read_and_binder() {
 #[test]
 fn loaded_quantifier_shared_guard_does_not_rename_a_variable_inside_state() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = intern_memory(Memory::new().with_block("loaded-quantifier", 64).store(
-        Address {
-            base: "loaded-quantifier".into(),
-            offset: AddressOffset::Constant(0),
-        },
-        ProgramValue::Int32(MachineTerm::Variable(Variable(920_001))),
-    ));
+    let memory = intern_memory(
+        SymbolicMemory::new()
+            .with_block("loaded-quantifier", 64)
+            .store(
+                Address {
+                    base: "loaded-quantifier".into(),
+                    offset: AddressOffset::Constant(0),
+                },
+                ProgramValue::Int32(MachineTerm::Variable(Variable(920_001))),
+            ),
+    );
     let native = loaded_fact(&memory, Variable(920_001), false);
     let shared = loaded_fact(&memory, Variable(920_002), true);
     for (source, requested) in [(&native, &shared), (&shared, &native)] {
@@ -168,13 +174,17 @@ fn loaded_quantifier_native_guard_does_not_capture_a_variable_inside_state() {
             let _session = crate::kernel::VerificationSession::enter();
             let a = Variable(920_001);
             let b = Variable(920_002);
-            let memory = intern_memory(Memory::new().with_block("loaded-quantifier", 64).store(
-                Address {
-                    base: "loaded-quantifier".into(),
-                    offset: AddressOffset::Constant(0),
-                },
-                ProgramValue::Int32(MachineTerm::Variable(a)),
-            ));
+            let memory = intern_memory(
+                SymbolicMemory::new()
+                    .with_block("loaded-quantifier", 64)
+                    .store(
+                        Address {
+                            base: "loaded-quantifier".into(),
+                            offset: AddressOffset::Constant(0),
+                        },
+                        ProgramValue::Int32(MachineTerm::Variable(a)),
+                    ),
+            );
             let quantify = |binder| {
                 let fact = loaded_fact(&memory, binder, shared);
                 if existential {
@@ -211,13 +221,17 @@ fn loaded_quantifier_matching_renames_both_state_binders_without_swapping_free_v
     let a = Variable(970_001);
     let b = Variable(970_002);
     let fact = |binder, stored| {
-        let memory = intern_memory(Memory::new().with_block("loaded-quantifier", 64).store(
-            Address {
-                base: "loaded-quantifier".into(),
-                offset: AddressOffset::Constant(0),
-            },
-            ProgramValue::Int32(MachineTerm::Variable(stored)),
-        ));
+        let memory = intern_memory(
+            SymbolicMemory::new()
+                .with_block("loaded-quantifier", 64)
+                .store(
+                    Address {
+                        base: "loaded-quantifier".into(),
+                        offset: AddressOffset::Constant(0),
+                    },
+                    ProgramValue::Int32(MachineTerm::Variable(stored)),
+                ),
+        );
         loaded_fact(&memory, binder, false)
     };
     let left = fact(a, a);
@@ -240,7 +254,7 @@ fn loaded_quantifier_guard_matching_preserves_machine_binder_width() {
         MachineIntegerType::UInt64,
     ] {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = intern_memory(Memory::new().with_block("loaded-quantifier", 64));
+        let memory = intern_memory(SymbolicMemory::new().with_block("loaded-quantifier", 64));
         let native = loaded_fact_of_format(&memory, Variable(940_001), false, format);
         let shared = loaded_fact_of_format(&memory, Variable(940_002), true, format);
         for (source, requested) in [(&native, &shared), (&shared, &native)] {
@@ -267,7 +281,7 @@ fn loaded_quantifier_guard_matching_preserves_machine_binder_width() {
 #[test]
 fn loaded_quantifier_without_prepared_state_matches_retained_order() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = intern_memory(Memory::new().with_block("loaded-quantifier", 64));
+    let memory = intern_memory(SymbolicMemory::new().with_block("loaded-quantifier", 64));
     let native = loaded_fact(&memory, Variable(950_001), false);
     let shared = loaded_fact(&memory, Variable(950_002), true);
     let same_binder = loaded_fact(&memory, Variable(950_001), true);

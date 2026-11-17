@@ -4892,7 +4892,7 @@ pub enum PureFunctionArgument {
     Integer(SharedIntegerTerm),
     Algebraic(AlgebraicTerm),
     ArrayRef {
-        memory: Memory,
+        memory: SymbolicMemory,
         pointer: ProgramValue,
         element_type: ProgramType,
     },
@@ -5491,7 +5491,7 @@ pub enum SpecProposition {
     Predicate {
         name: String,
         arguments: Vec<SpecPredicateArgument>,
-        /// Whether the definition observes the resource model. Memory states
+        /// Whether the definition observes the resource model. SymbolicMemory states
         /// remain explicit predicate arguments independently of this flag.
         resource_state_dependent: bool,
     },
@@ -6265,7 +6265,7 @@ impl From<Vec<ProgramValue>> for ArrayContents {
 
 /// `count` cells holding `value`, `stride` bytes apart from `offset` bytes
 /// into an object: one [`CellRun`] of an object's known initial contents
-/// ([`Memory::with_constant_runs`]).
+/// ([`SymbolicMemory::with_constant_runs`]).
 ///
 /// [`CellRun`]: crate::kernel::primitives::CellRun
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -7975,7 +7975,7 @@ pub enum RuntimeError {
         reason: String,
         held: Option<Box<ResourceFact>>,
         required: Box<ResourceFact>,
-        memory: Option<Box<Memory>>,
+        memory: Option<Box<SymbolicMemory>>,
     },
     /// Lock or destroy encountered no successful modeled initialization for
     /// this mutex on the current path.
@@ -8532,14 +8532,14 @@ pub(super) enum LocalBinding {
 /// path-independent — and an entry state, which carries no mark, can no
 /// longer be the state something was forgotten into.
 /// The mark is the base's *identity*, never the base itself. Holding the
-/// state would put a chain of `Arc<Memory>` inside every state that
+/// state would put a chain of `Arc<SymbolicMemory>` inside every state that
 /// ever forgot anything, and equality, ordering and dropping would all
 /// recurse down it — one stack frame per forget, on a hot path, in a
 /// structure the arena already keeps alive. Every field here is O(1) to
 /// compare and to hash.
 ///
 /// It is held behind an `Arc` rather than inline for the same reason the
-/// cell map is: `Memory` travels by value through deeply recursive
+/// cell map is: `SymbolicMemory` travels by value through deeply recursive
 /// evaluation, so a state pays one pointer for the mark and the states
 /// that inherit it share the one allocation.
 ///
@@ -8572,7 +8572,7 @@ impl std::fmt::Debug for ForgottenFrom {
 
 /// What a state no longer knows, beside its cells.
 ///
-/// Two facts of the same kind, behind one pointer. `Memory` travels by value
+/// Two facts of the same kind, behind one pointer. `SymbolicMemory` travels by value
 /// inside `Term`, whose clone recurses once per nested operator, so a state
 /// pays one word for both rather than one each.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
@@ -8594,8 +8594,14 @@ pub struct ForgottenKnowledge {
     pub(super) join_inputs: HashedOrdSet<ForgottenFrom>,
 }
 
+/// What the verifier knows about memory at one program point: symbolic
+/// values for the cells it has tracked, plus the blocks, heap state, and
+/// forgotten knowledge that bound them. It is partial: a cell with no entry
+/// is unknown, not empty or zero. Each value belongs to a
+/// [`ProgramPoint`](crate::kernel::ProgramPoint); pass the point rather than
+/// this value where the point is what is meant.
 #[derive(Clone, Debug, Default)]
-pub struct Memory {
+pub struct SymbolicMemory {
     pub(super) construction: Option<Arc<MemoryConstruction>>,
     /// The steps taken on this value's path since its state last reached a
     /// point ([`program_point::StepLog`]). Not part of equality, hashing or
@@ -8619,7 +8625,7 @@ pub struct Memory {
 /// when a constructor edits a cloned state without recording its operation.
 #[derive(Clone)]
 pub(crate) struct MemoryConstruction {
-    roots: Memory,
+    roots: SymbolicMemory,
     pub(crate) kind: MemoryConstructionKind,
 }
 
@@ -8641,12 +8647,12 @@ pub(crate) enum MemoryConstructionKind {
     Transition(Arc<MemoryDerivation>),
     Transform {
         operation: &'static str,
-        sources: Vec<Memory>,
+        sources: Vec<SymbolicMemory>,
         arguments: Vec<ProgramValue>,
     },
 }
 
-impl Memory {
+impl SymbolicMemory {
     // Pin the described roots so an in-place Arc mutation or allocator address
     // reuse cannot make a stale construction appear to describe new contents.
     // Dropping the origin here avoids a self-reference through this pin.
@@ -8674,7 +8680,7 @@ impl Memory {
     pub(in crate::kernel) fn record_diagnostic_transform(
         &mut self,
         operation: &'static str,
-        sources: Vec<Memory>,
+        sources: Vec<SymbolicMemory>,
         arguments: Vec<ProgramValue>,
     ) {
         crate::instrumentation::record_deterministic_work(1 + sources.len());
@@ -8833,7 +8839,7 @@ impl Ord for ReadRegionIdentity {
     }
 }
 
-impl Memory {
+impl SymbolicMemory {
     /// Names the parts in which two memories differ, for a refusal that
     /// would otherwise only say that they do.
     pub(crate) fn differing_parts(&self, other: &Self) -> Vec<&'static str> {
@@ -8863,7 +8869,7 @@ impl Memory {
     }
 }
 
-impl PartialEq for Memory {
+impl PartialEq for SymbolicMemory {
     /// Rejects on the O(1) content hash before any elementwise comparison.
     /// Without that, a candidate that differs only in a later component
     /// would pay for comparing the equal earlier ones, and which candidates a
@@ -8881,9 +8887,9 @@ impl PartialEq for Memory {
     }
 }
 
-impl Eq for Memory {}
+impl Eq for SymbolicMemory {}
 
-impl std::hash::Hash for Memory {
+impl std::hash::Hash for SymbolicMemory {
     /// O(1): every map and set carries its own cached content hash, and the
     /// forget mark hashes by its base's content hash.
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -8897,7 +8903,7 @@ impl std::hash::Hash for Memory {
     }
 }
 
-impl Ord for Memory {
+impl Ord for SymbolicMemory {
     /// By a content hash first, then structurally. The structural order walks
     /// the entries two states share, and states along one path share
     /// almost all of them, so ordered collections keyed by memories (fact
@@ -8945,7 +8951,7 @@ fn count_structural_comparison() {
     STRUCTURAL_COMPARISONS.with(|count| count.set(count.get() + 1));
 }
 
-impl Memory {
+impl SymbolicMemory {
     fn structural_cmp(&self, other: &Self) -> std::cmp::Ordering {
         count_structural_comparison();
         self.blocks
@@ -8967,7 +8973,7 @@ impl Memory {
     }
 }
 
-impl PartialOrd for Memory {
+impl PartialOrd for SymbolicMemory {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
@@ -9223,7 +9229,7 @@ pub(super) struct HeapMemory {
 
 impl std::hash::Hash for HeapMemory {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        // Memory state hashes name symbolic loads and order forgotten states.
+        // SymbolicMemory state hashes name symbolic loads and order forgotten states.
         // Preserve existing names when construction tracking is absent: an
         // unused extension must not reshuffle ordinary proof-search inputs.
         self.live_allocations.hash(state);
@@ -9368,7 +9374,7 @@ pub struct MemoryBlock {
 ///
 /// Equality and hashing are O(1) via the arena identity and a precomputed
 /// content hash. Ordering keeps a same-identity fast path, then orders by
-/// the content hash and only then structurally, as `Memory` does: proof
+/// the content hash and only then structurally, as `SymbolicMemory` does: proof
 /// search is sensitive to iteration order, and the content hash is as
 /// deterministic as the structure, where arena-insertion order would be
 /// nondeterministic across checks.
@@ -9377,7 +9383,7 @@ pub struct SharedMemory {
     arena: u32,
     id: u32,
     content_hash: u64,
-    memory: std::sync::Arc<Memory>,
+    memory: std::sync::Arc<SymbolicMemory>,
 }
 
 impl SharedMemory {
@@ -9418,7 +9424,7 @@ impl SharedMemory {
         })
     }
 
-    /// Memory state identity for definedness of a direct automatic object.
+    /// SymbolicMemory state identity for definedness of a direct automatic object.
     /// A producer updates only the local it stores; every other transition
     /// starts a fresh identity unless it merely forgets cached values.
     pub(crate) fn local_read_definedness_identity(&self, pointer: &Address) -> (u32, u32) {
@@ -9467,7 +9473,7 @@ impl SharedMemory {
         })
     }
 
-    pub(crate) fn memory(&self) -> &Memory {
+    pub(crate) fn memory(&self) -> &SymbolicMemory {
         &self.memory
     }
 }
@@ -9513,7 +9519,7 @@ impl std::fmt::Debug for SharedMemory {
 }
 
 /// The compact identity of a memory state at a retained proof frontier.
-/// This only records the persistent-node pointers already held by `Memory`;
+/// This only records the persistent-node pointers already held by `SymbolicMemory`;
 /// it does not intern, clone, or scan the state.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) struct MemoryStateIdentity {
@@ -9527,7 +9533,7 @@ thread_local! {
 }
 
 impl MemoryStateIdentity {
-    pub(crate) fn of(memory: &Memory) -> Self {
+    pub(crate) fn of(memory: &SymbolicMemory) -> Self {
         Self {
             shallow: MemoryShallowIdentity::of(memory),
         }
@@ -9560,7 +9566,7 @@ impl CallRequirementSite {
         interface: &str,
         candidate_ordinal: usize,
         source_arguments: &[ProgramExpression],
-        source_memory: &Memory,
+        source_memory: &SymbolicMemory,
     ) -> Self {
         #[cfg(test)]
         CALL_REQUIREMENT_SITE_CONSTRUCTION_COUNT.with(|count| {
@@ -9643,27 +9649,27 @@ impl std::ops::Deref for CallRequirementSource {
 }
 
 impl std::ops::Deref for SharedMemory {
-    type Target = Memory;
+    type Target = SymbolicMemory;
 
-    fn deref(&self) -> &Memory {
+    fn deref(&self) -> &SymbolicMemory {
         &self.memory
     }
 }
 
-impl AsRef<Memory> for SharedMemory {
-    fn as_ref(&self) -> &Memory {
+impl AsRef<SymbolicMemory> for SharedMemory {
+    fn as_ref(&self) -> &SymbolicMemory {
         &self.memory
     }
 }
 
-impl From<Memory> for SharedMemory {
-    fn from(memory: Memory) -> Self {
+impl From<SymbolicMemory> for SharedMemory {
+    fn from(memory: SymbolicMemory) -> Self {
         intern_memory(memory)
     }
 }
 
-impl From<&Memory> for SharedMemory {
-    fn from(memory: &Memory) -> Self {
+impl From<&SymbolicMemory> for SharedMemory {
+    fn from(memory: &SymbolicMemory) -> Self {
         intern_memory_ref(memory)
     }
 }
@@ -9704,7 +9710,7 @@ pub enum MemoryDerivation {
     /// the initial DAG arc; without it, block declaration split the DAG into
     /// disjoint components ("arena identity is connected, arena derivations
     /// are not"). The havoc producers insert their marker
-    /// blocks directly rather than through [`Memory::with_block`], so this
+    /// blocks directly rather than through [`SymbolicMemory::with_block`], so this
     /// edge can never alias a havoc hop.
     BlockDeclared {
         base: SharedMemory,
@@ -9898,14 +9904,14 @@ static NEXT_MEMORY_ARENA_TOKEN: std::sync::atomic::AtomicU32 = std::sync::atomic
 
 #[derive(Clone, Default)]
 struct MemoryArena {
-    identities: std::collections::HashMap<std::sync::Arc<Memory>, (u32, u64)>,
+    identities: std::collections::HashMap<std::sync::Arc<SymbolicMemory>, (u32, u64)>,
     shallow_identities: std::collections::HashMap<MemoryShallowIdentity, (u32, u64)>,
-    /// Memory states whose storage roots were registered in `shallow_identities`
+    /// SymbolicMemory states whose storage roots were registered in `shallow_identities`
     /// on a structural hit. Holding them keeps those roots allocated, so a
     /// registered address cannot be reused by a different map. Each pin is
     /// an O(1) handle clone.
-    shallow_pins: Vec<Memory>,
-    memories: Vec<std::sync::Arc<Memory>>,
+    shallow_pins: Vec<SymbolicMemory>,
+    memories: Vec<std::sync::Arc<SymbolicMemory>>,
     /// The recorded children of each base, by the child's content hash: a
     /// derivation re-run from the same base (planning and then checking one
     /// statement, say) is recognized here by comparing its changes from the
@@ -9946,7 +9952,7 @@ struct MemoryShallowIdentity {
 }
 
 impl MemoryShallowIdentity {
-    fn of(memory: &Memory) -> Self {
+    fn of(memory: &SymbolicMemory) -> Self {
         Self {
             blocks: std::sync::Arc::as_ptr(&memory.blocks) as usize,
             cells: std::sync::Arc::as_ptr(&memory.cells) as usize,
@@ -9966,7 +9972,7 @@ thread_local! {
 }
 
 /// Replaces this thread's memory arena with an empty one under a fresh
-/// token. Memory states interned before keep comparing by content but lose
+/// token. SymbolicMemory states interned before keep comparing by content but lose
 /// their derivations, so nothing recorded for an earlier verification can
 /// answer a DAG walk in a later one. Called by [`super::VerificationSession`]
 /// at the outermost verification entry; see its documentation.
@@ -10039,7 +10045,7 @@ pub(super) fn memory_derivation_generation() -> u64 {
 /// base's canonical storage and shares every unchanged subtree with it, which
 /// is what lets [`record_memory_derivation`] compare a re-derived result
 /// against an earlier child of the same base along the changed paths only.
-pub(crate) fn intern_derivation_base(memory: &mut Memory) -> SharedMemory {
+pub(crate) fn intern_derivation_base(memory: &mut SymbolicMemory) -> SharedMemory {
     let base = intern_memory_ref(memory);
     if !memory.same_storage_roots(base.memory()) {
         *memory = base.memory().clone();
@@ -10067,7 +10073,7 @@ pub(crate) fn intern_derivation_base(memory: &mut Memory) -> SharedMemory {
 /// canonical instance forward means every later state derived from this
 /// one shares storage roots with whatever the arena already holds, so facts
 /// and terms that embed equal states compare by root identity.
-pub(crate) fn record_memory_derivation(result: &mut Memory, derivation: MemoryDerivation) {
+pub(crate) fn record_memory_derivation(result: &mut SymbolicMemory, derivation: MemoryDerivation) {
     let variable_base = derivation.base().clone();
     let derivation = Arc::new(derivation);
     // The log this value carries from the path that made it; the step is
@@ -10195,7 +10201,7 @@ pub(crate) fn record_memory_derivation(result: &mut Memory, derivation: MemoryDe
 /// ([`intern_derivation_base`]) and so was every recorded child, so both share
 /// all of `base` that their updates did not touch and the comparison walks
 /// only the changed paths. The answer is exact either way.
-fn recorded_child_matching(result: &Memory, base: &SharedMemory) -> Option<Memory> {
+fn recorded_child_matching(result: &SymbolicMemory, base: &SharedMemory) -> Option<SymbolicMemory> {
     let content_hash = memory_content_hash(result);
     C_MEMORY_ARENA.with(|arena| {
         let arena = arena.borrow();
@@ -10219,7 +10225,7 @@ fn recorded_child_matching(result: &Memory, base: &SharedMemory) -> Option<Memor
 /// than the rest of a comparison and runs twice per comparison. Like the
 /// content hash it depends only on the entries, so it is deterministic and
 /// equal for equal states; a collision costs only the structural walk.
-fn memory_ordering_key(memory: &Memory) -> u64 {
+fn memory_ordering_key(memory: &SymbolicMemory) -> u64 {
     use std::hash::{Hash, Hasher};
     #[derive(Default)]
     struct OrderingHasher(u64);
@@ -10246,7 +10252,7 @@ fn memory_ordering_key(memory: &Memory) -> u64 {
     hasher.finish()
 }
 
-fn memory_content_hash(memory: &Memory) -> u64 {
+fn memory_content_hash(memory: &SymbolicMemory) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     memory.hash(&mut hasher);
@@ -10269,7 +10275,7 @@ fn record_memory_structural_lookup_work() {
 /// states interned on the same thread share one allocation and identity;
 /// states that cross threads still compare correctly through the content
 /// hash and structural fallback.
-pub fn intern_memory(memory: Memory) -> SharedMemory {
+pub fn intern_memory(memory: SymbolicMemory) -> SharedMemory {
     C_MEMORY_ARENA.with(|arena| {
         let mut arena = arena.borrow_mut();
         let (token, arena) = &mut *arena;
@@ -10329,7 +10335,7 @@ pub fn intern_memory(memory: Memory) -> SharedMemory {
 /// a state a derivation produced carries its interned storage forward
 /// ([`record_memory_derivation`]), so a live state's memory is found here
 /// in O(1), and any other memory is left to the caller.
-pub(crate) fn interned_storage_of(memory: &Memory) -> Option<SharedMemory> {
+pub(crate) fn interned_storage_of(memory: &SymbolicMemory) -> Option<SharedMemory> {
     C_MEMORY_ARENA.with(|arena| {
         let arena = arena.borrow();
         let (token, arena) = &*arena;
@@ -10349,7 +10355,7 @@ pub(crate) fn interned_storage_of(memory: &Memory) -> Option<SharedMemory> {
 /// Interns by reference: an already-interned state is found without
 /// cloning it, so hot memoization lookups keyed by interned identity pay a
 /// hash and comparison but no allocation.
-pub fn intern_memory_ref(memory: &Memory) -> SharedMemory {
+pub fn intern_memory_ref(memory: &SymbolicMemory) -> SharedMemory {
     intern_memory_ref_with_read_identity(memory, None)
 }
 
@@ -10357,7 +10363,7 @@ pub fn intern_memory_ref(memory: &Memory) -> SharedMemory {
 /// change keys underneath registered applications; an earlier unannotated hit
 /// conservatively loses this equality rather than requiring graph rescans.
 fn intern_memory_ref_with_read_identity(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     read_identity: Option<(u32, u32)>,
 ) -> SharedMemory {
     C_MEMORY_ARENA.with(|arena| {
@@ -10454,7 +10460,7 @@ pub struct ExecutionState {
     /// Call-local formal identities; the ledger retains actual caller identities.
     pub(super) resource_bindings: Option<std::sync::Arc<BTreeMap<Variable, Variable>>>,
     pub(super) locals: LocalEnvironment,
-    pub(super) memory: Memory,
+    pub(super) memory: SymbolicMemory,
     /// The point this state's path has reached; not part of equality
     /// ([`program_point::PathLink`]).
     pub(super) point: program_point::PathLink,
@@ -10975,7 +10981,7 @@ pub(super) struct ResourceContextStorage {
     /// index above, this cannot conflate equal support occurrences.
     pub(super) projections_by_support_occurrence:
         PersistentMap<ResourceOccurrenceId, ResourceEntryIds>,
-    /// Memory-dependent projections, indexed by their exact entry.  The
+    /// SymbolicMemory-dependent projections, indexed by their exact entry.  The
     /// companion block index lets a store/call/loop invalidation visit only
     /// projections whose recorded footprint can be affected.
     pub(super) support_metadata_by_projection:
@@ -11105,14 +11111,14 @@ pub(super) struct ResourceContextIndex {
     /// a parameter's fact with every other parameter's.
     pub(super) exact_shapes_by_root: PersistentMap<ShapeRootKey, ResourceEntryIds>,
     pub(super) memory_by_block: PersistentMap<AddressBase, ResourceEntryIds>,
-    /// Memory facts whose allocation identity is not a concrete block. An
+    /// SymbolicMemory facts whose allocation identity is not a concrete block. An
     /// implicit local loan must not rediscover whether these alias its storage.
     pub(super) nonconcrete_memory_count: usize,
     /// Iterated guarded-ownership facts keyed by both blocks their
     /// denotation depends on: the element base and the guard cells. A store,
     /// havoc, or free visits only the facts filed under its own block.
     pub(super) iterated_by_block: PersistentMap<AddressBase, ResourceEntryIds>,
-    /// Memory facts keyed by their exact base spelling. Direct pointer
+    /// SymbolicMemory facts keyed by their exact base spelling. Direct pointer
     /// equalities can then find only the facts whose bases they identify,
     /// without scanning every resource in an aliased block.
     pub(super) memory_by_base: PersistentMap<Address, ResourceEntryIds>,
@@ -13095,7 +13101,7 @@ pub enum Term {
     Algebraic(AlgebraicTerm),
     // Outcomes carry ExecutionState. Keep them out of Term's inline size so cloning
     // a deep pure proposition does not spend stack on unused C variants.
-    Memory(Memory),
+    Memory(SymbolicMemory),
     ExecutionState(Box<ExecutionState>),
 }
 
@@ -13267,12 +13273,12 @@ pub enum Proposition {
         specification: Box<FunctionSpecification>,
     },
     MemoryLoads {
-        memory: Memory,
+        memory: SymbolicMemory,
         pointer: Address,
         outcome: ExpressionOutcome,
     },
     MemoryCanStore {
-        memory: Memory,
+        memory: SymbolicMemory,
         pointer: Address,
         byte_width: u32,
     },
@@ -13280,7 +13286,7 @@ pub enum Proposition {
     /// term, or, when `wide`, an unsigned 64-bit one: a term carries no
     /// width, so a reader that takes a wide count as 32 bits misreads it.
     MemoryLoadable {
-        memory: Memory,
+        memory: SymbolicMemory,
         base: Address,
         bytes: MachineTerm,
         wide: bool,
@@ -13288,7 +13294,7 @@ pub enum Proposition {
     /// A typed read is valid in this state, including initialization.
     /// This is a pure fact; it grants no resource access permission.
     MemoryReadDefined {
-        memory: Memory,
+        memory: SymbolicMemory,
         pointer: Address,
         value_type: ProgramType,
     },
@@ -13301,7 +13307,7 @@ pub enum Proposition {
     /// ambient proposition visible to proof search.
     ResourceComposition(ResourceContext),
     ResourceViewable {
-        memory: Memory,
+        memory: SymbolicMemory,
         resource: Box<Resource>,
     },
     ResourceContains {
@@ -13313,23 +13319,23 @@ pub enum Proposition {
     /// written. Preservation proofs use recorded region footprints; allocation
     /// lifetime effects are recorded separately.
     MemoryMutatesOnly {
-        before: Memory,
-        after: Memory,
+        before: SymbolicMemory,
+        after: SymbolicMemory,
         writes: Vec<(Address, u32)>,
     },
     /// Internal write bound expressed as [`MemoryRange`] descriptors, including
     /// symbolic spans. Like [`Self::MemoryMutatesOnly`], this bounds possible
     /// writes rather than claiming that every listed cell changed.
     MemoryEffectSummary {
-        before: Memory,
-        after: Memory,
+        before: SymbolicMemory,
+        after: SymbolicMemory,
         mutable_ranges: Vec<MemoryRange>,
     },
     /// A free of the block at `allocation_base` with size `bytes`, which
     /// keeps its format, so a 64-bit block's free reinstates a 64-bit claim.
     HeapAllocationFreed {
-        before: Memory,
-        after: Memory,
+        before: SymbolicMemory,
+        after: SymbolicMemory,
         allocation_base: Address,
         bytes: AllocationSize,
     },
@@ -14756,8 +14762,10 @@ pub struct PureFactContext {
     /// `HeapAllocationFreed`), filed under both of their memories, so a load
     /// comparison between two states reads the effects naming one of
     /// them, not every proposition fact.
-    pub(super) memory_effect_facts:
-        crate::persistent::PersistentMap<Memory, crate::persistent::PersistentSet<Proposition>>,
+    pub(super) memory_effect_facts: crate::persistent::PersistentMap<
+        SymbolicMemory,
+        crate::persistent::PersistentSet<Proposition>,
+    >,
     /// The `ResourceContains` facts, filed by their parent: a memory
     /// range under its base block, any other resource under itself. A
     /// containment walk reads the facts under the resource it has reached,
@@ -15068,8 +15076,8 @@ pub struct CertifiedExecutionFactTransport {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub(super) struct CertifiedMemoryStore {
-    pub(super) before: Memory,
-    pub(super) after: Memory,
+    pub(super) before: SymbolicMemory,
+    pub(super) after: SymbolicMemory,
     pub(super) pointer: Address,
     pub(super) value: ProgramValue,
     pub(super) authorized_range: Option<MemoryRange>,

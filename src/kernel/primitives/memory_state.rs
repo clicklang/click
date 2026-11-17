@@ -50,7 +50,10 @@ fn write_havoc_block(identity: &mut String, block: AddressBase) {
     match block {
         AddressBase::ReferenceCarrier { referent, instance } => {
             identity.push_str("bref;");
-            write_havoc_block(identity, Memory::local_pointer(referent.as_ref()).base);
+            write_havoc_block(
+                identity,
+                SymbolicMemory::local_pointer(referent.as_ref()).base,
+            );
             let _ = write!(identity, "{instance:?};");
         }
         AddressBase::AggregateReturn { frame } => {
@@ -719,7 +722,7 @@ mod call_havoc_local_retention_tests {
             base: block.clone(),
             offset: AddressOffset::Constant(offset),
         };
-        let before = Memory::new()
+        let before = SymbolicMemory::new()
             .with_block(block.clone(), 16)
             .store(at(0), ProgramValue::Int32(MachineTerm::constant(7)))
             .store(at(8), ProgramValue::Int32(MachineTerm::constant(1)))
@@ -762,7 +765,7 @@ mod call_havoc_local_retention_tests {
             base: "local:initialization".into(),
             offset: AddressOffset::Constant(offset),
         };
-        let before = Memory::new()
+        let before = SymbolicMemory::new()
             .with_block(at(0).base.clone(), 16)
             .store(at(0), ProgramValue::Int32(MachineTerm::constant(7)));
         let range = MemoryRange::new_with_element_width(at(0), 0u32.into(), 16u32.into(), 1);
@@ -820,7 +823,7 @@ mod call_havoc_local_retention_tests {
             base: "local:borrowed-union".into(),
             offset: AddressOffset::Constant(0),
         };
-        let before = Memory::new()
+        let before = SymbolicMemory::new()
             .with_block(pointer.base.clone(), 8)
             .store_union_views(
                 pointer.clone(),
@@ -856,10 +859,12 @@ mod call_havoc_local_retention_tests {
             offset: AddressOffset::Constant(0),
         };
         let alias = Address::symbolic(Variable(944_021));
-        let before = Memory::new().with_block(pointer.base.clone(), 4).store(
-            pointer.clone(),
-            ProgramValue::Int32(MachineTerm::constant(7)),
-        );
+        let before = SymbolicMemory::new()
+            .with_block(pointer.base.clone(), 4)
+            .store(
+                pointer.clone(),
+                ProgramValue::Int32(MachineTerm::constant(7)),
+            );
         let facts = PureFactContext::new().assume_condition(
             ConditionTerm::pointer_equal(alias.clone(), pointer.offset_by_bytes(1)),
             true,
@@ -919,7 +924,7 @@ mod call_havoc_local_retention_tests {
             MachineTerm::constant(1),
         );
         let value = ProgramValue::Int32(MachineTerm::constant(41));
-        let before = Memory::new()
+        let before = SymbolicMemory::new()
             .with_block(local.base.clone(), 4)
             .store(local.clone(), value.clone());
 
@@ -983,7 +988,7 @@ mod call_havoc_union_view_tests {
                 ProgramValue::Int32(MachineTerm::constant(value)),
             )
         };
-        let before = Memory::new()
+        let before = SymbolicMemory::new()
             .with_block(block, 16)
             .store_union_views(written.clone(), 8, vec![view(&written, 3)])
             .store_union_views(sibling.clone(), 8, vec![view(&sibling, 5)]);
@@ -1038,12 +1043,12 @@ mod forget_cached_values_tests {
         )
     }
 
-    fn zeroed_heap_with_cell() -> (Memory, Address) {
+    fn zeroed_heap_with_cell() -> (SymbolicMemory, Address) {
         let base = Address {
             base: AddressBase::Heap(944_100),
             offset: AddressOffset::Constant(0),
         };
-        let mut memory = Memory::new().with_block(base.base.clone(), 8);
+        let mut memory = SymbolicMemory::new().with_block(base.base.clone(), 8);
         let heap = std::sync::Arc::make_mut(&mut memory.heap);
         heap.live_allocations
             .insert(base.clone(), AllocationSize::int32(8));
@@ -1064,7 +1069,7 @@ mod forget_cached_values_tests {
             base: "local:loop-union-kept".into(),
             offset: AddressOffset::Constant(4),
         };
-        let before = Memory::new()
+        let before = SymbolicMemory::new()
             .with_block(written.base.clone(), 12)
             .with_block(preserved.base.clone(), 12)
             .store_union_views(written.clone(), 8, vec![int32_view(&written, 3)])
@@ -1119,7 +1124,7 @@ mod forget_cached_values_tests {
             base: base.base.clone(),
             offset: AddressOffset::Constant(offset),
         };
-        let mut memory = Memory::new().with_block(base.base.clone(), 16);
+        let mut memory = SymbolicMemory::new().with_block(base.base.clone(), 16);
         let heap = std::sync::Arc::make_mut(&mut memory.heap);
         heap.live_allocations
             .insert(base.clone(), AllocationSize::int32(16));
@@ -1154,7 +1159,7 @@ mod forget_cached_values_tests {
     #[test]
     fn interface_join_drops_a_zero_reading_one_arm_wrote_over() {
         let (wrote, base) = zeroed_heap_with_cell();
-        let mut untouched = Memory::new().with_block(base.base.clone(), 8);
+        let mut untouched = SymbolicMemory::new().with_block(base.base.clone(), 8);
         let heap = std::sync::Arc::make_mut(&mut untouched.heap);
         heap.live_allocations
             .insert(base.clone(), AllocationSize::int32(8));
@@ -1240,7 +1245,7 @@ mod havoc_identity_tests {
         assert!(!first_identity.contains("depth-limit"));
         assert!(!second_identity.contains("depth-limit"));
 
-        let before = Memory::new().with_block("deep-havoc-range", 4_096);
+        let before = SymbolicMemory::new().with_block("deep-havoc-range", 4_096);
         let first = before.clone().with_call_memory_havoc(
             Variable(95_000),
             std::slice::from_ref(&first_range),
@@ -1433,7 +1438,7 @@ impl LocalEnvironment {
             .get(&name)
             .map(LocalBinding::slot)
             .cloned()
-            .unwrap_or_else(|| Memory::local_pointer(&name));
+            .unwrap_or_else(|| SymbolicMemory::local_pointer(&name));
         self.insert_binding(
             name,
             LocalBinding::Object {
@@ -1485,7 +1490,7 @@ impl LocalEnvironment {
             .get(&name)
             .map(LocalBinding::slot)
             .cloned()
-            .unwrap_or_else(|| Memory::local_pointer(&name));
+            .unwrap_or_else(|| SymbolicMemory::local_pointer(&name));
         self.set_typed_qualified_with_all_qualifiers(
             name,
             value.retag_pointer(program_type),
@@ -1683,7 +1688,7 @@ impl LocalEnvironment {
             .get(&name)
             .map(LocalBinding::slot)
             .cloned()
-            .unwrap_or_else(|| Memory::local_pointer(&name));
+            .unwrap_or_else(|| SymbolicMemory::local_pointer(&name));
         self.set_retained_typed_qualified_with_all_qualifiers(
             name,
             value,
@@ -3020,7 +3025,7 @@ impl CallKeptRanges {
     /// The kept memory recorded on the call havoc edge that derived `after`,
     /// if that edge is one: what a call's effect summary may keep beside its
     /// declared write set.
-    pub(in crate::kernel) fn recorded_on(after: &Memory) -> Option<Self> {
+    pub(in crate::kernel) fn recorded_on(after: &SymbolicMemory) -> Option<Self> {
         let derivation = crate::kernel::intern_memory_ref(after).derivation()?;
         let MemoryDerivation::CallHavoc {
             kept_by_caller: Some(kept),
@@ -3226,7 +3231,7 @@ impl CallKeptOwnership {
     /// bodies. The write-set marker spells both, so a content-equal state
     /// whose edge was recorded first carries the same ones.
     pub(in crate::kernel) fn recorded_on(
-        after: &Memory,
+        after: &SymbolicMemory,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
         let kept = CallKeptRanges::recorded_on(after)?;
@@ -3496,7 +3501,7 @@ where
 
 /// The widest typed overlay recorded at each address, so that the loan
 /// question above covers every byte the cell can be read as.
-fn union_overlay_widths(memory: &Memory) -> BTreeMap<Address, u32> {
+fn union_overlay_widths(memory: &SymbolicMemory) -> BTreeMap<Address, u32> {
     let mut widths = BTreeMap::<Address, u32>::new();
     for (pointer, program_type) in memory.union_cells.keys() {
         widths
@@ -3573,14 +3578,14 @@ fn external_argument_offset_derives_from(base: &Address, pointer: &Address) -> b
 /// body fact applying a pure predicate to a pointer. The state is empty, so
 /// nothing can be read through it by construction, and it is cached per thread
 /// so repeated uses share one storage root.
-pub fn value_independent_click_memory() -> Memory {
+pub fn value_independent_click_memory() -> SymbolicMemory {
     thread_local! {
-        static CANONICAL: Memory = Memory::new();
+        static CANONICAL: SymbolicMemory = SymbolicMemory::new();
     }
     CANONICAL.with(Clone::clone)
 }
 
-impl Memory {
+impl SymbolicMemory {
     pub fn new() -> Self {
         Self::default()
     }
@@ -4888,7 +4893,7 @@ impl Memory {
         &mut self,
         preserved_blocks: &dyn BlockMembership,
         ledger: Option<&crate::kernel::loans::LoanLedger>,
-        agreeing: &[&Memory],
+        agreeing: &[&SymbolicMemory],
     ) {
         let union_widths = union_overlay_widths(self);
         let arm_overlays = agreeing
@@ -4979,7 +4984,7 @@ impl Memory {
         self,
         variable: Variable,
         preserved_blocks: &dyn BlockMembership,
-        sibling_memories: &[&Memory],
+        sibling_memories: &[&SymbolicMemory],
     ) -> Result<Self, String> {
         self.with_interface_memory_havoc_preserving_loans(
             variable,
@@ -4993,7 +4998,7 @@ impl Memory {
         mut self,
         variable: Variable,
         preserved_blocks: &dyn BlockMembership,
-        sibling_memories: &[&Memory],
+        sibling_memories: &[&SymbolicMemory],
         ledger: Option<&crate::kernel::loans::LoanLedger>,
     ) -> Result<Self, String> {
         let mut incoming = std::iter::once(&self)
@@ -5092,7 +5097,7 @@ impl Memory {
         // until the join forgets it). This carries initialization, not a
         // value, so it remains useful after the join's conservative value
         // havoc. Cells of preserved blocks survive the join as cells.
-        let arm_initialized = |memory: &Memory| {
+        let arm_initialized = |memory: &SymbolicMemory| {
             let mut record = memory.heap.initialized.clone();
             let mut visited = 0usize;
             for (pointer, value) in local_block_entries(memory.cells.logical()) {
@@ -5226,7 +5231,7 @@ impl Memory {
         // forgotten here. So a reading goes wherever *any* arm caches a value
         // the join forgets, which is also what keeps every arm's abstraction
         // the same one.
-        let forgotten_value_blocks = |memory: &Memory| {
+        let forgotten_value_blocks = |memory: &SymbolicMemory| {
             if zeroed_allocations.len() == 0 && zeroed_prefix_allocations.is_empty() {
                 return BTreeSet::new();
             }
@@ -5598,7 +5603,7 @@ impl Memory {
         crate::instrumentation::record_deterministic_work(visited);
         // The producer's heap: `before`'s, with the automatic values it
         // dropped recorded initialized, and without the zero readings under
-        // a dropped value or the write set ([`Memory::forget_cached_values`]).
+        // a dropped value or the write set ([`SymbolicMemory::forget_cached_values`]).
         let mut expected = before.clone();
         expected.record_dropped_initialized_cells(&dropped_initialized);
         expected.forget_zero_readings_under(
@@ -5754,7 +5759,7 @@ impl Memory {
         {
             return Err(self);
         }
-        let source = crate::kernel::intern_memory(Memory::new());
+        let source = crate::kernel::intern_memory(SymbolicMemory::new());
         Ok(self.with_run_of_cells(
             base,
             element_type.byte_width(),
@@ -5802,7 +5807,7 @@ impl Memory {
         {
             return Err(self);
         }
-        let source = crate::kernel::intern_memory(Memory::new());
+        let source = crate::kernel::intern_memory(SymbolicMemory::new());
         for run in runs.iter().filter(|run| run.count > 0) {
             crate::instrumentation::record_deterministic_work(1);
             let run = CellRun::new_with_mode(
@@ -6068,7 +6073,7 @@ impl Memory {
                 element_type.byte_width(),
                 element_type,
                 length,
-                crate::kernel::intern_memory(Memory::new()),
+                crate::kernel::intern_memory(SymbolicMemory::new()),
                 RunValueMode::Constant(value),
                 IndexIntervals::default(),
             );
@@ -6275,7 +6280,7 @@ impl Memory {
                 element.byte_width(),
                 element,
                 count,
-                crate::kernel::intern_memory(Memory::new()),
+                crate::kernel::intern_memory(SymbolicMemory::new()),
                 RunValueMode::Constant(value),
                 IndexIntervals::default(),
             ));
@@ -7039,7 +7044,7 @@ impl Memory {
         // Nothing restores these cells — the copy could not carry the field —
         // so the result knows strictly less than its source and must not be
         // able to re-intern as a state that never knew it. See
-        // [`Memory::mark_forgotten_from`].
+        // [`SymbolicMemory::mark_forgotten_from`].
         if memory.cells.len() != self.cells.len()
             || memory.union_cells.len() != self.union_cells.len()
         {
@@ -9859,7 +9864,7 @@ impl ExecutionState {
         self
     }
 
-    pub fn with_memory(mut self, memory: Memory) -> Self {
+    pub fn with_memory(mut self, memory: SymbolicMemory) -> Self {
         self.set_memory(memory);
         self
     }
@@ -9872,7 +9877,7 @@ impl ExecutionState {
     /// writes, but using it for this proof representation step would discard
     /// unrelated resource views and make a resource rewrite appear to change
     /// more authority than its definition exchanges.
-    pub(crate) fn with_materialized_memory(mut self, memory: Memory) -> Self {
+    pub(crate) fn with_materialized_memory(mut self, memory: SymbolicMemory) -> Self {
         self.memory = memory;
         self
     }
@@ -9884,9 +9889,9 @@ impl ExecutionState {
     /// derived from `base` by persistent updates, as the abstractions of two
     /// arms are derived from the memory at their split. The memories are
     /// compared by what each changed from `base`
-    /// ([`Memory::eq_relative_to`]), so the cost is the arms' changes; the
+    /// ([`SymbolicMemory::eq_relative_to`]), so the cost is the arms' changes; the
     /// answer is exact whatever the memories share.
-    pub(crate) fn eq_with_memories_from(&self, other: &Self, base: &Memory) -> bool {
+    pub(crate) fn eq_with_memories_from(&self, other: &Self, base: &SymbolicMemory) -> bool {
         if !self.memory.eq_relative_to(&other.memory, base) {
             return false;
         }
@@ -9897,14 +9902,18 @@ impl ExecutionState {
         *self == other
     }
 
-    pub(crate) fn set_memory(&mut self, memory: Memory) {
+    pub(crate) fn set_memory(&mut self, memory: SymbolicMemory) {
         self.set_memory_with_checked_stores(memory, false);
     }
 
     /// [`Self::set_memory`] for the C store path, which has already applied
     /// the iterated-ownership store rule (`plan_iterated_guard_store`) to its
     /// one store. Every other transition keeps the conservative rule.
-    pub(crate) fn set_memory_with_checked_stores(&mut self, memory: Memory, stores_checked: bool) {
+    pub(crate) fn set_memory_with_checked_stores(
+        &mut self,
+        memory: SymbolicMemory,
+        stores_checked: bool,
+    ) {
         self.replace_memory(memory, stores_checked);
         let steps = self.memory.pending_steps.take();
         self.point = self
@@ -9929,7 +9938,7 @@ impl ExecutionState {
     /// Take `memory`, made from `from`'s memory by the steps in its own log,
     /// with [`Self::set_memory`]'s resource invalidation: this state's path
     /// continues from `from`'s point through those steps.
-    pub(crate) fn set_memory_continuing(&mut self, from: &Self, memory: Memory) {
+    pub(crate) fn set_memory_continuing(&mut self, from: &Self, memory: SymbolicMemory) {
         let base = from.program_point();
         self.replace_memory(memory, false);
         let steps = self.memory.pending_steps.take();
@@ -9942,13 +9951,13 @@ impl ExecutionState {
     }
 
     /// [`Self::set_memory_continuing`], by value.
-    pub(crate) fn with_memory_continuing(mut self, from: &Self, memory: Memory) -> Self {
+    pub(crate) fn with_memory_continuing(mut self, from: &Self, memory: SymbolicMemory) -> Self {
         self.set_memory_continuing(from, memory);
         self
     }
 
     /// Replace memory, dropping the resource projections it touches.
-    fn replace_memory(&mut self, memory: Memory, stores_checked: bool) {
+    fn replace_memory(&mut self, memory: SymbolicMemory, stores_checked: bool) {
         self.resources = self
             .resources
             .clone()
@@ -10004,7 +10013,7 @@ impl ExecutionState {
     /// Replace memory without the resource invalidation of
     /// [`Self::set_memory`], for a transition that has already accounted for
     /// it. It is still a transition, so the state moves to a new point.
-    pub(crate) fn set_memory_directly(&mut self, memory: Memory) {
+    pub(crate) fn set_memory_directly(&mut self, memory: SymbolicMemory) {
         self.memory = memory;
         let steps = self.memory.pending_steps.take();
         self.point = self
@@ -10158,7 +10167,7 @@ impl ExecutionState {
             .flatten()
     }
 
-    pub fn memory(&self) -> &Memory {
+    pub fn memory(&self) -> &SymbolicMemory {
         &self.memory
     }
 
@@ -10265,7 +10274,7 @@ impl ExecutionState {
     /// address-backed cells. Ordinary function frames keep their own local
     /// environment, but inline bodies execute with a separate parameter
     /// environment while retaining the caller's memory.
-    pub(in crate::kernel) fn sync_scalar_locals_from_memory(&mut self, memory: &Memory) {
+    pub(in crate::kernel) fn sync_scalar_locals_from_memory(&mut self, memory: &SymbolicMemory) {
         let updates = self
             .locals
             .bindings
@@ -10659,7 +10668,7 @@ mod contract_retirement_tests {
                 true,
             ))
         });
-        let mut memory = Memory::new()
+        let mut memory = SymbolicMemory::new()
             .with_heap_allocation_claim(base.clone(), AllocationSize::int32(4))
             .expect("fresh input allocation");
         let heap = std::sync::Arc::make_mut(&mut memory.heap);
@@ -10697,7 +10706,7 @@ mod union_store_tests {
             base: AddressBase::Concrete("local:u".to_string()),
             offset: AddressOffset::Constant(0),
         };
-        let memory = Memory::new()
+        let memory = SymbolicMemory::new()
             .store_union(base.clone(), ProgramType::UInt8, crate::kernel::uint8(0xAA))
             .store_union(
                 base.clone(),
@@ -10731,7 +10740,7 @@ mod interface_join_tombstone_tests {
             offset: AddressOffset::Constant(0),
         };
         // Arm B kept it live.
-        let alive = Memory::new()
+        let alive = SymbolicMemory::new()
             .with_block(base.base.clone(), 8)
             .with_heap_allocation_claim(base.clone(), AllocationSize::int32(8))
             .expect("fresh allocation on arm B");
@@ -10778,12 +10787,12 @@ mod join_allocation_spelling_tests {
 
     /// Each arm holds its allocation live under its own spelling, so the
     /// join unions two live entries.
-    fn joined(p: &Address, q: &Address) -> Memory {
-        let arm_a = Memory::new()
+    fn joined(p: &Address, q: &Address) -> SymbolicMemory {
+        let arm_a = SymbolicMemory::new()
             .with_block(p.base.clone(), 8)
             .with_heap_allocation_claim(p.clone(), AllocationSize::int32(8))
             .expect("arm A claim");
-        let arm_b = Memory::new()
+        let arm_b = SymbolicMemory::new()
             .with_block(q.base.clone(), 8)
             .with_heap_allocation_claim(q.clone(), AllocationSize::int32(8))
             .expect("arm B claim");
@@ -10868,7 +10877,7 @@ mod join_allocation_spelling_tests {
 }
 
 /// One cached value a forgetting transition is asked about
-/// ([`Memory::forget_cached_values`]).
+/// ([`SymbolicMemory::forget_cached_values`]).
 #[derive(Clone, Copy, Debug)]
 pub(super) enum CachedValue<'a> {
     /// A cell, or one slot of a run.
@@ -10945,7 +10954,7 @@ fn ask_every_slot(_: &CellRun) -> (SlotSet, crate::kernel::primitives::RuleAnswe
     )
 }
 
-/// Collects one dropped cell for [`Memory::record_dropped_initialized_cells`],
+/// Collects one dropped cell for [`SymbolicMemory::record_dropped_initialized_cells`],
 /// except from inside a debug self-check that re-asks a retain predicate:
 /// that would record, in a debug build only, cells a release build keeps
 /// by a whole-run answer.
@@ -10982,16 +10991,17 @@ mod initialization_record_tests {
         ] {
             for seeded in [false, true] {
                 let input = if seeded {
-                    Memory::new().with_seeded_cells(
+                    SymbolicMemory::new().with_seeded_cells(
                         field.clone(),
                         8,
                         ProgramType::UInt8Pointer,
                         0,
                         1,
-                        intern_memory(Memory::new()),
+                        intern_memory(SymbolicMemory::new()),
                     )
                 } else {
-                    Memory::new().store(field.clone(), ProgramValue::pointer(Address::null()))
+                    SymbolicMemory::new()
+                        .store(field.clone(), ProgramValue::pointer(Address::null()))
                 };
                 assert!(!input.has_initialized_bytes_at(&field, 8));
                 let before = input.with_uninitialized_object(output.clone(), 4);
@@ -11014,14 +11024,14 @@ mod initialization_record_tests {
         let field = Address::symbolic(Variable(924_043));
         let output = Address::symbolic(Variable(924_044));
         for count in [0, 1, 2] {
-            let before = Memory::new()
+            let before = SymbolicMemory::new()
                 .with_seeded_cells(
                     field.clone(),
                     4,
                     ProgramType::Int32,
                     0,
                     count,
-                    intern_memory(Memory::new()),
+                    intern_memory(SymbolicMemory::new()),
                 )
                 .with_uninitialized_object(output.clone(), 4);
             let after = before.without_possible_aliasing_cells(&output, 1, &PureFactContext::new());
@@ -11045,8 +11055,8 @@ mod initialization_record_tests {
         }
     }
 
-    fn written_pair(block: &str) -> Memory {
-        Memory::new()
+    fn written_pair(block: &str) -> SymbolicMemory {
+        SymbolicMemory::new()
             .with_block(block, 8)
             .store(
                 element(block, 0),
@@ -11058,7 +11068,7 @@ mod initialization_record_tests {
             )
     }
 
-    fn forgotten_pair(block: &str) -> Memory {
+    fn forgotten_pair(block: &str) -> SymbolicMemory {
         written_pair(block).without_possible_aliasing_cells(
             &unplaced(block),
             4,
@@ -11101,7 +11111,7 @@ mod initialization_record_tests {
         // One arm forgot both values but keeps their initialization; the
         // other still caches only the first element.
         let forgotten = forgotten_pair(block);
-        let first_only = Memory::new().with_block(block, 8).store(
+        let first_only = SymbolicMemory::new().with_block(block, 8).store(
             element(block, 0),
             ProgramValue::Int32(MachineTerm::constant(5)),
         );
@@ -11122,7 +11132,7 @@ mod initialization_record_tests {
     /// A fresh local block of `count` two-field structs (`stride` 8) or
     /// `count` int32s (`stride` 4), its zero contents seeded as constant runs
     /// with no initialization recorded, so only the runs say it was written.
-    fn zero_runs(block: &str, count: u32, stride: u32) -> Memory {
+    fn zero_runs(block: &str, count: u32, stride: u32) -> SymbolicMemory {
         let zero = ProgramValue::Int32(MachineTerm::constant(0));
         let runs = (0..stride / 4)
             .map(|field| ConstantRun {
@@ -11132,13 +11142,13 @@ mod initialization_record_tests {
                 value: zero.clone(),
             })
             .collect::<Vec<_>>();
-        Memory::new()
+        SymbolicMemory::new()
             .with_block(block, count * stride)
             .with_constant_runs(&element(block, 0), &runs)
             .expect("a fresh local block takes constant runs")
     }
 
-    fn loop_havoc(memory: Memory, variable: u64) -> Memory {
+    fn loop_havoc(memory: SymbolicMemory, variable: u64) -> SymbolicMemory {
         memory.with_loop_memory_havoc_preserving_loans(
             Variable(variable),
             &BTreeSet::new(),
@@ -11220,7 +11230,7 @@ mod initialization_record_tests {
         };
         assert!(written.has_initialized_bytes_under(&read, 4, &index_between(&index, 0, 1)));
         assert!(!written.has_initialized_bytes_under(&read, 4, &index_between(&index, 0, 2)));
-        let gap = Memory::new()
+        let gap = SymbolicMemory::new()
             .with_block(block, 12)
             .store(
                 element(block, 0),
@@ -11250,7 +11260,7 @@ mod local_variable_spelling_tests {
         let memory = state
             .memory()
             .clone()
-            .store(Memory::local_pointer(name), value.clone());
+            .store(SymbolicMemory::local_pointer(name), value.clone());
         state.with_local(name, value).with_memory(memory)
     }
 
@@ -11345,7 +11355,7 @@ mod local_variable_spelling_tests {
         }
         state = state.with_local(
             "pointer",
-            ProgramValue::pointer(Memory::local_pointer("v0")),
+            ProgramValue::pointer(SymbolicMemory::local_pointer("v0")),
         );
         for term in &terms {
             let scanned = state
@@ -11384,7 +11394,7 @@ mod local_variable_spelling_tests {
                 .and_then(BindingName::named),
             Some("a")
         );
-        let pointer = Memory::local_pointer("a");
+        let pointer = SymbolicMemory::local_pointer("a");
         assert_eq!(
             state
                 .local_name_holding_bitvector_variable_at(variable, &pointer)
@@ -11392,7 +11402,7 @@ mod local_variable_spelling_tests {
             Some("a")
         );
         let state = state.clone().with_memory(state.memory().clone().store(
-            Memory::local_pointer("a"),
+            SymbolicMemory::local_pointer("a"),
             ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
         ));
         assert_eq!(
@@ -11409,7 +11419,7 @@ mod local_variable_spelling_tests {
             "a recorded address must still hold the atom in current memory"
         );
         let state = state.clone().with_memory(state.memory().clone().store(
-            Memory::local_pointer("z"),
+            SymbolicMemory::local_pointer("z"),
             ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
         ));
         assert_eq!(

@@ -121,7 +121,7 @@ fn preservation_uses_selected_observations_without_scanning_the_registry() {
         let _session = crate::kernel::VerificationSession::enter();
         let _reads = typed_reads::ReadScope::enter();
         let (preservation, goal) = tests::fixture(2, false);
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         for index in 0..unrelated {
             tests::observe(
                 &memory,

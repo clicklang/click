@@ -29,8 +29,9 @@ impl KernelTerm {
 mod tests {
     use super::*;
     fn pointers() -> Vec<Address> {
-        let memory =
-            crate::kernel::intern_memory(crate::kernel::Memory::new().with_block("raw-pointer", 8));
+        let memory = crate::kernel::intern_memory(
+            crate::kernel::SymbolicMemory::new().with_block("raw-pointer", 8),
+        );
         let mut values = vec![
             Address::null(),
             Address::symbolic(Variable(999001)),
@@ -42,10 +43,10 @@ mod tests {
                 base: AddressBase::ExternalObject(Variable(999001)),
                 offset: AddressOffset::Constant(0),
             },
-            crate::kernel::Memory::global_pointer("raw-pointer"),
+            crate::kernel::SymbolicMemory::global_pointer("raw-pointer"),
             Address::loaded_value(
                 &memory,
-                &crate::kernel::Memory::global_pointer("raw-pointer"),
+                &crate::kernel::SymbolicMemory::global_pointer("raw-pointer"),
             ),
             Address::integer_address(MachineTerm::Variable(Variable(999002))),
             Address {
@@ -208,11 +209,11 @@ mod tests {
     #[test]
     fn raw_pointer_conditions_preserve_narrow_load_authority_and_wide_exact_identity() {
         let _session = crate::kernel::VerificationSession::enter();
-        let before = crate::kernel::Memory::new()
+        let before = crate::kernel::SymbolicMemory::new()
             .with_block("offset-condition", 8)
             .with_block("offset-other", 4);
         let after = before.clone().store(
-            crate::kernel::Memory::global_pointer("offset-other"),
+            crate::kernel::SymbolicMemory::global_pointer("offset-other"),
             ProgramValue::Int32(MachineTerm::constant(1)),
         );
         let memory_a = crate::kernel::intern_memory(before);
@@ -221,7 +222,9 @@ mod tests {
             let condition = |memory| {
                 let value = MachineTerm::MemoryLoad(
                     memory,
-                    Box::new(crate::kernel::Memory::global_pointer("offset-condition")),
+                    Box::new(crate::kernel::SymbolicMemory::global_pointer(
+                        "offset-condition",
+                    )),
                     if wide {
                         LoadKind::Bits64
                     } else {
