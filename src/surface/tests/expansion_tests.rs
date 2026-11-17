@@ -19240,6 +19240,41 @@ fn unfolding_proof_bound_integer_arguments_expands_and_rechecks() {
     }
 }
 
+/// Distinct literal bounds can match the same closed obligation during
+/// replay. Expansion must emit a proof that replays without a duplicate
+/// `requires` entry, while a false bound must still be refused.
+#[test]
+#[ignore = "nightly: literal call expansion and cold replay"]
+fn literal_call_bounds_expand_without_duplicate_obligation_entries() {
+    let source = r#"
+verifying "bounds.c";
+void bounded(int32 color) {
+    requires 0 <= color;
+    requires color <= 1;
+    ensures 1 == 1;
+}
+void caller() { ensures 1 == 1; }
+"#;
+    for value in [0, 1] {
+        let program =
+            format!("void bounded(int color) {{}} void caller(void) {{ bounded({value}); }}");
+        let sources = [("bounds.c", program.as_str())];
+        verify_c_sources(source, &sources).expect("both bounds hold");
+        let expanded =
+            expand_c_claim_source(source, &sources, "caller", ContractProofClaim::Ensure(0))
+                .expect("literal bounds must expand without duplicate obligation entries");
+        without_implicit_solve_for_claim("caller.ensures_0", || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+    let sources = [(
+        "bounds.c",
+        "void bounded(int color) {} void caller(void) { bounded(2); }",
+    )];
+    verify_c_sources(source, &sources).expect_err("a false upper bound must be refused");
+}
+
 /// A step's written obligation proofs expand in place: each `requires` entry
 /// keeps its proposition and prints its body's checked steps, the expansion
 /// reverifies, and deleting an entry leaves its obligation unproved.

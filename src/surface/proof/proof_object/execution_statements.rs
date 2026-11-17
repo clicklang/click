@@ -2003,12 +2003,14 @@ fn retained_have_body(certificate: &ProofCertificate) -> Result<ProofCertificate
         .ok_or_else(|| ClickError::new("a step obligation proof retained no `have`"))
 }
 
-/// Requirements up to alpha-equivalence, in the order first met.
+/// Requirements up to the comparison used by written obligation proofs, in
+/// the order first met. In particular, different closed true comparisons
+/// must not produce entries that replay matches to the same obligation.
 fn distinct_requirements(recorded: Vec<UnresolvedRequirement>) -> Vec<UnresolvedRequirement> {
     let mut distinct: Vec<UnresolvedRequirement> = Vec::new();
     for requirement in recorded {
         if !distinct.iter().any(|seen| {
-            crate::kernel::proof::propositions_are_alpha_equal(
+            super::super::smart_closures::propositions_match_after_canonical_loads(
                 &seen.proposition,
                 &requirement.proposition,
             )
@@ -2017,6 +2019,31 @@ fn distinct_requirements(recorded: Vec<UnresolvedRequirement>) -> Vec<Unresolved
         }
     }
     distinct
+}
+
+#[test]
+fn requirement_deduplication_uses_replay_truth_and_polarity() {
+    let requirement = |left: u32, right: u32| UnresolvedRequirement {
+        proposition: Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: Box::new(left.into()),
+                right: Box::new(right.into()),
+            },
+            true,
+        ),
+        context: None,
+        introductions: Default::default(),
+        call_site: None,
+        assertion_condition: None,
+        surface: None,
+    };
+    let first = requirement(0, 0);
+    let false_bound = requirement(2, 1);
+    let distinct =
+        distinct_requirements(vec![first.clone(), requirement(0, 1), false_bound.clone()]);
+    assert_eq!(distinct, vec![first, false_bound]);
 }
 
 thread_local! {

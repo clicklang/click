@@ -376,3 +376,32 @@ audit sites at default limits.
 The C, three original function contracts, tree models, imported inorder
 theorem, callback, existing tree resources, and verifier are unchanged. Other
 sidecars and the full-directory audit still leave this report open.
+
+## Context rotation with an arbitrary nonempty black middle subtree
+
+All three selected proofs in
+`rbtree_size_insert_context_middle_subtree_rotation.click` now verify at
+default limits on master `0e8e9cd9c` plus the proof repair, including both
+insertion wrappers. Complete node observations retain the child inequalities
+and typed parent relationships through initialization and read-only loop
+steps. The proof explicitly executes the missing local declaration and
+middle-child store, retains unchanged and newly written child links through
+the transferred subtree's reparenting and the outer parent update, and
+restores the ancestor context after the writable callback. Both the focused
+and transferred subtrees retain arbitrary owned children and symbolic valid
+cached sizes. The original count and overflow arguments remain in the proof.
+
+Expansion, retained and cold verification, and fixed-point checks pass all 23
+audit sites at default limits after the obligation fix below. Both targeted
+regressions and all 1,857 selected scaling tests pass.
+
+The C, three original function contracts, tree models, imported inorder
+theorem, callback, and existing tree resources are unchanged. Other sidecars
+and the full-directory audit still leave this report open.
+
+The expansion audit also exposed duplicate written call obligations: closed
+comparisons such as `0 <= 0` and `0 <= 1` were distinct when collected but
+matched the same obligation on replay. Requirement deduplication now uses
+the same canonical comparison as replay. A reduced bounded-argument call
+checks expansion and replay with the implicit closer off, and refuses an
+argument that violates its upper bound.
