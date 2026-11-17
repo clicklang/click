@@ -48,7 +48,7 @@ fn automatic_lifetime_event_rejects_active_local_loan_and_forged_retirement() {
         names,
         after_state: state
             .clone()
-            .with_memory(state.memory().clone().without_local_block(&pointer.block)),
+            .with_memory(state.memory().clone().without_local_block(&pointer.base)),
     };
     assert!(forged.advance_checked(&state).is_none());
 }
@@ -74,7 +74,7 @@ fn automatic_lifetime_event_rejects_forged_mutex_storage_retirement() {
         names: names.clone(),
         after_state: state
             .clone()
-            .with_memory(state.memory().clone().without_local_block(&address.block)),
+            .with_memory(state.memory().clone().without_local_block(&address.base)),
     };
     assert!(forged.advance_checked(state).is_none());
     assert_eq!(core.reached_state(), state);

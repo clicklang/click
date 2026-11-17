@@ -26,8 +26,8 @@ mod produced_argument_supply;
 mod return_loan_backing;
 mod summary_transfer;
 pub(in crate::kernel) use mixed_return_resources::{
-    ConstructedBodyReturn, ConstructedReturnBody, EscrowRecoveryBoundary, ReturnResourceTransfer,
-    ReturnedConsumedCell, ReturnedFreshAllocation, ReturnedOwnershipPartition,
+    ConstructedBodyReturn, EscrowRecoveryBoundary, ReturnResourceTransfer, ReturnedConsumedCell,
+    ReturnedFreshAllocation, ReturnedOwnershipPartition,
 };
 use mixed_return_resources::{
     ConstructedReturnBodies, ConsumedCellReturns, EvaluatedReturnResources, FreshAllocationReturn,
@@ -599,11 +599,11 @@ pub(super) fn transfer_population_call_facts<'a>(
             // the checked equality index; this moves an existing anchor and
             // grants neither allocation nor creation authority.
             let base = assumptions.equality_graph.storage_address(base);
-            if events.tracks_storage_anchor(&base.block)
-                && transferred_anchors.insert(base.block.clone())
+            if events.tracks_storage_anchor(&base.base)
+                && transferred_anchors.insert(base.base.clone())
             {
                 events = events
-                    .transfer_call_anchor(from_events, to_events, &base.block)
+                    .transfer_call_anchor(from_events, to_events, &base.base)
                     .map_err(|refusal| {
                         RuntimeError::FunctionContract(format!(
                             "allocation companion transfer refused: {refusal}"
@@ -687,10 +687,10 @@ pub(super) fn transfer_population_call_facts<'a>(
                 // custody moved above; only real anchors have an additional
                 // creation-ledger capability to transfer.
                 if !events.recognizes_imported_population(description)
-                    && transferred_anchors.insert(base.block.clone())
+                    && transferred_anchors.insert(base.base.clone())
                 {
                     events = events
-                        .transfer_call_anchor(from_events, to_events, &base.block)
+                        .transfer_call_anchor(from_events, to_events, &base.base)
                         .map_err(|refusal| {
                             RuntimeError::FunctionContract(format!(
                                 "population call allocation transfer refused: {refusal}"
@@ -1023,7 +1023,7 @@ fn recover_candidate_stable_view_resources(
         let intrinsic_read_only = matches!(
             fact.resource(),
             Resource::Memory(range)
-                if caller_state.memory().is_read_only_block(&range.base().block)
+                if caller_state.memory().is_read_only_block(&range.base().base)
         );
         if !returned_input && !preserved_outer && !projected_from_owner && !intrinsic_read_only {
             return Err(RuntimeError::UnbackedReturnedView {
@@ -1423,7 +1423,7 @@ fn candidate_memory_ranges_relation_by_bounds(
     let Some(right_end) = right_start.checked_add(i64::from(right_length)) else {
         return CandidateMemoryRangeRelation::SeparationUnproved;
     };
-    if left_base.block != right_base.block {
+    if left_base.base != right_base.base {
         CandidateMemoryRangeRelation::SeparationUnproved
     } else if left_end <= right_start || right_end <= left_start {
         CandidateMemoryRangeRelation::Disjoint
@@ -1449,8 +1449,8 @@ enum AllocationContinuity {
 }
 
 fn canonical_memory_range(range: MemoryRange) -> MemoryRange {
-    let base = Pointer {
-        block: range.base().block.clone(),
+    let base = Address {
+        base: range.base().base.clone(),
         offset: crate::kernel::eval::canonical_offset_term(&range.base().offset),
     };
     let (start, end) = range.bound_terms();
@@ -2045,7 +2045,7 @@ pub(super) fn execute_program_function_call_paths(
         .selected_call_contract
         .as_deref()
     {
-        let pointer = Pointer::function(function.name());
+        let pointer = Address::function(function.name());
         let owned = contracts_from_facts(
             assumptions.function_contract_facts_for(&pointer),
             execution_context.environment,
@@ -2823,7 +2823,7 @@ pub(in crate::kernel) fn representation_copy_cell_moves(
     entry_memory: &Memory,
     argument_values: &[ProgramValue],
     effect: RepresentationCopyEffect,
-) -> Vec<(Pointer, ProgramValue)> {
+) -> Vec<(Address, ProgramValue)> {
     let (Some(destination), Some(source), Some(bytes)) = (
         argument_values.get(effect.destination_argument),
         argument_values.get(effect.source_argument),
@@ -2854,8 +2854,8 @@ pub(in crate::kernel) fn representation_copy_cell_moves(
     if bytes <= 0 {
         return Vec::new();
     }
-    let source_block = source.pointer().block.clone();
-    let destination_block = destination.pointer().block.clone();
+    let source_block = source.pointer().base.clone();
+    let destination_block = destination.pointer().base.clone();
     // A checked byte copy requires the ranges be separate, so a self-copy in
     // one block is not the recognized effect.
     if source_block == destination_block {
@@ -2866,13 +2866,13 @@ pub(in crate::kernel) fn representation_copy_cell_moves(
     // `source_offset .. source_offset + bytes`. This range is therefore
     // exactly the candidate cells. A cell at `i64::MAX` cannot fit its
     // positive width, so saturating the end loses no candidate.
-    let start = Pointer {
-        block: source_block.clone(),
-        offset: PointerOffsetTerm::Constant(source_offset),
+    let start = Address {
+        base: source_block.clone(),
+        offset: AddressOffset::Constant(source_offset),
     };
-    let end = Pointer {
-        block: source_block,
-        offset: PointerOffsetTerm::Constant(source_offset.saturating_add(bytes)),
+    let end = Address {
+        base: source_block,
+        offset: AddressOffset::Constant(source_offset.saturating_add(bytes)),
     };
     crate::instrumentation::record_deterministic_work(1);
     let mut moves = Vec::new();
@@ -2896,9 +2896,9 @@ pub(in crate::kernel) fn representation_copy_cell_moves(
             continue;
         }
         moves.push((
-            Pointer {
-                block: destination_block.clone(),
-                offset: PointerOffsetTerm::Constant(destination_cell_offset),
+            Address {
+                base: destination_block.clone(),
+                offset: AddressOffset::Constant(destination_cell_offset),
             },
             value.clone(),
         ));
@@ -3424,7 +3424,7 @@ fn execute_verified_function_applications_with_suspension(
                 super::spec::pure_pointer_result_class(application.pointer_result, &arguments);
             if let ProgramValue::Pointer(mut pointer) = result {
                 if all_null {
-                    pointer.replace_pointer(Pointer::null());
+                    pointer.replace_pointer(Address::null());
                 }
                 ProgramValue::Pointer(pointer.with_object_type_evidence(evidence))
             } else {
@@ -4023,7 +4023,7 @@ fn execute_verified_function_applications_with_suspension(
                 *quantity
             };
             let (spent, _) = match events.checked_member_exchange_quantity(
-                &pointer.pointer().block,
+                &pointer.pointer().base,
                 &description,
                 false,
                 &exchange_quantity,
@@ -4075,7 +4075,7 @@ fn execute_verified_function_applications_with_suspension(
             let retirement = if spent.recognizes_imported_population(&description) {
                 spent.checked_retire_imported(&description, &effective_assumptions)
             } else {
-                spent.checked_retire(&pointer.pointer().block, &description)
+                spent.checked_retire(&pointer.pointer().base, &description)
             };
             let (retired, _) = match retirement {
                 Ok(exchange) => exchange,
@@ -4099,7 +4099,7 @@ fn execute_verified_function_applications_with_suspension(
                 } else if let Some(AlgebraicValue::Program(ProgramValue::Pointer(anchor))) =
                     additional.arguments().first()
                 {
-                    retired.checked_retire(&anchor.pointer().block, additional)
+                    retired.checked_retire(&anchor.pointer().base, additional)
                 } else {
                     paths.push(resource_call_failure(
                         "final release authority needs a pointer anchor",
@@ -4273,11 +4273,11 @@ fn execute_verified_function_applications_with_suspension(
                 let anchor = pointer.pointer();
                 if produce
                     && !events.recognizes_imported_population(&description)
-                    && (anchor.offset != PointerOffsetTerm::Constant(0)
-                        || !(matches!(&anchor.block, PointerBlock::Heap(_))
+                    && (anchor.offset != AddressOffset::Constant(0)
+                        || !(matches!(&anchor.base, AddressBase::Heap(_))
                             && post_state.memory.live_heap_block_size(anchor).is_some()
-                            || anchor.block.is_local_block()
-                                && post_state.memory.has_block(&anchor.block)))
+                            || anchor.base.is_local_block()
+                                && post_state.memory.has_block(&anchor.base)))
                 {
                     paths.push(resource_call_failure("Requires live base storage for R(p)"));
                     continue 'arguments;
@@ -4287,7 +4287,7 @@ fn execute_verified_function_applications_with_suspension(
                     .is_some_and(CompositeResourceDefinition::has_fixed_exclusive_memory);
                 if defer_locked_exchange {
                     deferred_exchange.push(super::threads::DeferredMemberExchange {
-                        block: anchor.block.clone(),
+                        block: anchor.base.clone(),
                         description,
                         produce,
                         quantity: (**quantity).clone(),
@@ -4297,7 +4297,7 @@ fn execute_verified_function_applications_with_suspension(
                 }
                 let exchange = if exclusive {
                     events.checked_exclusive_member_exchange_quantity(
-                        &anchor.block,
+                        &anchor.base,
                         &description,
                         produce,
                         quantity,
@@ -4305,7 +4305,7 @@ fn execute_verified_function_applications_with_suspension(
                     )
                 } else {
                     events.checked_member_exchange_quantity(
-                        &anchor.block,
+                        &anchor.base,
                         &description,
                         produce,
                         quantity,
@@ -4944,7 +4944,7 @@ fn refresh_call_written_locals(
     // class, never the caller's unrelated local environment.
     let mut refreshed_blocks = BTreeSet::new();
     for range in effects {
-        for block in std::iter::once(range.base().block.clone()).chain(
+        for block in std::iter::once(range.base().base.clone()).chain(
             assumptions
                 .equality_graph
                 .local_slot_alias_blocks(range.base()),
@@ -4952,9 +4952,9 @@ fn refresh_call_written_locals(
             if !refreshed_blocks.insert(block.clone()) {
                 continue;
             }
-            let slot = Pointer {
-                block,
-                offset: PointerOffsetTerm::Constant(0),
+            let slot = Address {
+                base: block,
+                offset: AddressOffset::Constant(0),
             };
             crate::kernel::eval::refresh_scalar_local_from_memory(state, &slot, assumptions);
         }
@@ -6652,12 +6652,12 @@ fn prepare_verified_function_call<'a>(
     // literal as an ordinary `uint8*` and no qualifier catches it.
     if let Some(range) = mutable_ranges
         .iter()
-        .find(|range| entry_state.memory.is_read_only_block(&range.base().block))
+        .find(|range| entry_state.memory.is_read_only_block(&range.base().base))
     {
         return Ok(Err(FunctionPath::new(
             FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(format!(
                 "mutable footprint covers read-only storage `{}`",
-                range.base().block
+                range.base().base
             ))),
             facts,
             obligations,
@@ -7171,13 +7171,13 @@ fn function_contract_requirement_is_proven(
                 .equality_graph
                 .pointer_value_representative(pointer);
             let target = match comparison_pointer.pointer() {
-                Pointer {
-                    block: PointerBlock::Function(target),
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: AddressBase::Function(target),
+                    offset: AddressOffset::Constant(0),
                 } => Some(target),
-                Pointer {
-                    block: PointerBlock::FunctionSymbolic(_) | PointerBlock::LoadedPointer(_),
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: AddressBase::FunctionSymbolic(_) | AddressBase::LoadedPointer(_),
+                    offset: AddressOffset::Constant(0),
                 } if matches!(pointer.program_type(), ProgramType::FunctionPointer(_)) => None,
                 _ => return Ok(false),
             };
@@ -7252,7 +7252,7 @@ pub(crate) use named_contract_refinement::*;
 /// The surface spells it in source terms.
 #[derive(Clone, Debug)]
 pub(crate) enum StorageWriteOutsideFootprint {
-    Write { pointer: Pointer, bytes: u32 },
+    Write { pointer: Address, bytes: u32 },
     Range(MemoryRange),
 }
 
@@ -7274,8 +7274,8 @@ pub(crate) fn storage_writes_outside_owned_footprint(
     transition_resources: Option<&[CheckedResourceFact]>,
     prepared_projection: Option<&FunctionMemoryEffectProjection>,
 ) -> ExecutionResult<Option<Vec<StorageWriteOutsideFootprint>>> {
-    let is_storage = |pointer: &Pointer| pointer.block.is_static_storage_block();
-    let storage_writes: Vec<(Pointer, u32)> =
+    let is_storage = |pointer: &Address| pointer.base.is_static_storage_block();
+    let storage_writes: Vec<(Address, u32)> =
         crate::kernel::reasoning::memory_effect_write_accesses(facts)
             .into_iter()
             .filter(|(pointer, _)| is_storage(pointer))
@@ -7342,7 +7342,7 @@ pub(crate) fn storage_writes_outside_owned_footprint(
 }
 
 fn storage_write_within_owned_footprint(
-    pointer: &Pointer,
+    pointer: &Address,
     write_bytes: u32,
     owned: &[MemoryRange],
     assumptions: &PureFactContext,
@@ -7388,7 +7388,7 @@ fn storage_write_within_owned_footprint(
 /// does not cover whole elements, or any other shape, is left to the byte
 /// comparison.
 fn storage_write_within_owned_elements(
-    pointer: &Pointer,
+    pointer: &Address,
     write_bytes: u32,
     range: &MemoryRange,
     assumptions: &PureFactContext,
@@ -7976,7 +7976,7 @@ fn open_unmatched_instance_body(
 /// same composition and give the same answer.
 pub(in crate::kernel) fn store_opened_instance_composition(
     state: &ExecutionState,
-    write: &Pointer,
+    write: &Address,
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
@@ -7985,8 +7985,8 @@ pub(in crate::kernel) fn store_opened_instance_composition(
         return None;
     }
     let definitions = crate::kernel::assumptions::frame_composite_definitions()?;
-    let write = Pointer {
-        block: write.block.clone(),
+    let write = Address {
+        base: write.base.clone(),
         offset: crate::kernel::memory_history::normalize_exact_memory_loads_in_pointer_offset(
             &write.offset,
             assumptions,
@@ -7996,7 +7996,7 @@ pub(in crate::kernel) fn store_opened_instance_composition(
         .owned_member_holding_access(resources, &write, bytes)?
         .clone();
     let memory = state.memory();
-    let candidates = crate::kernel::primitives::AliasCandidates::of_block(&write.block);
+    let candidates = crate::kernel::primitives::AliasCandidates::of_block(&write.base);
     let mut instances = BTreeMap::new();
     for (pointer, _) in memory.cells.candidate_logical_entries(&candidates) {
         crate::kernel::assumptions::owned_instances_naming_access_base(
@@ -9281,9 +9281,9 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
 /// different formats are never the same allocation's (D5): a pair whose
 /// bases are not proven distinct is [`AllocationContinuity::CrossKind`].
 fn allocation_continuity(
-    input_base: &Pointer,
+    input_base: &Address,
     input_size: &AllocationSize,
-    output_base: &Pointer,
+    output_base: &Address,
     output_size: &AllocationSize,
     assumptions: &PureFactContext,
 ) -> AllocationContinuity {
@@ -9351,7 +9351,7 @@ mod allocation_continuity_tests;
 /// preserved caller residual.
 fn refuse_retiring_a_lent_allocation(
     ledger: Option<&LoanLedger>,
-    base: &Pointer,
+    base: &Address,
     bytes: &AllocationSize,
     assumptions: &PureFactContext,
 ) -> Result<(), VerifiedAllocationDeltaError> {
@@ -9401,12 +9401,12 @@ fn refuse_retiring_a_lent_allocation(
 pub(in crate::kernel) fn caller_resource_left_stale_by_retirement<'a>(
     lent: &ResourceContext,
     kept: &'a ResourceContext,
-    base: &Pointer,
+    base: &Address,
     bytes: &AllocationSize,
     assumptions: &PureFactContext,
 ) -> Option<&'a ResourceFact> {
     let mut lent_owners_cover_allocation = None;
-    for resource in kept.facts_that_may_refer_to_memory_block(&base.block) {
+    for resource in kept.facts_that_may_refer_to_memory_block(&base.base) {
         let owned_by_the_caller = resource.memory_own_range().is_some()
             && resource.has_proven_positive_quantity(assumptions)
             || resource.memory_view_range().is_some_and(|range| {
@@ -9436,7 +9436,7 @@ pub(in crate::kernel) fn caller_resource_left_stale_by_retirement<'a>(
 /// width or with provably equal endpoints.
 fn lent_owned_memory_covers_allocation(
     lent: &ResourceContext,
-    base: &Pointer,
+    base: &Address,
     bytes: &AllocationSize,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -9576,7 +9576,7 @@ fn apply_verified_heap_allocation_delta(
             // call's own returned tokens are compared.
             for (output_base, output_bytes, returned) in &output_allocations {
                 if let Some(returned) = returned
-                    && output_base.block != base.block
+                    && output_base.base != base.base
                     && matches!(
                         allocation_continuity(
                             &base,
@@ -9614,7 +9614,7 @@ fn apply_verified_heap_allocation_delta(
                     AllocationContinuity::Same => {
                         retained = true;
                         if let Some(returned) = returned
-                            && output_base.block != base.block
+                            && output_base.base != base.base
                             && !continued_tokens.iter().any(|(token, _)| token == *returned)
                         {
                             continued_tokens.push(((*returned).clone(), fact.clone()));
@@ -9679,7 +9679,7 @@ fn apply_verified_heap_allocation_delta(
                     bytes.bytes(),
                     &allocation_assumptions,
                 );
-                retired_creations.push(base.block.clone());
+                retired_creations.push(base.base.clone());
                 continue;
             }
         }
@@ -9709,7 +9709,7 @@ fn apply_verified_heap_allocation_delta(
             return Err(VerifiedAllocationDeltaError::Runtime(error));
         }
 
-        retired_creations.push(base.block.clone());
+        retired_creations.push(base.base.clone());
         let before_free = memory.clone();
         if memory.live_heap_block_size(&base).is_none() {
             memory = memory
@@ -9794,7 +9794,7 @@ fn with_continued_allocation_tokens(
 struct VerifiedAllocationDelta {
     memory: Memory,
     effects: ExecutionFacts,
-    retired_creations: Vec<PointerBlock>,
+    retired_creations: Vec<AddressBase>,
     continued_tokens: Vec<(ResourceFact, ResourceFact)>,
 }
 
@@ -9835,8 +9835,8 @@ pub(crate) fn with_static_pointer_read_cached(
     };
     if !locals.is_global_object(&name)
         || !program_type.is_object_pointer()
-        || !slot.block.is_static_storage_block()
-        || !memory.has_block(&slot.block)
+        || !slot.base.is_static_storage_block()
+        || !memory.has_block(&slot.base)
         || memory.known_value(slot).is_some()
     {
         return memory;
@@ -9880,17 +9880,14 @@ pub(crate) fn initialize_program_program_storage(
 /// runs and concrete cells, not its elements.
 fn periodic_struct_array_blocks(
     memory: &Memory,
-    constant_offset: impl Fn(&Pointer) -> u32,
-) -> BTreeMap<PointerBlock, (u32, u32)> {
+    constant_offset: impl Fn(&Address) -> u32,
+) -> BTreeMap<AddressBase, (u32, u32)> {
     // Each run and each concrete cell examined charges a unit. Nothing here
     // stops early: the caller's next checkpoint, one visit later, does.
-    let mut runs_by_block = BTreeMap::<&PointerBlock, Vec<&CellRun>>::new();
+    let mut runs_by_block = BTreeMap::<&AddressBase, Vec<&CellRun>>::new();
     for run in memory.cells.runs() {
         crate::instrumentation::record_deterministic_work(1);
-        runs_by_block
-            .entry(&run.base().block)
-            .or_default()
-            .push(run);
+        runs_by_block.entry(&run.base().base).or_default().push(run);
     }
     let mut periodic = BTreeMap::new();
     for (block, runs) in runs_by_block {
@@ -9954,14 +9951,14 @@ fn initial_static_resources(
         count_visit();
         crate::instrumentation::deadline_exceeded()
     };
-    let constant_offset = |pointer: &Pointer| {
-        let PointerOffsetTerm::Constant(offset) = pointer.offset else {
+    let constant_offset = |pointer: &Address| {
+        let AddressOffset::Constant(offset) = pointer.offset else {
             unreachable!("static initializers have constant cell offsets");
         };
         u32::try_from(offset).expect("static cell offset")
     };
     // Each block's initialized spans: start, end and cell width.
-    let mut spans_by_block = BTreeMap::<PointerBlock, Vec<(u32, u32, u32)>>::new();
+    let mut spans_by_block = BTreeMap::<AddressBase, Vec<(u32, u32, u32)>>::new();
     // An array of structs whose every element holds the same cells is one
     // range of struct-sized elements, however many there are.
     let periodic = periodic_struct_array_blocks(memory, constant_offset);
@@ -9978,20 +9975,20 @@ fn initial_static_resources(
         if visit() {
             return None;
         }
-        if periodic.contains_key(&pointer.block) {
+        if periodic.contains_key(&pointer.base) {
             continue;
         }
         let offset = constant_offset(pointer);
         spans_by_block
-            .entry(pointer.block.clone())
+            .entry(pointer.base.clone())
             .or_default()
             .push((offset, offset + value.byte_width(), value.byte_width()));
     }
     for run in memory.cells.runs() {
-        if periodic.contains_key(&run.base().block) {
+        if periodic.contains_key(&run.base().base) {
             continue;
         }
-        let spans = spans_by_block.entry(run.base().block.clone()).or_default();
+        let spans = spans_by_block.entry(run.base().base.clone()).or_default();
         let width = run.value_width();
         for (low, high) in run.holes().gap_intervals(run.count()) {
             if visit() {
@@ -10047,9 +10044,9 @@ fn initial_static_resources(
                 return None;
             }
             let range = MemoryRange::new_with_element_width(
-                Pointer {
-                    block: identity.clone(),
-                    offset: PointerOffsetTerm::Constant(i64::from(start)),
+                Address {
+                    base: identity.clone(),
+                    offset: AddressOffset::Constant(i64::from(start)),
                 },
                 MachineTerm::constant(0),
                 MachineTerm::constant((end - start) / width),
@@ -10651,7 +10648,7 @@ fn string_literal_instance_values(
             return None;
         };
         let pointer = pointer.pointer();
-        let PointerBlock::StringLiteral { bytes, .. } = &pointer.block else {
+        let AddressBase::StringLiteral { bytes, .. } = &pointer.base else {
             return None;
         };
         let offset = usize::try_from(pointer.offset.as_const()?).ok()?;
@@ -10726,7 +10723,7 @@ fn string_literal_composite_holds(
     }
     let literal_pointer = |argument: &AlgebraicValue| {
         matches!(argument.as_program_value(), Some(ProgramValue::Pointer(pointer))
-            if matches!(pointer.pointer().block, PointerBlock::StringLiteral { .. }))
+            if matches!(pointer.pointer().base, AddressBase::StringLiteral { .. }))
     };
     let pointers_are_literal = arguments.iter().all(|argument| {
         !matches!(argument.as_program_value(), Some(ProgramValue::Pointer(_)))
@@ -10745,7 +10742,7 @@ fn string_literal_composite_holds(
                 return false;
             };
             let (base, bytes) = range.byte_footprint();
-            let PointerBlock::StringLiteral { bytes: literal, .. } = &base.block else {
+            let AddressBase::StringLiteral { bytes: literal, .. } = &base.base else {
                 return false;
             };
             match (base.offset.as_const(), bytes.as_const()) {
@@ -10800,7 +10797,7 @@ fn local_storage_composite_pieces(
         let Some(range) = piece.memory_range() else {
             return Ok(None);
         };
-        if !range.base().block.is_local_block() {
+        if !range.base().base.is_local_block() {
             return Ok(None);
         }
         pieces.push(ResourceFact::view_memory(range.clone()));
@@ -10905,13 +10902,13 @@ fn string_literal_fact_value(
         } => {
             let pointer = string_literal_pointer_with_bindings(pointer, bindings);
             let offset = pointer.offset.as_const()?;
-            let PointerBlock::StringLiteral { bytes, .. } = &pointer.block else {
+            let AddressBase::StringLiteral { bytes, .. } = &pointer.base else {
                 // Any other read is defined when the state holds a stored
                 // value of the read's width at that very cell, as a local
                 // array's bytes after their stores do.
-                let cell = Pointer {
-                    block: pointer.block.clone(),
-                    offset: PointerOffsetTerm::Constant(offset),
+                let cell = Address {
+                    base: pointer.base.clone(),
+                    offset: AddressOffset::Constant(offset),
                 };
                 return match memory.load(&cell) {
                     ExpressionOutcome::Value(value)
@@ -10945,9 +10942,9 @@ fn string_literal_fact_value(
 }
 
 fn string_literal_pointer_with_bindings(
-    pointer: &Pointer,
+    pointer: &Address,
     bindings: &[(Variable, MachineTerm)],
-) -> Pointer {
+) -> Address {
     let mut pointer = pointer.clone();
     for (bound, value) in bindings {
         pointer = crate::kernel::reasoning::substitute_bitvector_variable_in_pointer(
@@ -10979,7 +10976,7 @@ fn string_literal_reads_resolved(
             return None;
         };
         let pointer = string_literal_pointer_with_bindings(&pointer, bindings);
-        let PointerBlock::StringLiteral { bytes, .. } = &pointer.block else {
+        let AddressBase::StringLiteral { bytes, .. } = &pointer.base else {
             return None;
         };
         let offset = pointer.offset.as_const()?;
@@ -11079,7 +11076,7 @@ pub(crate) fn guard_contract_refusal(
         .then_some("mutex authority contracts currently require preserving owned inputs")
 }
 
-fn private_aggregate_storage_owner(slot: Pointer, layout: &AggregateLayout) -> ResourceFact {
+fn private_aggregate_storage_owner(slot: Address, layout: &AggregateLayout) -> ResourceFact {
     ResourceFact::own_memory(MemoryRange::new_with_element_width(
         slot,
         MachineTerm::constant(0),
@@ -11596,14 +11593,14 @@ fn prepare_contract_resource_transfer_unexplained(
     // retains intrinsic read authority. An explicitly supplied owner or view
     // takes the ordinary lend/reborrow route, including stale-binding checks.
     let unsupplied_local = |range: &MemoryRange| {
-        range.base().block.is_local_block()
-            && callee_state.memory().has_block(&range.base().block)
+        range.base().base.is_local_block()
+            && callee_state.memory().has_block(&range.base().base)
             && !callee_state
                 .memory()
                 .requires_explicit_scalar_ownership(range.base())
             && caller_state
                 .resources()
-                .has_no_explicit_memory_for_local_storage(&range.base().block, assumptions)
+                .has_no_explicit_memory_for_local_storage(&range.base().base, assumptions)
     };
     let implicit_read_views = checked_required_resources
         .iter()
@@ -11613,7 +11610,7 @@ fn prepare_contract_resource_transfer_unexplained(
                 Resource::Memory(range)
                     if requirement.fact.is_view()
                         && (unsupplied_local(range)
-                            || callee_state.memory().is_read_only_block(&range.base().block))
+                            || callee_state.memory().is_read_only_block(&range.base().base))
             )
         })
         .cloned()
@@ -11667,7 +11664,7 @@ fn prepare_contract_resource_transfer_unexplained(
                         // not implicit local storage.
                         && caller_state
                             .resources()
-                            .facts_that_may_refer_to_memory_block(&range.base().block)
+                            .facts_that_may_refer_to_memory_block(&range.base().base)
                             .next()
                             .is_none()
                 })
@@ -11700,7 +11697,7 @@ fn prepare_contract_resource_transfer_unexplained(
     }
     let (local_read_views, intrinsic_read_views): (Vec<_>, Vec<_>) = implicit_read_views.into_iter()
         .partition(|requirement| matches!(requirement.fact.resource(), Resource::Memory(range)
-            if range.base().block.is_local_block() && !callee_state.memory().is_read_only_block(&range.base().block)));
+            if range.base().base.is_local_block() && !callee_state.memory().is_read_only_block(&range.base().base)));
     // A composite view whose checked body is empty on this path protects no
     // bytes and holds no token, so there is nothing to lend and nothing a
     // loan could suspend (D6: an empty permission grants no dereference).
@@ -12270,7 +12267,7 @@ fn prepare_contract_resource_transfer_unexplained(
         if matches!(
             intrinsic_view.fact.resource(),
             Resource::Memory(range)
-                if range.base().block.is_local_block()
+                if range.base().base.is_local_block()
                     && !local_view_range_within_block(range, callee_state.memory())
         ) {
             return Ok(Err(RuntimeError::MissingResource {
@@ -12357,8 +12354,8 @@ fn prepare_contract_resource_transfer_unexplained(
         // whatever the caller keeps beyond it: `views a[0..3]` on an
         // `int32 b[2]` used to be discharged by the block merely existing.
         if let ResourceFact::View(Resource::Memory(range)) = resource
-            && range.base().block.is_local_block()
-            && callee_state.memory().has_block(&range.base().block)
+            && range.base().base.is_local_block()
+            && callee_state.memory().has_block(&range.base().base)
             && !callee_state
                 .memory()
                 .requires_explicit_scalar_ownership(range.base())
@@ -13394,7 +13391,7 @@ fn evaluate_contract_return_resources(
             Ok(resources) => resources,
             Err(error) => return Ok(Err(resource_context_runtime_error(error))),
         };
-    let Some(projected_cores_by_support) = crate::instrumentation::measure_operation(
+    let projected_cores_by_support = crate::instrumentation::measure_operation(
         interface_name,
         "contract resource transition",
         "ensured resource core projection",
@@ -13407,12 +13404,7 @@ fn evaluate_contract_return_resources(
                 &return_resources,
             )
         },
-    ) else {
-        return Ok(Err(RuntimeError::FunctionContract(format!(
-            "could not expand ensured composite resources after call ({})",
-            bounded_contract_resource_frontier(ensured_resources)
-        ))));
-    };
+    );
     // The callee has already certified every ensured composite and its
     // instantiated body. Its duplicable cores are therefore observations of
     // certified ownership, not independent persistent caller capabilities.
@@ -13732,7 +13724,7 @@ fn bind_composite_witness_values(
             .as_ref()
             .and_then(|term| {
                 if term.uint64_as_const() == Some(0) {
-                    return Some(Pointer::null());
+                    return Some(Address::null());
                 }
                 let mut used = super::eval::pointer_tags::UsedFacts::new();
                 super::eval::pointer_tags::tagged_address_form(term, assumptions, &mut used)
@@ -13765,7 +13757,7 @@ fn bind_composite_witness_values(
             word.as_ref()
                 .map(super::eval::canonical_term)
                 .hash(&mut hasher);
-            Pointer::symbolic(Variable(4_000_000_000 + hasher.finish() % 4_000_000_000))
+            Address::symbolic(Variable(4_000_000_000 + hasher.finish() % 4_000_000_000))
         });
         let value = ProgramValue::typed_pointer(pointer, witness.program_type());
         state.locals.set_typed(
@@ -13787,7 +13779,7 @@ fn held_child_witness(
     arguments: &[AlgebraicValue],
     resources: &ResourceContext,
     assumptions: &PureFactContext,
-) -> Option<Pointer> {
+) -> Option<Address> {
     // The body's own instance is never its own child.
     let own_pointers = arguments
         .iter()
@@ -13822,7 +13814,7 @@ fn held_child_witness(
         // proven a different pointer.
         .filter(|pointer| {
             own_pointers.iter().all(|own| {
-                own.block != pointer.block
+                own.base != pointer.base
                     || assumptions
                         .decide(&ConditionTerm::pointer_equal(pointer.clone(), own.clone()))
                         == Some(false)
@@ -14387,7 +14379,7 @@ fn body_fact_is_established_through_a_pointer_alias(
     );
     variables.into_iter().any(|variable| {
         established
-            .exact_pointer_aliases(&Pointer::symbolic(variable))
+            .exact_pointer_aliases(&Address::symbolic(variable))
             .any(|alias| {
                 let candidate =
                     crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_address_variable(
@@ -15492,7 +15484,7 @@ pub(super) fn loop_instance_guard(
     instance: &ResourceInstance,
     definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
-) -> Result<Option<(Pointer, ConditionTerm)>, String> {
+) -> Result<Option<(Address, ConditionTerm)>, String> {
     let Ok(index) = definitions.binary_search_by(|d| {
         crate::instrumentation::record_deterministic_work(1);
         d.name().cmp(instance.name())
@@ -16806,17 +16798,15 @@ fn view_range_concretely_loadable(memory: &Memory, range: &MemoryRange) -> bool 
         return false;
     }
     let width = match &range.base().offset {
-        PointerOffsetTerm::Int32Scaled { byte_width, .. } => {
-            u32::try_from(*byte_width).unwrap_or(4)
-        }
+        AddressOffset::Int32Scaled { byte_width, .. } => u32::try_from(*byte_width).unwrap_or(4),
         _ => 4,
     };
     (start..end).all(|index| {
-        let pointer = Pointer {
-            block: range.base().block.clone(),
-            offset: PointerOffsetTerm::add(
+        let pointer = Address {
+            base: range.base().base.clone(),
+            offset: AddressOffset::add(
                 range.base().offset.clone(),
-                PointerOffsetTerm::scale_int32(MachineTerm::constant(index), i64::from(width)),
+                AddressOffset::scale_int32(MachineTerm::constant(index), i64::from(width)),
             ),
         };
         memory.is_loadable_concretely(&pointer, width)
@@ -17481,8 +17471,8 @@ fn evaluate_resource_clauses_in_section(
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum ResourceClauseDependencyKey {
     Fact(ResourceFact),
-    MemoryBase(Pointer),
-    MemoryBlock(PointerBlock),
+    MemoryBase(Address),
+    MemoryBlock(AddressBase),
 }
 
 /// A sparse segment-tree coordinate space for a concrete memory block.
@@ -17495,7 +17485,7 @@ enum ResourceClauseDependencyKey {
 /// fallback below instead.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct ResourceClauseIntervalSpace {
-    block: PointerBlock,
+    block: AddressBase,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -17534,7 +17524,7 @@ struct ResourceClauseWaiterIndex {
     /// its explicit block is still a sound conservative candidate boundary.
     /// Store the dependency index as well as the clause so register/remove
     /// stay symmetric when one clause waits on multiple ranges in a block.
-    concrete_block_fallback: BTreeMap<PointerBlock, BTreeSet<ResourceClauseIntervalWaiter>>,
+    concrete_block_fallback: BTreeMap<AddressBase, BTreeSet<ResourceClauseIntervalWaiter>>,
     intervals: ResourceClauseIntervalIndex,
 }
 
@@ -17551,7 +17541,7 @@ fn resource_clause_concrete_memory_interval(
     }
     Some((
         ResourceClauseIntervalSpace {
-            block: range.base().block.clone(),
+            block: range.base().base.clone(),
         },
         start,
         end,
@@ -17594,7 +17584,7 @@ fn evaluate_resource_clause_with_dependencies(
     entry_state: &ExecutionState,
     state: &ExecutionState,
     resource: &ResourceSpec,
-    selected_load_values: &BTreeMap<(Pointer, ProgramType), ProgramValue>,
+    selected_load_values: &BTreeMap<(Address, ProgramType), ProgramValue>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<(Result<ResourceFact, RuntimeError>, Vec<ResourceFact>)> {
@@ -18911,7 +18901,7 @@ fn resolve_retained_aggregate_fields(
         } = expression
         && let Some((parameter, pointer)) = projection(pointer)
         && let Some(LocalBinding::AggregateObject { slot, .. }) = entry.locals.binding(parameter)
-        && !state.memory.has_block(&slot.block)
+        && !state.memory.has_block(&slot.base)
         && !matches!(
             value_type,
             ProgramType::Int32Array(_)
@@ -19031,7 +19021,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
     entry_state: &ExecutionState,
     state: &ExecutionState,
     resource: &ResourceSpec,
-    selected_load_values: &BTreeMap<(Pointer, ProgramType), ProgramValue>,
+    selected_load_values: &BTreeMap<(Address, ProgramType), ProgramValue>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<ResourceFact, RuntimeError>> {
@@ -19726,7 +19716,7 @@ fn evaluate_function_declared_resource_spec(
     argument_state_sources: &[ResourceStateSource],
     parameter_types: &[ProgramType],
     source_arguments: Option<&[String]>,
-    selected_load_values: &BTreeMap<(Pointer, ProgramType), ProgramValue>,
+    selected_load_values: &BTreeMap<(Address, ProgramType), ProgramValue>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<ResourceFact, RuntimeError>> {
@@ -20261,12 +20251,12 @@ fn resource_fact_containing_allocation(
 fn retired_automatistorage_creation_blocks(
     state: &ExecutionState,
     after: &Memory,
-) -> Vec<PointerBlock> {
+) -> Vec<AddressBase> {
     state
         .locals
         .slots()
-        .filter(|slot| state.memory.has_block(&slot.block) && !after.has_block(&slot.block))
-        .map(|slot| slot.block.clone())
+        .filter(|slot| state.memory.has_block(&slot.base) && !after.has_block(&slot.base))
+        .map(|slot| slot.base.clone())
         .collect()
 }
 
@@ -20275,7 +20265,7 @@ type AutomaticLifetimeInput = (usize, usize, usize, usize, usize);
 struct AutomaticLifetimeRetirement {
     // Pin the input roots so their addresses cannot be reused during a session.
     input: Memory,
-    blocks: Vec<PointerBlock>,
+    blocks: Vec<AddressBase>,
     after: Memory,
 }
 
@@ -20289,7 +20279,7 @@ pub(super) fn clear_automatic_lifetime_retirement() {
 
 /// Only the physical transition is reused. Callers check current loan,
 /// mutex, population and return-value restrictions before calling this.
-fn retire_automatic_lifetime_blocks(before: &Memory, blocks: &[PointerBlock]) -> Memory {
+fn retire_automatic_lifetime_blocks(before: &Memory, blocks: &[AddressBase]) -> Memory {
     if blocks.is_empty() {
         return before.clone();
     }
@@ -20329,13 +20319,13 @@ fn end_inline_frame_automatic_lifetimes(state: &ExecutionState) -> Result<Memory
     let mut selected = BTreeSet::new();
     for slot in state.locals.slots() {
         crate::instrumentation::record_deterministic_work(1);
-        if !block_is_frame_scoped_automatic_object(&slot.block) {
+        if !block_is_frame_scoped_automatic_object(&slot.base) {
             continue;
         }
-        if !memory.has_block(&slot.block) {
+        if !memory.has_block(&slot.base) {
             continue;
         }
-        if !selected.insert(slot.block.clone()) {
+        if !selected.insert(slot.base.clone()) {
             continue;
         }
         if let Some(error) = super::mutexes::automatic_storage_refusal(
@@ -20344,14 +20334,14 @@ fn end_inline_frame_automatic_lifetimes(state: &ExecutionState) -> Result<Memory
                 .locals
                 .name_for_slot(slot)
                 .expect("indexed local slot"),
-            &slot.block,
+            &slot.base,
         ) {
             return Err(error);
         }
-        if let Some(error) = state.population_storage_retirement_refusal(&slot.block) {
+        if let Some(error) = state.population_storage_retirement_refusal(&slot.base) {
             return Err(error);
         }
-        blocks.push(slot.block.clone());
+        blocks.push(slot.base.clone());
     }
     Ok(retire_automatic_lifetime_blocks(memory, &blocks))
 }
@@ -20372,13 +20362,13 @@ fn end_function_body_automatic_lifetimes(
     let mut selected = BTreeSet::new();
     for slot in state.locals.slots() {
         crate::instrumentation::record_deterministic_work(1);
-        if slot.block.is_local_block()
+        if slot.base.is_local_block()
             && !(function.return_aggregate_layout().is_some()
-                && matches!(returned, Some(ProgramValue::Pointer(pointer)) if pointer.pointer().block == slot.block))
-            && !caller.has_block(&slot.block)
-            && memory.has_block(&slot.block)
+                && matches!(returned, Some(ProgramValue::Pointer(pointer)) if pointer.pointer().base == slot.base))
+            && !caller.has_block(&slot.base)
+            && memory.has_block(&slot.base)
         {
-            if !selected.insert(slot.block.clone()) {
+            if !selected.insert(slot.base.clone()) {
                 continue;
             }
             if let Some(error) = super::mutexes::automatic_storage_refusal(
@@ -20387,33 +20377,33 @@ fn end_function_body_automatic_lifetimes(
                     .locals
                     .name_for_slot(slot)
                     .expect("indexed local slot"),
-                &slot.block,
+                &slot.base,
             ) {
                 return Err(error);
             }
-            if let Some(error) = state.population_storage_retirement_refusal(&slot.block) {
+            if let Some(error) = state.population_storage_retirement_refusal(&slot.base) {
                 return Err(error);
             }
-            blocks.push(slot.block.clone());
+            blocks.push(slot.base.clone());
         }
     }
     for (_, pointer) in state.aggregate_step_objects.iter() {
         crate::instrumentation::record_deterministic_work(1);
-        if !caller.has_block(&pointer.block)
-            && memory.has_block(&pointer.block)
-            && selected.insert(pointer.block.clone())
+        if !caller.has_block(&pointer.base)
+            && memory.has_block(&pointer.base)
+            && selected.insert(pointer.base.clone())
         {
-            if let Some(error) = state.population_storage_retirement_refusal(&pointer.block) {
+            if let Some(error) = state.population_storage_retirement_refusal(&pointer.base) {
                 return Err(error);
             }
             if let Some(error) = super::mutexes::automatic_storage_refusal(
                 state,
                 "aggregate expression result",
-                &pointer.block,
+                &pointer.base,
             ) {
                 return Err(error);
             }
-            blocks.push(pointer.block.clone());
+            blocks.push(pointer.base.clone());
         }
     }
     Ok(retire_automatic_lifetime_blocks(memory, &blocks))
@@ -20421,7 +20411,7 @@ fn end_function_body_automatic_lifetimes(
 
 /// Whether this block is an automatic object a call frame minted for itself,
 /// rather than the outermost frame's `local:<name>` or a pseudo-slot.
-fn block_is_frame_scoped_automatic_object(block: &PointerBlock) -> bool {
+fn block_is_frame_scoped_automatic_object(block: &AddressBase) -> bool {
     block.starts_with("local:lifetime:") || block.starts_with("local:frame:")
 }
 
@@ -20437,12 +20427,12 @@ pub(in crate::kernel) fn function_exit_memory(
     }
     match value.pointer() {
         Some(pointer)
-            if pointer.pointer().block.is_local_block()
-                && !caller_state.memory.has_block(&pointer.pointer().block) =>
+            if pointer.pointer().base.is_local_block()
+                && !caller_state.memory.has_block(&pointer.pointer().base) =>
         {
             callee_state
                 .memory
-                .without_local_block(&pointer.pointer().block)
+                .without_local_block(&pointer.pointer().base)
         }
         _ => callee_state.memory.clone(),
     }
@@ -21918,9 +21908,9 @@ pub(super) fn function_outcome_from_body(
                 crate::kernel::eval::retire_automatic_storage_owner(
                     &mut caller_state,
                     &MemoryRange::new_with_element_width(
-                        Pointer {
-                            block: block.clone(),
-                            offset: PointerOffsetTerm::Constant(0),
+                        Address {
+                            base: block.clone(),
+                            offset: AddressOffset::Constant(0),
                         },
                         0.into(),
                         bytes,
@@ -21999,9 +21989,9 @@ pub(super) fn function_outcome_from_body(
                 crate::kernel::eval::retire_automatic_storage_owner(
                     &mut caller_state,
                     &MemoryRange::new_with_element_width(
-                        Pointer {
-                            block: block.clone(),
-                            offset: PointerOffsetTerm::Constant(0),
+                        Address {
+                            base: block.clone(),
+                            offset: AddressOffset::Constant(0),
                         },
                         0.into(),
                         bytes,

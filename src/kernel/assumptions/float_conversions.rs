@@ -213,7 +213,7 @@ pub(super) fn fingerprint(root: FloatOperandView<'_>, policy: OperandFingerprint
     values[&key(root, policy)]
 }
 
-pub(super) fn collect_load_keys(root: &KernelTerm, keys: &mut BTreeSet<(PointerBlock, u64)>) {
+pub(super) fn collect_load_keys(root: &KernelTerm, keys: &mut BTreeSet<(AddressBase, u64)>) {
     let mut pending = vec![root];
     let mut seen = std::collections::HashSet::new();
     while let Some(root) = pending.pop() {
@@ -393,7 +393,7 @@ mod tests {
     #[test]
     fn conversion_index_fingerprints_and_load_keys_match_native_policies() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer::symbolic(Variable(999979));
+        let pointer = Address::symbolic(Variable(999979));
         let mut policies = Vec::new();
         for memory in [Memory::new(), Memory::new().with_block("different", 4)] {
             let source = MachineTerm::Float32Binary {

@@ -4,9 +4,9 @@ use super::*;
 fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
     let samples = [(2, 16), (64, 64), (65536, 256)].map(|(amount, unrelated)| {
         let pointer = ProgramValue::typed_pointer(
-            Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Constant(0),
             },
             ProgramType::Int32Pointer,
         );
@@ -33,9 +33,9 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
             let other = ResourceDescription::new(
                 "unrelated".into(),
                 vec![
-                    ProgramValue::pointer(Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: PointerOffsetTerm::Variable(Variable(950_000 + index as u64)),
+                    ProgramValue::pointer(Address {
+                        base: AddressBase::ExternalArgument,
+                        offset: AddressOffset::Variable(Variable(950_000 + index as u64)),
                     })
                     .into(),
                 ]
@@ -132,7 +132,7 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
         let (exit, work) = crate::persistent::measure_persistent_work(|| {
             let spent = events
                 .checked_member_exchange_quantity(
-                    &PointerBlock::ExternalArgument,
+                    &AddressBase::ExternalArgument,
                     &description,
                     false,
                     &MachineTerm::constant(amount),
@@ -142,7 +142,7 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
                 .0;
             let returned = spent
                 .checked_member_exchange_quantity(
-                    &PointerBlock::ExternalArgument,
+                    &AddressBase::ExternalArgument,
                     &description,
                     true,
                     &MachineTerm::constant(amount - 1),
@@ -198,9 +198,9 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
 
 #[test]
 fn contained_transfer_frontier_scales_with_selected_depth_and_indexed_definitions() {
-    let pointer = Pointer {
-        block: "payload".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "payload".into(),
+        offset: AddressOffset::Constant(0),
     };
     let memory = Memory::new().with_block("payload", 4);
     let assumptions = PureFactContext::new();
@@ -928,7 +928,7 @@ fn resource_expansion_diagnostics_bound_the_named_frontier() {
     let resources = ResourceContext::new().unchecked_with_facts((0..32).map(|id| {
         ResourceFact::own(Resource::Composite {
             name: format!("resource_{id}_{}", "x".repeat(1000)),
-            arguments: vec![ProgramValue::pointer(Pointer::null()).into()].into(),
+            arguments: vec![ProgramValue::pointer(Address::null()).into()].into(),
         })
     }));
     let diagnostic = bounded_contract_resource_frontier(&resources);

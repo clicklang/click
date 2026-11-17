@@ -1,6 +1,55 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: viewability restriction expansion and cold replay"]
+fn viewable_requirement_supports_a_narrower_span_without_transport() {
+    let (source, sources) =
+        mdtest_sources("mdtests/viewable_requirement_supports_a_narrower_span.md");
+    assert!(sources.is_empty());
+    assert!(!source.contains("transport("));
+    verify_c_sources(&source, &[]).unwrap_or_else(|error| panic!("{}", error.report()));
+    let label = "narrow_viewable_requirement.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&source, &[], label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &[]).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+
+    // With these endpoints the source spans 2^32 bytes, which wraps to zero.
+    // Prove that empty view locally so it carries no contract extent guards.
+    let wrapped = source
+        .replace(
+            "requires hi >= 0 and viewable(v[lo..hi]);",
+            "requires lo == 0;\n    requires hi == 1073741824;",
+        )
+        .replace(
+            "        have 0 < hi",
+            concat!(
+                "        have viewable(v[lo..hi]);\n",
+                "        have 0 <= to_integer(hi - lo) by {\n",
+                "            solve() using { lo == 0; hi == 1073741824; };\n",
+                "        }\n",
+                "        have 0 < hi",
+            ),
+        )
+        .replace(
+            "            viewable(v[lo..hi]);",
+            "            viewable(v[lo..hi]);\n            0 <= to_integer(hi - lo);",
+        );
+    let report = verify_c_sources(&wrapped, &[]).unwrap_err().report();
+    assert!(
+        report.contains("needs that range to be a valid 32-bit byte span"),
+        "{report}"
+    );
+    assert!(
+        report.contains("to_integer(hi - lo) <= 1073741823"),
+        "{report}"
+    );
+}
+
+#[test]
 #[ignore = "nightly: consumed field refusal, preservation expansion and cold replay"]
 fn consumed_field_refusal_keeps_an_ordinary_preservation_repair() {
     let (source, sources) =
@@ -2815,7 +2864,7 @@ theorem integer_forall_logical_solve() {
 theorem integer_exists_choose() {
     requires exists (z: Integer) { z == z };
     ensures chosen: exists (k: Integer) { k == k } by {
-        obtain (candidate: Integer) { candidate == candidate };
+        let candidate = obtain(exists (candidate: Integer) { candidate == candidate });
         witness(candidate);
         known();
     }
@@ -2841,7 +2890,7 @@ theorem integer_exists_choose() {
             // directly. The expanded claim must still verify below.
         } else {
             assert!(
-                expanded.contains("obtain (candidate: Integer) { candidate == candidate }"),
+                expanded.contains("let candidate = obtain(exists (candidate: Integer) { candidate == candidate });"),
                 "{label}: {expanded}"
             );
             assert!(
@@ -2867,9 +2916,9 @@ theorem guarded_integer_exists(value: int32) {
     ensures branched: exists (k: Integer) {
         k == to_integer(if value > 0 { value } else { value + 1 })
     } by {
-        obtain (candidate: Integer) {
+        let candidate = obtain(exists (candidate: Integer) {
             candidate == to_integer(if value > 0 { value } else { value + 1 })
-        };
+        });
         witness(candidate);
         known();
     }
@@ -5884,7 +5933,7 @@ fn post_execution_choose_and_witness_share_the_retained_outcome_proof() {
             requires exists (k: int32) { k == x };
             ensures exists (j: int32) { j == result } by {
                 step_until(function.exit);
-                obtain (k: int32) { k == x };
+                let k = obtain(exists (k: int32) { k == x });
                 witness(k);
                 solve();
             }
@@ -5907,7 +5956,7 @@ fn post_execution_choose_and_witness_share_the_retained_outcome_proof() {
     )
     .expect("the retained choose/witness Proof should serialize");
     assert!(
-        expanded.contains("obtain (k: int32) { k == x };"),
+        expanded.contains("let k = obtain(exists (k: int32) { k == x });"),
         "{expanded}"
     );
     assert!(expanded.contains("witness(k);"), "{expanded}");

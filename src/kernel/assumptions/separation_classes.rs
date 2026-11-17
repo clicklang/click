@@ -20,7 +20,7 @@ pub(in crate::kernel) struct SeparatedAddressIndex(Mutex<Option<Box<Index>>>);
 #[derive(Clone, Debug, Default)]
 struct Index {
     graph: Option<EqualityGraph>,
-    sources: PersistentMap<Proposition, (Pointer, Pointer)>,
+    sources: PersistentMap<Proposition, (Address, Address)>,
     pairs: PersistentMap<Pair, PersistentSet<Proposition>>,
     exact_spans: PersistentMap<Pair, PersistentMap<(u32, u32), Proposition>>,
     incident: PersistentMap<u64, PersistentSet<Pair>>,
@@ -191,8 +191,8 @@ impl SeparatedAddressIndex {
     pub(in crate::kernel) fn adjust(
         &self,
         fact: &Proposition,
-        left: Pointer,
-        right: Pointer,
+        left: Address,
+        right: Address,
         graph: &EqualityGraph,
     ) {
         let mut cache = self.0.lock().expect("separation index");
@@ -251,8 +251,8 @@ impl SeparatedAddressIndex {
 
     pub(in crate::kernel) fn candidates(
         &self,
-        left: &Pointer,
-        right: &Pointer,
+        left: &Address,
+        right: &Address,
         graph: &EqualityGraph,
     ) -> Vec<Proposition> {
         let mut cache = self.0.lock().expect("separation index");

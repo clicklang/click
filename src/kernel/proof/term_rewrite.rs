@@ -230,8 +230,8 @@ struct CarrierVariables {
     pointer_loads: BTreeSet<crate::kernel::PointerLoadId>,
     pointer_applications: BTreeSet<u64>,
     shared_machine_operands: BTreeSet<u64>,
-    pointer_terms: Option<Vec<Pointer>>,
-    read_terms: Option<BTreeMap<((u32, u32), Pointer, LoadKind), MachineTerm>>,
+    pointer_terms: Option<Vec<Address>>,
+    read_terms: Option<BTreeMap<((u32, u32), Address, LoadKind), MachineTerm>>,
 }
 
 impl CarrierVariables {
@@ -296,8 +296,8 @@ fn program_value_variable(value: &ProgramValue) -> Option<Variable> {
         | ProgramValue::UInt64(MachineTerm::Variable(variable))
         | ProgramValue::Float32(MachineTerm::Variable(variable))
         | ProgramValue::Float64(MachineTerm::Variable(variable)) => Some(*variable),
-        ProgramValue::Pointer(pointer) => match &pointer.block {
-            PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) => {
+        ProgramValue::Pointer(pointer) => match &pointer.base {
+            AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable) => {
                 Some(*variable)
             }
             _ => None,
@@ -482,12 +482,12 @@ fn program_value_declaration_variable(value: &ProgramValue) -> Option<Variable> 
         | ProgramValue::Float64(MachineTerm::Variable(variable)) => Some(*variable),
         ProgramValue::Pointer(pointer)
             if matches!(
-                &pointer.pointer().block,
-                PointerBlock::Symbolic(_) | PointerBlock::FunctionSymbolic(_)
-            ) && matches!(&pointer.pointer().offset, PointerOffsetTerm::Constant(0)) =>
+                &pointer.pointer().base,
+                AddressBase::Symbolic(_) | AddressBase::FunctionSymbolic(_)
+            ) && matches!(&pointer.pointer().offset, AddressOffset::Constant(0)) =>
         {
-            match pointer.pointer().block {
-                PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) => {
+            match pointer.pointer().base {
+                AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable) => {
                     Some(variable)
                 }
                 _ => unreachable!(),
@@ -525,21 +525,21 @@ fn replace_binding_variable(
             }
             ProgramValue::Pointer(pointer)
                 if matches!(
-                    &pointer.block,
-                    PointerBlock::Symbolic(_) | PointerBlock::FunctionSymbolic(_)
+                    &pointer.base,
+                    AddressBase::Symbolic(_) | AddressBase::FunctionSymbolic(_)
                 ) =>
             {
                 // Rename the binder's block wherever the value names it: in
                 // its address and in its bounds' start.
-                let old = pointer.block.clone();
+                let old = pointer.base.clone();
                 let new = match old {
-                    PointerBlock::FunctionSymbolic(_) => PointerBlock::FunctionSymbolic(variable),
-                    _ => PointerBlock::Symbolic(variable),
+                    AddressBase::FunctionSymbolic(_) => AddressBase::FunctionSymbolic(variable),
+                    _ => AddressBase::Symbolic(variable),
                 };
                 *pointer = pointer.map_pointers(|address| {
                     let mut renamed = address.clone();
-                    if renamed.block == old {
-                        renamed.block = new.clone();
+                    if renamed.base == old {
+                        renamed.base = new.clone();
                     }
                     renamed
                 });
@@ -841,28 +841,28 @@ fn collect_algebraic_carriers_seen(
     }
 }
 
-fn collect_pointer_carriers(pointer: &Pointer, variables: &mut CarrierVariables) {
+fn collect_pointer_carriers(pointer: &Address, variables: &mut CarrierVariables) {
     if !variables.visit() {
         return;
     }
     if let Some(pointers) = &mut variables.pointer_terms
-        && *pointer != Pointer::null()
+        && *pointer != Address::null()
     {
         pointers.push(pointer.clone());
     }
-    collect_pointer_block_carriers(&pointer.block, variables);
+    collect_address_base_carriers(&pointer.base, variables);
     if variables.exhausted() {
         return;
     }
     collect_pointer_offset_carriers(&pointer.offset, variables);
 }
 
-fn collect_pointer_block_carriers(block: &PointerBlock, variables: &mut CarrierVariables) {
+fn collect_address_base_carriers(block: &AddressBase, variables: &mut CarrierVariables) {
     match block {
-        PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) => {
+        AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable) => {
             variables.program_values.insert(*variable);
         }
-        PointerBlock::PureFunctionApplication(application)
+        AddressBase::PureFunctionApplication(application)
             if variables.pointer_applications.insert(application.id()) =>
         {
             let mut seen = BTreeSet::new();
@@ -875,7 +875,7 @@ fn collect_pointer_block_carriers(block: &PointerBlock, variables: &mut CarrierV
         }
         // A loaded pointer carries whatever its defining read's address
         // carries, as a registered load variable's offset does.
-        PointerBlock::LoadedPointer(identity) if variables.pointer_loads.insert(*identity) => {
+        AddressBase::LoadedPointer(identity) if variables.pointer_loads.insert(*identity) => {
             if let Some((_, address)) = crate::kernel::eval::registered_pointer_load(*identity) {
                 collect_pointer_carriers(&address, variables);
                 if variables.exhausted() {}
@@ -1229,17 +1229,17 @@ fn materialized_registered_load_value(variable: Variable) -> Option<MachineTerm>
 /// element's size rather than the field's. A pointer shape this does not
 /// recognize answers `false`, so an unfamiliar address is refused rather than
 /// assumed.
-fn pointer_addresses_four_byte_elements(pointer: &Pointer) -> bool {
-    fn offset_scales_by_four(offset: &PointerOffsetTerm) -> bool {
+fn pointer_addresses_four_byte_elements(pointer: &Address) -> bool {
+    fn offset_scales_by_four(offset: &AddressOffset) -> bool {
         match offset {
-            PointerOffsetTerm::Int32Scaled { byte_width, .. } => *byte_width == 4,
-            PointerOffsetTerm::Int64Scaled { byte_width, .. } => *byte_width == 4,
-            PointerOffsetTerm::Add(left, right) => {
+            AddressOffset::Int32Scaled { byte_width, .. } => *byte_width == 4,
+            AddressOffset::Int64Scaled { byte_width, .. } => *byte_width == 4,
+            AddressOffset::Add(left, right) => {
                 offset_scales_by_four(left) && offset_scales_by_four(right)
             }
             // A bare constant or variable offset carries no element width of
             // its own, so it cannot witness one.
-            PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => false,
+            AddressOffset::Constant(_) | AddressOffset::Variable(_) => false,
         }
     }
     offset_scales_by_four(&pointer.offset)
@@ -1258,25 +1258,24 @@ fn collect_registered_load_carriers(load: Variable, variables: &mut CarrierVaria
     collect_pointer_carriers(&pointer, variables);
 }
 
-fn collect_pointer_offset_carriers(offset: &PointerOffsetTerm, variables: &mut CarrierVariables) {
+fn collect_pointer_offset_carriers(offset: &AddressOffset, variables: &mut CarrierVariables) {
     if !variables.visit() {
         return;
     }
     match offset {
-        PointerOffsetTerm::Constant(_) => {}
-        PointerOffsetTerm::Variable(variable) => {
+        AddressOffset::Constant(_) => {}
+        AddressOffset::Variable(variable) => {
             variables.program_values.insert(*variable);
             collect_registered_load_carriers(*variable, variables);
         }
-        PointerOffsetTerm::Add(left, right) => {
+        AddressOffset::Add(left, right) => {
             collect_pointer_offset_carriers(left, variables);
             if variables.exhausted() {
                 return;
             }
             collect_pointer_offset_carriers(right, variables);
         }
-        PointerOffsetTerm::Int32Scaled { value, .. }
-        | PointerOffsetTerm::Int64Scaled { value, .. } => {
+        AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
             collect_machine_carriers(value, variables)
         }
     }
@@ -1364,7 +1363,7 @@ impl IntegerSubstitutionVariableCollector {
 
 /// Collect only pointer expressions reachable from this explicit goal. Memory
 /// states remain opaque, just as in capture-avoiding term rewriting.
-pub(crate) fn proposition_pointer_terms(proposition: &Proposition) -> Vec<Pointer> {
+pub(crate) fn proposition_pointer_terms(proposition: &Proposition) -> Vec<Address> {
     let mut carriers = CarrierVariables::for_rewrite(false);
     carriers.pointer_terms = Some(Vec::new());
     collect_integer_substitution_variables_with_carriers(proposition, &mut carriers);
@@ -1532,15 +1531,15 @@ fn exhausted_integer(term: &IntegerTerm) -> IntegerTerm {
     }
 }
 
-fn exhausted_pointer() -> Pointer {
-    Pointer {
-        block: PointerBlock::Concrete(String::new()),
-        offset: PointerOffsetTerm::Constant(0),
+fn exhausted_pointer() -> Address {
+    Address {
+        base: AddressBase::Concrete(String::new()),
+        offset: AddressOffset::Constant(0),
     }
 }
 
-fn exhausted_offset() -> PointerOffsetTerm {
-    PointerOffsetTerm::Constant(0)
+fn exhausted_offset() -> AddressOffset {
+    AddressOffset::Constant(0)
 }
 
 fn exhausted_program_value(value: &ProgramValue) -> ProgramValue {
@@ -1826,11 +1825,11 @@ pub(crate) struct TermRewrite<'a> {
     algebraic: Option<(&'a AlgebraicTerm, &'a AlgebraicTerm)>,
     bitvector: Option<(MachineOperandView<'a>, MachineOperandView<'a>)>,
     integer_exact: Option<(&'a SharedIntegerTerm, &'a SharedIntegerTerm)>,
-    pointer_variable: Option<(Variable, &'a Pointer)>,
+    pointer_variable: Option<(Variable, &'a Address)>,
     pointer_addresses_only: bool,
-    pointer_exact: Option<(&'a Pointer, &'a Pointer)>,
+    pointer_exact: Option<(&'a Address, &'a Address)>,
     pointer_value_exact: Option<(&'a PointerValue, &'a PointerValue)>,
-    pointer_offset_exact: Option<(&'a PointerOffsetTerm, &'a PointerOffsetTerm)>,
+    pointer_offset_exact: Option<(&'a AddressOffset, &'a AddressOffset)>,
     /// A `Bool` equality's rewrite (Stage 5, rule L-Eq): every occurrence of
     /// the first condition is replaced by the second.
     condition_exact: Option<(&'a ConditionTerm, &'a ConditionTerm)>,
@@ -1845,8 +1844,8 @@ pub(crate) struct TermRewrite<'a> {
     collected_conditions: Option<Vec<ConditionTerm>>,
     integer_cache: HashMap<(u64, u64, bool), IntegerTerm>,
     fold_integer_bridge: KernelTermExport,
-    pointer_application_cache: HashMap<(u64, u64, bool, bool), PointerBlock>,
-    pointer_origin_cache: HashMap<(PointerLoadId, u64, bool, bool), PointerBlock>,
+    pointer_application_cache: HashMap<(u64, u64, bool, bool), AddressBase>,
+    pointer_origin_cache: HashMap<(PointerLoadId, u64, bool, bool), AddressBase>,
     scope_renaming_max: u64,
     integer_body_summaries: HashMap<u64, crate::kernel::prelude::IntegerScopeSummary>,
     integer_variables: Option<IntegerVariableRewrite<'a>>,
@@ -1858,12 +1857,12 @@ pub(crate) struct TermRewrite<'a> {
     enforce_integer_work_limit: bool,
     typed_variables: Option<TypedVariableReplacements<'a>>,
     comparison_reads: Option<
-        &'a HashMap<((u32, u32), Pointer, LoadKind), (MachineTerm, ReadAddressDependencies)>,
+        &'a HashMap<((u32, u32), Address, LoadKind), (MachineTerm, ReadAddressDependencies)>,
     >,
     /// Reads of a library or enum value at a fixed address, each with the
     /// value its state stores there: the read-over-write authority for
     /// values a scalar cell cannot hold.
-    comparison_algebraic_reads: Option<&'a HashMap<((u32, u32), Pointer), AlgebraicTerm>>,
+    comparison_algebraic_reads: Option<&'a HashMap<((u32, u32), Address), AlgebraicTerm>>,
     // Recursive read-address walks must share this memo: each address can
     // reference the same earlier read more than once. Include lexical scope
     // and temporary rewrite modes so entries never cross interpretations.
@@ -2056,7 +2055,7 @@ impl<'a> TermRewrite<'a> {
     pub(crate) fn comparison_read_batch_with_algebraic(
         proposition: &Proposition,
         replacements: impl IntoIterator<Item = (MachineTerm, MachineTerm)>,
-        algebraic_reads: &HashMap<((u32, u32), Pointer), AlgebraicTerm>,
+        algebraic_reads: &HashMap<((u32, u32), Address), AlgebraicTerm>,
     ) -> Option<Proposition> {
         let mut named = BTreeMap::new();
         let mut reads = HashMap::new();
@@ -2484,17 +2483,14 @@ impl<'a> TermRewrite<'a> {
         rewrite
     }
 
-    pub(crate) fn for_pointer_offset_exact(
-        from: &'a PointerOffsetTerm,
-        to: &'a PointerOffsetTerm,
-    ) -> Self {
+    pub(crate) fn for_pointer_offset_exact(from: &'a AddressOffset, to: &'a AddressOffset) -> Self {
         let mut rewrite = Self::empty();
         rewrite.pointer_offset_exact = Some((from, to));
         rewrite.enforce_integer_work_limit = true;
         rewrite
     }
 
-    pub(crate) fn for_pointer_exact(from: &'a Pointer, to: &'a Pointer) -> Self {
+    pub(crate) fn for_pointer_exact(from: &'a Address, to: &'a Address) -> Self {
         let mut rewrite = Self::empty();
         rewrite.pointer_exact = Some((from, to));
         rewrite.enforce_integer_work_limit = true;
@@ -2513,8 +2509,8 @@ impl<'a> TermRewrite<'a> {
         // Native C arguments share a numeric block. Their base pointer is
         // an offset subterm of a displaced copy, rather than its own block.
         // A full equality also establishes this same-block offset equality.
-        if from.pointer().block == PointerBlock::ExternalArgument
-            && to.pointer().block == PointerBlock::ExternalArgument
+        if from.pointer().base == AddressBase::ExternalArgument
+            && to.pointer().base == AddressBase::ExternalArgument
         {
             rewrite.pointer_offset_exact = Some((&from.pointer().offset, &to.pointer().offset));
         }
@@ -2523,13 +2519,13 @@ impl<'a> TermRewrite<'a> {
     }
 
     /// Numeric address equality cannot substitute an allocation or bounds identity.
-    pub(crate) fn for_pointer_address_variable(from: Variable, to: &'a Pointer) -> Self {
+    pub(crate) fn for_pointer_address_variable(from: Variable, to: &'a Address) -> Self {
         let mut rewrite = Self::for_pointer_variable(from, to);
         rewrite.pointer_addresses_only = true;
         rewrite
     }
 
-    pub(crate) fn for_pointer_variable(from: Variable, to: &'a Pointer) -> Self {
+    pub(crate) fn for_pointer_variable(from: Variable, to: &'a Address) -> Self {
         Self {
             comparison_arithmetic: false,
             comparison_reads: None,
@@ -3990,11 +3986,11 @@ impl<'a> TermRewrite<'a> {
                 let shifted_source = self.pointer_value_exact.filter(|(from, to)| {
                     !self.source_disabled
                         && v.pointer() != from.pointer()
-                        && v.pointer().block == from.pointer().block
-                        && ((matches!(from.pointer().block, PointerBlock::Symbolic(_))
-                            && from.pointer().offset == PointerOffsetTerm::Constant(0))
-                            || (from.pointer().block == PointerBlock::ExternalArgument
-                                && to.pointer().block == PointerBlock::ExternalArgument))
+                        && v.pointer().base == from.pointer().base
+                        && ((matches!(from.pointer().base, AddressBase::Symbolic(_))
+                            && from.pointer().offset == AddressOffset::Constant(0))
+                            || (from.pointer().base == AddressBase::ExternalArgument
+                                && to.pointer().base == AddressBase::ExternalArgument))
                 });
                 let shifted_replacement = shifted_source.and_then(|(from, to)| {
                     (v.provenance() == from.provenance()
@@ -4004,8 +4000,8 @@ impl<'a> TermRewrite<'a> {
                     .then(|| to.clone())
                 });
                 let retain_view = shifted_source.is_some() && shifted_replacement.is_none();
-                let replacement = shifted_replacement.or_else(|| match &v.pointer().block {
-                    PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) => {
+                let replacement = shifted_replacement.or_else(|| match &v.pointer().base {
+                    AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable) => {
                         (!self.scope.program_values.contains_key(variable))
                             .then_some(())
                             .and(self.typed_variables.as_ref())
@@ -4019,7 +4015,7 @@ impl<'a> TermRewrite<'a> {
                 }.or_else(|| {
                     let (from, to) = self.pointer_variable?;
                     if self.pointer_addresses_only || self.scope.program_values.contains_key(&from)
-                        || !matches!(v.pointer().block, PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) if variable == from)
+                        || !matches!(v.pointer().base, AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable) if variable == from)
                         || v.provenance() != &v.pointer().object_identity()
                     {
                         return None;
@@ -4041,7 +4037,7 @@ impl<'a> TermRewrite<'a> {
                     replacement.provenance().clone()
                 } else if let Some((from, to)) = self.pointer_variable
                     && !self.scope.program_values.contains_key(&from)
-                    && matches!(v.provenance().block, PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) if variable == from)
+                    && matches!(v.provenance().base, AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable) if variable == from)
                 {
                     to.object_identity()
                 } else if let Some((from, to)) = self.pointer_value_exact
@@ -4067,7 +4063,7 @@ impl<'a> TermRewrite<'a> {
                                 .map(std::sync::Arc::new)
                         } else if let Some((from, to)) = self.pointer_variable
                             && !self.scope.program_values.contains_key(&from)
-                            && matches!(origin.block, PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) if variable == from)
+                            && matches!(origin.base, AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable) if variable == from)
                         {
                             Some(std::sync::Arc::new(to.object_identity()))
                         } else if let Some((from, to)) = self.pointer_value_exact
@@ -4097,14 +4093,14 @@ impl<'a> TermRewrite<'a> {
                     // domain with a different view's domain. Nested reads still
                     // substitute their arguments through the equality.
                     if v.provenance() != from.provenance()
-                        && v.provenance().block == from.pointer().block
+                        && v.provenance().base == from.pointer().base
                     {
                         mapped =
                             mapped.with_provenance(std::sync::Arc::new(v.provenance().clone()));
                     }
                     if (from.bounds_are_known() || v.bounds_owner() != from.bounds_owner())
                         && v.bounds_owner()
-                            .is_some_and(|origin| origin.block == from.pointer().block)
+                            .is_some_and(|origin| origin.base == from.pointer().base)
                     {
                         mapped = mapped
                             .with_bounds_owner(v.bounds_owner().cloned().map(std::sync::Arc::new));
@@ -5112,7 +5108,7 @@ impl<'a> TermRewrite<'a> {
         }
     }
 
-    fn pointer(&mut self, p: &Pointer) -> Pointer {
+    fn pointer(&mut self, p: &Address) -> Address {
         if self.checked_work_exhausted() {
             return exhausted_pointer();
         }
@@ -5130,15 +5126,15 @@ impl<'a> TermRewrite<'a> {
         if let Some((from, to)) = self.pointer_exact
             && self.pointer_value_exact.is_some()
             && !self.source_disabled
-            && p.block == from.block
-            && from.offset == PointerOffsetTerm::Constant(0)
-            && matches!(from.block, PointerBlock::LoadedPointer(_))
+            && p.base == from.base
+            && from.offset == AddressOffset::Constant(0)
+            && matches!(from.base, AddressBase::LoadedPointer(_))
         {
             self.changed = true;
             let displacement = self.offset(&p.offset);
-            return Pointer {
-                block: to.block.clone(),
-                offset: PointerOffsetTerm::add(to.offset.clone(), displacement),
+            return Address {
+                base: to.base.clone(),
+                offset: AddressOffset::add(to.offset.clone(), displacement),
             };
         }
         // A read depends on its selected address. Substitute full pointers
@@ -5157,9 +5153,9 @@ impl<'a> TermRewrite<'a> {
             );
             let offset = self.offset(&read.displacement);
             if let Some(block) = self.pointer_origin_cache.get(&key) {
-                self.changed |= block != &p.block;
-                return Pointer {
-                    block: block.clone(),
+                self.changed |= block != &p.base;
+                return Address {
+                    base: block.clone(),
                     offset,
                 };
             }
@@ -5168,19 +5164,22 @@ impl<'a> TermRewrite<'a> {
                 self.changed = true;
                 // Rewriting changes the selected address, not the read into
                 // its stored value. Keep the immutable defining state.
-                Pointer::version_read(&read.defining_memory, &address).block
+                Address::version_read(&read.defining_memory, &address).base
             } else {
-                p.block.clone()
+                p.base.clone()
             };
             self.pointer_origin_cache.insert(key, block.clone());
-            return Pointer { block, offset };
+            return Address {
+                base: block,
+                offset,
+            };
         }
         // Opaque object and bounds identities participate in lexical
         // binding, never in numeric pointer rewrites.
-        if let PointerBlock::ExternalObject(variable) = &p.block {
+        if let AddressBase::ExternalObject(variable) = &p.base {
             if let Some(mapped) = self.scope.program_values.get(variable) {
-                return Pointer {
-                    block: PointerBlock::ExternalObject(*mapped),
+                return Address {
+                    base: AddressBase::ExternalObject(*mapped),
                     offset: self.offset(&p.offset),
                 };
             }
@@ -5191,9 +5190,9 @@ impl<'a> TermRewrite<'a> {
             {
                 let root = replacement.provenance().clone();
                 self.changed = true;
-                return Pointer {
-                    block: root.block,
-                    offset: PointerOffsetTerm::add(root.offset, self.offset(&p.offset)),
+                return Address {
+                    base: root.base,
+                    offset: AddressOffset::add(root.offset, self.offset(&p.offset)),
                 };
             }
             if let Some((from, to)) = self.pointer_variable
@@ -5201,14 +5200,13 @@ impl<'a> TermRewrite<'a> {
             {
                 let root = to.object_identity();
                 self.changed = true;
-                return Pointer {
-                    block: root.block,
-                    offset: PointerOffsetTerm::add(root.offset, self.offset(&p.offset)),
+                return Address {
+                    base: root.base,
+                    offset: AddressOffset::add(root.offset, self.offset(&p.offset)),
                 };
             }
         }
-        if let PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) =
-            &p.block
+        if let AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable) = &p.base
             && let Some(mapped) = self.scope.program_values.get(variable)
         {
             let mapped = *mapped;
@@ -5216,16 +5214,15 @@ impl<'a> TermRewrite<'a> {
             if self.checked_work_exhausted() {
                 return exhausted_pointer();
             }
-            return Pointer {
-                block: match &p.block {
-                    PointerBlock::FunctionSymbolic(_) => PointerBlock::FunctionSymbolic(mapped),
-                    _ => PointerBlock::Symbolic(mapped),
+            return Address {
+                base: match &p.base {
+                    AddressBase::FunctionSymbolic(_) => AddressBase::FunctionSymbolic(mapped),
+                    _ => AddressBase::Symbolic(mapped),
                 },
                 offset,
             };
         }
-        if let PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) =
-            &p.block
+        if let AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable) = &p.base
             && let Some(replacements) = &self.typed_variables
             && let Some(TypedProgramValueReplacement::Pointer(replacement)) =
                 replacements.program_values.get(variable)
@@ -5235,9 +5232,9 @@ impl<'a> TermRewrite<'a> {
             if self.checked_work_exhausted() {
                 return exhausted_pointer();
             }
-            return Pointer {
-                block: replacement.block.clone(),
-                offset: PointerOffsetTerm::add(replacement.offset.clone(), offset),
+            return Address {
+                base: replacement.base.clone(),
+                offset: AddressOffset::add(replacement.offset.clone(), offset),
             };
         }
         // A loop state's pointer value is a symbolic base plus its
@@ -5245,51 +5242,51 @@ impl<'a> TermRewrite<'a> {
         // displaced addresses; the value path retains their selected bounds.
         if let Some((from, to)) = self.pointer_value_exact
             && !self.source_disabled
-            && matches!(from.pointer().block, PointerBlock::Symbolic(_))
-            && from.pointer().offset == PointerOffsetTerm::Constant(0)
-            && p.block == from.pointer().block
+            && matches!(from.pointer().base, AddressBase::Symbolic(_))
+            && from.pointer().offset == AddressOffset::Constant(0)
+            && p.base == from.pointer().base
         {
             self.changed = true;
             let offset = self.offset(&p.offset);
             if self.checked_work_exhausted() {
                 return exhausted_pointer();
             }
-            return Pointer {
-                block: to.pointer().block.clone(),
-                offset: PointerOffsetTerm::add(to.pointer().offset.clone(), offset),
+            return Address {
+                base: to.pointer().base.clone(),
+                offset: AddressOffset::add(to.pointer().offset.clone(), offset),
             };
         }
         if let Some((from, to)) = self.pointer_variable
-            && matches!(&p.block, PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) if *variable == from)
+            && matches!(&p.base, AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable) if *variable == from)
         {
             self.changed = true;
             let offset = self.offset(&p.offset);
             if self.checked_work_exhausted() {
                 return exhausted_pointer();
             }
-            return Pointer {
-                block: to.block.clone(),
-                offset: PointerOffsetTerm::add(to.offset.clone(), offset),
+            return Address {
+                base: to.base.clone(),
+                offset: AddressOffset::add(to.offset.clone(), offset),
             };
         }
         let offset = self.offset(&p.offset);
         if self.checked_work_exhausted() {
             return exhausted_pointer();
         }
-        Pointer {
-            block: match &p.block {
-                PointerBlock::Symbolic(variable)
+        Address {
+            base: match &p.base {
+                AddressBase::Symbolic(variable)
                     if self.resolve_registered_loads
                         && (self.pointer_variable.is_some()
                             || self.pointer_exact.is_some()
                             || self.pointer_offset_exact.is_some())
                         && crate::kernel::is_load_variable(variable) =>
                 {
-                    PointerBlock::Symbolic(
+                    AddressBase::Symbolic(
                         self.rewrite_registered_load(*variable).unwrap_or(*variable),
                     )
                 }
-                PointerBlock::PureFunctionApplication(application) => {
+                AddressBase::PureFunctionApplication(application) => {
                     self.charge_rewrite_work(1);
                     let key = (
                         application.id(),
@@ -5315,9 +5312,9 @@ impl<'a> TermRewrite<'a> {
                         // Use the same null representation as the original
                         // cast, keeping the displacement outside this block.
                         let result = if let Some(bits) = rewritten.integer_address_bits() {
-                            Pointer::integer_address(bits.clone()).block
+                            Address::integer_address(bits.clone()).base
                         } else {
-                            PointerBlock::PureFunctionApplication(rewritten)
+                            AddressBase::PureFunctionApplication(rewritten)
                         };
                         self.pointer_application_cache.insert(key, result.clone());
                         result
@@ -5355,7 +5352,7 @@ impl<'a> TermRewrite<'a> {
         value: SharedMachineIntegerTerm,
         byte_width: i64,
         wide: Option<bool>,
-    ) -> PointerOffsetTerm {
+    ) -> AddressOffset {
         let view = value.operand_view();
         // Native input and fixed-size leaves use the existing constant policy.
         let native = view
@@ -5369,13 +5366,11 @@ impl<'a> TermRewrite<'a> {
                 native.into_owned()
             };
             return match (wide, self.resolve_registered_loads) {
-                (None, true) => PointerOffsetTerm::scale_int32(native, byte_width),
-                (None, false) => PointerOffsetTerm::scaled_int32_node(native, byte_width),
-                (Some(unsigned), true) => {
-                    PointerOffsetTerm::scale_int64(native, byte_width, unsigned)
-                }
+                (None, true) => AddressOffset::scale_int32(native, byte_width),
+                (None, false) => AddressOffset::scaled_int32_node(native, byte_width),
+                (Some(unsigned), true) => AddressOffset::scale_int64(native, byte_width, unsigned),
                 (Some(unsigned), false) => {
-                    PointerOffsetTerm::scaled_int64_node(native, byte_width, unsigned)
+                    AddressOffset::scaled_int64_node(native, byte_width, unsigned)
                 }
             };
         }
@@ -5406,8 +5401,8 @@ impl<'a> TermRewrite<'a> {
             }
         }
         match wide {
-            None => PointerOffsetTerm::Int32Scaled { value, byte_width },
-            Some(unsigned) => PointerOffsetTerm::Int64Scaled {
+            None => AddressOffset::Int32Scaled { value, byte_width },
+            Some(unsigned) => AddressOffset::Int64Scaled {
                 value,
                 byte_width,
                 unsigned,
@@ -5415,7 +5410,7 @@ impl<'a> TermRewrite<'a> {
         }
     }
 
-    fn offset(&mut self, v: &PointerOffsetTerm) -> PointerOffsetTerm {
+    fn offset(&mut self, v: &AddressOffset) -> AddressOffset {
         if let Some((from, to)) = self.pointer_offset_exact
             && v == from
             && (self.pointer_value_exact.is_none() || !self.source_disabled)
@@ -5427,28 +5422,28 @@ impl<'a> TermRewrite<'a> {
             return exhausted_offset();
         }
         let result = match v {
-            PointerOffsetTerm::Constant(_) => v.clone(),
-            PointerOffsetTerm::Variable(variable)
+            AddressOffset::Constant(_) => v.clone(),
+            AddressOffset::Variable(variable)
                 if self.resolve_registered_loads && crate::kernel::is_load_variable(variable) =>
             {
                 self.rewrite_registered_load(*variable)
-                    .map_or_else(|| v.clone(), PointerOffsetTerm::Variable)
+                    .map_or_else(|| v.clone(), AddressOffset::Variable)
             }
-            PointerOffsetTerm::Variable(_) => v.clone(),
-            PointerOffsetTerm::Add(a, b) => {
+            AddressOffset::Variable(_) => v.clone(),
+            AddressOffset::Add(a, b) => {
                 let left = self.offset(a);
                 let right = self.offset(b);
                 if self.resolve_registered_loads {
-                    PointerOffsetTerm::add(left, right)
+                    AddressOffset::add(left, right)
                 } else {
-                    PointerOffsetTerm::Add(Box::new(left), Box::new(right))
+                    AddressOffset::Add(Box::new(left), Box::new(right))
                 }
             }
-            PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+            AddressOffset::Int32Scaled { value, byte_width } => {
                 let value = self.index_bits(value);
                 self.rebuilt_index(value, *byte_width, None)
             }
-            PointerOffsetTerm::Int64Scaled {
+            AddressOffset::Int64Scaled {
                 value,
                 byte_width,
                 unsigned,
@@ -5475,7 +5470,7 @@ impl<'a> TermRewrite<'a> {
                         )
                     };
                     // The checked narrowing keeps a written scaled node.
-                    PointerOffsetTerm::Int32Scaled {
+                    AddressOffset::Int32Scaled {
                         value: narrowed,
                         byte_width: *byte_width,
                     }
@@ -5643,8 +5638,8 @@ impl<'a> TermRewrite<'a> {
                     unreachable!()
                 };
                 let canonical = |value: PointerValue| {
-                    value.map_addresses(|p| Pointer {
-                        block: p.block.clone(),
+                    value.map_addresses(|p| Address {
+                        base: p.base.clone(),
                         offset: crate::kernel::eval::canonical_offset_term(&p.offset),
                     })
                 };
@@ -6772,12 +6767,12 @@ mod tests {
                             .unwrap();
                         let value = SharedMachineIntegerTerm::from_shared(container, root).unwrap();
                         let offset = if ty == MachineIntegerType::Int32 {
-                            PointerOffsetTerm::Int32Scaled {
+                            AddressOffset::Int32Scaled {
                                 value,
                                 byte_width: stride,
                             }
                         } else {
-                            PointerOffsetTerm::Int64Scaled {
+                            AddressOffset::Int64Scaled {
                                 value,
                                 byte_width: stride,
                                 unsigned: ty == MachineIntegerType::UInt64,
@@ -6788,17 +6783,17 @@ mod tests {
                         let expected = reference.bits(&native);
                         let expected = match (ty, resolving) {
                             (MachineIntegerType::Int32, false) => {
-                                PointerOffsetTerm::scaled_int32_node(expected, stride)
+                                AddressOffset::scaled_int32_node(expected, stride)
                             }
                             (MachineIntegerType::Int32, true) => {
-                                PointerOffsetTerm::scale_int32(expected, stride)
+                                AddressOffset::scale_int32(expected, stride)
                             }
-                            (_, false) => PointerOffsetTerm::scaled_int64_node(
+                            (_, false) => AddressOffset::scaled_int64_node(
                                 expected,
                                 stride,
                                 ty == MachineIntegerType::UInt64,
                             ),
-                            (_, true) => PointerOffsetTerm::scale_int64(
+                            (_, true) => AddressOffset::scale_int64(
                                 expected,
                                 stride,
                                 ty == MachineIntegerType::UInt64,
@@ -6827,7 +6822,7 @@ mod tests {
         let root = KernelTermImport::default()
             .machine_arithmetic(MachineIntegerType::Int64, &native)
             .unwrap();
-        let offset = PointerOffsetTerm::Int64Scaled {
+        let offset = AddressOffset::Int64Scaled {
             value: SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int64, root).unwrap(),
             byte_width: 4,
             unsigned: true,
@@ -6845,7 +6840,7 @@ mod tests {
             let actual = rewrite.offset(&offset);
             assert_eq!(KernelTermExport::machine_export_count(), before);
             assert_eq!(
-                matches!(actual, PointerOffsetTerm::Int32Scaled { .. }),
+                matches!(actual, AddressOffset::Int32Scaled { .. }),
                 limit == i32::MAX as u64
             );
         }
@@ -7154,7 +7149,7 @@ mod tests {
         let mut rewrite =
             TermRewrite::for_integer_variables(source, &replacement, false, &renamings);
         rewrite.enable_registered_load_resolution();
-        let offset = PointerOffsetTerm::scaled_int32_node(
+        let offset = AddressOffset::scaled_int32_node(
             MachineTerm::IntegerToMachine {
                 value: IntegerTerm::var(source).into(),
                 destination: MachineIntegerType::Int32,
@@ -7164,7 +7159,7 @@ mod tests {
         let rewritten = rewrite.term(&Term::PointerOffset(offset));
         assert!(matches!(
             rewritten,
-            Term::PointerOffset(PointerOffsetTerm::Int32Scaled { value, .. })
+            Term::PointerOffset(AddressOffset::Int32Scaled { value, .. })
                 if matches!(value.structural_value(), MachineTerm::IntegerToMachine {
                     value,
                     destination: MachineIntegerType::Int32,
@@ -7181,7 +7176,7 @@ mod tests {
         let mut rewrite =
             TermRewrite::for_integer_variables(source, &replacement, false, &renamings);
         rewrite.enable_registered_load_resolution();
-        let offset = PointerOffsetTerm::scaled_int32_node(
+        let offset = AddressOffset::scaled_int32_node(
             MachineTerm::IntegerToMachine {
                 value: IntegerTerm::var(source).into(),
                 destination: MachineIntegerType::Int32,
@@ -7191,7 +7186,7 @@ mod tests {
         let rewritten = rewrite.term(&Term::PointerOffset(offset));
         assert!(matches!(
             rewritten,
-            Term::PointerOffset(PointerOffsetTerm::Int32Scaled { value, .. })
+            Term::PointerOffset(AddressOffset::Int32Scaled { value, .. })
                 if matches!(value.structural_value(), MachineTerm::IntegerToMachine {
                     value,
                     destination: MachineIntegerType::Int32,
@@ -7207,7 +7202,7 @@ mod tests {
         let mut rewrite =
             TermRewrite::for_integer_variables(source, &replacement, false, &renamings);
         rewrite.enable_registered_load_resolution();
-        let offset = PointerOffsetTerm::scaled_int32_node(
+        let offset = AddressOffset::scaled_int32_node(
             MachineTerm::IntegerToMachine {
                 value: IntegerTerm::var(source).into(),
                 destination: MachineIntegerType::Int32,
@@ -7215,35 +7210,32 @@ mod tests {
             4,
         );
         let rewritten = rewrite.term(&Term::PointerOffset(offset));
-        assert_eq!(
-            rewritten,
-            Term::PointerOffset(PointerOffsetTerm::Constant(-4))
-        );
+        assert_eq!(rewritten, Term::PointerOffset(AddressOffset::Constant(-4)));
     }
 
     #[test]
     fn array_ref_rewrite_preserves_opaque_memory_and_ignores_unrelated_blocks() {
         let source = Variable(9880);
-        let replacement = Pointer {
-            block: PointerBlock::Symbolic(Variable(9881)),
-            offset: PointerOffsetTerm::Constant(3),
+        let replacement = Address {
+            base: AddressBase::Symbolic(Variable(9881)),
+            offset: AddressOffset::Constant(3),
         };
-        let expected_pointer = Pointer {
-            block: replacement.block.clone(),
-            offset: PointerOffsetTerm::Constant(4),
+        let expected_pointer = Address {
+            base: replacement.base.clone(),
+            offset: AddressOffset::Constant(4),
         };
-        let input_pointer = Pointer {
-            block: PointerBlock::Symbolic(source),
-            offset: PointerOffsetTerm::Constant(1),
+        let input_pointer = Address {
+            base: AddressBase::Symbolic(source),
+            offset: AddressOffset::Constant(1),
         };
         let memory_with_unrelated_blocks = |count: u64| {
             let mut memory = Memory::new().with_block("array", 8);
             for index in 0..count {
-                memory = memory.with_block(PointerBlock::Heap(index + 1), 8);
+                memory = memory.with_block(AddressBase::Heap(index + 1), 8);
             }
             memory
         };
-        let observed_array = |memory: Memory, pointer: Pointer| {
+        let observed_array = |memory: Memory, pointer: Address| {
             Term::Integer(IntegerTerm::PureFunctionApplication(
                 SharedPureApplication::intern(
                     "observe_array".into(),
@@ -7346,9 +7338,9 @@ mod tests {
         };
         let source = Variable(9890);
         let replacement = Variable(9891);
-        let pointer = Pointer {
-            block: PointerBlock::Symbolic(source),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: AddressBase::Symbolic(source),
+            offset: AddressOffset::Constant(0),
         };
         let condition_for = |memory: Memory, depth: usize, fanout: usize| {
             let mut right = MachineTerm::Variable(source);
@@ -7387,7 +7379,7 @@ mod tests {
         let memory_with_unrelated_blocks = |count: u64| {
             let mut memory = Memory::new().with_block("array", 8);
             for index in 0..count {
-                memory = memory.with_block(PointerBlock::Heap(index + 1), 8);
+                memory = memory.with_block(AddressBase::Heap(index + 1), 8);
             }
             memory
         };
@@ -7672,11 +7664,11 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let index = Variable(9_904);
         let memory = crate::kernel::intern_memory(Memory::new());
-        let address = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(index), 8),
+        let address = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::scale_int32(MachineTerm::Variable(index), 8),
         };
-        let loaded = Pointer::loaded_value(&memory, &address);
+        let loaded = Address::loaded_value(&memory, &address);
         let mut carriers = CarrierVariables::default();
         collect_pointer_carriers(&loaded, &mut carriers);
         assert!(carriers.contains(BindingCarrier::Program, index));
@@ -8769,9 +8761,9 @@ mod tests {
         let source = Variable(3_104_100);
         let atom = Proposition::MemoryLoadable {
             memory: Memory::new(),
-            base: Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(source), 4),
+            base: Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(source), 4),
             },
             bytes: MachineTerm::constant(4),
             wide: false,
@@ -8804,14 +8796,14 @@ mod pointer_integer_rewrite_tests {
     fn a_generic_read_rewrite_keeps_the_substituted_cells_version_name() {
         let _session = crate::kernel::VerificationSession::enter();
         let from = PointerValue::new(
-            Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Constant(0),
             },
             ProgramType::Int32Pointer,
         );
         let to = PointerValue::new(
-            Pointer::symbolic(Variable(996_021)),
+            Address::symbolic(Variable(996_021)),
             ProgramType::Int32Pointer,
         );
         let parameter = TypeParameterName::intern("RewriteReadT");
@@ -8820,9 +8812,9 @@ mod pointer_integer_rewrite_tests {
             node: AlgebraicTermNode::Variable(Variable(996_022)),
         }));
         let memory = crate::kernel::intern_memory(Memory::new().store(
-            Pointer {
-                block: PointerBlock::Heap(996_023),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: AddressBase::Heap(996_023),
+                offset: AddressOffset::Constant(0),
             },
             stored.clone(),
         ));
@@ -8831,9 +8823,9 @@ mod pointer_integer_rewrite_tests {
         // A separate four-byte observation must not replace the generic
         // read's eight-byte origin when the same version name is reused.
         let partial = crate::kernel::intern_memory(memory.memory().clone().store(
-            Pointer {
-                block: PointerBlock::Heap(996_023),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: AddressBase::Heap(996_023),
+                offset: AddressOffset::Constant(0),
             },
             ProgramValue::UInt32(7u32.into()),
         ));
@@ -8849,14 +8841,14 @@ mod pointer_integer_rewrite_tests {
     fn full_pointer_rewrite_keeps_the_read_version_and_state() {
         let _session = crate::kernel::VerificationSession::enter();
         let from = PointerValue::new(
-            Pointer::symbolic(Variable(996_010)),
+            Address::symbolic(Variable(996_010)),
             ProgramType::Int32PointerPointer,
         );
         let to = PointerValue::new(
-            Pointer::symbolic(Variable(996_011)),
+            Address::symbolic(Variable(996_011)),
             ProgramType::Int32PointerPointer,
         );
-        let stored = ProgramValue::pointer(Pointer::symbolic(Variable(996_012)));
+        let stored = ProgramValue::pointer(Address::symbolic(Variable(996_012)));
         let memory = Memory::new().store(to.pointer().clone(), stored.clone());
         let read = memory.symbolic_pointer_version_load(from.pointer(), ProgramType::Int32Pointer);
         let expected =
@@ -8866,7 +8858,7 @@ mod pointer_integer_rewrite_tests {
         assert_eq!(rewrite(), expected);
         let later = memory.store(
             to.pointer().clone(),
-            ProgramValue::pointer(Pointer::symbolic(Variable(996_013))),
+            ProgramValue::pointer(Address::symbolic(Variable(996_013))),
         );
         let later_read =
             later.symbolic_pointer_version_load(to.pointer(), ProgramType::Int32Pointer);
@@ -8883,19 +8875,19 @@ mod pointer_integer_rewrite_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let from = MachineTerm::Variable(Variable(996_020));
         let to = MachineTerm::Variable(Variable(996_021));
-        let address = |index| Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(index, 8),
+        let address = |index| Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::scale_int32(index, 8),
         };
         let destination = address(to.clone());
-        let stored = ProgramValue::pointer(Pointer::symbolic(Variable(996_022)));
+        let stored = ProgramValue::pointer(Address::symbolic(Variable(996_022)));
         let memory = Memory::new().store(destination.clone(), stored.clone());
         let shared = crate::kernel::intern_memory(memory.clone());
         let mut input = address(from.clone());
         let mut expected = destination.clone();
         for depth in 1..=32 {
-            input = Pointer::version_read(&shared, &input);
-            expected = Pointer::version_read(&shared, &expected);
+            input = Address::version_read(&shared, &input);
+            expected = Address::version_read(&shared, &expected);
             assert_eq!(
                 TermRewrite::for_bits(&from, &to).pointer(&input),
                 expected,
@@ -8904,7 +8896,7 @@ mod pointer_integer_rewrite_tests {
         }
         let later = memory.store(
             destination,
-            ProgramValue::pointer(Pointer::symbolic(Variable(996_023))),
+            ProgramValue::pointer(Address::symbolic(Variable(996_023))),
         );
         let _ =
             later.symbolic_pointer_version_load(&address(to.clone()), ProgramType::Int32Pointer);
@@ -8921,7 +8913,7 @@ mod pointer_integer_rewrite_tests {
     fn numeric_rewriting_retains_the_existing_record_without_creating_one() {
         let context = PureFactContext::new();
         let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(996_001)),
+            Address::symbolic(Variable(996_001)),
             ProgramType::Int32Pointer,
         );
         let word = crate::kernel::eval::cast_program_value_to_type(
@@ -8979,7 +8971,7 @@ mod comparison_read_batch_tests {
         ] {
             let read = MachineTerm::MemoryLoad(
                 ProgramPoint::at(&memory),
-                Box::new(Pointer::symbolic(Variable(401_020))),
+                Box::new(Address::symbolic(Variable(401_020))),
                 kind,
             );
             let literal = |bits| {
@@ -9030,7 +9022,7 @@ mod comparison_read_batch_tests {
         let read = |index| {
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&memory),
-                Box::new(Pointer::symbolic(Variable(index))),
+                Box::new(Address::symbolic(Variable(index))),
                 LoadKind::Int32,
             )
         };
@@ -9103,7 +9095,7 @@ mod comparison_read_batch_tests {
             Some(scoped)
         );
 
-        let scoped_pointer = Pointer::symbolic(binder);
+        let scoped_pointer = Address::symbolic(binder);
         let scoped_name = MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
             &scoped_pointer,
@@ -9178,7 +9170,7 @@ mod comparison_read_batch_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let binder = Variable(403_001);
         let accumulator = Variable(403_002);
-        let pointer = Pointer::symbolic(binder);
+        let pointer = Address::symbolic(binder);
         let memory = crate::kernel::intern_memory(Memory::new());
         let raw = MachineTerm::MemoryLoad(
             ProgramPoint::at(&memory),
@@ -9270,7 +9262,7 @@ mod comparison_read_batch_tests {
     fn batch_read_comparison_preserves_states_and_sealed_resources() {
         let _session = crate::kernel::VerificationSession::enter();
         let source = Variable(402_001);
-        let pointer = Pointer::symbolic(Variable(402_002));
+        let pointer = Address::symbolic(Variable(402_002));
         let memory = crate::kernel::intern_memory(Memory::new().store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::Variable(source)),
@@ -9282,9 +9274,9 @@ mod comparison_read_batch_tests {
         );
         let sealed = Resource::MutexGuard(MutexIdentity {
             epoch: Some(123),
-            mutex: Pointer {
-                block: "sealed".into(),
-                offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(source), 1),
+            mutex: Address {
+                base: "sealed".into(),
+                offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(source), 1),
             },
         });
         let input = Proposition::And(
@@ -9323,12 +9315,12 @@ mod pointer_association_boundary_tests {
             MachineBinaryOp::Add,
             [left.clone(), right.clone()],
         );
-        let scaled = |root| PointerOffsetTerm::Int32Scaled {
+        let scaled = |root| AddressOffset::Int32Scaled {
             value: SharedMachineIntegerTerm::from_shared(ty, root).unwrap(),
             byte_width: 4,
         };
         let condition = ConditionTerm::PointerOffsetEqual(
-            Box::new(PointerOffsetTerm::Add(
+            Box::new(AddressOffset::Add(
                 Box::new(scaled(left)),
                 Box::new(scaled(right)),
             )),

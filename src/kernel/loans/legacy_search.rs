@@ -63,8 +63,8 @@ impl crate::kernel::search::ProofSearch<LoanLedger> {
             if !indexed_alias_exists
                 && !(aliases.iter().all(|alias| {
                     matches!(
-                        alias.base().block,
-                        PointerBlock::ExternalArgument | PointerBlock::ExternalObject(_)
+                        alias.base().base,
+                        AddressBase::ExternalArgument | AddressBase::ExternalObject(_)
                     )
                 }) && proof_input.storage.data.active_nonlocal_indexed_ranges == 0
                     && proof_input.storage.data.unindexed_memory.is_empty())
@@ -78,14 +78,14 @@ impl crate::kernel::search::ProofSearch<LoanLedger> {
         }
         let mut checked_blocks = BTreeSet::new();
         for alias in aliases {
-            if !checked_blocks.insert(alias.base().block.clone()) {
+            if !checked_blocks.insert(alias.base().base.clone()) {
                 continue;
             }
             let Some(protected) = proof_input
                 .storage
                 .data
                 .unindexed_memory
-                .get(&alias.base().block)
+                .get(&alias.base().base)
             else {
                 continue;
             };

@@ -29,13 +29,13 @@ int32 choose_requirement(int32 x) {
     requires exists (k: int32) { k == x };
     ensures found_again_first: exists (j: int32) { j == x } by {
         step_until(function.exit);
-        obtain (k: int32) { k == x }
+        let k = obtain(exists (k: int32) { k == x });
         witness(k);
         solve();
     }
     ensures found_again_second: exists (j: int32) { j == x } by {
         step_until(function.exit);
-        obtain (k: int32) { k == x }
+        let k = obtain(exists (k: int32) { k == x });
         witness(k);
         solve();
     }

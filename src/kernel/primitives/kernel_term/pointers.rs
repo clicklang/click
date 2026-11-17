@@ -1,13 +1,13 @@
 //! Complete pointer payloads. Expression-bearing fields use common children;
 //! proof/access metadata is retained without affecting numeric address identity.
-use super::addresses::SharedPointerAddress;
+use super::addresses::SharedAddress;
 use super::*;
 mod rewrite;
 pub(crate) use rewrite::{PointerRewrite, PointerRewriteError};
 
 #[derive(Clone, Debug)]
 pub(crate) struct KernelSubobjectBounds {
-    pub(crate) start: SharedPointerAddress,
+    pub(crate) start: SharedAddress,
     pub(crate) width: KernelTerm,
 }
 #[derive(Clone, Debug, Default)]
@@ -21,9 +21,9 @@ pub(crate) struct KernelPointerQualifiers {
 }
 #[derive(Clone, Debug)]
 pub(crate) struct KernelPointerValue {
-    pub(crate) address: SharedPointerAddress,
-    pub(crate) provenance: SharedPointerAddress,
-    pub(crate) bounds_owner: Option<SharedPointerAddress>,
+    pub(crate) address: SharedAddress,
+    pub(crate) provenance: SharedAddress,
+    pub(crate) bounds_owner: Option<SharedAddress>,
     pub(crate) program_type: ProgramType,
     pub(crate) qualifiers: Option<Arc<KernelPointerQualifiers>>,
 }
@@ -140,7 +140,7 @@ impl SharedPointerValue {
     }
     /// Same address roles as PointerValue::pointers. Widths remain separate
     /// numeric payloads; each reader retains its existing metadata policy.
-    pub(crate) fn addresses(&self) -> impl Iterator<Item = &SharedPointerAddress> {
+    pub(crate) fn addresses(&self) -> impl Iterator<Item = &SharedAddress> {
         let value = self.node();
         std::iter::once(&value.address)
             .chain(std::iter::once(&value.provenance))
@@ -154,15 +154,12 @@ impl SharedPointerValue {
             )
     }
     pub(crate) fn import(value: &PointerValue) -> Self {
-        Self::import_addresses(value, SharedPointerAddress::import)
+        Self::import_addresses(value, SharedAddress::import)
     }
     pub(crate) fn import_produced(value: &PointerValue) -> Self {
-        Self::import_addresses(value, SharedPointerAddress::import_produced)
+        Self::import_addresses(value, SharedAddress::import_produced)
     }
-    fn import_addresses(
-        value: &PointerValue,
-        address: fn(&Pointer) -> SharedPointerAddress,
-    ) -> Self {
+    fn import_addresses(value: &PointerValue, address: fn(&Address) -> SharedAddress) -> Self {
         Self::new(KernelPointerValue {
             address: address(&value.pointer),
             provenance: address(&value.provenance),
@@ -368,15 +365,15 @@ mod tests {
     pub(super) fn complete_source() -> PointerValue {
         let class = CAccessClass::Scalar(CScalarClass::Int);
         PointerValue {
-            pointer: Pointer::symbolic(Variable(1000001)),
-            provenance: Arc::new(Pointer::symbolic(Variable(1000002))),
-            bounds_owner: Some(Arc::new(Pointer::symbolic(Variable(1000003)))),
+            pointer: Address::symbolic(Variable(1000001)),
+            provenance: Arc::new(Address::symbolic(Variable(1000002))),
+            bounds_owner: Some(Arc::new(Address::symbolic(Variable(1000003)))),
             program_type: ProgramType::VoidPointer,
             qualifiers: Some(Arc::new(PointerQualifiers {
                 volatile: true,
                 constant: true,
                 bounds: Some(SubobjectBounds {
-                    start: Pointer::symbolic(Variable(1000004)),
+                    start: Address::symbolic(Variable(1000004)),
                     width: MachineTerm::Variable(Variable(1000005)),
                 }),
                 bounds_known: true,

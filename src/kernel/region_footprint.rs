@@ -127,9 +127,9 @@ impl RegionFootprint {
                     }
                     extra_effect = true;
                     members.push_back(Resource::Memory(contents.allocation_size().byte_range(
-                        Pointer {
-                            block: block.clone(),
-                            offset: PointerOffsetTerm::Constant(0),
+                        Address {
+                            base: block.clone(),
+                            offset: AddressOffset::Constant(0),
                         },
                     )));
                 }

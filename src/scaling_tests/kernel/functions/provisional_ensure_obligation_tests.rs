@@ -7,9 +7,9 @@ use super::*;
 #[test]
 fn provisional_ensure_loadability_work_ignores_unrelated_facts() {
     let memory = Memory::new();
-    let data = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    let data = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_local("data", ProgramValue::pointer(data.clone()))

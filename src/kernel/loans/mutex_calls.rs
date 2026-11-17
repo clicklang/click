@@ -567,12 +567,12 @@ impl MutexUseCallTransfer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{MutexIdentity, Pointer, Variable};
+    use crate::kernel::{Address, MutexIdentity, Variable};
 
     fn owner() -> ResourceFact {
         ResourceFact::own(Resource::MutexLive(MutexIdentity {
             epoch: Some(91),
-            mutex: Pointer::symbolic(Variable(100)),
+            mutex: Address::symbolic(Variable(100)),
         }))
     }
 
@@ -610,7 +610,7 @@ mod tests {
                         .borrowed_mutex_use_input_with_protected(
                             caller,
                             support,
-                            Pointer::symbolic(Variable(100)),
+                            Address::symbolic(Variable(100)),
                             Some(protected_type(1)),
                         )
                         .unwrap();
@@ -647,7 +647,7 @@ mod tests {
                 assert!(names.resolve(Variable(7000), &named_state).is_some());
                 let retained = first
                     .caller_resources
-                    .mutex_use_at(&Pointer::symbolic(Variable(100)))
+                    .mutex_use_at(&Address::symbolic(Variable(100)))
                     .unwrap()
                     .clone();
                 if borrowed {
@@ -704,7 +704,7 @@ mod tests {
                 assert!(
                     joined
                         .caller_resources
-                        .mutex_live_at(&Pointer::symbolic(Variable(100)))
+                        .mutex_live_at(&Address::symbolic(Variable(100)))
                         .is_none()
                 );
                 named_state.resources = joined.caller_resources.clone();
@@ -745,7 +745,7 @@ mod tests {
                 if borrowed {
                     assert!(
                         done.caller_resources
-                            .mutex_live_at(&Pointer::symbolic(Variable(100)))
+                            .mutex_live_at(&Address::symbolic(Variable(100)))
                             .is_none()
                     );
                 }
@@ -857,7 +857,7 @@ mod tests {
                 &assumptions,
             )
             .unwrap();
-        let pointer = Pointer::symbolic(Variable(100));
+        let pointer = Address::symbolic(Variable(100));
         assert!(joined.caller_resources.mutex_use_at(&pointer).is_none());
         let candidate = joined
             .caller_resources
@@ -1013,7 +1013,7 @@ mod tests {
             .borrowed_mutex_use_input_with_protected(
                 caller,
                 support,
-                Pointer::symbolic(Variable(100)),
+                Address::symbolic(Variable(100)),
                 Some(protected.clone()),
             )
             .unwrap();
@@ -1238,7 +1238,7 @@ mod tests {
             .unwrap()
             .0;
         let (before, input) = before
-            .borrowed_mutex_use_input(caller, support, Pointer::symbolic(Variable(100)))
+            .borrowed_mutex_use_input(caller, support, Address::symbolic(Variable(100)))
             .unwrap();
         let source = before.mutex_use_resource(input.usage, caller).unwrap();
         let resources = ResourceContext::new().unchecked_with_fact(source.clone());
@@ -1501,7 +1501,7 @@ mod tests {
             .issue(LoanTransitionEvidence::BorrowedMutexUseRoot {
                 holder: plan.callee,
                 support,
-                mutex: Pointer::symbolic(Variable(200)),
+                mutex: Address::symbolic(Variable(200)),
                 protected: None,
                 initialization: crate::kernel::mutexes::MutexInitializationId::fresh().unwrap(),
                 scope: LoanScopeId {

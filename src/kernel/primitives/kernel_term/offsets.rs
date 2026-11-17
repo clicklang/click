@@ -4,10 +4,10 @@ use super::*;
 mod operations;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub(crate) enum KernelPointerOffset {
+pub(crate) enum KernelAddressOffset {
     Constant(i64),
     Variable(Variable),
-    Add([SharedPointerOffset; 2]),
+    Add([SharedAddressOffset; 2]),
     Int32Scaled {
         value: KernelTerm,
         byte_width: i64,
@@ -22,10 +22,10 @@ pub(crate) enum KernelPointerOffset {
 /// Shared internal address component. Numeric children are common KernelTerm
 /// handles; offsets are not independently spellable Click values.
 #[derive(Clone)]
-pub struct SharedPointerOffset(Arc<OffsetData>);
+pub struct SharedAddressOffset(Arc<OffsetData>);
 struct OffsetData {
     id: OffsetIdentity,
-    node: KernelPointerOffset,
+    node: KernelAddressOffset,
     constant: Option<i64>,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -33,36 +33,36 @@ enum OffsetIdentity {
     Constant(i64),
     Interned(u64),
 }
-impl std::fmt::Debug for SharedPointerOffset {
+impl std::fmt::Debug for SharedAddressOffset {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("SharedPointerOffset")
+        f.debug_tuple("SharedAddressOffset")
             .field(&self.0.id)
             .finish()
     }
 }
-impl PartialEq for SharedPointerOffset {
+impl PartialEq for SharedAddressOffset {
     fn eq(&self, other: &Self) -> bool {
         self.0.id == other.0.id
     }
 }
-impl Eq for SharedPointerOffset {}
-impl Hash for SharedPointerOffset {
+impl Eq for SharedAddressOffset {}
+impl Hash for SharedAddressOffset {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.id.hash(state);
     }
 }
 #[derive(Default)]
 struct OffsetInterner {
-    nodes: HashMap<KernelPointerOffset, Weak<OffsetData>>,
-    cleanup: VecDeque<KernelPointerOffset>,
+    nodes: HashMap<KernelAddressOffset, Weak<OffsetData>>,
+    cleanup: VecDeque<KernelAddressOffset>,
     next_id: u64,
 }
 
-impl SharedPointerOffset {
-    pub(crate) fn node(&self) -> &KernelPointerOffset {
+impl SharedAddressOffset {
+    pub(crate) fn node(&self) -> &KernelAddressOffset {
         &self.0.node
     }
-    fn intern(node: KernelPointerOffset) -> Self {
+    fn intern(node: KernelAddressOffset) -> Self {
         static INTERNER: std::sync::OnceLock<Mutex<OffsetInterner>> = std::sync::OnceLock::new();
         let mut interner = INTERNER
             .get_or_init(Default::default)
@@ -99,8 +99,8 @@ impl SharedPointerOffset {
     }
 }
 
-impl KernelPointerOffset {
-    pub(crate) fn offset_children(&self) -> &[SharedPointerOffset] {
+impl KernelAddressOffset {
+    pub(crate) fn offset_children(&self) -> &[SharedAddressOffset] {
         match self {
             Self::Add(children) => children,
             _ => &[],
@@ -114,12 +114,12 @@ impl KernelPointerOffset {
         }
     }
 
-    pub(crate) fn into_shared(self) -> Result<SharedPointerOffset, &'static str> {
+    pub(crate) fn into_shared(self) -> Result<SharedAddressOffset, &'static str> {
         // Constant displacements already have scalar identities. Their value
         // supplies equality directly, without interner insertion or upkeep.
         if let Self::Constant(value) = &self {
             crate::instrumentation::record_deterministic_work(1);
-            return Ok(SharedPointerOffset(Arc::new(OffsetData {
+            return Ok(SharedAddressOffset(Arc::new(OffsetData {
                 id: OffsetIdentity::Constant(*value),
                 constant: Some(*value),
                 node: self,
@@ -148,12 +148,12 @@ impl KernelPointerOffset {
             }
             _ => {}
         }
-        Ok(SharedPointerOffset::intern(self))
+        Ok(SharedAddressOffset::intern(self))
     }
 
-    pub(crate) fn import(offset: &PointerOffsetTerm) -> SharedPointerOffset {
+    pub(crate) fn import(offset: &AddressOffset) -> SharedAddressOffset {
         enum Task<'a> {
-            Enter(&'a PointerOffsetTerm),
+            Enter(&'a AddressOffset),
             Add,
         }
         let mut pending = vec![Task::Enter(offset)];
@@ -165,19 +165,19 @@ impl KernelPointerOffset {
         };
         while let Some(task) = pending.pop() {
             let node = match task {
-                Task::Enter(PointerOffsetTerm::Constant(value)) => Self::Constant(*value),
-                Task::Enter(PointerOffsetTerm::Variable(value)) => Self::Variable(*value),
-                Task::Enter(PointerOffsetTerm::Add(left, right)) => {
+                Task::Enter(AddressOffset::Constant(value)) => Self::Constant(*value),
+                Task::Enter(AddressOffset::Variable(value)) => Self::Variable(*value),
+                Task::Enter(AddressOffset::Add(left, right)) => {
                     pending.extend([Task::Add, Task::Enter(right), Task::Enter(left)]);
                     continue;
                 }
-                Task::Enter(PointerOffsetTerm::Int32Scaled { value, byte_width }) => {
+                Task::Enter(AddressOffset::Int32Scaled { value, byte_width }) => {
                     Self::Int32Scaled {
                         value: index(value),
                         byte_width: *byte_width,
                     }
                 }
-                Task::Enter(PointerOffsetTerm::Int64Scaled {
+                Task::Enter(AddressOffset::Int64Scaled {
                     value,
                     byte_width,
                     unsigned,
@@ -221,9 +221,9 @@ impl KernelPointerOffset {
 
     /// Explicit native output. Completed offset children are moved, never
     /// cached and cloned at every prefix. Shared numeric indices stay shared.
-    pub(crate) fn export(root: &SharedPointerOffset) -> Result<PointerOffsetTerm, &'static str> {
+    pub(crate) fn export(root: &SharedAddressOffset) -> Result<AddressOffset, &'static str> {
         enum Task<'a> {
-            Enter(&'a SharedPointerOffset),
+            Enter(&'a SharedAddressOffset),
             Add,
         }
         let mut pending = vec![Task::Enter(root)];
@@ -233,13 +233,13 @@ impl KernelPointerOffset {
             crate::instrumentation::record_deterministic_work(1);
             let value = match task {
                 Task::Enter(root) => match root.node() {
-                    Self::Constant(value) => PointerOffsetTerm::Constant(*value),
-                    Self::Variable(value) => PointerOffsetTerm::Variable(*value),
+                    Self::Constant(value) => AddressOffset::Constant(*value),
+                    Self::Variable(value) => AddressOffset::Variable(*value),
                     Self::Add([left, right]) => {
                         pending.extend([Task::Add, Task::Enter(right), Task::Enter(left)]);
                         continue;
                     }
-                    Self::Int32Scaled { value, byte_width } => PointerOffsetTerm::Int32Scaled {
+                    Self::Int32Scaled { value, byte_width } => AddressOffset::Int32Scaled {
                         value: index(value)?,
                         byte_width: *byte_width,
                     },
@@ -247,7 +247,7 @@ impl KernelPointerOffset {
                         value,
                         byte_width,
                         unsigned,
-                    } => PointerOffsetTerm::Int64Scaled {
+                    } => AddressOffset::Int64Scaled {
                         value: index(value)?,
                         byte_width: *byte_width,
                         unsigned: *unsigned,
@@ -256,7 +256,7 @@ impl KernelPointerOffset {
                 Task::Add => {
                     let right = values.pop().ok_or("missing right offset")?;
                     let left = values.pop().ok_or("missing left offset")?;
-                    PointerOffsetTerm::Add(Box::new(left), Box::new(right))
+                    AddressOffset::Add(Box::new(left), Box::new(right))
                 }
             };
             values.push(value);
@@ -273,17 +273,17 @@ mod tests {
     fn offset_payload_round_trips_shape_scale_and_interpretation() {
         let _session = crate::kernel::VerificationSession::enter();
         let mut values = vec![
-            PointerOffsetTerm::Constant(i64::MIN),
-            PointerOffsetTerm::Constant(i64::MAX),
-            PointerOffsetTerm::Variable(Variable(994001)),
+            AddressOffset::Constant(i64::MIN),
+            AddressOffset::Constant(i64::MAX),
+            AddressOffset::Variable(Variable(994001)),
         ];
         for width in [0, -8, 4] {
-            values.push(PointerOffsetTerm::scaled_int32_node(
+            values.push(AddressOffset::scaled_int32_node(
                 MachineTerm::Variable(Variable(994002)),
                 width,
             ));
             for unsigned in [false, true] {
-                values.push(PointerOffsetTerm::scaled_int64_node(
+                values.push(AddressOffset::scaled_int64_node(
                     MachineTerm::Variable(Variable(994003)),
                     width,
                     unsigned,
@@ -291,14 +291,13 @@ mod tests {
             }
         }
         for value in values {
-            let source =
-                PointerOffsetTerm::Add(Box::new(PointerOffsetTerm::Constant(0)), Box::new(value));
-            let root = KernelPointerOffset::import(&source);
-            assert_eq!(KernelPointerOffset::export(&root).unwrap(), source);
-            assert_eq!(KernelPointerOffset::import(&source), root);
+            let source = AddressOffset::Add(Box::new(AddressOffset::Constant(0)), Box::new(value));
+            let root = KernelAddressOffset::import(&source);
+            assert_eq!(KernelAddressOffset::export(&root).unwrap(), source);
+            assert_eq!(KernelAddressOffset::import(&source), root);
             assert_eq!(root.node().offset_children().len(), 2);
         }
-        let signed = PointerOffsetTerm::scaled_int64_node(
+        let signed = AddressOffset::scaled_int64_node(
             MachineTerm::Constant {
                 format: MachineIntegerType::Int64,
                 bits: u64::MAX as u128,
@@ -306,7 +305,7 @@ mod tests {
             1,
             false,
         );
-        let unsigned = PointerOffsetTerm::scaled_int64_node(
+        let unsigned = AddressOffset::scaled_int64_node(
             MachineTerm::Constant {
                 format: MachineIntegerType::Int64,
                 bits: u64::MAX as u128,
@@ -315,8 +314,8 @@ mod tests {
             true,
         );
         assert_ne!(
-            KernelPointerOffset::import(&signed),
-            KernelPointerOffset::import(&unsigned)
+            KernelAddressOffset::import(&signed),
+            KernelAddressOffset::import(&unsigned)
         );
     }
 
@@ -332,19 +331,19 @@ mod tests {
             let value =
                 SharedMachineIntegerTerm::index(format, MachineTerm::Variable(Variable(994006)));
             let source = if format.format().bits() == 32 {
-                PointerOffsetTerm::Int32Scaled {
+                AddressOffset::Int32Scaled {
                     value: value.clone(),
                     byte_width: 4,
                 }
             } else {
-                PointerOffsetTerm::Int64Scaled {
+                AddressOffset::Int64Scaled {
                     value: value.clone(),
                     byte_width: 8,
                     unsigned: false,
                 }
             };
-            let root = KernelPointerOffset::import(&source);
-            let output = KernelPointerOffset::export(&root).unwrap();
+            let root = KernelAddressOffset::import(&source);
+            let output = KernelAddressOffset::export(&root).unwrap();
             assert_eq!(source, output);
             let index = root.node().index().unwrap();
             assert_eq!(index.ty(), &KernelType::Program(format.program_type()));
@@ -360,18 +359,18 @@ mod tests {
         let mut natives = Vec::new();
         for class in [CScalarClass::Int, CScalarClass::Char] {
             let expected = Some(CAccessClass::Scalar(class));
-            let source = PointerOffsetTerm::scaled_int64_node(
+            let source = AddressOffset::scaled_int64_node(
                 MachineTerm::PointerAddress(
-                    Box::new(Pointer::symbolic(Variable(994004))),
+                    Box::new(Address::symbolic(Variable(994004))),
                     crate::kernel::AddressObjectClass::new(expected.clone()),
                 ),
                 1,
                 true,
             );
-            let root = KernelPointerOffset::import(&source);
-            let output = KernelPointerOffset::export(&root).unwrap();
+            let root = KernelAddressOffset::import(&source);
+            let output = KernelAddressOffset::export(&root).unwrap();
             assert_eq!(source, output);
-            let PointerOffsetTerm::Int64Scaled { value, .. } = output else {
+            let AddressOffset::Int64Scaled { value, .. } = output else {
                 panic!("scaled index")
             };
             let MachineTerm::PointerAddress(_, annotation) = value.structural_value() else {
@@ -387,10 +386,10 @@ mod tests {
 
     #[test]
     fn offset_payload_rejects_mixed_sorts_without_normalizing_children() {
-        let offset = KernelPointerOffset::Constant(0).into_shared().unwrap();
+        let offset = KernelAddressOffset::Constant(0).into_shared().unwrap();
         let integer = KernelTerm::integer_literal(0.into());
         assert!(
-            KernelPointerOffset::Int32Scaled {
+            KernelAddressOffset::Int32Scaled {
                 value: integer,
                 byte_width: 0
             }
@@ -399,14 +398,14 @@ mod tests {
         );
         let wide = KernelTerm::variable(KernelType::Program(ProgramType::Int64), Variable(994005));
         assert!(
-            KernelPointerOffset::Int32Scaled {
+            KernelAddressOffset::Int32Scaled {
                 value: wide,
                 byte_width: 1
             }
             .into_shared()
             .is_err()
         );
-        let sum = KernelPointerOffset::Add([offset.clone(), offset.clone()])
+        let sum = KernelAddressOffset::Add([offset.clone(), offset.clone()])
             .into_shared()
             .unwrap();
         assert_ne!(sum, offset);

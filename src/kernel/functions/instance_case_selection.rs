@@ -368,7 +368,7 @@ pub(super) fn selected_instance_resource_load_values(
     state: &ExecutionState,
     definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
-) -> BTreeMap<(Pointer, ProgramType), ProgramValue> {
+) -> BTreeMap<(Address, ProgramType), ProgramValue> {
     let Some(bindings) = state.resource_bindings.as_ref() else {
         return BTreeMap::new();
     };

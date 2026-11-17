@@ -25,7 +25,7 @@ fn a_call_keeps_an_argument_direct_composites_memory_without_opening_it() {
     let _session = VerificationSession::enter();
     let boxed = boxed_definition();
     assert!(boxed.has_argument_direct_body());
-    let object = |index: u64| Pointer::symbolic(Variable(781_000 + index));
+    let object = |index: u64| Address::symbolic(Variable(781_000 + index));
     let residual = ResourceContext::new().unchecked_with_fact(ResourceFact::own_composite(
         "boxed".into(),
         vec![ProgramValue::pointer(object(1))],
@@ -66,16 +66,16 @@ fn a_call_keeps_an_argument_direct_composites_memory_without_opening_it() {
 #[test]
 fn caller_flat_exclusions_keep_new_composites_fragments_and_views() {
     let _session = VerificationSession::enter();
-    let object = |index| Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(index)), 4),
+    let object = |index| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(index)), 4),
     };
     let cell = object(783_901);
     let other = object(783_902);
     let range =
-        |base: Pointer, start, end| MemoryRange::new_with_element_width(base, start, end, 4);
+        |base: Address, start, end| MemoryRange::new_with_element_width(base, start, end, 4);
     let flat = range(cell.clone(), 0u32.into(), 3u32.into());
-    let boxed = |base: Pointer| {
+    let boxed = |base: Address| {
         ResourceFact::own_composite("boxed".into(), vec![ProgramValue::pointer(base)])
     };
     let original = ResourceContext::new()
@@ -145,15 +145,15 @@ fn caller_flat_exclusions_keep_new_composites_fragments_and_views() {
 fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
     let _session = VerificationSession::enter();
     for wrapper_kind in 0..3 {
-        let pointer = |name: &str| Pointer {
-            block: name.into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = |name: &str| Address {
+            base: name.into(),
+            offset: AddressOffset::Constant(0),
         };
         let shared = pointer("shared-counter");
         let private = pointer("private-cell");
         crate::kernel::eval::declare_load_access_width(&shared, 4);
         crate::kernel::eval::declare_load_access_width(&private, 4);
-        let range = |pointer: &Pointer| {
+        let range = |pointer: &Address| {
             MemoryRange::new(
                 pointer.clone(),
                 MachineTerm::constant(0),
@@ -266,7 +266,7 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
             !after.cells.contains_key(&shared),
             "membership must not preserve the shared counter (wrapper {wrapper_kind})"
         );
-        let same_load = |pointer: &Pointer| {
+        let same_load = |pointer: &Address| {
             checked_atomic_load_equality(
                 &MachineTerm::MemoryLoad(
                     ProgramPoint::at(&(intern_memory_ref(&before))),

@@ -1172,7 +1172,7 @@ fn has_live_aggregate_binding(state: &ExecutionState, name: &str) -> bool {
     state
         .locals()
         .aggregate_object_pointer(name)
-        .is_some_and(|slot| state.memory().has_block(&slot.block))
+        .is_some_and(|slot| state.memory().has_block(&slot.base))
 }
 
 impl FixedStateLowering {
@@ -1756,7 +1756,7 @@ mod retained_capture_tests {
             ProgramValue::Float64(MachineTerm::Variable(Variable(997002))),
             ProgramValue::Pointer(
                 crate::kernel::PointerValue::new(
-                    crate::kernel::Pointer::symbolic(Variable(997003)),
+                    crate::kernel::Address::symbolic(Variable(997003)),
                     ProgramType::Int32Pointer,
                 )
                 .with_pointee_constant(true),
@@ -1785,7 +1785,7 @@ mod retained_capture_tests {
 #[test]
 fn fixed_array_argument_retains_the_selected_point_with_equal_memory() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = crate::kernel::Pointer::symbolic(crate::kernel::Variable(995_001));
+    let pointer = crate::kernel::Address::symbolic(crate::kernel::Variable(995_001));
     let entry = ExecutionState::new()
         .with_memory(crate::kernel::Memory::new())
         .with_local(

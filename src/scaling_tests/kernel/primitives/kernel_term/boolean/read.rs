@@ -13,9 +13,9 @@ fn boolean_reads_keep_shared_indices_through_rewrites_and_observations() {
                 [index.clone(), index],
             );
         }
-        let address = SharedPointerAddress::new(
-            SharedPointerBlock::import(&PointerBlock::Symbolic(Variable(999331))),
-            KernelPointerOffset::Int32Scaled {
+        let address = SharedAddress::new(
+            SharedAddressBase::import(&AddressBase::Symbolic(Variable(999331))),
+            KernelAddressOffset::Int32Scaled {
                 value: index,
                 byte_width: 4,
             }
@@ -38,7 +38,7 @@ fn boolean_reads_keep_shared_indices_through_rewrites_and_observations() {
                 crate::kernel::reasoning::substitute_pointer_variable_in_common_condition(
                     &root,
                     Variable(999332),
-                    &Pointer::null()
+                    &Address::null()
                 ),
                 Some(root.clone())
             );
@@ -70,7 +70,7 @@ fn boolean_reads_admit_states_without_comparing_unrelated_contents() {
         };
         let _session = crate::kernel::VerificationSession::enter();
         let second = intern_memory(memory);
-        let address = SharedPointerAddress::import(&Pointer::symbolic(Variable(999340)));
+        let address = SharedAddress::import(&Address::symbolic(Variable(999340)));
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             let a = KernelTerm::boolean_read(first, address.clone());
             let b = KernelTerm::boolean_read(second, address);

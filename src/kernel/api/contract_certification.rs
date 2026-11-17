@@ -343,7 +343,7 @@ fn certification_binary(
 
 fn pointer_offset_bytes(
     assumptions: &PureFactContext,
-    offset: &PointerOffsetTerm,
+    offset: &AddressOffset,
 ) -> Option<SharedMachineIntegerTerm> {
     let literal =
         |n| SharedMachineIntegerTerm::intern(MachineIntegerType::Int32, MachineTerm::constant(n));
@@ -355,10 +355,10 @@ fn pointer_offset_bytes(
     let le =
         |a: Operand<'_>, b: Operand<'_>| certification_proves_signed_le_views(assumptions, a, b);
     match offset {
-        PointerOffsetTerm::Constant(_)
-        | PointerOffsetTerm::Variable(_)
-        | PointerOffsetTerm::Int64Scaled { .. } => None,
-        PointerOffsetTerm::Add(left, right) => {
+        AddressOffset::Constant(_)
+        | AddressOffset::Variable(_)
+        | AddressOffset::Int64Scaled { .. } => None,
+        AddressOffset::Add(left, right) => {
             let left = pointer_offset_bytes(assumptions, left)?;
             let right = pointer_offset_bytes(assumptions, right)?;
             let sum = certification_binary(
@@ -374,7 +374,7 @@ fn pointer_offset_bytes(
                 && le(right.operand_view(), sum.operand_view()))
             .then_some(sum)
         }
-        PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+        AddressOffset::Int32Scaled { value, byte_width } => {
             let width = u32::try_from(*byte_width).ok().filter(|width| *width > 0)?;
             let limit = MachineTerm::constant(max / width);
             (le(Operand::Legacy(&zero), value.operand_view())
@@ -399,8 +399,8 @@ fn pointer_offset_bytes(
 /// offset extends the fact offset additively.
 fn pointer_offset_byte_delta(
     assumptions: &PureFactContext,
-    goal_offset: &PointerOffsetTerm,
-    fact_offset: &PointerOffsetTerm,
+    goal_offset: &AddressOffset,
+    fact_offset: &AddressOffset,
 ) -> Option<SharedMachineIntegerTerm> {
     if goal_offset == fact_offset {
         return Some(SharedMachineIntegerTerm::intern(
@@ -408,7 +408,7 @@ fn pointer_offset_byte_delta(
             MachineTerm::constant(0),
         ));
     }
-    if let PointerOffsetTerm::Add(left, right) = goal_offset {
+    if let AddressOffset::Add(left, right) = goal_offset {
         if left.as_ref() == fact_offset {
             return pointer_offset_bytes(assumptions, right);
         }
@@ -513,10 +513,10 @@ pub fn execution_state_justifies_loadability_obligation(
 /// bounded by the equalities stated about this one pointer.
 fn symbolic_base_aliases_a_held_cell(
     memory: &Memory,
-    base: &Pointer,
+    base: &Address,
     assumptions: &PureFactContext,
 ) -> bool {
-    if !matches!(base.block, PointerBlock::Symbolic(_)) {
+    if !matches!(base.base, AddressBase::Symbolic(_)) {
         return false;
     }
     let Some(offset) = base
@@ -526,9 +526,9 @@ fn symbolic_base_aliases_a_held_cell(
     else {
         return false;
     };
-    let object = Pointer {
-        block: base.block.clone(),
-        offset: PointerOffsetTerm::Constant(0),
+    let object = Address {
+        base: base.base.clone(),
+        offset: AddressOffset::Constant(0),
     };
     assumptions.exact_pointer_aliases(&object).any(|alias| {
         crate::instrumentation::record_deterministic_work(1);
@@ -598,7 +598,7 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
                 else {
                     return false;
                 };
-                if fact_base.block != base.block {
+                if fact_base.base != base.base {
                     return false;
                 }
                 // Loadability of a covering span transports across differences in
@@ -860,26 +860,25 @@ fn forall_loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Proposi
 pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
     assumptions: &PureFactContext,
     memory: &Memory,
-    base: &Pointer,
+    base: &Address,
 ) -> bool {
     if crate::kernel::assumptions::reasoning_interrupted() {
         return false;
     }
     fn collect_shallow_offset_variables(
-        offset: &PointerOffsetTerm,
+        offset: &AddressOffset,
         variables: &mut BTreeSet<Variable>,
     ) {
         match offset {
-            PointerOffsetTerm::Constant(_) => {}
-            PointerOffsetTerm::Variable(variable) => {
+            AddressOffset::Constant(_) => {}
+            AddressOffset::Variable(variable) => {
                 variables.insert(*variable);
             }
-            PointerOffsetTerm::Add(left, right) => {
+            AddressOffset::Add(left, right) => {
                 collect_shallow_offset_variables(left, variables);
                 collect_shallow_offset_variables(right, variables);
             }
-            PointerOffsetTerm::Int32Scaled { value, .. }
-            | PointerOffsetTerm::Int64Scaled { value, .. } => {
+            AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
                 collect_shallow_operand_variables(value.operand_view(), variables);
             }
         }
@@ -896,7 +895,7 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
     }
 
     let mut target_variables = BTreeSet::new();
-    if let PointerBlock::Symbolic(variable) = base.block {
+    if let AddressBase::Symbolic(variable) = base.base {
         target_variables.insert(variable);
     }
     collect_shallow_offset_variables(&base.offset, &mut target_variables);
@@ -2007,7 +2006,7 @@ fn program_function_contract_entry_facts(
                     Resource::Footprint(fp) => fp.source.clone(),
                     Resource::Parameter(v) => format!("resource parameter {v:?}"),
                     Resource::Memory(range) => {
-                        format!("memory in {}", range.base().block)
+                        format!("memory in {}", range.base().base)
                     }
                     Resource::PopulationAuthority(description) => {
                         format!("population authority for {}", description.family())
@@ -2916,9 +2915,9 @@ fn freshen_proposition_bodies(
     ) {
         let pointer = match sort {
             Sort::ProgramPointer(ProgramType::FunctionPointer(_)) => {
-                Pointer::symbolic_function(fresh)
+                Address::symbolic_function(fresh)
             }
-            Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _) => Pointer::symbolic(fresh),
+            Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _) => Address::symbolic(fresh),
             _ => unreachable!("pointer freshening only handles pointer sorts"),
         };
         (
@@ -2972,10 +2971,10 @@ pub(crate) fn substitute_quantified_body_capture_free(
         ) {
             let pointer = match sort {
                 Sort::ProgramPointer(ProgramType::FunctionPointer(_)) => {
-                    Pointer::symbolic_function(target)
+                    Address::symbolic_function(target)
                 }
                 Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _) => {
-                    Pointer::symbolic(target)
+                    Address::symbolic(target)
                 }
                 _ => unreachable!("pointer substitution only handles pointer sorts"),
             };
@@ -3090,15 +3089,15 @@ pub(crate) fn propositions_alpha_equivalent(left: &Proposition, right: &Proposit
 /// resolver once per atom at top level, never inside the resolution
 /// recursion.
 fn pointer_offsets_equal_with_resolved_atoms(
-    left: &PointerOffsetTerm,
-    right: &PointerOffsetTerm,
+    left: &AddressOffset,
+    right: &AddressOffset,
     assumptions: &PureFactContext,
 ) -> bool {
-    let resolve = |offset: &PointerOffsetTerm| {
+    let resolve = |offset: &AddressOffset| {
         let (atoms, mut constant) = crate::kernel::reasoning::offset_atoms_and_constant(offset);
         let mut unresolved = Vec::new();
         for atom in atoms {
-            if let PointerOffsetTerm::Int32Scaled { value, byte_width } = &atom
+            if let AddressOffset::Int32Scaled { value, byte_width } = &atom
                 && let Some(known) =
                     assumptions.known_signed_constant_after_normalization_view(value.operand_view())
             {
@@ -3131,7 +3130,7 @@ fn pointer_offsets_equal_with_resolved_atoms(
                 assumptions,
             )
     };
-    let atoms_match = |left: &PointerOffsetTerm, right: &PointerOffsetTerm| {
+    let atoms_match = |left: &AddressOffset, right: &AddressOffset| {
         if left == right
             || assumptions.exact_condition_value(&ConditionTerm::pointer_offset_equal(
                 left.clone(),
@@ -3145,11 +3144,11 @@ fn pointer_offsets_equal_with_resolved_atoms(
             return true;
         }
         let (
-            PointerOffsetTerm::Int32Scaled {
+            AddressOffset::Int32Scaled {
                 value: left_value,
                 byte_width: left_width,
             },
-            PointerOffsetTerm::Int32Scaled {
+            AddressOffset::Int32Scaled {
                 value: right_value,
                 byte_width: right_width,
             },
@@ -3422,9 +3421,9 @@ mod shared_contract_operand_tests {
     #[test]
     fn shared_contract_read_matches_stored_arithmetic_without_export() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer {
-            block: "contract-expression-cell".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "contract-expression-cell".into(),
+            offset: AddressOffset::Constant(0),
         };
         let written = MachineTerm::add(
             MachineTerm::Variable(Variable(1017151)),
@@ -3469,9 +3468,9 @@ mod shared_contract_operand_tests {
     #[test]
     fn shared_contract_index_equality_keeps_read_states_and_sources() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer {
-            block: "contract-index".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "contract-index".into(),
+            offset: AddressOffset::Constant(0),
         };
         let load = |id| {
             let memory = crate::kernel::Memory::new()
@@ -3488,7 +3487,7 @@ mod shared_contract_operand_tests {
         };
         let a = load(1017152);
         let b = load(1017153);
-        let offset = |term| PointerOffsetTerm::Int32Scaled {
+        let offset = |term| AddressOffset::Int32Scaled {
             value: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, term),
             byte_width: 4,
         };
@@ -3517,7 +3516,7 @@ mod shared_contract_operand_tests {
     fn shared_byte_offsets_keep_bounds_and_width_authority() {
         let _session = crate::kernel::VerificationSession::enter();
         let x = MachineTerm::Variable(Variable(1017121));
-        let offset = PointerOffsetTerm::Int32Scaled {
+        let offset = AddressOffset::Int32Scaled {
             value: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, x.clone()),
             byte_width: 4,
         };
@@ -3534,7 +3533,7 @@ mod shared_contract_operand_tests {
         assert!(
             pointer_offset_bytes(
                 &bounded,
-                &PointerOffsetTerm::Int64Scaled {
+                &AddressOffset::Int64Scaled {
                     value: SharedMachineIntegerTerm::index(
                         MachineIntegerType::Int64,
                         MachineTerm::int64_from_32(x)

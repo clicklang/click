@@ -5,7 +5,7 @@ use super::*;
 pub type KernelBooleanRead = KernelMemoryRead;
 
 impl KernelTerm {
-    pub(crate) fn boolean_read(memory: SharedMemory, address: SharedPointerAddress) -> Self {
+    pub(crate) fn boolean_read(memory: SharedMemory, address: SharedAddress) -> Self {
         Self::intern(
             KernelType::Bool,
             KernelTermNode::BoolRead(KernelMemoryRead::new(memory, address)),
@@ -49,11 +49,11 @@ mod tests {
         let sources = [before, after].map(|memory| {
             ConditionTerm::BoolLoad(
                 intern_memory(memory),
-                Box::new(Pointer {
-                    block: PointerBlock::Symbolic(Variable(999301)),
-                    offset: PointerOffsetTerm::Add(
-                        Box::new(PointerOffsetTerm::Constant(0)),
-                        Box::new(PointerOffsetTerm::scaled_int64_node(
+                Box::new(Address {
+                    base: AddressBase::Symbolic(Variable(999301)),
+                    offset: AddressOffset::Add(
+                        Box::new(AddressOffset::Constant(0)),
+                        Box::new(AddressOffset::scaled_int64_node(
                             MachineTerm::Variable(Variable(999302)),
                             8,
                             true,
@@ -110,9 +110,9 @@ mod tests {
         ));
         let source = ConditionTerm::BoolLoad(
             memory,
-            Box::new(Pointer {
-                block: PointerBlock::Symbolic(Variable(999311)),
-                offset: PointerOffsetTerm::scaled_int32_node(
+            Box::new(Address {
+                base: AddressBase::Symbolic(Variable(999311)),
+                offset: AddressOffset::scaled_int32_node(
                     MachineTerm::Variable(Variable(999310)),
                     4,
                 ),
@@ -140,7 +140,7 @@ mod tests {
                 format!("{:?}", KernelTermExport::condition(&actual).unwrap()),
                 format!("{expected:?}")
             );
-            let target = Pointer::null();
+            let target = Address::null();
             let expected = crate::kernel::reasoning::substitute_pointer_variable_in_proposition(
                 &Proposition::ConditionIs(source.clone(), true),
                 Variable(999311),
@@ -174,7 +174,7 @@ mod tests {
         let roots = [first, second].map(|memory| {
             KernelTerm::boolean_read(
                 memory,
-                SharedPointerAddress::import(&Pointer::symbolic(Variable(999320))),
+                SharedAddress::import(&Address::symbolic(Variable(999320))),
             )
         });
         assert_ne!(roots[0], roots[1]);

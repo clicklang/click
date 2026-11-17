@@ -7,9 +7,9 @@ use super::*;
 #[test]
 fn materialized_run_adjacency_preserves_holes_and_scales() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Pointer {
-        block: "run-adjacency".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: "run-adjacency".into(),
+        offset: AddressOffset::Constant(0),
     };
     let source = crate::kernel::intern_memory(Memory::new());
     let context = PureFactContext::new();

@@ -39,7 +39,7 @@ fn branch_join_read_query_does_not_scan_unrelated_cached_cells() {
             .clone()
             .with_interface_memory_havoc(
                 Variable(981003),
-                &std::collections::BTreeSet::<crate::kernel::PointerBlock>::new(),
+                &std::collections::BTreeSet::<crate::kernel::AddressBase>::new(),
                 &[&first, &second],
             )
             .unwrap();
@@ -95,7 +95,7 @@ fn branch_join_nested_naming_work_tracks_new_branches() {
             .clone()
             .with_interface_memory_havoc(
                 Variable(981030 + u64::from(index)),
-                &std::collections::BTreeSet::<crate::kernel::PointerBlock>::new(),
+                &std::collections::BTreeSet::<crate::kernel::AddressBase>::new(),
                 &[&left, &right],
             )
             .unwrap();
@@ -217,15 +217,12 @@ fn fresh_cell_offsets_share_the_whole_block_version_prefix() {
         let entry = intern_memory(Memory::new());
         let mut memory = entry.memory().clone();
         for index in 0..size {
-            memory = memory.store(
-                at(PointerBlock::Temporary(998_980 + index as u64), 0),
-                one(),
-            );
+            memory = memory.store(at(AddressBase::Temporary(998_980 + index as u64), 0), one());
         }
         let current = point(&memory);
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 0..size {
-                let pointer = at(PointerBlock::ExternalArgument, index as i64 * 4);
+                let pointer = at(AddressBase::ExternalArgument, index as i64 * 4);
                 assert_eq!(
                     last_same_version_point(
                         TrackedResource::Cell {
@@ -295,9 +292,9 @@ fn loop_kept_pointer_frame_ignores_unrelated_owners_and_ambiguous_buckets() {
     let mut samples = Vec::new();
     for size in [4u32, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let field = Pointer::symbolic(Variable(980115));
-        let ambiguous = Pointer::symbolic(Variable(980116));
-        let range = |base: Pointer, count: u32| {
+        let field = Address::symbolic(Variable(980115));
+        let ambiguous = Address::symbolic(Variable(980116));
+        let range = |base: Address, count: u32| {
             MemoryRange::new_with_element_width(base, 0u32.into(), count.into(), 1)
         };
         let mut owners = ResourceContext::new()
@@ -305,7 +302,7 @@ fn loop_kept_pointer_frame_ignores_unrelated_owners_and_ambiguous_buckets() {
         for index in 0..size {
             owners = owners
                 .unchecked_with_fact(ResourceFact::own_memory(range(
-                    Pointer::symbolic(Variable(981000 + u64::from(index))),
+                    Address::symbolic(Variable(981000 + u64::from(index))),
                     8,
                 )))
                 .unchecked_with_fact(ResourceFact::own_memory(range(
@@ -323,10 +320,10 @@ fn loop_kept_pointer_frame_ignores_unrelated_owners_and_ambiguous_buckets() {
             Some(CallKeptRanges::new(owners, vec![], None)),
         ));
         let context = PureFactContext::new();
-        let query = |address: &Pointer| {
+        let query = |address: &Address| {
             crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
-                &Pointer::loaded_value(&before, address),
-                &Pointer::loaded_value(&after, address),
+                &Address::loaded_value(&before, address),
+                &Address::loaded_value(&after, address),
                 &context,
             )
         };
@@ -426,7 +423,7 @@ fn shared_pointer_resource_read_collection_visits_each_node_once() {
     let mut costs = Vec::new();
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let address = Pointer::symbolic(crate::kernel::Variable(1081601));
+        let address = Address::symbolic(crate::kernel::Variable(1081601));
         let memory = intern_memory(Memory::new().store(address.clone(), one()));
         let read = MachineTerm::MemoryLoad(
             ProgramPoint::at(&memory),
@@ -442,7 +439,7 @@ fn shared_pointer_resource_read_collection_visits_each_node_once() {
                 [root.clone(), root],
             );
         }
-        let offset = PointerOffsetTerm::Int32Scaled {
+        let offset = AddressOffset::Int32Scaled {
             value: S::from_shared(MachineIntegerType::Int32, root).unwrap(),
             byte_width: 4,
         };

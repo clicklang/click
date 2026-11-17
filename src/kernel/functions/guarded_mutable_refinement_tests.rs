@@ -39,9 +39,9 @@ fn entry_state() -> ExecutionState {
         .with_local("active", int32(MachineTerm::Variable(Variable(980_001))))
         .with_local(
             "cells",
-            ProgramValue::pointer(Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Constant(0),
+            ProgramValue::pointer(Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Constant(0),
             }),
         )
 }

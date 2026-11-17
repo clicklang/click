@@ -2,9 +2,9 @@ use super::*;
 
 #[test]
 fn write_span_must_fit_inside_owned_byte_footprint() {
-    let base = Pointer {
-        block: "global:owned".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: "global:owned".into(),
+        offset: AddressOffset::Constant(0),
     };
     let owned = MemoryRange::new_with_element_width(
         base.clone(),
@@ -36,9 +36,9 @@ fn write_span_must_fit_inside_owned_byte_footprint() {
 /// displacement, across several elements, and against a symbolic end.
 #[test]
 fn a_symbolic_index_write_is_placed_by_its_element_bounds() {
-    let base = Pointer {
-        block: "global:owned".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: "global:owned".into(),
+        offset: AddressOffset::Constant(0),
     };
     let j = MachineTerm::Variable(Variable(99_001));
     let n = MachineTerm::Variable(Variable(99_002));
@@ -62,7 +62,7 @@ fn a_symbolic_index_write_is_placed_by_its_element_bounds() {
             )
     };
     let at_j = base.offset_by_elements(j.clone(), 4);
-    let within = |pointer: &Pointer, bytes: u32, owned: &[MemoryRange], facts: &PureFactContext| {
+    let within = |pointer: &Address, bytes: u32, owned: &[MemoryRange], facts: &PureFactContext| {
         storage_write_within_owned_footprint(pointer, bytes, owned, facts)
     };
     let thousand = owned(MachineTerm::constant(1000));
@@ -97,9 +97,9 @@ fn a_symbolic_index_write_is_placed_by_its_element_bounds() {
 
 #[test]
 fn memory_effect_write_collection_preserves_each_access_width() {
-    let pointer = Pointer {
-        block: "global:owned".into(),
-        offset: PointerOffsetTerm::Constant(3),
+    let pointer = Address {
+        base: "global:owned".into(),
+        offset: AddressOffset::Constant(3),
     };
     let fact = ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
         before: Memory::new(),

@@ -78,8 +78,8 @@ fn opaque_guard_observations_keep_identity_without_exporting_arms() {
     let format = MachineIntegerType::UInt64;
     let guard = |id| {
         ConditionTerm::pointer_equal(
-            Pointer::symbolic(Variable(id)),
-            Pointer::symbolic(Variable(998110)),
+            Address::symbolic(Variable(id)),
+            Address::symbolic(Variable(998110)),
         )
     };
     let left = variable(format, 998111);
@@ -208,8 +208,8 @@ fn exact_rewrites_keep_opaque_conditional_observation_identity() {
     let _session = VerificationSession::enter();
     let format = MachineIntegerType::Int32;
     let guard = ConditionTerm::pointer_equal(
-        Pointer::symbolic(Variable(998205)),
-        Pointer::symbolic(Variable(998206)),
+        Address::symbolic(Variable(998205)),
+        Address::symbolic(Variable(998206)),
     );
     let source = join(&guard, &word(format, 1), &word(format, 0))
         .observe()
@@ -245,7 +245,7 @@ fn exact_rewrites_keep_opaque_conditional_observation_identity() {
 fn pointer_conditional_handoffs_keep_selected_roots_metadata_and_refusals() {
     let _session = VerificationSession::enter();
     let pointer = PointerValue::new(
-        Pointer::symbolic(Variable(1026100)),
+        Address::symbolic(Variable(1026100)),
         ProgramType::Int32Pointer,
     )
     .with_pointee_constant(true)
@@ -274,7 +274,7 @@ fn pointer_conditional_handoffs_keep_selected_roots_metadata_and_refusals() {
         }
     }
     let distinct = SpecValue::Native(ProgramValue::Pointer(PointerValue::new(
-        Pointer::symbolic(Variable(1026102)),
+        Address::symbolic(Variable(1026102)),
         ProgramType::Int32Pointer,
     )));
     for retain in [false, true] {

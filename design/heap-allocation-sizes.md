@@ -44,10 +44,10 @@ contract happens to prove.
   zeroed-prefix); so do `CPendingReallocation.old_bytes` and `CBlock.size`
   (`primitives.rs:8688-8690`). The width is implicit; `memory_state.rs:4008`
   labels a reallocation's old bytes `CValue::Int32`.
-- **Offsets** are already width-typed (`PointerOffsetTerm::Int32Scaled` /
+- **Offsets** are already width-typed (`AddressOffset::Int32Scaled` /
   `Int64Scaled{unsigned}`, `primitives.rs:1018-1035`). `pointer_index_term`
   (`src/kernel/eval/operators.rs:2419-2446`) keeps a `size_t` index 64-bit and
-  always zero-extends `uint32`. `pointer_block_bounds` (`operators.rs:2884-2990`)
+  always zero-extends `uint32`. `address_base_bounds` (`operators.rs:2884-2990`)
   reads `CBlock.size` as unsigned 32 bits in its wide arms and as `int32` in
   its narrow arm.
 - **malloc/calloc.** `execute_c_heap_allocate_paths` (`statements.rs:1288-1474`).
@@ -110,7 +110,7 @@ Why 32-bit: the heap model predates typed indices, when every range was
 | `statements.rs:1929-2006, 2119-2184` | realloc admission and fit compares |
 | `statements.rs:2308, 2403-2409, 2560-2705` | free's range and token; pending resolution |
 | `primitives.rs:8508-8555, 8688-8690`; `memory_state.rs:3582-3587, 3946-3980, 4008` | untyped sizes, implicit 32-bit reading |
-| `operators.rs:2884-2990` | `pointer_block_bounds` |
+| `operators.rs:2884-2990` | `address_base_bounds` |
 | `functions.rs:19235-19300` | contract `allocation(p, e*4)` |
 | `resource_algebra.rs:145, 1177-1182` | interval-index coordinates (not heap-specific) |
 
@@ -237,12 +237,12 @@ the `UInt64` kind.
    separation of a retired allocation (`is_proven_separate_from_allocation*`,
    `caller_resource_left_stale_by_retirement`, `refuse_retiring_a_lent_allocation`,
    `lent_owned_memory_covers_allocation`); contract claims take the kind
-   from the token; `pointer_block_bounds` reads the size through the tag
+   from the token; `address_base_bounds` reads the size through the tag
    (`uint64_bytes`/`int64_bytes` in the 64-bit arms, `int32_bytes` in the
    32-bit ones); `ReadRegionIdentity` compares sizes. Refused for a
    `UInt64` size until a later stage reads it: `allocation_size_validity_refusal`
    (`HeapAllocationSize`), realloc of a `UInt64` block or to a `UInt64` size
-   (stage 4), the 32-bit arms of `pointer_block_bounds` (no normal path),
+   (stage 4), the 32-bit arms of `address_base_bounds` (no normal path),
    `pointer_at_block_end_condition` (may be the end) and
    `proves_loadable_cell_from_region` (not loadable). Kernel unit tests:
    `src/kernel/primitives/allocation_size_tests.rs`. No new scaling test: no
@@ -253,7 +253,7 @@ the `UInt64` kind.
    a symbolic `Int64`/`UInt64` size `kind: UInt64`, and
    `allocation_size_validity_refusal` replaces its `UInt64` refusal with the
    size proof below (and keeps calloc refused until stage 4). Two readers:
-   the 32-bit arms of `pointer_block_bounds` compare a widened 32-bit offset
+   the 32-bit arms of `address_base_bounds` compare a widened 32-bit offset
    with the 64-bit size instead of refusing (a wide parameter range accepts
    an `int32` index), and `heap_range_element_count` (the typed width of the
    wide range) and `is_proven_separate_from_allocation*` need the `uint64`
@@ -300,7 +300,7 @@ the `UInt64` kind.
    for a `UInt64` size: `n` of `uint64 n * w`, or a divisible `uint64`
    constant), used by the heap range of malloc, free and pending resolution
    (`heap_range_element_count`) and by `is_proven_separate_from_allocation*`.
-   `pointer_block_bounds`: a 64-bit offset into a `UInt64` block compares
+   `address_base_bounds`: a 64-bit offset into a `UInt64` block compares
    with its element count where the size spells one; a 32-bit offset
    (`wide_block_bounds_of_32_bit_offset`) compares a sign-extended scaled
    `int32` index with that count at `int64`, any other exact offset with

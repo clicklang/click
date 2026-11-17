@@ -281,7 +281,7 @@ value's definition or install a global observation. The input is branch-local
 and retained by input checkpoints; rebuilding a context without its evidence drops it.
 Offset equality queries register the same producer-retained typed-read
 definitions as full-pointer queries. Registration visits only the selected
-operands; it never infers pointer-block identity from equal offsets.
+operands; it never infers address-base identity from equal offsets.
 
 A checked pointer store also emits the equation between its complete stored
 value and the typed read at the written address in the resulting state.
@@ -393,7 +393,7 @@ A negative query means unknown, not disequal. Insertion's return value reports
 whether a class merge occurred, not validation of the supplied premise.
 
 Pointer operations keep pointer-typed operands; `add_offset_equality` and
-`are_offsets_equal` accept whole pointer-offset terms. Supported pointer-load
+`are_offsets_equal` accept whole address offsets. Supported pointer-load
 applications and offset terms register on demand during insertion and queries.
 `add_int32_equality` and `are_int32_equal` admit and query explicit int32
 equalities, addition congruence, and registered same-state int32 load congruence. The uint64 interface above extends the same closure to wide reads and selected
@@ -848,7 +848,7 @@ previous equality answer.
 A typed pointer-load application in the equality graph denotes the stored
 value independently of the storage address form and pointee width. The
 graph can answer equality of two such applications without replacing the
-`Pointer` values produced by C execution. A live caller must supply the actual
+`Address` values produced by C execution. A live caller must supply the actual
 defining state and address from a typed load site or checked evidence. A
 loaded value is represented only by its `LoadedPointer` name; an address indexed
 by a loaded scalar (`a[*p]`) is pointer arithmetic, never a read.
@@ -908,7 +908,7 @@ without intermediate field-load claims or C writes. This does not transport
 loads across different states.
 
 
-The kernel has a distinct `PointerLoadId`, `PointerBlock::LoadedPointer`,
+The kernel has a distinct `PointerLoadId`, `AddressBase::LoadedPointer`,
 and a constructor/decoder pair for `(defining retained_state, address, displacement)`.
 The equality graph indexes this explicit pointer application without consulting
 the scalar load registry's mutable access width. Ordinary C pointer-load
@@ -937,7 +937,7 @@ semantics). The semantic key is explicit even when an external registry
 supplies it.
 
 The typed graph query uses a distinct pointer-load name and an explicit
-loaded-pointer block variant, rather than hiding another sort in the scalar
+loaded-pointer address-base variant, rather than hiding another sort in the scalar
 load-variable range. Its key is the assumption-free canonical state,
 address, and pointer interpretation (object-pointer value, eight-byte access).
 Pointee type remains on the C value and is not key material. Live origin/epoch
@@ -1194,7 +1194,7 @@ through registered application dependencies. Unrelated scalar aliases do not dis
 late merges and block relabels, and applies to subsequently registered parents.
 Affected classes report unknown coverage; exact whole-cell evidence remains
 usable independently. Concrete loaded pointers use the interval contract after their retained
-definitions register; there is no blanket exclusion of loaded-pointer blocks. An unpublished
+definitions register; there is no blanket exclusion of loaded-pointer address bases. An unpublished
 loaded-pointer interval remains unknown: its raw structural root has not
 registered all suppliers' retained origins, and a simple query cannot do that
 whole-input work. Publication establishes this fragment's completeness.
@@ -1275,7 +1275,7 @@ The regression asks the read and write indexes directly before any equality
 warm-up, rejects sibling, displacement, width, and state mismatches, and
 checks cold address registration at multiple unrelated-definition counts.
 
-Structural "already held" range checks do not scan a pointer block's
+Structural "already held" range checks do not scan an address base's
 resources. They use a publication-maintained index of base shapes and affine
 origins, plus the raw interval summary for complete concrete coverage at a
 plain origin with constant displacement. Updates and consumption maintain

@@ -6,8 +6,8 @@
 
 use super::{Anchor, AuthorityState, Holder, Refusal};
 use crate::kernel::{
-    AlgebraicValue, CompositeResourceDefinition, ExecutionState, MachineTerm, PointerBlock,
-    PointerOffsetTerm, ProgramValue, PureFactContext, Resource, ResourceDescription, ResourceFact,
+    AddressBase, AddressOffset, AlgebraicValue, CompositeResourceDefinition, ExecutionState,
+    MachineTerm, ProgramValue, PureFactContext, Resource, ResourceDescription, ResourceFact,
     ResourceReference,
 };
 use crate::persistent::{PersistentMap, PersistentSet};
@@ -94,11 +94,11 @@ struct Root {
     /// Standalone proof entry preserves only declared opaque custody; the C
     /// invocation remains fresh and cannot inherit storage creation rights.
     opaque_actor: Holder,
-    pending: PersistentMap<PointerBlock, Holder>,
-    creators: PersistentMap<PointerBlock, Holder>,
-    anchors: PersistentMap<PointerBlock, Anchor>,
+    pending: PersistentMap<AddressBase, Holder>,
+    creators: PersistentMap<AddressBase, Holder>,
+    anchors: PersistentMap<AddressBase, Anchor>,
     authority: AuthorityState,
-    scopes: PersistentMap<(PointerBlock, String), ResourceDescription>,
+    scopes: PersistentMap<(AddressBase, String), ResourceDescription>,
     /// Exact identities in concrete wildcard populations; totals remain in AuthorityState.
     exact_members: PersistentMap<ResourceDescription, u32>,
     opaque_types: PersistentMap<ResourceDescription, ResourceDescription>,
@@ -106,7 +106,7 @@ struct Root {
     symbolic_batches: PersistentMap<super::Population, SymbolicBatch>,
     symbolic_holders: PersistentMap<Holder, u32>,
     /// Per-storage family history; never inferred from the current owner.
-    tainted: PersistentMap<PointerBlock, PersistentSet<String>>,
+    tainted: PersistentMap<AddressBase, PersistentSet<String>>,
     /// Exact declared population inputs. Each carries no creator right,
     /// storage event, or asserted total.
     opaque_imports: PersistentMap<ResourceDescription, OpaqueImport>,
@@ -116,7 +116,7 @@ struct Root {
     opaque_transfers:
         Mutex<BTreeMap<(Holder, Holder, u64, ResourceDescription, bool, u32), CreationEvents>>,
     opaque_entry_counts: Mutex<BTreeMap<ResourceDescription, MachineTerm>>,
-    empty_populations: PersistentMap<PointerBlock, PersistentSet<String>>,
+    empty_populations: PersistentMap<AddressBase, PersistentSet<String>>,
 }
 
 #[derive(Clone)]
@@ -214,13 +214,13 @@ impl OpaqueImport {
 #[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
 enum StorageEvent {
     Control(ResourceFact),
-    Pending(PointerBlock),
-    Resolve(PointerBlock, Option<PointerBlock>),
-    Created(PointerBlock),
-    MemberCreated(PointerBlock, String),
-    Retired(PointerBlock),
+    Pending(AddressBase),
+    Resolve(AddressBase, Option<AddressBase>),
+    Created(AddressBase),
+    MemberCreated(AddressBase, String),
+    Retired(AddressBase),
     InstanceMember(ResourceReference, bool),
-    TransferredAnchor(Holder, Holder, PointerBlock),
+    TransferredAnchor(Holder, Holder, AddressBase),
     AcquiredControl(ResourceDescription, u32),
 }
 
@@ -230,12 +230,12 @@ enum StorageEvent {
 /// A pointer read is named by its read rather than spelled in the storage
 /// block it was read from; it is external exactly when that storage is, as
 /// the storage-block spelling of the same read was.
-pub(in crate::kernel) fn is_external_population_anchor(anchor: &crate::kernel::Pointer) -> bool {
-    match anchor.block {
-        PointerBlock::ExternalArgument => true,
-        PointerBlock::LoadedPointer(identity) => {
+pub(in crate::kernel) fn is_external_population_anchor(anchor: &crate::kernel::Address) -> bool {
+    match anchor.base {
+        AddressBase::ExternalArgument => true,
+        AddressBase::LoadedPointer(identity) => {
             crate::kernel::eval::registered_pointer_load(identity)
-                .is_some_and(|(_, address)| address.block == PointerBlock::ExternalArgument)
+                .is_some_and(|(_, address)| address.base == AddressBase::ExternalArgument)
         }
         _ => false,
     }
@@ -1033,7 +1033,7 @@ impl CreationEvents {
         else {
             return false;
         };
-        let Ok(block) = self.exact_member_block(&pointer.pointer().block, description) else {
+        let Ok(block) = self.exact_member_block(&pointer.pointer().base, description) else {
             return false;
         };
         self.0
@@ -1154,7 +1154,7 @@ impl CreationEvents {
         else {
             return false;
         };
-        let Ok(block) = self.exact_member_block(&pointer.pointer().block, description) else {
+        let Ok(block) = self.exact_member_block(&pointer.pointer().base, description) else {
             return false;
         };
         self.0
@@ -1657,7 +1657,7 @@ impl CreationEvents {
         else {
             return false;
         };
-        let block = &pointer.pointer().block;
+        let block = &pointer.pointer().base;
         if self.exact_member_block(block, description).is_err() {
             return false;
         }
@@ -1683,7 +1683,7 @@ impl CreationEvents {
         };
         self.0
             .scopes
-            .get(&(pointer.pointer().block.clone(), pattern.family().to_owned()))
+            .get(&(pointer.pointer().base.clone(), pattern.family().to_owned()))
             .filter(|scope| {
                 scope.arguments() == pattern.arguments()
                     && scope.population_arity() == pattern.population_arity()
@@ -1728,7 +1728,7 @@ impl CreationEvents {
         match self
             .0
             .scopes
-            .get(&(pointer.pointer().block.clone(), description.family().into()))
+            .get(&(pointer.pointer().base.clone(), description.family().into()))
         {
             Some(scope) if description == scope => Some(scope.clone()),
             Some(scope)
@@ -1751,16 +1751,16 @@ impl CreationEvents {
 
     fn exact_member_block<'a>(
         &self,
-        block: &'a PointerBlock,
+        block: &'a AddressBase,
         description: &ResourceDescription,
-    ) -> Result<&'a PointerBlock, CreationRefusal> {
+    ) -> Result<&'a AddressBase, CreationRefusal> {
         let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) =
             description.arguments().first()
         else {
             return Err(CreationRefusal::InvalidMember);
         };
-        if pointer.pointer().offset != PointerOffsetTerm::Constant(0)
-            || &pointer.pointer().block != block
+        if pointer.pointer().offset != AddressOffset::Constant(0)
+            || &pointer.pointer().base != block
             || self.governing_authority(description).is_none()
         {
             return Err(CreationRefusal::InvalidMember);
@@ -1772,10 +1772,10 @@ impl CreationEvents {
     /// Read the total only while this proof environment holds the authority.
     pub(in crate::kernel) fn observe(
         &self,
-        block: &PointerBlock,
+        block: &AddressBase,
         family: &str,
     ) -> Result<u32, CreationRefusal> {
-        if *block == PointerBlock::ExternalArgument && !self.0.opaque_imports.is_empty() {
+        if *block == AddressBase::ExternalArgument && !self.0.opaque_imports.is_empty() {
             return Err(CreationRefusal::UnknownTotal);
         }
         let anchor = *self
@@ -1932,7 +1932,7 @@ impl CreationEvents {
             return Err(CreationRefusal::InvalidMember);
         };
         if self
-            .observed_symbolic_batch(&anchor.pointer().block, scope.family())
+            .observed_symbolic_batch(&anchor.pointer().base, scope.family())
             .is_some()
         {
             return Err(CreationRefusal::UnknownTotal);
@@ -1945,7 +1945,7 @@ impl CreationEvents {
             .unwrap_or(0)
             != 0;
         let empty = self
-            .observe_term(&anchor.pointer().block, scope.family())?
+            .observe_term(&anchor.pointer().base, scope.family())?
             .as_const()
             == Some(0);
         if (!Self::has_concrete_indices(description) || unresolved) && !empty {
@@ -1975,7 +1975,7 @@ impl CreationEvents {
             AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => {
                 let mut address = pointer.pointer().clone();
                 if let Some(offset) = address.offset.as_const() {
-                    address.offset = PointerOffsetTerm::Constant(offset);
+                    address.offset = AddressOffset::Constant(offset);
                 }
                 AlgebraicValue::Program(ProgramValue::pointer(address))
             }
@@ -1995,8 +1995,8 @@ impl CreationEvents {
     fn has_concrete_indices(description: &ResourceDescription) -> bool {
         description.arguments().iter().all(|value| match value {
             AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => {
-                matches!(pointer.pointer().block, PointerBlock::Heap(_))
-                    || pointer.pointer().block.is_local_block()
+                matches!(pointer.pointer().base, AddressBase::Heap(_))
+                    || pointer.pointer().base.is_local_block()
             }
             AlgebraicValue::Program(ProgramValue::Int32(value)) => value.as_const().is_some(),
             _ => false,
@@ -2012,7 +2012,7 @@ impl CreationEvents {
     /// symbolic batch, only while this holder owns population authority.
     pub(in crate::kernel) fn observe_term(
         &self,
-        block: &PointerBlock,
+        block: &AddressBase,
         family: &str,
     ) -> Result<MachineTerm, CreationRefusal> {
         let anchor = *self
@@ -2039,7 +2039,7 @@ impl CreationEvents {
 
     pub(in crate::kernel) fn observed_symbolic_batch(
         &self,
-        block: &PointerBlock,
+        block: &AddressBase,
         family: &str,
     ) -> Option<(u32, MachineTerm)> {
         let anchor = *self.0.anchors.get(block)?;
@@ -2060,7 +2060,7 @@ impl CreationEvents {
     /// exclusive footprint. That footprint rules out a second equal instance.
     pub(in crate::kernel) fn checked_exclusive_member_exchange_quantity(
         &self,
-        block: &PointerBlock,
+        block: &AddressBase,
         description: &ResourceDescription,
         produce: bool,
         quantity: &MachineTerm,
@@ -2083,7 +2083,7 @@ impl CreationEvents {
 
     pub(in crate::kernel) fn checked_member_exchange_quantity(
         &self,
-        block: &PointerBlock,
+        block: &AddressBase,
         description: &ResourceDescription,
         produce: bool,
         quantity: &MachineTerm,
@@ -2366,7 +2366,7 @@ impl CreationEvents {
         else {
             return Err(CreationRefusal::InvalidMember);
         };
-        if &pointer.pointer().block != block {
+        if &pointer.pointer().base != block {
             return Err(CreationRefusal::InvalidMember);
         }
         if produce {
@@ -2409,7 +2409,7 @@ impl CreationEvents {
     /// this method independently rejects fields, references and non-base anchors.
     pub(in crate::kernel) fn checked_member_exchange(
         &self,
-        block: &PointerBlock,
+        block: &AddressBase,
         description: &ResourceDescription,
         produce: bool,
     ) -> Result<(Self, CheckedPopulationMemberExchange), CreationRefusal> {
@@ -2629,7 +2629,7 @@ impl CreationEvents {
             return Ok(existing.clone());
         }
         let (next, _) = self.checked_member_exchange_with_context(
-            &pointer.pointer().block,
+            &pointer.pointer().base,
             description,
             produce,
             None,
@@ -2648,7 +2648,7 @@ impl CreationEvents {
 
     fn checked_member_exchange_with_context(
         &self,
-        block: &PointerBlock,
+        block: &AddressBase,
         description: &ResourceDescription,
         produce: bool,
         assumptions: Option<&PureFactContext>,
@@ -2770,7 +2770,7 @@ impl CreationEvents {
             else {
                 return Err(CreationRefusal::InvalidMember);
             };
-            if &pointer.pointer().block != block {
+            if &pointer.pointer().base != block {
                 return Err(CreationRefusal::InvalidMember);
             }
             if import.retired_authority || import.authority_holder != self.0.opaque_actor {
@@ -3084,7 +3084,7 @@ impl CreationEvents {
         else {
             return Err(CreationRefusal::InvalidMember);
         };
-        let block = self.exact_member_block(&pointer.pointer().block, description)?;
+        let block = self.exact_member_block(&pointer.pointer().base, description)?;
         let anchor = *self
             .0
             .anchors
@@ -3174,7 +3174,7 @@ impl CreationEvents {
     /// Move the C storage cleanup obligation with a consumed or borrowed
     /// control whose checked body contains the allocation. The ordinary
     /// resource transfer separately moves that exact allocation fact.
-    pub(in crate::kernel) fn tracks_storage_anchor(&self, block: &PointerBlock) -> bool {
+    pub(in crate::kernel) fn tracks_storage_anchor(&self, block: &AddressBase) -> bool {
         self.0.anchors.contains_key(block)
     }
 
@@ -3182,7 +3182,7 @@ impl CreationEvents {
         &self,
         from: &Self,
         to: &Self,
-        block: &PointerBlock,
+        block: &AddressBase,
     ) -> Result<Self, CreationRefusal> {
         let anchor = *self
             .0
@@ -3219,7 +3219,7 @@ impl CreationEvents {
         }
         self.0
             .anchors
-            .get(&pointer.pointer().block)
+            .get(&pointer.pointer().base)
             .and_then(|anchor| {
                 self.0
                     .authority
@@ -3273,14 +3273,14 @@ impl CreationEvents {
     /// The C `malloc`/`calloc` statement owns an unresolved result. Record
     /// its creator before another function can test the pointer and resolve
     /// the outcome. This is not yet a live-storage creation grant.
-    pub(in crate::kernel) fn pending_creation(&self, block: PointerBlock) -> Self {
+    pub(in crate::kernel) fn pending_creation(&self, block: AddressBase) -> Self {
         self.memoized_storage_event(StorageEvent::Pending(block.clone()), || {
             self.pending_creation_uncached(block)
         })
     }
 
-    fn pending_creation_uncached(&self, block: PointerBlock) -> Self {
-        debug_assert!(matches!(&block, PointerBlock::Symbolic(_)));
+    fn pending_creation_uncached(&self, block: AddressBase) -> Self {
+        debug_assert!(matches!(&block, AddressBase::Symbolic(_)));
         assert!(
             !self.0.pending.contains_key(&block),
             "pending allocation reused"
@@ -3298,8 +3298,8 @@ impl CreationEvents {
     /// when a helper made the deciding branch.
     pub(in crate::kernel) fn resolve_pending(
         &self,
-        pending_block: &PointerBlock,
-        live_block: Option<PointerBlock>,
+        pending_block: &AddressBase,
+        live_block: Option<AddressBase>,
     ) -> Self {
         self.memoized_storage_event(
             StorageEvent::Resolve(pending_block.clone(), live_block.clone()),
@@ -3309,8 +3309,8 @@ impl CreationEvents {
 
     fn resolve_pending_uncached(
         &self,
-        pending_block: &PointerBlock,
-        live_block: Option<PointerBlock>,
+        pending_block: &AddressBase,
+        live_block: Option<AddressBase>,
     ) -> Self {
         let Some(creator) = self.0.pending.get(pending_block).copied() else {
             return self.clone();
@@ -3324,7 +3324,7 @@ impl CreationEvents {
         let mut tainted = self.0.tainted.without_key(pending_block);
         if let Some(block) = live_block {
             empty_populations.remove(&block);
-            debug_assert!(matches!(&block, PointerBlock::Heap(_)));
+            debug_assert!(matches!(&block, AddressBase::Heap(_)));
             assert!(
                 !creators.contains_key(&block),
                 "storage lifetime created twice"
@@ -3350,14 +3350,14 @@ impl CreationEvents {
 
     /// Called only at checked C storage creation, never at resource lowering,
     /// contract allocation import, or generic memory-block construction.
-    pub(in crate::kernel) fn created(&self, block: PointerBlock) -> Self {
+    pub(in crate::kernel) fn created(&self, block: AddressBase) -> Self {
         self.memoized_storage_event(StorageEvent::Created(block.clone()), || {
             self.created_uncached(block)
         })
     }
 
-    fn created_uncached(&self, block: PointerBlock) -> Self {
-        debug_assert!(matches!(block, PointerBlock::Heap(_)) || block.is_local_block());
+    fn created_uncached(&self, block: AddressBase) -> Self {
+        debug_assert!(matches!(block, AddressBase::Heap(_)) || block.is_local_block());
         let mut creators = self.0.creators.clone();
         assert!(
             !creators.contains_key(&block),
@@ -3379,7 +3379,7 @@ impl CreationEvents {
     /// Query the allocator's recorded creator for one selected storage block.
     /// Call entry retains its creator scope, so returns never search aliases
     /// or compare growing event histories to recover allocation freshness.
-    pub(in crate::kernel) fn storage_created_by(&self, scope: &Self, block: &PointerBlock) -> bool {
+    pub(in crate::kernel) fn storage_created_by(&self, scope: &Self, block: &AddressBase) -> bool {
         crate::instrumentation::record_deterministic_work(1);
         self.0.creators.get(block).copied() == Some(scope.0.invocation)
     }
@@ -3388,13 +3388,13 @@ impl CreationEvents {
         self.0.invocation == other.0.invocation
     }
 
-    pub(in crate::kernel) fn created_here(&self, block: &PointerBlock) -> bool {
+    pub(in crate::kernel) fn created_here(&self, block: &AddressBase) -> bool {
         self.0.creators.get(block).copied() == Some(self.0.invocation)
     }
 
     pub(in crate::kernel) fn retirement_refusal(
         &self,
-        block: &PointerBlock,
+        block: &AddressBase,
     ) -> Option<CreationRefusal> {
         let anchor = *self.0.anchors.get(block)?;
         self.0
@@ -3407,7 +3407,7 @@ impl CreationEvents {
     /// Once a member existed, absence from the local resource context is no
     /// evidence of an empty population: it may have been transferred away.
     /// This mark follows the storage lifetime across helper calls.
-    pub(in crate::kernel) fn member_created(&self, block: &PointerBlock, family: &str) -> Self {
+    pub(in crate::kernel) fn member_created(&self, block: &AddressBase, family: &str) -> Self {
         if !self.0.creators.contains_key(block) && !self.0.pending.contains_key(block) {
             return self.clone();
         }
@@ -3417,7 +3417,7 @@ impl CreationEvents {
         )
     }
 
-    fn member_created_uncached(&self, block: &PointerBlock, family: &str) -> Self {
+    fn member_created_uncached(&self, block: &AddressBase, family: &str) -> Self {
         if !self.0.creators.contains_key(block) && !self.0.pending.contains_key(block) {
             return self.clone();
         }
@@ -3439,7 +3439,7 @@ impl CreationEvents {
     /// before any member of this family has existed in the storage lifetime.
     pub(in crate::kernel) fn establish(
         &self,
-        block: &PointerBlock,
+        block: &AddressBase,
         family: &str,
     ) -> Result<Self, CreationRefusal> {
         self.establish_scoped(block, family, None)
@@ -3447,7 +3447,7 @@ impl CreationEvents {
 
     fn establish_scoped(
         &self,
-        block: &PointerBlock,
+        block: &AddressBase,
         family: &str,
         scope: Option<&ResourceDescription>,
     ) -> Result<Self, CreationRefusal> {
@@ -3487,15 +3487,15 @@ impl CreationEvents {
 
     pub(in crate::kernel) fn checked_establish(
         &self,
-        block: &PointerBlock,
+        block: &AddressBase,
         description: &ResourceDescription,
     ) -> Result<(Self, CheckedPopulationAuthorityExchange), CreationRefusal> {
         let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] = description.arguments()
         else {
             return Err(CreationRefusal::InvalidMember);
         };
-        if &pointer.pointer().block != block
-            || pointer.pointer().offset != PointerOffsetTerm::Constant(0)
+        if &pointer.pointer().base != block
+            || pointer.pointer().offset != AddressOffset::Constant(0)
             || !description.resource_arguments().is_empty()
         {
             return Err(CreationRefusal::InvalidMember);
@@ -3512,7 +3512,7 @@ impl CreationEvents {
 
     pub(in crate::kernel) fn checked_retire(
         &self,
-        block: &PointerBlock,
+        block: &AddressBase,
         description: &ResourceDescription,
     ) -> Result<(Self, CheckedPopulationAuthorityExchange), CreationRefusal> {
         self.exact_member_block(block, description)?;
@@ -3604,7 +3604,7 @@ impl CreationEvents {
 
     pub(in crate::kernel) fn retire_authority(
         &self,
-        block: &PointerBlock,
+        block: &AddressBase,
         family: &str,
     ) -> Result<Self, CreationRefusal> {
         let anchor = *self
@@ -3642,7 +3642,7 @@ impl CreationEvents {
 
     /// End of an automatic or heap lifetime removes its creation record. Future
     /// reuse at the same address needs an independently checked creation.
-    pub(in crate::kernel) fn retired(&self, block: &PointerBlock) -> Result<Self, CreationRefusal> {
+    pub(in crate::kernel) fn retired(&self, block: &AddressBase) -> Result<Self, CreationRefusal> {
         if !self.0.creators.contains_key(block) {
             return Ok(self.clone());
         }
@@ -3657,7 +3657,7 @@ impl CreationEvents {
         )
     }
 
-    fn retired_uncached(&self, block: &PointerBlock) -> Result<Self, CreationRefusal> {
+    fn retired_uncached(&self, block: &AddressBase) -> Result<Self, CreationRefusal> {
         if !self.0.creators.contains_key(block) {
             return Ok(self.clone());
         }

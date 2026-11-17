@@ -8,8 +8,8 @@ use super::*;
 #[ignore = "nightly: 1.3s in the parallel gate"]
 fn loop_view_partition_uses_alias_graph_without_scanning_ambient_ranges() {
     let _session = crate::kernel::VerificationSession::enter();
-    let source = Pointer::symbolic(Variable(916_100));
-    let alias = Pointer::symbolic(Variable(916_101));
+    let source = Address::symbolic(Variable(916_100));
+    let alias = Address::symbolic(Variable(916_101));
     let source_value = PointerValue::new(source.clone(), ProgramType::UInt8Pointer);
     // Respelling a copied pointer retains its origin; address equality alone
     // cannot turn an independently originated pointer into this owner.
@@ -20,9 +20,9 @@ fn loop_view_partition_uses_alias_graph_without_scanning_ambient_ranges() {
         8u32.into(),
         1,
     ));
-    let target = Pointer {
-        block: source.block.clone(),
-        offset: PointerOffsetTerm::Constant(2),
+    let target = Address {
+        base: source.base.clone(),
+        offset: AddressOffset::Constant(2),
     };
     let assumptions = PureFactContext::new()
         .assume_condition(ConditionTerm::pointer_equal(alias.clone(), target), true);

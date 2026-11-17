@@ -195,9 +195,9 @@ fn pointer_field_qualifier_changes_keep_growing_indices_shared() {
             };
         }
         let pointer = PointerValue::new(
-            Pointer {
-                block: PointerBlock::Symbolic(Variable(999981)),
-                offset: PointerOffsetTerm::scaled_int32_node(index, 4),
+            Address {
+                base: AddressBase::Symbolic(Variable(999981)),
+                offset: AddressOffset::scaled_int32_node(index, 4),
             },
             ProgramType::Int32Pointer,
         )

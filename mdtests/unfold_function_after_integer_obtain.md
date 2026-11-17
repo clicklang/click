@@ -8,7 +8,7 @@ function black(w: Walk) -> int32 decreases w {
 theorem unfold_an_obtained_integer(rest: Walk) {
     requires exists (d: Integer) { black(Walk::At(d, rest)) == 1 };
     ensures black(rest) == 1 by {
-        obtain (d: Integer) { black(Walk::At(d, rest)) == 1 };
+        let d = obtain(exists (d: Integer) { black(Walk::At(d, rest)) == 1 });
         unfold(black(Walk::At(d, rest)));
         known();
     }

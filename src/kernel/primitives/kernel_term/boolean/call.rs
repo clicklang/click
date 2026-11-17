@@ -84,7 +84,7 @@ mod tests {
     fn boolean_calls_preserve_exact_descriptors_and_semantic_identity() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(999401)),
+            Address::symbolic(Variable(999401)),
             ProgramType::Int32Pointer,
         );
         let applications = [pointer.clone(), pointer.with_pointee_constant(true)].map(|pointer| {

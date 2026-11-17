@@ -11,15 +11,14 @@ use super::{PersistentOrderedSet, PersistentSequence, PureFactStore, SharedValue
 use crate::kernel::population_authority::storage_creation::{
     CheckedPopulationAuthorityExchange, CheckedPopulationMemberExchange,
 };
-use crate::kernel::{BindingName, CompareRelation, MachineIntegerType};
 use crate::kernel::{
-    CompositeResourceDefinition, ConditionOutcome, ExecutionBudget, ExecutionLimit,
+    Address, CompositeResourceDefinition, ConditionOutcome, ExecutionBudget, ExecutionLimit,
     ExecutionPureFact, ExecutionState, FunctionExecutionCandidates, FunctionOutcome, MachineTerm,
-    Memory, MemoryRange, Pointer, ProgramExpression, ProgramFunction, ProgramStatement,
-    ProgramValue, Proposition, PureFactContext, Resource, ResourceContext, ResourceFact,
-    ResourceSpec, RuntimeError, SpecProposition, StatementOutcome, Theorem, Variable,
-    VerifiedLoopRule,
+    Memory, MemoryRange, ProgramExpression, ProgramFunction, ProgramStatement, ProgramValue,
+    Proposition, PureFactContext, Resource, ResourceContext, ResourceFact, ResourceSpec,
+    RuntimeError, SpecProposition, StatementOutcome, Theorem, Variable, VerifiedLoopRule,
 };
+use crate::kernel::{BindingName, CompareRelation, MachineIntegerType};
 use crate::kernel::{ExecutionFactSource, ExecutionFacts};
 use crate::kernel::{LoadKind, StoredExecutionValue};
 use crate::persistent::PersistentSet;
@@ -843,7 +842,7 @@ fn checks_population_authority_exchange(
     };
     let anchor = pointer.pointer();
     let imported_retirement = !establish
-        && anchor.block == crate::kernel::PointerBlock::ExternalArgument
+        && anchor.base == crate::kernel::AddressBase::ExternalArgument
         && before
             .population_effects
             .creation
@@ -855,10 +854,10 @@ fn checks_population_authority_exchange(
             .map_err(|_| format!("Requires count({}(...)) == 0 and no outstanding member custody before authority retirement", description.family()))?;
     }
     if !imported_retirement
-        && (anchor.offset != crate::kernel::PointerOffsetTerm::Constant(0)
-            || !(matches!(&anchor.block, crate::kernel::PointerBlock::Heap(_))
+        && (anchor.offset != crate::kernel::AddressOffset::Constant(0)
+            || !(matches!(&anchor.base, crate::kernel::AddressBase::Heap(_))
                 && before.memory.live_heap_block_size(anchor).is_some()
-                || anchor.block.is_local_block() && before.memory.has_block(&anchor.block)))
+                || anchor.base.is_local_block() && before.memory.has_block(&anchor.base)))
     {
         return Err("population authority rewrite requires live base storage".into());
     }
@@ -1070,10 +1069,10 @@ fn checks_population_member_exchange(
                 }
             });
     if !imported_member_exchange
-        && (anchor.offset != crate::kernel::PointerOffsetTerm::Constant(0)
-            || !(matches!(&anchor.block, crate::kernel::PointerBlock::Heap(_))
+        && (anchor.offset != crate::kernel::AddressOffset::Constant(0)
+            || !(matches!(&anchor.base, crate::kernel::AddressBase::Heap(_))
                 && before.memory.live_heap_block_size(anchor).is_some()
-                || anchor.block.is_local_block() && before.memory.has_block(&anchor.block)))
+                || anchor.base.is_local_block() && before.memory.has_block(&anchor.base)))
     {
         return Err("population member rewrite requires live base storage".into());
     }
@@ -1299,7 +1298,7 @@ fn memory_only_adds_named_cells(
 /// search or ambient-fact scan.
 fn describe_unnamed_cell_addition(
     base: &crate::kernel::SharedMemory,
-    pointer: &crate::kernel::Pointer,
+    pointer: &crate::kernel::Address,
     value: &ProgramValue,
     load: &MachineTerm,
 ) -> String {
@@ -2295,7 +2294,7 @@ impl CheckedResourceRewrite {
                         .ok_or("member private body needs a positive bounded range")?;
                     let base = range.start_pointer();
                     if !before_state.memory().access_in_bounds(&base, bytes)
-                        && base.block != crate::kernel::PointerBlock::ExternalArgument
+                        && base.base != crate::kernel::AddressBase::ExternalArgument
                     {
                         return Err("member private body exceeds live storage".into());
                     }
@@ -5007,7 +5006,7 @@ fn arm_effect_deltas_are_exact(
 fn memory_diff_is_covered_by_writes(
     before: &Memory,
     after: &Memory,
-    changed: &[(Pointer, u32)],
+    changed: &[(Address, u32)],
     assumptions: &PureFactContext,
     fact: &ExecutionPureFact,
 ) -> bool {
@@ -5025,7 +5024,7 @@ fn memory_diff_is_covered_by_writes(
     before
         .differing_cell_pointers(after)
         .into_iter()
-        .filter(|pointer| !pointer.block.is_local_block())
+        .filter(|pointer| !pointer.base.is_local_block())
         .all(|diff_pointer| {
             if !after.has_known_cell_at(&diff_pointer) {
                 return false;
@@ -5064,7 +5063,7 @@ fn memory_diff_is_covered_by_ranges(
     before
         .differing_cell_pointers(after)
         .into_iter()
-        .filter(|pointer| !pointer.block.is_local_block())
+        .filter(|pointer| !pointer.base.is_local_block())
         .all(|diff_pointer| {
             if !after.has_known_cell_at(&diff_pointer) {
                 return false;
@@ -5369,7 +5368,7 @@ fn checked_interface_effect_facts_along(
 
 fn conditional_heap_frees(
     arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
-) -> [Vec<(Pointer, crate::kernel::AllocationSize)>; 2] {
+) -> [Vec<(Address, crate::kernel::AllocationSize)>; 2] {
     std::array::from_fn(|arm_index| {
         arm_effect_facts[arm_index]
             .fact_iter()
@@ -5390,10 +5389,10 @@ fn interface_resources_guard_heap_frees(
     arm_resources: &[Vec<ResourceFact>; 2],
     arm_states: [&ExecutionState; 2],
     arm_facts: [&PureFactStore; 2],
-    heap_frees: &[Vec<(Pointer, crate::kernel::AllocationSize)>; 2],
+    heap_frees: &[Vec<(Address, crate::kernel::AllocationSize)>; 2],
 ) -> bool {
     let has_allocation = |arm_index: usize,
-                          base: &Pointer,
+                          base: &Address,
                           bytes: &crate::kernel::AllocationSize| {
         arm_resources[arm_index].iter().any(|resource| {
             if resource
@@ -5710,7 +5709,7 @@ impl CheckedInterfaceLowering {
 #[derive(Default)]
 struct InterfaceReadPremises {
     by_base: std::collections::BTreeMap<
-        (crate::kernel::Memory, crate::kernel::Pointer),
+        (crate::kernel::Memory, crate::kernel::Address),
         (u32, Proposition),
     >,
 }

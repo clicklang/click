@@ -24,9 +24,9 @@ fn loadability_explanation_ignores_unrelated_objects() {
         for index in 0..size {
             context = context.assume_proposition(Proposition::MemoryLoadable {
                 memory: state.memory().clone(),
-                base: Pointer {
-                    block: PointerBlock::Heap(index),
-                    offset: PointerOffsetTerm::Constant(0),
+                base: Address {
+                    base: AddressBase::Heap(index),
+                    offset: AddressOffset::Constant(0),
                 },
                 bytes: MachineTerm::constant(8),
                 wide: false,

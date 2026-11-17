@@ -13,7 +13,7 @@ fn aggregate_step_results_cost_their_fields_instead_of_unrelated_state() {
                         state
                             .memory
                             .clone()
-                            .with_block(pointer.block.clone(), 4)
+                            .with_block(pointer.base.clone(), 4)
                             .store(pointer, int32(i)),
                     );
                 }
@@ -57,7 +57,7 @@ fn opaque_exception_creation_ignores_unrelated_memory_and_types() {
                 state
                     .memory
                     .clone()
-                    .with_block(pointer.block.clone(), 4)
+                    .with_block(pointer.base.clone(), 4)
                     .store(pointer, int32(index)),
             );
         }
