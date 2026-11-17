@@ -312,3 +312,24 @@ limits.
 The C, three original function contracts, inorder theorem, both callbacks,
 existing tree resources, and verifier are unchanged. Other sidecars and the
 full-directory audit still leave this report open.
+
+## Context double rotation with a nonempty transferred subtree
+
+All four selected proofs in
+`rbtree_size_insert_context_double_middle_subtree_rotation.click` now verify
+at default limits on master `7b90f7357` plus the proof repair, including the
+inorder-preservation theorem and both insertion wrappers. Initialization
+exposes the transferred root's entry-time identity and retains complete node
+observations through the C reads. The proof executes the missing local
+declaration and pivot load, retains tags and child links through the inner
+rotation and parent updates, and reparents the nonempty middle subtree with
+its original arbitrary children and cached count. Both writable callbacks
+and the original count arguments remain in the proof. The outer rotation
+retains the first callback child's identity and restores the ancestor context.
+
+Expansion, retained and cold verification, and fixed-point checks pass all 21
+audit sites at default limits.
+
+The C, three original function contracts, inorder theorem, tree models,
+callbacks, existing tree resources, and verifier are unchanged. Other sidecars
+and the full-directory audit still leave this report open.
