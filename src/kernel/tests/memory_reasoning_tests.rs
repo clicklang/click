@@ -1357,7 +1357,7 @@ fn direct_composite_resource_match_checks_pointer_load_across_block_declaration(
     let resource_at = |memory: Memory| Resource::Composite {
         name: "tree".to_string(),
         arguments: vec![
-            ProgramValue::Pointer(PointerValue::from_read(
+            ProgramValue::Pointer(Pointer::from_read(
                 Address {
                     base: AddressBase::ExternalArgument,
                     offset: AddressOffset::scale_int32(
@@ -1920,7 +1920,7 @@ fn equivalent_field_derived_bases_frame_symbolic_index_store() {
     }
     apply_law(
         crate::kernel::prove_separation_subrange(
-            PointerValue::new(execution_data.clone(), ProgramType::Int32Pointer),
+            Pointer::new(execution_data.clone(), ProgramType::Int32Pointer),
             4,
             MachineIntegerType::Int32,
             0u32.into(),
@@ -2136,13 +2136,13 @@ fn packed_word_pointer_transport_requires_all_eight_bytes() {
         Box::new(field.clone()),
         crate::kernel::LoadKind::Bits64,
     );
-    let pointer = PointerValue::from_read(
+    let pointer = Pointer::from_read(
         Address::integer_address(bits),
         ProgramType::VoidPointer,
         &before,
         &field,
     );
-    let parent = PointerValue::new(
+    let parent = Pointer::new(
         Address::symbolic(Variable(9_889_501)),
         ProgramType::VoidPointer,
     );
@@ -3969,10 +3969,7 @@ fn a_store_to_a_local_is_not_framed_away_for_an_unresolved_pointer() {
         .without_possible_aliasing_cells(&q, crate::kernel::C_POINTER_BYTE_WIDTH, &bare)
         .store(
             q.clone(),
-            ProgramValue::Pointer(PointerValue::new(
-                symbolic.clone(),
-                ProgramType::Int32Pointer,
-            )),
+            ProgramValue::Pointer(Pointer::new(symbolic.clone(), ProgramType::Int32Pointer)),
         );
     let after_store = after_binding
         .clone()
@@ -7823,7 +7820,7 @@ fn kept_call_frame_with_loaded_owner_survives_equivalent_input_lineages() {
     else {
         panic!("a typed pointer read");
     };
-    let owner = value.pointer().clone();
+    let owner = value.address().clone();
     let queried = Address::symbolic(Variable(953_002));
     let middle = Address::symbolic(Variable(953_003));
     let inputs = || {

@@ -14,7 +14,7 @@ fn mixed_call_arguments_import_structurally_and_keep_exact_native_forms() {
             )],
         },
     };
-    let pointer = PointerValue::new(
+    let pointer = Pointer::new(
         Address::symbolic(Variable(1008501)),
         ProgramType::Int32Pointer,
     )
@@ -151,7 +151,7 @@ fn prepared_call_children_reuse_the_producer_only_in_the_current_session() {
     let application = SharedPureApplication::intern(
         "session_pointer_argument".into(),
         vec![PureFunctionArgument::Value(ProgramValue::Pointer(
-            PointerValue::new(
+            Pointer::new(
                 Address::symbolic(Variable(1008515)),
                 ProgramType::Int32Pointer,
             ),
@@ -183,7 +183,7 @@ fn prepared_call_children_do_not_cross_threads_with_equal_session_generations() 
     let application = SharedPureApplication::intern(
         "thread_pointer_argument".into(),
         vec![PureFunctionArgument::Value(ProgramValue::Pointer(
-            PointerValue::new(
+            Pointer::new(
                 Address::symbolic(Variable(1008517)),
                 ProgramType::Int32Pointer,
             ),

@@ -410,14 +410,14 @@ mod pointer_observation_tests {
     #[test]
     fn numeric_pointer_projection_retains_the_address_without_changing_complete_values() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = PointerValue::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(1024900)),
             ProgramType::Int32Pointer,
         )
         .with_pointee_constant(true)
         .with_pointee_volatile(true);
         let numeric = ProgramValue::UInt64(MachineTerm::object_pointer_address(
-            pointer.pointer().clone(),
+            pointer.address().clone(),
             pointer.object_class(),
         ));
         let value = ProgramValue::PointerInteger(PointerIntegerValue {

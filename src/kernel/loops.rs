@@ -586,7 +586,7 @@ fn execute_modeled_pthread_mutex_paths(
                 .then(|| {
                     super::mutexes::initialization_storage_refusal(
                         state,
-                        mutex.pointer(),
+                        mutex.address(),
                         binding.mutex_storage_bytes,
                         binding.mutex_storage_alignment,
                         &current,
@@ -598,7 +598,7 @@ fn execute_modeled_pthread_mutex_paths(
                         return None;
                     }
                     let storage = MemoryRange::new_with_element_width(
-                        mutex.pointer().clone(),
+                        mutex.address().clone(),
                         0u32.into(),
                         binding.mutex_storage_bytes.into(),
                         1,
@@ -623,7 +623,7 @@ fn execute_modeled_pthread_mutex_paths(
                 let context = if let Some(identity) = state_identity {
                     super::mutexes::MutexContext::new(state.clone())
                         .publish_declared(
-                            mutex.pointer(),
+                            mutex.address(),
                             *identity,
                             &environment.modeled_mutex_definitions,
                             &current,
@@ -632,13 +632,13 @@ fn execute_modeled_pthread_mutex_paths(
                         .map_err(|message| RuntimeError::FunctionContract(message.to_string()))
                 } else {
                     super::mutexes::MutexContext::new(state.clone())
-                        .initialize_empty(mutex.pointer().clone(), binding.mutex_storage_bytes)
+                        .initialize_empty(mutex.address().clone(), binding.mutex_storage_bytes)
                         .map_err(|message| RuntimeError::FunctionContract(message.to_string()))
                 };
                 let context = context.and_then(|context| {
                     context
                         .consume_initialized_storage(
-                            mutex.pointer(),
+                            mutex.address(),
                             binding.mutex_storage_bytes,
                             &current,
                         )
@@ -654,7 +654,7 @@ fn execute_modeled_pthread_mutex_paths(
                         .binder_by_role(MutexResourceRole::Lifetime)
                         .expect("initialization declares its lifetime output");
                     let output = transport.bindings[&Variable(lifetime.identity)];
-                    let live = super::mutexes::live_resource(&next, mutex.pointer(), false)
+                    let live = super::mutexes::live_resource(&next, mutex.address(), false)
                         .expect("successful initialization establishes lifetime authority");
                     next.bind_named_mutex_authority(output, &live)
                         .map(|next| (next, evidence))
@@ -670,7 +670,7 @@ fn execute_modeled_pthread_mutex_paths(
                 && (function_name == binding.mutex_lock_name
                     || state
                         .resources
-                        .mutex_use_candidate_at(mutex.pointer())
+                        .mutex_use_candidate_at(mutex.address())
                         .is_some()
                     || state.opaque_mutex_acquisitions.is_some())
             {
@@ -689,7 +689,7 @@ fn execute_modeled_pthread_mutex_paths(
                         transport.bindings[&Variable(binder.identity)]
                     })
                 };
-                let usage = state.resources.mutex_use_candidate_at(mutex.pointer());
+                let usage = state.resources.mutex_use_candidate_at(mutex.address());
                 let access_matches =
                     selected_role(MutexResourceRole::Access).is_none_or(|identity| {
                         state.resolve_named_mutex_authority(identity) == usage && usage.is_some()
@@ -697,16 +697,16 @@ fn execute_modeled_pthread_mutex_paths(
                 let guard_matches = acquiring
                     || selected_role(MutexResourceRole::Guard).is_none_or(|identity| {
                         matches!((state.resolve_named_mutex_authority(identity),
-                        super::mutexes::guard_resource(state, mutex.pointer(), false)),
+                        super::mutexes::guard_resource(state, mutex.address(), false)),
                         (Some(actual), Some(expected)) if actual == &expected)
                     });
                 if !access_matches {
                     Err(RuntimeError::MissingMutexUse {
-                        mutex: mutex.pointer().clone(),
+                        mutex: mutex.address().clone(),
                     })
                 } else if !guard_matches {
                     Err(RuntimeError::MissingMutexGuard {
-                        mutex: mutex.pointer().clone(),
+                        mutex: mutex.address().clone(),
                     })
                 } else {
                     let definition = usage
@@ -721,7 +721,7 @@ fn execute_modeled_pthread_mutex_paths(
                         });
                     super::mutexes::opaque_runtime_transition_with_payload(
                         state,
-                        mutex.pointer(),
+                        mutex.address(),
                         acquiring,
                         &current,
                         definition,
@@ -729,7 +729,7 @@ fn execute_modeled_pthread_mutex_paths(
                         selected_role(MutexResourceRole::State),
                         budget,
                     )
-                    .map_err(|error| error.into_runtime_error(mutex.pointer()))
+                    .map_err(|error| error.into_runtime_error(mutex.address()))
                     .and_then(|(next, evidence)| {
                         if !acquiring {
                             return Ok((next, evidence));
@@ -737,7 +737,7 @@ fn execute_modeled_pthread_mutex_paths(
                         let Some(output) = selected_role(MutexResourceRole::Guard) else {
                             return Ok((next, evidence));
                         };
-                        let guard = super::mutexes::guard_resource(&next, mutex.pointer(), false)
+                        let guard = super::mutexes::guard_resource(&next, mutex.address(), false)
                             .expect("checked acquisition establishes its guard");
                         next.bind_named_mutex_authority(output, &guard)
                             .map(|next| (next, evidence))
@@ -761,7 +761,7 @@ fn execute_modeled_pthread_mutex_paths(
                     (|| {
                         let (fresh, ranges) = freshen_shared_mutex_payload(
                             state,
-                            mutex.pointer(),
+                            mutex.address(),
                             &current,
                             environment,
                             budget,
@@ -769,8 +769,8 @@ fn execute_modeled_pthread_mutex_paths(
                         let before = state.memory.clone();
                         let after = fresh.memory.clone();
                         let acquired = super::mutexes::MutexContext::new(fresh)
-                            .acquire_current(mutex.pointer(), &current)
-                            .map_err(|error| error.into_runtime_error(mutex.pointer()))?;
+                            .acquire_current(mutex.address(), &current)
+                            .map_err(|error| error.into_runtime_error(mutex.address()))?;
                         if !ranges.is_empty() {
                             path.facts.push(
                                 ExecutionPureFact::internal(Proposition::MemoryEffectSummary {
@@ -785,8 +785,8 @@ fn execute_modeled_pthread_mutex_paths(
                     })()
                 } else if function_name == binding.mutex_unlock_name {
                     context
-                        .release_current(mutex.pointer(), &current)
-                        .map_err(|error| error.into_runtime_error(mutex.pointer()))
+                        .release_current(mutex.address(), &current)
+                        .map_err(|error| error.into_runtime_error(mutex.address()))
                 } else {
                     let selected_live = selected.map(|transport| {
                         let lifetime = MutexOperation::Destroy
@@ -799,18 +799,18 @@ fn execute_modeled_pthread_mutex_paths(
                         !matches!(
                             (
                                 state.resolve_named_mutex_authority(identity),
-                                super::mutexes::live_resource(state, mutex.pointer(), false)
+                                super::mutexes::live_resource(state, mutex.address(), false)
                             ),
                             (Some(actual), Some(expected)) if actual == &expected
                         )
                     }) {
                         Err(RuntimeError::MissingMutexLive {
-                            mutex: mutex.pointer().clone(),
+                            mutex: mutex.address().clone(),
                         })
                     } else {
                         context
-                            .destroy(mutex.pointer(), &current)
-                            .map_err(|error| error.into_runtime_error(mutex.pointer()))
+                            .destroy(mutex.address(), &current)
+                            .map_err(|error| error.into_runtime_error(mutex.address()))
                     }
                 };
                 result.map(super::mutexes::MutexContext::into_runtime_transition)
@@ -821,7 +821,7 @@ fn execute_modeled_pthread_mutex_paths(
                 }
                 let (fresh, ranges) = freshen_shared_mutex_payload(
                     &next,
-                    mutex.pointer(),
+                    mutex.address(),
                     &current,
                     environment,
                     budget,
@@ -844,7 +844,7 @@ fn execute_modeled_pthread_mutex_paths(
                     // Every runtime transition may change the opaque representation.
                     // Only this checked path bypasses its ordinary-write reservation.
                     {
-                        let storage = current.equality_graph.storage_address(mutex.pointer());
+                        let storage = current.equality_graph.storage_address(mutex.address());
                         let footprint = MemoryRange::new_with_element_width(
                             storage,
                             0u32.into(),
@@ -1125,7 +1125,7 @@ fn execute_modeled_pthread_create_paths(
                                 let ProgramValue::Pointer(slot_pointer) = slot else {
                                     unreachable!()
                                 };
-                                let output_slot = slot_pointer.pointer();
+                                let output_slot = slot_pointer.address();
                                 let mut failure = modeled_pthread_indeterminate_handle(
                                     failure.parent().clone(),
                                     output_slot,
@@ -1359,7 +1359,7 @@ fn execute_program_indirect_call_paths(
                         let target_assumptions =
                             assumptions_with_path_context(assumptions, &facts, &obligations);
                         let owned = super::functions::contracts_from_facts(
-                            target_assumptions.function_contract_facts_for(pointer.pointer()),
+                            target_assumptions.function_contract_facts_for(pointer.address()),
                             execution_context.environment,
                             &function_type,
                         );
@@ -1924,7 +1924,7 @@ fn loop_state_components_match_at_back_edge_inner(
                 || next
                     .and_then(|value| value.pointer())
                     .is_some_and(|pointer| {
-                        assumptions.pointers_known_equal(pointer.pointer(), &Address::null())
+                        assumptions.pointers_known_equal(pointer.address(), &Address::null())
                     })
             {
                 return None;
@@ -3244,7 +3244,7 @@ fn loop_exit_local_arguments(
                         return None;
                     };
                     Some(ProgramValue::UInt64(MachineTerm::pointer_address(
-                        pointer.pointer().clone(),
+                        pointer.address().clone(),
                     )))
                 } else {
                     Some(value.clone())
@@ -7730,7 +7730,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
         Err(message) => return Ok(Err(message)),
     };
     let base_value = base;
-    let base = base_value.pointer().clone();
+    let base = base_value.address().clone();
     let start_value = evaluate(&segment.start, "segment start")?;
     let end_value = evaluate(&segment.end, "segment end")?;
     // A range with a 64-bit bound retains that bound's width.
@@ -8981,7 +8981,7 @@ pub(super) fn address_escaped_scalar_locals(
     for name in state.locals.bindings.keys() {
         if let Some(value) = state.locals.get(name)
             && let Some(pointer) = value.pointer()
-            && let Some(name) = state.locals.name_for_slot(pointer.pointer())
+            && let Some(name) = state.locals.name_for_slot(pointer.address())
         {
             escaped.insert(name.clone());
         }
@@ -9452,7 +9452,7 @@ fn with_retained_bounds(
 /// claims nothing. A pointer without bounds is bounded by its complete
 /// object, as before.
 fn segment_bounds_refusal(
-    base: &PointerValue,
+    base: &Pointer,
     segment: &EvaluatedMemorySegment,
     assumptions: &PureFactContext,
 ) -> Option<String> {
@@ -9469,7 +9469,7 @@ fn segment_bounds_refusal(
 /// [`segment_bounds_refusal`] for a lowered range: a proof step's clause
 /// names its range through the same pointer value.
 pub(crate) fn memory_range_bounds_refusal(
-    base: &PointerValue,
+    base: &Pointer,
     range: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> Option<String> {
@@ -9488,7 +9488,7 @@ pub(crate) fn memory_range_bounds_refusal(
 }
 
 fn range_bounds_refusal(
-    base: &PointerValue,
+    base: &Pointer,
     start: &MachineTerm,
     end: &MachineTerm,
     element_width: u32,
@@ -9512,10 +9512,10 @@ fn range_bounds_refusal(
     // that start before measuring its offset, as an access through it is
     // decided; the spellings' own difference names two unrelated variables.
     let respelled = assumptions
-        .pointer_at_known_base(base.pointer(), &bounds.start)
+        .pointer_at_known_base(base.address(), &bounds.start)
         .filter(|respelled| {
-            respelled != base.pointer()
-                && assumptions.pointers_known_equal(base.pointer(), respelled)
+            respelled != base.address()
+                && assumptions.pointers_known_equal(base.address(), respelled)
         });
     let Some(offset) = respelled
         .as_ref()
@@ -9524,7 +9524,7 @@ fn range_bounds_refusal(
         })
         .or_else(|| {
             crate::kernel::reasoning::shared_pointer_byte_offset_from_base(
-                base.pointer(),
+                base.address(),
                 &bounds.start,
             )
         })

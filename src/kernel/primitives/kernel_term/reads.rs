@@ -74,20 +74,20 @@ impl KernelTermImport {
 impl KernelTerm {
     /// Retain a pointer result only when its producer already retained a read
     /// definition. This reads term metadata, never hypotheses or stored values.
-    pub(crate) fn retained_pointer_read(value: &PointerValue) -> Option<Self> {
+    pub(crate) fn retained_pointer_read(value: &Pointer) -> Option<Self> {
         // Later arithmetic and ordinary pointer values belong to their own
         // producer slices. Do not clone or hash a growing displacement merely
         // to ask whether it is an undisplaced read atom.
-        if !matches!(value.pointer().offset, AddressOffset::Constant(0))
+        if !matches!(value.address().offset, AddressOffset::Constant(0))
             || !matches!(
-                value.pointer().base,
+                value.address().base,
                 AddressBase::LoadedPointer(_) | AddressBase::FunctionSymbolic(_)
             )
         {
             return None;
         }
         let MachineTerm::MemoryLoad(memory, address, _) =
-            crate::kernel::equality_graph::logical_pointer_read_term(value.pointer())?
+            crate::kernel::equality_graph::logical_pointer_read_term(value.address())?
         else {
             return None;
         };
@@ -317,7 +317,7 @@ mod tests {
     fn shared_read_addresses_preserve_call_payloads_ignored_by_logical_identity() {
         let _session = VerificationSession::enter();
         let memory = intern_memory(Memory::new());
-        let pointer = PointerValue::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(1017200)),
             ProgramType::Int32Pointer,
         );

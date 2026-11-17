@@ -69,7 +69,7 @@ fn retained_resource_fields_preserve_lvalues_and_scale_with_expression() {
                 let ProgramValue::Pointer(stored) = &value else {
                     unreachable!()
                 };
-                read.pointer() != stored.pointer()
+                read.address() != stored.address()
                     && PureFactContext::new().equality_graph.knows_condition(
                         &ConditionTerm::PointerValueEqual(
                             Box::new(read.clone()),

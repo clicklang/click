@@ -33,7 +33,7 @@ fn pointer_base(values: &BTreeMap<String, ProgramValue>) -> Address {
     let ProgramValue::Pointer(pointer) = &values["p"] else {
         unreachable!("the probe binds `p` to a pointer");
     };
-    pointer.pointer().clone()
+    pointer.address().clone()
 }
 
 /// The cell `(p + index) as (int32 *)[0]`, as the kernel indexes it.

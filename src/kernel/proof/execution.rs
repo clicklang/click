@@ -840,7 +840,7 @@ fn checks_population_authority_exchange(
     else {
         return Err("population authority rewrite requires one pointer anchor".into());
     };
-    let anchor = pointer.pointer();
+    let anchor = pointer.address();
     let imported_retirement = !establish
         && anchor.base == crate::kernel::AddressBase::ExternalArgument
         && before
@@ -1055,7 +1055,7 @@ fn checks_population_member_exchange(
     else {
         return Err("population member rewrite requires one pointer anchor".into());
     };
-    let anchor = pointer.pointer();
+    let anchor = pointer.address();
     let imported_member_exchange =
         before
             .population_effects
@@ -5398,7 +5398,7 @@ fn interface_resources_guard_heap_frees(
             if resource
                 .allocation_size()
                 .is_some_and(|(candidate_base, candidate_bytes)| {
-                    candidate_base.pointer() == base && &candidate_bytes == bytes
+                    candidate_base.address() == base && &candidate_bytes == bytes
                 })
             {
                 return true;
@@ -5418,7 +5418,7 @@ fn interface_resources_guard_heap_frees(
                 expanded.facts().iter().any(|fact| {
                     fact.allocation_size()
                         .is_some_and(|(candidate_base, candidate_bytes)| {
-                            candidate_base.pointer() == base && &candidate_bytes == bytes
+                            candidate_base.address() == base && &candidate_bytes == bytes
                         })
                 })
             })

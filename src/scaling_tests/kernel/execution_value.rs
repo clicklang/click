@@ -87,7 +87,7 @@ fn retaining_pointer_read_results_ignores_unrelated_read_definitions() {
 #[test]
 fn pointer_branch_handoffs_retain_selected_dags_without_export() {
     let _session = crate::kernel::VerificationSession::enter();
-    let value = SharedPointerValue::import(&PointerValue::new(
+    let value = SharedPointerValue::import(&Pointer::new(
         Address::symbolic(Variable(1026300)),
         ProgramType::Int32Pointer,
     ));
@@ -131,7 +131,7 @@ fn pointer_branch_handoffs_retain_selected_dags_without_export() {
 #[test]
 fn pointer_local_bindings_preserve_prepared_dags_at_constant_work() {
     let _session = crate::kernel::VerificationSession::enter();
-    let payload = SharedPointerValue::import(&PointerValue::new(
+    let payload = SharedPointerValue::import(&Pointer::new(
         Address::symbolic(Variable(1027200)),
         ProgramType::Int32Pointer,
     ));
@@ -219,7 +219,7 @@ fn retained_pointer_cells_do_not_export_prepared_dags_or_scan_sibling_cells() {
                     [argument.clone(), argument],
                 );
             }
-            let pointer = PointerValue::new(
+            let pointer = Pointer::new(
                 Address::symbolic(Variable(1027701 + size)),
                 ProgramType::Int32Pointer,
             );
@@ -606,7 +606,7 @@ fn algebraic_storage_comparison_visits_shared_pairs_once() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let native = KernelMatch::test_scrutinee(vec![]);
-        let pointer = PointerValue::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(998740)),
             ProgramType::Int32Pointer,
         );
@@ -653,7 +653,7 @@ fn pointer_storage_keys_keep_growing_offsets_shared_and_session_scoped() {
     use std::hash::Hash;
     let mut previous = None;
     for size in [16, 64, 256] {
-        let value = SharedPointerValue::import_produced(&PointerValue::new(
+        let value = SharedPointerValue::import_produced(&Pointer::new(
             Address::symbolic(Variable(998760)),
             ProgramType::Int32Pointer,
         ));
@@ -731,7 +731,7 @@ fn pointer_storage_comparison_visits_shared_offset_pairs_once() {
                     .unwrap()
             });
         }
-        let value = SharedPointerValue::import_produced(&PointerValue::new(
+        let value = SharedPointerValue::import_produced(&Pointer::new(
             Address::symbolic(Variable(998766)),
             ProgramType::Int32Pointer,
         ));

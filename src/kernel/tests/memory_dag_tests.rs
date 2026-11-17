@@ -2581,7 +2581,7 @@ fn canonical_load_form_keeps_a_cell_a_wide_read_covers() {
     assert!(
         !canonical_equal_across_store_at(
             -4,
-            ProgramValue::Pointer(PointerValue::new(arc_pointer(0), ProgramType::Int32Pointer))
+            ProgramValue::Pointer(Pointer::new(arc_pointer(0), ProgramType::Int32Pointer))
         ),
         "a stored pointer is eight bytes, so one four bytes below the load \
          covers the load's first four bytes"
@@ -3229,8 +3229,8 @@ fn direct_pointer_reads_retain_their_projection_definitions() {
     );
     assert!(context.equality_graph.knows_condition(
         &ConditionTerm::pointer_value_equal(
-            PointerValue::new(named.clone(), ProgramType::Int32Pointer),
-            PointerValue::new(observed.clone(), ProgramType::Int32Pointer),
+            Pointer::new(named.clone(), ProgramType::Int32Pointer),
+            Pointer::new(observed.clone(), ProgramType::Int32Pointer),
         ),
         true
     ));
@@ -3564,7 +3564,7 @@ fn initialization_metadata_keeps_complete_pointer_identity_without_access_author
     assert!(after.memory().has_initialized_bytes_at(&address, 8));
 
     let read = |memory: &SharedMemory| {
-        PointerValue::from_read(
+        Pointer::from_read(
             Address::loaded_value(memory, &address),
             ProgramType::Int32Pointer,
             memory,
@@ -3575,7 +3575,7 @@ fn initialization_metadata_keeps_complete_pointer_identity_without_access_author
     let original = read(&before);
     assert_eq!(original.provenance(), read(&after).provenance());
     assert!(facts.pointer_provenance_match(&original, &read(&after)));
-    assert!(facts.pointers_known_equal(original.pointer(), read(&after).pointer()));
+    assert!(facts.pointers_known_equal(original.address(), read(&after).address()));
     assert!(!ResourceContext::new().permits_memory_read(&address, 8, &facts));
 
     let overwritten = intern_memory(
@@ -3585,7 +3585,7 @@ fn initialization_metadata_keeps_complete_pointer_identity_without_access_author
             .store(address.offset_by_bytes(4), crate::kernel::uint8(1u32)),
     );
     assert!(!facts.pointer_provenance_match(&original, &read(&overwritten)));
-    assert!(!facts.pointers_known_equal(original.pointer(), read(&overwritten).pointer()));
+    assert!(!facts.pointers_known_equal(original.address(), read(&overwritten).address()));
 }
 
 #[test]
@@ -4131,7 +4131,7 @@ fn full_pointer_read_survives_a_join_of_stores_to_its_sibling() {
     let _session = crate::kernel::VerificationSession::enter();
     let before = intern_memory(Memory::new());
     let p = Address::symbolic(Variable(998_710));
-    let q = PointerValue::new(
+    let q = Pointer::new(
         Address::symbolic(Variable(998_711)),
         ProgramType::Int32Pointer,
     );
@@ -4145,8 +4145,8 @@ fn full_pointer_read_survives_a_join_of_stores_to_its_sibling() {
         true,
     );
     let beside = Address {
-        base: child.pointer().base.clone(),
-        offset: AddressOffset::add(child.pointer().offset.clone(), AddressOffset::Constant(8)),
+        base: child.address().base.clone(),
+        offset: AddressOffset::add(child.address().offset.clone(), AddressOffset::Constant(8)),
     };
     let left = before.memory().clone().store(beside.clone(), int32(0));
     let right = before.memory().clone().store(beside.clone(), int32(1));
@@ -4165,7 +4165,7 @@ fn full_pointer_read_survives_a_join_of_stores_to_its_sibling() {
             1,
         ))),
         right: Box::new(Resource::Memory(MemoryRange::new_with_element_width(
-            q.pointer().clone(),
+            q.address().clone(),
             0u32.into(),
             8u32.into(),
             1,
@@ -4181,7 +4181,7 @@ fn full_pointer_read_survives_a_join_of_stores_to_its_sibling() {
     let (old, new, equality) = super::explicit_frame(
         before.memory(),
         joined.memory(),
-        q.pointer(),
+        q.address(),
         ProgramType::Int32Pointer,
         &[effect],
         &facts,
@@ -4192,20 +4192,20 @@ fn full_pointer_read_survives_a_join_of_stores_to_its_sibling() {
     };
     let preserved = facts.clone().assume_proposition(equality);
     assert!(preserved.pointer_provenance_match(&old, &new));
-    let earlier = Address::loaded_value(&before, q.pointer());
+    let earlier = Address::loaded_value(&before, q.address());
     let upper_half = Address {
-        base: q.pointer().base.clone(),
-        offset: AddressOffset::add(q.pointer().offset.clone(), AddressOffset::Constant(4)),
+        base: q.address().base.clone(),
+        offset: AddressOffset::add(q.address().offset.clone(), AddressOffset::Constant(4)),
     };
     let changed = intern_memory(joined.memory().clone().store(upper_half, int32(5)));
     let projection = intern_memory(
         crate::kernel::memory_history::canonical_program_memory_for_pointer_load(
             &changed,
-            q.pointer(),
+            q.address(),
         ),
     );
-    crate::kernel::reasoning::record_canonical_load_projection(&changed, &projection, q.pointer());
-    let overwritten = Address::loaded_value(&projection, q.pointer());
+    crate::kernel::reasoning::record_canonical_load_projection(&changed, &projection, q.address());
+    let overwritten = Address::loaded_value(&projection, q.address());
     assert!(
         !crate::kernel::memory_history::pointer_read_provenance_equal(
             &earlier,

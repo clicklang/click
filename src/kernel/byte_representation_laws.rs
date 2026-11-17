@@ -2,7 +2,7 @@
 //! character reads in the same state; no memory-history search is involved.
 use super::prelude::*;
 
-pub(crate) fn prove_uint32_from_le_bytes(pointer: PointerValue) -> Result<Theorem, String> {
+pub(crate) fn prove_uint32_from_le_bytes(pointer: Pointer) -> Result<Theorem, String> {
     if pointer.program_type().pointee_type() != Some(ProgramType::UInt32) {
         return Err("uint32_from_le_bytes requires a uint32 pointer".into());
     }

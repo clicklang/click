@@ -41,13 +41,13 @@ impl StatementAssignSource {
         else {
             return None;
         };
-        if parent.pointer() != child.pointer() || parent.program_type() != child.program_type() {
+        if parent.address() != child.address() || parent.program_type() != child.program_type() {
             return None;
         }
         let mut fact = ExecutionPureFact::certified(Proposition::ConditionIs(
             ConditionTerm::PointerEqual(
-                Box::new(parent.pointer().clone()),
-                Box::new(child.pointer().clone()),
+                Box::new(parent.address().clone()),
+                Box::new(child.address().clone()),
             ),
             true,
         ));
@@ -56,7 +56,7 @@ impl StatementAssignSource {
         fact.reference_observation = ReferenceObservationSource(Some(Arc::new(
             ReferenceObservation::Borrow(ReferenceBorrowObservation {
                 source: source.clone(),
-                pointer: child.pointer().clone(),
+                pointer: child.address().clone(),
             }),
         )));
         Some(fact)
@@ -223,7 +223,7 @@ impl ExecutedReferenceAccess<'_> {
     pub(crate) fn source(&self) -> &ReferenceAccessSourceId {
         self.source
     }
-    pub(crate) fn pointer(&self) -> &Address {
+    pub(crate) fn address(&self) -> &Address {
         self.pointer
     }
 }

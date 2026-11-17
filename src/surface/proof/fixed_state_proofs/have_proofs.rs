@@ -1080,7 +1080,7 @@ pub(in crate::surface) fn evaluate_fixed_state_array_ref_through_kernel(
     contract_environment: ContractEnvironment<'_>,
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
-) -> Result<(ClickArrayRef, crate::kernel::PointerValue), String> {
+) -> Result<(ClickArrayRef, crate::kernel::Pointer), String> {
     if let ContractExpression::Binding(name)
     | ContractExpression::ProgramExpression(ProgramExpression::Variable(
         crate::kernel::BindingName::Named(name),
@@ -1123,7 +1123,7 @@ pub(in crate::surface) fn evaluate_fixed_state_array_ref_through_kernel(
     Ok((
         ClickArrayRef {
             memory,
-            pointer: pointer.pointer().clone(),
+            pointer: pointer.address().clone(),
             element_type,
         },
         pointer,
@@ -1756,7 +1756,7 @@ mod retained_capture_tests {
             ProgramValue::Bool(MachineTerm::constant(1)),
             ProgramValue::Float64(MachineTerm::Variable(Variable(997002))),
             ProgramValue::Pointer(
-                crate::kernel::PointerValue::new(
+                crate::kernel::Pointer::new(
                     crate::kernel::Address::symbolic(Variable(997003)),
                     ProgramType::Int32Pointer,
                 )

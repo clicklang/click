@@ -15,9 +15,9 @@ pub(in crate::kernel) struct InputData {
         crate::kernel::pointer_provenance::ValueClasses<Address>,
     pub(in crate::kernel) bounds_graph: crate::kernel::pointer_provenance::ValueClasses<Address>,
     pub(in crate::kernel) pointer_value_classes:
-        crate::kernel::pointer_provenance::ValueClasses<PointerValue>,
+        crate::kernel::pointer_provenance::ValueClasses<Pointer>,
     pub(in crate::kernel) pointer_value_equalities:
-        crate::persistent::PersistentSet<(PointerValue, PointerValue)>,
+        crate::persistent::PersistentSet<(Pointer, Pointer)>,
 
     /// Conservative source-dependency selectors for parameter-store shortcuts.
     /// These record syntax, not equality classes or permission authority.

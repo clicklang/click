@@ -373,7 +373,7 @@ impl ConditionTerm {
                 )
             }
             ProgramValue::Pointer(pointer) => {
-                crate::kernel::eval::pointer_is_null_condition(pointer.pointer().clone())
+                crate::kernel::eval::pointer_is_null_condition(pointer.address().clone())
             }
             _ => return None,
         };

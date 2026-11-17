@@ -67,7 +67,7 @@ fn loop_binding_carryover_ignores_ambient_observations() {
         for count in [4usize, 16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
             let assumptions = PureFactContext::new();
-            let pointer = PointerValue::new(
+            let pointer = Pointer::new(
                 Address::symbolic(Variable(9_370_001)),
                 ProgramType::Int32Pointer,
             );
@@ -269,7 +269,7 @@ fn explicit_loop_frame_ignores_rejected_heap_owners() {
         let _session = crate::kernel::VerificationSession::enter();
         let facts = PureFactContext::new();
         let scalar = Address::symbolic(Variable(9_390_001));
-        let viewed = PointerValue::new(
+        let viewed = Pointer::new(
             Address::symbolic(Variable(9_390_002)),
             ProgramType::Int32Pointer,
         );

@@ -699,7 +699,7 @@ pub(super) fn concrete_named_contract_fact(fact: &Proposition) -> Option<(&str, 
     let Address {
         base: AddressBase::Function(target),
         offset: AddressOffset::Constant(0),
-    } = pointer.pointer()
+    } = pointer.address()
     else {
         return None;
     };
@@ -2366,7 +2366,7 @@ fn describe_struct_place_range(
         // A recursive struct pointer field has the same known layout as its
         // parent. Do not infer that layout for pointers to another type.
         if let Some(field_name) =
-            describe_parameter_struct_field_pointer(range.base(), parameter, base.pointer())
+            describe_parameter_struct_field_pointer(range.base(), parameter, base.address())
             && let Some((_, field)) = layout.fields().iter().find(|(name, _)| {
                 field_name
                     == describe_field_place(
@@ -2450,7 +2450,7 @@ fn struct_byte_bounds(
             let layout = parameter
                 .pointee_struct_layout()
                 .or_else(|| parameter.struct_layout())?;
-            let offset = pointer_offset_bytes(&range.base().offset_from_base(base.pointer())?)?;
+            let offset = pointer_offset_bytes(&range.base().offset_from_base(base.address())?)?;
             Some((parameter, layout, offset))
         })
     {
@@ -2656,7 +2656,7 @@ pub(super) fn describe_memory_range(
             continue;
         };
         if let Some(field) =
-            describe_parameter_struct_field_pointer(range.base(), parameter, base.pointer())
+            describe_parameter_struct_field_pointer(range.base(), parameter, base.address())
         {
             let layout = parameter
                 .pointee_struct_layout()
@@ -4352,7 +4352,7 @@ pub(in crate::surface) fn diagnostic_aggregate_parameter_load_cell(
         let ProgramExpression::Value(ProgramValue::Pointer(base)) = argument else {
             continue;
         };
-        let Some(offset) = diagnostic_pointer_element_index_from_base(pointer, base.pointer(), 1)
+        let Some(offset) = diagnostic_pointer_element_index_from_base(pointer, base.address(), 1)
             .and_then(|offset| offset.as_const())
         else {
             continue;
@@ -4419,7 +4419,7 @@ pub(in crate::surface) fn diagnostic_source_pointer_cell(
             continue;
         };
         let mut fields = layout.fields().iter().filter(|(_, field)| {
-            let expected = base.pointer().offset_by_bytes(field.offset_bytes());
+            let expected = base.address().offset_by_bytes(field.offset_bytes());
             expected.base == pointer.base
                 && crate::kernel::offsets_have_same_canonical_form(
                     &expected.offset,
@@ -4803,7 +4803,7 @@ fn describe_source_cell_of_width(
             continue;
         };
         if let Some(field) =
-            describe_parameter_struct_field_pointer(pointer, parameter, base.pointer())
+            describe_parameter_struct_field_pointer(pointer, parameter, base.address())
         {
             return Some(SourceCell {
                 object: field,
@@ -4813,7 +4813,7 @@ fn describe_source_cell_of_width(
             });
         }
         if let Some(member) =
-            describe_parameter_struct_member(pointer, parameter, base.pointer(), parameter_binding)
+            describe_parameter_struct_member(pointer, parameter, base.address(), parameter_binding)
         {
             return Some(SourceCell {
                 object: member,
@@ -4975,7 +4975,7 @@ pub(super) fn describe_memory_block(
         .zip(parameter_binding.arguments)
     {
         if let ProgramExpression::Value(ProgramValue::Pointer(base)) = argument
-            && &base.pointer().base == block
+            && &base.address().base == block
         {
             return Some(parameter.name().to_string());
         }
@@ -5164,7 +5164,7 @@ pub(in crate::surface) fn describe_pointer(
             continue;
         };
         if let Some(field) =
-            describe_parameter_struct_field_pointer(pointer, parameter, base.pointer())
+            describe_parameter_struct_field_pointer(pointer, parameter, base.address())
         {
             return field;
         }
@@ -5186,12 +5186,12 @@ pub(in crate::surface) fn describe_pointer(
                 best = Some(spelled);
             }
         } else if let Some(member) =
-            describe_parameter_struct_member(pointer, parameter, base.pointer(), parameter_binding)
+            describe_parameter_struct_member(pointer, parameter, base.address(), parameter_binding)
         {
             if best.as_ref().is_none_or(|best| member.len() < best.len()) {
                 best = Some(member);
             }
-        } else if let Some(bytes) = pointer.offset_from_base(base.pointer()) {
+        } else if let Some(bytes) = pointer.offset_from_base(base.address()) {
             // An address inside the parameter's object that is no whole
             // element of it -- a byte of a wider cell, say -- is still a
             // byte offset from the parameter, as a named object's is below.
@@ -5744,7 +5744,7 @@ pub(super) fn describe_program_value(
         ),
         ProgramValue::Pointer(pointer)
             if matches!(
-                pointer.pointer().base,
+                pointer.address().base,
                 AddressBase::ContractResult
                     | AddressBase::ContractException
                     | AddressBase::AggregateReturn { .. }
@@ -6444,7 +6444,7 @@ fn describe_load_at(pointer: &Address, parameter_binding: ParameterBinding<'_>) 
             let ProgramExpression::Value(ProgramValue::Pointer(base)) = argument else {
                 return None;
             };
-            (parameter.is_reference() && base.pointer() == pointer)
+            (parameter.is_reference() && base.address() == pointer)
                 .then_some((parameter, parameter.name()))
         });
     match referent {
@@ -6512,7 +6512,7 @@ fn describe_struct_field_load(
         else {
             continue;
         };
-        let Some(offset) = diagnostic_pointer_element_index_from_base(pointer, base.pointer(), 1)
+        let Some(offset) = diagnostic_pointer_element_index_from_base(pointer, base.address(), 1)
             .and_then(|offset| offset.as_const())
         else {
             continue;
@@ -6638,7 +6638,7 @@ fn pointee_struct_at_depth(
         else {
             continue;
         };
-        if let Some(offset) = diagnostic_pointer_element_index_from_base(address, base.pointer(), 1)
+        if let Some(offset) = diagnostic_pointer_element_index_from_base(address, base.address(), 1)
             .and_then(|offset| offset.as_const())
         {
             return field_at(layout, u64::from(offset));
@@ -8354,8 +8354,8 @@ pub(super) fn describe_condition(condition: &ConditionTerm) -> String {
     match condition {
         ConditionTerm::PointerValueEqual(left, right) => format!(
             "{} == {}",
-            describe_pointer(left.pointer(), ParameterBinding::default()),
-            describe_pointer(right.pointer(), ParameterBinding::default())
+            describe_pointer(left.address(), ParameterBinding::default()),
+            describe_pointer(right.address(), ParameterBinding::default())
         ),
 
         ConditionTerm::AlgebraicEqual(_, _) => "algebraic equality".to_string(),

@@ -414,7 +414,7 @@ fn pointer_lowering_keeps_producers_and_complete_metadata() {
     let class = crate::kernel::effective_type::CAccessClass::Scalar(
         crate::kernel::effective_type::CScalarClass::Int,
     );
-    let source = PointerValue::new(
+    let source = Pointer::new(
         Address::symbolic(Variable(999982)),
         ProgramType::VoidPointer,
     )
@@ -462,7 +462,7 @@ fn pointer_lowering_keeps_producers_and_complete_metadata() {
             payload.node().provenance
         );
         match (root.node(), field.node()) {
-            (KernelTermNode::PointerValue { .. }, KernelTermNode::PointerValue { .. }) => {}
+            (KernelTermNode::Pointer { .. }, KernelTermNode::Pointer { .. }) => {}
             (
                 KernelTermNode::PointerCall { call: a, .. },
                 KernelTermNode::PointerCall { call: b, .. },
@@ -542,7 +542,7 @@ fn explicit_pointer_cast_lowering_keeps_native_bounds_rules() {
         (ProgramType::Int32Pointer, ProgramType::UInt8Pointer, false),
         (ProgramType::Int8Pointer, ProgramType::UInt8Pointer, true),
     ] {
-        let pointer = PointerValue::new(Address::symbolic(Variable(999940)), source)
+        let pointer = Pointer::new(Address::symbolic(Variable(999940)), source)
             .with_pointee_constant(true)
             .with_bounds(Some(SubobjectBounds {
                 start: Address::symbolic(Variable(999940)),
@@ -723,7 +723,7 @@ fn mixed_call_assembly_preserves_typed_roots_without_exports() {
         algebraic_type: algebraic_type.clone(),
         node: AlgebraicTermNode::Variable(Variable(999960)),
     };
-    let pointer = PointerValue::new(
+    let pointer = Pointer::new(
         Address::symbolic(Variable(999961)),
         ProgramType::Int32Pointer,
     )

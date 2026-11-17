@@ -7,14 +7,14 @@ fn complete_pointer_representative_exposes_a_stored_callback() {
     let _session = VerificationSession::enter();
     let ty = ProgramType::FunctionPointer(crate::kernel::CallbackSignature::UNSPECIFIED);
     let cell = Address::symbolic(Variable(998_965));
-    let target = PointerValue::new(Address::function("callback"), ty);
+    let target = Pointer::new(Address::function("callback"), ty);
     let memory = crate::kernel::intern_memory(
         Memory::new().store(cell.clone(), ProgramValue::Pointer(target.clone())),
     );
-    let read = PointerValue::from_read(Address::loaded_value(&memory, &cell), ty, &memory, &cell);
+    let read = Pointer::from_read(Address::loaded_value(&memory, &cell), ty, &memory, &cell);
     let graph = EqualityGraph::default();
     assert_eq!(graph.pointer_value_representative(&read), target);
-    let unknown = PointerValue::from_read(
+    let unknown = Pointer::from_read(
         Address::loaded_value(&memory, &cell.offset_by_bytes(8)),
         ty,
         &memory,
@@ -47,7 +47,7 @@ fn pointer(name: &str) -> Address {
 fn array(memory: &Memory, p: Address, element_type: ProgramType) -> PureFunctionArgument {
     PureFunctionArgument::ArrayRef {
         memory: memory.clone(),
-        pointer: ProgramValue::Pointer(PointerValue::new(p, ProgramType::Int32Pointer)),
+        pointer: ProgramValue::Pointer(Pointer::new(p, ProgramType::Int32Pointer)),
         element_type,
     }
 }
@@ -135,8 +135,8 @@ fn pure_application_arguments_keep_states_types_and_argument_order() {
     assert!(!context.contains_known(&eq(f(&memory, pointer("q"), ProgramType::Int32), var(30))));
     let context = context.assume_condition(
         ConditionTerm::PointerValueEqual(
-            Box::new(PointerValue::new(pointer("p"), ProgramType::Int32Pointer)),
-            Box::new(PointerValue::new(pointer("q"), ProgramType::Int32Pointer)),
+            Box::new(Pointer::new(pointer("p"), ProgramType::Int32Pointer)),
+            Box::new(Pointer::new(pointer("q"), ProgramType::Int32Pointer)),
         ),
         true,
     );
@@ -177,7 +177,7 @@ fn fact_lookup_uses_pointer_read_congruence_after_a_late_address_alias() {
         call(
             "tag",
             vec![PureFunctionArgument::Value(ProgramValue::Pointer(
-                PointerValue::new(
+                Pointer::new(
                     Address::loaded_value(&memory, address),
                     ProgramType::Int32Pointer,
                 ),
@@ -462,53 +462,53 @@ fn selected_cursor_chain() -> (Proposition, Vec<Proposition>) {
         left: Box::new(total.clone()),
         right: Box::new(after),
     };
-    let original = PointerValue::new(
+    let original = Pointer::new(
         Address {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(100_001)), 1),
         },
         ProgramType::UInt8Pointer,
     );
-    let batch = PointerValue::new(
+    let batch = Pointer::new(
         Address::symbolic(Variable(1_000_001)),
         ProgramType::UInt8Pointer,
     );
-    let cursor_base = PointerValue::new(
+    let cursor_base = Pointer::new(
         Address::symbolic(Variable(1_000_005)),
         ProgramType::UInt8Pointer,
     );
     let cursor = cursor_base
         .clone()
-        .with_address(cursor_base.pointer().offset_by_bytes(16));
+        .with_address(cursor_base.address().offset_by_bytes(16));
     let at_first = original.clone().with_address(Address {
-        base: original.pointer().base.clone(),
+        base: original.address().base.clone(),
         offset: AddressOffset::add(
-            original.pointer().offset.clone(),
+            original.address().offset.clone(),
             AddressOffset::scale_int32(first.clone(), 1),
         ),
     });
     let at_sum = Address {
-        base: original.pointer().base.clone(),
+        base: original.address().base.clone(),
         offset: AddressOffset::add(
-            original.pointer().offset.clone(),
+            original.address().offset.clone(),
             AddressOffset::scale_int32(sum.clone(), 1),
         ),
     };
     let at_count = Address {
-        base: original.pointer().base.clone(),
+        base: original.address().base.clone(),
         offset: AddressOffset::add(
-            original.pointer().offset.clone(),
+            original.address().offset.clone(),
             AddressOffset::scale_int32(count.clone(), 1),
         ),
     };
     let target = original.clone().with_address(Address {
-        base: original.pointer().base.clone(),
+        base: original.address().base.clone(),
         offset: AddressOffset::add(
-            original.pointer().offset.clone(),
+            original.address().offset.clone(),
             AddressOffset::scale_int64(difference, 1, true),
         ),
     });
-    let full = |left: PointerValue, right: PointerValue| {
+    let full = |left: Pointer, right: Pointer| {
         Proposition::ConditionIs(
             ConditionTerm::PointerValueEqual(Box::new(left), Box::new(right)),
             true,
@@ -525,12 +525,12 @@ fn selected_cursor_chain() -> (Proposition, Vec<Proposition>) {
             cursor.clone(),
             batch
                 .clone()
-                .with_address(batch.pointer().offset_by_bytes(5552)),
+                .with_address(batch.address().offset_by_bytes(5552)),
         ),
         full(batch, at_first.clone()),
-        address(at_first.pointer().offset_by_bytes(5552), at_sum),
+        address(at_first.address().offset_by_bytes(5552), at_sum),
         Proposition::ConditionIs(ConditionTerm::equal(count, sum), true),
-        address(target.pointer().clone(), at_count),
+        address(target.address().clone(), at_count),
     ];
     let goal = full(cursor, target);
     (goal, premises)
@@ -583,7 +583,7 @@ fn selected_cursor_chain_needs_its_support_and_displacement() {
             Box::new(
                 (**left)
                     .clone()
-                    .with_address(left.pointer().offset_by_bytes(1)),
+                    .with_address(left.address().offset_by_bytes(1)),
             ),
             right.clone(),
         ),
@@ -603,7 +603,7 @@ fn refreshed_address_aliases_do_not_establish_pointer_identity() {
         unreachable!()
     };
     premises[0] = Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(left.pointer().clone(), right.pointer().clone()),
+        ConditionTerm::pointer_equal(left.address().clone(), right.address().clone()),
         true,
     );
     let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) = &goal
@@ -612,7 +612,7 @@ fn refreshed_address_aliases_do_not_establish_pointer_identity() {
     };
     // Establish the numeric result independently of value identity.
     premises.push(Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(left.pointer().clone(), right.pointer().clone()),
+        ConditionTerm::pointer_equal(left.address().clone(), right.address().clone()),
         true,
     ));
     let facts = PureFactStore::from_ordered(&premises);
@@ -620,7 +620,7 @@ fn refreshed_address_aliases_do_not_establish_pointer_identity() {
         facts
             .assumptions()
             .equality_graph
-            .are_equal(left.pointer(), right.pointer())
+            .are_equal(left.address(), right.address())
     );
     assert!(normalize_using_conditions(&goal, &premises, &facts).is_err());
 }
@@ -628,48 +628,48 @@ fn refreshed_address_aliases_do_not_establish_pointer_identity() {
 #[test]
 fn selected_native_cursor_normalization_is_stable_across_context_orders() {
     use crate::kernel::proof::{PureFactStore, fact_reasoning::normalize_using_conditions};
-    let original = PointerValue::new(
+    let original = Pointer::new(
         Address {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(100_001)), 1),
         },
         ProgramType::UInt8Pointer,
     );
-    let batch = PointerValue::new(
+    let batch = Pointer::new(
         Address::symbolic(Variable(1_000_001)),
         ProgramType::UInt8Pointer,
     );
-    let root = PointerValue::new(
+    let root = Pointer::new(
         Address::symbolic(Variable(1_000_005)),
         ProgramType::UInt8Pointer,
     );
     let cursor = root
         .clone()
-        .with_address(root.pointer().offset_by_bytes(16));
+        .with_address(root.address().offset_by_bytes(16));
     let first = MachineTerm::Variable(Variable(10));
     let second = MachineTerm::Variable(Variable(11));
     let at_first = original.clone().with_address(Address {
-        base: original.pointer().base.clone(),
+        base: original.address().base.clone(),
         offset: AddressOffset::add(
-            original.pointer().offset.clone(),
+            original.address().offset.clone(),
             AddressOffset::scale_int64(first.clone(), 1, true),
         ),
     });
     let at_second = batch.clone().with_address(Address {
-        base: batch.pointer().base.clone(),
+        base: batch.address().base.clone(),
         offset: AddressOffset::scale_int64(second.clone(), 1, true),
     });
     let sequential = Address {
-        base: original.pointer().base.clone(),
+        base: original.address().base.clone(),
         offset: AddressOffset::add(
-            at_first.pointer().offset.clone(),
+            at_first.address().offset.clone(),
             AddressOffset::scale_int64(second.clone(), 1, true),
         ),
     };
     let target = original.clone().with_address(Address {
-        base: original.pointer().base.clone(),
+        base: original.address().base.clone(),
         offset: AddressOffset::add(
-            original.pointer().offset.clone(),
+            original.address().offset.clone(),
             AddressOffset::scale_int64(
                 MachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
@@ -682,7 +682,7 @@ fn selected_native_cursor_normalization_is_stable_across_context_orders() {
             ),
         ),
     });
-    let full = |left: PointerValue, right: PointerValue| {
+    let full = |left: Pointer, right: Pointer| {
         Proposition::ConditionIs(
             ConditionTerm::PointerValueEqual(Box::new(left), Box::new(right)),
             true,
@@ -692,7 +692,7 @@ fn selected_native_cursor_normalization_is_stable_across_context_orders() {
         full(cursor.clone(), at_second),
         full(batch, at_first),
         Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(sequential, target.pointer().clone()),
+            ConditionTerm::pointer_equal(sequential, target.address().clone()),
             true,
         ),
     ];
@@ -728,8 +728,7 @@ fn checked_pointer_read_retention_keeps_a_simplified_address_equation() {
     let address = Address::symbolic(Variable(9072));
     let read = Address::loaded_value(&memory, &address);
     let named = Address::symbolic(Variable(9073));
-    let value =
-        PointerValue::new(read.clone(), ProgramType::Int32Pointer).with_address(named.clone());
+    let value = Pointer::new(read.clone(), ProgramType::Int32Pointer).with_address(named.clone());
     let fact = crate::kernel::ExecutionPureFact::logical_read_equation(value, read.clone());
     assert!(matches!(
         fact.proposition(),
@@ -810,11 +809,11 @@ fn structural_pointer_read_definitions_keep_domains_and_reject_partial_writes() 
     ));
     let named_memory =
         crate::kernel::memory_history::canonical_value_load_memory(&memory, &cell, 8);
-    let named = PointerValue::new(
+    let named = Pointer::new(
         Address::loaded_value(&named_memory, &cell),
         ProgramType::Int32Pointer,
     );
-    let original = PointerValue::new(
+    let original = Pointer::new(
         Address::loaded_value(&memory, &cell),
         ProgramType::Int32Pointer,
     );
@@ -831,7 +830,7 @@ fn structural_pointer_read_definitions_keep_domains_and_reject_partial_writes() 
     );
     let changed_memory =
         crate::kernel::memory_history::canonical_value_load_memory(&changed, &cell, 8);
-    let changed = PointerValue::new(
+    let changed = Pointer::new(
         Address::loaded_value(&changed_memory, &cell),
         ProgramType::Int32Pointer,
     );
@@ -846,7 +845,7 @@ fn stored_pointer_read_definitions_preserve_bounds_and_reject_partial_overwrites
     let _session = VerificationSession::enter();
     let slot = Address::symbolic(Variable(987_001));
     let target = Address::symbolic(Variable(987_002));
-    let stored = PointerValue::new(target.clone(), ProgramType::Int32Pointer).with_bounds(Some(
+    let stored = Pointer::new(target.clone(), ProgramType::Int32Pointer).with_bounds(Some(
         SubobjectBounds {
             start: target.clone(),
             width: 4u32.into(),
@@ -854,7 +853,7 @@ fn stored_pointer_read_definitions_preserve_bounds_and_reject_partial_overwrites
     ));
     let memory =
         intern_memory(Memory::new().store(slot.clone(), ProgramValue::Pointer(stored.clone())));
-    let read = PointerValue::new(
+    let read = Pointer::new(
         Address::loaded_value(&memory, &slot),
         ProgramType::Int32Pointer,
     );
@@ -878,7 +877,7 @@ fn stored_pointer_read_definitions_preserve_bounds_and_reject_partial_overwrites
             .clone()
             .store(slot.offset_by_bytes(4), ProgramValue::UInt32(9u32.into())),
     );
-    let changed_read = PointerValue::new(
+    let changed_read = Pointer::new(
         Address::loaded_value(&changed, &slot),
         ProgramType::Int32Pointer,
     );
@@ -893,7 +892,7 @@ fn a_fact_retained_pointer_cache_is_not_an_unconditional_read_definition() {
     let _session = VerificationSession::enter();
     let slot = Address::symbolic(Variable(987_010));
     let other = Address::symbolic(Variable(987_011));
-    let stored = PointerValue::new(
+    let stored = Pointer::new(
         Address::symbolic(Variable(987_012)),
         ProgramType::Int32Pointer,
     );
@@ -912,7 +911,7 @@ fn a_fact_retained_pointer_cache_is_not_an_unconditional_read_definition() {
         after.known_value(&slot),
         Some(ProgramValue::Pointer(stored.clone()))
     );
-    let read = PointerValue::new(
+    let read = Pointer::new(
         Address::loaded_value(&intern_memory(after), &slot),
         ProgramType::Int32Pointer,
     );
@@ -927,7 +926,7 @@ fn pointer_domain_queries_register_stored_read_definitions_without_prior_address
     let _session = VerificationSession::enter();
     let slot = Address::symbolic(Variable(989_100));
     let target = Address::symbolic(Variable(989_101));
-    let stored = PointerValue::new(target.clone(), ProgramType::Int32Pointer);
+    let stored = Pointer::new(target.clone(), ProgramType::Int32Pointer);
     let memory =
         intern_memory(Memory::new().store(slot.clone(), ProgramValue::Pointer(stored.clone())));
     let read = Address::loaded_value(&memory, &slot);

@@ -677,7 +677,7 @@ pub(super) fn transfer_population_call_facts<'a>(
                         "population call control needs one pointer anchor".into(),
                     ));
                 };
-                if *base != pointer.pointer() {
+                if *base != pointer.address() {
                     return Err(RuntimeError::FunctionContract(
                         "population call allocation does not match its authority anchor".into(),
                     ));
@@ -2845,8 +2845,8 @@ pub(in crate::kernel) fn representation_copy_cell_moves(
         _ => None,
     };
     let (Some(source_offset), Some(destination_offset), Some(bytes)) = (
-        source.pointer().offset.as_const(),
-        destination.pointer().offset.as_const(),
+        source.address().offset.as_const(),
+        destination.address().offset.as_const(),
         bytes,
     ) else {
         return Vec::new();
@@ -2854,8 +2854,8 @@ pub(in crate::kernel) fn representation_copy_cell_moves(
     if bytes <= 0 {
         return Vec::new();
     }
-    let source_block = source.pointer().base.clone();
-    let destination_block = destination.pointer().base.clone();
+    let source_block = source.address().base.clone();
+    let destination_block = destination.address().base.clone();
     // A checked byte copy requires the ranges be separate, so a self-copy in
     // one block is not the recognized effect.
     if source_block == destination_block {
@@ -4023,7 +4023,7 @@ fn execute_verified_function_applications_with_suspension(
                 *quantity
             };
             let (spent, _) = match events.checked_member_exchange_quantity(
-                &pointer.pointer().base,
+                &pointer.address().base,
                 &description,
                 false,
                 &exchange_quantity,
@@ -4075,7 +4075,7 @@ fn execute_verified_function_applications_with_suspension(
             let retirement = if spent.recognizes_imported_population(&description) {
                 spent.checked_retire_imported(&description, &effective_assumptions)
             } else {
-                spent.checked_retire(&pointer.pointer().base, &description)
+                spent.checked_retire(&pointer.address().base, &description)
             };
             let (retired, _) = match retirement {
                 Ok(exchange) => exchange,
@@ -4099,7 +4099,7 @@ fn execute_verified_function_applications_with_suspension(
                 } else if let Some(AlgebraicValue::Program(ProgramValue::Pointer(anchor))) =
                     additional.arguments().first()
                 {
-                    retired.checked_retire(&anchor.pointer().base, additional)
+                    retired.checked_retire(&anchor.address().base, additional)
                 } else {
                     paths.push(resource_call_failure(
                         "final release authority needs a pointer anchor",
@@ -4270,7 +4270,7 @@ fn execute_verified_function_applications_with_suspension(
                     ));
                     continue 'arguments;
                 };
-                let anchor = pointer.pointer();
+                let anchor = pointer.address();
                 if produce
                     && !events.recognizes_imported_population(&description)
                     && (anchor.offset != AddressOffset::Constant(0)
@@ -7010,7 +7010,7 @@ fn call_value_arguments(
             right.as_program_value(),
         ) {
             (Some(ProgramValue::Pointer(left)), Some(ProgramValue::Pointer(right))) => {
-                left.pointer() == right.pointer()
+                left.address() == right.address()
             }
             _ => left == right,
         };
@@ -7170,7 +7170,7 @@ fn function_contract_requirement_is_proven(
             let comparison_pointer = assumptions
                 .equality_graph
                 .pointer_value_representative(pointer);
-            let target = match comparison_pointer.pointer() {
+            let target = match comparison_pointer.address() {
                 Address {
                     base: AddressBase::Function(target),
                     offset: AddressOffset::Constant(0),
@@ -7208,7 +7208,7 @@ fn function_contract_requirement_is_proven(
             // carries its own contract, fixed to its captured values.
             let Some(target) = target else {
                 for source in contracts_from_facts(
-                    assumptions.function_contract_facts_for(pointer.pointer()),
+                    assumptions.function_contract_facts_for(pointer.address()),
                     environment,
                     &pointer.program_type(),
                 ) {
@@ -9504,7 +9504,7 @@ fn apply_verified_heap_allocation_delta(
         .iter()
         .filter_map(|fact| {
             fact.allocation_size()
-                .map(|(base, bytes)| (fact, base.pointer().clone(), bytes))
+                .map(|(base, bytes)| (fact, base.address().clone(), bytes))
         })
         .collect::<Vec<_>>();
     // The caller's untouched resources are expanded only when the callee
@@ -9545,7 +9545,7 @@ fn apply_verified_heap_allocation_delta(
         .filter_map(|fact| {
             fact.allocation_size().map(|(base, bytes)| {
                 (
-                    base.pointer().clone(),
+                    base.address().clone(),
                     bytes,
                     returned_tokens.contains(&fact).then_some(fact),
                 )
@@ -10647,7 +10647,7 @@ fn string_literal_instance_values(
         let Some(ProgramValue::Pointer(pointer)) = argument.as_program_value() else {
             return None;
         };
-        let pointer = pointer.pointer();
+        let pointer = pointer.address();
         let AddressBase::StringLiteral { bytes, .. } = &pointer.base else {
             return None;
         };
@@ -10723,7 +10723,7 @@ fn string_literal_composite_holds(
     }
     let literal_pointer = |argument: &AlgebraicValue| {
         matches!(argument.as_program_value(), Some(ProgramValue::Pointer(pointer))
-            if matches!(pointer.pointer().base, AddressBase::StringLiteral { .. }))
+            if matches!(pointer.address().base, AddressBase::StringLiteral { .. }))
     };
     let pointers_are_literal = arguments.iter().all(|argument| {
         !matches!(argument.as_program_value(), Some(ProgramValue::Pointer(_)))
@@ -13784,7 +13784,7 @@ fn held_child_witness(
         .iter()
         .filter_map(|argument| match argument {
             AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => {
-                Some(pointer.pointer().clone())
+                Some(pointer.address().clone())
             }
             _ => None,
         })
@@ -13802,7 +13802,7 @@ fn held_child_witness(
             Resource::Composite { name, arguments } if name == child_name => {
                 match arguments.as_ref() {
                     [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] => {
-                        Some(pointer.pointer().clone())
+                        Some(pointer.address().clone())
                     }
                     _ => None,
                 }
@@ -15578,7 +15578,7 @@ pub(super) fn loop_instance_guard(
         Ok(_) => return Err("loop guard requires a mutex pointer".into()),
         Err(message) => return Err(message.into()),
     };
-    Ok(Some((pointer.pointer().clone(), held.clone())))
+    Ok(Some((pointer.address().clone(), held.clone())))
 }
 
 pub(in crate::kernel) fn instance_body_guard_case(
@@ -19100,11 +19100,11 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 _ => state,
             };
             Ok(
-                super::mutexes::guard_resource(acquisition_state, pointer.pointer(), false)
+                super::mutexes::guard_resource(acquisition_state, pointer.address(), false)
                     .ok_or_else(|| {
                         if resource.role() == ResourceTransferRole::Borrow {
                             RuntimeError::MissingMutexGuard {
-                                mutex: pointer.pointer().clone(),
+                                mutex: pointer.address().clone(),
                             }
                         } else {
                             RuntimeError::FunctionContract(
@@ -19139,11 +19139,11 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 _ => state,
             };
             Ok(
-                super::mutexes::live_resource(initialization_state, pointer.pointer(), false)
+                super::mutexes::live_resource(initialization_state, pointer.address(), false)
                     .ok_or_else(|| {
                         if resource.role() == ResourceTransferRole::Borrow {
                             RuntimeError::MissingMutexLive {
-                                mutex: pointer.pointer().clone(),
+                                mutex: pointer.address().clone(),
                             }
                         } else {
                             RuntimeError::FunctionContract(
@@ -19178,7 +19178,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 ResourceStateSource::Entry => entry_state,
                 _ => state,
             };
-            let mut fact = super::mutexes::use_resource(initialization_state, pointer.pointer());
+            let mut fact = super::mutexes::use_resource(initialization_state, pointer.address());
             if let Some(protected) = protected {
                 let description = match evaluate_resource_type(
                     entry_state,
@@ -19236,7 +19236,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
             Ok(Ok(ResourceFact::own(Resource::Publication(
                 PublicationRight {
                     side: *side,
-                    flag: pointer.pointer().clone(),
+                    flag: pointer.address().clone(),
                     payload,
                     observed: None,
                 },
@@ -19777,10 +19777,10 @@ fn evaluate_function_declared_resource_spec(
                 budget,
             )? {
                 Ok(ProgramValue::Pointer(address))
-                    if !argument_state.memory().has_known_cell_at(address.pointer()) =>
+                    if !argument_state.memory().has_known_cell_at(address.address()) =>
                 {
                     selected_load_values
-                        .get(&(address.pointer().clone(), *value_type))
+                        .get(&(address.address().clone(), *value_type))
                         .cloned()
                 }
                 _ => None,
@@ -20363,7 +20363,7 @@ fn end_function_body_automatic_lifetimes(
         crate::instrumentation::record_deterministic_work(1);
         if slot.base.is_local_block()
             && !(function.return_aggregate_layout().is_some()
-                && matches!(returned, Some(ProgramValue::Pointer(pointer)) if pointer.pointer().base == slot.base))
+                && matches!(returned, Some(ProgramValue::Pointer(pointer)) if pointer.address().base == slot.base))
             && !caller.has_block(&slot.base)
             && memory.has_block(&slot.base)
         {
@@ -20426,12 +20426,12 @@ pub(in crate::kernel) fn function_exit_memory(
     }
     match value.pointer() {
         Some(pointer)
-            if pointer.pointer().base.is_local_block()
-                && !caller_state.memory.has_block(&pointer.pointer().base) =>
+            if pointer.address().base.is_local_block()
+                && !caller_state.memory.has_block(&pointer.address().base) =>
         {
             callee_state
                 .memory
-                .without_local_block(&pointer.pointer().base)
+                .without_local_block(&pointer.address().base)
         }
         _ => callee_state.memory.clone(),
     }

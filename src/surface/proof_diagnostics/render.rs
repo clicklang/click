@@ -148,7 +148,7 @@ impl MemoryStateLabels {
                 } else {
                     "result"
                 };
-                self.fallback_pointer_name(pointer.pointer(), name.into());
+                self.fallback_pointer_name(pointer.address(), name.into());
             }
             _ => {}
         }
@@ -181,7 +181,7 @@ impl MemoryStateLabels {
             };
             if let crate::kernel::ProgramValue::Pointer(pointer) = value {
                 labels.immutable_pointer_name(
-                    pointer.pointer(),
+                    pointer.address(),
                     &crate::surface::surface_parameter_binding(parameter.binding_name())
                         .to_string(),
                 );
@@ -1914,9 +1914,9 @@ impl Renderer<'_> {
                 self.offset(b, 0);
             }
             ConditionTerm::PointerValueEqual(a, b) => {
-                self.pointer(a.pointer());
+                self.pointer(a.address());
                 self.push(" == ");
-                self.pointer(b.pointer());
+                self.pointer(b.address());
             }
             ConditionTerm::PointerEqual(a, b) => {
                 self.pointer(a);

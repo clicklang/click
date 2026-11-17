@@ -182,7 +182,7 @@ impl TraceLoad {
         let identity =
             |value: &crate::kernel::ProgramValue, labels: &mut MemoryStateLabels| match value {
                 crate::kernel::ProgramValue::Pointer(pointer) => {
-                    labels.pointer_value_name(pointer.pointer())
+                    labels.pointer_value_name(pointer.address())
                 }
                 _ => render::render_program_value_labeled(value, labels),
             };
@@ -266,10 +266,10 @@ impl ChildArgumentTrace {
             views: HashMap::new(),
             child: child.clone(),
             index: *index,
-            actual: actual.pointer().clone(),
-            required: required.pointer().clone(),
+            actual: actual.address().clone(),
+            required: required.address().clone(),
             related: assumptions
-                .exact_pointer_aliases(actual.pointer())
+                .exact_pointer_aliases(actual.address())
                 .take(4)
                 .cloned()
                 .collect(),

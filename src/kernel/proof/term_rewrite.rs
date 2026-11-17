@@ -144,7 +144,7 @@ pub(crate) enum TypedProgramValueReplacement {
     Bitvector(MachineTerm),
     /// The whole value: a use of the bound variable's address adopts its
     /// subobject bounds.
-    Pointer(PointerValue),
+    Pointer(Pointer),
 }
 
 type MatchFieldReplacements = (
@@ -482,11 +482,11 @@ fn program_value_declaration_variable(value: &ProgramValue) -> Option<Variable> 
         | ProgramValue::Float64(MachineTerm::Variable(variable)) => Some(*variable),
         ProgramValue::Pointer(pointer)
             if matches!(
-                &pointer.pointer().base,
+                &pointer.address().base,
                 AddressBase::Symbolic(_) | AddressBase::FunctionSymbolic(_)
-            ) && matches!(&pointer.pointer().offset, AddressOffset::Constant(0)) =>
+            ) && matches!(&pointer.address().offset, AddressOffset::Constant(0)) =>
         {
-            match pointer.pointer().base {
+            match pointer.address().base {
                 AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable) => {
                     Some(variable)
                 }
@@ -1579,7 +1579,7 @@ fn exhausted_program_value(value: &ProgramValue) -> ProgramValue {
         ProgramValue::Float32(_) => ProgramValue::Float32(MachineTerm::constant(0)),
         ProgramValue::Float64(_) => ProgramValue::Float64(MachineTerm::uint64_constant(0)),
         ProgramValue::Pointer(pointer) => ProgramValue::Pointer(
-            PointerValue::new(exhausted_pointer(), pointer.program_type())
+            Pointer::new(exhausted_pointer(), pointer.program_type())
                 .with_pointee_volatile(pointer.pointee_volatile())
                 .with_pointee_constant(pointer.pointee_constant()),
         ),
@@ -1828,7 +1828,7 @@ pub(crate) struct TermRewrite<'a> {
     pointer_variable: Option<(Variable, &'a Address)>,
     pointer_addresses_only: bool,
     pointer_exact: Option<(&'a Address, &'a Address)>,
-    pointer_value_exact: Option<(&'a PointerValue, &'a PointerValue)>,
+    pointer_value_exact: Option<(&'a Pointer, &'a Pointer)>,
     pointer_offset_exact: Option<(&'a AddressOffset, &'a AddressOffset)>,
     /// A `Bool` equality's rewrite (Stage 5, rule L-Eq): every occurrence of
     /// the first condition is replaced by the second.
@@ -2497,7 +2497,7 @@ impl<'a> TermRewrite<'a> {
         rewrite
     }
 
-    pub(crate) fn for_pointer_value_exact(from: &'a PointerValue, to: &'a PointerValue) -> Self {
+    pub(crate) fn for_pointer_value_exact(from: &'a Pointer, to: &'a Pointer) -> Self {
         let mut rewrite = Self::empty();
         rewrite.pointer_value_exact = Some((from, to));
         // Reads named by load variables can sit at addresses formed from
@@ -2505,14 +2505,14 @@ impl<'a> TermRewrite<'a> {
         rewrite.resolve_registered_loads = true;
         // A full value equality also rewrites raw addresses in loadability,
         // memory endpoints and other address-only propositions.
-        rewrite.pointer_exact = Some((from.pointer(), to.pointer()));
+        rewrite.pointer_exact = Some((from.address(), to.address()));
         // Native C arguments share a numeric block. Their base pointer is
         // an offset subterm of a displaced copy, rather than its own block.
         // A full equality also establishes this same-block offset equality.
-        if from.pointer().base == AddressBase::ExternalArgument
-            && to.pointer().base == AddressBase::ExternalArgument
+        if from.address().base == AddressBase::ExternalArgument
+            && to.address().base == AddressBase::ExternalArgument
         {
-            rewrite.pointer_offset_exact = Some((&from.pointer().offset, &to.pointer().offset));
+            rewrite.pointer_offset_exact = Some((&from.address().offset, &to.address().offset));
         }
         rewrite.enforce_integer_work_limit = true;
         rewrite
@@ -3267,11 +3267,11 @@ impl<'a> TermRewrite<'a> {
                     // The footprint already fixed its admitted byte bounds.
                     // A complete equality transports its retained carrier,
                     // including transitions between known and opaque bounds.
-                    mapped = to.clone().with_address(mapped.pointer().clone());
+                    mapped = to.clone().with_address(mapped.address().clone());
                 }
                 let mut result = range
                     .with_bounds(
-                        mapped.pointer().clone(),
+                        mapped.address().clone(),
                         self.bits(range.bound_terms().0),
                         self.bits(range.bound_terms().1),
                     )
@@ -3983,12 +3983,12 @@ impl<'a> TermRewrite<'a> {
                 }
                 let shifted_source = self.pointer_value_exact.filter(|(from, to)| {
                     !self.source_disabled
-                        && v.pointer() != from.pointer()
-                        && v.pointer().base == from.pointer().base
-                        && ((matches!(from.pointer().base, AddressBase::Symbolic(_))
-                            && from.pointer().offset == AddressOffset::Constant(0))
-                            || (from.pointer().base == AddressBase::ExternalArgument
-                                && to.pointer().base == AddressBase::ExternalArgument))
+                        && v.address() != from.address()
+                        && v.address().base == from.address().base
+                        && ((matches!(from.address().base, AddressBase::Symbolic(_))
+                            && from.address().offset == AddressOffset::Constant(0))
+                            || (from.address().base == AddressBase::ExternalArgument
+                                && to.address().base == AddressBase::ExternalArgument))
                 });
                 let shifted_replacement = shifted_source.and_then(|(from, to)| {
                     (v.provenance() == from.provenance()
@@ -3998,7 +3998,7 @@ impl<'a> TermRewrite<'a> {
                     .then(|| to.clone())
                 });
                 let retain_view = shifted_source.is_some() && shifted_replacement.is_none();
-                let replacement = shifted_replacement.or_else(|| match &v.pointer().base {
+                let replacement = shifted_replacement.or_else(|| match &v.address().base {
                     AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable) => {
                         (!self.scope.program_values.contains_key(variable))
                             .then_some(())
@@ -4013,14 +4013,14 @@ impl<'a> TermRewrite<'a> {
                 }.or_else(|| {
                     let (from, to) = self.pointer_variable?;
                     if self.pointer_addresses_only || self.scope.program_values.contains_key(&from)
-                        || !matches!(v.pointer().base, AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable) if variable == from)
-                        || v.provenance() != &v.pointer().object_identity()
+                        || !matches!(v.address().base, AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable) if variable == from)
+                        || v.provenance() != &v.address().object_identity()
                     {
                         return None;
                     }
                     // Lexical substitution replaces a complete formal value.
                     // Address-equality rewrites use a separate constructor.
-                    Some(PointerValue::new(to.clone(), v.program_type()))
+                    Some(Pointer::new(to.clone(), v.program_type()))
                 }));
                 let adopted = if !v.bounds_are_known() {
                     replacement.as_ref().and_then(|p| p.bounds().cloned())
@@ -4053,7 +4053,7 @@ impl<'a> TermRewrite<'a> {
                     Some(origin) => {
                         if addresses_only {
                             Some(std::sync::Arc::new(origin.clone()))
-                        } else if replacement.is_some() && origin == &v.pointer().object_identity()
+                        } else if replacement.is_some() && origin == &v.address().object_identity()
                         {
                             replacement
                                 .as_ref()
@@ -4091,14 +4091,14 @@ impl<'a> TermRewrite<'a> {
                     // domain with a different view's domain. Nested reads still
                     // substitute their arguments through the equality.
                     if v.provenance() != from.provenance()
-                        && v.provenance().base == from.pointer().base
+                        && v.provenance().base == from.address().base
                     {
                         mapped =
                             mapped.with_provenance(std::sync::Arc::new(v.provenance().clone()));
                     }
                     if (from.bounds_are_known() || v.bounds_owner() != from.bounds_owner())
                         && v.bounds_owner()
-                            .is_some_and(|origin| origin.base == from.pointer().base)
+                            .is_some_and(|origin| origin.base == from.address().base)
                     {
                         mapped = mapped
                             .with_bounds_owner(v.bounds_owner().cloned().map(std::sync::Arc::new));
@@ -5240,9 +5240,9 @@ impl<'a> TermRewrite<'a> {
         // displaced addresses; the value path retains their selected bounds.
         if let Some((from, to)) = self.pointer_value_exact
             && !self.source_disabled
-            && matches!(from.pointer().base, AddressBase::Symbolic(_))
-            && from.pointer().offset == AddressOffset::Constant(0)
-            && p.base == from.pointer().base
+            && matches!(from.address().base, AddressBase::Symbolic(_))
+            && from.address().offset == AddressOffset::Constant(0)
+            && p.base == from.address().base
         {
             self.changed = true;
             let offset = self.offset(&p.offset);
@@ -5250,8 +5250,8 @@ impl<'a> TermRewrite<'a> {
                 return exhausted_pointer();
             }
             return Address {
-                base: to.pointer().base.clone(),
-                offset: AddressOffset::add(to.pointer().offset.clone(), offset),
+                base: to.address().base.clone(),
+                offset: AddressOffset::add(to.address().offset.clone(), offset),
             };
         }
         if let Some((from, to)) = self.pointer_variable
@@ -5635,7 +5635,7 @@ impl<'a> TermRewrite<'a> {
                 else {
                     unreachable!()
                 };
-                let canonical = |value: PointerValue| {
+                let canonical = |value: Pointer| {
                     value.map_addresses(|p| Address {
                         base: p.base.clone(),
                         offset: crate::kernel::eval::canonical_offset_term(&p.offset),
@@ -5937,7 +5937,7 @@ impl<'a> TermRewrite<'a> {
                     },
                     |context| context.pointer_provenance_match(left, right),
                 );
-                matches && graph.are_equal(left.pointer(), right.pointer())
+                matches && graph.are_equal(left.address(), right.address())
             }
             ConditionTerm::PointerEqual(left, right) => graph.are_equal(left, right),
             ConditionTerm::PointerOffsetEqual(left, right) => graph.are_offsets_equal(left, right),
@@ -7239,7 +7239,7 @@ mod tests {
                     "observe_array".into(),
                     vec![PureFunctionArgument::ArrayRef {
                         memory,
-                        pointer: ProgramValue::Pointer(PointerValue::new(
+                        pointer: ProgramValue::Pointer(Pointer::new(
                             pointer,
                             ProgramType::VoidPointer,
                         )),
@@ -7275,7 +7275,7 @@ mod tests {
             else {
                 unreachable!()
             };
-            assert_eq!(pointer.pointer(), &expected_pointer);
+            assert_eq!(pointer.address(), &expected_pointer);
             assert_eq!(*element_type, ProgramType::UInt8);
             assert!(std::sync::Arc::ptr_eq(
                 &memory.blocks,
@@ -7302,7 +7302,7 @@ mod tests {
         let mut program_replacements = BTreeMap::new();
         program_replacements.insert(
             source,
-            TypedProgramValueReplacement::Pointer(PointerValue::new(
+            TypedProgramValueReplacement::Pointer(Pointer::new(
                 replacement.clone(),
                 ProgramType::Int32Pointer,
             )),
@@ -8793,14 +8793,14 @@ mod pointer_integer_rewrite_tests {
     #[test]
     fn a_generic_read_rewrite_keeps_the_substituted_cells_version_name() {
         let _session = crate::kernel::VerificationSession::enter();
-        let from = PointerValue::new(
+        let from = Pointer::new(
             Address {
                 base: AddressBase::ExternalArgument,
                 offset: AddressOffset::Constant(0),
             },
             ProgramType::Int32Pointer,
         );
-        let to = PointerValue::new(
+        let to = Pointer::new(
             Address::symbolic(Variable(996_021)),
             ProgramType::Int32Pointer,
         );
@@ -8817,7 +8817,7 @@ mod pointer_integer_rewrite_tests {
             stored.clone(),
         ));
         let read =
-            AlgebraicTermNode::parameter_load(memory.clone(), from.pointer().clone(), parameter);
+            AlgebraicTermNode::parameter_load(memory.clone(), from.address().clone(), parameter);
         // A separate four-byte observation must not replace the generic
         // read's eight-byte origin when the same version name is reused.
         let partial = crate::kernel::intern_memory(memory.memory().clone().store(
@@ -8828,8 +8828,8 @@ mod pointer_integer_rewrite_tests {
             ProgramValue::UInt32(7u32.into()),
         ));
         let _ =
-            crate::kernel::memory_history::canonical_value_load_memory(&partial, from.pointer(), 4);
-        let expected = AlgebraicTermNode::parameter_load(memory, to.pointer().clone(), parameter);
+            crate::kernel::memory_history::canonical_value_load_memory(&partial, from.address(), 4);
+        let expected = AlgebraicTermNode::parameter_load(memory, to.address().clone(), parameter);
         assert_ne!(expected, stored, "a rewritten logical read stays a read");
         let rewritten = TermRewrite::for_pointer_value_exact(&from, &to).value(&read);
         assert_eq!(rewritten, expected);
@@ -8838,28 +8838,28 @@ mod pointer_integer_rewrite_tests {
     #[test]
     fn full_pointer_rewrite_keeps_the_read_version_and_state() {
         let _session = crate::kernel::VerificationSession::enter();
-        let from = PointerValue::new(
+        let from = Pointer::new(
             Address::symbolic(Variable(996_010)),
             ProgramType::Int32PointerPointer,
         );
-        let to = PointerValue::new(
+        let to = Pointer::new(
             Address::symbolic(Variable(996_011)),
             ProgramType::Int32PointerPointer,
         );
         let stored = ProgramValue::pointer(Address::symbolic(Variable(996_012)));
-        let memory = Memory::new().store(to.pointer().clone(), stored.clone());
-        let read = memory.symbolic_pointer_version_load(from.pointer(), ProgramType::Int32Pointer);
+        let memory = Memory::new().store(to.address().clone(), stored.clone());
+        let read = memory.symbolic_pointer_version_load(from.address(), ProgramType::Int32Pointer);
         let expected =
-            memory.symbolic_pointer_version_load(to.pointer(), ProgramType::Int32Pointer);
+            memory.symbolic_pointer_version_load(to.address(), ProgramType::Int32Pointer);
         assert_ne!(expected, stored, "a rewritten logical read stays a read");
         let rewrite = || TermRewrite::for_pointer_value_exact(&from, &to).value(&read);
         assert_eq!(rewrite(), expected);
         let later = memory.store(
-            to.pointer().clone(),
+            to.address().clone(),
             ProgramValue::pointer(Address::symbolic(Variable(996_013))),
         );
         let later_read =
-            later.symbolic_pointer_version_load(to.pointer(), ProgramType::Int32Pointer);
+            later.symbolic_pointer_version_load(to.address(), ProgramType::Int32Pointer);
         assert_ne!(later_read, expected);
         assert_eq!(
             rewrite(),
@@ -8910,7 +8910,7 @@ mod pointer_integer_rewrite_tests {
     #[test]
     fn numeric_rewriting_retains_the_existing_record_without_creating_one() {
         let context = PureFactContext::new();
-        let pointer = PointerValue::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(996_001)),
             ProgramType::Int32Pointer,
         );

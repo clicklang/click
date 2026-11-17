@@ -18,13 +18,13 @@ impl PureFactContext {
             (left, right)
         {
             let same_value =
-                |a: &PointerValue, b: &PointerValue| {
+                |a: &Pointer, b: &Pointer| {
                     a.program_type() == b.program_type()
                     && self.pointer_provenance_match(a, b)
                     && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
-                        a.pointer(), b.pointer(), self,
+                        a.address(), b.address(), self,
                     ) || crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
-                        a.pointer(), b.pointer(), self,
+                        a.address(), b.address(), self,
                     ))
                 };
             return same_value(a, c) && same_value(b, d);
@@ -50,13 +50,13 @@ impl PureFactContext {
             (left, right)
         {
             let same_value =
-                |a: &PointerValue, b: &PointerValue| {
+                |a: &Pointer, b: &Pointer| {
                     a.program_type() == b.program_type()
                     && self.pointer_provenance_match(a, b)
                     && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
-                        a.pointer(), b.pointer(), self,
+                        a.address(), b.address(), self,
                     ) || crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
-                        a.pointer(), b.pointer(), self,
+                        a.address(), b.address(), self,
                     ))
                 };
             return same_value(a, c) && same_value(b, d);

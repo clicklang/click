@@ -389,12 +389,12 @@ mod tests {
         KernelTermExport, MachineBinaryOp, SharedMachineIntegerTerm, SubobjectBounds,
         VerificationSession,
     };
-    fn pointer(offset: AddressOffset) -> PointerValue {
+    fn pointer(offset: AddressOffset) -> Pointer {
         let address = Address {
             base: AddressBase::Concrete("shared-key".into()),
             offset,
         };
-        PointerValue::new(address.clone(), ProgramType::VoidPointer)
+        Pointer::new(address.clone(), ProgramType::VoidPointer)
             .with_provenance(Arc::new(address.clone()))
             .with_pointee_volatile(true)
             .with_pointee_constant(true)

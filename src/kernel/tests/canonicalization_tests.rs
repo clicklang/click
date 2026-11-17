@@ -335,7 +335,7 @@ fn pointer_loaded_from_an_opaque_cell_is_named_by_its_read() {
         collect_offset_load_variables_from_value(&value.native(), &mut load_variables);
         assert_load_variables_have_defining_facts(&load_variables, &path.execution_facts());
         if let ProgramValue::Pointer(pointer) = value.clone().into_native()
-            && let Some(read) = pointer.pointer().as_loaded_value()
+            && let Some(read) = pointer.address().as_loaded_value()
         {
             assert_eq!(read.defining_address, cell);
             assert_eq!(read.displacement, AddressOffset::Constant(0));

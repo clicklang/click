@@ -1272,7 +1272,7 @@ pub enum ConditionTerm {
     PointerOffsetEqual(Box<AddressOffset>, Box<AddressOffset>),
     PointerEqual(Box<Address>, Box<Address>),
     /// Specification pointer equality includes the designated object and bounds.
-    PointerValueEqual(Box<PointerValue>, Box<PointerValue>),
+    PointerValueEqual(Box<Pointer>, Box<Pointer>),
     IntegerLessThan(SharedIntegerTerm, SharedIntegerTerm),
     IntegerLessEqual(SharedIntegerTerm, SharedIntegerTerm),
     IntegerGreaterThan(SharedIntegerTerm, SharedIntegerTerm),
@@ -1333,7 +1333,7 @@ enum ConditionIdentity<'a> {
     Float64(&'a FloatCondition),
     PointerOffsetEqual(&'a AddressOffset, &'a AddressOffset),
     PointerEqual(&'a Address, &'a Address),
-    PointerValueEqual(&'a PointerValue, &'a PointerValue),
+    PointerValueEqual(&'a Pointer, &'a Pointer),
     IntegerLessThan(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
     IntegerLessEqual(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
     IntegerGreaterThan(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
@@ -2349,8 +2349,8 @@ pub(super) struct ObjectTypePremise {
 /// values that differ only in it designate the same object. A fact about a
 /// pointer therefore matches the pointer however its type is qualified.
 #[derive(Clone, Debug)]
-pub struct PointerValue {
-    pointer: Address,
+pub struct Pointer {
+    address: Address,
     /// The object designated when this value entered. Address aliases never
     /// replace this component; only value transport or substitution maps it.
     provenance: Arc<Address>,
@@ -2402,7 +2402,7 @@ pub(in crate::kernel) struct RetainedPointerMetadata<'a> {
 /// an opaque domain whose bounds come from coverage evidence.
 ///
 /// The term-valued width also supports the legacy symbolic-bounds prototype.
-/// Production unseen pointers use `PointerValue::bounds_owner` instead
+/// Production unseen pointers use `Pointer::bounds_owner` instead
 /// (`design/pointer-subobject-bounds.md`, Phase C).
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct SubobjectBounds {
@@ -2414,7 +2414,7 @@ impl SubobjectBounds {
     /// The fact that these opaque bounds cover `range`.
     pub(crate) fn coverage_fact(&self, range: &MemoryRange) -> Proposition {
         let pointer = |pointer: Address| {
-            Term::ProgramValue(ProgramValue::Pointer(PointerValue::new(
+            Term::ProgramValue(ProgramValue::Pointer(Pointer::new(
                 pointer,
                 ProgramType::VoidPointer,
             )))
@@ -2464,9 +2464,9 @@ impl SubobjectBounds {
             return None;
         };
         let count = to
-            .pointer()
-            .element_index_from_base_with_width(from.pointer(), width)?;
-        Some((from.pointer().clone(), count, width))
+            .address()
+            .element_index_from_base_with_width(from.address(), width)?;
+        Some((from.address().clone(), count, width))
     }
 
     /// A native range retains both full-width endpoints in its coverage fact.
@@ -2489,7 +2489,7 @@ impl SubobjectBounds {
             return None;
         };
         Some(MemoryRange::new_wide(
-            base.pointer().clone(),
+            base.address().clone(),
             start.clone(),
             end.clone(),
             width,
@@ -2510,7 +2510,7 @@ impl SubobjectBounds {
     }
 }
 
-impl PointerValue {
+impl Pointer {
     pub(crate) fn new(pointer: Address, program_type: ProgramType) -> Self {
         assert!(
             program_type.is_pointer(),
@@ -2539,7 +2539,7 @@ impl PointerValue {
         Self {
             bounds_owner: (!known_root).then(|| Arc::new(root.clone())),
             provenance: Arc::new(root),
-            pointer,
+            address: pointer,
             program_type,
             qualifiers: known_root.then(|| {
                 Arc::new(PointerQualifiers {
@@ -2560,7 +2560,7 @@ impl PointerValue {
     ) -> Self {
         let mut value = Self::new(pointer, program_type);
         if matches!(program_type, ProgramType::FunctionPointer(_))
-            || value.pointer.base.is_function()
+            || value.address.base.is_function()
         {
             return value;
         }
@@ -2581,11 +2581,11 @@ impl PointerValue {
     /// the producing read, not an address-alias or preservation query.
     pub(crate) fn complete_read_source(&self) -> Option<(SharedMemory, Address)> {
         if self.bounds_owner() != Some(self.provenance())
-            || self.pointer.object_identity() == *self.provenance()
+            || self.address.object_identity() == *self.provenance()
         {
             return None;
         }
-        let address_read = self.pointer.as_loaded_value()?;
+        let address_read = self.address.as_loaded_value()?;
         let origin = self.provenance().as_loaded_value()?;
         if address_read.displacement != AddressOffset::Constant(0)
             || origin.displacement != AddressOffset::Constant(0)
@@ -2643,12 +2643,12 @@ impl PointerValue {
         self
     }
 
-    pub(crate) fn pointer(&self) -> &Address {
-        &self.pointer
+    pub(crate) fn address(&self) -> &Address {
+        &self.address
     }
 
     pub(crate) fn into_pointer(self) -> Address {
-        self.pointer
+        self.address
     }
 
     pub(crate) fn program_type(&self) -> ProgramType {
@@ -2681,7 +2681,7 @@ impl PointerValue {
 
     pub(crate) fn with_type(self, program_type: ProgramType) -> Self {
         Self {
-            pointer: self.pointer,
+            address: self.address,
             provenance: self.provenance,
             bounds_owner: self.bounds_owner,
             program_type,
@@ -2709,13 +2709,13 @@ impl PointerValue {
     /// own spelling: it names the same bytes either way, and the access
     /// check resolves the address against it as it resolves a held range.
     pub(crate) fn replace_pointer(&mut self, pointer: Address) {
-        self.pointer = pointer;
+        self.address = pointer;
     }
 
     /// The same value at another address in the same subobject: the result
     /// of pointer arithmetic, which keeps the type, qualifiers and bounds.
     pub(crate) fn with_address(mut self, pointer: Address) -> Self {
-        self.pointer = pointer;
+        self.address = pointer;
         self
     }
 
@@ -2808,7 +2808,7 @@ impl PointerValue {
     /// variables, not where it only respells the address.
     pub(crate) fn map_pointers(&self, mut map: impl FnMut(&Address) -> Address) -> Self {
         let mut result = self.clone();
-        result.pointer = map(&self.pointer);
+        result.address = map(&self.address);
         let provenance = map(&self.provenance);
         if provenance != *self.provenance {
             result.provenance = Arc::new(provenance);
@@ -2827,7 +2827,7 @@ impl PointerValue {
         &self,
         mut map: impl FnMut(&Address) -> Option<Address>,
     ) -> Option<Self> {
-        let pointer = map(&self.pointer)?;
+        let pointer = map(&self.address)?;
         let provenance = map(&self.provenance)?;
         let bounds_owner = match self.bounds_owner() {
             Some(origin) => Some(Arc::new(map(origin)?)),
@@ -2858,19 +2858,19 @@ impl PointerValue {
 
     /// Every address the value mentions, for variable collection.
     pub(crate) fn pointers(&self) -> impl Iterator<Item = &Address> {
-        std::iter::once(&self.pointer)
+        std::iter::once(&self.address)
             .chain(std::iter::once(self.provenance.as_ref()))
             .chain(self.bounds_owner())
             .chain(self.bounds().map(|bounds| &bounds.start))
     }
 
     pub(crate) fn is_null(&self) -> bool {
-        self.pointer.base == AddressBase::Concrete("null".to_string())
-            && self.pointer.offset == AddressOffset::Constant(0)
+        self.address.base == AddressBase::Concrete("null".to_string())
+            && self.address.offset == AddressOffset::Constant(0)
     }
 }
 
-impl PointerValue {
+impl Pointer {
     /// Everything that is the value's identity: the address, the type it is
     /// viewed through, whether the pointee is volatile, and the subobject it
     /// designates, plus its opaque local-reference custody. A lease key is a
@@ -2890,7 +2890,7 @@ impl PointerValue {
         Option<&SubobjectBounds>,
     ) {
         (
-            &self.pointer,
+            &self.address,
             &self.provenance,
             &self.program_type,
             self.pointee_volatile(),
@@ -2905,37 +2905,37 @@ impl PointerValue {
     }
 }
 
-impl PartialEq for PointerValue {
+impl PartialEq for Pointer {
     fn eq(&self, other: &Self) -> bool {
         self.identity() == other.identity()
     }
 }
 
-impl Eq for PointerValue {}
+impl Eq for Pointer {}
 
-impl std::hash::Hash for PointerValue {
+impl std::hash::Hash for Pointer {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.identity().hash(state);
     }
 }
 
-impl PartialOrd for PointerValue {
+impl PartialOrd for Pointer {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for PointerValue {
+impl Ord for Pointer {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.identity().cmp(&other.identity())
     }
 }
 
-impl std::ops::Deref for PointerValue {
+impl std::ops::Deref for Pointer {
     type Target = Address;
 
     fn deref(&self) -> &Self::Target {
-        &self.pointer
+        &self.address
     }
 }
 
@@ -3492,7 +3492,7 @@ pub(in crate::kernel) enum PointerIntegerKind {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct PointerIntegerValue {
     pub(in crate::kernel) numeric: Box<ProgramValue>,
-    pub(in crate::kernel) pointer: Box<PointerValue>,
+    pub(in crate::kernel) pointer: Box<Pointer>,
     pub(in crate::kernel) kind: PointerIntegerKind,
 }
 
@@ -3518,7 +3518,7 @@ pub enum ProgramValue {
     Float32(MachineTerm),
     /// IEEE-754 binary64 payload represented in the shared checked term arena.
     Float64(MachineTerm),
-    Pointer(PointerValue),
+    Pointer(Pointer),
     /// A value of an abstract type parameter: the spec value of that rigid
     /// type it is.
     Parameter(Box<AlgebraicTerm>),
@@ -5030,7 +5030,7 @@ impl AlgebraicTerm {
                     ProgramValue::Parameter(term) => pending.push(Node::Algebraic(term)),
                     ProgramValue::Void => {}
                     ProgramValue::Bool(v) => visit(MachineOperandView::Legacy(v)),
-                    ProgramValue::Pointer(v) => pending.push(Node::Offset(&v.pointer().offset)),
+                    ProgramValue::Pointer(v) => pending.push(Node::Offset(&v.address().offset)),
                     ProgramValue::Int8(v) => visit(MachineOperandView::Legacy(v)),
                     ProgramValue::Int16(v)
                     | ProgramValue::UInt16(v)
@@ -13963,7 +13963,7 @@ pub struct FunctionContractRefinementContext {
     /// not needed to lower the symbolic relation.
     pub(super) function_interface: FunctionContractInterface,
     pub(super) function_name: String,
-    pub(super) pointer: PointerValue,
+    pub(super) pointer: Pointer,
     pub(super) source_contract: Option<FunctionContract>,
     /// The values a fact fixed for the implementation side's own value
     /// parameters, when that side is a named contract found through one.

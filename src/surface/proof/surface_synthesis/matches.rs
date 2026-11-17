@@ -76,7 +76,7 @@ fn shared_declaration_variable(term: &KernelTerm) -> Option<(BindingCarrier, Var
         return Some((carrier, *variable));
     }
     let variable = match term.node() {
-        N::PointerValue(value)
+        N::Pointer(value)
         | N::PointerRead { value, .. }
         | N::PointerArithmetic { value, .. }
         | N::PointerCall { value, .. } => {

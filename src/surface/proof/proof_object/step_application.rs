@@ -1820,7 +1820,7 @@ fn trace_resource_fact(
             .zip(context.arguments)
         {
             if let ProgramExpression::Value(ProgramValue::Pointer(base)) = argument
-                && base.pointer() == range.base()
+                && base.address() == range.base()
             {
                 return crate::surface::proof_diagnostics::render::render_resource_fact_diagnostic(
                     fact,

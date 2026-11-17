@@ -4132,18 +4132,17 @@ impl PureFactContext {
                 ConditionTerm::PointerValueEqual(fact_left, fact_right),
                 ConditionTerm::PointerValueEqual(target_left, target_right),
             ) => {
-                let same = |fact: &crate::kernel::PointerValue,
-                            target: &crate::kernel::PointerValue| {
+                let same = |fact: &crate::kernel::Pointer, target: &crate::kernel::Pointer| {
                     fact == target
                         || fact.program_type() == target.program_type()
                             && self.pointer_provenance_match(fact, target)
                             && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
-                                fact.pointer(),
-                                target.pointer(),
+                                fact.address(),
+                                target.address(),
                                 self,
                             ) || crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
-                                fact.pointer(),
-                                target.pointer(),
+                                fact.address(),
+                                target.address(),
                                 self,
                             ))
                 };
@@ -5048,7 +5047,7 @@ impl PureFactContext {
                 && *value
             {
                 let address =
-                    ConditionTerm::pointer_equal(left.pointer().clone(), right.pointer().clone());
+                    ConditionTerm::pointer_equal(left.address().clone(), right.address().clone());
                 if condition_polarities.insert(canonical_contradiction_condition(&address), true)
                     == Some(false)
                 {

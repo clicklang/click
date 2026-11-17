@@ -67,11 +67,11 @@ fn owned_entry_footprint_names_memory_owners_and_refuses_unnameable_ones() {
 #[test]
 fn restoring_a_loop_frame_retains_complete_pointer_reads_but_not_written_cells() {
     let _session = crate::kernel::VerificationSession::enter();
-    let field = PointerValue::new(
+    let field = Pointer::new(
         Address::symbolic(Variable(916_200)),
         ProgramType::Int32Pointer,
     );
-    let data = PointerValue::new(
+    let data = Pointer::new(
         Address::symbolic(Variable(916_201)),
         ProgramType::Int32Pointer,
     );
@@ -80,8 +80,8 @@ fn restoring_a_loop_frame_retains_complete_pointer_reads_but_not_written_cells()
     let initial = Memory::new();
     // Restore scalar cache cells covering one complete pointer.
     let memory = initial
-        .materialize_symbolic_cell(field.pointer().clone(), ProgramType::Int32)
-        .materialize_symbolic_cell(field.pointer().offset_by_bytes(4), ProgramType::Int32);
+        .materialize_symbolic_cell(field.address().clone(), ProgramType::Int32)
+        .materialize_symbolic_cell(field.address().offset_by_bytes(4), ProgramType::Int32);
     let state = ExecutionState::new()
         .with_local("field", ProgramValue::Pointer(field.clone()))
         .with_local("data", ProgramValue::Pointer(data))
@@ -132,7 +132,7 @@ fn restoring_a_loop_frame_retains_complete_pointer_reads_but_not_written_cells()
         let preservation = crate::kernel::tests::explicit_frame(
             state.memory(),
             head.top.memory(),
-            field.pointer(),
+            field.address(),
             ProgramType::Int32Pointer,
             &head.summaries,
             &assumptions,

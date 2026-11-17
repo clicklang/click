@@ -20,7 +20,7 @@ pub(crate) struct KernelPointerQualifiers {
     pub(crate) object_type_evidence: Option<ObjectTypeEvidence>,
 }
 #[derive(Clone, Debug)]
-pub(crate) struct KernelPointerValue {
+pub(crate) struct KernelPointer {
     pub(crate) address: SharedAddress,
     pub(crate) provenance: SharedAddress,
     pub(crate) bounds_owner: Option<SharedAddress>,
@@ -31,7 +31,7 @@ pub(crate) struct KernelPointerValue {
 /// Exact producer handle. Logical equality is a separate checker operation;
 /// it must not discard qualifiers or proof evidence from this payload.
 #[derive(Clone)]
-pub struct SharedPointerValue(Arc<KernelPointerValue>);
+pub struct SharedPointerValue(Arc<KernelPointer>);
 impl std::fmt::Debug for SharedPointerValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("SharedPointerValue")
@@ -51,11 +51,11 @@ impl Hash for SharedPointerValue {
     }
 }
 impl SharedPointerValue {
-    pub(crate) fn new(value: KernelPointerValue) -> Self {
+    pub(crate) fn new(value: KernelPointer) -> Self {
         crate::instrumentation::record_deterministic_work(1);
         Self(Arc::new(value))
     }
-    pub(crate) fn node(&self) -> &KernelPointerValue {
+    pub(crate) fn node(&self) -> &KernelPointer {
         &self.0
     }
     pub(in crate::kernel) fn retained_nonaddress_metadata(&self) -> RetainedPointerMetadata<'_> {
@@ -138,7 +138,7 @@ impl SharedPointerValue {
             && bounds_match
             && evidence_matches
     }
-    /// Same address roles as PointerValue::pointers. Widths remain separate
+    /// Same address roles as Pointer::pointers. Widths remain separate
     /// numeric payloads; each reader retains its existing metadata policy.
     pub(crate) fn addresses(&self) -> impl Iterator<Item = &SharedAddress> {
         let value = self.node();
@@ -153,15 +153,15 @@ impl SharedPointerValue {
                     .map(|bounds| &bounds.start),
             )
     }
-    pub(crate) fn import(value: &PointerValue) -> Self {
+    pub(crate) fn import(value: &Pointer) -> Self {
         Self::import_addresses(value, SharedAddress::import)
     }
-    pub(crate) fn import_produced(value: &PointerValue) -> Self {
+    pub(crate) fn import_produced(value: &Pointer) -> Self {
         Self::import_addresses(value, SharedAddress::import_produced)
     }
-    fn import_addresses(value: &PointerValue, address: fn(&Address) -> SharedAddress) -> Self {
-        Self::new(KernelPointerValue {
-            address: address(&value.pointer),
+    fn import_addresses(value: &Pointer, address: fn(&Address) -> SharedAddress) -> Self {
+        Self::new(KernelPointer {
+            address: address(&value.address),
             provenance: address(&value.provenance),
             bounds_owner: value.bounds_owner.as_ref().map(|pointer| address(pointer)),
             program_type: value.program_type,
@@ -183,10 +183,10 @@ impl SharedPointerValue {
             }),
         })
     }
-    pub(crate) fn export(&self) -> Result<PointerValue, &'static str> {
+    pub(crate) fn export(&self) -> Result<Pointer, &'static str> {
         let value = self.node();
-        Ok(PointerValue {
-            pointer: value.address.export()?,
+        Ok(Pointer {
+            address: value.address.export()?,
             provenance: Arc::new(value.provenance.export()?),
             bounds_owner: value
                 .bounds_owner
@@ -225,7 +225,7 @@ impl KernelTerm {
     pub(crate) fn shared_pointer_value(value: SharedPointerValue) -> Self {
         Self::intern(
             KernelType::Program(value.node().program_type),
-            KernelTermNode::PointerValue(value),
+            KernelTermNode::Pointer(value),
         )
     }
 
@@ -255,7 +255,7 @@ impl KernelTerm {
 
     pub(crate) fn pointer_payload(&self) -> Option<&SharedPointerValue> {
         match self.node() {
-            KernelTermNode::PointerValue(value)
+            KernelTermNode::Pointer(value)
             | KernelTermNode::PointerRead { value, .. }
             | KernelTermNode::PointerArithmetic { value, .. }
             | KernelTermNode::PointerCall { value, .. } => Some(value),
@@ -311,7 +311,7 @@ impl KernelTerm {
 
     /// Keep the producer structure when existing object-argument checking
     /// refines only its complete pointer payload.
-    pub(crate) fn refined_pointer_argument(&self, pointer: &PointerValue) -> Self {
+    pub(crate) fn refined_pointer_argument(&self, pointer: &Pointer) -> Self {
         if let KernelTermNode::ArrayReference {
             memory,
             pointer: source,
@@ -362,10 +362,10 @@ impl KernelTerm {
 mod tests {
     use super::*;
     use crate::kernel::effective_type::{CAccessClass, CScalarClass};
-    pub(super) fn complete_source() -> PointerValue {
+    pub(super) fn complete_source() -> Pointer {
         let class = CAccessClass::Scalar(CScalarClass::Int);
-        PointerValue {
-            pointer: Address::symbolic(Variable(1000001)),
+        Pointer {
+            address: Address::symbolic(Variable(1000001)),
             provenance: Arc::new(Address::symbolic(Variable(1000002))),
             bounds_owner: Some(Arc::new(Address::symbolic(Variable(1000003)))),
             program_type: ProgramType::VoidPointer,

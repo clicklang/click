@@ -14379,7 +14379,7 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
             .facts()
             .assumptions()
             .contains_known(&Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(read.pointer().clone(), target),
+                ConditionTerm::pointer_equal(read.address().clone(), target),
                 true
             )),
         "typed read did not reach proof facts: {:?}",
@@ -15091,7 +15091,7 @@ fn proof_binding_names_keep_typed_scopes_when_a_generic_alias_leaves() {
 fn generated_pointer_requirement_retains_lexical_binder_without_capturing_a_shadow() {
     let variable = Variable(981_020);
     let pointer =
-        crate::kernel::PointerValue::new(Address::symbolic(variable), ProgramType::Int32Pointer);
+        crate::kernel::Pointer::new(Address::symbolic(variable), ProgramType::Int32Pointer);
     let expression = ContractExpression::ProgramExpression(ProgramExpression::Value(
         ProgramValue::Pointer(pointer.clone()),
     ));
@@ -15099,7 +15099,7 @@ fn generated_pointer_requirement_retains_lexical_binder_without_capturing_a_shad
     locals.set_values(locals.values.with_inserted("identity", expression));
     let state = ExecutionState::new();
     let goal = Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(pointer.pointer().clone(), Address::null()),
+        ConditionTerm::pointer_equal(pointer.address().clone(), Address::null()),
         false,
     );
     let synthesize = || {

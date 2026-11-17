@@ -39,7 +39,7 @@ impl EqualityGraph {
             Term(&'a Term),
             Model(&'a AlgebraicTerm),
             Value(&'a ProgramValue),
-            Pointer(&'a PointerValue),
+            Pointer(&'a Pointer),
         }
         let mut pending = match proposition {
             Proposition::Equal(a, b) => vec![Work::Term(a), Work::Term(b)],
@@ -74,7 +74,7 @@ impl EqualityGraph {
                 Work::Pointer(pointer) => {
                     if let Some(evidence) = pointer.object_type_evidence() {
                         keys.insert((
-                            pointer.pointer().clone(),
+                            pointer.address().clone(),
                             terms::PointerFactKey::ObjectType(evidence.class.clone()),
                         ));
                     }
@@ -117,7 +117,7 @@ impl EqualityGraph {
         // its element width, so a lookup by bounds finds them all.
         if name.starts_with(crate::kernel::SUBOBJECT_COVERS_PREDICATE_PREFIX) {
             return Some((
-                pointer.pointer().clone(),
+                pointer.address().clone(),
                 terms::PointerFactKey::PredicateShape(
                     crate::kernel::SUBOBJECT_COVERS_PREDICATE_PREFIX.to_string(),
                     arguments.len(),
@@ -136,7 +136,7 @@ impl EqualityGraph {
                     pointer.program_type(),
                 )
             });
-        Some((pointer.pointer().clone(), key))
+        Some((pointer.address().clone(), key))
     }
 
     /// Retain an exact source proposition in the selected pointer's checked
@@ -284,7 +284,7 @@ impl EqualityGraph {
         &self,
         start: &Address,
     ) -> Vec<crate::kernel::Proposition> {
-        use crate::kernel::{PointerValue, ProgramType, SUBOBJECT_COVERS_PREDICATE_PREFIX};
+        use crate::kernel::{Pointer, ProgramType, SUBOBJECT_COVERS_PREDICATE_PREFIX};
         [3, 4]
             .into_iter()
             .flat_map(|arity| {
@@ -292,7 +292,7 @@ impl EqualityGraph {
                     SUBOBJECT_COVERS_PREDICATE_PREFIX.to_string(),
                     arity,
                     0,
-                    PointerValue::new(start.clone(), ProgramType::VoidPointer).program_type(),
+                    Pointer::new(start.clone(), ProgramType::VoidPointer).program_type(),
                 );
                 self.pointer_fact_candidates(start, &key)
                     .iter()

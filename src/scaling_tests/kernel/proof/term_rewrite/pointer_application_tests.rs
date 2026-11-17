@@ -85,12 +85,12 @@ fn pure_pointer_legacy_scalar_substitution_visits_the_shared_dag_once() {
 fn full_pointer_substitution_visits_shared_read_origins_once() {
     let _session = VerificationSession::enter();
     let memory = intern_memory(Memory::new());
-    let p = PointerValue::new(Address::symbolic(Variable(810)), ProgramType::Int32Pointer);
-    let q = PointerValue::new(Address::symbolic(Variable(811)), ProgramType::Int32Pointer);
+    let p = Pointer::new(Address::symbolic(Variable(810)), ProgramType::Int32Pointer);
+    let q = Pointer::new(Address::symbolic(Variable(811)), ProgramType::Int32Pointer);
     let mut costs = Vec::new();
     for depth in [16, 32, 64] {
-        let mut input = p.pointer().clone();
-        let mut expected = q.pointer().clone();
+        let mut input = p.address().clone();
+        let mut expected = q.address().clone();
         for _ in 0..depth {
             input = Address::loaded_value(
                 &memory,
@@ -122,17 +122,17 @@ fn full_pointer_resource_relationship_rewriting_scales_with_its_arguments() {
     for size in [16usize, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = intern_memory(Memory::new());
-        let source = PointerValue::from_read(
+        let source = Pointer::from_read(
             Address::symbolic(Variable(425_100)),
             ProgramType::Int32Pointer,
             &memory,
             &Address::symbolic(Variable(425_101)),
         );
-        let target = PointerValue::new(
+        let target = Pointer::new(
             Address::symbolic(Variable(425_102)),
             ProgramType::Int32Pointer,
         );
-        let relationship = |value: &PointerValue| Proposition::ResourceSeparate {
+        let relationship = |value: &Pointer| Proposition::ResourceSeparate {
             left: Box::new(Resource::Memory(MemoryRange::from_pointer_value(
                 value,
                 0u32.into(),
@@ -169,7 +169,7 @@ fn displaced_full_pointer_rewrite_scales_with_the_selected_offset() {
         let mut costs = Vec::new();
         for size in [8_u64, 32, 128] {
             let parameter = |id| {
-                PointerValue::new(
+                Pointer::new(
                     Address {
                         base: AddressBase::ExternalArgument,
                         offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(id)), 1),
@@ -179,14 +179,14 @@ fn displaced_full_pointer_rewrite_scales_with_the_selected_offset() {
             };
             let base = parameter(916_221);
             let source = if symbolic {
-                PointerValue::new(
+                Pointer::new(
                     Address::symbolic(Variable(916_222)),
                     ProgramType::UInt8Pointer,
                 )
             } else {
                 parameter(916_222)
             };
-            let target = base.clone().with_address(base.pointer().offset_by_bytes(2));
+            let target = base.clone().with_address(base.address().offset_by_bytes(2));
             let delta = (0..size).fold(AddressOffset::Constant(0), |offset, index| {
                 AddressOffset::add(
                     offset,
@@ -194,8 +194,8 @@ fn displaced_full_pointer_rewrite_scales_with_the_selected_offset() {
                 )
             });
             let input = source.clone().with_address(Address {
-                base: source.pointer().base.clone(),
-                offset: AddressOffset::add(source.pointer().offset.clone(), delta.clone()),
+                base: source.address().base.clone(),
+                offset: AddressOffset::add(source.address().offset.clone(), delta.clone()),
             });
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let mut rewrite = TermRewrite::for_pointer_value_exact(&source, &target);
@@ -206,11 +206,11 @@ fn displaced_full_pointer_rewrite_scales_with_the_selected_offset() {
             let ProgramValue::Pointer(result) = result else {
                 panic!("pointer type")
             };
-            assert_eq!(result.pointer().base, target.pointer().base);
+            assert_eq!(result.address().base, target.address().base);
             assert_eq!(
-                crate::kernel::eval::canonical_offset_term(&result.pointer().offset),
+                crate::kernel::eval::canonical_offset_term(&result.address().offset),
                 crate::kernel::eval::canonical_offset_term(&AddressOffset::add(
-                    target.pointer().offset.clone(),
+                    target.address().offset.clone(),
                     delta
                 ))
             );
@@ -264,7 +264,7 @@ fn integer_address_rewrite_visits_a_shared_pointer_dag_once() {
                 panic!("lost pointer arguments")
             };
             assert!(left == right, "the shared branches must stay identical");
-            leaf = left.pointer();
+            leaf = left.address();
         }
         assert_eq!(leaf, &Address::null());
         costs.push(work);

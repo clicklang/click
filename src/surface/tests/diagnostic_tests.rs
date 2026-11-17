@@ -4,7 +4,7 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
 fn full_and_concise_reports_keep_named_pointer_prerequisites() {
-    use crate::kernel::{Address, PointerValue, ProgramType, Variable};
+    use crate::kernel::{Address, Pointer, ProgramType, Variable};
     use crate::surface::proof_diagnostics::{
         ProofDiagnosticOrigin, ProofDiagnosticState, ProofFailureDiagnostic,
         render::MemoryStateLabels,
@@ -34,7 +34,7 @@ fn full_and_concise_reports_keep_named_pointer_prerequisites() {
         node: Address::symbolic(Variable(990_101)),
         identity: Address::symbolic(Variable(990_102)),
     };
-    let pointer = |p: &Address| PointerValue::new(p.clone(), ProgramType::Int32Pointer);
+    let pointer = |p: &Address| Pointer::new(p.clone(), ProgramType::Int32Pointer);
     let requirement = Proposition::ConditionIs(
         ConditionTerm::PointerValueEqual(
             Box::new(pointer(&names.node)),
@@ -2055,7 +2055,7 @@ fn unheld_field_without_a_checked_consumption_does_not_invent_one() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_12")]
 fn source_unknown_local_pointer_diagnostics_identify_byte_units() {
     use crate::kernel::{
-        Address, AddressBase, AddressOffset, MachineTerm, MemoryRange, PointerValue, ProgramType,
+        Address, AddressBase, AddressOffset, MachineTerm, MemoryRange, Pointer, ProgramType,
     };
     let base = Address {
         base: AddressBase::Concrete("unknown".into()),
@@ -2063,7 +2063,7 @@ fn source_unknown_local_pointer_diagnostics_identify_byte_units() {
     };
     let state = ExecutionState::new().with_local(
         "cursor",
-        ProgramValue::Pointer(PointerValue::new(base.clone(), ProgramType::Int32Pointer)),
+        ProgramValue::Pointer(Pointer::new(base.clone(), ProgramType::Int32Pointer)),
     );
     let (parameters, arguments) = super::diagnostics::local_naming_tables_with_source(&state, None);
     let range = MemoryRange::new(base, MachineTerm::constant(1), MachineTerm::constant(2));
@@ -3534,7 +3534,7 @@ void symbolic(int32* p, const struct callbacks* cb) {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_19")]
 fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_states() {
     use crate::kernel::{
-        Address, AddressBase, AddressOffset, AlgebraicValue, LoadKind, Memory, PointerValue,
+        Address, AddressBase, AddressOffset, AlgebraicValue, LoadKind, Memory, Pointer,
         ProgramType, ProgramValue, Resource, Variable, intern_memory,
     };
     let _session = crate::kernel::VerificationSession::enter();
@@ -3545,7 +3545,7 @@ fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_states() {
     let before = Memory::new();
     let after = before.clone().store(read.clone(), int32(7));
     let argument = |memory: Memory| {
-        AlgebraicValue::Program(ProgramValue::Pointer(PointerValue::new(
+        AlgebraicValue::Program(ProgramValue::Pointer(Pointer::new(
             Address {
                 base: AddressBase::Concrete("nodes".into()),
                 offset: AddressOffset::scale_int32(
@@ -4284,7 +4284,7 @@ fn struct_pointer_pointer_ranges_print_pointer_units() {
         "struct item { uint8 tag; int64 value; }; void inspect(struct item **pp) {}",
     )
     .unwrap();
-    let pointer = crate::kernel::PointerValue::new(
+    let pointer = crate::kernel::Pointer::new(
         Address {
             base: AddressBase::Concrete("array".into()),
             offset: crate::kernel::AddressOffset::Constant(0),

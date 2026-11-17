@@ -1,8 +1,8 @@
 //! Borrow exact pointer payloads and written addresses during certification.
 use super::*;
 use crate::kernel::{
-    Address, AddressBase, AddressOffset, KernelAddressOffset, PointerValue,
-    RetainedPointerMetadata, SharedAddress, SharedAddressOffset, SharedPointerValue,
+    Address, AddressBase, AddressOffset, KernelAddressOffset, Pointer, RetainedPointerMetadata,
+    SharedAddress, SharedAddressOffset, SharedPointerValue,
 };
 use std::borrow::Cow;
 
@@ -116,7 +116,7 @@ impl<'a> Offset<'a> {
 
 #[derive(Clone, Copy)]
 enum Value<'a> {
-    Native(&'a PointerValue),
+    Native(&'a Pointer),
     Shared(&'a SharedPointerValue),
 }
 impl<'a> Value<'a> {
@@ -137,7 +137,7 @@ impl<'a> Value<'a> {
     }
     fn address(self) -> BorrowedAddress<'a> {
         match self {
-            Self::Native(value) => BorrowedAddress::Native(value.pointer()),
+            Self::Native(value) => BorrowedAddress::Native(value.address()),
             Self::Shared(value) => BorrowedAddress::Shared(&value.node().address),
         }
     }
@@ -247,7 +247,7 @@ impl Comparison {
     pub(super) fn shared_addresses(&mut self, a: &SharedAddress, b: &SharedAddress) -> bool {
         self.addresses(BorrowedAddress::Shared(a), BorrowedAddress::Shared(b))
     }
-    pub(super) fn pointer_value(&mut self, a: &PointerValue, b: &PointerValue) -> bool {
+    pub(super) fn pointer_value(&mut self, a: &Pointer, b: &Pointer) -> bool {
         self.pointer_values(Value::Native(a), Value::Native(b))
     }
     fn pointer_values(&mut self, a: Value<'_>, b: Value<'_>) -> bool {

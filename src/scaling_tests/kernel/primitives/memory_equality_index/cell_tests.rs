@@ -1313,7 +1313,7 @@ fn captured_interior_pointer_reads_keep_owned_bounds_and_opaque_base_identity() 
         let ExpressionOutcome::Value(ProgramValue::Pointer(value)) = &paths[0].outcome else {
             panic!("pointer read")
         };
-        value.pointer().clone()
+        value.address().clone()
     };
     let base = read(972_100);
     let unrelated = read(972_101);
@@ -1511,16 +1511,16 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
             );
             let pointer = Address::loaded(&MachineTerm::Variable(variable)).unwrap();
             context.register_pointer_read(&pointer, &retained_state, &field);
-            PointerValue::from_read(pointer, ProgramType::Int32Pointer, &retained_state, &field)
+            Pointer::from_read(pointer, ProgramType::Int32Pointer, &retained_state, &field)
         };
         let source = read(&PureFactContext::new(), &Memory::new());
         let before = Memory::new().store(field.clone(), ProgramValue::Pointer(source.clone()));
-        let range = |base: PointerValue, start: u32, end: u32| {
+        let range = |base: Pointer, start: u32, end: u32| {
             MemoryRange::from_pointer_value(&base, start.into(), end.into(), 4)
         };
         let separation = Proposition::ResourceSeparate {
             left: Box::new(Resource::Memory(range(
-                PointerValue::new(field.clone(), ProgramType::Int32Pointer),
+                Pointer::new(field.clone(), ProgramType::Int32Pointer),
                 0,
                 2,
             ))),
@@ -1536,10 +1536,10 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
         let current = read(&context, &after);
         assert_eq!(
             crate::kernel::memory_history::checked_pointer_read_endpoint(
-                current.pointer(),
+                current.address(),
                 &context
             ),
-            Some(source.pointer().clone())
+            Some(source.address().clone())
         );
         let tail = ResourceFact::own_memory(range(source.clone(), 1, 8));
         let mut resources = ResourceContext::new()
@@ -1547,7 +1547,7 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
             .unchecked_with_fact(ResourceFact::own_memory(range(current.clone(), 0, 1)));
         for index in 0..size {
             resources = resources.unchecked_with_fact(ResourceFact::own_memory(range(
-                PointerValue::new(
+                Pointer::new(
                     Address::symbolic(Variable(9_911_000 + index)),
                     ProgramType::Int32Pointer,
                 ),
@@ -1568,7 +1568,7 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
         assert!(
             !context
                 .equality_graph
-                .are_equal(source.pointer(), current.pointer())
+                .are_equal(source.address(), current.address())
         );
         let unseparated = PureFactContext::new();
         assert!(
@@ -1641,7 +1641,7 @@ fn framed_pointer_read_selects_interior_writes_under_live_authority() {
         let source = read(&PureFactContext::new(), &Memory::new());
         let before = Memory::new().store(
             field.clone(),
-            ProgramValue::Pointer(PointerValue::new(source.clone(), ProgramType::Int32Pointer)),
+            ProgramValue::Pointer(Pointer::new(source.clone(), ProgramType::Int32Pointer)),
         );
         let range = |base: Address, start: u32, end: u32| {
             MemoryRange::new_with_element_width(base, start.into(), end.into(), 4)

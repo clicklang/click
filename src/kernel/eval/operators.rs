@@ -127,7 +127,7 @@ fn add_arithmetic_branch_fact(
     add_condition_path_fact(facts, assumptions, condition, value)
 }
 
-fn pointer_types_compatible(left: &PointerValue, right: &PointerValue) -> bool {
+fn pointer_types_compatible(left: &Pointer, right: &Pointer) -> bool {
     left.program_type()
         .pointer_types_compatible(right.program_type())
         || left.is_null()
@@ -444,7 +444,7 @@ fn retain_tagged_representation(
             else {
                 continue;
             };
-            if &form.pointer != record.pointer.pointer() {
+            if &form.pointer != record.pointer.address() {
                 continue;
             }
             record.kind = PointerIntegerKind::Tagged;
@@ -1851,7 +1851,7 @@ pub(in crate::kernel) fn apply_program_bitwise_not(
 }
 
 pub(super) fn pointer_value_step_width(
-    pointer: &PointerValue,
+    pointer: &Pointer,
     expression_width: Option<u32>,
 ) -> Option<u32> {
     // GNU C treats void-pointer arithmetic as byte arithmetic. Other
@@ -2553,7 +2553,7 @@ pub(in crate::kernel) fn pointer_index_term(
 
 fn pointer_offset_by_elements_paths(
     state: &ExecutionState,
-    pointer: PointerValue,
+    pointer: Pointer,
     offset: MachineTerm,
     byte_width: u32,
     unsigned: bool,
@@ -2563,7 +2563,7 @@ fn pointer_offset_by_elements_paths(
     assumptions: &PureFactContext,
 ) -> Vec<ExpressionPath> {
     let value = pointer;
-    let pointer = value.pointer().clone();
+    let pointer = value.address().clone();
 
     // C11 6.5.6p8 defines additive pointer arithmetic only for a pointer that
     // designates an element of an array object or one past its end. A null
@@ -2799,14 +2799,14 @@ fn byte_product_no_overflow(
 
 pub(in crate::kernel) fn pointer_offset_by_bytes_paths(
     state: &ExecutionState,
-    pointer: PointerValue,
+    pointer: Pointer,
     bytes: u32,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<ExpressionPath> {
     let value = pointer;
-    let pointer = value.pointer().clone();
+    let pointer = value.address().clone();
     if pointer.base.is_function() && bytes != 0 {
         return vec![ExpressionPath {
             outcome: ExpressionOutcome::RuntimeError(RuntimeError::IndeterminatePointeeType),
@@ -3756,7 +3756,7 @@ fn simplify_program_int32_add_operand(
 /// `const` pointee qualifier, as formation always has; the write-through-const
 /// check reads the lvalue's static type.
 fn apply_pointer_formation_guards(
-    pointer: PointerValue,
+    pointer: Pointer,
     guards: Vec<PointerFormationGuard>,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
@@ -5901,7 +5901,7 @@ pub(in crate::kernel) fn effective_type_refusal_of(
 /// subobject bounds. A result whose position cannot be related to the
 /// bounds is refused outright.
 fn subobject_formation_guards(
-    value: &PointerValue,
+    value: &Pointer,
     result: &Address,
     facts: &ExecutionFacts,
     obligations: &[ProofObligation],
@@ -5911,7 +5911,7 @@ fn subobject_formation_guards(
     let Some(bounds) = value.bounds() else {
         if value.bounds_are_known()
             || value.bounds_owner().is_none()
-            || result == value.pointer()
+            || result == value.address()
             || assumptions.should_assume_entry_clause_spans()
             // Spec offsets name mathematical addresses, as SpecExpression::PointerOffset
             // does. Executed C arithmetic must establish its bounds here.
@@ -5920,7 +5920,7 @@ fn subobject_formation_guards(
             return Ok(Vec::new());
         }
         let context = assumptions_with_path_context(assumptions, facts, obligations);
-        if context.pointers_known_equal(result, value.pointer())
+        if context.pointers_known_equal(result, value.address())
             || context.opaque_pointer_covers(value, result, 0)
         {
             return Ok(Vec::new());
@@ -5928,7 +5928,7 @@ fn subobject_formation_guards(
         return resources
             .permits_designated_pointer_position(
                 result,
-                value.pointer(),
+                value.address(),
                 value.access_provenance(),
                 &context,
             )
@@ -5949,7 +5949,7 @@ fn subobject_formation_guards(
 /// its address. A pointer that already designates a subobject may select
 /// only a part of it.
 pub(in crate::kernel) fn subobject_paths(
-    pointer: PointerValue,
+    pointer: Pointer,
     width: u32,
     mut facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
@@ -5964,7 +5964,7 @@ pub(in crate::kernel) fn subobject_paths(
         if assumptions.should_assume_entry_clause_spans() {
             if let Some(coverage) =
                 pointer.opaque_coverage_fact(&MemoryRange::new_with_element_width(
-                    pointer.pointer().clone(),
+                    pointer.address().clone(),
                     0u32.into(),
                     width.into(),
                     1,
@@ -5974,9 +5974,9 @@ pub(in crate::kernel) fn subobject_paths(
             }
         } else {
             let context = assumptions_with_path_context(assumptions, &facts, &obligations);
-            if !context.opaque_pointer_covers(&pointer, pointer.pointer(), width)
+            if !context.opaque_pointer_covers(&pointer, pointer.address(), width)
                 && !resources.permits_designated_storage_read(
-                    pointer.pointer(),
+                    pointer.address(),
                     Some(pointer.access_provenance()),
                     width,
                     &context,
@@ -5988,7 +5988,7 @@ pub(in crate::kernel) fn subobject_paths(
                             required: Box::new(
                                 pointer
                                     .opaque_coverage_fact(&MemoryRange::new_with_element_width(
-                                        pointer.pointer().clone(),
+                                        pointer.address().clone(),
                                         0u32.into(),
                                         width.into(),
                                         1,
@@ -6004,7 +6004,7 @@ pub(in crate::kernel) fn subobject_paths(
         }
     }
     if let Some(refusal) = subobject_access_refusal(
-        pointer.pointer(),
+        pointer.address(),
         pointer.bounds(),
         width,
         &facts,
@@ -6017,7 +6017,7 @@ pub(in crate::kernel) fn subobject_paths(
             obligations,
         }];
     }
-    let start = pointer.pointer().clone();
+    let start = pointer.address().clone();
     let narrowed = pointer.with_bounds(Some(SubobjectBounds::constant(start, width)));
     vec![ExpressionPath {
         outcome: ExpressionOutcome::Value(ProgramValue::Pointer(narrowed)),

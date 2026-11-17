@@ -285,7 +285,7 @@ pub(in crate::surface) fn decode_predicate_arguments(
                 values.insert(
                     parameter.name().to_string(),
                     ProgramValue::typed_pointer(
-                        pointer.pointer().clone(),
+                        pointer.address().clone(),
                         element_type.pointer_to().unwrap(),
                     ),
                 );
@@ -293,7 +293,7 @@ pub(in crate::surface) fn decode_predicate_arguments(
                     parameter.name().to_string(),
                     ClickArrayRef {
                         memory: memory.clone(),
-                        pointer: pointer.pointer().clone(),
+                        pointer: pointer.address().clone(),
                         element_type,
                     },
                 );

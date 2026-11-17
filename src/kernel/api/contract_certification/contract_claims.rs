@@ -1076,11 +1076,11 @@ fn materialized_load_is_unchanged(
         // Object and function pointers share the exact structural descriptor;
         // the remaining branches adapt legacy registered names and offsets.
         ProgramValue::Pointer(pointer_value)
-            if pointer_value.pointer().as_loaded_value().is_some() =>
+            if pointer_value.address().as_loaded_value().is_some() =>
         {
-            crate::kernel::equality_graph::logical_pointer_read_term(pointer_value.pointer())
+            crate::kernel::equality_graph::logical_pointer_read_term(pointer_value.address())
         }
-        ProgramValue::Pointer(pointer_value) => match pointer_value.pointer() {
+        ProgramValue::Pointer(pointer_value) => match pointer_value.address() {
             Address {
                 base: AddressBase::FunctionSymbolic(variable),
                 offset: AddressOffset::Constant(0),
@@ -2495,7 +2495,7 @@ fn contract_view_of_entry(
             entry_state.locals.set_aggregate_object_at(
                 parameter.name().to_string(),
                 layout.clone(),
-                argument.pointer().clone(),
+                argument.address().clone(),
             );
         }
     }
@@ -3192,7 +3192,7 @@ mod checked_proposition_index_tests {
         let context = PureFactContext::new().assume_proposition(route.clone());
         let pointer = Address::symbolic(Variable(71_031));
         let equation = ExecutionPureFact::logical_read_equation(
-            PointerValue::new(pointer.clone(), ProgramType::Int32Pointer),
+            Pointer::new(pointer.clone(), ProgramType::Int32Pointer),
             Address::loaded_value(&intern_memory(Memory::new()), &pointer),
         );
         let mut paths = vec![
@@ -3542,7 +3542,7 @@ mod materialized_function_load_tests {
             unreachable!()
         };
         let displaced = ProgramValue::typed_pointer(
-            pointer_value.pointer().offset_by_bytes(1),
+            pointer_value.address().offset_by_bytes(1),
             pointer_value.program_type(),
         );
         assert!(!materialized_load_is_unchanged(
@@ -3763,7 +3763,7 @@ mod retained_contract_input_tests {
     #[test]
     fn contract_input_preparation_preserves_roots_and_native_binding_rules() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = PointerValue::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(996801)),
             ProgramType::Int32Pointer,
         );

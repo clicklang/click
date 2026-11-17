@@ -33,7 +33,7 @@ fn logical_cached_pointer_read_carries_its_current_cell_equation() {
         // through unrelated symbolic names after the observation might alias
         // either half of the pointer and cannot preserve its complete value.
         let cached = logical_pointer_read(&memory, &address, &empty);
-        let cached_value = PointerValue::from_read(
+        let cached_value = Pointer::from_read(
             cached.clone(),
             ProgramType::Int64Pointer,
             &intern_memory_ref(&memory),
@@ -51,7 +51,7 @@ fn logical_cached_pointer_read_carries_its_current_cell_equation() {
         context = context.assume_condition(
             ConditionTerm::pointer_value_equal(
                 cached_value.clone(),
-                PointerValue::new(model.clone(), ProgramType::Int64Pointer),
+                Pointer::new(model.clone(), ProgramType::Int64Pointer),
             ),
             true,
         );
@@ -113,7 +113,7 @@ fn logical_cached_pointer_read_carries_its_current_cell_equation() {
         let missing_alias = empty.clone().assume_condition(
             ConditionTerm::pointer_value_equal(
                 cached_value.clone(),
-                PointerValue::new(model.clone(), ProgramType::Int64Pointer),
+                Pointer::new(model.clone(), ProgramType::Int64Pointer),
             ),
             true,
         );
@@ -206,7 +206,7 @@ fn naming_a_load_after_a_call_is_flat_in_its_address_read_depth() {
             .unwrap() else {
                 panic!("expected a typed pointer read");
             };
-            value.pointer().clone()
+            value.address().clone()
         };
         let mut array = Address::symbolic(Variable(992_000));
         for _ in 0..depth {
@@ -290,7 +290,7 @@ fn pointer_read_observations_check_frames_scope_and_scaling() {
         .unwrap() else {
             panic!("expected a typed pointer read");
         };
-        value.pointer().clone()
+        value.address().clone()
     };
     let left = read(&base, &address, LoadPurpose::Logical);
     let right = read(&base, &alias, LoadPurpose::Logical);
@@ -917,7 +917,7 @@ fn pointer_read_premises_register_definitions_before_transitive_queries() {
     let bare = PureFactContext::new();
     let read = logical_pointer_read(&memory, &parent.offset_by_bytes(16), &bare);
     let base_equality = ConditionTerm::pointer_equal(parent.clone(), base);
-    let read_equality = ConditionTerm::pointer_equal(stored.pointer().clone(), successor.clone());
+    let read_equality = ConditionTerm::pointer_equal(stored.address().clone(), successor.clone());
     let mut samples = Vec::new();
     for size in [8u64, 32, 128, 512] {
         let mut ambient = bare.clone();
@@ -1007,7 +1007,7 @@ fn seeded_pointer_cells_retain_their_typed_load_definition() {
     };
     let bare = PureFactContext::new();
     let read = logical_pointer_read(&memory, &alias_address, &bare);
-    assert!(!bare.pointers_known_equal(seeded.pointer(), &read));
+    assert!(!bare.pointers_known_equal(seeded.address(), &read));
     let mut samples = Vec::new();
     for size in [8u64, 32, 128, 512] {
         for i in 0..size {
@@ -1025,7 +1025,7 @@ fn seeded_pointer_cells_retain_their_typed_load_definition() {
         );
         let ((equal, work), map_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
-                context.pointers_known_equal(seeded.pointer(), &read)
+                context.pointers_known_equal(seeded.address(), &read)
             })
         });
         assert!(equal);
@@ -1034,10 +1034,10 @@ fn seeded_pointer_cells_retain_their_typed_load_definition() {
             map_work < 512 * (size.ilog2() as usize + 1),
             "size={size}, map work={map_work}"
         );
-        assert!(!bare.pointers_known_equal(seeded.pointer(), &read));
+        assert!(!bare.pointers_known_equal(seeded.address(), &read));
         assert!(!ResourceContext::new().permits_memory_read(&alias_address, 8, &context));
         let other = logical_pointer_read(&memory, &alias.offset_by_bytes(24), &context);
-        assert!(!context.pointers_known_equal(seeded.pointer(), &other));
+        assert!(!context.pointers_known_equal(seeded.address(), &other));
         let changed = memory.clone().store(
             address.clone(),
             ProgramValue::typed_pointer(
@@ -1046,7 +1046,7 @@ fn seeded_pointer_cells_retain_their_typed_load_definition() {
             ),
         );
         let replacement = logical_pointer_read(&changed, &address, &context);
-        assert!(!context.pointers_known_equal(seeded.pointer(), &replacement));
+        assert!(!context.pointers_known_equal(seeded.address(), &replacement));
     }
     assert!(
         samples.iter().all(|work| *work <= samples[0] + 40),
@@ -1103,7 +1103,7 @@ fn cached_pointer_value_keeps_its_defining_coordinates_and_scales() {
         else {
             panic!("typed pointer cache")
         };
-        assert!(context.pointers_known_equal(actual.pointer(), expected.pointer()));
+        assert!(context.pointers_known_equal(actual.address(), expected.address()));
         assert!(context.pointer_provenance_match(actual, expected));
         samples.push((work, map_work));
         assert!(
@@ -1241,7 +1241,7 @@ fn cached_pointer_reads_retain_their_current_cell_identity() {
         let ExpressionOutcome::Value(ProgramValue::Pointer(checked)) = &path.outcome else {
             panic!("pointer read expected");
         };
-        assert!(context.pointers_known_equal(&stored, checked.pointer()));
+        assert!(context.pointers_known_equal(&stored, checked.address()));
         assert!(proven_equal(&logical, &stored, &context));
         // The producer may return the complete stored value directly. The
         // read equation, rather than literal value reflexivity, is scoped.
@@ -1527,8 +1527,8 @@ fn cached_raw_pointer_names_ignore_unrelated_read_definitions() {
             .store(slot_b.clone(), second);
         let context = PureFactContext::new().assume_condition(
             ConditionTerm::pointer_value_equal(
-                PointerValue::new(a, ProgramType::Int32Pointer),
-                PointerValue::new(b, ProgramType::Int32Pointer),
+                Pointer::new(a, ProgramType::Int32Pointer),
+                Pointer::new(b, ProgramType::Int32Pointer),
             ),
             true,
         );
@@ -1676,12 +1676,12 @@ fn normalizing_an_opaque_word_pointer_does_not_search_unrelated_call_resources()
         if size == 16 {
             // A full pointer premise still supplies the selected member bounds.
             let root = Address::symbolic(Variable(989_704));
-            let bounded = PointerValue::new(root.clone(), ProgramType::Int32Pointer).with_bounds(
-                Some(SubobjectBounds {
+            let bounded = Pointer::new(root.clone(), ProgramType::Int32Pointer).with_bounds(Some(
+                SubobjectBounds {
                     start: root,
                     width: 4u32.into(),
-                }),
-            );
+                },
+            ));
             let related = context.assume_condition(
                 ConditionTerm::pointer_value_equal(pointer.clone(), bounded.clone()),
                 true,
@@ -1813,16 +1813,16 @@ fn complete_pointer_read_definitions_scale_with_selected_reads() {
         for i in 0..selected {
             let slot = Address::symbolic(Variable(983_000 + i));
             let target = Address::symbolic(Variable(984_000 + i));
-            let stored = PointerValue::new(target.clone(), ProgramType::Int32Pointer).with_bounds(
-                Some(SubobjectBounds {
+            let stored = Pointer::new(target.clone(), ProgramType::Int32Pointer).with_bounds(Some(
+                SubobjectBounds {
                     start: target,
                     width: 4u32.into(),
-                }),
-            );
+                },
+            ));
             let memory = intern_memory_ref(
                 &Memory::new().store(slot.clone(), ProgramValue::Pointer(stored.clone())),
             );
-            let read = PointerValue::new(
+            let read = Pointer::new(
                 Address::version_read(&memory, &slot),
                 ProgramType::Int32Pointer,
             );

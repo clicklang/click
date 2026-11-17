@@ -1290,7 +1290,7 @@ impl TermClasses {
                         continue;
                     }
                     if let ProgramValue::Pointer(pointer) = value {
-                        let address = self.numeric_address(pointer.pointer());
+                        let address = self.numeric_address(pointer.address());
                         // Address, allocation origin and selected bounds are
                         // distinct congruence operands. Only a complete value
                         // equality merges the latter two domains.
@@ -1644,8 +1644,8 @@ impl TermClasses {
 
     pub(in crate::kernel::equality_graph) fn add_pointer_value_equality(
         &mut self,
-        a: &crate::kernel::PointerValue,
-        b: &crate::kernel::PointerValue,
+        a: &crate::kernel::Pointer,
+        b: &crate::kernel::Pointer,
     ) -> bool {
         let roots = (
             self.provenance_node(a.provenance()),
@@ -1728,8 +1728,8 @@ impl TermClasses {
 
     pub(in crate::kernel::equality_graph) fn pointer_values_equal(
         &mut self,
-        a: &crate::kernel::PointerValue,
-        b: &crate::kernel::PointerValue,
+        a: &crate::kernel::Pointer,
+        b: &crate::kernel::Pointer,
     ) -> bool {
         let a = self.intern_expression(
             None,
@@ -1749,7 +1749,7 @@ impl TermClasses {
         self.root(a) == self.root(b)
     }
 
-    pub(super) fn retain_pointer_value(&mut self, node: u64, value: crate::kernel::PointerValue) {
+    pub(super) fn retain_pointer_value(&mut self, node: u64, value: crate::kernel::Pointer) {
         let root = self.root(node);
         let value = self
             .pointer_values
@@ -1762,8 +1762,8 @@ impl TermClasses {
 
     pub(in crate::kernel::equality_graph) fn pointer_value_representative(
         &mut self,
-        value: &crate::kernel::PointerValue,
-    ) -> crate::kernel::PointerValue {
+        value: &crate::kernel::Pointer,
+    ) -> crate::kernel::Pointer {
         let node = self.intern_expression(
             None,
             None,
@@ -1797,7 +1797,7 @@ impl TermClasses {
         }
     }
 
-    fn bounds_node(&mut self, value: &crate::kernel::PointerValue) -> u64 {
+    fn bounds_node(&mut self, value: &crate::kernel::Pointer) -> u64 {
         let node = if let Some(bounds) = value.bounds() {
             let head = self.intern_node(Node::ArgumentTag(ArgumentTag::PointerSubobjectBounds));
             let width = self.intern_int32(&bounds.width);
@@ -1852,7 +1852,7 @@ impl TermClasses {
         let node = self.intern_node(Node::OpaqueArgument(SharedPureApplication::intern(
             "<pointer-bounds-origin>".into(),
             vec![A::Value(ProgramValue::Pointer(
-                crate::kernel::PointerValue::new(origin.clone(), ProgramType::VoidPointer),
+                crate::kernel::Pointer::new(origin.clone(), ProgramType::VoidPointer),
             ))],
         )));
         self.bounds_origin_nodes.insert(origin, node);
@@ -1960,7 +1960,7 @@ impl TermClasses {
             return node;
         }
         self.opaque_argument(&A::Value(ProgramValue::Pointer(
-            crate::kernel::PointerValue::new(origin.clone(), ProgramType::VoidPointer),
+            crate::kernel::Pointer::new(origin.clone(), ProgramType::VoidPointer),
         )))
     }
 

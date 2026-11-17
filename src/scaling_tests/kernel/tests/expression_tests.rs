@@ -219,8 +219,8 @@ fn stored_pointer_bounds_ignore_unrelated_numeric_classes() {
         let field = Address::symbolic(Variable(96_311));
         let stored = subobject_pointer(0, 0, 4);
         let memory = Memory::new().store(field.clone(), ProgramValue::Pointer(stored.clone()));
-        let read = PointerValue::from_read(
-            stored.pointer().clone(),
+        let read = Pointer::from_read(
+            stored.address().clone(),
             ProgramType::Int32Pointer,
             &crate::kernel::intern_memory_ref(&memory),
             &field,

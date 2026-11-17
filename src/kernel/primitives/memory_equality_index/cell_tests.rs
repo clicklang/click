@@ -140,7 +140,7 @@ fn cell_index_follows_completed_pointer_reads_and_preserves_states() {
         let ExpressionOutcome::Value(ProgramValue::Pointer(value)) = &paths[0].outcome else {
             panic!("pointer read")
         };
-        (value.pointer().clone(), paths[0].facts.clone())
+        (value.address().clone(), paths[0].facts.clone())
     };
     let (x, xf) = read(&a);
     let (y, yf) = read(&b);
@@ -514,7 +514,7 @@ fn logical_pointer_reads_reach_resource_index_without_equality_warmup() {
         let ExpressionOutcome::Value(ProgramValue::Pointer(value)) = &path.outcome else {
             panic!("pointer read")
         };
-        value.pointer().clone()
+        value.address().clone()
     };
     let memory = Memory::new();
     let a = Address::symbolic(Variable(92_250));

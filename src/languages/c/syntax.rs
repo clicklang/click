@@ -3320,7 +3320,7 @@ impl ImportedFunction {
             return None;
         }
         Some(crate::kernel::ProgramValue::Pointer(
-            crate::kernel::PointerValue::new(address.pointer, declared_type.to_kernel_type())
+            crate::kernel::Pointer::new(address.pointer, declared_type.to_kernel_type())
                 .with_pointee_constant(declared_pointee_constant)
                 .with_bounds(address.bounds),
         ))

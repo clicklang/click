@@ -2928,7 +2928,7 @@ fn repeated_pointer_frame_work(compare_to_entry: bool, compose: bool) -> Vec<(u3
         let field = Address::symbolic(Variable(998_910));
         let write = Address::symbolic(Variable(998_911));
         let initial = crate::kernel::intern_memory(Memory::new());
-        let original = PointerValue::new(
+        let original = Pointer::new(
             Address::loaded_value(&initial, &field),
             ProgramType::Int32Pointer,
         );
@@ -2954,7 +2954,7 @@ fn repeated_pointer_frame_work(compare_to_entry: bool, compose: bool) -> Vec<(u3
                     .clone()
                     .store(write.clone(), ProgramValue::Int32(index.into()));
                 let retained_state = crate::kernel::intern_memory_ref(&memory);
-                let current = PointerValue::new(
+                let current = Pointer::new(
                     Address::loaded_value(&retained_state, &field),
                     ProgramType::Int32Pointer,
                 );
@@ -3228,7 +3228,7 @@ fn pointer_read_naming_samples(with_history: bool, same_cell: bool) -> Vec<(u32,
             reads
                 .iter()
                 .map(|(address, read)| {
-                    crate::kernel::PointerValue::from_read(
+                    crate::kernel::Pointer::from_read(
                         read.clone(),
                         ProgramType::Int32Pointer,
                         &current,
@@ -3240,7 +3240,7 @@ fn pointer_read_naming_samples(with_history: bool, same_cell: bool) -> Vec<(u32,
         // Construction keeps the exact supplied source even when an earlier
         // read would have the same bytes. No historical identity is inferred.
         for ((address, read), value) in reads.iter().zip(values.iter()) {
-            assert_eq!(value.pointer(), read);
+            assert_eq!(value.address(), read);
             let exact = Address::loaded_value(&current, address);
             assert_eq!(value.provenance(), &exact);
             assert_eq!(value.bounds_owner(), Some(&exact));

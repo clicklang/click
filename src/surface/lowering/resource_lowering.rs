@@ -73,7 +73,7 @@ const INPUT_VARIABLE_BASE: u64 = 1 << 34;
 const INPUT_VARIABLE_CEILING: u64 = 1 << 40;
 thread_local! {
     static INPUT_SCOPES: std::cell::RefCell<std::collections::HashMap<u64, String>> = Default::default();
-    static INPUT_POINTER_PLACES: std::cell::RefCell<std::collections::HashMap<Variable, (u64, usize, crate::kernel::PointerValue)>> = Default::default();
+    static INPUT_POINTER_PLACES: std::cell::RefCell<std::collections::HashMap<Variable, (u64, usize, crate::kernel::Pointer)>> = Default::default();
     static INPUT_VARIABLE_OWNERS: std::cell::RefCell<std::collections::HashMap<Variable, (u64, usize)>> = Default::default();
     static INPUT_VARIABLES: std::cell::RefCell<std::collections::HashMap<(u64, usize), Variable>> = Default::default();
 }
@@ -182,7 +182,7 @@ fn input_pointer_variable(scope: u64, index: usize) -> Result<Variable, ClickErr
 // before the function is verified. No unrelated function inputs are searched.
 pub(in crate::surface) fn input_pointer_parameter(
     scope: u64,
-    pointer: &crate::kernel::PointerValue,
+    pointer: &crate::kernel::Pointer,
 ) -> Option<usize> {
     let variable = input_pointer_identity(pointer)?;
     crate::instrumentation::record_deterministic_work(1);
@@ -193,11 +193,11 @@ pub(in crate::surface) fn input_pointer_parameter(
     })
 }
 
-fn input_pointer_identity(pointer: &crate::kernel::PointerValue) -> Option<Variable> {
-    if pointer.pointer().base != AddressBase::ExternalArgument {
+fn input_pointer_identity(pointer: &crate::kernel::Pointer) -> Option<Variable> {
+    if pointer.address().base != AddressBase::ExternalArgument {
         return None;
     }
-    match &pointer.pointer().offset {
+    match &pointer.address().offset {
         AddressOffset::Int32Scaled { value, .. } => value.operand_view().variable().copied(),
         _ => None,
     }
@@ -2355,7 +2355,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                 };
                 let guard = crate::kernel::program_mutex_guard_resource(
                     state,
-                    mutex.pointer(),
+                    mutex.address(),
                     allow_symbolic_resource_arguments,
                 )
                 .ok_or_else(|| ClickError::new("mutex_guard requires a live acquisition"))?;
@@ -2436,7 +2436,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                 };
                 let guard = crate::kernel::program_mutex_live_resource(
                     state,
-                    mutex.pointer(),
+                    mutex.address(),
                     allow_symbolic_resource_arguments,
                 )
                 .ok_or_else(|| ClickError::new("mutex_live requires a live initialization"))?;
@@ -2482,7 +2482,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                 };
                 let right = Resource::Publication(crate::kernel::PublicationRight::new(
                     side,
-                    flag.pointer().clone(),
+                    flag.address().clone(),
                     crate::kernel::ResourceDescription::new(
                         payload_name.clone(),
                         arguments.clone(),
@@ -2524,7 +2524,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                     };
                     crate::kernel::program_mutex_use_resource_with_type(
                         state,
-                        mutex.pointer(),
+                        mutex.address(),
                         crate::kernel::ResourceDescription::new(
                             name.clone(),
                             arguments.clone(),
@@ -2532,7 +2532,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                         ),
                     )
                 } else {
-                    crate::kernel::program_mutex_use_resource(state, mutex.pointer())
+                    crate::kernel::program_mutex_use_resource(state, mutex.address())
                 };
                 return Ok(match access {
                     ResourceAccessMode::Own => guard,
@@ -4058,7 +4058,7 @@ pub(in crate::surface) fn array_refs_for_values(
                 name.clone(),
                 ClickArrayRef {
                     memory: memory.clone(),
-                    pointer: pointer.pointer().clone(),
+                    pointer: pointer.address().clone(),
                     element_type,
                 },
             ))
@@ -4131,7 +4131,7 @@ pub(in crate::surface) fn array_refs_for_parameters(
                 parameter.name().to_string(),
                 ClickArrayRef {
                     memory: memory.clone(),
-                    pointer: pointer.pointer().clone(),
+                    pointer: pointer.address().clone(),
                     element_type,
                 },
             ))

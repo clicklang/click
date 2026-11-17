@@ -14,8 +14,7 @@ fn token_discovery_follows_a_producer_defined_pointer_read() {
     facts
         .equality_graph
         .register_pointer_read_definition(&value, &memory, &field);
-    let wrap =
-        |pointer| PointerValue::from_read(pointer, ProgramType::Int32Pointer, &memory, &field);
+    let wrap = |pointer| Pointer::from_read(pointer, ProgramType::Int32Pointer, &memory, &field);
     let held = ResourceFact::own_designated_allocation(wrap(read), &AllocationSize::int32(4));
     let required = ResourceFact::own_designated_allocation(wrap(value), &AllocationSize::int32(4));
     assert!(
@@ -42,8 +41,8 @@ fn class_candidates_follow_merges_and_removals_without_leaking_to_siblings() {
     resources.synchronize_memory_equalities(&facts);
     let extended = facts.clone().assume_proposition(Proposition::ConditionIs(
         ConditionTerm::pointer_value_equal(
-            PointerValue::new(base, ProgramType::Int32Pointer),
-            PointerValue::new(alias, ProgramType::Int32Pointer),
+            Pointer::new(base, ProgramType::Int32Pointer),
+            Pointer::new(alias, ProgramType::Int32Pointer),
         ),
         true,
     ));
@@ -80,7 +79,7 @@ fn definitions_registered_after_publication_select_existing_payloads() {
     };
     let value = Address::symbolic(Variable(976_200));
     let read = Address::loaded_value(&memory, &field);
-    let wrap = |p| PointerValue::from_read(p, ProgramType::Int32Pointer, &memory, &field);
+    let wrap = |p| Pointer::from_read(p, ProgramType::Int32Pointer, &memory, &field);
     let held = ResourceFact::own_designated_allocation(wrap(read), &AllocationSize::int32(4));
     let required =
         ResourceFact::own_designated_allocation(wrap(value.clone()), &AllocationSize::int32(4));

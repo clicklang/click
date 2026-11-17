@@ -52,7 +52,7 @@ pub(super) fn allocated_call(
     let ProgramValue::Pointer(pointer) = native.as_ref() else {
         panic!("allocator did not return a pointer")
     };
-    let pointer = pointer.pointer().clone();
+    let pointer = pointer.address().clone();
     (caller, entry, post.as_ref().clone(), pointer)
 }
 

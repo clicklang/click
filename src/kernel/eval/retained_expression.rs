@@ -682,7 +682,7 @@ mod tests {
     fn retained_pointer_numeric_results_match_native_casts_and_differences() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = ProgramExpression::Value(ProgramValue::Pointer(
-            PointerValue::new(
+            Pointer::new(
                 Address::symbolic(Variable(1024100)),
                 ProgramType::Int32Pointer,
             )
@@ -760,7 +760,7 @@ mod tests {
     fn retained_pointer_arithmetic_preserves_operands_metadata_and_refusals() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = ProgramExpression::Value(ProgramValue::Pointer(
-            PointerValue::new(
+            Pointer::new(
                 Address::symbolic(Variable(1023000)),
                 ProgramType::Int32Pointer,
             )
@@ -859,7 +859,7 @@ mod tests {
             .locals
             .set_array_object_at("array", ProgramType::Int32, 4, array.clone());
         state.set_memory(Memory::new().with_block(array.base, 16));
-        let pointer = PointerValue::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(1022000)),
             ProgramType::Int32Pointer,
         )
@@ -948,7 +948,7 @@ mod tests {
         };
         // Allocation contracts can name a retained read as their exact base.
         // Value-use refusal consults that base's own freed-block record.
-        let base = pointer.pointer().clone();
+        let base = pointer.address().clone();
         let retained = ExecutionValue::retain_native(native.clone());
         assert!(matches!(
             retained.shared().map(KernelTerm::node),
@@ -1029,8 +1029,8 @@ mod tests {
                 let ProgramValue::Pointer(pointer) = native.as_ref() else {
                     panic!("a static array must decay to its address: {native:?}");
                 };
-                assert_eq!(pointer.pointer().base, Memory::global_pointer(binding).base);
-                assert_eq!(pointer.pointer().offset, AddressOffset::Constant(offset));
+                assert_eq!(pointer.address().base, Memory::global_pointer(binding).base);
+                assert_eq!(pointer.address().offset, AddressOffset::Constant(offset));
             }
         }
     }
@@ -1120,14 +1120,14 @@ mod tests {
     fn pointer_conditional_paths_keep_scoped_facts_and_complete_values() {
         let _session = crate::kernel::VerificationSession::enter();
         let left = ProgramValue::Pointer(
-            PointerValue::new(
+            Pointer::new(
                 Address::symbolic(Variable(1026200)),
                 ProgramType::Int32Pointer,
             )
             .with_pointee_constant(true),
         );
         let right = ProgramValue::Pointer(
-            PointerValue::new(
+            Pointer::new(
                 Address::symbolic(Variable(1026201)),
                 ProgramType::Int32Pointer,
             )
@@ -1985,7 +1985,7 @@ mod tests {
                 "nested".into(),
                 vec![read_root.clone()],
             ),
-            SharedPointerValue::import(&PointerValue::new(
+            SharedPointerValue::import(&Pointer::new(
                 Memory::local_pointer("pointer_step_pointee"),
                 ProgramType::Int32Pointer,
             )),

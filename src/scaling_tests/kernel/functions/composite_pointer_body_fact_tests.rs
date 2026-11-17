@@ -202,8 +202,8 @@ fn fold_nonnull_fact_uses_an_exact_composite_pointer_alias() {
     // alias suffices for nonnull above, but cannot rewrite this argument.
     let context = context.assume_condition(
         ConditionTerm::pointer_value_equal(
-            PointerValue::new(model.clone(), ProgramType::Int32Pointer),
-            PointerValue::new(program.clone(), ProgramType::Int32Pointer),
+            Pointer::new(model.clone(), ProgramType::Int32Pointer),
+            Pointer::new(program.clone(), ProgramType::Int32Pointer),
         ),
         true,
     );

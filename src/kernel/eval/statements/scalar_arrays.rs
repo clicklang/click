@@ -86,7 +86,7 @@ pub(super) fn execute(
                 ));
                 continue;
             };
-            let target = target_pointer.pointer();
+            let target = target_pointer.address();
             if bytes != 0
                 && let Some(refusal) = subobject_access_refusal(
                     target,
@@ -155,7 +155,7 @@ pub(super) fn execute(
                     continue;
                 };
                 if let Some(refusal) = subobject_access_refusal(
-                    source.pointer(),
+                    source.address(),
                     source.bounds(),
                     bytes,
                     &facts,
@@ -171,14 +171,14 @@ pub(super) fn execute(
                 }
                 if !crate::kernel::api::with_extended_dag_bridging(|| {
                     state.resources().permits_designated_storage_read(
-                        source.pointer(),
+                        source.address(),
                         Some(source.access_provenance()),
                         bytes,
                         &selected,
                     )
                 }) {
                     let resource = ResourceFact::view_memory(MemoryRange::new_with_element_width(
-                        source.pointer().clone(),
+                        source.address().clone(),
                         0u32.into(),
                         count.into(),
                         element_type.byte_width(),

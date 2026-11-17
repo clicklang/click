@@ -260,7 +260,7 @@ fn compact_scalar_array_initialization_rejects_readonly_storage_and_pointer_qual
         let state = ExecutionState::new()
             .with_memory(memory)
             .with_resource_context(own_memory_context(target.clone(), 0, 4));
-        let pointer = PointerValue::new(target.clone(), ProgramType::UInt32Pointer)
+        let pointer = Pointer::new(target.clone(), ProgramType::UInt32Pointer)
             .with_pointee_constant(!readonly_block);
         let theorem = prove_execution_statement_execution(
             state,
