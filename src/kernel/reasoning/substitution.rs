@@ -4111,6 +4111,7 @@ fn validate_integer_pure_proposition(
             if !matches!(
                 sort,
                 Sort::Integer
+                    | Sort::Algebraic(_)
                     | Sort::ProgramInt32
                     | Sort::ProgramInt64
                     | Sort::ProgramInteger(_)
@@ -4128,6 +4129,7 @@ fn validate_integer_pure_proposition(
             if !matches!(
                 sort,
                 Sort::Integer
+                    | Sort::Algebraic(_)
                     | Sort::ProgramInt32
                     | Sort::ProgramInt64
                     | Sort::ProgramInteger(_)
@@ -4238,6 +4240,7 @@ enum PropositionBinaryOperator {
 enum IntegerPropositionScope {
     Integer(crate::kernel::proof::term_rewrite::IntegerSubstitutionScope),
     Program(crate::kernel::proof::term_rewrite::ProgramValueSubstitutionScope),
+    Algebraic(crate::kernel::proof::term_rewrite::AlgebraicSubstitutionScope),
 }
 
 /// Iterative proposition traversal for checked pure substitution.  The
@@ -4422,6 +4425,9 @@ fn substitute_pure_proposition_with_walker(
                     IntegerPropositionScope::Program(scope) => {
                         walker.pop_program_substitution_scope(scope);
                     }
+                    IntegerPropositionScope::Algebraic(scope) => {
+                        walker.pop_algebraic_substitution_scope(scope);
+                    }
                 }
                 let body = rewritten.pop().expect("quantifier rewrite result");
                 if exists {
@@ -4459,6 +4465,7 @@ fn queue_integer_quantifier_rewrite<'a>(
     tasks: &mut Vec<IntegerPropositionRewriteTask<'a>>,
 ) -> Result<(), IntegerPureSubstitutionError> {
     let is_integer = *sort == Sort::Integer;
+    let is_algebraic = matches!(sort, Sort::Algebraic(_));
     let is_c = matches!(
         sort,
         Sort::ProgramInt32
@@ -4467,12 +4474,14 @@ fn queue_integer_quantifier_rewrite<'a>(
             | Sort::ProgramPointer(_)
             | Sort::ProgramObjectPointer(_, _)
     );
-    if !is_integer && !is_c {
+    if !is_integer && !is_c && !is_algebraic {
         return Err(IntegerPureSubstitutionError::UnsupportedSort);
     }
 
     let renamed = if is_integer {
         !shadowed && var != from && walker.replacement_contains_integer_variable(var)
+    } else if is_algebraic {
+        walker.replacement_contains_algebraic_variable(var)
     } else {
         walker.replacement_contains_program_variable(var)
     };
@@ -4503,6 +4512,13 @@ fn queue_integer_quantifier_rewrite<'a>(
                 shadowed || var == from,
             )),
             shadowed || var == from,
+        )
+    } else if is_algebraic {
+        (
+            IntegerPropositionScope::Algebraic(
+                walker.push_algebraic_substitution_scope(var, new_var),
+            ),
+            shadowed,
         )
     } else {
         (
@@ -9016,6 +9032,113 @@ mod integer_mixed_quantifier_tests {
         assert_eq!(
             *pointer_goal,
             Proposition::Equal(pointer_value(outer_c), pointer_value(pointer_after))
+        );
+    }
+
+    fn algebraic_variable(algebraic_type: &AlgebraicType, variable: Variable) -> AlgebraicTerm {
+        AlgebraicTerm {
+            algebraic_type: algebraic_type.clone(),
+            node: AlgebraicTermNode::Variable(variable),
+        }
+    }
+
+    fn algebraic_projection(algebraic_type: &AlgebraicType, variable: Variable) -> IntegerTerm {
+        IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
+            "projection".into(),
+            vec![PureFunctionArgument::Algebraic(algebraic_variable(
+                algebraic_type,
+                variable,
+            ))],
+        ))
+    }
+
+    #[test]
+    fn integer_substitution_keeps_algebraic_and_integer_binders_separate() {
+        let from = Variable(9_232);
+        let algebraic_type = AlgebraicType::parameter("Flag".into());
+        let algebraic = algebraic_variable(&algebraic_type, from);
+        let source = Proposition::Exists {
+            name: "flag".into(),
+            var: from,
+            sort: Sort::Algebraic(algebraic_type),
+            body: Box::new(Proposition::And(
+                Box::new(Proposition::Equal(
+                    Term::Integer(IntegerTerm::var(from)),
+                    Term::Integer(IntegerTerm::constant_i64(3)),
+                )),
+                Box::new(Proposition::Equal(
+                    Term::Algebraic(algebraic.clone()),
+                    Term::Algebraic(algebraic.clone()),
+                )),
+            )),
+        };
+        let Proposition::Exists { var, body, .. } =
+            substitute_integer_variable_in_pure_proposition(
+                &source,
+                from,
+                &IntegerTerm::constant_i64(3),
+            )
+            .unwrap()
+        else {
+            panic!("the algebraic existential was lost");
+        };
+        assert_eq!(var, from);
+        assert_eq!(
+            *body,
+            Proposition::And(
+                Box::new(Proposition::Equal(
+                    Term::Integer(IntegerTerm::constant_i64(3)),
+                    Term::Integer(IntegerTerm::constant_i64(3))
+                )),
+                Box::new(Proposition::Equal(
+                    Term::Algebraic(algebraic.clone()),
+                    Term::Algebraic(algebraic)
+                )),
+            )
+        );
+    }
+
+    #[test]
+    fn integer_substitution_avoids_algebraic_capture_and_restores_sibling_scope() {
+        let from = Variable(9_233);
+        let bound = Variable(9_234);
+        let algebraic_type = AlgebraicType::parameter("Flag".into());
+        let replacement = algebraic_projection(&algebraic_type, bound);
+        let leaf = Proposition::Equal(
+            Term::Integer(IntegerTerm::var(from)),
+            Term::Integer(replacement.clone()),
+        );
+        let source = Proposition::And(
+            Box::new(Proposition::ForAll {
+                name: Default::default(),
+                var: bound,
+                sort: Sort::Algebraic(algebraic_type.clone()),
+                body: Box::new(leaf.clone()),
+            }),
+            Box::new(leaf),
+        );
+        let Proposition::And(quantifier, sibling) =
+            substitute_integer_variable_in_pure_proposition(&source, from, &replacement).unwrap()
+        else {
+            panic!("the sibling propositions were lost");
+        };
+        let Proposition::ForAll { var, body, .. } = *quantifier else {
+            panic!("the algebraic universal was lost");
+        };
+        assert_ne!(var, bound);
+        assert_eq!(
+            *body,
+            Proposition::Equal(
+                Term::Integer(replacement.clone()),
+                Term::Integer(algebraic_projection(&algebraic_type, var))
+            )
+        );
+        assert_eq!(
+            *sibling,
+            Proposition::Equal(
+                Term::Integer(replacement.clone()),
+                Term::Integer(replacement)
+            )
         );
     }
 

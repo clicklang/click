@@ -1667,6 +1667,14 @@ pub(crate) struct ProgramValueSubstitutionScope {
     scope_id: u64,
 }
 
+/// Algebraic binders have their own lexical map, independent of Integer
+/// and program-value binders with the same numeric variable ID.
+pub(crate) struct AlgebraicSubstitutionScope {
+    variable: Variable,
+    previous: Option<Variable>,
+    scope_id: u64,
+}
+
 #[derive(PartialEq, Eq, Hash)]
 enum BoundedIndexKey {
     Variable(Variable),
@@ -2773,6 +2781,13 @@ impl<'a> TermRewrite<'a> {
             .is_some_and(|replacement| replacement.program_values.contains(&variable))
     }
 
+    pub(crate) fn replacement_contains_algebraic_variable(&mut self, variable: Variable) -> bool {
+        self.ensure_replacement_carriers();
+        self.replacement_carriers
+            .as_ref()
+            .is_some_and(|replacement| replacement.algebraic.contains(&variable))
+    }
+
     /// Install a C-carrier binder mapping without changing the Integer
     /// shadowing state.  The scope token restores only the previous C mapping
     /// and the cache scope ID.
@@ -2799,6 +2814,28 @@ impl<'a> TermRewrite<'a> {
             scope.variable,
             scope.previous,
         );
+        self.scope_id = scope.scope_id;
+    }
+
+    pub(crate) fn push_algebraic_substitution_scope(
+        &mut self,
+        variable: Variable,
+        mapped: Variable,
+    ) -> AlgebraicSubstitutionScope {
+        let previous = self.scope.algebraic.insert(variable, mapped);
+        let scope_id = self.scope_id;
+        if previous != Some(mapped) {
+            self.bump_scope_id();
+        }
+        AlgebraicSubstitutionScope {
+            variable,
+            previous,
+            scope_id,
+        }
+    }
+
+    pub(crate) fn pop_algebraic_substitution_scope(&mut self, scope: AlgebraicSubstitutionScope) {
+        restore_mapping(&mut self.scope.algebraic, scope.variable, scope.previous);
         self.scope_id = scope.scope_id;
     }
 

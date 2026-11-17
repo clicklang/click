@@ -3216,6 +3216,8 @@ just a nonempty prefix, leaving the remaining existential goal open.
   `exists (x: int32, y: int32) { ... }` takes `x`, then `y`.
   `witness(3); witness(4);` has the same effect. Intermediate proof steps
   may appear between them. Binder names do not appear in the tactic.
+  Remaining binders keep their declared types, including when an Integer
+  binder precedes an enum binder.
 - Each value has its binder's type: a C integer of exactly that type (`3u64`
   for `uint64`), a pointer, an `Integer` expression such as `0` or
   `to_integer(n)` for `Integer`, or an algebraic value of that datatype.
@@ -3234,13 +3236,12 @@ checked; prove it next.
 **Failure, checking, and tools:**
 
 An empty argument list, ill-typed value, or nonexistential goal fails.
-Extra arguments fail when no existential binder remains. On a
-nonexistential pure goal the message reads "pure `witness` currently requires
-an Integer existential proposition" even though C integer and algebraic
-binders are accepted. Click records the exact witness; expansion prints `witness(value)` steps,
+Extra arguments fail when no existential binder remains. A nonexistential
+pure goal reports "`witness` requires an existential proposition goal".
+Click records the exact witness; expansion prints `witness(value)` steps,
 and profiling charges one instantiation per value.
 
-**Checked examples:** [`witness_values_follow_the_goal_binders.md`](https://github.com/clicklang/click/blob/master/mdtests/witness_values_follow_the_goal_binders.md), [`witness_and_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/witness_and_choose.md), [`integer_exists_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_exists_choose.md), [`witness_reversed_values_leave_a_false_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/witness_reversed_values_leave_a_false_goal.md)
+**Checked examples:** [`witness_preserves_remaining_binder_types.md`](https://github.com/clicklang/click/blob/master/mdtests/witness_preserves_remaining_binder_types.md), [`witness_values_follow_the_goal_binders.md`](https://github.com/clicklang/click/blob/master/mdtests/witness_values_follow_the_goal_binders.md), [`witness_and_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/witness_and_choose.md), [`integer_exists_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_exists_choose.md), [`witness_reversed_values_leave_a_false_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/witness_reversed_values_leave_a_false_goal.md)
 
 ### Obtaining witnesses
 

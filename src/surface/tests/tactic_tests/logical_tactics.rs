@@ -3168,7 +3168,32 @@ fn positional_witnesses_preserve_mixed_types_and_cold_replay() {
                 .expect("positional expansion cold-replays without search");
         }
     }
+    let bindings = [
+        ("i: Integer", "3"),
+        ("m: int32", "4"),
+        ("f: Flag", "Flag::Set"),
+    ];
+    for order in [
+        [0, 1, 2],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+    ] {
+        let declarations = order.map(|index| bindings[index].0).join(", ");
+        let arguments = order.map(|index| bindings[index].1).join(", ");
+        let source = format!(
+            "spec enum Flag {{ Set }} theorem ordered() {{ ensures answer: exists ({declarations}) {{ i == 3 and m == 4 and f == Flag::Set }} by {{ witness({arguments}); solve(); }} }}"
+        );
+        verify_c_sources(&source, &[])
+            .expect("each positional value keeps its declared binder type");
+        let expanded = expand_c_claim_source_by_label(&source, &[], "ordered.answer").unwrap();
+        crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+            .expect("mixed binder orders cold-replay without search");
+    }
     for source in [
+        "spec enum Flag { Set } theorem bad() { ensures exists (i: Integer, f: Flag) { i == 3 and f == Flag::Set } by { witness(Flag::Set, 3); solve(); } }",
         "theorem bad() { ensures exists (x: int32) { x == 3 } by { witness(3, 4); solve(); } }",
         "theorem bad() { ensures exists (x: Integer, y: Integer) { x == 3 and y == 4 } by { witness(4, 3); solve(); } }",
     ] {

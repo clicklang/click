@@ -1667,7 +1667,12 @@ impl<'a> Proof<'a> {
         witness: &ProofWitness,
     ) -> Result<CheckedFocusedTransition, ClickError> {
         if matches!(self.context.as_ref(), ProofContext::Pure(_)) {
-            return match self.proposition_goal("`witness` requires a proposition goal")? {
+            let goal =
+                self.proposition_goal("`witness` requires an existential proposition goal")?;
+            if !matches!(goal, Proposition::Exists { .. }) {
+                return Err(self.step_error("`witness` requires an existential proposition goal"));
+            }
+            return match goal {
                 Proposition::Exists {
                     sort: Sort::Algebraic(_),
                     ..
@@ -1681,7 +1686,13 @@ impl<'a> Proof<'a> {
                         | Sort::ProgramObjectPointer(_, _),
                     ..
                 } => self.apply_pure_machine_witness(witness),
-                _ => self.apply_pure_integer_witness(witness),
+                Proposition::Exists {
+                    sort: Sort::Integer,
+                    ..
+                } => self.apply_pure_integer_witness(witness),
+                _ => {
+                    Err(self.step_error("`witness` does not support this existential binder type"))
+                }
             };
         }
         let view = match self.context.as_ref() {
@@ -2006,9 +2017,7 @@ impl<'a> Proof<'a> {
             body,
         } = goal
         else {
-            return Err(self.step_error(
-                "pure `witness` currently requires an Integer existential proposition",
-            ));
+            return Err(self.step_error("`witness` requires an Integer existential proposition"));
         };
         let value = self.capture_pure_integer_witness(witness.value())?;
         let proposition =
