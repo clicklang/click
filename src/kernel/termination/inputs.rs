@@ -40,16 +40,6 @@ pub(super) struct TerminationBodyInputs {
 }
 
 impl TerminationBodyInputs {
-    pub fn independent(
-        rules: &[VerifiedFunctionRule],
-        summaries: &BTreeMap<String, Vec<VerifiedLoopRule>>,
-    ) -> Self {
-        Self {
-            rules: prepare_independent_loop_exits(rules, summaries),
-            completed: BTreeMap::new(),
-        }
-    }
-
     pub fn completed(
         bodies: &[Arc<ContractBodyProof>],
         independent: &[VerifiedFunctionRule],
@@ -171,7 +161,7 @@ mod tests {
             inputs.rules[0].function.source_body,
             body.termination_rule().function.source_body
         );
-        let independent = TerminationBodyInputs::independent(&inputs.rules, &BTreeMap::new());
+        let independent = TerminationBodyInputs::completed(&[], &inputs.rules, &BTreeMap::new());
         assert!(matches!(
             independent.local("concrete_body"),
             LocalTerminationInput::Independent

@@ -603,6 +603,10 @@ pub(in crate::surface::proof) fn statement_contains_call(statement: &ProgramStat
             .any(|statement| statement_contains_call(statement)),
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
+        }
+        | ProgramStatement::UnwindCleanup {
+            body: try_body,
+            cleanup: handler,
         } => statement_contains_call(try_body) || statement_contains_call(handler),
         ProgramStatement::If {
             then_branch,

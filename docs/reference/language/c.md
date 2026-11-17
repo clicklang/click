@@ -81,7 +81,7 @@ int32 is_null(int32* p) {
 The accepted target is `x86_64-unknown-linux-gnu`, and the accepted
 modes are `userspace` and `kernel`, selected with
 `mode "kernel";`; any other name is a parse error. The retired
-single-name spellings `x86_64-linux-userspace` and `x86_64-linux-kernel` are
+single-name forms `x86_64-linux-userspace` and `x86_64-linux-kernel` are
 refused with their replacement
 (`mdtests/target_directive_refuses_retired_name.md`). A file declares at most
 one `target` and one `mode`, and every module of one project must agree
@@ -183,7 +183,7 @@ does. Verifying plain C needs no compiler or system headers; see the
 
 | Header | Targets | Provides |
 | --- | --- | --- |
-| `<stdint.h>`, `<inttypes.h>`, `<stdbool.h>` | all | the standard type spellings mapped to Click's C types |
+| `<stdint.h>`, `<inttypes.h>`, `<stdbool.h>` | all | the standard type names mapped to Click's C types |
 | `<limits.h>` | all | `CHAR_BIT` and the integer limit macros for LP64; `CHAR_MIN`/`CHAR_MAX` follow the target's plain `char` |
 | `<stddef.h>` | user space | `NULL` |
 | `<string.h>` | user space | `memcpy`, `memcmp`, `memset`, `strlen`, and `NULL` |
@@ -292,12 +292,12 @@ through two calls to a pointer-taking helper without resetting the state.
   `uint64` in a specification position specifies either.
   See `mdtests/long_and_long_long_values_convert_implicitly.md` and
   `mdtests/a_long_pointer_does_not_initialize_a_long_long_pointer.md`.
-- C `_Bool` and the modeled `stdbool.h` spelling `bool`; both denote Click's
+- C `_Bool` and the modeled `stdbool.h` name `bool`; both denote Click's
   logical `Bool` and use one-byte storage whose byte is `1` or `0` (see
   Boolean objects below)
 - `float` (IEEE-754 binary32) and `double` (IEEE-754 binary64) as typed value
   types with width-preserving arithmetic, comparisons, and conversions
-- Standard spellings for the modeled integer types: under the supported LP64
+- Standard names for the modeled integer types: under the supported LP64
   ABI, `signed char` and `int8_t` map to `int8`; `int`, `signed int`, and `int32_t` map to `int32`; `short`, `signed short`, and
   `int16_t` map to `int16`; `unsigned char` and `uint8_t` map to the one-byte
   `uint8`; `unsigned short` and `uint16_t` map to `uint16`; `unsigned int` and
@@ -318,7 +318,7 @@ through two calls to a pointer-taking helper without resetting the state.
   fixed-width aliases. See `mdtests/c_integer_trailing_int.md` and
   `mdtests/c_integer_specifier_order.md` for promotion and width checks.
 - The modeled `<stdbool.h>` header is a no-op include; its `bool`, `true`, and
-  `false` spellings are understood directly by Click. The `true` and `false`
+  `false` names are understood directly by Click. The `true` and `false`
   constants are fallbacks when no ordinary C declaration binds that name;
   explicit macros expand before parsing.
   These fallback constants apply in C source. In contract expressions `true`
@@ -415,10 +415,10 @@ written with the alias, `int first(triple values)` for `typedef int
 triple[3];`, and means `int values[3]`: C passes it as a pointer to its
 first element, and the alias's length bounds the bytes the head declares.
 The C front end adjusts such a parameter to a pointer whether the source
-writes the alias or the array declarator, so either head spelling restates
+writes the alias or the array declarator, so either head form restates
 it. A head writes the C type of a union, volatile or aligned alias, of an
 array or function-pointer alias anywhere but as a parameter's whole type,
-and of a name two verified sources alias to different types. A standard spelling such as `size_t` or `uint32_t` keeps its
+and of a name two verified sources alias to different types. A standard name such as `size_t` or `uint32_t` keeps its
 meaning even when a source typedefs it. A specification position writes
 Click's type, not a typedef name. See
 `mdtests/a_function_head_writes_the_source_typedef_names.md`,
@@ -478,7 +478,7 @@ positions. The adapter retains those type identities, but grants no callable
 extended-precision ABI. Their definitions, calls, and function addresses are
 rejected. This does not admit automatic `long double` values or arithmetic.
 
-The accepted standard scalar spellings alias the existing Click's C type model,
+The accepted standard scalar type names alias the existing Click's C type model,
 except that plain `char` retains its distinct C type identity. `signed char`
 is modeled separately as `int8`. Where plain `char` is signed it has `int8`'s
 values and representation without becoming `signed char`.
@@ -630,7 +630,7 @@ An enumeration's objects have its compatible type, as GCC and Clang choose
 it: `uint32` when no value is negative and `int32` otherwise
 (`mdtests/an_enum_with_no_negative_value_is_unsigned.md`,
 `mdtests/an_enum_with_a_negative_value_is_signed.md`). Enum fields, parameters,
-return values, and locals take that type, and a sidecar spells them with it. A
+return values, and locals take that type, and a sidecar writes them with it. A
 range neither type holds is refused. Its constants are `int32` when every value
 fits `int`, and otherwise have the enumerated type, as C23 6.7.2.2p15 and GCC 13
 type them; Clang 18 keeps the fitting constants `int`. A value above `INT_MAX`,
@@ -1087,7 +1087,7 @@ Supported C surface includes:
 - project-local quoted `#include "header.h"` declarations supplied in the
   verifying source bundle; headers may contain supported type declarations,
   prototypes, and `static inline` or `static __always_inline` function bodies.
-  Those helpers may carry the allowlisted declaration-only GNU spellings
+  Those helpers may carry the allowlisted declaration-only GNU forms
   `__attribute__((always_inline))` or `__attribute__((__always_inline__))`
   before the return type or after the parameter list. They may also carry
   `gnu_inline` (or `__gnu_inline__`), which the Linux kernel's `inline`
@@ -1099,7 +1099,7 @@ Supported C surface includes:
   translation-unit-local kernel identity named
   `{helper}#inline:{translation-unit}` in diagnostics that carry the kernel
   identity. A sidecar contract names an inline helper by its ordinary C
-  spelling. Parse diagnostics for bundle sources name the bundle file and
+  name. Parse diagnostics for bundle sources name the bundle file and
   line behind the expanded text, so an error inside a header helper points at
   `header.h:line`.
   A helper without a contract executes at the call site, including concrete
@@ -1144,9 +1144,9 @@ Supported C surface includes:
   contract-less helper is a cycle needing a checked rule
   (`mdtests/c_decreases_rejects_recursive_inline_helper.md`). A helper's own
   `decreases` is planned under the name its body executes under, not its
-  sidecar spelling (`mdtests/inline_helper_ranked_loop.md`).
+  sidecar name (`mdtests/inline_helper_ranked_loop.md`).
   `extern inline`, bare `inline` without `static`, and other
-  inline spellings have profile-dependent emission rules and remain
+  inline forms have profile-dependent emission rules and remain
   rejected. Canonical whole-header guards
   using `#ifndef NAME`/`#define NAME`/`#endif` and `#pragma once` are supported,
   so a shared header may be reached through multiple include paths without
@@ -1187,7 +1187,7 @@ Supported C surface includes:
   relational operators, and other general preprocessor expressions remain
   unsupported
 - the modeled system headers `#include <stdint.h>`, `#include <inttypes.h>`, and `#include <stdbool.h>`, which contribute the
-  standard spellings already mapped to Click's C types, including `int32_t` and
+  standard type names already mapped to Click's C types, including `int32_t` and
   `uint8_t`; they are otherwise no-ops. This does not model format macros or
   library functions from `<inttypes.h>`
 - the built-in `#include <limits.h>` on every target, which defines
@@ -1305,7 +1305,7 @@ Supported C surface includes:
   attribute is rejected at file scope. See
   `mdtests/c_compiletime_assert_declaration.md`
 - the inline assembly statement `__asm__ __volatile__("" : : : "memory");`
-  (also spelled `asm volatile`), the Linux `barrier()`: an empty template, no
+  (also written `asm volatile`), the Linux `barrier()`: an empty template, no
   operands, and exactly the `memory` clobber. It emits no instruction and
   does nothing in the sequential semantics. This is a claim about sequential
   execution only: what the barrier tells the compiler about reordering, and
@@ -1592,7 +1592,7 @@ concurrency-dependent problem tracked in
 ## Checked sequential kernel access primitives
 
 Click recognizes the Linux-style `READ_ONCE`, `WRITE_ONCE`, `likely`, `unlikely`,
-and `rcu_assign_pointer` spellings at the source boundary. Header wrappers
+and `rcu_assign_pointer` forms at the source boundary. Header wrappers
 whose replacement text uses GNU `typeof`, volatile accesses, or the matching
 helper names are mapped to these checked operations before ordinary C
 parsing, so statement-expression implementations do not get erased or
@@ -1679,13 +1679,13 @@ Nested source statements chain as `f.statement(2).statement(0).local(x)`.
 The canonical forms `f.parameter(i)` and `f.local(i)` use separate zero-based
 ordinals: signature position for parameters, declaration introduction order for
 automatic locals throughout the body. These references remain unambiguous when
-the source reuses a spelling. Qualify an ambiguous function with its source,
+the source reuses a name. Qualify an ambiguous function with its source,
 for example `"file.c"::f.local(0)`, or a declared source alias.
 
 Diagnostics, traces, and `click expand` write a declaration by its source name
 when that name is unambiguous: no other parameter, automatic or `static` local
 of the function, and no file-scope object declared before it, has the same
-spelling, and the name is not a Click word such as `result` or `old`. Otherwise
+name, and the name is not a Click word such as `result` or `old`. Otherwise
 they write the canonical `"file.c"::f.local(i)` or `"file.c"::f.parameter(i)`.
 
 A declaration is distinct from each execution instance of its storage. Loop
@@ -1711,7 +1711,7 @@ ordinary C symbol names.
 These references preserve scalar types, struct layouts, and array dimensions.
 They remain usable from another function after a static object's pointer
 escapes. Each static declaration has one storage identity for the whole program,
-spelled `f.static(i).storage()` or `"file.c"::static(i).storage()`. These storage
+written `f.static(i).storage()` or `"file.c"::static(i).storage()`. These storage
 forms are byte pointers and supply no permission to read or write. Scalar reads
 use the surrounding selected memory, including `old(...)`; volatile reads are
 subject to the ordinary specification restrictions.
@@ -2011,7 +2011,7 @@ copy. Use ordinary `fold` and `unfold` to change representation afterward.
 
 Forming `Comparator(&compare)` checks the verified (or explicit external)
 contract of `compare` against the named contract. Parameter names are binders
-and need not use the same spelling, and the formed fact is indexed by the
+and need not use the same names, and the formed fact is indexed by the
 concrete address `&compare`. The check is behavioral refinement: the named
 preconditions must imply the concrete function's preconditions, and the
 concrete function's postconditions, together with the named preconditions,
@@ -2094,7 +2094,7 @@ distinct, and the ordinary resource and owned-footprint checks still apply.
 <!-- verified-example: mdtests/c_named_contract_sequence_refinement_extra_write.md -->
 
 The same judgment relates two contracts for an arbitrary callback. Pure
-theorem parameters spell a function-pointer type with a nameless C declarator:
+theorem parameters write a function-pointer type with a nameless C declarator:
 
 <!-- verified-example: mdtests/c_named_contract_refines_named_contract.md -->
 ```click
@@ -2420,7 +2420,7 @@ Scalar parameters are callee-owned objects, just like scalar locals. If a
 parameter's address is taken, Click gives that parameter a distinct stack slot
 for the current call, and stores through the address are visible to later reads
 of the parameter by name. The slot is separate from any caller variable with
-the same spelling and from slots in recursive calls. Pointer-to-pointer
+the same name and from slots in recursive calls. Pointer-to-pointer
 parameters use 8-byte pointer cells and can be indexed and dereferenced like
 ordinary C pointer arrays.
 
@@ -2428,10 +2428,10 @@ Declarations in nested compound statements may shadow parameters and locals
 from an enclosing scope. Click resolves each use to the innermost declaration
 that is live at that source position, and the kernel assigns shadowed objects
 distinct local identities. Their addresses and storage therefore remain
-separate; after the nested block ends, a use of the outer spelling resolves to
+separate; after the nested block ends, a use of the outer name resolves to
 the enclosing object again. Declarations in sibling blocks may reuse a name as
 well. This lexical resolution is an import detail: Click contracts continue to
-refer to the source spelling at the current proof state.
+refer to the source name at the current proof state.
 
 ## Local arrays
 
@@ -2497,7 +2497,7 @@ supported scalar types, or pointer-typed fields such as `int32*`, `uint8*`, `flo
 `struct name*`. For example,
 `uint8 buf[16]` remains an inline 16-byte field; `p->buf[i]` decays that field
 to a byte pointer for indexed access and does not load it as a scalar or as a
-pointer-valued field. The standard spellings for the modeled scalar types are
+pointer-valued field. The standard names for the modeled scalar types are
 accepted in the same positions. `struct name*` is accepted for parameters,
 local pointers, and fields. Embedded struct fields whose nested declaration
 precedes the containing declaration are also supported for member access. An
@@ -2914,7 +2914,7 @@ refusal says
 A `uint64` constant that fits a 32-bit extent, such as `16u64`, states the
 32-bit extent `16`, as `malloc` of that constant makes it.
 
-The two formats never name one block: an `allocation` spelling of the other
+The two formats never name one block: an `allocation` form of the other
 format than the block's token, `allocation(p, m * 4)` with an `int32` count
 for a 64-bit block or `allocation(p, n * 4u64)` for a 32-bit one, is refused
 naming both

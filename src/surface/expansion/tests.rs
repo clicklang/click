@@ -3786,7 +3786,6 @@ fn a_caught_call_can_bypass_its_branch_return() {
         try_body: Box::new(body),
         binding: "error".into(),
         handler: Box::new(program_skip()),
-        cleanup_unwind: false,
     };
     assert!(
         returning_then_arms(&caught).is_empty(),

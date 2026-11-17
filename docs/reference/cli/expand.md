@@ -13,7 +13,7 @@ proof permits. A slow emitted simple operation is a verifier defect rather than
 another expansion candidate.
 
 An unnamed resource witness can be rendered as `result` when it is exactly
-the checked return pointer. Expansion rechecks that this spelling denotes
+the checked return pointer. Expansion rechecks that this form denotes
 the same premise, including inside address casts and `at(...)` expressions.
 
 ## Synopsis
@@ -242,12 +242,12 @@ work budget is exhausted, the crash-containment bound stops the run, or file
 output fails. In-place output uses an adjacent temporary file
 and an atomic rename after all checks pass.
 
-Both site and whole-function-claim expansion reject diagnostic-only spellings
-of unnamed kernel values with a missing-surface-name error. Whole-claim errors
-also identify the function, claim kind, and original proof location; a rendered
-placeholder such as `…` is not reported as a syntax error in a generated file.
-For a project, this validation resolves the rewritten entry with its original
-import graph, retaining imported resources and declarations.
+Both site and whole-function-claim expansion reject diagnostic-only printed
+forms of unnamed kernel values with a missing-surface-name error. Whole-claim
+errors also identify the function, claim kind, and original proof location; a
+rendered placeholder such as `…` is not reported as a syntax error in a
+generated file. For a project, this validation resolves the rewritten entry with
+its original import graph, retaining imported resources and declarations.
 
 A claim expansion whose explicit proof would nest `match`, `branch`, and proof
 `if` regions past the checked drivers' bound of eleven is refused before it is

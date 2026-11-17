@@ -1597,12 +1597,6 @@ enum LoanTransitionEvidence {
         loan: LoanId,
         holder: LoanParticipantId,
     },
-    #[cfg_attr(not(test), allow(dead_code))]
-    RegisterDependency {
-        parent: LoanScopeId,
-        child: LoanScopeId,
-        holder: LoanParticipantId,
-    },
 }
 
 /// Kernel-issued evidence for one exact ledger transition.
@@ -1929,7 +1923,9 @@ pub(crate) struct StableViewRecovery {
     pub(crate) resources: ResourceContext,
     /// The escrowed owners recovery handed back, in recovery order, each
     /// with the hold binding its occurrence carried before the call.
+    #[cfg(test)]
     pub(crate) recovered_escrows: Vec<(ResourceFact, Option<LoanViewBinding>)>,
+    pub(crate) recovered_hold_occurrences: Vec<(ResourceOccurrenceId, LoanViewBinding)>,
     pub(crate) mutex_authority_updates: Vec<mutex_calls::MutexAuthorityUpdate>,
     /// The holds this call's produced borrowing composites now carry.
     pub(crate) escaped_holds: Vec<EscapedHold>,
@@ -1984,8 +1980,7 @@ impl StableViewRecovery {
                 LoanTransitionEvidence::Recover { loan, .. } => {
                     LoanRefusalSubject::with_loan_id(*loan)
                 }
-                LoanTransitionEvidence::End { scope, .. }
-                | LoanTransitionEvidence::RegisterDependency { parent: scope, .. } => {
+                LoanTransitionEvidence::End { scope, .. } => {
                     LoanRefusalSubject::with_scope_id(*scope)
                 }
                 LoanTransitionEvidence::Split { share, .. }
@@ -3811,6 +3806,15 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
     })
 }
 
+/// The captured call residual retains the entry partition. A suspended call
+/// instead recovers into today's parent frame and must establish separation.
+#[derive(Clone, Copy)]
+enum RecoveryFrame {
+    #[cfg(test)]
+    Captured,
+    Current,
+}
+
 impl StableViewTransferPlan {
     /// Add the call's implicit local views to the same checked entry trace as
     /// explicit resources. No owned fact is inserted into either context.
@@ -4021,13 +4025,40 @@ impl StableViewTransferPlan {
     /// hold bindings of owned composites the callee consumed without
     /// returning: their holds are released, and a root the caller can then
     /// close is ended and its owner recovered (step 7).
+    #[cfg(test)]
     pub(crate) fn recover_stable_views(
         self,
         assumptions: &PureFactContext,
         escaping: &BTreeMap<LoanId, Vec<EscapingComposite>>,
         consumed_holds: &[LoanViewBinding],
     ) -> Result<StableViewRecovery, StableViewPlanError> {
-        self.recover_stable_views_impl(assumptions, escaping, consumed_holds, false)
+        self.recover_stable_views_impl(
+            assumptions,
+            escaping,
+            consumed_holds,
+            false,
+            RecoveryFrame::Captured,
+        )
+    }
+
+    /// Recover directly into the constructed call return, preserving its
+    /// output occurrences and projections. This establishes only the missing
+    /// output/escrow boundary; it does not rebuild the captured entry frame.
+    pub(crate) fn recover_returned_views(
+        mut self,
+        resources: ResourceContext,
+        assumptions: &PureFactContext,
+        escaping: &BTreeMap<LoanId, Vec<EscapingComposite>>,
+        consumed_holds: &[LoanViewBinding],
+    ) -> Result<StableViewRecovery, StableViewPlanError> {
+        self.caller_resources_after_requirements = resources;
+        self.recover_stable_views_impl(
+            assumptions,
+            escaping,
+            consumed_holds,
+            false,
+            RecoveryFrame::Current,
+        )
     }
 
     pub(crate) fn supports_suspended_memory_recovery(&self) -> bool {
@@ -4051,7 +4082,13 @@ impl StableViewTransferPlan {
         self.caller_resources_after_requirements = resources;
         self.parent_view_bindings = bindings;
         self.suspended_local_parents = local_bindings;
-        self.recover_stable_views_impl(assumptions, &BTreeMap::new(), &[], true)
+        self.recover_stable_views_impl(
+            assumptions,
+            &BTreeMap::new(),
+            &[],
+            true,
+            RecoveryFrame::Current,
+        )
     }
 
     fn recover_stable_views_impl(
@@ -4060,6 +4097,7 @@ impl StableViewTransferPlan {
         escaping: &BTreeMap<LoanId, Vec<EscapingComposite>>,
         consumed_holds: &[LoanViewBinding],
         mut keep_terminal: bool,
+        frame: RecoveryFrame,
     ) -> Result<StableViewRecovery, StableViewPlanError> {
         // Recovery changes only this call's escrow. Normalizing the ambient
         // frame would rebuild unrelated resource indexes at every child join.
@@ -4071,6 +4109,24 @@ impl StableViewTransferPlan {
                 )
                 .map_err(|error| composition_conflict(error, fact))
         };
+        // These sources were removed from the captured residual at entry.
+        // Restore that exact partition directly. Released older holds below
+        // have different provenance and retain ordinary boundary admission.
+        let restore_entry_resource = |resources: ResourceContext, fact: &ResourceFact| {
+            let (resources, mut inserted) = match frame {
+                #[cfg(test)]
+                RecoveryFrame::Captured => {
+                    resources.unchecked_with_facts_and_occurrences([fact.clone()])
+                }
+                RecoveryFrame::Current => resources
+                    .try_compose_with_legacy_discovery_and_occurrences([fact.clone()], assumptions)
+                    .map_err(|error| composition_conflict(error, fact))?,
+            };
+            Ok::<_, StableViewPlanError>((
+                resources,
+                inserted.pop().expect("one recovered source").1,
+            ))
+        };
         self.validate_exclusive_reservation()?;
         let parent_ledger = self.parent_ledger;
         let stable_views = self.stable_views.clone();
@@ -4080,7 +4136,9 @@ impl StableViewTransferPlan {
         let mut view_bindings = self.parent_view_bindings.clone();
         let mut local_view_updates = BTreeMap::new();
         let mut transitions = Vec::new();
+        #[cfg(test)]
         let mut recovered_escrows = Vec::new();
+        let mut recovered_hold_occurrences = Vec::new();
         let mut mutex_authority_updates = Vec::new();
         let mut pending_holds: Vec<(Vec<EscapingComposite>, LoanViewBinding)> = Vec::new();
         for (scope, loan, root, support, recoverable) in loan_roots.into_iter().rev() {
@@ -4186,6 +4244,7 @@ impl StableViewTransferPlan {
                         .ok_or(StableViewPlanError::InvalidResidual)?;
                     view_bindings = view_bindings.without(*occurrence);
                     resources = restore_resource(resources, &escrow)?;
+                    #[cfg(test)]
                     recovered_escrows.push((escrow, None));
                 } else if ledger
                     .validate_view_binding(binding.clone(), self.caller)
@@ -4213,17 +4272,23 @@ impl StableViewTransferPlan {
                 // caller's own packaging exactly as it found it.
                 if let Some(restored) = self.adapter_restorations.get(&loan) {
                     for fact in restored {
-                        resources = restore_resource(resources, fact)?;
+                        resources = restore_entry_resource(resources, fact)?.0;
+                        #[cfg(test)]
                         recovered_escrows.push((fact.clone(), None));
                     }
                     continue;
                 }
-                resources = restore_resource(resources, &escrow)?;
+                let (restored, occurrence) = restore_entry_resource(resources, &escrow)?;
+                resources = restored;
                 let hold_binding = self
                     .escrowed_holds
                     .iter()
                     .find(|(held, _)| *held == escrow)
                     .map(|(_, binding)| binding.clone());
+                if let Some(binding) = &hold_binding {
+                    recovered_hold_occurrences.push((occurrence, binding.clone()));
+                }
+                #[cfg(test)]
                 recovered_escrows.push((escrow, hold_binding));
             }
         }
@@ -4249,6 +4314,7 @@ impl StableViewTransferPlan {
                 ledger = ledger.apply(&recover)?;
                 transitions.push(recover);
                 resources = restore_resource(resources, &escrow)?;
+                #[cfg(test)]
                 recovered_escrows.push((escrow, None));
             }
         }
@@ -4284,7 +4350,8 @@ impl StableViewTransferPlan {
                 ledger = returned.ledger;
                 transitions.extend(returned.exit_transitions);
                 let source = use_plan.source_resource().clone();
-                resources = restore_resource(resources, &source)?;
+                resources = restore_entry_resource(resources, &source)?.0;
+                #[cfg(test)]
                 recovered_escrows.push((source, None));
             }
         }
@@ -4329,7 +4396,9 @@ impl StableViewTransferPlan {
             hold_base_ledger,
             hold_transitions,
             resources,
+            #[cfg(test)]
             recovered_escrows,
+            recovered_hold_occurrences,
             mutex_authority_updates,
             escaped_holds,
             view_bindings,
@@ -5650,23 +5719,6 @@ impl LoanLedger {
         self.require_arena(scope.arena)?;
         self.require_participant(holder)?;
         self.issue(LoanTransitionEvidence::End { scope, holder })
-    }
-
-    #[cfg(test)]
-    pub(crate) fn register_dependency(
-        &self,
-        parent: LoanScopeId,
-        child: LoanScopeId,
-        holder: LoanParticipantId,
-    ) -> Result<CheckedLoanTransition, LoanRefusal> {
-        self.require_arena(parent.arena)?;
-        self.require_arena(child.arena)?;
-        self.require_participant(holder)?;
-        self.issue(LoanTransitionEvidence::RegisterDependency {
-            parent,
-            child,
-            holder,
-        })
     }
 
     pub(crate) fn recover(
@@ -7032,52 +7084,6 @@ impl LoanLedger {
                     LoanRecord {
                         recovered: true,
                         ..record
-                    },
-                );
-            }
-            LoanTransitionEvidence::RegisterDependency {
-                parent,
-                child,
-                holder,
-            } => {
-                if parent == child {
-                    return Err(LoanRefusal::InvalidEvidence);
-                }
-                let parent_record = data
-                    .scopes
-                    .get(parent)
-                    .cloned()
-                    .ok_or(LoanRefusal::MissingScope)?;
-                let child_record = data
-                    .scopes
-                    .get(child)
-                    .cloned()
-                    .ok_or(LoanRefusal::MissingScope)?;
-                if !parent_record.active || !child_record.active {
-                    return Err(LoanRefusal::ScopeEnded);
-                }
-                if parent_record.close_right != Some(*holder) || child_record.parent.is_some() {
-                    return Err(LoanRefusal::WrongHolder);
-                }
-                let parent_share = data
-                    .shares
-                    .get(&parent_record.root)
-                    .ok_or(LoanRefusal::MissingShare)?;
-                if parent_share.holder != Some(*holder) {
-                    return Err(LoanRefusal::WrongHolder);
-                }
-                data.scopes = data.scopes.with_inserted(
-                    *parent,
-                    LoanScopeRecord {
-                        dependencies: parent_record.dependencies.with_value(*child),
-                        ..parent_record
-                    },
-                );
-                data.scopes = data.scopes.with_inserted(
-                    *child,
-                    LoanScopeRecord {
-                        parent: Some(*parent),
-                        ..child_record
                     },
                 );
             }

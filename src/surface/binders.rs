@@ -124,7 +124,7 @@ impl From<GeneratedBinderId> for SurfaceBinder {
 }
 impl From<&GeneratedBinderId> for SurfaceBinder {
     fn from(id: &GeneratedBinderId) -> Self {
-        Self::Generated(id.clone())
+        Self::Generated(*id)
     }
 }
 

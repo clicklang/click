@@ -16,7 +16,7 @@ structural nesting budget. These limits likewise fail with a source-positioned
 diagnostic before an unbounded recursive parse or AST construction can occur.
 Nested algebraic datatype applications and fields use a separate bounded
 angle-bracket budget; angle brackets are not included in the general delimiter
-preflight because they also spell comparison operators.
+preflight because they also serve as comparison operators.
 
 The current budgets are 16 for parenthesized and `match` nesting, 32 for the
 shared structural and conditional-expression nesting, and 32 for nested
@@ -133,11 +133,11 @@ caller's call graph, so a straight-line one needs no ranking of its own and a
 ranked loop may call it, while one carrying a loop still needs that loop
 ranked and a recursive one needs a checked rule for its cycle. `extern inline` has profile-dependent
 emission rules and stays rejected, as do bare `inline` and other inline
-spellings. The declaration-only GNU spellings
+forms. The declaration-only GNU forms
 `__attribute__((always_inline))` and `__attribute__((__always_inline__))` are
 accepted on those helpers, as is `gnu_inline` on a `static inline` helper
 only; other inline attributes and function definitions in headers
-remain unsupported. The exact trailing struct spelling
+remain unsupported. The exact trailing struct attribute
 `__attribute__((aligned(sizeof(long))))` (and `__aligned__`) is supported as an
 LP64 eight-byte alignment requirement; other alignment forms remain
 unsupported. Const-qualified static-storage aggregates are read-only, while
@@ -195,7 +195,7 @@ footprint.
 ## Type support is partial
 
 [Language coverage](../coverage.md#scalar-types) lists the admitted scalar
-types, and [Supported C](c.md) gives their spellings and operations. Integer
+types, and [Supported C](c.md) gives their names and operations. Integer
 promotions and the usual arithmetic conversions apply, and every C integer
 conversion, constant or symbolic, reduces modulo 2^N as GCC and Clang do
 (`mdtests/constant_narrowing_initializer_wraps_modulo_256.md`). A narrowing

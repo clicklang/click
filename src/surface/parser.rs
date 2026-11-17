@@ -1409,6 +1409,9 @@ impl ProgramLayouts {
                         record(binding, None, false);
                         pending.extend([try_body.as_ref(), handler.as_ref()]);
                     }
+                    ProgramStatement::UnwindCleanup { body, cleanup } => {
+                        pending.extend([body.as_ref(), cleanup.as_ref()]);
+                    }
                     ProgramStatement::Seq(sequence) => {
                         pending.extend(sequence.iter().map(|s| s.as_ref()))
                     }
@@ -3909,7 +3912,7 @@ impl Parser {
                         );
                     }
                     witnesses.push(ResourceWitness {
-                        name: binding.name.into(),
+                        name: binding.name,
                         interface_type,
                     });
                     facts.push(condition);
@@ -18481,7 +18484,8 @@ mod preserve_syntax_tests {
             let expected = parser(evidence).parse_proposition().unwrap();
             assert_eq!(tactic, ProofTactic::Preserve(expected));
             let printed =
-                crate::surface::printing::format_proof_tactics(&[tactic.clone()]).unwrap();
+                crate::surface::printing::format_proof_tactics(std::slice::from_ref(&tactic))
+                    .unwrap();
             assert!(!printed.contains("preserve(separate("), "{printed}");
             let reparsed = parser(&printed).parse_proof_clause_or_default().unwrap();
             let SourceProof::Script(reparsed) = reparsed else {

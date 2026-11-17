@@ -1133,16 +1133,19 @@ impl<'a> Proof<'a> {
                     FrontierPosition::StatementEntry { remaining } => Some(remaining.as_ref()),
                     _ => None,
                 });
-        // C++ cleanup wrappers do not introduce an executable step. Select
-        // the same first operation that ordinary `step()` will execute, while
-        // leaving the wrapper intact for the kernel's exception continuation.
-        // Borrow only the leading source path. Splitting/cloning each try
-        // wrapper here would also copy its unrelated cleanup handler.
+        // A `try` or an unwind cleanup does not introduce an executable step.
+        // Select the same first operation that ordinary `step()` will execute,
+        // leaving the statement intact for the kernel's exception
+        // continuation. Borrow only the leading source path: splitting or
+        // cloning each one here would also copy its handler or cleanup.
         let mut operation = remaining;
         loop {
             operation = match operation {
                 Some(ProgramStatement::Seq(statements)) => Some(statements.first()),
-                Some(ProgramStatement::TryCatchInt32 { try_body, .. }) => Some(try_body.as_ref()),
+                Some(
+                    ProgramStatement::TryCatchInt32 { try_body, .. }
+                    | ProgramStatement::UnwindCleanup { body: try_body, .. },
+                ) => Some(try_body.as_ref()),
                 _ => break,
             };
             crate::instrumentation::record_deterministic_work(1);

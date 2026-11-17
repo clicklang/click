@@ -375,7 +375,7 @@ fn iterated_clause_as_proposition(clause: &IteratedResourceClause) -> ClickPropo
     };
     ClickProposition::ForAll {
         click_type: ClickType::Program(InterfaceType::Int32),
-        name: clause.binder.clone().into(),
+        name: clause.binder.clone(),
         written_name: None,
         body: Box::new(body),
     }

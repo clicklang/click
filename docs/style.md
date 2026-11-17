@@ -79,7 +79,7 @@ claim with no C left, such as a `have` or a pure theorem. Braces
 are optional around that single tactic. Use `by { ... }` for a sequence of
 tactics. Call-style tactics always take parentheses, including `solve()`.
 Write `solve`, `solve() using`, and `step_until`; the parser refuses the
-removed spellings `assumption`, `auto`, `arithmetic`, `execute`, and
+removed names `assumption`, `auto`, `arithmetic`, `execute`, and
 `execute_until`. Structural forms such as `if`, `match`, and `have` retain their
 own grammar. For binary proof splits
 (`if` and `branch`), write `then` exactly when an `ensuring` interface precedes
@@ -110,9 +110,15 @@ it is not an execution target. See
 - A **function head** (of a verified function, an `extern`, or a `contract`)
   restates a target-language declaration. Write it as the source writes the
   declaration: `long long` where the source says `long long`, `int` where it
-  says `int`. Click checks the head's exact types; the spelling is this
+  says `int`. Click checks the head's exact types; the written form is this
   convention.
 - **Kernel Click** is the explicit proof core. It has no textual user syntax.
+- **Lowering** turns a Surface term into a kernel term, **raising** turns a
+  kernel term into a Surface term, and **printing** turns a Surface term into
+  text. What an author or a target-language source wrote is its **source
+  text**. A kernel term **raises** when raising gives a Surface term that
+  lowers back to it. Do not write *spell*, *spelling*, or *spellable*: say
+  raise, print, source text, form, or name, whichever is meant.
 - A **C fragment** is C syntax embedded in Surface Click and elaborated into
   Kernel Click meaning.
 - A **sidecar** is a `.click` file that specifies one or more target-language
@@ -188,7 +194,7 @@ related entries.
 
 State syntax and variants, class, accepted proof state, consumed and produced
 state, checking behavior, smart-search failure behavior when applicable,
-expansion and profiling behavior, a verified example, and retired spellings.
+expansion and profiling behavior, a verified example, and retired forms.
 
 ### Command
 

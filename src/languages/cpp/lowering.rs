@@ -27,8 +27,8 @@ use crate::kernel::{
     program_copy_aggregate, program_declare, program_declare_aggregate,
     program_declare_initialized, program_declare_with_all_qualifiers,
     program_end_automatic_lifetimes, program_function, program_if, program_parameter,
-    program_return, program_seq, program_skip, program_try_catch_int32,
-    program_try_catch_int32_with_cleanup, program_typed_store,
+    program_return, program_seq, program_skip, program_try_catch_int32, program_typed_store,
+    program_unwind_cleanup,
 };
 
 /// One kernel function together with the immutable semantic artifact that
@@ -1121,7 +1121,7 @@ impl LoweringContext<'_> {
                 let mut result = program_seq(
                     program_declare(object.clone(), ProgramType::Int32Pointer),
                     ProgramStatement::HeapAllocate {
-                        target: (object.clone()).into(),
+                        target: (object.clone()),
                         bytes: crate::kernel::program_expression::int32_literal(source.size_bytes),
                         zeroed: false,
                         object_type: class,
@@ -1345,9 +1345,7 @@ impl LoweringContext<'_> {
                 } else {
                     program_seq(
                         operation,
-                        program_end_automatic_lifetimes(
-                            temporaries.into_iter().map(Into::into).collect(),
-                        ),
+                        program_end_automatic_lifetimes(temporaries.into_iter().collect()),
                     )
                 };
                 Ok(evaluate_then(prefix, operation))
@@ -1409,18 +1407,7 @@ impl LoweringContext<'_> {
         can_throw: bool,
     ) -> Result<ProgramStatement, String> {
         if can_throw && self.unwind_cleanups && !unwind_cleanups.is_empty() {
-            let binding = self.fresh_temporary(ProgramType::Int32)?;
-            let mut handler = program_skip();
-            for cleanup in unwind_cleanups {
-                handler = program_seq(handler, self.lower_cleanup(cleanup)?);
-            }
-            handler = program_seq(
-                handler,
-                ProgramStatement::Throw(crate::kernel::program_expression::variable(
-                    binding.clone(),
-                )),
-            );
-            evaluation = program_try_catch_int32_with_cleanup(evaluation, binding, handler, true);
+            evaluation = program_unwind_cleanup(evaluation, self.lower_cleanups(unwind_cleanups)?);
         }
         let mut result = program_seq(program_declare(capture.clone(), value_type), evaluation);
         for cleanup in cleanups {
@@ -1496,7 +1483,7 @@ impl LoweringContext<'_> {
                                     crate::kernel::program_expression::variable(temporary.clone()),
                                     layout,
                                 ),
-                                program_end_automatic_lifetimes(vec![(temporary).into()]),
+                                program_end_automatic_lifetimes(vec![(temporary)]),
                             ),
                         ),
                     ),
@@ -1733,26 +1720,30 @@ impl LoweringContext<'_> {
         }
     }
 
+    /// A statement that may exit by throwing, with the destructors of the
+    /// objects live around it to run if it does.
     fn lower_throwing_statement<'p>(
         &mut self,
         statement: ProgramStatement,
-        mut cleanups: impl Iterator<Item = &'p CppCleanup>,
+        cleanups: impl Iterator<Item = &'p CppCleanup>,
     ) -> Result<ProgramStatement, String> {
-        let Some(first) = cleanups.next() else {
+        let cleanups = cleanups.collect::<Vec<_>>();
+        if cleanups.is_empty() {
             return Ok(statement);
-        };
-        let binding = self.fresh_temporary(ProgramType::Int32)?;
-        let mut handler = program_seq(program_skip(), self.lower_cleanup(first)?);
-        for cleanup in cleanups {
-            handler = program_seq(handler, self.lower_cleanup(cleanup)?);
         }
-        handler = program_seq(
-            handler,
-            ProgramStatement::Throw(crate::kernel::program_expression::variable(binding.clone())),
-        );
-        Ok(program_try_catch_int32_with_cleanup(
-            statement, binding, handler, true,
+        Ok(program_unwind_cleanup(
+            statement,
+            self.lower_cleanups(&cleanups)?,
         ))
+    }
+
+    /// The destructors to run, in order, as one statement.
+    fn lower_cleanups(&mut self, cleanups: &[&CppCleanup]) -> Result<ProgramStatement, String> {
+        let mut lowered = program_skip();
+        for cleanup in cleanups {
+            lowered = program_seq(lowered, self.lower_cleanup(cleanup)?);
+        }
+        Ok(lowered)
     }
 
     /// Normalize evaluation into explicit statements followed by a pure value.

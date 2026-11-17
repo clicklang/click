@@ -75,7 +75,7 @@ proposed extra worker proof parameter is superseded by the nested type above.
 ## Pass resources through existing proof interfaces
 
 Use existing proof-only resource arguments and named call maps. Do not add
-`<P: Resource>`, parameterized mutex spellings, or a separate description
+`<P: Resource>`, parameterized mutex syntax, or a separate description
 argument at a call. Do not replace these with a second description argument in
 parentheses. Introduce a new parameter syntax only after a concrete use case
 shows why existing resource passing is insufficient. Existing type applications
@@ -164,7 +164,7 @@ The proposed mutex-only `protecting` modifier is withdrawn. The illustrative
 `access.state == counter_state(counter)` expression is also not an accepted
 feature or a chosen design. First establish how ordinary resource definitions
 and resource arguments can express the relationship. Do not introduce either
-spelling as an implementation shortcut.
+syntax as an implementation shortcut.
 
 The current implementation has these distinct capabilities:
 

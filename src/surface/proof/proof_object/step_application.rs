@@ -435,16 +435,13 @@ impl<'a> Proof<'a> {
         for (role, original) in facts.chain(goal) {
             let scope = crate::surface::proof::attempt::search_scope("raise-lower audit");
             let (outcome, spelling, lowered) = crate::instrumentation::without_charging(|| {
-                let Some(view) = next.premise_fixed_state_view() else {
+                if next.premise_fixed_state_view().is_none() {
                     return (RoundTrip::NoState, String::new(), String::new());
-                };
-                let Some(surface) =
-                    crate::surface::proof::surface_synthesis::synthesize_surface_proposition(
-                        original,
-                        view.parameter_binding,
-                        view.fixed_state.state,
-                    )
-                else {
+                }
+                // Raise as goal presentation does: with the path's recorded
+                // points and its entry state, so `at(point, ..)`, `old(..)`
+                // and `<call>.result` spellings are available.
+                let Some(surface) = next.structural_proposition_candidate(original) else {
                     return (RoundTrip::Unraised, String::new(), String::new());
                 };
                 let spelling = crate::surface::printing::source_click_proposition(&surface);

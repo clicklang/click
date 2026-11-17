@@ -258,7 +258,7 @@ fn reduce(value: u32) -> u32 {
 ```
 
 A Rust source's function contracts require this form. A C-shaped signature
-is refused with a suggestion of the `fn` spelling. A field through a
+is refused with a suggestion of the `fn` form. A field through a
 reference is `p.f`; `p->f` is refused. The
 sidecar parser accepts every Rust integer and float type name, `bool`, `()`,
 and a struct by name, but the importer admits only the types in
@@ -298,7 +298,7 @@ them. Type parameters are limited to the supported
 named by its position, `self.0`.
 
 A diagnostic about a function whose signature is written this way, and the
-proof `click expand` writes for it, spell its places the same way: a
+proof `click expand` writes for it, write its places the same way: a
 slice's length `bytes.len()`, a cast `(x as u32)`, and a field through a
 reference `p.field`.
 
@@ -436,7 +436,7 @@ and `let` binders, and algebraic datatype fields take Rust types too: the
 scalars (`u8`, `i32`, `u32`, `u64`, `usize`, `bool`, ...) and a raw pointer
 to one or to a crate struct, `*const T` or `*mut T`. Such a function takes values, not borrows,
 and a reference `&T` is refused there. `x as T` casts in a body as in a
-contract. The C spellings (`uint8`, `const uint8*`, `x as int32`) still read
+contract. The C forms (`uint8`, `const uint8*`, `x as int32`) still read
 the same types.
 
 A pure function may take a slice of scalars, `bytes: &[u8]`. The body reads
@@ -450,7 +450,7 @@ the length as two arguments is refused. Printed proofs write a call the same
 way, `size(old(bytes))`. The library's `Slice<T>`
 (`library/rust/slice.click`) is the slice as one value, with `slice::len` and
 `slice::as_ptr`; a slice parameter is lowered as its pointer and its length,
-and the two spellings are the same slice.
+and the two forms are the same slice.
 
 A slice in a value position is one `Slice<T>` value: the result of a pure
 function, `fn half(bytes: &[u8]) -> &[u8]`, a type argument, `Option<&[u8]>`,
@@ -459,12 +459,12 @@ and an enum field, `Window(&[u8], usize)`. Rust's methods read it:
 `half(bytes).as_ptr()`. They reduce without an `unfold` when the slice is
 built, so `half(bytes).len() == bytes.len() / 2u64` closes by `solve`. A
 slice value passes to a slice parameter as one argument,
-`size(half(bytes))`. Failures print these spellings, each reading back as
+`size(half(bytes))`. Failures print these forms, each reading back as
 the same term: a written subslice as `bytes[1..3]` and its length as
 `bytes[2..].len()`, a slice argument built from a pointer and a length as
 `click::rust::slice::from_raw_parts(p, n)`. In a goal, a slice built as a
 subslice prints as that subslice, `bytes[1..3]`: the kernel records it where
-it is constructed, the same place its bounds are owed, so the spelling owes
+it is constructed, the same place its bounds are owed, so the printed form owes
 nothing new when it is read back. A slice built any other way, such as the
 body of `half` unfolded, prints as its constructor at its element type,
 `Slice<u8>::Slice(&bytes[1], 2u64)`. In a theorem
@@ -562,7 +562,7 @@ tactics) are the same in every language.
 ### Function pointers and named contracts
 
 A sidecar callable parameter must match the source signature. A mismatch
-reports both types in C spelling, such as `uint32 (*)(uint32)` against
+reports both types in C syntax, such as `uint32 (*)(uint32)` against
 `int32 (*)(int32)`.
 
 A parameter of a safe Rust-ABI function-pointer type of scalar parameters and
@@ -749,7 +749,7 @@ generic struct's field is: `fn peek<T: Copy>(value: &T) -> T { views
 
 A generic struct, `struct Cell<T> { value: T, count: u32 }`, holds values of
 its type parameters in memory. Each instance a type names is a record of its
-own, spelled with its arguments in the sidecar, `generic_structs::Cell<T>` in
+own, written with its arguments in the sidecar, `generic_structs::Cell<T>` in
 generic code and `generic_structs::Cell<i32>` in a caller. Rust fixes no
 layout for a generic struct and safe code reads none, so Click lays each
 instance out in declaration order: a scalar field at its size and alignment,
@@ -1427,7 +1427,7 @@ loop over `0..bytes.len()` reads, and nested ranges.
 An inclusive range `a..=b`, which the compiler builds with
 `RangeInclusive::new`, is read through `RangeInclusive`'s own `iter.start()`
 and `iter.end()`; its state also holds `iter_done`, whether it has yielded
-`b`, which its proofs still name while it awaits a Rust spelling.
+`b`, which its proofs still name while it awaits a Rust form.
 It yields while `iter_done == 0 and iter_start <= iter_end`; each iteration
 yields `iter_start` and then, as an ordinary branch of the loop body,
 advances it while `iter_start < iter_end` and sets `iter_done` at
@@ -1448,7 +1448,7 @@ implementation, signature, and concrete types before constructing Click's
 `IntegerFrom` operation;
 lowering preserves the value and evaluates its argument once in source order.
 These pinned standard-library primitive conversions are interpreted builtins;
-their library bodies are not imported. Matching a method's spelling alone does
+their library bodies are not imported. Matching a method's name alone does
 not authorize a conversion. User conversion implementations, `.into()`, bool
 conversions, and general trait dispatch remain unsupported. The same adapter
 rule applies inside supported owned-record functions.
