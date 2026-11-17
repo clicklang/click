@@ -584,6 +584,9 @@ history and temporary session notes are not the plan's durable record.
 
 Checkpoint: 10a–10g have landed; 10f is [PR #3075](https://github.com/clicklang/click/pull/3075)
 and 10g is [PR #3080](https://github.com/clicklang/click/pull/3080).
+10k landed in [PR #3151](https://github.com/clicklang/click/pull/3151); all eight
+pushed commits were verified on upstream and the clean primary was advanced
+through Git.
 10i landed in [PR #3117](https://github.com/clicklang/click/pull/3117); all four
 pushed commits were verified on upstream. Its approved hash-encoding change
 supersedes the historical native-hash-stream requirement below. The original
@@ -594,7 +597,7 @@ sequence below. These rows record planned scope, not completed implementation.
 | Slice | Scope | Acceptance / dependency | Status |
 | --- | --- | --- | --- |
 | 10j | Remove redundant native payloads from stored execution and memory values. | Audit actual wrapper-owned and reachable duplicate payloads first; remove demonstrated redundancy while preserving producer, storage and exact-refresh contracts. Account for live compatibility readers. | Audit complete; wrapper field duplication already absent; live dependencies below remain. |
-| 10k | Migrate native Integer result storage. | Integer results retain shared roots through result handoffs; exact native output is an explicit boundary. | Implementation and local validation complete; [PR #3151](https://github.com/clicklang/click/pull/3151) has auto-merge requested. Integration pending; evidence below. |
+| 10k | Migrate native Integer result storage. | Integer results retain shared roots through result handoffs; exact native output is an explicit boundary. | Landed in [PR #3151](https://github.com/clicklang/click/pull/3151); all eight pushed commits verified on upstream. Evidence below. |
 | 10l | Migrate deferred Integer bindings and fold endpoints. | Deferred bindings and endpoints retain shared operands through substitution and evaluation with unchanged fold behavior. | Implemented locally; validation in progress. |
 | 10m | Migrate algebraic field and match-result storage. | Fields and match results retain shared values with existing constructor/arm identity and producer metadata. | Planned. |
 | 10n | Migrate theorem argument and recorded-state value storage. | Stored arguments and recorded values retain shared operands with unchanged substitution and state selection. | Planned. |
@@ -906,7 +909,10 @@ loop-iteration fixtures, named fold expansion/replay with implicit solving
 disabled, and quality checks (script exit zero). The new scaling assertion
 compares costs across sizes; it does not prescribe a particular accounting
 count. Full nightly was not run. Upstream integration and PR delivery remain
-pending.
+pending. After integrating upstream `4f614f04e`, all 512 focused checks,
+the fold-read and loop-iteration selections, and quality checks passed again
+(script exit zero). The subsequent `5a58b73d3` integration adds the merged 10k
+commits already present in this implementation.
 
 ## Chunk 3: machine-valued pure-function results
 

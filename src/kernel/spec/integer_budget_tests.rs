@@ -260,8 +260,7 @@ fn integer_fold_loadable_obligation_keeps_carriers_separate() {
     let integer_address = MachineTerm::IntegerToMachine {
         value: IntegerTerm::var(shared_id).into(),
         destination: MachineIntegerType::Int32,
-    }
-    .into();
+    };
     let integer_address_requirement = Proposition::MemoryLoadable {
         memory: Memory::new(),
         base: Address {
@@ -370,8 +369,7 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
         },
         bytes: MachineTerm::constant(4),
         wide: false,
-    }
-    .into();
+    };
     let direct_wrapped =
         integer_range_fold_body_obligation(direct_requirement, &index, accumulator, item);
     assert!(matches!(
