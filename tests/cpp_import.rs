@@ -21189,3 +21189,70 @@ int32 probe() { ensures result == 0; }
         "an unused reference must still reject retired record storage"
     );
 }
+
+#[test]
+#[ignore = "nightly: returned member write with sibling view and complete replay"]
+fn cpp_returned_member_pointer_write_retains_its_source_domain() {
+    let project = Project::with_fixture(
+        "reference.cpp",
+        "probe",
+        r#"
+struct Widget { int value; };
+struct Outer { int first; Widget child; };
+int* child(Outer& outer) noexcept { return &outer.child.value; }
+int probe(Outer& outer, int value) noexcept { auto* ref = child(outer); *ref = value; return outer.child.value; }
+"#,
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "reference.cpp";
+int32* child(Outer& outer) { views outer.first; views outer.child.value; ensures result == &outer.child.value; }
+int32 probe(Outer& outer, int32 value) { owns outer.child.value; views outer.first; ensures result == value; ensures outer.child.value == value; ensures outer.first == old(outer.first); } by {
+    step(); step(); step();
+    have ref == &outer.child.value by { known(); }
+    have separate(memory(outer.child.value), memory(outer.first)) by { known(); }
+    have separate(memory(ref[0]), memory(outer.first)) by {
+        rewrite(ref, &outer.child.value); known();
+    }
+    step();
+}
+"#;
+    let path = project.directory.join("arithmetic.click");
+    fs::write(&path, source).unwrap();
+    let mut parsed = read_click_project(&path, source).unwrap();
+    for (label, target) in [
+        ("child.ensures_0", "ensures result == &outer.child.value"),
+        ("probe.contract", "ensures result == value"),
+    ] {
+        let expanded =
+            expand_project_claim_source_by_label(&parsed, &ProgramInputs::program(&import), label)
+                .unwrap_or_else(|error| panic!("{}", error.report()));
+        let (session, _) =
+            ProgramVerificationSession::new_program_prepared_project(&parsed, &import)
+                .unwrap_or_else(|error| panic!("{}", error.report()));
+        let offset = expanded.find(target).unwrap();
+        let prefix = &expanded[..offset];
+        let line = prefix.bytes().filter(|b| *b == b'\n').count() + 1;
+        let column = prefix.rsplit('\n').next().unwrap().chars().count() + 1;
+        session
+            .verify_at_project(&expanded, line, column)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        drop(session);
+        parsed = parsed.with_entry_source(expanded);
+    }
+    click::surface::without_implicit_solve(|| verify_program_prepared_project(&parsed, &import))
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    for bad in [
+        source.replace("owns outer.child.value;", "views outer.child.value;"),
+        source.replace(
+            "ensures result == &outer.child.value;",
+            "ensures (result as uint64) == (&outer.child.value as uint64);",
+        ),
+    ] {
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &bad).unwrap();
+        let parsed = read_click_project(&path, &bad).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+}

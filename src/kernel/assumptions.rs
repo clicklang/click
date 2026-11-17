@@ -3,7 +3,7 @@ mod float_conversions;
 #[allow(dead_code)]
 mod pointer_checks;
 mod pointer_domains;
-pub(in crate::kernel) use pointer_domains::PointerDomain;
+pub(in crate::kernel) use pointer_domains::{PointerDomain, PointerDomainSource};
 #[allow(dead_code)]
 mod retained_folds;
 #[allow(dead_code)]
@@ -3889,25 +3889,6 @@ impl PureFactContext {
                 })
     }
 
-    pub(in crate::kernel) fn access_provenance_match(
-        &self,
-        required: (&Address, Option<&Address>),
-        available: &MemoryRange,
-    ) -> bool {
-        if pointer_checks::access_match(
-            required,
-            (
-                &available.provenance,
-                available.bounds_owner.as_deref(),
-                available.carrier_bounds_known,
-            ),
-            self,
-        ) {
-            return true;
-        }
-        self.selected_domain_access_matches(required, available)
-    }
-
     pub(in crate::kernel) fn pointer_provenance_match(
         &self,
         left: &PointerValue,
@@ -3958,128 +3939,6 @@ impl PureFactContext {
                 pointer_checks::Origins::native(right),
                 self,
             )
-    }
-
-    pub(in crate::kernel) fn pointer_value_at_entry(&self, value: &PointerValue) -> PointerValue {
-        if value.bounds_are_known() {
-            return value.clone();
-        }
-        let representative = self
-            .equality_graph
-            .admitted
-            .pointer_value_classes
-            .representative(value);
-        let representative = super::pointer_provenance::prefer_pointer(
-            &representative,
-            &self.equality_graph.pointer_value_representative(value),
-        );
-        let mut framed_address = None;
-        let representative = if !representative.bounds_are_known()
-            && value.provenance().as_loaded_value().is_some()
-            && value.bounds_owner() == Some(value.provenance())
-        {
-            self.known_value_of_framed_pointer_read(value)
-                .inspect(|known| {
-                    framed_address = Some(known.pointer().clone());
-                })
-                .unwrap_or(representative)
-        } else {
-            representative
-        };
-        if !representative.bounds_are_known() {
-            // Typed loads already return the complete stored pointer when one
-            // exists. Normalizing their result must not repeat that history
-            // search, including for opaque pointers reconstructed from words.
-            // Only full pointer premises above can supply additional bounds.
-            return value.clone();
-        }
-        let adopted = value
-            .clone()
-            .with_provenance(std::sync::Arc::new(representative.provenance().clone()))
-            .with_bounds(representative.bounds().cloned())
-            .with_bounds_owner(
-                representative
-                    .bounds_owner()
-                    .cloned()
-                    .map(std::sync::Arc::new),
-            );
-        let adopted = match framed_address {
-            Some(address) => adopted.with_address(address),
-            None => adopted,
-        };
-        if representative.bounds().is_none() {
-            adopted.with_root_bounds()
-        } else {
-            adopted
-        }
-    }
-
-    /// Address aliases select existing full-value premises; only the selected
-    /// read's complete eight-byte source can authorize their pointer metadata.
-    fn known_value_of_framed_pointer_read(&self, value: &PointerValue) -> Option<PointerValue> {
-        let source = {
-            let _checking =
-                crate::instrumentation::CheckingWorkScope::new("select framed pointer source", 1);
-            crate::instrumentation::record_deterministic_work(1);
-            let alias = self
-                .equality_graph
-                .unique_exact_pointer_alias(value.pointer())?;
-            let address = ConditionTerm::pointer_equal(value.pointer().clone(), alias.clone());
-            let sources = self
-                .equality_graph
-                .admitted
-                .pointer_address_sources
-                .get(&address)
-                .or_else(|| {
-                    self.equality_graph
-                        .admitted
-                        .pointer_address_sources
-                        .get(&address.flipped())
-                })?;
-            // A source bucket can grow with states of this same address. Its
-            // cached cardinality decides whether implicit selection is unambiguous.
-            if sources.len() != 1 {
-                return None;
-            }
-            sources.iter().next()?
-        };
-        crate::instrumentation::record_deterministic_work(1);
-        let ConditionTerm::PointerValueEqual(left, right) = source else {
-            return None;
-        };
-        for read in [left.as_ref(), right.as_ref()] {
-            if read.pointer() != value.pointer()
-                || read.bounds_are_known()
-                || read.bounds().is_some()
-                || read.bounds_owner() != Some(read.provenance())
-            {
-                continue;
-            }
-            let representative = self
-                .equality_graph
-                .admitted
-                .pointer_value_classes
-                .representative(read);
-            let representative = super::pointer_provenance::prefer_pointer(
-                &representative,
-                &self.equality_graph.pointer_value_representative(read),
-            );
-            if !representative.bounds_are_known() {
-                continue;
-            }
-            if crate::kernel::memory_history::pointer_read_provenance_equal(
-                value.provenance(),
-                read.provenance(),
-                self,
-            ) && crate::kernel::memory_history::pointer_read_bounds_equal(
-                value.provenance(),
-                read.provenance(),
-                self,
-            ) {
-                return Some(representative);
-            }
-        }
-        None
     }
 
     fn adjust_pointer_value_equality(&mut self, proposition: &Proposition) {

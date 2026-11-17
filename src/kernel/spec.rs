@@ -8022,18 +8022,30 @@ fn refine_object_pointer_argument_with_null(
     {
         return true;
     }
+    let names_declared_object = |value: &PointerValue| {
+        [value.pointer(), value.provenance()]
+            .into_iter()
+            .any(|object| {
+                object.offset == AddressOffset::Constant(0)
+                    && memory.declared_class(object).as_ref() == Some(object_class)
+            })
+    };
     if pointer.object_type_evidence().is_none()
         && (assumptions
             .equality_graph
             .has_object_type(pointer.pointer(), object_class)
-            // A modular result may have a symbolic address while its checked
-            // provenance already names the actual declared object.
-            || [pointer.pointer(), pointer.provenance()]
-                .into_iter()
-                .any(|object| {
-                    object.offset == AddressOffset::Constant(0)
-                        && memory.declared_class(object).as_ref() == Some(object_class)
-                })
+            || names_declared_object(pointer)
+            || {
+                // Complete-value equality can identify the declared object
+                // even when strict replay carries a symbolic result. Use
+                // the retained witness only for this class check.
+                let witness = assumptions
+                    .equality_graph
+                    .admitted
+                    .pointer_value_classes
+                    .representative(pointer);
+                witness != *pointer && names_declared_object(&witness)
+            }
             // A pointer the facts prove null meets the requirement too. It
             // keeps its written address rather than being respelled as null.
             || proves_null(assumptions, pointer.pointer()))
@@ -8882,7 +8894,7 @@ fn evaluate_spec_if_paths_in(
         let retained_comparison = !budget.machine_result_production_disabled
             && match &condition_path.proposition {
                 Proposition::ConditionIs(condition, _)
-                    if crate::kernel::machine_integer::comparison::is_simple_bitwise_comparison(
+                    if crate::kernel::machine_integer::comparison::is_bounded_bit_comparison(
                         condition,
                     ) =>
                 {

@@ -7467,6 +7467,8 @@ fn intrinsically_decided_bitwise_guards_retain_their_conditionals() {
             format!("(z | (7 as {spelling})) < (z | (7 as {spelling}))"),
             "(~z) == (~z)".into(),
             "(~z) < (~z)".into(),
+            "(z >> 1) == (z >> 1)".into(),
+            "(z >> 1) < (z >> 1)".into(),
         ] {
             let text = format!("to_integer(if {guard} {{ y }} else {{ 3 as {spelling} }}) <= 100");
             let file = parser::parse(&format!(
@@ -7602,6 +7604,55 @@ fn closed_word32_equality_guards_with_selected_literal_arms_round_trip() {
             for replacement in [9, 10] {
                 for reverse in [false, true] {
                     check_conditional_round_trip(format, spelling, guard, reverse, replacement);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn fixed_right_shifts_in_conditionals_round_trip_after_rewrite() {
+    use crate::kernel::MachineIntegerType as T;
+    for (format, spelling, max_count) in [
+        (T::Int32, "int32", 31),
+        (T::UInt32, "uint32", 31),
+        (T::Int64, "int64", 63),
+        (T::UInt64, "uint64", 63),
+    ] {
+        for count in [1, 7, max_count] {
+            let equality = format!("x == (z >> {count})");
+            for reverse in [false, true] {
+                for guard in ["flag", "not flag"] {
+                    check_conditional_round_trip_using_equality(
+                        format, spelling, guard, reverse, &equality,
+                    );
+                }
+                for guard in ["x < y", "x == y", "y <= x", "y != x"] {
+                    check_conditional_round_trip_with_arm(
+                        format, spelling, guard, reverse, &equality, "z",
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn fixed_unsigned_left_shifts_in_conditionals_round_trip_after_rewrite() {
+    use crate::kernel::MachineIntegerType as T;
+    for (format, spelling, max_count) in [(T::UInt32, "uint32", 31), (T::UInt64, "uint64", 63)] {
+        for count in [1, 7, max_count] {
+            let equality = format!("x == (z << {count})");
+            for reverse in [false, true] {
+                for guard in ["flag", "not flag"] {
+                    check_conditional_round_trip_using_equality(
+                        format, spelling, guard, reverse, &equality,
+                    );
+                }
+                for guard in ["x < y", "x == y", "y <= x", "y != x"] {
+                    check_conditional_round_trip_with_arm(
+                        format, spelling, guard, reverse, &equality, "z",
+                    );
                 }
             }
         }
