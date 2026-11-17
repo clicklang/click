@@ -41,23 +41,6 @@ pub(crate) enum FlatBodyAdmission {
 }
 
 impl ResourceContext {
-    /// Admit a returned composite's already-constructed flat body against
-    /// this frame. The body producer established its own composition; query
-    /// only cross-boundary memory overlap, without inserting temporary child
-    /// owners or validating either side again. Tokens add and views duplicate.
-    /// A finite recursive body's folded child stays opaque; this query checks
-    /// its explicitly exposed memory frontier and does not unfold that child.
-    pub(in crate::kernel) fn admit_returned_flat_body(
-        &self,
-        body: &crate::kernel::functions::ConstructedReturnBody,
-        assumptions: &PureFactContext,
-    ) -> FlatBodyAdmission {
-        #[cfg(test)]
-        let _fast =
-            crate::kernel::search::FastOperationScope::enter("returned flat body admission");
-        self.admit_returned_frontier(body.boundary(), assumptions)
-    }
-
     /// Check just the boundary against this retained partition. This operation
     /// does not insert the frontier or compare its already checked leaves.
     pub(in crate::kernel) fn admit_returned_frontier(
@@ -65,6 +48,8 @@ impl ResourceContext {
         frontier: &[ResourceFact],
         assumptions: &PureFactContext,
     ) -> FlatBodyAdmission {
+        #[cfg(test)]
+        let _fast = crate::kernel::search::FastOperationScope::enter("returned frontier admission");
         for piece in frontier {
             let _checking =
                 crate::instrumentation::CheckingWorkScope::new("admit returned ownership leaf", 1);
