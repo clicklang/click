@@ -5935,7 +5935,7 @@ fn subobject_formation_guards(
             .permits_designated_pointer_position(
                 result,
                 value.pointer(),
-                value.access_designation(),
+                value.access_provenance(),
                 &context,
             )
             .then(Vec::new)
@@ -5983,7 +5983,7 @@ pub(in crate::kernel) fn subobject_paths(
             if !context.opaque_pointer_covers(&pointer, pointer.pointer(), width)
                 && !resources.permits_designated_storage_read(
                     pointer.pointer(),
-                    Some(pointer.access_designation()),
+                    Some(pointer.access_provenance()),
                     width,
                     &context,
                 )

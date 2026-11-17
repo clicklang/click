@@ -113,7 +113,7 @@ impl<K: Ord + Clone> ValueClasses<K> {
 }
 
 pub(super) fn prefer_pointer(left: &PointerValue, right: &PointerValue) -> PointerValue {
-    // A contract supplies the designation of an opaque incoming value. Its
+    // A contract supplies the provenance of an opaque incoming value. Its
     // explicit subobject boundary takes precedence over an unknown extent.
     if !left.extent_is_known() && right.extent_is_known()
         || matches!(right.pointer().block, super::PointerBlock::Function(_))
@@ -187,12 +187,12 @@ mod tests {
         let pointer = value(810_000);
         let null = PointerValue::new(Pointer::null(), ProgramType::Int32Pointer);
         let empty = PureFactContext::new();
-        assert!(!empty.pointer_designations_match(&pointer, &null));
+        assert!(!empty.pointer_provenance_match(&pointer, &null));
         let context = empty.assume_condition(
             ConditionTerm::pointer_equal(pointer.pointer().clone(), Pointer::null()),
             true,
         );
-        assert!(context.pointer_designations_match(&pointer, &null));
+        assert!(context.pointer_provenance_match(&pointer, &null));
         assert!(crate::kernel::resource_arguments_proven_equal(
             &ProgramValue::Pointer(pointer).into(),
             &ProgramValue::Pointer(null).into(),
@@ -201,7 +201,7 @@ mod tests {
     }
 
     #[test]
-    fn address_equality_preserves_memory_aliasing_without_granting_designation() {
+    fn address_equality_preserves_memory_aliasing_without_granting_provenance() {
         let a = value(810_001);
         let b = value(810_002);
         let context = PureFactContext::new().assume_condition(
@@ -215,7 +215,7 @@ mod tests {
         assert!(resources.permits_memory_read(a.pointer(), 4, &context));
         assert!(!resources.permits_designated_memory_read(
             a.pointer(),
-            Some(a.access_designation()),
+            Some(a.access_provenance()),
             4,
             &context
         ));
@@ -223,7 +223,7 @@ mod tests {
             resources
                 .designated_memory_write_range(
                     a.pointer(),
-                    Some(a.access_designation()),
+                    Some(a.access_provenance()),
                     4,
                     &context
                 )
@@ -232,18 +232,13 @@ mod tests {
         let linked = context.clone().assume_proposition(equality(&a, &b));
         assert!(resources.permits_designated_memory_read(
             a.pointer(),
-            Some(a.access_designation()),
+            Some(a.access_provenance()),
             4,
             &linked
         ));
         assert!(
             resources
-                .designated_memory_write_range(
-                    a.pointer(),
-                    Some(a.access_designation()),
-                    4,
-                    &linked
-                )
+                .designated_memory_write_range(a.pointer(), Some(a.access_provenance()), 4, &linked)
                 .is_some()
         );
     }
@@ -257,16 +252,16 @@ mod tests {
         let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
             MemoryRange::from_pointer_value(&parent, 0u32.into(), 2u32.into(), 4),
         ));
-        assert!(context.designations_equal(input.designation(), parent.designation()));
+        assert!(context.provenance_equal(input.provenance(), parent.provenance()));
         assert!(!resources.permits_designated_memory_read(
             input.pointer(),
-            Some(input.access_designation()),
+            Some(input.access_provenance()),
             4,
             &context
         ));
         assert!(resources.permits_designated_memory_read(
             byte_view.pointer(),
-            Some(byte_view.access_designation()),
+            Some(byte_view.access_provenance()),
             4,
             &context
         ));
@@ -287,7 +282,7 @@ mod tests {
         let sibling = input.pointer().offset_by_bytes(4);
         assert!(!split.permits_designated_memory_read(
             &sibling,
-            Some(input.access_designation()),
+            Some(input.access_provenance()),
             4,
             &context
         ));
@@ -301,7 +296,7 @@ mod tests {
             ));
         assert!(!selected_resources.permits_designated_memory_read(
             input.pointer(),
-            Some(input.access_designation()),
+            Some(input.access_provenance()),
             4,
             &context
         ));
@@ -319,10 +314,10 @@ mod tests {
             .assume_proposition(ab)
             .assume_proposition(ba)
             .assume_proposition(bc.clone());
-        assert!(context.designations_equal(a.designation(), c.designation()));
+        assert!(context.provenance_equal(a.provenance(), c.provenance()));
         let bc_only = PureFactContext::new().assume_proposition(bc);
-        assert!(!bc_only.designations_equal(a.designation(), c.designation()));
-        assert!(bc_only.designations_equal(b.designation(), c.designation()));
+        assert!(!bc_only.provenance_equal(a.provenance(), c.provenance()));
+        assert!(bc_only.provenance_equal(b.provenance(), c.provenance()));
     }
     #[test]
     fn a_narrowed_read_does_not_narrow_its_enclosing_pointer() {
@@ -344,11 +339,11 @@ mod tests {
         assert!(context.pointer_value_at_entry(&read).extent().is_some());
         assert!(context.pointer_value_at_entry(&parent).extent().is_none());
         assert!(!context.contains_known(&equality(&parent, &member)));
-        assert!(!context.pointer_designations_match(&parent, &read));
+        assert!(!context.pointer_provenance_match(&parent, &read));
     }
 
     #[test]
-    fn equal_storage_addresses_preserve_a_complete_pointer_reads_designation() {
+    fn equal_storage_addresses_preserve_a_complete_pointer_reads_provenance() {
         let a = value(825_001);
         let b = value(825_002);
         let retained_state = crate::kernel::intern_memory(Memory::new());
@@ -368,8 +363,8 @@ mod tests {
             ConditionTerm::pointer_equal(a.pointer().clone(), b.pointer().clone()),
             true,
         );
-        assert!(!context.designations_equal(a.designation(), b.designation()));
-        assert!(context.designations_equal(x.designation(), y.designation()));
+        assert!(!context.provenance_equal(a.provenance(), b.provenance()));
+        assert!(context.provenance_equal(x.provenance(), y.provenance()));
     }
 
     #[test]
@@ -389,7 +384,7 @@ mod tests {
                 .offset_by_typed_elements(offset, 4, false, false),
         );
         let goal = equality(&displaced, &b);
-        assert!(context.pointer_designations_match(&displaced, &b));
+        assert!(context.pointer_provenance_match(&displaced, &b));
         assert!(context.pointers_known_equal(displaced.pointer(), b.pointer()));
         assert!(context.contains_known(&goal));
         let proof_facts = crate::kernel::proof::PureFactStore::from_ordered(&facts);
@@ -406,5 +401,5 @@ mod tests {
 
 #[cfg(test)]
 mod scaling_tests {
-    include!("../scaling_tests/kernel/pointer_designations/tests.rs");
+    include!("../scaling_tests/kernel/pointer_provenance/tests.rs");
 }

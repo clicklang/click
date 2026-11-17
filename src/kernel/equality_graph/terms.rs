@@ -673,8 +673,8 @@ pub(super) struct TermClasses {
     pointer_value_witnesses: PersistentMap<u64, PointerBlock>,
     pointer_values: PersistentMap<u64, crate::kernel::PointerValue>,
     extent_values: PersistentMap<u64, crate::kernel::PointerValue>,
-    read_domains: crate::kernel::pointer_designations::ValueClasses<Pointer>,
-    read_designation_nodes: PersistentMap<Pointer, u64>,
+    read_domains: crate::kernel::pointer_provenance::ValueClasses<Pointer>,
+    read_provenance_nodes: PersistentMap<Pointer, u64>,
     read_extent_nodes: PersistentMap<Pointer, u64>,
     pointer_value_merges: imbl::Vector<(PointerBlock, PointerBlock)>,
     nodes: PersistentMap<Node, u64>,
@@ -3007,7 +3007,7 @@ impl TermClasses {
                     .extent_values
                     .get(&kept)
                     .map_or(value.clone(), |previous| {
-                        crate::kernel::pointer_designations::prefer_pointer(previous, &value)
+                        crate::kernel::pointer_provenance::prefer_pointer(previous, &value)
                     });
                 self.extent_values.insert(kept, witness);
             }

@@ -5,7 +5,7 @@ carries the Linux helper shapes unchanged. These contracts compare the
 recovered numeric addresses; they grant no dereference authority for them.
 The relinked-node check requires distinct parent and node addresses because
 C compares the packed word numerically. Pointer-value disequality alone can
-also distinguish different designations at one address. Its proof masks the
+also distinguish different provenances at one address. Its proof masks the
 word and uses alignment to rule out the empty-node marker.
 
 ```c filename=rbtree.h

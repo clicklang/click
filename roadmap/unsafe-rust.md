@@ -18,7 +18,7 @@ against C's.
 ## What carries over
 
 All three languages lower into one kernel. The pointer value (address,
-designation and extent; see
+provenance and extent; see
 [pointer subobject extents](../design/pointer-subobject-extents.md)) and the
 `owns`/`views` permission resources are shared. These already match Rust:
 

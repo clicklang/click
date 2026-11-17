@@ -1,6 +1,6 @@
 use super::*;
 #[test]
-fn full_pointer_fact_transport_checks_designations_and_the_whole_read() {
+fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
     let _session = VerificationSession::enter();
     let cell = Pointer {
         block: "pointer-retained_state-cell".into(),
@@ -31,7 +31,7 @@ fn full_pointer_fact_transport_checks_designations_and_the_whole_read() {
     let origin = Arc::new(Pointer::symbolic(Variable(991_101)));
     let forged = fact(
         pointer(&after)
-            .with_designation(origin.clone())
+            .with_provenance(origin.clone())
             .with_opaque_extent(Some(origin)),
     );
     let overwritten = intern_memory(after.memory().clone().store(

@@ -333,7 +333,7 @@ mod tests {
             Pointer::symbolic(Variable(1001010)),
             ProgramType::VoidPointer,
         )
-        .with_designation(Arc::new(Pointer::symbolic(Variable(1001011))))
+        .with_provenance(Arc::new(Pointer::symbolic(Variable(1001011))))
         .with_opaque_extent(Some(Arc::new(Pointer::symbolic(Variable(1001012)))))
         .with_extent(Some(SubobjectExtent {
             start: Pointer::symbolic(Variable(1001013)),

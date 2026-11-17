@@ -739,7 +739,7 @@ fn complete_pointer_equalities_supply_only_their_true_numeric_consequences() {
             .contains(&var(941_002))
     );
     let numeric = PureFactContext::new().assume_condition(eq(&var(941_001), &var(941_002)), true);
-    assert!(!numeric.pointer_designations_match(&left, &right));
+    assert!(!numeric.pointer_provenance_match(&left, &right));
 }
 
 #[test]

@@ -1198,7 +1198,7 @@ fn pointer_translation(
 ) -> bool {
     if let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) = goal {
         let same_domain = |a: &PointerValue, b: &PointerValue| {
-            a.designation() == b.designation()
+            a.provenance() == b.provenance()
                 && a.extent() == b.extent()
                 && a.extent_is_known() == b.extent_is_known()
         };

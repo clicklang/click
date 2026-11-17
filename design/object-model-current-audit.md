@@ -18,7 +18,7 @@ Historical archive passes/failures are not counted as current results.
 1. Current master has useful shared pointer, construction, initialization and
    representation machinery. Rebuilding a universal object model is not the
    next prerequisite for using it.
-2. Pointer address and designation are distinct in current values and proof
+2. Pointer address and provenance are distinct in current values and proof
    rewriting. Subobject formation/access checks and complete pointer-cell reads
    have implementations and rejection witnesses. The archived design's claim
    that the scalar-sibling defect still needs implementation is historical.
@@ -131,7 +131,7 @@ equality nor a metadata transition manufactures a loan or ownership.
 The original read-only and writable descriptor-destruction tests now pass,
 including their selected expansion/cold/retained checking and hostile-contract
 controls. The existing destroyed-local-backing rejection still passes. A fast
-kernel regression checks complete pointer designation/address identity across
+kernel regression checks complete pointer provenance/address identity across
 both metadata edges, distinct initialization states, absence of read authority,
 and refusal to identify a pointer after an upper-half byte write. The existing
 read-identity production scaling regression now includes declaration and
@@ -169,7 +169,7 @@ goal: at(<state A>, root->rb_node) == <pointer A>
 not define `<pointer A>` in its legend. This prevents stating the generated
 link from the report (`unclear-trace` under the tracing procedure). The
 baseline reproduction established a tooling/composition failure, not a false
-acceptance or a root cause in pointer designation. No new bug file or issue
+acceptance or a root cause in pointer provenance. No new bug file or issue
 was filed. Keep this exact fixture as the small acceptance witness rather
 than substituting a full rbtree census.
 
@@ -432,7 +432,7 @@ are in `tests/cpp_import.rs`; Markdown witnesses are in `mdtests/`.
 | Raw pointer | `languages/cpp/{schema,scalar,interface}.rs` check the supported pointee/profile and preserve pointer identity. A raw pointer argument may be null and can be forwarded without any backing resource. Its signature alone promises no dereferenceable storage. | `kernel/eval/operators.rs` checks pointer arithmetic's domain before a dereference; `eval/expression.rs`, memory loads and call-resource transfer check bounds, backing lifetime and permissions at access. Return identity is not a backing grant. | P1, P2 below. |
 | By-value record | Only the admitted trivial copy profile is used; nontrivial copy/move bodies and unsupported prvalues are refused. `lowering.rs` retains the aggregate layout; `functions/call_arguments.rs` gives symbolic entry an independent evaluated field image with private field storage. Pointer fields remain values pointing at their original backing. | `functions/globals_and_aggregates.rs::aggregate_argument_read_refusal` checks the source's full extent, field read permissions and initialization before binding the callee's private copy. Even a source field the callee does not inspect is copied and must be readable. Copy ownership grants no ownership of pointees. | V1, V2 below. |
 | Constructor destination | `languages/cpp/schema.rs` requires the checked member-initializer prefix in declaration order, complete value-field initialization and the correct embedded constructor identity. `lowering.rs` marks the construction parameter and layout. Constructor entry receives the selected raw destination; field ownership there does not pretend its values are already written. | `functions/construction_return.rs::{destination,bind,complete_parameter}` checks original destination, layout, alignment, extent, lifetime and writable value fields. Completion checks that original storage even if the parameter is reassigned. It does not initialize padding or resize the containing allocation. Parent fields and backing remain independently framed. | C1, C2 below. |
-| Pointer/reference result | `languages/cpp/{schema,interface,lowering}.rs` retain the result category, native type and qualification. Shared call/result handling carries the complete pointer identity and designation, rather than inventing a pointee from its address. | The caller independently justifies reference formation and every subsequent access. Returned member bounds survive calls. Destroying a local descriptor does not retire its external backing; destroying the actual backing prevents a read. A dangling alias may escape under an alias-only/trivial claim, so a reference result is not an unconditional promise of live backing. | T1, T2 below and R3. |
+| Pointer/reference result | `languages/cpp/{schema,interface,lowering}.rs` retain the result category, native type and qualification. Shared call/result handling carries the complete pointer identity and provenance, rather than inventing a pointee from its address. | The caller independently justifies reference formation and every subsequent access. Returned member bounds survive calls. Destroying a local descriptor does not retire its external backing; destroying the actual backing prevents a read. A dangling alias may escape under an alias-only/trivial claim, so a reference result is not an unconditional promise of live backing. | T1, T2 below and R3. |
 
 ### Named positive and rejection pairs
 
@@ -477,7 +477,7 @@ are in `tests/cpp_import.rs`; Markdown witnesses are in `mdtests/`.
   `cpp_literal_null_pointer_values_verify_without_storage_authority_offline`
   checks native null spellings; `cpp_literal_null_pointer_dereference_requires_live_backing_offline`
   refuses the actual `read(nullptr)` call.
-- **P2 — arithmetic and designation:**
+- **P2 — arithmetic and provenance:**
   `cpp_unknown_pointer_formation_requires_bounds_before_any_dereference`
   pairs an unbounded arithmetic refusal with a backed one-past result.
   `cpp_forming_a_pointer_two_past_a_scalar_member_is_refused.md` and

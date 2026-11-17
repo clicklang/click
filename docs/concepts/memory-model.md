@@ -49,7 +49,7 @@ Pointer { block, offset }
 ```
 
 These coordinates describe the raw address. A complete C pointer separately
-carries its designation and selected subobject extent. Numeric address equality
+carries its provenance and selected subobject extent. Numeric address equality
 does not equate those bounds. C pointer arithmetic is scaled by the pointee
 type: `int32*` adds four bytes per element, while `uint8*` adds one byte per
 element.
@@ -88,7 +88,7 @@ the full relationship using existing cast syntax:
 requires ((word & ~1) as (struct node *)) == p;
 ```
 
-This equality includes designation and selected extent. It lets a copied word
+This equality includes provenance and selected extent. It lets a copied word
 reconstruct `p` with those bounds. A modular callee must explicitly preserve
 such a relationship when callers need it; `ensures result == word` preserves
 only the number. Mathematical integers, integer model fields and pure numeric

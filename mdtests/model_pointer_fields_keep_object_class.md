@@ -2,7 +2,7 @@
 
 Matching the model recovers the original object class needed by the packed
 pointer round trip and its reachable loop back edge. The numeric address
-relation alone does not promise the stored pointer's designation and bounds;
+relation alone does not promise the stored pointer's provenance and bounds;
 the resource also states the complete pointer round trip.
 
 ```c filename=packed_model.c

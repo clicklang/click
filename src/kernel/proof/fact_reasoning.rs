@@ -806,7 +806,7 @@ pub(crate) enum ForallInstantiationError {
 
 /// The value `instantiate` specializes a universal at, in the binder's own
 /// carrier: a machine integer, a mathematical `Integer`, or a pointer value
-/// with its subobject designation.
+/// with its subobject provenance.
 #[derive(Clone, Debug)]
 pub(crate) enum InstanceArgument {
     Machine(MachineTerm),

@@ -417,7 +417,7 @@ impl PureFactContext {
             if self.equality_graph.knows_condition(condition, false) {
                 return Some(false);
             }
-            if self.pointer_designations_match(left, right)
+            if self.pointer_provenance_match(left, right)
                 && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
                     left.pointer(),
                     right.pointer(),
@@ -436,7 +436,7 @@ impl PureFactContext {
             ));
             return match address {
                 Some(false) => Some(false),
-                Some(true) if self.pointer_designations_match(left, right) => Some(true),
+                Some(true) if self.pointer_provenance_match(left, right) => Some(true),
                 _ => None,
             };
         }

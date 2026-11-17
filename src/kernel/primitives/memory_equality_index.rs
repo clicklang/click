@@ -1336,7 +1336,7 @@ impl MemoryFactEntries {
 impl MemoryFactCandidates {
     /// Restate one selected supplier in the query's checked byte coordinates.
     /// This uses the same query-local graph as requirement alignment; it does
-    /// not publish an equality or change object designation/validity metadata.
+    /// not publish an equality or change object provenance/validity metadata.
     pub(super) fn supplier_at_base(
         &self,
         entry: ResourceEntryId,

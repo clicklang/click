@@ -518,7 +518,7 @@ pub(in crate::kernel) fn evaluate_composite_resource_relation_propositions(
     Some(propositions)
 }
 
-/// The held body's exact ranges, including their pointer designations and
+/// The held body's exact ranges, including their pointer provenances and
 /// selected extents. Later clauses may read the cells declared before them
 /// in a scratch view context; the caller's composite remains folded.
 pub(in crate::kernel) fn evaluate_composite_resource_memory_ranges(

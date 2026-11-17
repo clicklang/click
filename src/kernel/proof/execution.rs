@@ -1406,7 +1406,7 @@ fn describe_changed_state_field(
 /// Whether a materialized cell's value is exactly the given load of its own
 /// cell, in one of the representations resource projection writes: the scalar
 /// term itself, the `_Bool` normalization of it, or the complete typed pointer
-/// read (including its designation and extent).
+/// read (including its provenance and extent).
 fn cell_value_is_exactly_load(value: &ProgramValue, load: &MachineTerm) -> bool {
     match value {
         ProgramValue::Int8(term) => term == load,

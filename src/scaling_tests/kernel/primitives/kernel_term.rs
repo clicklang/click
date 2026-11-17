@@ -737,7 +737,7 @@ fn formed_pointer_roots_keep_prepared_displacement_dags() {
             let mut payload = source.node().clone();
             payload.address =
                 SharedPointerAddress::new(payload.address.node().block.clone(), offset);
-            payload.designation = payload.address.clone();
+            payload.provenance = payload.address.clone();
             let payload = SharedPointerValue::new(payload);
             let exports = KernelTermExport::machine_export_count();
             let (root, work) = crate::instrumentation::measure_deterministic_work(|| {

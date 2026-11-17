@@ -277,7 +277,7 @@ still requires the relevant resource permissions.
 
 A model field or pure-helper parameter declared `void*` accepts an object
 pointer through implicit coercion: its carrier changes to `void*`, preserving
-its designation, bounds, qualifiers, and object-type evidence. Opaque helper
+its provenance, bounds, qualifiers, and object-type evidence. Opaque helper
 calls and unfolded bodies use this same argument conversion. Function pointers
 are excluded. An authored `p as (void *)` remains an explicit cast and selects the
 root view according to C cast semantics. Address-only models should use `void*`

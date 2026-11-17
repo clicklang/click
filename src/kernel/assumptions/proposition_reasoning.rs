@@ -4128,7 +4128,7 @@ impl PureFactContext {
             }
             // A pointer-value fact carries operand by operand, each pair one
             // value as the state-modulo matchers read it: the same
-            // designation, at a proven-equal address or as one complete read
+            // provenance, at a proven-equal address or as one complete read
             // across the frame (`n->right` before a call, `old(n)->right`
             // after it).
             (
@@ -4139,7 +4139,7 @@ impl PureFactContext {
                             target: &crate::kernel::PointerValue| {
                     fact == target
                         || fact.program_type() == target.program_type()
-                            && self.pointer_designations_match(fact, target)
+                            && self.pointer_provenance_match(fact, target)
                             && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
                                 fact.pointer(),
                                 target.pointer(),

@@ -3,7 +3,7 @@
 `caller` holds `size_metadata(rb_old)`, with `rb_old`'s own view. `set_size`
 requires `size_metadata(node as (void *) as (struct rb_node *))` where `node` is
 `container_of(rb_old, ...)`: the cast selects the enclosing `sized_node`'s
-view, but the pointer has the same address and designation. A resource names
+view, but the pointer has the same address and provenance. A resource names
 the object at its argument's address, so the held instance matches; the view
 bounds C accesses through the pointer, which the resource's own clauses check.
 The refusal for a different node is

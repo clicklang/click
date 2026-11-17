@@ -3573,8 +3573,8 @@ fn initialization_metadata_keeps_complete_pointer_identity_without_access_author
     };
     let facts = PureFactContext::new();
     let original = read(&before);
-    assert_eq!(original.designation(), read(&after).designation());
-    assert!(facts.pointer_designations_match(&original, &read(&after)));
+    assert_eq!(original.provenance(), read(&after).provenance());
+    assert!(facts.pointer_provenance_match(&original, &read(&after)));
     assert!(facts.pointers_known_equal(original.pointer(), read(&after).pointer()));
     assert!(!ResourceContext::new().permits_memory_read(&address, 8, &facts));
 
@@ -3584,7 +3584,7 @@ fn initialization_metadata_keeps_complete_pointer_identity_without_access_author
             .clone()
             .store(address.offset_by_bytes(4), crate::kernel::uint8(1u32)),
     );
-    assert!(!facts.pointer_designations_match(&original, &read(&overwritten)));
+    assert!(!facts.pointer_provenance_match(&original, &read(&overwritten)));
     assert!(!facts.pointers_known_equal(original.pointer(), read(&overwritten).pointer()));
 }
 
@@ -4194,7 +4194,7 @@ fn full_pointer_read_survives_a_join_of_stores_to_its_sibling() {
         panic!("complete pointer observations");
     };
     let preserved = facts.clone().assume_proposition(equality);
-    assert!(preserved.pointer_designations_match(&old, &new));
+    assert!(preserved.pointer_provenance_match(&old, &new));
     let earlier = Pointer::loaded_value(&before, q.pointer());
     let upper_half = Pointer {
         block: q.pointer().block.clone(),
@@ -4210,7 +4210,7 @@ fn full_pointer_read_survives_a_join_of_stores_to_its_sibling() {
     crate::kernel::reasoning::record_canonical_load_projection(&changed, &projection, q.pointer());
     let overwritten = Pointer::loaded_value(&projection, q.pointer());
     assert!(
-        !crate::kernel::memory_history::pointer_read_designations_equal(
+        !crate::kernel::memory_history::pointer_read_provenance_equal(
             &earlier,
             &overwritten,
             &facts

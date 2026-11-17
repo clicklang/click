@@ -16418,7 +16418,7 @@ impl Parser {
     /// The modeled memory functions describe their native `void *` arguments
     /// as byte ranges. Retag an object pointer for that contract after the
     /// native call's qualifier checks. This is an implicit conversion: it
-    /// retains the argument's designation, subobject extent and qualifiers.
+    /// retains the argument's provenance, subobject extent and qualifiers.
     /// Ordinary functions, indirect calls and internal-linkage names keep
     /// their own declared interfaces.
     fn adapt_library_memory_argument(

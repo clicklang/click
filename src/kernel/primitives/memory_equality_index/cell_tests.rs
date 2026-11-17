@@ -1413,7 +1413,7 @@ fn native_fragment_consumption_refuses_gaps_views_and_nonpositive_ownership() {
 }
 
 #[test]
-fn native_fragment_consumption_checks_each_typed_designation() {
+fn native_fragment_consumption_checks_each_typed_provenance() {
     let _session = crate::kernel::VerificationSession::enter();
     let p = Pointer::symbolic(Variable(976_192));
     let other = Pointer::symbolic(Variable(976_193));
@@ -1429,7 +1429,7 @@ fn native_fragment_consumption_checks_each_typed_designation() {
     let required = ResourceFact::own_memory(range(0, 8).with_typed_carrier());
     for wrong in [false, true] {
         let second =
-            ResourceFact::own_memory(range(2, 8).with_designation(std::sync::Arc::new(if wrong {
+            ResourceFact::own_memory(range(2, 8).with_provenance(std::sync::Arc::new(if wrong {
                 other.clone()
             } else {
                 p.clone()
@@ -1470,7 +1470,7 @@ fn ownership_queries_preserve_authority_checks_and_branches(symbolic: bool) {
             "view",
             "zero",
             "negative",
-            "designation",
+            "provenance",
         ] {
             let _session = crate::kernel::VerificationSession::enter();
             let p = Pointer::symbolic(Variable(991_010));
@@ -1516,11 +1516,9 @@ fn ownership_queries_preserve_authority_checks_and_branches(symbolic: bool) {
                 "view" => ResourceFact::view_memory(tail),
                 "zero" => ResourceFact::Own(Resource::Memory(tail), Box::new(0u32.into())),
                 "negative" => ResourceFact::Own(Resource::Memory(tail), Box::new(u32::MAX.into())),
-                "designation" => {
-                    ResourceFact::own_memory(tail.with_designation(std::sync::Arc::new(
-                        Pointer::symbolic(Variable(991_012)),
-                    )))
-                }
+                "provenance" => ResourceFact::own_memory(
+                    tail.with_provenance(std::sync::Arc::new(Pointer::symbolic(Variable(991_012)))),
+                ),
                 _ => ResourceFact::own_memory(tail),
             };
             let context = ResourceContext::new_with_equalities(&facts)
@@ -1543,7 +1541,7 @@ fn ownership_queries_preserve_authority_checks_and_branches(symbolic: bool) {
                     .is_some(),
                 // Narrow fragment transfer retains the supplied carrier;
                 // unlike entailment, it need not establish the requested one.
-                case == "owned" || (!symbolic && !native && case == "designation"),
+                case == "owned" || (!symbolic && !native && case == "provenance"),
                 "consumption {native}/{case}"
             );
             if case == "owned" {

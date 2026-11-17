@@ -8119,8 +8119,8 @@ fn refine_object_pointer_argument_with_null(
             .equality_graph
             .has_object_type(pointer.pointer(), object_class)
             // A modular result may have a symbolic address while its checked
-            // designation already names the actual declared object.
-            || [pointer.pointer(), pointer.designation()]
+            // provenance already names the actual declared object.
+            || [pointer.pointer(), pointer.provenance()]
                 .into_iter()
                 .any(|object| {
                     object.offset == PointerOffsetTerm::Constant(0)

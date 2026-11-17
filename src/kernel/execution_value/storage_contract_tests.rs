@@ -390,7 +390,7 @@ fn pointer_storage_keys_preserve_the_complete_native_identity_tuple() {
         pointer.clone().with_type(ProgramType::VoidPointer),
         pointer
             .clone()
-            .with_designation(std::sync::Arc::new(other.clone())),
+            .with_provenance(std::sync::Arc::new(other.clone())),
         pointer
             .clone()
             .with_opaque_extent(Some(std::sync::Arc::new(other.clone()))),
@@ -478,7 +478,7 @@ fn deep_pointer_storage_keys_use_a_small_stack() {
             }
             payload.address =
                 SharedPointerAddress::new(payload.address.node().block.clone(), offset);
-            payload.designation = payload.address.clone();
+            payload.provenance = payload.address.clone();
             let stored = StoredExecutionValue::from(ExecutionValue::Shared(
                 KernelTerm::shared_pointer_value(SharedPointerValue::new(payload)),
             ));

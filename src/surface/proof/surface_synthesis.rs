@@ -6739,7 +6739,7 @@ fn synthesize_pointer_equality_operand(
         ));
     }
     // An address can survive a later store while the complete pointer's
-    // designation still names the earlier read. Spell that value at the
+    // provenance still names the earlier read. Spell that value at the
     // state that introduced its domain, rather than naming only its address
     // through the current field. The source memory selects one recorded
     // point; this does not search pointer aliases or state history.

@@ -1205,7 +1205,7 @@ fn pointers_proven_equal_for_memory_resolution_unmemoized(
 /// `pointer` spelled as an address in `block`, when the two name one
 /// coordinate: the same block, an affine equality class the graph maintains,
 /// or two reads of one cell whose states agree on its bytes. This answers
-/// where an address is; it grants no access, which the caller's designation
+/// where an address is; it grants no access, which the caller's provenance
 /// check still decides.
 pub(in crate::kernel) fn pointer_in_block_for_memory_resolution(
     pointer: &Pointer,
@@ -1230,7 +1230,7 @@ pub(in crate::kernel) fn pointer_in_block_for_memory_resolution(
     // As for a retained read's stored value (`pointer_read_stored_value`),
     // the comparison may cross cache-forgetting edges: they discard
     // knowledge but write no program bytes. A projected read is compared
-    // from its source state, as its designation is.
+    // from its source state, as its provenance is.
     (pointers_proven_equal_for_memory_resolution(
         &read.defining_address,
         &target.defining_address,
@@ -2556,7 +2556,7 @@ pub(in crate::kernel) fn program_values_proven_equal_for_memory_resolution(
             bitvector_terms_proven_equal_for_memory_resolution(left, right, assumptions)
         }
         (ProgramValue::Pointer(left), ProgramValue::Pointer(right)) => {
-            assumptions.pointer_designations_match(left, right)
+            assumptions.pointer_provenance_match(left, right)
                 && pointers_proven_equal_for_memory_resolution(
                     left.pointer(),
                     right.pointer(),
