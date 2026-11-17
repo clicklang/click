@@ -6091,8 +6091,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     &BTreeMap::new(),
                 )
                 .ok_or_else(|| {
-                    search_input
-                        .step_error("a separation restriction source has no Surface form")
+                    search_input.step_error("a separation restriction source has no Surface form")
                 })
             };
             let (a, b) = (source(a)?, source(b)?);
