@@ -12,6 +12,7 @@ fn integer_truncation_guard_lookup_ignores_unrelated_facts() {
         let expression = truncation(remainder, left.clone(), right.clone());
         let mut measured = Vec::new();
         for count in [16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
             let mut assumptions = PureFactContext::new().assume_condition(
                 ConditionTerm::integer_not_equal(right.clone(), IntegerTerm::constant_i64(0)),
                 true,

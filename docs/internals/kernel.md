@@ -67,6 +67,10 @@ Kernel files:
 - `reasoning.rs`: deterministic proof helpers, finite forall/range reasoning,
   substitutions, execution-derived pure facts, and obligation plumbing.
 - `spec.rs`: `SpecExpression`/`SpecProposition` lowering and evaluation.
+  `spec/integer_result.rs` retains one common Integer root through evaluator
+  paths, arithmetic, conditionals and fold initial/body production. Native
+  comparison, capture and ranking outputs use explicit compatibility reads;
+  deferred bindings and fold endpoints remain separate storage boundaries.
 - `eval.rs`: program expression/statement evaluation and memory operations.
 - `loops.rs`: loop verification, loop effects, loop havoc, and invariant
   helpers.

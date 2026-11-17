@@ -2635,7 +2635,7 @@ fn pure_integer_ranking_measure_term(
     };
     reader.reads.obligations.extend(path.obligations.clone());
     reader.reads.facts.extend_shared(&path.facts);
-    Ok(path.value.clone())
+    Ok(path.value.clone().into_native_compat())
 }
 
 /// The kernel term for one pure `decreases` component at one C state.
