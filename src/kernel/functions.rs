@@ -8326,7 +8326,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
             self.reaches_unnamed = true;
             return;
         }
-        let mut evaluation = ExecutionState::new().with_memory(self.state.memory().clone());
+        let mut evaluation = ExecutionState::at_point(&self.state.program_point());
         evaluation.preserves_mutex_protocols = self.state.preserves_mutex_protocols;
         if !Self::bind_parameters(definition, arguments, &mut evaluation)
             || bind_composite_witnesses(definition, arguments, &mut evaluation, self.assumptions)
@@ -10621,8 +10621,7 @@ fn composite_definition_facts_hold(
     if definition.parameters().len() != arguments.len() {
         return Ok(false);
     }
-    let mut state = ExecutionState::new()
-        .with_memory(caller_state.memory().clone())
+    let mut state = ExecutionState::at_point(&caller_state.program_point())
         .with_resource_context(caller_state.resources().clone());
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
         let Some(argument) = argument.as_program_value() else {
@@ -16751,7 +16750,6 @@ pub(super) fn resource_context_satisfies_definitional_fact(
     at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> bool {
-    let memory = at.memory();
     if available.satisfies_fact(required, assumptions) {
         return true;
     }
@@ -16772,7 +16770,7 @@ pub(super) fn resource_context_satisfies_definitional_fact(
             || assembled_composite_body_facts_hold(
                 composite,
                 definitions,
-                memory,
+                at,
                 &expanded_available,
                 assumptions,
             )
@@ -16793,7 +16791,7 @@ pub(super) fn resource_context_satisfies_definitional_fact(
 pub(super) fn assembled_composite_body_facts_hold(
     composite: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    at: &ProgramPoint,
     resources: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -16812,9 +16810,7 @@ pub(super) fn assembled_composite_body_facts_hold(
     if definition.parameters().len() != arguments.len() {
         return false;
     }
-    let mut state = ExecutionState::new()
-        .with_memory(memory.clone())
-        .with_resource_context(resources.clone());
+    let mut state = ExecutionState::at_point(at).with_resource_context(resources.clone());
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
         let Some(argument) = argument.as_program_value() else {
             return false;
@@ -16965,7 +16961,7 @@ fn consume_resource_fact_definitionally(
             if !assembled_composite_body_facts_hold(
                 required,
                 definitions,
-                memory,
+                &crate::kernel::ProgramPoint::of_memory(memory),
                 available,
                 assumptions,
             ) {
@@ -18570,7 +18566,7 @@ fn resource_clause_composite_memory_views(
     evaluate_composite_resource_memory_ranges(
         fact,
         &definitions[index..=index],
-        state.memory(),
+        &state.program_point(),
         assumptions,
     )
     .unwrap_or_default()
