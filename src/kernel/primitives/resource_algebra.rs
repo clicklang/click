@@ -3798,7 +3798,11 @@ impl ResourceContext {
             )
         {
             (!required.typed_carrier
-                || assumptions.access_provenance_match(required.access_provenance(), &available))
+                || assumptions.access_provenance_matches_range(
+                    required.access_provenance(),
+                    required,
+                    &available,
+                ))
                 && memory_range_covers_by_routes(&available, required, assumptions)
         } else {
             resource_fact_entails(available, required, assumptions)
@@ -3908,7 +3912,11 @@ impl ResourceContext {
             // native transfers already require matching typed provenances.
             if (establish_requested_carrier || range.wide_bounds().is_some())
                 && range.typed_carrier
-                && !assumptions.access_provenance_match(range.access_provenance(), available)
+                && !assumptions.access_provenance_matches_range(
+                    range.access_provenance(),
+                    range,
+                    available,
+                )
             {
                 return None;
             }
@@ -6962,9 +6970,10 @@ impl ResourceContext {
                 return false;
             };
             if provenance.is_some_and(|provenance| {
-                resource
-                    .memory_range()
-                    .is_none_or(|range| !assumptions.access_provenance_match(provenance, range))
+                resource.memory_range().is_none_or(|range| {
+                    !assumptions
+                        .access_provenance_matches_bytes(provenance, pointer, byte_width, range)
+                })
             }) {
                 return false;
             }
@@ -6994,7 +7003,7 @@ impl ResourceContext {
         let Some(range) = resource_fact_read_core_range(self.fact(entry)) else {
             return false;
         };
-        if !assumptions.access_provenance_match(provenance, &range) {
+        if !assumptions.access_provenance_matches_bytes(provenance, pointer, 0, &range) {
             return false;
         }
         if pointer_formation_in_range(&address, operand, &range, assumptions)
@@ -7028,7 +7037,11 @@ impl ResourceContext {
         crate::instrumentation::record_deterministic_work(1);
         let held = self.fact(entry).memory_own_range()?;
         if (required.typed_carrier
-            && !assumptions.access_provenance_match(required.access_provenance(), held))
+            && !assumptions.access_provenance_matches_range(
+                required.access_provenance(),
+                required,
+                held,
+            ))
             || held.element_width() == required.element_width()
             || (held.wide_bounds().is_none() && required.wide_bounds().is_none())
         {
@@ -7082,7 +7095,9 @@ impl ResourceContext {
         let Some(range) = self.fact(entry).memory_range() else {
             return false;
         };
-        if provenance.is_some_and(|d| !assumptions.access_provenance_match(d, range)) {
+        if provenance
+            .is_some_and(|d| !assumptions.access_provenance_matches_bytes(d, pointer, bytes, range))
+        {
             return false;
         }
         let required = ResourceFact::view_memory(
@@ -7146,7 +7161,9 @@ impl ResourceContext {
         }
         let address = entries.address()?;
         let range = self.fact(entry).memory_range()?;
-        if provenance.is_some_and(|d| !assumptions.access_provenance_match(d, range)) {
+        if provenance
+            .is_some_and(|d| !assumptions.access_provenance_matches_bytes(d, pointer, bytes, range))
+        {
             return None;
         }
         let aligned = ResourceFact::own_memory(
@@ -7180,8 +7197,9 @@ impl ResourceContext {
             crate::instrumentation::record_deterministic_work(1);
             let resource = self.fact(entry);
             let range = resource.memory_own_range()?;
-            if provenance.is_some_and(|origin| !assumptions.access_provenance_match(origin, range))
-            {
+            if provenance.is_some_and(|origin| {
+                !assumptions.access_provenance_matches_bytes(origin, pointer, byte_width, range)
+            }) {
                 return None;
             }
             let address = entries.address()?;
@@ -7462,7 +7480,11 @@ impl ResourceContext {
             };
             let piece_range = piece.memory_own_range()?;
             if range.typed_carrier
-                && !assumptions.access_provenance_match(range.access_provenance(), piece_range)
+                && !assumptions.access_provenance_matches_range(
+                    range.access_provenance(),
+                    range,
+                    piece_range,
+                )
             {
                 return None;
             }
@@ -9102,7 +9124,11 @@ fn memory_resource_fact_entails(
 ) -> bool {
     if let (Some(available), Some(required)) = (available.memory_range(), required.memory_range())
         && required.typed_carrier
-        && !assumptions.access_provenance_match(required.access_provenance(), available)
+        && !assumptions.access_provenance_matches_range(
+            required.access_provenance(),
+            required,
+            available,
+        )
     {
         return false;
     }
@@ -9135,7 +9161,11 @@ fn consume_memory_resource_fact(
 ) -> Option<ResourceFactConsumption> {
     if let (Some(available), Some(required)) = (available.memory_range(), required.memory_range())
         && required.typed_carrier
-        && !assumptions.access_provenance_match(required.access_provenance(), available)
+        && !assumptions.access_provenance_matches_range(
+            required.access_provenance(),
+            required,
+            available,
+        )
     {
         return None;
     }

@@ -129,6 +129,7 @@ pub(super) fn prefer_pointer(left: &Pointer, right: &Pointer) -> Pointer {
 
 #[cfg(test)]
 mod tests {
+    use crate::kernel::assumptions::PointerDomain;
     use crate::kernel::*;
 
     #[test]
@@ -336,8 +337,11 @@ mod tests {
             &cell,
         );
         let context = PureFactContext::new().assume_proposition(equality(&read, &member));
-        assert!(context.pointer_value_at_entry(&read).bounds().is_some());
-        assert!(context.pointer_value_at_entry(&parent).bounds().is_none());
+        assert!(matches!(
+            context.pointer_domain(&read),
+            PointerDomain::Selected(_)
+        ));
+        assert_eq!(context.pointer_domain(&parent), PointerDomain::Unknown);
         assert!(!context.contains_known(&equality(&parent, &member)));
         assert!(!context.pointer_provenance_match(&parent, &read));
     }

@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::assumptions::PointerDomain;
 
 #[test]
 fn an_opaque_candidate_does_not_walk_its_unusable_memory_frame() {
@@ -34,10 +35,9 @@ fn an_opaque_candidate_does_not_walk_its_unusable_memory_frame() {
             ProgramType::Int32Pointer,
         )
         .with_address(raw);
-        let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.known_value_of_framed_pointer_read(&current)
-        });
-        assert!(value.is_none());
+        let (value, work) =
+            crate::instrumentation::measure_deterministic_work(|| context.pointer_domain(&current));
+        assert_eq!(value, PointerDomain::Unknown);
         work
     });
     assert!(
@@ -111,7 +111,7 @@ fn framed_pointer_refusals_do_not_scan_same_address_sources() {
         .with_address(raw);
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..4 {
-                assert!(facts.known_value_of_framed_pointer_read(&current).is_none());
+                assert_eq!(facts.pointer_domain(&current), PointerDomain::Unknown);
             }
         });
         samples.push(work);

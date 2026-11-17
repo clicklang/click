@@ -57,6 +57,37 @@ fn pointer_domain_queries_read_cached_classes_without_alias_discovery() {
                 map_work <= 128 * logarithm + 128,
                 "related={related}, unrelated={unrelated}, map work={map_work}"
             );
+            // Consumers query the same cold class without rewriting the value.
+            let ((paths, clause), work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    let paths = crate::kernel::eval::pointer_offset_by_bytes_paths(
+                        &ExecutionState::new(),
+                        first.clone(),
+                        4,
+                        ExecutionFacts::new(),
+                        Vec::new(),
+                        &facts,
+                    );
+                    let range =
+                        MemoryRange::from_pointer_value(&first, 0u32.into(), 1u32.into(), 4);
+                    let clause =
+                        crate::kernel::loops::memory_range_bounds_refusal(&first, &range, &facts);
+                    (paths, clause)
+                });
+            assert!(clause.is_none());
+            assert_eq!(paths.len(), 1);
+            assert_eq!(
+                paths[0].outcome,
+                ExpressionOutcome::Value(ProgramValue::Pointer(
+                    first
+                        .clone()
+                        .with_address(first.pointer().offset_by_bytes(4))
+                ))
+            );
+            assert!(
+                work <= 512 * logarithm + 1024,
+                "related={related}, unrelated={unrelated}, consumer work={work}"
+            );
             let held = MemoryRange::from_pointer_value(&selected, 0u32.into(), 1u32.into(), 4);
             let (matched, work) = crate::instrumentation::measure_deterministic_work(|| {
                 facts.access_provenance_match(first.access_provenance(), &held)

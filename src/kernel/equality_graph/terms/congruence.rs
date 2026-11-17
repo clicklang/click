@@ -1772,29 +1772,13 @@ impl TermClasses {
             None,
         );
         self.register_pending_loads();
-        let representative = self
-            .pointer_values
+        // Return an actual retained value from the class. Bounds learned
+        // through a separate bounds class are checker knowledge, exposed by
+        // opaque_pointer_domain, never metadata synthesized onto this value.
+        self.pointer_values
             .get(&self.root(node))
             .unwrap_or(value)
-            .clone();
-        if representative.bounds_are_known() {
-            return representative;
-        }
-        let bounds = self.bounds_node(value);
-        let Some(witness) = self.bounds_values.get(&self.root(bounds)) else {
-            return representative;
-        };
-        if !witness.bounds_are_known() {
-            return representative;
-        }
-        let adopted = representative
-            .with_bounds(witness.bounds().cloned())
-            .with_bounds_owner(witness.bounds_owner().cloned().map(std::sync::Arc::new));
-        if witness.bounds().is_none() {
-            adopted.with_root_bounds()
-        } else {
-            adopted
-        }
+            .clone()
     }
 
     fn bounds_node(&mut self, value: &crate::kernel::Pointer) -> u64 {
@@ -1877,8 +1861,9 @@ impl TermClasses {
         PointerDomain::intrinsic(witness)
     }
 
-    /// Only a complete pointer-value equality can connect opaque bounds
+    /// Only a complete pointer-value equality can connect an opaque bounds
     /// to the root-bounds tag. Numeric address equality cannot do so.
+    #[cfg(test)]
     pub(in crate::kernel::equality_graph) fn bounds_owner_is_root(
         &mut self,
         origin: &crate::kernel::Address,

@@ -4082,7 +4082,8 @@ fn budget_stopped_known_transport_retains_its_checked_prefix_and_completed_fact(
         .expect("the explicit transport is measured")
         .work;
     assert!(transport_work > 0, "{work:?}");
-    // Exercise the beginning and end of this operation's measured work,
+    // This pointer copy completes even at a zero simple budget. Exercise
+    // exhaustion at the start and end of the following explicit transport,
     // without assuming a fixed cost or changing the production allowance.
     for limit in [0, transport_work - 1] {
         with_proof_trace("f", || {
@@ -4094,27 +4095,6 @@ fn budget_stopped_known_transport_retains_its_checked_prefix_and_completed_fact(
                 || verify_c_sources(source, &c),
             )
             .expect_err("the explicit transport exhausts its work allowance");
-            if limit == 0 {
-                // Checked work inside the preceding smart step has the same
-                // simple allowance. A zero allowance must stop that check,
-                // rather than misattribute it to the later transport/search.
-                assert!(
-                    error.message().contains("inside checking operation"),
-                    "{}",
-                    error.message()
-                );
-                assert!(
-                    error.message().contains("inside tactic `step_until`"),
-                    "{}",
-                    error.message()
-                );
-                assert!(
-                    error.message().contains("engine performance defect"),
-                    "{}",
-                    error.message()
-                );
-                return;
-            }
             assert!(
                 error.message().contains("tactic `transport`"),
                 "{}",

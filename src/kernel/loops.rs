@@ -9507,7 +9507,11 @@ fn range_bounds_refusal(
     kind: RangeIndexKind,
     assumptions: &PureFactContext,
 ) -> Option<String> {
-    let bounds = base.bounds()?;
+    let crate::kernel::assumptions::PointerDomain::Selected(bounds) =
+        assumptions.pointer_domain(base)
+    else {
+        return None;
+    };
     let refusal = || {
         Some(match bounds.constant_width() {
             Some(width) => format!(
@@ -9518,11 +9522,8 @@ fn range_bounds_refusal(
             ),
         })
     };
-    // A pointer can carry bounds it adopted through a proven pointer
-    // equality, whose start is spelled through the other pointer: another
-    // block, or another parameter of the same one. Respell the pointer at
-    // that start before measuring its offset, as an access through it is
-    // decided; the spellings' own difference names two unrelated variables.
+    // The domain witness can use another equal pointer's coordinates.
+    // Resolve only the checked address; the clause's base value stays intact.
     let respelled = assumptions
         .pointer_at_known_base(base.address(), &bounds.start)
         .filter(|respelled| {
@@ -9616,3 +9617,47 @@ mod frame_resource_tests {
 
 #[cfg(test)]
 mod shared_update_tests;
+
+#[cfg(test)]
+mod pointer_domain_clause_tests {
+    use super::*;
+
+    #[test]
+    fn clause_ranges_check_admitted_member_bounds_without_rewriting_the_base() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = PointerValue::new(
+            Address::symbolic(Variable(1013200)),
+            ProgramType::Int32Pointer,
+        );
+        let selected = base.clone().with_bounds(Some(SubobjectBounds {
+            start: base.pointer().clone(),
+            width: 4u32.into(),
+        }));
+        let context = PureFactContext::new().assume_condition(
+            ConditionTerm::pointer_value_equal(base.clone(), selected),
+            true,
+        );
+        for (end, refused) in [(0, false), (1, false), (2, true)] {
+            for wide in [false, true] {
+                let (start, end, kind) = if wide {
+                    (
+                        MachineTerm::uint64_constant(0),
+                        MachineTerm::uint64_constant(end),
+                        RangeIndexKind::UInt64,
+                    )
+                } else {
+                    (
+                        0u32.into(),
+                        MachineTerm::constant(end as u32),
+                        RangeIndexKind::Int32,
+                    )
+                };
+                assert_eq!(
+                    range_bounds_refusal(&base, &start, &end, 4, kind, &context).is_some(),
+                    refused
+                );
+            }
+        }
+        assert_eq!(base.bounds(), None);
+    }
+}

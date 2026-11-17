@@ -159,18 +159,6 @@ pub(in crate::kernel) fn evaluate_retained_memory_load_paths(
             }
         }
     }
-    if !volatile && !SpecificationReadScope::is_active() {
-        for path in &mut paths {
-            if let ExpressionOutcome::Value(value) = &mut path.outcome
-                && let Some(pointer) = value.pointer()
-            {
-                *value = retained_cell_conversion(
-                    value,
-                    ProgramValue::Pointer(assumptions.pointer_value_at_entry(pointer)),
-                );
-            }
-        }
-    }
     if let Some(observed) = observed {
         for path in &mut paths {
             let ExpressionOutcome::Value(value) = &path.outcome else {
@@ -8222,21 +8210,13 @@ mod tests {
             true,
         );
         assert_eq!(
-            context
-                .pointer_value_at_entry(&original)
-                .bounds()
-                .unwrap()
-                .width,
-            MachineTerm::constant(4)
+            context.pointer_domain(&original),
+            crate::kernel::assumptions::PointerDomain::Selected(bounded.bounds().unwrap().clone())
         );
         let unchanged = before.clone().with_block("unrelated-pointer-cache", 4);
         assert_eq!(
-            context
-                .pointer_value_at_entry(&read(&unchanged, &context))
-                .bounds()
-                .unwrap()
-                .width,
-            MachineTerm::constant(4)
+            context.pointer_domain(&read(&unchanged, &context)),
+            crate::kernel::assumptions::PointerDomain::Selected(bounded.bounds().unwrap().clone())
         );
         let observed = before
             .clone()
@@ -8246,12 +8226,8 @@ mod tests {
         assert_eq!(observed_read.address(), original.address());
         assert!(context.pointer_provenance_match(&observed_read, &bounded));
         assert_eq!(
-            context
-                .pointer_value_at_entry(&observed_read)
-                .bounds()
-                .unwrap()
-                .width,
-            MachineTerm::constant(4)
+            context.pointer_domain(&observed_read),
+            crate::kernel::assumptions::PointerDomain::Selected(bounded.bounds().unwrap().clone())
         );
         let overwritten = observed.store(
             address.clone().offset_by_bytes(4),
@@ -8264,7 +8240,10 @@ mod tests {
             "the cached numeric prefix is unchanged; it cannot supply bounds"
         );
         assert!(!context.pointer_provenance_match(&changed, &bounded));
-        assert!(context.pointer_value_at_entry(&changed).bounds().is_none());
+        assert_eq!(
+            context.pointer_domain(&changed),
+            crate::kernel::assumptions::PointerDomain::Unknown
+        );
     }
 
     #[test]
