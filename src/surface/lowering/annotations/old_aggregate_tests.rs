@@ -21,7 +21,8 @@ fn entry_state() -> ExecutionState {
         program_return(program_void_value()),
     );
     program_function_entry_state(
-        &ExecutionState::new().with_memory(Memory::new().with_block(source.block.clone(), 8)),
+        &ExecutionState::new()
+            .with_memory(SymbolicMemory::new().with_block(source.block.clone(), 8)),
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(source))],
     )

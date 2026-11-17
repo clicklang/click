@@ -45,7 +45,7 @@ fn variable_collection_after_a_store_costs_the_store() {
         offset: PointerOffsetTerm::Constant(offset),
     };
     let samples = [16usize, 64, 256, 1024].map(|cells| {
-        let mut memory = Memory::new().with_block("counted-history", 4 * cells as u32 + 8);
+        let mut memory = SymbolicMemory::new().with_block("counted-history", 4 * cells as u32 + 8);
         for index in 0..cells {
             memory = memory.store(
                 at(4 * index as i64),

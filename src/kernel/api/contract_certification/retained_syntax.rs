@@ -637,9 +637,9 @@ mod tests {
 
     #[test]
     fn shared_captured_pointer_certification_preserves_memory_state() {
-        use crate::kernel::{Memory, Pointer, PointerValue, SharedPointerValue};
+        use crate::kernel::{Pointer, PointerValue, SharedPointerValue, SymbolicMemory};
         let _session = VerificationSession::enter();
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let changed = memory.clone().store(
             Pointer::null(),
             ProgramValue::Int32(MachineTerm::constant(1)),
@@ -649,7 +649,7 @@ mod tests {
             ProgramType::Int32Pointer,
         );
         let root = KernelTerm::shared_pointer_value(SharedPointerValue::import(&pointer));
-        let shared = |memory: &Memory| {
+        let shared = |memory: &SymbolicMemory| {
             KernelTerm::shared_array_reference(
                 crate::kernel::intern_memory_ref(memory),
                 root.clone(),
@@ -680,10 +680,10 @@ mod tests {
     #[test]
     fn shared_algebraic_read_certification_preserves_address_and_state_identity() {
         use crate::kernel::{
-            AlgebraicTermNode, AlgebraicType, Memory, Pointer, SharedPointerAddress,
+            AlgebraicTermNode, AlgebraicType, Pointer, SharedPointerAddress, SymbolicMemory,
         };
         let _session = VerificationSession::enter();
-        let memory = crate::kernel::intern_memory_ref(&Memory::new());
+        let memory = crate::kernel::intern_memory_ref(&SymbolicMemory::new());
         let changed = crate::kernel::intern_memory_ref(&memory.memory().clone().store(
             Pointer::null(),
             ProgramValue::Int32(MachineTerm::constant(1)),
@@ -946,7 +946,7 @@ mod tests {
 
     #[test]
     fn algebraic_call_certification_ignores_allocation_but_keeps_written_inputs() {
-        use crate::kernel::{AlgebraicTermNode, AlgebraicType, Memory, Pointer, Variable};
+        use crate::kernel::{AlgebraicTermNode, AlgebraicType, Pointer, SymbolicMemory, Variable};
         let _session = VerificationSession::enter();
         let ty = AlgebraicType::parameter("T".into());
         let variable = AlgebraicTerm {
@@ -976,11 +976,11 @@ mod tests {
             node: AlgebraicTermNode::Variable(Variable(995951)),
         };
         assert!(!algebraic_equal(&left, &algebraic_call(changed, "wrap")));
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let other = memory
             .clone()
             .store(Pointer::null(), ProgramValue::Int32(1u32.into()));
-        let read = |memory: &Memory| AlgebraicTerm {
+        let read = |memory: &SymbolicMemory| AlgebraicTerm {
             algebraic_type: ty.clone(),
             node: AlgebraicTermNode::MemoryLoad {
                 memory: crate::kernel::intern_memory_ref(memory),
@@ -1048,12 +1048,12 @@ mod tests {
     #[test]
     fn retained_syntax_keeps_states_and_pointer_qualifiers_exact() {
         let _session = VerificationSession::enter();
-        let memory = crate::kernel::Memory::new();
+        let memory = crate::kernel::SymbolicMemory::new();
         let changed = memory.clone().store(
             crate::kernel::Pointer::null(),
             ProgramValue::Int32(MachineTerm::constant(1)),
         );
-        let read = |memory: &crate::kernel::Memory| {
+        let read = |memory: &crate::kernel::SymbolicMemory| {
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                 Box::new(crate::kernel::Pointer::null()),
@@ -1138,15 +1138,16 @@ mod tests {
     #[test]
     fn retained_syntax_preserves_captured_and_pointer_index_states() {
         use crate::kernel::{
-            LoadKind, Memory, Pointer, PointerOffsetTerm, PointerValue, ProgramType, Variable,
+            LoadKind, Pointer, PointerOffsetTerm, PointerValue, ProgramType, SymbolicMemory,
+            Variable,
         };
         let _session = VerificationSession::enter();
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let other = memory.clone().store(
             Pointer::null(),
             ProgramValue::Int32(MachineTerm::constant(5)),
         );
-        let pointer = |retained_state: &Memory| {
+        let pointer = |retained_state: &SymbolicMemory| {
             PointerValue::new(
                 Pointer {
                     block: "indexed".into(),
@@ -1167,7 +1168,7 @@ mod tests {
                 ProgramType::Int32Pointer,
             )
         };
-        let captured = |retained_state: &Memory, address| A::ArrayRef {
+        let captured = |retained_state: &SymbolicMemory, address| A::ArrayRef {
             memory: retained_state.clone(),
             pointer: ProgramValue::Pointer(address),
             element_type: ProgramType::Int32,

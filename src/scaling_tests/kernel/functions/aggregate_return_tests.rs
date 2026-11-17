@@ -16,7 +16,7 @@ fn construction_destination_binding_work_ignores_unrelated_caller_objects() {
         let at = caller.locals.slot("node").unwrap().clone();
         caller = caller.with_aggregate_return_destination(at, node_layout());
         for index in 0..count {
-            let unrelated = Memory::frame_local_pointer(10, format!("unrelated{index}"));
+            let unrelated = SymbolicMemory::frame_local_pointer(10, format!("unrelated{index}"));
             caller.memory = caller.memory.with_block(unrelated.block.clone(), 4);
             caller.resources = caller
                 .resources
@@ -95,7 +95,9 @@ fn construction_completion_work_scales_with_value_fields() {
             };
             let caller = ExecutionState::new()
                 .with_population_creation_tracking()
-                .with_memory(Memory::new().with_uninitialized_block(at.block.clone(), count * 8))
+                .with_memory(
+                    SymbolicMemory::new().with_uninitialized_block(at.block.clone(), count * 8),
+                )
                 .with_resource_context(resources)
                 .with_aggregate_return_destination(at.clone(), layout.clone());
             let function = if parameter {
@@ -156,8 +158,8 @@ fn construction_initialization_lookup_ignores_unrelated_caller_storage() {
     let mut work_by_size = Vec::new();
     for count in [16, 128, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
-        let source = Memory::frame_local_pointer(21, "construction");
-        let mut memory = Memory::new().with_uninitialized_block(source.block.clone(), 4);
+        let source = SymbolicMemory::frame_local_pointer(21, "construction");
+        let mut memory = SymbolicMemory::new().with_uninitialized_block(source.block.clone(), 4);
         for index in 0..count {
             memory = memory.with_uninitialized_block(format!("local:unrelated:{index}"), 4);
         }
@@ -180,7 +182,7 @@ fn aggregate_return_copy_permission_ignores_unrelated_storage() {
     let mut samples = Vec::new();
     for count in [4, 32, 256] {
         let temporary = Pointer::verifier_temporary(Variable(870_201));
-        let mut memory = Memory::new().with_block(temporary.block.clone(), 16);
+        let mut memory = SymbolicMemory::new().with_block(temporary.block.clone(), 16);
         for index in 0..count {
             memory = memory.with_block(PointerBlock::Heap(880_000 + index), 16);
         }
@@ -212,9 +214,9 @@ fn materialized_return_storage_ignores_unrelated_local_declarations() {
     let mut samples = Vec::new();
     for count in [4, 32, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let source = Memory::frame_local_pointer(999, "source");
+        let source = SymbolicMemory::frame_local_pointer(999, "source");
         let mut state = ExecutionState::new().with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block(source.block.clone(), 16)
                 .store(
                     source.clone(),

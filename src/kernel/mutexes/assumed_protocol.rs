@@ -202,7 +202,7 @@ impl AssumedMutexProtocol {
         budget: &mut crate::kernel::ExecutionBudget,
     ) -> Result<
         (
-            crate::kernel::Memory,
+            crate::kernel::SymbolicMemory,
             Option<crate::kernel::ResourceInstance>,
         ),
         MutexTransitionError,
@@ -582,7 +582,7 @@ pub(super) fn opaque_runtime_transition_with_selected_use(
 }
 
 /// A fresh instance of the protected resource with arbitrary fields, as an
-/// acquisition hands it out. Memory is not changed here.
+/// acquisition hands it out. SymbolicMemory is not changed here.
 pub(super) fn mint_protected_instance(
     description: &crate::kernel::ResourceDescription,
     definition: Option<&crate::kernel::CompositeResourceDefinition>,
@@ -630,7 +630,7 @@ pub(super) fn mint_protected_instance(
     .ok_or("protected mutex type requires an exclusive resource")?)
 }
 
-/// Memory after a thread releases `released` to its mutex. Other threads may
+/// SymbolicMemory after a thread releases `released` to its mutex. Other threads may
 /// change that memory before this one acquires it again, so every
 /// observation inside its footprint goes. The footprint is derived here,
 /// while the thread still owns the resource and its memory names the
@@ -647,7 +647,7 @@ fn forget_released_protected_memory(
     definitions: &[crate::kernel::CompositeResourceDefinition],
     assumptions: &PureFactContext,
     budget: &mut crate::kernel::ExecutionBudget,
-) -> Result<crate::kernel::Memory, MutexTransitionError> {
+) -> Result<crate::kernel::SymbolicMemory, MutexTransitionError> {
     let ranges = crate::kernel::functions::checked_owned_memory_ranges(
         released,
         definitions,
@@ -682,7 +682,7 @@ pub(super) fn fresh_protected_payload(
     budget: &mut crate::kernel::ExecutionBudget,
 ) -> Result<
     (
-        crate::kernel::Memory,
+        crate::kernel::SymbolicMemory,
         Option<crate::kernel::ResourceInstance>,
     ),
     MutexTransitionError,

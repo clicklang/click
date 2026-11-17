@@ -9,7 +9,7 @@ fn complete_pointer_representative_exposes_a_stored_callback() {
     let cell = Pointer::symbolic(Variable(998_965));
     let target = PointerValue::new(Pointer::function("callback"), ty);
     let memory = crate::kernel::intern_memory(
-        Memory::new().store(cell.clone(), ProgramValue::Pointer(target.clone())),
+        SymbolicMemory::new().store(cell.clone(), ProgramValue::Pointer(target.clone())),
     );
     let read = PointerValue::from_read(Pointer::loaded_value(&memory, &cell), ty, &memory, &cell);
     let graph = EqualityGraph::default();
@@ -44,7 +44,7 @@ fn pointer(name: &str) -> Pointer {
         offset: PointerOffsetTerm::Constant(0),
     }
 }
-fn array(memory: &Memory, p: Pointer, element_type: ProgramType) -> PureFunctionArgument {
+fn array(memory: &SymbolicMemory, p: Pointer, element_type: ProgramType) -> PureFunctionArgument {
     PureFunctionArgument::ArrayRef {
         memory: memory.clone(),
         pointer: ProgramValue::Pointer(PointerValue::new(p, ProgramType::Int32Pointer)),
@@ -120,11 +120,11 @@ fn fact_lookup_preserves_branch_restriction_and_contradiction() {
 #[test]
 fn pure_application_arguments_keep_states_types_and_argument_order() {
     let _session = VerificationSession::enter();
-    let memory = Memory::new().with_block("p", 4).with_block("q", 4);
+    let memory = SymbolicMemory::new().with_block("p", 4).with_block("q", 4);
     let changed = memory
         .clone()
         .store(pointer("p"), ProgramValue::Int32(var(34)));
-    let f = |memory: &Memory, p, ty| call("f", vec![array(memory, p, ty)]);
+    let f = |memory: &SymbolicMemory, p, ty| call("f", vec![array(memory, p, ty)]);
     let held = eq(f(&memory, pointer("p"), ProgramType::Int32), var(30));
     let context = PureFactContext::new()
         .assume_proposition(held)
@@ -170,7 +170,7 @@ fn fact_congruence_keeps_predicate_truth_out_of_resource_equality_history() {
 #[test]
 fn fact_lookup_uses_pointer_read_congruence_after_a_late_address_alias() {
     let _session = VerificationSession::enter();
-    let memory = intern_memory(Memory::new());
+    let memory = intern_memory(SymbolicMemory::new());
     let a = Pointer::symbolic(Variable(72));
     let b = Pointer::symbolic(Variable(73));
     let f = |address: &Pointer| {
@@ -727,7 +727,7 @@ fn selected_native_cursor_normalization_is_stable_across_context_orders() {
 #[test]
 fn checked_pointer_read_retention_keeps_a_simplified_address_equation() {
     let _session = VerificationSession::enter();
-    let memory = intern_memory(Memory::new());
+    let memory = intern_memory(SymbolicMemory::new());
     let address = Pointer::symbolic(Variable(9072));
     let read = Pointer::loaded_value(&memory, &address);
     let named = Pointer::symbolic(Variable(9073));
@@ -767,7 +767,7 @@ fn named_pointer_read_definitions_follow_later_observations() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let first = crate::kernel::intern_memory(
-        Memory::new().store(unrelated.clone(), ProgramValue::UInt32(1u32.into())),
+        SymbolicMemory::new().store(unrelated.clone(), ProgramValue::UInt32(1u32.into())),
     );
     let named = name(&first, &cell);
     let context = PureFactContext::new();
@@ -804,7 +804,7 @@ fn structural_pointer_read_definitions_keep_domains_and_reject_partial_writes() 
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = intern_memory(Memory::new().store(
+    let memory = intern_memory(SymbolicMemory::new().store(
         Pointer {
             block: PointerBlock::Heap(986_005),
             offset: PointerOffsetTerm::Constant(0),
@@ -855,8 +855,9 @@ fn stored_pointer_read_definitions_preserve_bounds_and_reject_partial_overwrites
             width: 4u32.into(),
         },
     ));
-    let memory =
-        intern_memory(Memory::new().store(slot.clone(), ProgramValue::Pointer(stored.clone())));
+    let memory = intern_memory(
+        SymbolicMemory::new().store(slot.clone(), ProgramValue::Pointer(stored.clone())),
+    );
     let read = PointerValue::new(
         Pointer::loaded_value(&memory, &slot),
         ProgramType::Int32Pointer,
@@ -909,7 +910,7 @@ fn a_fact_retained_pointer_cache_is_not_an_unconditional_read_definition() {
             2u32.into(),
         ))),
     });
-    let before = Memory::new().store(slot.clone(), ProgramValue::Pointer(stored.clone()));
+    let before = SymbolicMemory::new().store(slot.clone(), ProgramValue::Pointer(stored.clone()));
     let after = before.with_call_memory_havoc(Variable(987_013), &[written], &separated, None);
     assert_eq!(
         after.known_value(&slot),
@@ -931,14 +932,15 @@ fn pointer_domain_queries_register_stored_read_definitions_without_prior_address
     let slot = Pointer::symbolic(Variable(989_100));
     let target = Pointer::symbolic(Variable(989_101));
     let stored = PointerValue::new(target.clone(), ProgramType::Int32Pointer);
-    let memory =
-        intern_memory(Memory::new().store(slot.clone(), ProgramValue::Pointer(stored.clone())));
+    let memory = intern_memory(
+        SymbolicMemory::new().store(slot.clone(), ProgramValue::Pointer(stored.clone())),
+    );
     let read = Pointer::loaded_value(&memory, &slot);
     let root = Pointer {
         block: PointerBlock::Heap(989_102),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let root_memory = intern_memory(Memory::new().store(
+    let root_memory = intern_memory(SymbolicMemory::new().store(
         slot.clone(),
         ProgramValue::typed_pointer(root, ProgramType::Int32Pointer),
     ));

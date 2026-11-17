@@ -12,8 +12,8 @@ static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 pub struct RegionFootprint {
     id: u64,
     pub(crate) source: String,
-    pub(crate) before: Memory,
-    pub(crate) after: Memory,
+    pub(crate) before: SymbolicMemory,
+    pub(crate) after: SymbolicMemory,
     pub(crate) before_resources: ResourceContext,
     pub(crate) after_resources: ResourceContext,
     pub(crate) members: imbl::Vector<Resource>,

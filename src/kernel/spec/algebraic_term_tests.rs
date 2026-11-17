@@ -389,7 +389,7 @@ fn cached_pointer_read_equations_do_not_escape_symbolic_match_arms() {
     };
     let address = Pointer::symbolic(Variable(71_040));
     let value = Pointer::symbolic(Variable(71_041));
-    let memory = Memory::new().store(
+    let memory = SymbolicMemory::new().store(
         address.clone(),
         ProgramValue::typed_pointer(value, ProgramType::Int64Pointer),
     );
@@ -1138,7 +1138,7 @@ fn algebraic_read_result_preserves_native_state_and_type() {
     let native = AlgebraicTerm {
         algebraic_type: ty.clone(),
         node: AlgebraicTermNode::MemoryLoad {
-            memory: intern_memory(Memory::new()),
+            memory: intern_memory(SymbolicMemory::new()),
             pointer: Box::new(Pointer::symbolic(Variable(999749))),
         },
     };

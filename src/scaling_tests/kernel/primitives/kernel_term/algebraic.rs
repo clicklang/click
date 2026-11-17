@@ -122,7 +122,7 @@ fn algebraic_read_construction_keeps_growing_shared_addresses_without_exports() 
         };
         let address = SharedPointerAddress::import(&pointer);
         let ty = TypeParameterName::intern("ReadScaleT").algebraic_type();
-        let memory = intern_memory(Memory::new());
+        let memory = intern_memory(SymbolicMemory::new());
         let exports = KernelTermExport::machine_export_count();
         let (root, work) = crate::instrumentation::measure_deterministic_work(|| {
             KernelTerm::algebraic_read(ty.clone(), memory.clone(), address.clone())

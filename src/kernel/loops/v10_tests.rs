@@ -77,7 +77,7 @@ fn restoring_a_loop_frame_retains_complete_pointer_reads_but_not_written_cells()
     );
     let field_range = MemoryRange::from_pointer_value(&field, 0u32.into(), 2u32.into(), 4);
     let data_range = MemoryRange::from_pointer_value(&data, 0u32.into(), 4u32.into(), 4);
-    let initial = Memory::new();
+    let initial = SymbolicMemory::new();
     // Restore scalar cache cells covering one complete pointer.
     let memory = initial
         .materialize_symbolic_cell(field.pointer().clone(), ProgramType::Int32)

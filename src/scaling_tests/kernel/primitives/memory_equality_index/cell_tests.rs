@@ -1299,7 +1299,7 @@ fn composition_provenance_admission_follows_sibling_deltas_not_the_shared_frame(
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn captured_interior_pointer_reads_keep_owned_bounds_and_opaque_base_identity() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let empty = PureFactContext::new();
     let read = |id| {
         let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
@@ -1500,7 +1500,7 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
         };
-        let read = |context: &PureFactContext, memory: &Memory| {
+        let read = |context: &PureFactContext, memory: &SymbolicMemory| {
             let retained_state = crate::kernel::intern_memory_ref(memory);
             let variable = crate::kernel::load_variable_for_cell_with_origin(
                 &retained_state,
@@ -1513,8 +1513,9 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
             context.register_pointer_read(&pointer, &retained_state, &field);
             PointerValue::from_read(pointer, ProgramType::Int32Pointer, &retained_state, &field)
         };
-        let source = read(&PureFactContext::new(), &Memory::new());
-        let before = Memory::new().store(field.clone(), ProgramValue::Pointer(source.clone()));
+        let source = read(&PureFactContext::new(), &SymbolicMemory::new());
+        let before =
+            SymbolicMemory::new().store(field.clone(), ProgramValue::Pointer(source.clone()));
         let range = |base: PointerValue, start: u32, end: u32| {
             MemoryRange::from_pointer_value(&base, start.into(), end.into(), 4)
         };
@@ -1625,7 +1626,7 @@ fn framed_pointer_read_selects_interior_writes_under_live_authority() {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
         };
-        let read = |context: &PureFactContext, memory: &Memory| {
+        let read = |context: &PureFactContext, memory: &SymbolicMemory| {
             let retained_state = crate::kernel::intern_memory_ref(memory);
             let variable = crate::kernel::load_variable_for_cell_with_origin(
                 &retained_state,
@@ -1638,8 +1639,8 @@ fn framed_pointer_read_selects_interior_writes_under_live_authority() {
             context.register_pointer_read(&pointer, &retained_state, &field);
             pointer
         };
-        let source = read(&PureFactContext::new(), &Memory::new());
-        let before = Memory::new().store(
+        let source = read(&PureFactContext::new(), &SymbolicMemory::new());
+        let before = SymbolicMemory::new().store(
             field.clone(),
             ProgramValue::Pointer(PointerValue::new(source.clone(), ProgramType::Int32Pointer)),
         );
@@ -1755,7 +1756,7 @@ fn an_indexed_read_supplier_does_not_resolve_its_pointer_history() {
             offset: PointerOffsetTerm::Constant(0),
         };
         let stored = Pointer::symbolic(Variable(9_930_000));
-        let mut memory = Memory::new().store(
+        let mut memory = SymbolicMemory::new().store(
             field.clone(),
             ProgramValue::typed_pointer(stored, ProgramType::Int32Pointer),
         );
@@ -1882,7 +1883,7 @@ fn query_read_definition_merges_scale_with_changed_suppliers() {
             offset: PointerOffsetTerm::Constant(0),
         };
         let first = crate::kernel::intern_memory(
-            Memory::new().store(unrelated.clone(), ProgramValue::UInt32(1u32.into())),
+            SymbolicMemory::new().store(unrelated.clone(), ProgramValue::UInt32(1u32.into())),
         );
         let later = crate::kernel::intern_memory(
             first

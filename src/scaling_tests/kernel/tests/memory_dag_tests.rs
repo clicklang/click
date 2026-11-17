@@ -101,10 +101,10 @@ fn rewritten_store_witness_work_scales_with_explicit_adjacent_equalities() {
     let mut samples = Vec::new();
     for size in [1, 2, 4, 8] {
         let value = MachineTerm::constant(17);
-        let mut memory = Memory::new()
+        let mut memory = SymbolicMemory::new()
             .with_block("arg-memory", 128)
             .store(arc_pointer(4), ProgramValue::Int32(value.clone()));
-        let load = |memory: &Memory| {
+        let load = |memory: &SymbolicMemory| {
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                 Box::new(arc_pointer(4)),
@@ -147,7 +147,7 @@ fn reinterning_retained_memory_uses_shallow_component_identity() {
     let samples = [16, 32, 64, 128]
         .into_iter()
         .map(|size| {
-            let mut memory = Memory::new();
+            let mut memory = SymbolicMemory::new();
             for index in 0..size {
                 memory = memory.with_block(format!("shallow-memory-{size}-{index}"), 4);
             }
@@ -188,9 +188,9 @@ fn checked_order_store_crossing_ignores_unrelated_order_facts() {
             }
             let context =
                 context.assume_condition(ConditionTerm::signed_less_than(index, length), true);
-            let base = Memory::new().with_block(format!("arg-memory-{size}"), 64);
+            let base = SymbolicMemory::new().with_block(format!("arg-memory-{size}"), 64);
             let separated = base.clone().store_with_context(written, int32(7), &context);
-            let load = |memory: &Memory| {
+            let load = |memory: &SymbolicMemory| {
                 MachineTerm::MemoryLoad(
                     ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                     Box::new(kept.clone()),
@@ -226,7 +226,7 @@ fn memory_dag_walks_follow_chains_of_any_length() {
     let samples = [32, 64, 128, 256]
         .into_iter()
         .map(|size| {
-            let entry = Memory::new().with_block("arg-memory", 4096);
+            let entry = SymbolicMemory::new().with_block("arg-memory", 4096);
             let mut memory = entry.clone();
             for index in 0..size {
                 memory = memory.store(
@@ -255,7 +255,7 @@ fn seeded_pointer_read_evidence_does_not_enumerate_large_runs_or_alias_classes()
         let base = Pointer::symbolic(Variable(98_320));
         let address = base.offset_by_bytes((size - 2) * 4);
         let alias = Pointer::symbolic(Variable(98_321));
-        let old = intern_memory(Memory::new());
+        let old = intern_memory(SymbolicMemory::new());
         let current = intern_memory(
             old.memory()
                 .clone()
@@ -285,7 +285,7 @@ fn seeded_pointer_read_evidence_does_not_enumerate_large_runs_or_alias_classes()
 fn pointer_read_source_registration_does_not_walk_growing_store_histories() {
     for size in [8u32, 32, 128, 512] {
         let address = Pointer::symbolic(Variable(98_340));
-        let old = intern_memory(Memory::new());
+        let old = intern_memory(SymbolicMemory::new());
         let mut memory = old.memory().clone().with_seeded_cells(
             address.clone(),
             4,
@@ -315,7 +315,7 @@ fn pointer_read_single_store_edges_compose_with_near_linear_work() {
     let mut previous_work = None;
     for size in [2u32, 8, 32, 128] {
         let address = Pointer::symbolic(Variable(98_390));
-        let mut memory = intern_memory(Memory::new());
+        let mut memory = intern_memory(SymbolicMemory::new());
         let context = PureFactContext::new();
         let original = Pointer::loaded_value(&memory, &address);
         context.register_pointer_read(&original, &memory, &address);
@@ -347,7 +347,7 @@ fn pointer_read_single_store_edges_compose_with_near_linear_work() {
 fn pointer_read_cache_forgetting_registration_does_not_search_older_history() {
     for size in [8u32, 32, 128, 512] {
         let address = arc_pointer(0);
-        let mut memory = Memory::new().with_block("arg-memory", 32);
+        let mut memory = SymbolicMemory::new().with_block("arg-memory", 32);
         let original = intern_memory(memory.clone());
         for i in 0..size {
             memory = memory.store(
@@ -381,7 +381,7 @@ fn read_identity_production_is_linear_and_endpoint_queries_do_not_walk_history()
     for size in [8u32, 32, 128, 512] {
         let address = Pointer::symbolic(Variable(98_440));
         let unknown = Pointer::symbolic(Variable(98_441));
-        let original = intern_memory(Memory::new());
+        let original = intern_memory(SymbolicMemory::new());
         let mut memory = original.memory().clone();
         let context = PureFactContext::new();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -443,9 +443,9 @@ fn named_state_alias_equality_does_not_depend_on_sibling_observation_origins() {
                 true,
             );
         }
-        let named = crate::kernel::intern_memory(Memory::new());
+        let named = crate::kernel::intern_memory(SymbolicMemory::new());
         let origins = ["local:first-arm", "local:second-arm"]
-            .map(|block| crate::kernel::intern_memory(Memory::new().with_block(block, 4)));
+            .map(|block| crate::kernel::intern_memory(SymbolicMemory::new().with_block(block, 4)));
         let variables = [(&left, &origins[0]), (&right, &origins[1])].map(|(pointer, origin)| {
             crate::kernel::eval::load_variable_for_cell_with_origin(
                 &named,
@@ -477,7 +477,7 @@ fn named_state_alias_equality_does_not_depend_on_sibling_observation_origins() {
         }
         // The witness names the exact state, address, and read kind.
         let changed = crate::kernel::intern_memory(
-            Memory::new().with_block("local:different-retained_state", 4),
+            SymbolicMemory::new().with_block("local:different-retained_state", 4),
         );
         for retargeted in [
             MachineTerm::MemoryLoad(
@@ -596,7 +596,7 @@ fn seeded_scalar_loads_frame_unknown_cells_with_constant_work() {
     ] {
         let mut previous_work = None;
         for size in [16, 256, 4096, 65536] {
-            let original = intern_memory(Memory::new());
+            let original = intern_memory(SymbolicMemory::new());
             let first = intern_memory(original.memory().clone().with_seeded_cells(
                 anchor.clone(),
                 width,
@@ -658,7 +658,7 @@ fn seeded_scalar_slots_preserve_overlapping_wide_reads() {
         .into_iter()
         .flat_map(|count| [4, 8].map(|stride| (count, stride)))
     {
-        let original = intern_memory(Memory::new());
+        let original = intern_memory(SymbolicMemory::new());
         let current = intern_memory(original.memory().clone().with_seeded_cells(
             pointer.clone(),
             stride,
@@ -801,7 +801,7 @@ fn aliased_store_byte_frame_checks_width_context_and_scales() {
         Pointer::symbolic(Variable(106_004)),
         ProgramType::Int32Pointer,
     );
-    let memory = intern_memory(Memory::new());
+    let memory = intern_memory(SymbolicMemory::new());
     let classify = |write: Pointer, bytes, context: &PureFactContext| {
         let step = MemoryDerivation::Store {
             base: memory.clone(),
@@ -930,7 +930,7 @@ fn graph_aliased_range_membership_checks_complete_access_and_scales() {
         ConditionTerm::pointer_equal(read_bridge, read_model.clone()),
     ];
     let step = MemoryDerivation::Store {
-        base: intern_memory(Memory::new()),
+        base: intern_memory(SymbolicMemory::new()),
         pointer: write.clone(),
         value: ProgramValue::typed_pointer(
             Pointer::symbolic(Variable(160_007)),
@@ -999,19 +999,20 @@ fn local_lifetime_end_retains_complete_separated_range_evidence_and_scales() {
     let mut costs = Vec::new();
     for count in [16u32, 64, 256] {
         crate::kernel::eval::clear_load_variable_registry();
-        let retired = Memory::frame_local_pointer(u64::from(count), "span");
+        let retired = SymbolicMemory::frame_local_pointer(u64::from(count), "span");
         let read = Pointer::symbolic(Variable(140_000 + u64::from(count)));
         let bytes = |base, end| MemoryRange::new_with_element_width(base, 0u32.into(), end, 1);
         let retired_range = bytes(retired.clone(), 16u32.into());
         let read_range = bytes(read.clone(), 8u32.into());
-        let mut memory = Memory::new()
+        let mut memory = SymbolicMemory::new()
             .with_block(retired.block.clone(), 16)
             .with_block(read.block.clone(), 16);
         let mut resources = ResourceContext::new()
             .unchecked_with_fact(ResourceFact::own_memory(retired_range.clone()))
             .unchecked_with_fact(ResourceFact::own_memory(read_range.clone()));
         for index in 0..count {
-            let other = Memory::frame_local_pointer(u64::from(count + index + 1), "unrelated");
+            let other =
+                SymbolicMemory::frame_local_pointer(u64::from(count + index + 1), "unrelated");
             memory = memory.with_block(other.block.clone(), 16);
             resources =
                 resources.unchecked_with_fact(ResourceFact::own_memory(bytes(other, 16u32.into())));
@@ -1103,7 +1104,7 @@ fn local_lifetime_end_retains_complete_separated_range_evidence_and_scales() {
             !hop.justification
                 .checks(hop.derivation.as_ref(), &retired, 8, &assumptions)
         );
-        let larger = Memory::new().with_block(retired.block.clone(), 32);
+        let larger = SymbolicMemory::new().with_block(retired.block.clone(), 32);
         let larger_end =
             crate::kernel::intern_memory_ref(&larger.without_local_block(&retired.block));
         assert!(!hop.justification.checks(
@@ -1146,7 +1147,7 @@ fn local_lifetime_end_retains_complete_separated_range_evidence_and_scales() {
 fn preliminary_byte_gap_uses_only_stated_endpoint_order() {
     use crate::kernel::reasoning::memory_resolution::{AccessByteOverlap, access_byte_overlap};
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = crate::kernel::intern_memory_ref(&Memory::new());
+    let memory = crate::kernel::intern_memory_ref(&SymbolicMemory::new());
     let index = |slot: i64| {
         MachineTerm::MemoryLoad(
             ProgramPoint::at(&memory),
@@ -1323,13 +1324,13 @@ fn an_unrelated_view_does_not_walk_pointer_read_history() {
             offset: PointerOffsetTerm::Constant(0),
         };
         let target = Pointer::symbolic(Variable(995_600));
-        let mut memory = Memory::new().store(
+        let mut memory = SymbolicMemory::new().store(
             field.clone(),
             ProgramValue::typed_pointer(target, ProgramType::Int32Pointer),
         );
         for index in 0..size {
             memory = memory.store(
-                Memory::local_pointer("empty-frame-counter").offset_by_bytes(index * 4),
+                SymbolicMemory::local_pointer("empty-frame-counter").offset_by_bytes(index * 4),
                 ProgramValue::Int32(index.into()),
             );
         }
@@ -1370,9 +1371,9 @@ fn mixed_width_seeded_runs_ignore_other_address_stems() {
             let word = address(98_750);
             let bytes = address(98_751);
             assert_eq!(word.block, bytes.block);
-            let source = intern_memory(Memory::new());
+            let source = intern_memory(SymbolicMemory::new());
             let (memory, work) = crate::instrumentation::measure_deterministic_work(|| {
-                let seed_word = |memory: Memory| {
+                let seed_word = |memory: SymbolicMemory| {
                     memory.with_seeded_cells(
                         word.clone(),
                         8,
@@ -1382,7 +1383,7 @@ fn mixed_width_seeded_runs_ignore_other_address_stems() {
                         source.clone(),
                     )
                 };
-                let seed_bytes = |memory: Memory| {
+                let seed_bytes = |memory: SymbolicMemory| {
                     memory.with_seeded_cells(
                         bytes.clone(),
                         1,
@@ -1393,9 +1394,9 @@ fn mixed_width_seeded_runs_ignore_other_address_stems() {
                     )
                 };
                 let memory = if bytes_first {
-                    seed_word(seed_bytes(Memory::new()))
+                    seed_word(seed_bytes(SymbolicMemory::new()))
                 } else {
-                    seed_bytes(seed_word(Memory::new()))
+                    seed_bytes(seed_word(SymbolicMemory::new()))
                 };
                 // A repeated entry projection must not enumerate the other run either.
                 seed_word(memory)
@@ -1414,8 +1415,9 @@ fn direct_pointer_projection_dependencies_scale_with_the_selected_chain() {
     let mut samples = Vec::new();
     for size in [8, 16, 32, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let source =
-            intern_memory(Memory::new().with_block_without_derivation("local:projection-chain", 4));
+        let source = intern_memory(
+            SymbolicMemory::new().with_block_without_derivation("local:projection-chain", 4),
+        );
         let mut left = Pointer::symbolic(Variable(98_370));
         let mut right = Pointer::symbolic(Variable(98_371));
         let context = PureFactContext::new().assume_condition(
@@ -1446,8 +1448,9 @@ fn direct_pointer_projection_dependencies_scale_with_the_selected_chain() {
     let mut unrelated_samples = Vec::new();
     for size in [0, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let source =
-            intern_memory(Memory::new().with_block_without_derivation("local:projection-frame", 4));
+        let source = intern_memory(
+            SymbolicMemory::new().with_block_without_derivation("local:projection-frame", 4),
+        );
         for i in 0..size {
             let address = Pointer::symbolic(Variable(99_000 + i));
             let projected = crate::kernel::memory_history::canonical_value_load_memory(
@@ -1483,7 +1486,7 @@ fn direct_pointer_projection_dependencies_scale_with_the_selected_chain() {
 #[test]
 fn abstract_read_congruence_scales_with_selected_reads() {
     let parameter = TypeParameterName::intern("ScaledReadT");
-    let memory = intern_memory(Memory::new());
+    let memory = intern_memory(SymbolicMemory::new());
     let read = |pointer: Pointer| AlgebraicTerm {
         algebraic_type: parameter.algebraic_type(),
         node: AlgebraicTermNode::MemoryLoad {
@@ -1542,7 +1545,7 @@ fn abstract_read_origin_lookup_ignores_unrelated_definitions() {
     for size in [0, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let source = intern_memory(
-            Memory::new().with_block_without_derivation("local:abstract-origin-scaling", 4),
+            SymbolicMemory::new().with_block_without_derivation("local:abstract-origin-scaling", 4),
         );
         let parameter = TypeParameterName::intern("ScaledOriginT");
         for i in 0..size {

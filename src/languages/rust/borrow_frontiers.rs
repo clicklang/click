@@ -1192,7 +1192,7 @@ mod tests {
             block: "executed-child".into(),
             offset: crate::kernel::PointerOffsetTerm::Constant(0),
         };
-        let memory = Memory::new()
+        let memory = SymbolicMemory::new()
             .with_block(pointer.block.clone(), if owned { 4 } else { 0 })
             .store(pointer.clone(), int32(4));
         let state = ExecutionState::new()

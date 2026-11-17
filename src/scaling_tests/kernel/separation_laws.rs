@@ -177,7 +177,7 @@ fn viewable_restrict_does_not_walk_compositions_or_enumerate_memory() {
         for i in 0..size {
             parent = Resource::star(parent, Resource::Parameter(Variable(i as u64)));
         }
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let range = Resource::Memory(MemoryRange::new_with_element_width(
             Pointer::symbolic(Variable(8_390_100)),
             0u32.into(),

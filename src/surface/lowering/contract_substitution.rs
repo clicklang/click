@@ -1745,7 +1745,7 @@ fn substitute_resource_subject(
                     .iter()
                     .any(|value| contract_expression_as_program_expression(value).is_none())
                 {
-                    // Memory state-valued arguments are Surface expressions, not
+                    // SymbolicMemory state-valued arguments are Surface expressions, not
                     // C fragments. Retain them in the same resource form used
                     // by written `memory(old(p)[lo..hi])` facts.
                     let at_state = |value| match segment.state {
@@ -4072,7 +4072,7 @@ fn substitute_contract_expression_node(
             pointee_struct,
         } => {
             let substituted_base = substitute_contract_expression_in(base, substitutions)?;
-            // Memory state field lowering uses the Surface base and only the
+            // SymbolicMemory state field lowering uses the Surface base and only the
             // operation/type shape of `lowered`. An `old(...)` base cannot
             // be embedded in the cached C fragment.
             // A call's parameter object is read at that call's parameter

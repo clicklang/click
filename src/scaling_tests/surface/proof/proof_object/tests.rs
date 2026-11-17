@@ -1047,7 +1047,7 @@ fn integer_equality_rewrite_builds_names_only_on_refusal_and_scales() {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
-            memory: Memory::new(),
+            memory: SymbolicMemory::new(),
             array_refs: BTreeMap::new(),
             requires: vec![equality.clone()],
             surface_requirements: SurfacePropositionMap::default(),
@@ -1262,7 +1262,7 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
-            memory: Memory::new(),
+            memory: SymbolicMemory::new(),
             values: BTreeMap::from([
                 ("x".into(), ProgramValue::UInt64(x.clone())),
                 ("y".into(), ProgramValue::UInt64(y.clone())),
@@ -1503,7 +1503,7 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
     for size in [4usize, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = crate::kernel::intern_memory(
-            crate::kernel::Memory::new().with_block("rewrite_reads", 4096),
+            crate::kernel::SymbolicMemory::new().with_block("rewrite_reads", 4096),
         );
         let mut facts = Vec::new();
         let mut reads = Vec::new();
@@ -1752,7 +1752,7 @@ fn mixed_entry_and_current_premise_spelling_ignores_unrelated_states() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let entry = ExecutionState::new()
-        .with_memory(Memory::new().with_block("mixed-premise", 4))
+        .with_memory(SymbolicMemory::new().with_block("mixed-premise", 4))
         .with_local(
             "p",
             ProgramValue::typed_pointer(pointer.clone(), ProgramType::UInt32Pointer),
@@ -1856,7 +1856,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
     let mut samples = Vec::new();
     for size in [4usize, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut memory = crate::kernel::Memory::new().with_block("rewrite_reads", 4096);
+        let mut memory = crate::kernel::SymbolicMemory::new().with_block("rewrite_reads", 4096);
         let mut facts = Vec::new();
         let mut reads = Vec::new();
         for index in 0..size {
@@ -2216,7 +2216,7 @@ fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool)
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: Default::default(),
-            memory: Memory::new(),
+            memory: SymbolicMemory::new(),
             values: words
                 .iter()
                 .enumerate()

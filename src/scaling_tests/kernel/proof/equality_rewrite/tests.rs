@@ -22,7 +22,7 @@ fn pointer_rewrite_integer_reads_preserves_state_kind_and_scales() {
             }
             let cited =
                 Proposition::ConditionIs(ConditionTerm::pointer_equal(p.clone(), q.clone()), true);
-            let mut memory = Memory::new();
+            let mut memory = SymbolicMemory::new();
             let mut facts = PureFactStore::default().with_fact(cited.clone());
             for index in 0..size {
                 memory = memory.store(
@@ -34,7 +34,7 @@ fn pointer_rewrite_integer_reads_preserves_state_kind_and_scales() {
                     IntegerTerm::constant_i64(index as i64),
                 ));
             }
-            let read = |memory: &Memory, pointer: &Pointer, kind| {
+            let read = |memory: &SymbolicMemory, pointer: &Pointer, kind| {
                 MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
                     &crate::kernel::intern_memory(memory.clone()),
                     pointer,
@@ -45,7 +45,7 @@ fn pointer_rewrite_integer_reads_preserves_state_kind_and_scales() {
             // The read identity preserves only its original cell. The observed
             // origin is needed when the equality exposes the alias address.
             let source = MachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
-                &crate::kernel::intern_memory(Memory::new()),
+                &crate::kernel::intern_memory(SymbolicMemory::new()),
                 &p,
                 LoadKind::UInt8,
                 1,
@@ -124,7 +124,7 @@ fn pointer_read_rewrite_preserves_value_state_and_scales() {
             true,
         );
         let mut facts = PureFactStore::default().with_fact(cited.clone());
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for i in 0..size {
             memory = memory.store(
                 Pointer::symbolic(Variable(220_000 + i)),
@@ -136,7 +136,7 @@ fn pointer_read_rewrite_preserves_value_state_and_scales() {
             ));
         }
         let context = PureFactContext::new();
-        let read = |memory: &Memory, address: &Pointer| {
+        let read = |memory: &SymbolicMemory, address: &Pointer| {
             let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
                 memory,
                 address.clone(),
@@ -433,13 +433,13 @@ fn cited_read_rewrite_requires_unchanged_cells_and_its_named_premise() {
         offset: PointerOffsetTerm::Constant(0),
     };
     crate::kernel::eval::declare_load_access_width(&pointer, 4);
-    let before = Memory::new().with_block("rewrite-selected-read", 4);
+    let before = SymbolicMemory::new().with_block("rewrite-selected-read", 4);
     let after = before.clone().with_block("local:rewrite-unrelated", 4);
     let changed = after.clone().store(
         pointer.clone(),
         ProgramValue::Int32(MachineTerm::constant(43)),
     );
-    let load = |memory: &Memory| {
+    let load = |memory: &SymbolicMemory| {
         MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
             Box::new(pointer.clone()),
@@ -493,7 +493,7 @@ fn same_block_pointer_view_rewrite_preserves_span_and_selected_work() {
         ConditionTerm::PointerOffsetEqual(Box::new(source.clone()), Box::new(target.clone())),
         true,
     );
-    let memory = Memory::new().with_block("offset-view-rewrite", 8);
+    let memory = SymbolicMemory::new().with_block("offset-view-rewrite", 8);
     let span = MachineTerm::Variable(Variable(192_922));
     let goal = Proposition::MemoryLoadable {
         memory: memory.clone(),
@@ -562,7 +562,7 @@ fn pointer_view_rewrite_preserves_state_span_and_ambient_scaling() {
         ConditionTerm::pointer_equal(source.clone(), target.clone()),
         true,
     );
-    let memory = Memory::new().with_block("pointer-view-rewrite", 8);
+    let memory = SymbolicMemory::new().with_block("pointer-view-rewrite", 8);
     let span = MachineTerm::Variable(Variable(192_912));
     let goal = Proposition::MemoryLoadable {
         memory: memory.clone(),
@@ -619,7 +619,7 @@ fn pointer_rewrite_enters_scalar_calls_and_preserves_scope_and_states() {
         ),
         true,
     );
-    let memory = Memory::new().with_block("unchanged", 4);
+    let memory = SymbolicMemory::new().with_block("unchanged", 4);
     let goal_at = |pointer: Pointer, count: usize| {
         equality(
             MachineTerm::ClickFunctionApplication {
@@ -726,7 +726,7 @@ fn rewrite_capture_collection_does_not_visit_state_contents() {
     let address = Variable(42);
     let mut costs = Vec::new();
     for size in [16u64, 64, 256, 1024] {
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for i in 0..size {
             memory = memory.store(
                 Pointer::symbolic(Variable(100_000 + i)),
@@ -765,7 +765,7 @@ fn rewrite_integer_application_endpoint_keeps_byte_state_and_ignores_its_content
     );
     let mut costs = Vec::new();
     for size in [16u64, 64, 256, 1024] {
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for i in 0..size {
             memory = memory.store(
                 Pointer::symbolic(Variable(300000 + i)),
@@ -954,7 +954,7 @@ fn pointer_read_chain_rewrite_work(
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(998_951)), 8),
     };
-    let mut memory = Memory::new();
+    let mut memory = SymbolicMemory::new();
     for index in 0..cells {
         memory = memory.store(
             Pointer {
@@ -1322,7 +1322,7 @@ fn selected_rewrite_does_not_discover_a_load_equality_chain() {
     let x = MachineTerm::Variable(Variable(800_001));
     let y = MachineTerm::Variable(Variable(800_002));
     let read = MachineTerm::MemoryLoad(
-        ProgramPoint::at(&(intern_memory(Memory::new()))),
+        ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
         Box::new(Pointer::symbolic(Variable(800_003))),
         crate::kernel::LoadKind::Int32,
     );

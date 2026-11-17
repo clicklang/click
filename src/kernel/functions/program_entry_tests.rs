@@ -12,7 +12,7 @@ fn storage_function(name: &str, globals: Vec<Global>) -> ProgramFunction {
 
 fn scalar_ownership(name: &str) -> ResourceFact {
     ResourceFact::own_memory(MemoryRange::new(
-        Memory::global_pointer(name),
+        SymbolicMemory::global_pointer(name),
         MachineTerm::constant(0),
         MachineTerm::constant(1),
     ))
@@ -27,8 +27,9 @@ fn static_declaration_preserves_a_cell_materialized_before_its_block() {
             ProgramType::Int32,
             int32(5),
         )]);
-    let pointer = Memory::static_pointer("increment", "calls");
-    let state = ExecutionState::new().with_memory(Memory::new().store(pointer.clone(), int32(37)));
+    let pointer = SymbolicMemory::static_pointer("increment", "calls");
+    let state =
+        ExecutionState::new().with_memory(SymbolicMemory::new().store(pointer.clone(), int32(37)));
     assert!(!state.memory().has_block(&pointer.block));
     let initialized = initialize_program_function_globals(&state, &function);
     assert!(initialized.memory().has_block(&pointer.block));
@@ -54,34 +55,38 @@ fn ordinary_function_entry_does_not_restore_static_initializers() {
     assert!(
         ordinary
             .memory()
-            .has_block(&Memory::global_pointer("state").block)
+            .has_block(&SymbolicMemory::global_pointer("state").block)
     );
     assert_ne!(
-        ordinary.memory().load(&Memory::global_pointer("state")),
+        ordinary
+            .memory()
+            .load(&SymbolicMemory::global_pointer("state")),
         ExpressionOutcome::Value(int32(7))
     );
     assert!(
         ordinary
             .memory()
-            .has_block(&Memory::static_pointer("read", "calls").block)
+            .has_block(&SymbolicMemory::static_pointer("read", "calls").block)
     );
     assert_ne!(
         ordinary
             .memory()
-            .load(&Memory::static_pointer("read", "calls")),
+            .load(&SymbolicMemory::static_pointer("read", "calls")),
         ExpressionOutcome::Value(int32(11))
     );
 
     let startup =
         initialize_program_program_storage([function]).expect("no run limit is installed");
     assert_eq!(
-        startup.memory().load(&Memory::global_pointer("state")),
+        startup
+            .memory()
+            .load(&SymbolicMemory::global_pointer("state")),
         ExpressionOutcome::Value(int32(7))
     );
     assert_eq!(
         startup
             .memory()
-            .load(&Memory::static_pointer("read", "calls")),
+            .load(&SymbolicMemory::static_pointer("read", "calls")),
         ExpressionOutcome::Value(int32(11))
     );
 }
@@ -117,12 +122,12 @@ fn startup_coalesces_declarations_and_calls_cannot_replenish_ownership() {
         initialize_program_function_globals(&ExecutionState::new(), &left)
             .memory()
             .clone()
-            .store(Memory::global_pointer("state"), int32(19)),
+            .store(SymbolicMemory::global_pointer("state"), int32(19)),
     );
     let call = initialize_program_function_globals(&state, &left);
     assert!(!call.resources().satisfies_fact(&owned, &assumptions));
     assert_eq!(
-        call.memory().load(&Memory::global_pointer("state")),
+        call.memory().load(&SymbolicMemory::global_pointer("state")),
         ExpressionOutcome::Value(int32(19))
     );
 }
@@ -166,9 +171,9 @@ fn startup_preserves_private_identities_and_const_permissions() {
 #[test]
 fn startup_permission_partition_visits_scale_with_cells_and_blocks() {
     for count in [16u32, 64, 256] {
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for index in 0..count {
-            let pointer = Memory::global_pointer(format!("state_{index}"));
+            let pointer = SymbolicMemory::global_pointer(format!("state_{index}"));
             memory = memory
                 .with_block(pointer.block.clone(), 4)
                 .store(pointer, int32(7));
@@ -242,17 +247,17 @@ fn startup_includes_uncalled_local_statics_and_typed_arrays() {
     assert_eq!(
         startup
             .memory()
-            .load(&Memory::static_pointer("left", "state")),
+            .load(&SymbolicMemory::static_pointer("left", "state")),
         ExpressionOutcome::Value(int32(3))
     );
     assert_eq!(
         startup
             .memory()
-            .load(&Memory::static_pointer("right", "state")),
+            .load(&SymbolicMemory::static_pointer("right", "state")),
         ExpressionOutcome::Value(int32(5))
     );
     let owned = ResourceFact::own_memory(MemoryRange::new_with_element_width(
-        Memory::global_pointer("values"),
+        SymbolicMemory::global_pointer("values"),
         MachineTerm::constant(0),
         MachineTerm::constant(2),
         2,
@@ -311,7 +316,7 @@ fn a_symbolic_global_array_entry_holds_no_cells() {
             let _session = crate::kernel::VerificationSession::enter();
             let function = function_with_global_array(element_type, length);
             let entry = initialize_program_function_globals(&ExecutionState::new(), &function);
-            let base = Memory::global_pointer("buf");
+            let base = SymbolicMemory::global_pointer("buf");
             let width = element_type.byte_width();
             let slot = |index: u32| base.offset_by_bytes(index * width);
             assert!(entry.memory().has_block(&base.block));
@@ -376,7 +381,7 @@ fn an_initialized_array_at_startup_holds_exactly_the_per_element_stores() {
         let function = function_with_initialized_arrays(length, false);
         let startup = initialize_program_program_storage([function.clone()])
             .expect("no run limit is installed");
-        let mut reference = Memory::new();
+        let mut reference = SymbolicMemory::new();
         let mut per_element =
             |pointer: Pointer, element_type: ProgramType, contents: &ArrayContents| {
                 reference = reference.clone().with_block_or_read_only(
@@ -392,12 +397,12 @@ fn an_initialized_array_at_startup_holds_exactly_the_per_element_stores() {
                 }
             };
         per_element(
-            Memory::global_pointer("buf"),
+            SymbolicMemory::global_pointer("buf"),
             ProgramType::Int32,
             function.global_arrays()[0].initial_values(),
         );
         per_element(
-            Memory::static_pointer("main", "counts"),
+            SymbolicMemory::static_pointer("main", "counts"),
             ProgramType::UInt8,
             function.static_arrays()[0].initial_values(),
         );
@@ -480,14 +485,14 @@ fn an_aggregate_array_at_startup_holds_exactly_the_per_field_stores() {
         let startup = initialize_program_program_storage([function.clone()])
             .expect("no run limit is installed");
         let layout = node_layout(wide);
-        let mut reference = Memory::new();
+        let mut reference = SymbolicMemory::new();
         for (pointer, initializers) in [
             (
-                Memory::global_pointer("pool"),
+                SymbolicMemory::global_pointer("pool"),
                 function.global_aggregate_arrays()[0].initializers(),
             ),
             (
-                Memory::static_pointer("main", "slots"),
+                SymbolicMemory::static_pointer("main", "slots"),
                 function.static_aggregate_arrays()[0].initializers(),
             ),
         ] {
@@ -572,8 +577,8 @@ fn a_symbolic_aggregate_array_at_function_entry_holds_no_cells() {
         let function = function_with_aggregate_arrays(length, 0, false);
         let entry = initialize_program_function_globals(&ExecutionState::new(), &function);
         for pointer in [
-            Memory::global_pointer("pool"),
-            Memory::static_pointer("main", "slots"),
+            SymbolicMemory::global_pointer("pool"),
+            SymbolicMemory::static_pointer("main", "slots"),
         ] {
             assert!(entry.memory().has_block(&pointer.block), "[{length}]");
         }

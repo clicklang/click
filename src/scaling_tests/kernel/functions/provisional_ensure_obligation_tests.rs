@@ -6,7 +6,7 @@ use super::*;
 
 #[test]
 fn provisional_ensure_loadability_work_ignores_unrelated_facts() {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let data = Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),

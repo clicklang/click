@@ -24,7 +24,7 @@ fn unsigned_index_membership_ignores_unrelated_facts_and_stores() {
                 left: Box::new(Resource::Memory(bytes(&dst, 5))),
                 right: Box::new(Resource::Memory(range.clone())),
             });
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for index in 0..size {
             // Another index under another bound, on the same base.
             let other = Variable(9_904_000 + index);

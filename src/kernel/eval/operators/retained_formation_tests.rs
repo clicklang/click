@@ -166,8 +166,8 @@ fn retained_block_bounds_require_the_full_index_and_preserve_missing_bounds() {
             block: PointerBlock::Concrete("retained-formation".into()),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let state =
-            ExecutionState::new().with_memory(Memory::new().with_block(base.block.clone(), 64));
+        let state = ExecutionState::new()
+            .with_memory(SymbolicMemory::new().with_block(base.block.clone(), 64));
         let variable = MachineTerm::Variable(Variable(993200));
         let pointer = Pointer {
             block: base.block.clone(),
@@ -219,10 +219,12 @@ fn coordinate_reconstruction_keeps_the_selected_read_state() {
         block: PointerBlock::Concrete("coordinate-retained_state".into()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let before = Memory::new().with_block(pointer.block.clone(), 8).store(
-        pointer.clone(),
-        ProgramValue::Int64(MachineTerm::int64_constant(2)),
-    );
+    let before = SymbolicMemory::new()
+        .with_block(pointer.block.clone(), 8)
+        .store(
+            pointer.clone(),
+            ProgramValue::Int64(MachineTerm::int64_constant(2)),
+        );
     let after = before.clone().store(
         pointer.clone(),
         ProgramValue::Int64(MachineTerm::int64_constant(3)),

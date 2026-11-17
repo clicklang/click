@@ -1448,7 +1448,8 @@ impl ProgramLayouts {
                 .entry(id.function().to_owned())
                 .or_default()
                 .insert(id.source().map(str::to_owned));
-            let pointer = crate::kernel::Memory::string_literal_pointer(&id, literal.bytes());
+            let pointer =
+                crate::kernel::SymbolicMemory::string_literal_pointer(&id, literal.bytes());
             std::sync::Arc::make_mut(&mut self.string_literal_values).insert(
                 id,
                 ProgramValue::typed_pointer(

@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel::{Memory, Pointer, PointerOffsetTerm};
+use crate::kernel::{Pointer, PointerOffsetTerm, SymbolicMemory};
 
 fn view(index: usize, end: u32) -> CheckedResourceFact {
     CheckedResourceFact {
@@ -34,7 +34,7 @@ fn plan() -> StableViewTransferPlan {
 
 #[test]
 fn local_views_preserve_aliases_check_bounds_and_mint_no_owned_escrow() {
-    let memory = Memory::new().with_block(
+    let memory = SymbolicMemory::new().with_block(
         view(0, 2).fact.memory_range().unwrap().base().block.clone(),
         8,
     );

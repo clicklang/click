@@ -996,9 +996,9 @@ mod resource_relation_tests {
     fn resource_relation_keys_match_read_names_without_erasing_their_identity() {
         let _session = crate::kernel::VerificationSession::enter();
         let address = Pointer::symbolic(Variable(3_219_300));
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let other_memory = crate::kernel::intern_memory(
-            Memory::new().store(address.clone(), ProgramValue::Int32(9u32.into())),
+            SymbolicMemory::new().store(address.clone(), ProgramValue::Int32(9u32.into())),
         );
         let name = crate::kernel::eval::load_variable_for_exact_cell(
             &memory,

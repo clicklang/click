@@ -14,7 +14,7 @@ fn word(offset: i64) -> Pointer {
 }
 
 fn load_byte(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     offset: i64,
     value_type: ProgramType,
     byte_order: Option<ByteOrder>,
@@ -35,7 +35,12 @@ fn load_byte(
     paths[0].outcome.clone()
 }
 
-fn store_byte(memory: Memory, offset: i64, byte: ProgramValue, byte_order: ByteOrder) -> Memory {
+fn store_byte(
+    memory: SymbolicMemory,
+    offset: i64,
+    byte: ProgramValue,
+    byte_order: ByteOrder,
+) -> SymbolicMemory {
     let state = ExecutionState::new().with_memory(memory.clone());
     let state = if memory.requires_explicit_scalar_ownership(&word(0)) {
         state.with_resource_context(ResourceContext::new().unchecked_with_fact(
@@ -92,7 +97,7 @@ fn uint8_constant(value: u32) -> ExpressionOutcome {
 #[test]
 fn byte_stores_complete_declared_uint32_and_preserve_byte_observations() {
     let mut memory =
-        Memory::new().with_declared_scalar_block(word(0).block, 4, ProgramType::UInt32);
+        SymbolicMemory::new().with_declared_scalar_block(word(0).block, 4, ProgramType::UInt32);
     // Out-of-order stores must not treat a partial representation as a word.
     for (offset, byte) in [(3, 0xFF), (1, 0x80), (0, 0x11)] {
         memory = store_byte(
@@ -133,24 +138,35 @@ fn byte_stores_complete_declared_uint32_and_preserve_byte_observations() {
 #[test]
 fn byte_assembly_refuses_untyped_other_types_missing_bytes_and_other_orders() {
     use crate::kernel::eval::assemble_declared_uint32_after_byte_store as assemble;
-    let prefix = |mut memory: Memory| {
+    let prefix = |mut memory: SymbolicMemory| {
         for byte in 0..3 {
             memory = memory.store(word(byte), crate::kernel::uint8(1u32));
         }
         memory
     };
-    let typed =
-        prefix(Memory::new().with_declared_scalar_block(word(0).block, 4, ProgramType::UInt32));
+    let typed = prefix(SymbolicMemory::new().with_declared_scalar_block(
+        word(0).block,
+        4,
+        ProgramType::UInt32,
+    ));
     let incoming = crate::kernel::uint8(2u32);
     assert!(assemble(&typed, &word(3), &incoming, Some(ByteOrder::Little)).is_some());
     for order in [None, Some(ByteOrder::Big)] {
         assert!(assemble(&typed, &word(3), &incoming, order).is_none());
     }
     for memory in [
-        prefix(Memory::new().with_block(word(0).block, 4)),
-        prefix(Memory::new().with_declared_scalar_block(word(0).block, 4, ProgramType::Int32)),
-        prefix(Memory::new().with_declared_scalar_block(word(0).block, 8, ProgramType::UInt64)),
-        Memory::new()
+        prefix(SymbolicMemory::new().with_block(word(0).block, 4)),
+        prefix(SymbolicMemory::new().with_declared_scalar_block(
+            word(0).block,
+            4,
+            ProgramType::Int32,
+        )),
+        prefix(SymbolicMemory::new().with_declared_scalar_block(
+            word(0).block,
+            8,
+            ProgramType::UInt64,
+        )),
+        SymbolicMemory::new()
             .with_declared_scalar_block(word(0).block, 4, ProgramType::UInt32)
             .store(word(0), crate::kernel::uint8(1u32)),
         typed.without_local_block(&word(0).block),
@@ -187,7 +203,7 @@ fn is_load_type_mismatch(outcome: &ExpressionOutcome) -> bool {
 
 #[test]
 fn byte_loads_read_each_little_endian_byte_of_a_constant_uint32_cell() {
-    let memory = Memory::new().store(word(0), ProgramValue::UInt32(0x4433_2211.into()));
+    let memory = SymbolicMemory::new().store(word(0), ProgramValue::UInt32(0x4433_2211.into()));
     for (offset, expected) in [(0, 0x11), (1, 0x22), (2, 0x33), (3, 0x44)] {
         assert_eq!(
             load_byte(&memory, offset, ProgramType::UInt8, Some(ByteOrder::Little)),
@@ -204,7 +220,7 @@ fn byte_loads_read_each_little_endian_byte_of_constant_64_bit_cells() {
         ProgramValue::UInt64(MachineTerm::uint64_constant(bits)),
         ProgramValue::Int64(MachineTerm::int64_constant(bits as i64)),
     ] {
-        let memory = Memory::new().store(word(0), cell.clone());
+        let memory = SymbolicMemory::new().store(word(0), cell.clone());
         for offset in 0..8 {
             assert_eq!(
                 load_byte(&memory, offset, ProgramType::UInt8, Some(ByteOrder::Little)),
@@ -218,7 +234,7 @@ fn byte_loads_read_each_little_endian_byte_of_constant_64_bit_cells() {
 #[test]
 fn byte_loads_of_symbolic_cells_extract_the_shifted_masked_byte() {
     let value = MachineTerm::Variable(Variable(7301));
-    let memory = Memory::new().store(word(0), ProgramValue::UInt32(value.clone()));
+    let memory = SymbolicMemory::new().store(word(0), ProgramValue::UInt32(value.clone()));
     assert_eq!(
         load_byte(&memory, 2, ProgramType::UInt8, Some(ByteOrder::Little)),
         // A byte view is the byte's native `uint8` term.
@@ -235,7 +251,7 @@ fn byte_loads_of_symbolic_cells_extract_the_shifted_masked_byte() {
     );
 
     let wide = MachineTerm::Variable(Variable(7302));
-    let memory = Memory::new().store(word(0), ProgramValue::UInt64(wide.clone()));
+    let memory = SymbolicMemory::new().store(word(0), ProgramValue::UInt64(wide.clone()));
     assert_eq!(
         load_byte(&memory, 5, ProgramType::UInt8, Some(ByteOrder::Little)),
         ExpressionOutcome::Value(ProgramValue::UInt8(MachineTerm::machine_integer_cast(
@@ -267,7 +283,7 @@ fn byte_loads_of_symbolic_cells_extract_the_shifted_masked_byte() {
 
 #[test]
 fn signed_byte_loads_sign_extend_a_constant_byte_and_refuse_a_symbolic_one() {
-    let memory = Memory::new().store(word(0), ProgramValue::UInt32(0x0000_7F80.into()));
+    let memory = SymbolicMemory::new().store(word(0), ProgramValue::UInt32(0x0000_7F80.into()));
     assert_eq!(
         load_byte(&memory, 0, ProgramType::Int8, Some(ByteOrder::Little)),
         ExpressionOutcome::Value(crate::kernel::int8(0xFFFF_FF80))
@@ -276,7 +292,7 @@ fn signed_byte_loads_sign_extend_a_constant_byte_and_refuse_a_symbolic_one() {
         load_byte(&memory, 1, ProgramType::Int8, Some(ByteOrder::Little)),
         ExpressionOutcome::Value(crate::kernel::int8(0x7F))
     );
-    let symbolic = Memory::new().store(
+    let symbolic = SymbolicMemory::new().store(
         word(0),
         ProgramValue::UInt32(MachineTerm::Variable(Variable(7303))),
     );
@@ -296,7 +312,7 @@ fn byte_stores_update_the_containing_uint32_cell_in_place() {
         (2, 0x44AB_2211),
         (3, 0xAB33_2211),
     ] {
-        let memory = Memory::new().store(word(0), ProgramValue::UInt32(0x4433_2211.into()));
+        let memory = SymbolicMemory::new().store(word(0), ProgramValue::UInt32(0x4433_2211.into()));
         let after = store_byte(
             memory,
             offset,
@@ -323,7 +339,7 @@ fn byte_stores_update_the_containing_uint32_cell_in_place() {
 fn byte_stores_update_the_containing_uint64_cell_in_place() {
     let bits = 0x8877_6655_4433_2211_u64;
     for offset in 0..8 {
-        let memory = Memory::new().store(
+        let memory = SymbolicMemory::new().store(
             word(0),
             ProgramValue::UInt64(MachineTerm::uint64_constant(bits)),
         );
@@ -341,7 +357,7 @@ fn byte_stores_update_the_containing_uint64_cell_in_place() {
 #[test]
 fn byte_stores_into_a_symbolic_uint32_cell_keep_the_other_bytes() {
     let value = MachineTerm::Variable(Variable(7304));
-    let memory = Memory::new().store(word(0), ProgramValue::UInt32(value.clone()));
+    let memory = SymbolicMemory::new().store(word(0), ProgramValue::UInt32(value.clone()));
     let after = store_byte(memory, 1, crate::kernel::uint8(0x5Au32), ByteOrder::Little);
     assert_eq!(
         after.known_value(&word(0)),
@@ -361,7 +377,7 @@ fn byte_stores_into_a_symbolic_uint32_cell_keep_the_other_bytes() {
 
 #[test]
 fn big_endian_and_uninstalled_byte_orders_have_no_byte_view() {
-    let memory = Memory::new().store(word(0), ProgramValue::UInt32(0x4433_2211.into()));
+    let memory = SymbolicMemory::new().store(word(0), ProgramValue::UInt32(0x4433_2211.into()));
     for byte_order in [Some(ByteOrder::Big), None] {
         assert!(is_load_type_mismatch(&load_byte(
             &memory,
@@ -390,7 +406,7 @@ fn pointer_cells_have_no_byte_view() {
         block: PointerBlock::from("global:target"),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = Memory::new().store(
+    let memory = SymbolicMemory::new().store(
         word(0),
         ProgramValue::typed_pointer(target, ProgramType::Int32Pointer),
     );
@@ -411,7 +427,7 @@ fn pointer_cells_have_no_byte_view() {
 
 #[test]
 fn a_one_byte_cell_is_read_as_its_own_access() {
-    let memory = Memory::new().store(word(1), crate::kernel::uint8(9));
+    let memory = SymbolicMemory::new().store(word(1), crate::kernel::uint8(9));
     assert_eq!(
         containing_integer_cell(&memory, &word(1), Some(ByteOrder::Little)),
         None
@@ -637,7 +653,7 @@ fn integer_loads_read_a_cell_of_the_other_signedness_as_its_bits() {
 /// is read through `unsigned char` as its bits, and the reverse.
 #[test]
 fn execution_loads_read_character_cells_of_the_other_signedness() {
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .store(word(0), crate::kernel::int8(-56i32 as u32))
         .store(word(1), crate::kernel::uint8(200));
     assert_eq!(
@@ -659,7 +675,8 @@ mod scaling_tests {
 fn declared_word_read_representation_is_typed_live_and_state_specific() {
     use crate::kernel::eval::declared_uint32_read_representation as representation;
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = Memory::new().with_declared_scalar_block(word(0).block, 4, ProgramType::UInt32);
+    let memory =
+        SymbolicMemory::new().with_declared_scalar_block(word(0).block, 4, ProgramType::UInt32);
     let first = representation(&memory, &word(0), Some(ByteOrder::Little)).unwrap();
     let changed = memory.clone().store(word(0), crate::kernel::uint32(7u32));
     let second = representation(&changed, &word(0), Some(ByteOrder::Little)).unwrap();
@@ -668,9 +685,9 @@ fn declared_word_read_representation_is_typed_live_and_state_specific() {
         assert!(representation(&memory, &word(0), order).is_none());
     }
     for unsupported in [
-        Memory::new().with_block(word(0).block, 4),
-        Memory::new().with_declared_scalar_block(word(0).block, 4, ProgramType::Int32),
-        Memory::new().with_declared_scalar_block(word(0).block, 8, ProgramType::UInt64),
+        SymbolicMemory::new().with_block(word(0).block, 4),
+        SymbolicMemory::new().with_declared_scalar_block(word(0).block, 4, ProgramType::Int32),
+        SymbolicMemory::new().with_declared_scalar_block(word(0).block, 8, ProgramType::UInt64),
         memory.clone().without_local_block(&word(0).block),
     ] {
         assert!(representation(&unsupported, &word(0), Some(ByteOrder::Little)).is_none());

@@ -14,10 +14,12 @@ fn local_initialization_havoc_checks_scale_with_changed_cells() {
     let facts = PureFactContext::new();
     let mut samples = Vec::new();
     for count in [16, 64, 256, 1024] {
-        let mut before = Memory::new().with_block(target.block.clone(), 8).store(
-            target.clone(),
-            ProgramValue::Int32(MachineTerm::constant(7)),
-        );
+        let mut before = SymbolicMemory::new()
+            .with_block(target.block.clone(), 8)
+            .store(
+                target.clone(),
+                ProgramValue::Int32(MachineTerm::constant(7)),
+            );
         for index in 0..count {
             let pointer = Pointer {
                 block: format!("local:ambient-{index}").into(),

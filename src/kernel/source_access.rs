@@ -172,7 +172,7 @@ impl ReferenceObservationSource {
     pub(super) fn new(
         source: Arc<ReferenceAccessSourceId>,
         pointer: Pointer,
-        memory: &Memory,
+        memory: &SymbolicMemory,
         value_type: ProgramType,
     ) -> Self {
         Self(Some(Arc::new(ReferenceObservation::Read {
@@ -412,7 +412,7 @@ mod tests {
             block: "source-read".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let memory = Memory::new()
+        let memory = SymbolicMemory::new()
             .with_block(pointer.block.clone(), 4)
             .store(pointer.clone(), int32(7));
         let source = Arc::new(ReferenceAccessSourceId {

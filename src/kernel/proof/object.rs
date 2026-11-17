@@ -3281,7 +3281,7 @@ mod tests {
         };
         use crate::kernel::{
             ConditionTerm, ExecutionState, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType,
-            Memory, Pointer, PointerOffsetTerm, ProgramValue, SharedIntegerRangeEndpoint,
+            Pointer, PointerOffsetTerm, ProgramValue, SharedIntegerRangeEndpoint, SymbolicMemory,
         };
         type TestProof = ProofObject<
             (),
@@ -3310,8 +3310,8 @@ mod tests {
                 ),
             )
         };
-        let before = Memory::new().with_block("alpha", 16);
-        let loadable = |memory: Memory, variable| Proposition::ForAll {
+        let before = SymbolicMemory::new().with_block("alpha", 16);
+        let loadable = |memory: SymbolicMemory, variable| Proposition::ForAll {
             name: Default::default(),
             var: variable,
             sort: Sort::ProgramInt32,

@@ -867,7 +867,7 @@ fn comparison_read_fixture(value: MachineTerm) -> (Variable, Variable) {
         offset: PointerOffsetTerm::scaled_int32_node(value, 4),
     };
     let memory = crate::kernel::intern_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_block("opaque-comparison", 64)
             .store(pointer(index.clone()), ProgramValue::Int32(value)),
     );

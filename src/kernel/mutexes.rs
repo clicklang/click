@@ -3243,8 +3243,8 @@ mod tests {
     fn automatic_holder() -> (ExecutionState, Pointer) {
         let state = ExecutionState::new().with_local("holder", super::super::int32(0));
         let slot = state.locals().slot("holder").unwrap().clone();
-        let state =
-            state.with_memory(super::super::Memory::new().with_block(slot.block.clone(), 88));
+        let state = state
+            .with_memory(super::super::SymbolicMemory::new().with_block(slot.block.clone(), 88));
         (state, slot.offset_by_bytes(8))
     }
 
@@ -3736,8 +3736,8 @@ mod tests {
             initialization_storage_refusal(&ended, &pointer, 40, 8, &PureFactContext::new()),
             Some(RuntimeError::MissingResource { .. })
         ));
-        let read_only =
-            state.with_memory(Memory::new().with_read_only_block(pointer.block.clone(), 48));
+        let read_only = state
+            .with_memory(SymbolicMemory::new().with_read_only_block(pointer.block.clone(), 48));
         assert!(matches!(
             initialization_storage_refusal(&read_only, &pointer, 40, 8, &PureFactContext::new()),
             Some(RuntimeError::MissingResource { .. })

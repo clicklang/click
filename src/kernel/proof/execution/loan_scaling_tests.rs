@@ -114,8 +114,8 @@ fn symbolic_contract_input_ledger(count: usize) -> LoanLedger {
 }
 
 /// `count` concrete cells in the same block those loans protect.
-fn cells_in_the_symbolic_block(count: usize) -> Memory {
-    let mut memory = Memory::new();
+fn cells_in_the_symbolic_block(count: usize) -> SymbolicMemory {
+    let mut memory = SymbolicMemory::new();
     for index in 0..count {
         memory = memory.store(
             Pointer {
@@ -134,7 +134,7 @@ fn symbolic_loan_retains_its_exact_cached_value_without_a_search() {
     let range = parameter_view(0).memory_range().unwrap().clone();
     assert!(ledger.permits_memory_access(&range).is_err());
     let pointer = range.base().clone();
-    let before = Memory::new().store(pointer.clone(), int32(7));
+    let before = SymbolicMemory::new().store(pointer.clone(), int32(7));
     let after = before.clone().with_loop_memory_havoc_preserving_loans(
         Variable(7),
         &BTreeSet::new(),

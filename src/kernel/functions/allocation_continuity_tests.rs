@@ -89,7 +89,7 @@ fn contract_retirement_invalidates_creation_history_even_with_replacement() {
     let bytes = MachineTerm::constant(16);
     let input = ResourceContext::new()
         .unchecked_with_fact(ResourceFact::own_allocation(base.clone(), bytes.clone()));
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .with_heap_allocation_claim(base.clone(), AllocationSize::int32(bytes.clone()))
         .expect("live input allocation");
     let mut state = ExecutionState::new()
@@ -282,7 +282,7 @@ fn continuity_requires_both_the_allocation_base_and_size() {
 #[test]
 fn allocation_size_continuity_uses_graph_with_state_scope() {
     let _session = crate::kernel::VerificationSession::enter();
-    let before = crate::kernel::intern_memory(Memory::new().with_block("alloc-size", 8));
+    let before = crate::kernel::intern_memory(SymbolicMemory::new().with_block("alloc-size", 8));
     let pointer = |index| Pointer {
         block: "alloc-size".into(),
         offset: PointerOffsetTerm::scale_int32(index, 4),
@@ -349,7 +349,7 @@ fn allocation_companion_call(unrelated: u64) -> (Pointer, ExecutionState, Execut
         block: PointerBlock::Heap(984_000),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .with_heap_allocation_claim(base.clone(), AllocationSize::int32(4))
         .unwrap();
     let mut caller = ExecutionState::new()

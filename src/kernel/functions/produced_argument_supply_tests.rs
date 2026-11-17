@@ -19,7 +19,7 @@ fn state(count: u32) -> ExecutionState {
                 offset: PointerOffsetTerm::Constant(0),
             }),
         )
-        .with_memory(Memory::new().with_block("produced-cells", count * 4))
+        .with_memory(SymbolicMemory::new().with_block("produced-cells", count * 4))
 }
 
 #[test]

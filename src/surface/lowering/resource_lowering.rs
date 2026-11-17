@@ -800,9 +800,9 @@ fn reject_aggregate_parameter_storage_resource(
 }
 
 pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
-    mut memory: Memory,
+    mut memory: SymbolicMemory,
     loadable_ranges: &BTreeMap<String, ConcreteMemoryRangeSeed>,
-) -> Memory {
+) -> SymbolicMemory {
     let base_memory = memory.clone();
     for range in loadable_ranges.values() {
         if let Some(layout) = &range.struct_layout {
@@ -875,9 +875,9 @@ pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
 pub(in crate::surface) fn visit_struct_field_cells(
     field: &crate::languages::interface::RecordField,
     element_pointer: &Pointer,
-    mut memory: Memory,
-    mut visit: impl FnMut(Memory, Pointer, ProgramType) -> Memory,
-) -> Memory {
+    mut memory: SymbolicMemory,
+    mut visit: impl FnMut(SymbolicMemory, Pointer, ProgramType) -> SymbolicMemory,
+) -> SymbolicMemory {
     let field_pointer = element_pointer.offset_by_bytes(field.offset_bytes());
     let field_type = field.interface_type().to_kernel_type();
     let Some((element_type, length)) = array_field_elements(field_type) else {
@@ -927,15 +927,15 @@ fn seeds_symbolic_field_cell(element_type: ProgramType) -> bool {
 }
 
 fn materialize_symbolic_access_resource_cells(
-    mut memory: Memory,
+    mut memory: SymbolicMemory,
     state: &ExecutionState,
     requires: &[Requirement],
     parameter_binding: ParameterBinding<'_>,
-) -> Result<Memory, ClickError> {
+) -> Result<SymbolicMemory, ClickError> {
     // A segment based at a static pointer reads it before seeding the cells
     // it points at; keep that read so a later read of the pointer is the
     // same value rather than a question of whether those cells alias it.
-    let seed = |memory: Memory, segment: &ContractSegment| {
+    let seed = |memory: SymbolicMemory, segment: &ContractSegment| {
         let memory = match &segment.base {
             ProgramExpression::Variable(name) => {
                 crate::kernel::with_static_pointer_read_cached(state, memory, name)
@@ -980,10 +980,10 @@ fn materialize_symbolic_access_resource_cells(
 /// initialized, so the proof starts with them unwritten: a read needs a store
 /// or `defined` evidence first, as for a fresh local.
 fn mark_uninitialized_resource_memory(
-    mut memory: Memory,
+    mut memory: SymbolicMemory,
     requires: &[Requirement],
     parameter_binding: ParameterBinding<'_>,
-) -> Result<Memory, ClickError> {
+) -> Result<SymbolicMemory, ClickError> {
     for requirement in requires {
         let Requirement::Resource(resource) = requirement else {
             continue;
@@ -1013,7 +1013,7 @@ fn mark_uninitialized_resource_memory(
                                         )
                                     })?
                             }
-                            _ => Memory::UNBOUNDED_UNWRITTEN_SPAN,
+                            _ => SymbolicMemory::UNBOUNDED_UNWRITTEN_SPAN,
                         };
                         let start = offset_pointer_by_elements(
                             evaluated.base,
@@ -1033,7 +1033,7 @@ fn mark_uninitialized_resource_memory(
                                     crate::surface::diagnostics::describe_contract_segment(segment)
                                 ))
                             })?;
-                        (base, Memory::UNBOUNDED_UNWRITTEN_SPAN)
+                        (base, SymbolicMemory::UNBOUNDED_UNWRITTEN_SPAN)
                     }
                 };
             memory = memory.with_uninitialized_object(start, span);
@@ -1296,10 +1296,10 @@ pub(in crate::surface) fn folded_matched_instance_note(
 }
 
 fn materialize_access_segment_cells(
-    mut memory: Memory,
+    mut memory: SymbolicMemory,
     segment: &ContractSegment,
     parameter_binding: ParameterBinding<'_>,
-) -> Result<Memory, ClickError> {
+) -> Result<SymbolicMemory, ClickError> {
     let state = ExecutionState::new().with_memory(memory.clone());
     let source_segment = segment;
     let Ok(segment) = evaluate_requirement_segment(parameter_binding, &state, source_segment)
@@ -1788,7 +1788,7 @@ pub(in crate::surface) fn resource_context_from_requirements(
 pub(in crate::surface) fn lower_resource_clause(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
 ) -> Result<ResourceFact, ClickError> {
     if matches!(resource, ResourceClause::MemoryAggregate { .. }) {
         let mut facts = lower_resource_clause_facts(resource, parameter_binding, memory)?;
@@ -1809,7 +1809,7 @@ pub(in crate::surface) fn lower_resource_clause(
 pub(in crate::surface) fn lower_resource_clause_facts(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
 ) -> Result<Vec<ResourceFact>, ClickError> {
     let values = resource_clause_parameter_values(resource, parameter_binding)?;
     let state = ExecutionState::new().with_memory(memory.clone());
@@ -2011,7 +2011,7 @@ pub(in crate::surface) fn lower_resource_clause_facts_at_state_with_result_and_e
 struct ClauseParameters<'a> {
     parameters: &'a [crate::languages::interface::ImportedParameter],
     values: &'a BTreeMap<String, ProgramValue>,
-    memory: &'a Memory,
+    memory: &'a SymbolicMemory,
     index: Option<&'a crate::surface::ParameterIndex>,
     array_refs: std::cell::OnceCell<ClickArrayRefs>,
 }
@@ -2020,7 +2020,7 @@ impl<'a> ClauseParameters<'a> {
     fn new(
         parameters: &'a [crate::languages::interface::ImportedParameter],
         values: &'a BTreeMap<String, ProgramValue>,
-        memory: &'a Memory,
+        memory: &'a SymbolicMemory,
     ) -> Self {
         Self {
             parameters,
@@ -3099,7 +3099,7 @@ fn lower_resource_segment_with_values(
 fn loadable_requirement_props(
     requirement: &Requirement,
     parameter_binding: ParameterBinding<'_>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> Result<Vec<Proposition>, ClickError> {
     if let Requirement::LoadableSegment { segment } = requirement
@@ -3153,7 +3153,7 @@ fn loadable_requirement_props(
 pub(in crate::surface) fn resource_clause_loadable_prop(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
 ) -> Result<Option<Proposition>, ClickError> {
     resource_clause_loadable_prop_at_state(
         resource,
@@ -3273,14 +3273,14 @@ pub(in crate::surface) fn resource_clause_memory_ranges_at_state(
 }
 
 pub(in crate::surface) fn memory_range_loadable_prop(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     range: &MemoryRange,
 ) -> Proposition {
     memory_range_loadable_atom_prop(memory, range)
 }
 
 pub(in crate::surface) fn memory_range_loadable_atom_prop(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     range: &MemoryRange,
 ) -> Proposition {
     if range.wide_bounds().is_some() {
@@ -4041,7 +4041,7 @@ pub(in crate::surface) fn parameter_values_named(
 pub(in crate::surface) fn array_refs_for_values(
     parameter_binding: ParameterBinding<'_>,
     values: &BTreeMap<String, ProgramValue>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
 ) -> ClickArrayRefs {
     let Some(index) = parameter_binding.index else {
         return array_refs_for_parameters(parameter_binding.parameters, values, memory);
@@ -4117,7 +4117,7 @@ fn resource_clause_parameter_values(
 pub(in crate::surface) fn array_refs_for_parameters(
     parameters: &[crate::languages::interface::ImportedParameter],
     values: &BTreeMap<String, ProgramValue>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
 ) -> ClickArrayRefs {
     crate::instrumentation::record_deterministic_work(parameters.len());
     parameters

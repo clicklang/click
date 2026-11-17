@@ -102,8 +102,8 @@ fn memory_effect_write_collection_preserves_each_access_width() {
         offset: PointerOffsetTerm::Constant(3),
     };
     let fact = ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
-        before: Memory::new(),
-        after: Memory::new(),
+        before: SymbolicMemory::new(),
+        after: SymbolicMemory::new(),
         writes: vec![(pointer.clone(), 1), (pointer.clone(), 2)],
     });
 

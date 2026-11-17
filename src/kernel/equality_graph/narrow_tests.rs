@@ -211,7 +211,7 @@ fn check_narrow_store_equation(format: Ty) {
         let stored = constant(format, bits);
         let kind = LoadKind::of_value(&value).unwrap();
         let memory = intern_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block("narrow", 8)
                 .store(pointer.clone(), value.clone()),
         );

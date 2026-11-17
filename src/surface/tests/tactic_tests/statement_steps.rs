@@ -263,7 +263,7 @@ fn clone_field_stores_with_observed_source_resource_verify() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_00")]
 fn simple_statement_transition_does_not_transport_facts_automatically() {
-    let base_memory = Memory::new();
+    let base_memory = SymbolicMemory::new();
     let first = Pointer {
         block: "arg-memory".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -1151,7 +1151,7 @@ fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
         block: "arg-memory".into(),
         offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(42)), 4),
     };
-    let read = Pointer::loaded_value(&crate::kernel::intern_memory(Memory::new()), &owner);
+    let read = Pointer::loaded_value(&crate::kernel::intern_memory(SymbolicMemory::new()), &owner);
     let proposition = Proposition::ConditionIs(
         ConditionTerm::pointer_value_equal(
             crate::kernel::PointerValue::new(read, ProgramType::Int32Pointer),

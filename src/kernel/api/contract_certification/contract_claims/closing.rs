@@ -882,14 +882,14 @@ mod tests {
         size: u32,
     ) -> (ExecutionState, ExecutionFacts, PureFactContext) {
         let anchor = if local {
-            Memory::local_pointer("private-output")
+            SymbolicMemory::local_pointer("private-output")
         } else {
             Pointer {
                 block: "global:public-output".into(),
                 offset: PointerOffsetTerm::Constant(0),
             }
         };
-        let mut memory = Memory::new().with_block(anchor.block.clone(), 4);
+        let mut memory = SymbolicMemory::new().with_block(anchor.block.clone(), 4);
         let alias = Pointer::loaded_value(
             &crate::kernel::intern_memory(memory.clone()),
             &Pointer::symbolic(Variable(988_000)),

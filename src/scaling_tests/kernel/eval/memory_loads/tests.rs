@@ -8,7 +8,7 @@ use super::*;
 fn logical_cached_pointer_read_carries_its_current_cell_equation() {
     let _session = crate::kernel::VerificationSession::enter();
     let empty = PureFactContext::new();
-    let base = Memory::new();
+    let base = SymbolicMemory::new();
     let address = Pointer::symbolic(Variable(955_901));
     let alias = Pointer::symbolic(Variable(955_902));
     let model = Pointer::symbolic(Variable(955_903));
@@ -192,7 +192,7 @@ fn naming_a_load_after_a_call_is_flat_in_its_address_read_depth() {
     for depth in [1_u64, 2, 4, 8, 16] {
         let _session = crate::kernel::VerificationSession::enter();
         let empty = PureFactContext::new();
-        let base = Memory::new();
+        let base = SymbolicMemory::new();
         let read = |address: &Pointer| {
             let ProgramValue::Pointer(value) = canonicalized_symbolic_load_value_with_identity(
                 &base,
@@ -271,13 +271,13 @@ fn pointer_read_observations_check_frames_scope_and_scaling() {
     let _session = crate::kernel::VerificationSession::enter();
     let address = Pointer::symbolic(Variable(960_000));
     let alias = Pointer::symbolic(Variable(960_001));
-    let base = Memory::new();
+    let base = SymbolicMemory::new();
     let empty = PureFactContext::new();
     let facts = empty.clone().assume_condition(
         ConditionTerm::pointer_equal(address.clone(), alias.clone()),
         true,
     );
-    let read = |memory: &Memory, address: &Pointer, purpose| {
+    let read = |memory: &SymbolicMemory, address: &Pointer, purpose| {
         let ProgramValue::Pointer(value) = canonicalized_symbolic_load_value_with_identity(
             memory,
             address,
@@ -366,7 +366,7 @@ fn wide_observations_preserve_width_scope_and_selected_query_scaling() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Pointer::symbolic(Variable(940_000));
     let other = Pointer::symbolic(Variable(940_001));
-    let base = intern_memory(Memory::new());
+    let base = intern_memory(SymbolicMemory::new());
     let load = |memory: &SharedMemory, pointer: &Pointer, kind| {
         MachineTerm::MemoryLoad(ProgramPoint::at(memory), Box::new(pointer.clone()), kind)
     };
@@ -458,7 +458,7 @@ fn logical_reads_of_a_returned_field_share_checked_alias_identity() {
         offset: PointerOffsetTerm::Constant(8),
     };
     let alias = Pointer::symbolic(Variable(944_019));
-    let before = Memory::new()
+    let before = SymbolicMemory::new()
         .with_block(field.block.clone(), 16)
         .store(field.clone(), ProgramValue::Int32(MachineTerm::constant(1)));
     let range = MemoryRange::new_with_element_width(field.clone(), 0u32.into(), 4u32.into(), 1);
@@ -615,7 +615,7 @@ fn logical_read_alias_samples(sizes: &[u64]) -> Vec<(usize, usize)> {
             MemoryRange::new_with_element_width(owner.clone(), 0u32.into(), 3u32.into(), 4),
         ));
     let before = empty.assume_proposition(Proposition::ResourceComposition(resources));
-    let mut memory = Memory::new();
+    let mut memory = SymbolicMemory::new();
     for offset in [0, 4, 8] {
         memory = memory.store(owner.offset_by_bytes(offset), int32(7));
     }
@@ -771,7 +771,7 @@ fn logical_scalar_read_meets_model_cell_through_later_external_alias() {
     let field = owner.offset_by_bytes(8);
     let queried = alias.offset_by_bytes(8);
     let value = ProgramValue::UInt64(MachineTerm::uint64_constant(17));
-    let memory = Memory::new().materialize_named_cell(field.clone(), value.clone());
+    let memory = SymbolicMemory::new().materialize_named_cell(field.clone(), value.clone());
     let empty = PureFactContext::new();
     let resources =
         ResourceContext::new_with_equalities(&empty).unchecked_with_fact(ResourceFact::own_memory(
@@ -782,7 +782,7 @@ fn logical_scalar_read_meets_model_cell_through_later_external_alias() {
         .assume_proposition(
             crate::kernel::memory_history::store_value_equation(&memory, &field, &value).unwrap(),
         );
-    let read = |memory: &Memory, pointer: Pointer, context: &PureFactContext| {
+    let read = |memory: &SymbolicMemory, pointer: Pointer, context: &PureFactContext| {
         let paths = evaluate_logical_memory_load_paths(
             memory,
             pointer,
@@ -899,7 +899,7 @@ fn logical_scalar_read_meets_model_cell_through_later_external_alias() {
 #[test]
 fn pointer_read_premises_register_definitions_before_transitive_queries() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let retained_state = intern_memory_ref(&memory);
     let base = Pointer {
         block: PointerBlock::ExternalArgument,
@@ -990,7 +990,7 @@ fn pointer_read_premises_register_definitions_before_transitive_queries() {
 #[test]
 fn seeded_pointer_cells_retain_their_typed_load_definition() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let retained_state = intern_memory_ref(&memory);
     let base = Pointer {
         block: PointerBlock::ExternalArgument,
@@ -1063,7 +1063,7 @@ fn cached_pointer_value_keeps_its_defining_coordinates_and_scales() {
     let cursor = Pointer::symbolic(Variable(195_101));
     let address = owner.offset_by_bytes(16);
     let cursor_address = cursor.offset_by_bytes(16);
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let retained_state = intern_memory_ref(&memory);
     let bits = canonical_form_of_load(retained_state, address.clone(), LoadKind::Int32);
     let cached = ProgramValue::Int32(bits);
@@ -1158,7 +1158,7 @@ fn cached_pointer_reads_retain_their_current_cell_identity() {
     let empty = PureFactContext::new();
     let mut samples = Vec::new();
     for count in [8u64, 32, 128, 512] {
-        let mut memory = Memory::new().store(
+        let mut memory = SymbolicMemory::new().store(
             alias.clone(),
             ProgramValue::typed_pointer(stored.clone(), ProgramType::Int64Pointer),
         );
@@ -1271,7 +1271,7 @@ fn cached_pointer_reads_retain_their_current_cell_identity() {
 
 #[test]
 fn logical_pointer_read_queries_do_not_scan_unrelated_definitions() {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let context = PureFactContext::new();
     let a = Pointer::symbolic(Variable(92_220));
     let b = Pointer::symbolic(Variable(92_221));
@@ -1337,7 +1337,7 @@ fn stored_pointer_read_preserves_blocks_and_ignores_unrelated_cells() {
         let address = Pointer::symbolic(Variable(97_001));
         let stored = Pointer::symbolic(Variable(97_002));
         let wrong = Pointer::symbolic(Variable(97_003));
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for index in 1..=count {
             memory = memory.store(
                 address.offset_by_bytes(index * 8),
@@ -1403,7 +1403,7 @@ fn recorded_pointer_normalization_has_bounded_history_work() {
     let mut known_work = None;
     let mut missing_work = None;
     for count in [64, 256, 1024] {
-        let mut memory = Memory::new().with_block("bounded-pointer-normalization", 16384);
+        let mut memory = SymbolicMemory::new().with_block("bounded-pointer-normalization", 16384);
         for index in 1..=count {
             memory = memory.store(
                 address.offset_by_bytes(index * 8),
@@ -1460,7 +1460,7 @@ fn complete_pointer_domains_across_cached_observations_scale_with_new_cells() {
     for count in [16u64, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
         let address = Pointer::symbolic(Variable(199_101));
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         let ProgramValue::Pointer(original) =
             symbolic_load_value(&memory, &address, ProgramType::Int64Pointer).unwrap()
         else {
@@ -1494,7 +1494,7 @@ fn complete_pointer_domains_across_cached_observations_scale_with_new_cells() {
 fn cached_raw_pointer_names_ignore_unrelated_read_definitions() {
     let costs = [16u64, 64, 256, 1024].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Memory::new();
+        let base = SymbolicMemory::new();
         let origin = intern_memory_ref(&base);
         for i in 0..size {
             base.symbolic_pointer_load(
@@ -1570,7 +1570,7 @@ fn cached_raw_pointer_names_ignore_unrelated_read_definitions() {
     );
 }
 
-fn opaque_word_call_frame(size: u32) -> (Memory, PureFactContext, Pointer) {
+fn opaque_word_call_frame(size: u32) -> (SymbolicMemory, PureFactContext, Pointer) {
     let input = |name| Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(name)), 4),
@@ -1627,7 +1627,7 @@ fn opaque_word_call_frame(size: u32) -> (Memory, PureFactContext, Pointer) {
         ),
         &context,
     );
-    let memory = Memory::new().with_call_memory_havoc(
+    let memory = SymbolicMemory::new().with_call_memory_havoc(
         Variable(989_702),
         &[MemoryRange::new_with_element_width(
             input(989_701),
@@ -1757,7 +1757,7 @@ fn naming_an_unsigned_32_bit_read_costs_what_naming_its_word_costs() {
     let mut samples = Vec::new();
     for size in [16_u64, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for i in 0..size {
             memory = memory.store(Pointer::symbolic(Variable(993_000 + i)), int32(7));
         }
@@ -1820,7 +1820,7 @@ fn complete_pointer_read_definitions_scale_with_selected_reads() {
                 }),
             );
             let memory = intern_memory_ref(
-                &Memory::new().store(slot.clone(), ProgramValue::Pointer(stored.clone())),
+                &SymbolicMemory::new().store(slot.clone(), ProgramValue::Pointer(stored.clone())),
             );
             let read = PointerValue::new(
                 Pointer::version_read(&memory, &slot),
@@ -1878,7 +1878,7 @@ fn typed_pointer_read_store_frames_use_the_selected_edge_and_owners() {
         }
         let mut context =
             PureFactContext::new().assume_proposition(Proposition::ResourceComposition(resources));
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for n in 0..count {
                 let before = intern_memory_ref(&memory);
@@ -1944,7 +1944,7 @@ fn scalar_projection_congruence_scales_with_selected_versions() {
             );
         }
         let range = MemoryRange::new_with_element_width(field.clone(), 0u32.into(), 1u32.into(), 4);
-        let mut memory = Memory::new().with_block(field.block.clone(), 16);
+        let mut memory = SymbolicMemory::new().with_block(field.block.clone(), 16);
         let mut reads = Vec::new();
         for i in 0..selected {
             memory = memory.with_call_memory_havoc(
@@ -2007,7 +2007,7 @@ fn symbolic_logical_wide_reads_do_not_scan_ambient_cells_or_facts() {
         let _session = crate::kernel::VerificationSession::enter();
         let slot = Pointer::symbolic(Variable(989_970));
         let alias = Pointer::symbolic(Variable(989_971));
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         let mut context = PureFactContext::new()
             .allow_symbolic_contract_loads()
             .prefer_symbolic_external_loads()
@@ -2075,8 +2075,8 @@ fn structural_read_definitions_scale_across_cache_only_records() {
     for count in [16u64, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
         let address = Pointer::symbolic(Variable(299_101));
-        let mut memory = Memory::new();
-        let raw = |memory: &Memory| {
+        let mut memory = SymbolicMemory::new();
+        let raw = |memory: &SymbolicMemory| {
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(intern_memory_ref(memory))),
                 Box::new(address.clone()),
@@ -2117,7 +2117,7 @@ fn symbolic_pointer_observations_scale_with_selected_cells() {
     for count in [8u32, 32, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Pointer::symbolic(Variable(299_301));
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         // Grow unrelated stored state as well as the chain of observations.
         for i in 0..count {
             memory = memory.store(
@@ -2171,7 +2171,7 @@ fn structural_index_read_chains_have_near_linear_producer_work() {
         let mut samples = Vec::new();
         for size in [16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
-            let mut memory = Memory::new();
+            let mut memory = SymbolicMemory::new();
             for index in 0..unrelated {
                 memory = memory.store(
                     Pointer {
@@ -2223,7 +2223,7 @@ fn immediate_pointer_store_readability_does_not_walk_history() {
     };
     let mut samples = Vec::new();
     for size in [8, 32, 128, 512] {
-        let mut memory = Memory::new()
+        let mut memory = SymbolicMemory::new()
             .with_block(cell.block.clone(), 8)
             .with_block(target.block.clone(), 4);
         for i in 0..size {
@@ -2319,7 +2319,7 @@ fn narrow_read_selection_ignores_unrelated_wide_observations() {
     let mut samples = Vec::new();
     for size in [8, 32, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = intern_memory_ref(&Memory::new());
+        let memory = intern_memory_ref(&SymbolicMemory::new());
         let pointer = Pointer::symbolic(Variable(995_000));
         record_load_access_width(memory.memory(), &pointer, 8);
         for i in 0..size {

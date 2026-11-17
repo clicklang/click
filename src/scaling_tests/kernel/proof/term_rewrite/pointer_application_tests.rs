@@ -84,7 +84,7 @@ fn pure_pointer_legacy_scalar_substitution_visits_the_shared_dag_once() {
 #[test]
 fn full_pointer_substitution_visits_shared_read_origins_once() {
     let _session = VerificationSession::enter();
-    let memory = intern_memory(Memory::new());
+    let memory = intern_memory(SymbolicMemory::new());
     let p = PointerValue::new(Pointer::symbolic(Variable(810)), ProgramType::Int32Pointer);
     let q = PointerValue::new(Pointer::symbolic(Variable(811)), ProgramType::Int32Pointer);
     let mut costs = Vec::new();
@@ -121,7 +121,7 @@ fn full_pointer_resource_relationship_rewriting_scales_with_its_arguments() {
     let mut samples = Vec::new();
     for size in [16usize, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = intern_memory(Memory::new());
+        let memory = intern_memory(SymbolicMemory::new());
         let source = PointerValue::from_read(
             Pointer::symbolic(Variable(425_100)),
             ProgramType::Int32Pointer,

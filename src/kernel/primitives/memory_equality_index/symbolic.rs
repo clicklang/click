@@ -634,7 +634,7 @@ mod tests {
         let alias = Pointer::symbolic(Variable(940_001));
         let n = MachineTerm::Variable(Variable(940_002));
         let m = MachineTerm::Variable(Variable(940_003));
-        let retained_state = crate::kernel::intern_memory(Memory::new());
+        let retained_state = crate::kernel::intern_memory(SymbolicMemory::new());
         let loaded = Pointer::loaded_value(&retained_state, &slot);
         let loaded_alias = Pointer::loaded_value(&retained_state, &alias);
         let empty = PureFactContext::new();
@@ -667,7 +667,7 @@ mod tests {
             resources.symbolic_range_read_supported(&required, &empty, None),
             None
         );
-        let declared = crate::kernel::intern_memory(Memory::new().with_block("later", 8));
+        let declared = crate::kernel::intern_memory(SymbolicMemory::new().with_block("later", 8));
         let declared_range = range(
             &Pointer::loaded_value(&declared, &alias),
             0u32.into(),

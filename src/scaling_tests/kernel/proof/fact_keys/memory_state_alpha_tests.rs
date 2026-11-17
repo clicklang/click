@@ -8,7 +8,7 @@ use super::*;
 fn state_alpha_work_ignores_unrelated_heap_size() {
     let make_memory = |unrelated_size| {
         crate::kernel::intern_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block("retained_state-alpha", 8)
                 .with_block("unrelated-retained_state-alpha", unrelated_size),
         )
@@ -96,7 +96,8 @@ fn state_alpha_registered_load_branching_dags_stay_linear() {
 
 #[test]
 fn state_alpha_nested_shared_load_dags_scale_linearly() {
-    let memory = crate::kernel::intern_memory(Memory::new().with_block("retained_state-alpha", 8));
+    let memory =
+        crate::kernel::intern_memory(SymbolicMemory::new().with_block("retained_state-alpha", 8));
     let mut work = Vec::new();
     for depth in [8usize, 16, 32, 64] {
         let item = Variable(315_001);
@@ -207,7 +208,7 @@ fn algebraic_read_fold_alpha_keys_ignore_unrelated_cells() {
     };
     let mut work = Vec::new();
     for unrelated in [0u64, 8, 64, 512] {
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for index in 0..unrelated {
             memory = memory.store(
                 Pointer {

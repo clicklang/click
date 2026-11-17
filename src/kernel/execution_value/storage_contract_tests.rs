@@ -338,7 +338,7 @@ fn algebraic_storage_keys_preserve_native_order_and_carrier_classes() {
     }
     for address in [998738, 998739] {
         values.push(make(AlgebraicTermNode::MemoryLoad {
-            memory: intern_memory(Memory::new()),
+            memory: intern_memory(SymbolicMemory::new()),
             pointer: Box::new(Pointer::symbolic(Variable(address))),
         }));
     }

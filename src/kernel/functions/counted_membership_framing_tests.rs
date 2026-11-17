@@ -30,7 +30,7 @@ fn a_call_keeps_an_argument_direct_composites_memory_without_opening_it() {
         "boxed".into(),
         vec![ProgramValue::pointer(object(1))],
     ));
-    let memory = Memory::new().store(object(1), int32(5));
+    let memory = SymbolicMemory::new().store(object(1), int32(5));
     let assumptions = PureFactContext::new();
     let state = ExecutionState::new()
         .with_memory(memory.clone())
@@ -82,7 +82,7 @@ fn caller_flat_exclusions_keep_new_composites_fragments_and_views() {
         .unchecked_with_fact(ResourceFact::own_memory(flat.clone()))
         .unchecked_with_fact(boxed(other));
     let assumptions = PureFactContext::new();
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let record = |original: &ResourceContext, residual: &ResourceContext| {
         let state = ExecutionState::new()
             .with_memory(memory.clone())
@@ -231,10 +231,10 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
             )),
         };
         residual = residual.unchecked_with_fact(head);
-        let base = Memory::new()
+        let base = SymbolicMemory::new()
             .with_block("shared-counter", 4)
             .with_block("private-cell", 4);
-        let load_in = |memory: &Memory| {
+        let load_in = |memory: &SymbolicMemory| {
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                 Box::new(shared.clone()),

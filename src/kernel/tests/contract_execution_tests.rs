@@ -439,7 +439,7 @@ fn borrowed_contract_input_refuses_an_owned_clause_inside_a_viewed_range() {
         MachineTerm::constant(2),
     ));
     let state = ExecutionState::new()
-        .with_memory(Memory::new().with_block(pointer.block.clone(), 8))
+        .with_memory(SymbolicMemory::new().with_block(pointer.block.clone(), 8))
         .with_resource_context(
             ResourceContext::new().unchecked_with_facts([viewed.clone(), owned.clone()]),
         );
@@ -486,7 +486,7 @@ fn borrowed_contract_input_rejects_derived_or_ambiguous_views() {
         owner_occurrence,
         &owner,
         [viewed.clone()],
-        &Memory::new(),
+        &SymbolicMemory::new(),
     );
     let function = borrowed_input_view_function("reject_derived_input");
     let refusal = execution_state_with_borrowed_contract_inputs(
@@ -718,7 +718,7 @@ fn owner_authorized_same_value_store_into_a_lent_range_is_refused() {
         },
     );
     // The cell already holds 9; the body stores 9 into it.
-    let populated = Memory::new()
+    let populated = SymbolicMemory::new()
         .with_block(pointer.block.clone(), 8)
         .store(pointer.clone(), int32(9));
     let state = ExecutionState::new()
@@ -784,20 +784,24 @@ fn local_declaration_allocates_stack_object_for_address_of() {
         ),
     );
     let final_state = ExecutionState::new().with_local("x", int32(5)).with_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_declared_scalar_block("local:x".into(), 4, ProgramType::Int32)
             .store(local_pointer, int32(5)),
     );
-    let final_state = final_state.with_resource_context(
-        ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
-            MemoryRange::new_with_element_width(Memory::local_pointer("x"), 0.into(), 4.into(), 1),
-        )),
-    );
+    let final_state =
+        final_state.with_resource_context(ResourceContext::new().unchecked_with_fact(
+            ResourceFact::own_memory(MemoryRange::new_with_element_width(
+                SymbolicMemory::local_pointer("x"),
+                0.into(),
+                4.into(),
+                1,
+            )),
+        ));
     let mut final_state = final_state;
     final_state.locals.set_uninitialized_with_all_qualifiers(
         "x",
         ProgramType::Int32,
-        Memory::local_pointer("x"),
+        SymbolicMemory::local_pointer("x"),
         false,
         false,
         false,
@@ -1270,7 +1274,7 @@ fn signed_addition_matches_interval_facts_across_unchanged_states() {
         block: "arg-memory".into(),
         offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(660)), 4),
     };
-    let before = Memory::new();
+    let before = SymbolicMemory::new();
     let after = before.clone().with_block("local:temporary", 4);
     let before_load = MachineTerm::MemoryLoad(
         ProgramPoint::at(&(crate::kernel::intern_memory(before))),
@@ -1318,20 +1322,24 @@ fn pointer_store_through_local_address_updates_named_lvalue() {
         ),
     );
     let final_state = ExecutionState::new().with_local("x", int32(5)).with_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_declared_scalar_block("local:x".into(), 4, ProgramType::Int32)
             .store(local_pointer, int32(5)),
     );
-    let final_state = final_state.with_resource_context(
-        ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
-            MemoryRange::new_with_element_width(Memory::local_pointer("x"), 0.into(), 4.into(), 1),
-        )),
-    );
+    let final_state =
+        final_state.with_resource_context(ResourceContext::new().unchecked_with_fact(
+            ResourceFact::own_memory(MemoryRange::new_with_element_width(
+                SymbolicMemory::local_pointer("x"),
+                0.into(),
+                4.into(),
+                1,
+            )),
+        ));
     let mut final_state = final_state;
     final_state.locals.set_uninitialized_with_all_qualifiers(
         "x",
         ProgramType::Int32,
-        Memory::local_pointer("x"),
+        SymbolicMemory::local_pointer("x"),
         false,
         false,
         false,
@@ -1367,12 +1375,13 @@ fn memory_load_store_are_native_theorems() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let value = int32(7);
-    let theorem = prove_memory_load_after_store_same(Memory::new(), pointer.clone(), value.clone());
+    let theorem =
+        prove_memory_load_after_store_same(SymbolicMemory::new(), pointer.clone(), value.clone());
 
     assert_eq!(
         theorem.proposition(),
         &Proposition::MemoryLoads {
-            memory: Memory::new().store(pointer.clone(), value.clone()),
+            memory: SymbolicMemory::new().store(pointer.clone(), value.clone()),
             pointer,
             outcome: ExpressionOutcome::Value(value),
         }
@@ -1389,7 +1398,7 @@ fn store_preserves_distinct_memory_cell_frame() {
         block: "right".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = Memory::new().store(loaded_pointer.clone(), int32(42));
+    let memory = SymbolicMemory::new().store(loaded_pointer.clone(), int32(42));
     let theorem = prove_memory_load_after_store_other(
         memory.clone(),
         stored_pointer.clone(),
@@ -1414,12 +1423,12 @@ fn missing_memory_load_is_native_undefined_behavior() {
         block: "block".into(),
         offset: PointerOffsetTerm::Constant(4),
     };
-    let theorem = prove_memory_load(Memory::new(), pointer.clone());
+    let theorem = prove_memory_load(SymbolicMemory::new(), pointer.clone());
 
     assert_eq!(
         theorem.proposition(),
         &Proposition::MemoryLoads {
-            memory: Memory::new(),
+            memory: SymbolicMemory::new(),
             pointer,
             outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
         }
@@ -1724,7 +1733,11 @@ fn verified_function_rule_does_not_publish_one_spec_alias_path() {
     let execution = prove_symbolic_program_execution_paths_with_environment(
         ExecutionState::new()
             .with_population_creation_tracking()
-            .with_memory(Memory::new().with_block("heap", 8).store(stored, int32(0))),
+            .with_memory(
+                SymbolicMemory::new()
+                    .with_block("heap", 8)
+                    .store(stored, int32(0)),
+            ),
         program_call_then_assign(
             2,
             "result",
@@ -2429,7 +2442,7 @@ fn effect_endpoint_comparison_ignores_function_local_cells() {
         block: "local:temporary".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let before = Memory::new().with_block("local:temporary", 4);
+    let before = SymbolicMemory::new().with_block("local:temporary", 4);
     let after = before.clone().store(local, int32(7));
 
     assert!(
@@ -2460,7 +2473,7 @@ fn effect_endpoint_allows_resource_allocation_bookkeeping() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(64),
     };
-    let before = Memory::new();
+    let before = SymbolicMemory::new();
     let after = before
         .clone()
         .with_heap_allocation_claim(allocation, AllocationSize::int32(16))
@@ -4037,7 +4050,7 @@ fn a_called_frames_declaration_does_not_take_the_callers_block() {
     };
     let state = ExecutionState::new()
         .with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block("local:x", 4)
                 .store(callers.clone(), int32(1)),
         )
@@ -4071,7 +4084,7 @@ fn a_called_frames_declaration_does_not_take_the_callers_block() {
 fn a_declaration_does_not_take_a_block_whose_lifetime_ended() {
     let retired = PointerBlock::from("local:x");
     let state = ExecutionState::new().with_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_block("local:x", 4)
             .without_local_block(&retired),
     );
@@ -4389,7 +4402,7 @@ fn path_exists_at_program_point(
     ty: &AlgebraicType,
     binder: u64,
     argument: u64,
-    memory: Memory,
+    memory: SymbolicMemory,
     target: u32,
 ) -> Proposition {
     Proposition::Exists {
@@ -4426,7 +4439,7 @@ fn path_exists_at_program_point(
 fn certification_recognizes_only_the_same_algebraic_existential() {
     let _session = crate::kernel::VerificationSession::enter();
     let ty = AlgebraicType::parameter("Path".into());
-    let before = Memory::new().with_block("graph", 4);
+    let before = SymbolicMemory::new().with_block("graph", 4);
     let after = before.clone().store(
         Pointer {
             block: "graph".into(),
@@ -4536,7 +4549,7 @@ fn kernel_fresh_identity_cannot_be_forged_by_the_numeric_constructor() {
 fn conditional_path_universal(
     ty: &AlgebraicType,
     binder: u64,
-    memory: Memory,
+    memory: SymbolicMemory,
     target: u32,
 ) -> Proposition {
     let Proposition::Exists {
@@ -4571,7 +4584,7 @@ fn conditional_path_universal(
 fn certification_keeps_conditional_universal_guards_states_and_sorts() {
     let _session = crate::kernel::VerificationSession::enter();
     let ty = AlgebraicType::parameter("Path".into());
-    let memory = Memory::new().with_block("graph", 4);
+    let memory = SymbolicMemory::new().with_block("graph", 4);
     let fact = conditional_path_universal(&ty, 100, memory.clone(), 0);
     let proof_facts =
         crate::kernel::proof::PureFactStore::from_ordered(std::slice::from_ref(&fact));
@@ -4701,7 +4714,7 @@ fn automatic_scalar_ownership_is_exact_and_required_for_all_accesses() {
         panic!("scalar declaration");
     };
     let state = state.as_ref().clone();
-    let pointer = Memory::local_pointer("word");
+    let pointer = SymbolicMemory::local_pointer("word");
     let owner = ResourceFact::own_memory(MemoryRange::new_with_element_width(
         pointer.clone(),
         0.into(),

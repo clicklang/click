@@ -1,7 +1,7 @@
 //! The cells of a store's own block that its constant byte gap keeps, as key
 //! ranges a store never has to visit.
 //!
-//! [`crate::kernel::Memory::without_possible_aliasing_cells`] decides every
+//! [`crate::kernel::SymbolicMemory::without_possible_aliasing_cells`] decides every
 //! earlier cell of the written block, and the cell map offers no way to keep
 //! a group of cells without asking each, so `N` stores to cells the facts
 //! keep apart used to ask `N^2/2` questions. Most of those cells are not a
@@ -252,7 +252,7 @@ fn anchor_shift_is_small(anchor: &PointerOffsetTerm) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{ConditionTerm, Memory, ProgramValue, Variable};
+    use crate::kernel::{ConditionTerm, ProgramValue, SymbolicMemory, Variable};
 
     fn variable(id: u64) -> MachineTerm {
         MachineTerm::Variable(Variable(id))
@@ -296,7 +296,7 @@ mod tests {
                 true,
             );
             assert!(!connected.address_connected_objects(&store).is_empty());
-            let memory = Memory::new().store(field.clone(), value_of_width(8, 17));
+            let memory = SymbolicMemory::new().store(field.clone(), value_of_width(8, 17));
             let full = with_store_gap_skip_disabled(|| {
                 memory.without_possible_aliasing_cells(&store, 8, &connected)
             });
@@ -322,7 +322,8 @@ mod tests {
                 ),
                 true,
             );
-            let overlapping = Memory::new().store(aliased_field.clone(), value_of_width(8, 19));
+            let overlapping =
+                SymbolicMemory::new().store(aliased_field.clone(), value_of_width(8, 19));
             assert!(
                 !overlapping
                     .without_possible_aliasing_cells(&store, 8, &overlaps)
@@ -427,18 +428,18 @@ mod tests {
     }
 
     fn store(
-        memory: Memory,
+        memory: SymbolicMemory,
         pointer: &Pointer,
         value: ProgramValue,
         context: &PureFactContext,
-    ) -> Memory {
+    ) -> SymbolicMemory {
         memory
             .without_possible_aliasing_cells(pointer, value.byte_width(), context)
             .store_with_context(pointer.clone(), value, context)
     }
 
     /// Cells of `memory` inside the ranges a store would skip.
-    fn skipped_cells(memory: &Memory, ranges: &[(Pointer, Pointer)]) -> usize {
+    fn skipped_cells(memory: &SymbolicMemory, ranges: &[(Pointer, Pointer)]) -> usize {
         ranges
             .iter()
             .map(|(low, high)| {
@@ -454,9 +455,9 @@ mod tests {
     /// Runs `stores` from an empty block both ways, checks the two memories
     /// agree after every store, and returns the skipping one together with
     /// how many cells its stores skipped.
-    fn stored_both_ways(stores: &[(PointerOffsetTerm, ProgramValue)]) -> (Memory, usize) {
+    fn stored_both_ways(stores: &[(PointerOffsetTerm, ProgramValue)]) -> (SymbolicMemory, usize) {
         let context = PureFactContext::new();
-        let mut fast = Memory::new().with_block("store-gap", 64);
+        let mut fast = SymbolicMemory::new().with_block("store-gap", 64);
         let mut full = fast.clone();
         let mut skipped = 0;
         for (offset, value) in stores {
@@ -616,7 +617,7 @@ mod tests {
                 PointerOffsetTerm::scale_int32(
                     MachineTerm::MemoryLoad(
                         crate::kernel::ProgramPoint::at(
-                            &(crate::kernel::intern_memory(Memory::new())),
+                            &(crate::kernel::intern_memory(SymbolicMemory::new())),
                         ),
                         Box::new(at(&PointerOffsetTerm::Constant(0))),
                         crate::kernel::LoadKind::Int32,
@@ -662,7 +663,7 @@ mod tests {
         for trial in 0..480 {
             let context = &contexts[trial % contexts.len()];
             let anchor = anchors.get(trial / contexts.len() % (anchors.len() + 1));
-            let mut fast = Memory::new().with_block("store-gap", 64);
+            let mut fast = SymbolicMemory::new().with_block("store-gap", 64);
             let mut full = fast.clone();
             for step in 0..48 {
                 let pointer = Pointer {

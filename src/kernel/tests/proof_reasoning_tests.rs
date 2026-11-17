@@ -2128,7 +2128,7 @@ fn condition_fact_matching_ignores_unrelated_local_memory() {
         block: "local:ignored".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let empty_memory = Memory::new();
+    let empty_memory = SymbolicMemory::new();
     let old_memory = empty_memory.clone().store(
         owner.clone(),
         int32(MachineTerm::MemoryLoad(
@@ -2137,7 +2137,7 @@ fn condition_fact_matching_ignores_unrelated_local_memory() {
             crate::kernel::LoadKind::Int32,
         )),
     );
-    let before_local = Memory::new()
+    let before_local = SymbolicMemory::new()
         .with_block("call-havoc:8000000", 0)
         .with_block("local:ignored", 4);
     let after_local = before_local
@@ -2191,14 +2191,14 @@ fn order_check_does_not_resolve_loads_across_an_unrelated_local_store() {
     };
     let position = owner.clone();
     let length = owner.offset_by_int32_elements(MachineTerm::constant(1));
-    let local = Memory::local_pointer("temporary");
-    let fact_memory = Memory::new()
+    let local = SymbolicMemory::local_pointer("temporary");
+    let fact_memory = SymbolicMemory::new()
         .with_block("call-havoc:0", 0)
         .with_block(local.block.clone(), 4)
         .store(local, int32(7));
-    let target_memory = Memory::new().with_block("call-havoc:0", 0);
+    let target_memory = SymbolicMemory::new().with_block("call-havoc:0", 0);
     let symbolic_length = MachineTerm::Variable(Variable(100_002));
-    let load = |memory: &Memory, pointer: &Pointer| {
+    let load = |memory: &SymbolicMemory, pointer: &Pointer| {
         MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
             Box::new(pointer.clone()),
@@ -2232,13 +2232,13 @@ fn equality_chains_across_observationally_equivalent_memory_loads() {
         block: "arg-memory".into(),
         offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(100_000)), 4),
     };
-    let observed = Memory::local_pointer("observed");
-    let before_materialized = Memory::new()
+    let observed = SymbolicMemory::local_pointer("observed");
+    let before_materialized = SymbolicMemory::new()
         .with_block("call-havoc:0", 0)
         .with_block("call-havoc:1", 0)
         .with_block(observed.block.clone(), 4)
         .store(observed, int32(MachineTerm::Variable(Variable(10))));
-    let before_sparse = Memory::new()
+    let before_sparse = SymbolicMemory::new()
         .with_block("call-havoc:0", 0)
         .with_block("call-havoc:1", 0);
     let after = before_sparse.clone().with_block("call-havoc:3", 0);
@@ -2300,7 +2300,7 @@ fn proposition_derivation_proves_implication_from_false_antecedent() {
 #[test]
 fn builtin_obligation_solver_proves_trivial_props() {
     let assumptions = PureFactContext::new();
-    let memory = Memory::new().with_block("block", 8);
+    let memory = SymbolicMemory::new().with_block("block", 8);
     let pointer = Pointer {
         block: "block".into(),
         offset: PointerOffsetTerm::Constant(4),
@@ -2350,7 +2350,7 @@ mod loadable_range_narrowing {
         MachineTerm::Variable(Variable(id))
     }
 
-    fn segment(memory: &Memory, start: &MachineTerm, end: &MachineTerm) -> Proposition {
+    fn segment(memory: &SymbolicMemory, start: &MachineTerm, end: &MachineTerm) -> Proposition {
         let origin = Pointer {
             block: "data".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -2419,7 +2419,7 @@ mod loadable_range_narrowing {
 
     #[test]
     fn a_sub_range_the_order_facts_place_inside_is_loadable() {
-        let memory = Memory::new().with_block("data", 4096);
+        let memory = SymbolicMemory::new().with_block("data", 4096);
         let [a, b, c, d] = endpoints();
         let assumptions = assume_orders(segment(&memory, &a, &b), &inside(&a, &b, &c, &d));
 
@@ -2431,7 +2431,7 @@ mod loadable_range_narrowing {
 
     #[test]
     fn a_sub_range_past_the_assumed_end_is_refused() {
-        let memory = Memory::new().with_block("data", 4096);
+        let memory = SymbolicMemory::new().with_block("data", 4096);
         let [a, b, c, d] = endpoints();
         // `d <= b` is exactly the fact that is missing.
         let assumptions = assume_orders(segment(&memory, &a, &b), &[order(&a, &c), order(&c, &d)]);
@@ -2446,7 +2446,7 @@ mod loadable_range_narrowing {
     /// the assumed range, so only the required `c <= d` refuses it.
     #[test]
     fn a_reversed_goal_range_is_refused() {
-        let memory = Memory::new().with_block("data", 4096);
+        let memory = SymbolicMemory::new().with_block("data", 4096);
         let [a, b, c, d] = endpoints();
         let mut orders = vec![order(&a, &c), order(&d, &c), order(&c, &b)];
         orders.extend(span_is_valid(&a, &b));
@@ -2463,8 +2463,8 @@ mod loadable_range_narrowing {
     /// order facts alone never carry the conclusion across.
     #[test]
     fn a_different_memory_state_is_refused() {
-        let assumed = Memory::new().with_block("data", 4096);
-        let elsewhere = Memory::new().with_block("other", 4096);
+        let assumed = SymbolicMemory::new().with_block("data", 4096);
+        let elsewhere = SymbolicMemory::new().with_block("other", 4096);
         let [a, b, c, d] = endpoints();
         let assumptions = assume_orders(segment(&assumed, &a, &b), &inside(&a, &b, &c, &d));
 
@@ -2484,7 +2484,7 @@ mod loadable_range_narrowing {
     /// refuses unless the count is pinned to `0..=u32::MAX / 4`.
     #[test]
     fn a_wrapped_assumed_span_is_refused() {
-        let memory = Memory::new().with_block("data", 4096);
+        let memory = SymbolicMemory::new().with_block("data", 4096);
         let [a, b, c, d] = endpoints();
         // Everything the narrowing rule reads except the span bound: the goal
         // sits inside the assumed range, and the count is known nonnegative.
@@ -2508,7 +2508,7 @@ mod loadable_range_narrowing {
     /// because `b - a` is really `-1`; only the nonnegativity fact excludes it.
     #[test]
     fn a_bounded_but_negative_count_is_refused() {
-        let memory = Memory::new().with_block("data", 4096);
+        let memory = SymbolicMemory::new().with_block("data", 4096);
         let [a, b, c, d] = endpoints();
         let count = MachineTerm::subtract(b.clone(), a.clone());
         let limit = MachineTerm::constant(crate::kernel::memory_range_element_count_limit(4));
@@ -2530,7 +2530,7 @@ mod loadable_range_narrowing {
     /// scaling it by the element width is what leaves the 32-bit span.
     #[test]
     fn a_count_past_the_span_limit_is_refused() {
-        let memory = Memory::new().with_block("data", 4096);
+        let memory = SymbolicMemory::new().with_block("data", 4096);
         let [a, b, c, d] = endpoints();
         let count = MachineTerm::subtract(b.clone(), a.clone());
         let past = MachineTerm::constant(crate::kernel::memory_range_element_count_limit(4) + 1);
@@ -2555,7 +2555,7 @@ mod loadable_range_narrowing {
     /// rescaling a product it would then have to bound against overflow.
     #[test]
     fn a_different_element_width_is_refused() {
-        let memory = Memory::new().with_block("data", 4096);
+        let memory = SymbolicMemory::new().with_block("data", 4096);
         let [a, b, c, d] = endpoints();
         let origin = Pointer {
             block: "data".into(),
@@ -2582,7 +2582,7 @@ mod loadable_range_narrowing {
 #[test]
 fn empty_memory_range_is_vacuously_loadable() {
     let proposition = Proposition::MemoryLoadable {
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         base: Pointer {
             block: "not-live".into(),
             offset: PointerOffsetTerm::Variable(Variable(1)),
@@ -2599,7 +2599,7 @@ fn empty_memory_range_is_vacuously_loadable() {
 
 #[test]
 fn deferred_obligations_keep_contextual_memory_proofs_explicit() {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let base = Pointer {
         block: "data".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -2679,7 +2679,7 @@ fn structured_obligations_are_emitted_rather_than_derived() {
 
 #[test]
 fn memory_derivation_records_the_selected_range_candidate() {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let data = Pointer {
         block: "data".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -2718,7 +2718,7 @@ fn memory_derivation_records_the_selected_range_candidate() {
 
 #[test]
 fn loadable_symbolic_subrange_proves_an_indexed_cell() {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let data = Pointer {
         block: "data".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -2775,7 +2775,7 @@ fn loadable_symbolic_subrange_proves_an_indexed_cell() {
 
 #[test]
 fn adjacent_loadable_regions_certify_their_concatenation() {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let data = Pointer {
         block: "data".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -2810,7 +2810,7 @@ fn adjacent_loadable_regions_certify_their_concatenation() {
     assert!(premises.contains(&prefix));
     assert!(premises.contains(&next_cell));
 
-    let stored_memory = Memory::new().store(
+    let stored_memory = SymbolicMemory::new().store(
         data.offset_by_int32_elements(MachineTerm::constant(2)),
         ProgramValue::Int32(MachineTerm::constant(9)),
     );
@@ -2839,7 +2839,7 @@ fn adjacent_loadable_regions_certify_their_concatenation() {
         .assume_proposition(goal.clone())
         .assume_proposition(gap);
     let too_wide = Proposition::MemoryLoadable {
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         base: data,
         bytes: MachineTerm::constant(16),
         wide: false,
@@ -2852,7 +2852,7 @@ fn adjacent_loadable_regions_certify_their_concatenation() {
 
 #[test]
 fn field_derived_capacity_range_covers_a_shorter_live_prefix() {
-    let entry_memory = Memory::new();
+    let entry_memory = SymbolicMemory::new();
     let owner = Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(100_000)), 4),
@@ -2945,7 +2945,7 @@ fn field_derived_capacity_range_covers_a_shorter_live_prefix() {
 
 #[test]
 fn quantified_int32_fact_does_not_certify_an_instantiated_load() {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let data = Pointer {
         block: "data".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -3025,7 +3025,7 @@ fn quantified_int32_fact_does_not_certify_an_instantiated_load() {
 
 #[test]
 fn quantified_loadability_fact_certifies_an_instantiated_load() {
-    let memory = Memory::new().with_block("data", 16);
+    let memory = SymbolicMemory::new().with_block("data", 16);
     let data = Pointer {
         block: "data".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -3133,7 +3133,7 @@ fn quantified_signed_condition_fact_certifies_a_symbolic_index() {
 
 #[test]
 fn quantified_atomic_derivation_retains_its_specialization_and_guards() {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let data = Pointer {
         block: "typed-quantified-data".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -3219,7 +3219,7 @@ fn quantified_atomic_derivation_retains_its_specialization_and_guards() {
 /// name `not (exit < 3)` as the guard premise.
 #[test]
 fn a_quantified_instantiation_guard_needing_a_derivation_is_refused() {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let data = Pointer {
         block: "refused-guard-data".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -3277,7 +3277,7 @@ fn a_quantified_instantiation_guard_needing_a_derivation_is_refused() {
 
 #[test]
 fn quantified_int32_fact_certifies_a_concrete_indexed_load() {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let data = Pointer {
         block: "data".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -3329,7 +3329,7 @@ fn quantified_int32_fact_certifies_a_concrete_indexed_load() {
 
 #[test]
 fn quantified_copy_fact_certifies_concrete_pointer_indices() {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let destination = Pointer {
         block: "argument-memory".into(),
         offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(2_200_000)), 4),
@@ -3385,7 +3385,7 @@ fn quantified_copy_fact_certifies_concrete_pointer_indices() {
 
 #[test]
 fn quantified_int32_fact_does_not_certify_its_complete_guarded_range() {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let data = Pointer {
         block: "data".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -3441,7 +3441,7 @@ fn quantified_int32_fact_does_not_certify_its_complete_guarded_range() {
     assert!(!crate::kernel::search::ProofSearch::proves(
         &(assumptions),
         &Proposition::MemoryLoadable {
-            memory: Memory::new(),
+            memory: SymbolicMemory::new(),
             base: Pointer {
                 block: "other-data".into(),
                 offset: PointerOffsetTerm::Constant(0),
@@ -3935,7 +3935,7 @@ fn assumptions_do_not_split_a_multi_value_context_variable() {
 /// proof writes puts the instance where the theory can see it.
 #[test]
 fn finite_forall_order_fact_needs_an_explicit_instantiation() {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let indexed_load = |index| {
         MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
@@ -4040,7 +4040,7 @@ fn conditional_forall_instantiates_at_same_named_variable_in_order_path() {
     let k_bits = MachineTerm::Variable(k);
     let j = MachineTerm::Variable(Variable(189));
     let value_at_k = MachineTerm::MemoryLoad(
-        ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
+        ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
         Box::new(Pointer {
             block: "arg-memory".into(),
             offset: PointerOffsetTerm::scale_int32(k_bits.clone(), 4),
@@ -4727,8 +4727,8 @@ fn known_memory_block_bounds_prove_symbolic_element_access() {
             ConditionTerm::signed_less_than(index_bits.clone(), MachineTerm::constant(3)),
             true,
         );
-    let memory = Memory::new().with_block("local:a", 12);
-    let pointer = Memory::local_pointer("a").offset_by_int32_elements(index_bits);
+    let memory = SymbolicMemory::new().with_block("local:a", 12);
+    let pointer = SymbolicMemory::local_pointer("a").offset_by_int32_elements(index_bits);
 
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
@@ -4751,7 +4751,7 @@ fn known_memory_block_bounds_prove_symbolic_element_access() {
 
 #[test]
 fn symbolic_int32_range_directly_proves_constant_element_loadable() {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let base = Pointer {
         block: "data".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -4793,7 +4793,7 @@ fn symbolic_int32_range_directly_proves_constant_element_loadable() {
 fn assumptions_prove_forall_int32_array_range_body() {
     let index = Variable(90);
     let index_bits = MachineTerm::Variable(index);
-    let memory = Memory::new().with_block("block", 12);
+    let memory = SymbolicMemory::new().with_block("block", 12);
     let base = Pointer {
         block: "block".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -4835,8 +4835,8 @@ fn assumptions_prove_forall_int32_array_range_body() {
 fn loadability_transports_to_state_with_symbolic_index_bounds() {
     let index = MachineTerm::Variable(Variable(190));
     let cursor = MachineTerm::Variable(Variable(191));
-    let range_memory = Memory::new();
-    let state_memory = Memory::new().with_block("local:j", 4);
+    let range_memory = SymbolicMemory::new();
+    let state_memory = SymbolicMemory::new().with_block("local:j", 4);
     let base = Pointer {
         block: "arg-memory".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -4885,7 +4885,7 @@ fn loadability_transports_to_state_with_symbolic_index_bounds() {
 
 #[test]
 fn loadability_same_base_span_uses_graph_for_byte_count() {
-    let before = Memory::new().with_block("effect-side", 4);
+    let before = SymbolicMemory::new().with_block("effect-side", 4);
     let written = Pointer {
         block: "effect-side".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -5330,7 +5330,7 @@ fn builtin_obligation_solver_discharges_concrete_invariant() {
         block: "block".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = Memory::new().with_block("block", 4);
+    let memory = SymbolicMemory::new().with_block("block", 4);
     let invariant = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: pointer,
@@ -5688,7 +5688,7 @@ fn derived_order_contradiction_resolves_load_endpoints() {
         block: "arg-memory".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = Memory::new().store(cell.clone(), int32(MachineTerm::constant(7)));
+    let memory = SymbolicMemory::new().store(cell.clone(), int32(MachineTerm::constant(7)));
     let load = MachineTerm::MemoryLoad(
         ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
         Box::new(cell),
@@ -5722,7 +5722,7 @@ fn derived_order_contradiction_bridges_state_loads() {
     // The untouched cell is the `int32` at offset zero; a width-less load
     // there spans eight bytes and the store at offset four does touch it.
     crate::kernel::eval::declare_load_access_width(&preserved, 4);
-    let before = Memory::new();
+    let before = SymbolicMemory::new();
     let after = before
         .clone()
         .store(written.clone(), int32(MachineTerm::constant(1)));
@@ -7353,8 +7353,8 @@ fn native_loadability_transport_pins_span_domain_and_lifetime() {
         block: "native-region".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let live = Memory::new().with_block("native-region", 8);
-    let fact = |memory: Memory, bytes, wide| Proposition::MemoryLoadable {
+    let live = SymbolicMemory::new().with_block("native-region", 8);
+    let fact = |memory: SymbolicMemory, bytes, wide| Proposition::MemoryLoadable {
         memory,
         base: base.clone(),
         bytes,
@@ -7390,7 +7390,7 @@ fn native_loadability_transport_pins_span_domain_and_lifetime() {
     }
     let native_count = MachineTerm::Variable(Variable(973_001));
     let narrow = PureFactContext::new().assume_proposition(fact(
-        Memory::new(),
+        SymbolicMemory::new(),
         MachineTerm::legacy_cast(
             MachineCastSpelling::UInt32From64,
             Box::new(native_count.clone()),
@@ -7400,7 +7400,7 @@ fn native_loadability_transport_pins_span_domain_and_lifetime() {
     assert!(
         crate::kernel::search::ProofSearch::derive_atomic_proposition(
             &(narrow),
-            &fact(Memory::new(), native_count, true,)
+            &fact(SymbolicMemory::new(), native_count, true,)
         )
         .is_none(),
         "a low-word span cannot establish the full native span"
@@ -7409,7 +7409,7 @@ fn native_loadability_transport_pins_span_domain_and_lifetime() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
     };
-    let live = Memory::new()
+    let live = SymbolicMemory::new()
         .with_heap_allocation_claim(external.clone(), AllocationSize::int32(16))
         .unwrap();
     let dead = live
@@ -7434,7 +7434,7 @@ fn native_loadability_transport_pins_span_domain_and_lifetime() {
 
 #[test]
 fn native_loadability_prefix_coverage_retains_full_width_bounds() {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let base = Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
@@ -7507,8 +7507,8 @@ fn native_loadability_prefix_coverage_preserves_lifetime_and_base() {
         block: "native-prefix".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let live = Memory::new().with_block("native-prefix", 8);
-    let range = |memory: Memory, base: Pointer, bytes| Proposition::MemoryLoadable {
+    let live = SymbolicMemory::new().with_block("native-prefix", 8);
+    let range = |memory: SymbolicMemory, base: Pointer, bytes| Proposition::MemoryLoadable {
         memory,
         base,
         bytes: MachineTerm::uint64_constant(bytes),
@@ -7533,7 +7533,7 @@ fn native_loadability_prefix_coverage_preserves_lifetime_and_base() {
             base.clone(),
             4,
         ),
-        range(Memory::new(), base.offset_by_bytes(8), 1),
+        range(SymbolicMemory::new(), base.offset_by_bytes(8), 1),
     ] {
         assert!(
             crate::kernel::search::ProofSearch::derive_atomic_proposition(&(context), &wrong)
@@ -7544,7 +7544,7 @@ fn native_loadability_prefix_coverage_preserves_lifetime_and_base() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
     };
-    let allocated = Memory::new()
+    let allocated = SymbolicMemory::new()
         .with_heap_allocation_claim(external.clone(), AllocationSize::int32(16))
         .unwrap();
     let retired = allocated
@@ -7563,12 +7563,12 @@ fn native_loadability_prefix_coverage_preserves_lifetime_and_base() {
 
 #[test]
 fn native_loadability_window_checks_offset_end_and_retirement() {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let source = Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(17),
     };
-    let range = |memory: Memory, base: Pointer, bytes| Proposition::MemoryLoadable {
+    let range = |memory: SymbolicMemory, base: Pointer, bytes| Proposition::MemoryLoadable {
         memory,
         base,
         bytes: MachineTerm::uint64_constant(bytes),
@@ -7627,7 +7627,7 @@ fn native_loadability_window_checks_offset_end_and_retirement() {
         )
         .is_none()
     );
-    let live = Memory::new()
+    let live = SymbolicMemory::new()
         .with_heap_allocation_claim(root.clone(), AllocationSize::int32(16))
         .unwrap();
     let dead = live
@@ -7646,7 +7646,7 @@ fn native_loadability_window_checks_offset_end_and_retirement() {
 
 #[test]
 fn native_loadability_window_requires_every_full_width_guard() {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let base = Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
@@ -8181,7 +8181,7 @@ fn pointer_predicate_matching_preserves_types_arguments_states_and_scope() {
         ),
         fact(
             "Selected",
-            state.with_memory(Memory::new().with_block("new-epoch", 4)),
+            state.with_memory(SymbolicMemory::new().with_block("new-epoch", 4)),
             &[b, d],
             ty,
             7,
@@ -8524,7 +8524,7 @@ fn exact_condition_check_ignores_unrelated_implications() {
 /// unrelated facts.
 #[test]
 fn offset_and_existential_matches_ignore_unrelated_facts() {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let load = MachineTerm::MemoryLoad(
         ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
         Box::new(Pointer {
@@ -8595,7 +8595,7 @@ fn complete_pointer_read_source_retains_the_domain_version() {
     let _session = crate::kernel::VerificationSession::enter();
     let cell = Pointer::symbolic(Variable(995_031));
     let unrelated = Pointer::symbolic(Variable(995_032));
-    let before = crate::kernel::intern_memory(Memory::new().store(
+    let before = crate::kernel::intern_memory(SymbolicMemory::new().store(
         cell.clone(),
         ProgramValue::typed_pointer(
             Pointer::symbolic(Variable(995_033)),

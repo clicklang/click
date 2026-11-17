@@ -999,7 +999,7 @@ impl PureFactContext {
 
     /// Query equality already known to the trusted graph. This performs no
     /// arithmetic proof search, alias-component walk, or resource check.
-    /// `false` means unknown, not unequal. Memory consumers must retain their
+    /// `false` means unknown, not unequal. SymbolicMemory consumers must retain their
     /// structural-distinctness and separation checks around this query.
     pub(in crate::kernel) fn pointers_known_equal(&self, left: &Pointer, right: &Pointer) -> bool {
         self.equality_graph.are_equal(left, right)
@@ -4046,13 +4046,13 @@ mod shared_read_equality_rule_tests {
             ConditionTerm::signed_less_than(read_index, write_index),
             true,
         );
-        let before = Memory::new().with_block("selected-word", 64);
+        let before = SymbolicMemory::new().with_block("selected-word", 64);
         let after = before.clone().store_with_context(
             written,
             ProgramValue::Int32(MachineTerm::constant(9)),
             &context,
         );
-        let read = |memory: Memory, at: &Pointer| {
+        let read = |memory: SymbolicMemory, at: &Pointer| {
             let memory = crate::kernel::intern_memory(memory);
             MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,
@@ -4160,7 +4160,7 @@ mod shared_read_order_bridge_tests {
         crate::kernel::eval::declare_load_access_width(&pointer, 4);
         let separation = ConditionTerm::signed_less_than(read_index, write_index);
         let separated = PureFactContext::new().assume_condition(separation, true);
-        let before = Memory::new().with_block("order-read-bridge", 64);
+        let before = SymbolicMemory::new().with_block("order-read-bridge", 64);
         let after = before.clone().store_with_context(
             write,
             ProgramValue::Int32(MachineTerm::constant(9)),

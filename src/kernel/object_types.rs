@@ -189,7 +189,7 @@ pub(super) fn check_requirements(
     parameters: &[ProgramParameter],
     requirements: &ObjectTypeRequirements,
     values: &mut [ProgramValue],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> Option<RuntimeError> {
     check_requirement_slice(
@@ -207,7 +207,7 @@ pub(super) fn check_value_requirements(
     name: &str,
     interface: &FunctionContractInterface,
     values: &mut [ProgramValue],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> Option<RuntimeError> {
     check_requirement_slice(
@@ -226,7 +226,7 @@ fn check_requirement_slice(
     parameters: &[ProgramParameter],
     requirements: &ObjectTypeRequirements,
     values: &mut [ProgramValue],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
     offset: usize,
 ) -> Option<RuntimeError> {
@@ -266,7 +266,8 @@ mod tests {
             block: "declared_node".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let memory = Memory::new().with_classed_block(object.block.clone(), Some(class()), 8);
+        let memory =
+            SymbolicMemory::new().with_classed_block(object.block.clone(), Some(class()), 8);
         let make = |provenance| {
             let ProgramValue::Pointer(pointer) = ProgramValue::typed_pointer(
                 Pointer::symbolic(Variable(900_010)),
@@ -297,7 +298,7 @@ mod tests {
 
         let other = CAccessClass::Struct(CStructClass::opaque("other"));
         for (mut value, declared) in [
-            (original.clone(), Memory::new()),
+            (original.clone(), SymbolicMemory::new()),
             (
                 make(Pointer {
                     offset: PointerOffsetTerm::Constant(4),
@@ -388,7 +389,7 @@ mod tests {
         assert!(refine_object_pointer_argument(
             &mut decoded,
             &class(),
-            &Memory::new(),
+            &SymbolicMemory::new(),
             &facts
         ));
         let word = super::super::eval::cast_program_value_to_type(

@@ -6,7 +6,7 @@ fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
         block: "pointer-retained_state-cell".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let before = intern_memory(Memory::new().with_block(cell.block.clone(), 8));
+    let before = intern_memory(SymbolicMemory::new().with_block(cell.block.clone(), 8));
     let after = intern_memory(before.memory().clone().with_block("other-local", 4));
     let pointer = |memory: &SharedMemory| {
         PointerValue::from_read(

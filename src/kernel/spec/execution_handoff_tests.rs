@@ -428,8 +428,8 @@ fn pointer_lowering_keeps_producers_and_complete_metadata() {
     }))
     .with_object_type_evidence(Some(ObjectTypeEvidence::parameter(class, 3, 999986, false)));
     let payload = SharedPointerValue::import(&source);
-    let memory = intern_memory(Memory::new());
-    let address = SharedPointerAddress::import(&Memory::global_pointer("pointer-slot"));
+    let memory = intern_memory(SymbolicMemory::new());
+    let address = SharedPointerAddress::import(&SymbolicMemory::global_pointer("pointer-slot"));
     let roots = [
         KernelTerm::shared_pointer_value(payload.clone()),
         KernelTerm::shared_pointer_call(

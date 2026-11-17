@@ -224,7 +224,7 @@ fn resource_transition_retains_borrow_role_for_owned_entry_fact() {
     let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(range));
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(pointer.clone()))
-        .with_memory(Memory::new().with_block(pointer.block.clone(), 4))
+        .with_memory(SymbolicMemory::new().with_block(pointer.block.clone(), 4))
         .with_resource_context(resources);
     let transfer = prepare_contract_resource_transfer(
         &state,
@@ -300,7 +300,7 @@ fn call_site_and_function_boundary_transitions_agree_on_the_callee_entry() {
         .with_local("p", ProgramValue::pointer(owned.clone()))
         .with_local("q", ProgramValue::pointer(viewed.clone()))
         .with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block(owned.block.clone(), 4)
                 .with_block(viewed.block.clone(), 4),
         )
@@ -398,7 +398,7 @@ fn stable_view_refinement_uses_checked_variance_for_subranges() {
             "p",
             ProgramValue::typed_pointer(base, ProgramType::Int32Pointer),
         )
-        .with_memory(Memory::new().with_block("refinement:stable-view", 8));
+        .with_memory(SymbolicMemory::new().with_block("refinement:stable-view", 8));
     let segment = |end| {
         MemorySegment::new(
             crate::kernel::program_expression::variable("p"),
@@ -471,7 +471,7 @@ fn stable_view_refinement_does_not_confuse_disjoint_same_mode_inputs() {
             "q",
             ProgramValue::typed_pointer(base.offset_by_bytes(4), ProgramType::Int32Pointer),
         )
-        .with_memory(Memory::new().with_block("refinement:mixed", 8));
+        .with_memory(SymbolicMemory::new().with_block("refinement:mixed", 8));
     let segment = |name: &str| {
         MemorySegment::new(
             crate::kernel::program_expression::variable(name),
@@ -716,7 +716,7 @@ fn direct_and_named_callback_resource_interfaces_agree_across_families() {
     .with_resource_summary(vec![memory_spec.clone()], vec![memory_spec]);
     let memory_state = ExecutionState::new()
         .with_population_creation_tracking()
-        .with_memory(Memory::new().with_block(memory_pointer.block.clone(), 4))
+        .with_memory(SymbolicMemory::new().with_block(memory_pointer.block.clone(), 4))
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
             ResourceFact::own_memory(MemoryRange::new(
                 memory_pointer,
@@ -1070,7 +1070,7 @@ fn resource_derived_refinement_compares_checked_ranges() {
     };
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(pointer.clone()))
-        .with_memory(Memory::new().with_block(pointer.block.clone(), 8));
+        .with_memory(SymbolicMemory::new().with_block(pointer.block.clone(), 8));
     let resource = |start| {
         ResourceSpec::owned_memory(MemorySegment::new(
             ProgramExpression::Variable("p".into()),
@@ -1117,7 +1117,7 @@ fn resource_derived_frame_rejects_mixed_explicit_effect_metadata() {
     };
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(pointer.clone()))
-        .with_memory(Memory::new().with_block(pointer.block.clone(), 4));
+        .with_memory(SymbolicMemory::new().with_block(pointer.block.clone(), 4));
     let function = program_function(
         ProgramType::Void,
         "mixed_resource_frame",
@@ -1188,7 +1188,7 @@ fn declared_loop_frame_is_installed_from_the_loop_specs_not_from_segments() {
     );
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(pointer.clone()))
-        .with_memory(Memory::new().with_block(pointer.block.clone(), 4))
+        .with_memory(SymbolicMemory::new().with_block(pointer.block.clone(), 4))
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
             ResourceFact::own_composite(
                 "LoopWrapper".into(),
@@ -1320,7 +1320,7 @@ fn resource_derived_loop_setup_does_not_fallback_to_surface_metadata() {
     .with_resource_derived_mutable_frame();
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(pointer.clone()))
-        .with_memory(Memory::new().with_block(pointer.block, 4));
+        .with_memory(SymbolicMemory::new().with_block(pointer.block, 4));
     let result = establish_resource_derived_loop_frames(
         function,
         &state,
@@ -1359,10 +1359,10 @@ fn unresolved_call_requirements_retain_selected_source_site_identity() {
     let arguments = vec![crate::kernel::program_expression::int32_literal(0)];
     let first_state = ExecutionState::new()
         .with_population_creation_tracking()
-        .with_memory(Memory::new().with_block("first", 4));
+        .with_memory(SymbolicMemory::new().with_block("first", 4));
     let second_state = ExecutionState::new()
         .with_population_creation_tracking()
-        .with_memory(Memory::new().with_block("second", 4));
+        .with_memory(SymbolicMemory::new().with_block("second", 4));
     let run = |state: &ExecutionState| {
         execute_program_function_contracts_paths(
             state,
@@ -1576,7 +1576,7 @@ fn generated_requirement_source_cannot_advertise_state_independence() {
         "Generated",
         0,
         &[],
-        &Memory::new(),
+        &SymbolicMemory::new(),
     ));
     let source = CallRequirementSource::new(site, 0, None, true, None);
     assert!(!source.source_requirement_is_state_independent);
@@ -1679,8 +1679,8 @@ fn contract_source_maps_do_not_change_function_semantic_identity() {
 
 #[test]
 fn call_state_identity_work_does_not_scale_with_unrelated_memory() {
-    let small = Memory::new();
-    let large = (0..256).fold(Memory::new(), |memory, index| {
+    let small = SymbolicMemory::new();
+    let large = (0..256).fold(SymbolicMemory::new(), |memory, index| {
         memory.with_block(format!("unrelated{index}"), 4)
     });
     let (_, small_work) =

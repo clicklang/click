@@ -8,7 +8,7 @@ use super::*;
 fn automatic_lifetime_end_consumes_only_local_construction_ownership() {
     let mut samples = Vec::new();
     for size in [16, 64, 256, 1024] {
-        let pointer = Memory::local_pointer("selected");
+        let pointer = SymbolicMemory::local_pointer("selected");
         let owner = ResourceFact::own_memory(MemoryRange::new_with_element_width(
             pointer,
             0u32.into(),
@@ -22,7 +22,7 @@ fn automatic_lifetime_end_consumes_only_local_construction_ownership() {
         }
         let state = ExecutionState::new()
             .with_local("selected", int32(0))
-            .with_memory(Memory::new().with_block("local:selected", 16))
+            .with_memory(SymbolicMemory::new().with_block("local:selected", 16))
             .with_resource_context(resources);
         let mut core = ExecutionProofCore::at_entry(state.clone(), ExecutionFrontier::default());
         let (after, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -61,7 +61,7 @@ fn automatic_lifetime_event_ignores_unrelated_locals_and_checks_exact_states() {
     let samples = [8, 16, 32, 64].map(|size| {
         let mut state = ExecutionState::new()
             .with_local("selected", int32(5))
-            .with_memory(Memory::new().with_block("local:selected", 4));
+            .with_memory(SymbolicMemory::new().with_block("local:selected", 4));
         for i in 0..size {
             state = state.with_local(format!("other_{i}"), int32(9));
         }

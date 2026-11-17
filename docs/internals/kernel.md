@@ -604,7 +604,7 @@ In `src/kernel/`:
   `int32`, whose order its canonical words compare exactly, so a fact has
   one representation. Every other order is filed at its own format: a `uint32`
   order is `Compare { format: UInt32, .. }` of the operands' words.
-- `ProgramValue`, `ProgramType`, `Pointer`, `Memory`, `ExecutionState`: C semantic state,
+- `ProgramValue`, `ProgramType`, `Pointer`, `SymbolicMemory`, `ExecutionState`: C semantic state,
   including the non-object `Void` return value, scalar `int8`, `int16`, `int32`,
   `uint8`, `uint16`, `uint32`, `int64`, and `uint64`, pointers, and typed
   memory loads/stores.

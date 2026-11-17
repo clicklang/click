@@ -36,7 +36,7 @@ fn float_read_construction_keeps_growing_shared_addresses_and_states() {
         let _session = crate::kernel::VerificationSession::enter();
         let mut index =
             KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(999920));
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for i in 0..size {
             index = KernelTerm::machine_binary_shared(
                 MachineIntegerType::Int32,

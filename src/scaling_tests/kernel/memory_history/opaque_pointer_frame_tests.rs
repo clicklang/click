@@ -17,7 +17,7 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
             offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(9_880_301)), 4),
         };
         let stored = Pointer::symbolic(Variable(9_880_302));
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         let mut context = PureFactContext::new();
         for index in 0..size {
             let block = format!("local:irrelevant-{index}");
@@ -126,7 +126,7 @@ fn complete_read_domains_use_numeric_storage_classes_without_scanning_other_clas
         let a = Pointer::symbolic(Variable(9_889_000));
         let b = Pointer::symbolic(Variable(9_889_001));
         facts = facts.assume_condition(equal(a.clone(), b.clone()), true);
-        let memory = intern_memory(Memory::new());
+        let memory = intern_memory(SymbolicMemory::new());
         let left = Pointer::loaded_value(&memory, &a);
         let right = Pointer::loaded_value(&memory, &b);
         let (holds, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -177,7 +177,8 @@ fn copied_pointer_frames_ignore_unrelated_separations() {
                 width: 4u32.into(),
             }),
         );
-        let before = Memory::new().store(field.clone(), ProgramValue::Pointer(stored.clone()));
+        let before =
+            SymbolicMemory::new().store(field.clone(), ProgramValue::Pointer(stored.clone()));
         let write = buffer.clone().offset_by_bytes(4);
         let after = before
             .clone()
@@ -204,7 +205,7 @@ fn sibling_pointer_reads_stop_before_unrelated_shared_history() {
     let costs = [16u64, 64, 256, 1024].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Pointer::symbolic(Variable(9_920_000));
-        let mut memory = Memory::new().with_block("local:read-common-history", 4096);
+        let mut memory = SymbolicMemory::new().with_block("local:read-common-history", 4096);
         for index in 0..size {
             memory = memory.store(
                 Pointer {
@@ -279,7 +280,7 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
             block: "packed-scaling".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let mut memory = Memory::new().with_block("packed-scaling", 32);
+        let mut memory = SymbolicMemory::new().with_block("packed-scaling", 32);
         let mut context = PureFactContext::new();
         for index in 0..size {
             let name = format!("local:unrelated-packed-{index}");
@@ -382,7 +383,7 @@ fn converted_narrow_read_value_uses_only_selected_terms_and_cells() {
     for size in [4u64, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Pointer::symbolic(Variable(9_889_000));
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         let mut facts = PureFactContext::new();
         for index in 0..size {
             memory = memory.store(
@@ -451,7 +452,7 @@ fn complete_word_record_at_bounded_stop_has_flat_lookup_work() {
             offset: PointerOffsetTerm::Constant(0),
         };
         let context = PureFactContext::new();
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for index in 0..size {
             memory = memory.store(
                 Pointer {
@@ -493,7 +494,7 @@ fn complete_word_frame_reuses_named_versions_across_observations() {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Pointer::symbolic(Variable(9_950_001));
         let write = Pointer::symbolic(Variable(9_950_002));
-        let base = intern_memory(Memory::new());
+        let base = intern_memory(SymbolicMemory::new());
         let mut observed = base.memory().clone();
         for index in 0..size {
             observed = observed.materialize_cell_from_source(

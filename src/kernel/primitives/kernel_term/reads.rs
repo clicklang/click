@@ -205,7 +205,7 @@ mod tests {
     #[test]
     fn pointer_read_execution_results_keep_definition_type_and_complete_payload() {
         let _session = VerificationSession::enter();
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let address = Pointer::symbolic(Variable(1018000));
         for ty in [
             ProgramType::Int32Pointer,
@@ -254,7 +254,7 @@ mod tests {
     fn pointer_read_root_retains_definition_after_registry_reset() {
         let _session = VerificationSession::enter();
         let address = Pointer::symbolic(Variable(1018001));
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let native = memory.symbolic_pointer_load(&address, ProgramType::UInt8Pointer);
         let retained = crate::kernel::ExecutionValue::retain_native(native);
         let root = retained.shared().expect("read root").clone();
@@ -280,7 +280,7 @@ mod tests {
     fn scalar_reads_retain_exact_descriptors_and_survive_registry_reset() {
         let _session = VerificationSession::enter();
         let address = Pointer::symbolic(Variable(993100));
-        let memory = intern_memory(Memory::new().store(
+        let memory = intern_memory(SymbolicMemory::new().store(
             address.clone(),
             ProgramValue::Int32(MachineTerm::constant(7)),
         ));
@@ -317,7 +317,7 @@ mod tests {
     #[test]
     fn shared_read_addresses_preserve_call_payloads_ignored_by_logical_identity() {
         let _session = VerificationSession::enter();
-        let memory = intern_memory(Memory::new());
+        let memory = intern_memory(SymbolicMemory::new());
         let pointer = PointerValue::new(
             Pointer::symbolic(Variable(1017200)),
             ProgramType::Int32Pointer,
@@ -370,8 +370,8 @@ mod tests {
     fn scalar_read_identity_distinguishes_state_address_and_kind() {
         let _session = VerificationSession::enter();
         let address = Pointer::symbolic(Variable(993110));
-        let memory = intern_memory(Memory::new());
-        let written = intern_memory(Memory::new().store(
+        let memory = intern_memory(SymbolicMemory::new());
+        let written = intern_memory(SymbolicMemory::new().store(
             address.clone(),
             ProgramValue::Int32(MachineTerm::constant(7)),
         ));
@@ -405,7 +405,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int32;
         let raw = MachineTerm::MemoryLoad(
-            ProgramPoint::at(&(intern_memory(Memory::new()))),
+            ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             Box::new(Pointer::symbolic(Variable(993120))),
             LoadKind::Int32,
         );
@@ -424,7 +424,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::UInt32;
         let raw = MachineTerm::MemoryLoad(
-            ProgramPoint::at(&(intern_memory(Memory::new()))),
+            ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             Box::new(Pointer::symbolic(Variable(993126))),
             LoadKind::UInt32,
         );
@@ -449,7 +449,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int32;
         let raw = MachineTerm::MemoryLoad(
-            ProgramPoint::at(&(intern_memory(Memory::new()))),
+            ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             Box::new(Pointer::symbolic(Variable(993125))),
             LoadKind::Int32,
         );
@@ -470,9 +470,9 @@ mod tests {
     fn nested_scalar_reads_retain_both_states_without_registered_names() {
         let _session = VerificationSession::enter();
         let p = Pointer::symbolic(Variable(993140));
-        let before = intern_memory(Memory::new());
+        let before = intern_memory(SymbolicMemory::new());
         let after = intern_memory(
-            Memory::new().store(p.clone(), ProgramValue::Int32(MachineTerm::constant(1))),
+            SymbolicMemory::new().store(p.clone(), ProgramValue::Int32(MachineTerm::constant(1))),
         );
         let nested = |inner: SharedMemory, outer: SharedMemory, kind| {
             MachineTerm::MemoryLoad(
@@ -516,10 +516,10 @@ mod tests {
     fn nested_read_identity_does_not_compare_state_contents_across_arenas() {
         let first = {
             let _session = VerificationSession::enter();
-            intern_memory(Memory::new())
+            intern_memory(SymbolicMemory::new())
         };
         let _session = VerificationSession::enter();
-        let second = intern_memory(Memory::new());
+        let second = intern_memory(SymbolicMemory::new());
         assert_ne!(first.arena_id(), second.arena_id());
         assert_eq!(first, second); // Same contents, distinct retained_state identities.
         let read = |memory| {
@@ -577,7 +577,7 @@ mod tests {
             (MachineIntegerType::Int64, LoadKind::Bits64, true),
         ] {
             let read = MachineTerm::MemoryLoad(
-                ProgramPoint::at(&(intern_memory(Memory::new()))),
+                ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
                 Box::new(Pointer::symbolic(Variable(993160))),
                 kind,
             );
@@ -620,7 +620,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let p = Pointer::symbolic(Variable(993162));
         let memory = intern_memory(
-            Memory::new().store(p.clone(), ProgramValue::Int32(MachineTerm::constant(3))),
+            SymbolicMemory::new().store(p.clone(), ProgramValue::Int32(MachineTerm::constant(3))),
         );
         let index = crate::kernel::eval::canonical_form_of_load(memory.clone(), p, LoadKind::Int32);
         let address = Pointer {
@@ -685,7 +685,7 @@ mod tests {
             ),
         };
         let native = MachineTerm::MemoryLoad(
-            ProgramPoint::at(&(intern_memory(Memory::new()))),
+            ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             Box::new(address),
             LoadKind::Int32,
         );

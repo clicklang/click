@@ -2361,7 +2361,7 @@ fn collect_shared_integer_carrier_variables_seen(
     }
 }
 
-/// Collect mathematical Integer variables nested in a machine term.  Memory
+/// Collect mathematical Integer variables nested in a machine term.  SymbolicMemory
 /// states are intentionally opaque here: only the address payload of a
 /// load can carry a variable relevant to a lexical substitution, and that
 /// payload is a machine term with no Integer carrier.
@@ -5892,7 +5892,7 @@ pub(in crate::kernel) fn indexed_memory_contains_variable(
 }
 
 /// Establish the input state's index once, before individual C steps.
-pub(in crate::kernel) fn prepare_memory_variable_index(memory: &Memory) {
+pub(in crate::kernel) fn prepare_memory_variable_index(memory: &SymbolicMemory) {
     let shared = crate::kernel::intern_memory_ref(memory);
     shared_memory_variable_counts(&shared, WholeCount::Charged);
 }
@@ -6124,7 +6124,7 @@ pub(in crate::kernel) fn bound_reserved_base(
 /// The variables of every entry `memory` holds that `base` does not hold
 /// the same, by the diffs `counts_from_base` reads: together with `base`'s
 /// variables they include all of `memory`'s, and each is one of `memory`'s.
-fn variables_entering(base: &Memory, memory: &Memory) -> BTreeSet<Variable> {
+fn variables_entering(base: &SymbolicMemory, memory: &SymbolicMemory) -> BTreeSet<Variable> {
     let mut variables = BTreeSet::new();
     for change in base.blocks.diff(&memory.blocks) {
         let block = change.key();
@@ -6272,7 +6272,7 @@ fn shared_memory_variable_counts(memory: &SharedMemory, whole: WholeCount) -> Va
     previous.expect("the chain counts at least the state").1
 }
 
-fn memory_entry_count(memory: &Memory) -> usize {
+fn memory_entry_count(memory: &SymbolicMemory) -> usize {
     memory.blocks.len()
         + memory.cells.representation_len()
         + memory.union_cells.len()
@@ -6464,7 +6464,7 @@ fn heap_variable_counts(
     counts
 }
 
-fn counts_whole(memory: &Memory, whole: WholeCount) -> VariableCounts {
+fn counts_whole(memory: &SymbolicMemory, whole: WholeCount) -> VariableCounts {
     if whole == WholeCount::Charged {
         crate::instrumentation::record_deterministic_work(
             memory.blocks.len() + memory.cells.representation_len() + memory.union_cells.len(),
@@ -6491,7 +6491,11 @@ fn counts_whole(memory: &Memory, whole: WholeCount) -> VariableCounts {
 /// `memory`'s counts from `base`'s: each entry the two differ on leaves with
 /// its old variables and arrives with its new ones. The diffs charge one unit
 /// per difference.
-fn counts_from_base(mut counts: VariableCounts, base: &Memory, memory: &Memory) -> VariableCounts {
+fn counts_from_base(
+    mut counts: VariableCounts,
+    base: &SymbolicMemory,
+    memory: &SymbolicMemory,
+) -> VariableCounts {
     for change in base.blocks.diff(&memory.blocks) {
         let block = change.key();
         if let Some(contents) = base.blocks.get(block) {
@@ -6558,7 +6562,7 @@ fn counts_from_base(mut counts: VariableCounts, base: &Memory, memory: &Memory) 
 /// An interned state a cell's load reaches is walked through
 /// [`collect_shared_memory_bitvector_variables`], once per session.
 pub(in crate::kernel) fn collect_memory_bitvector_variables(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     variables: &mut BTreeSet<Variable>,
 ) {
     if collecting_connection_variables() {
@@ -6600,7 +6604,7 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables(
 /// [`shared_memory_variable_counts`] are built from the same per-entry
 /// collectors, so the two agree on every state.
 pub(in crate::kernel) fn collect_memory_bitvector_variables_whole(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     variables: &mut BTreeSet<Variable>,
 ) {
     if collecting_connection_variables() {
@@ -6824,7 +6828,7 @@ mod shared_read_walker_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let native = MachineTerm::MemoryLoad(
-            ProgramPoint::at(&(intern_memory(Memory::new()))),
+            ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             Box::new(pointer),
             LoadKind::Int32,
         );
@@ -6852,7 +6856,7 @@ mod shared_read_walker_tests {
             ),
         };
         let raw = MachineTerm::MemoryLoad(
-            ProgramPoint::at(&(intern_memory(Memory::new()))),
+            ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             Box::new(pointer),
             LoadKind::Int32,
         );

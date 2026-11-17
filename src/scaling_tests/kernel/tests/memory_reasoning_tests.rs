@@ -42,7 +42,7 @@ fn unaddressable_scalar_owners_do_not_restate_observable_memory_frames() {
         for i in 0..count {
             resources = resources.unchecked_with_fact(ResourceFact::own_memory(
                 MemoryRange::new_with_element_width(
-                    Memory::local_pointer(format!("hidden_{i}")),
+                    SymbolicMemory::local_pointer(format!("hidden_{i}")),
                     0u32.into(),
                     4u32.into(),
                     1,
@@ -56,7 +56,7 @@ fn unaddressable_scalar_owners_do_not_restate_observable_memory_frames() {
         measured_work.push((count, work));
         assert_eq!(resources.facts().len(), count + 2);
         let addressed = ResourceFact::own_memory(MemoryRange::new(
-            Memory::local_pointer("addressed"),
+            SymbolicMemory::local_pointer("addressed"),
             0u32.into(),
             1u32.into(),
         ));
@@ -112,7 +112,7 @@ fn memory_range_endpoint_graph_matching_scales_without_fact_index() {
 
 #[test]
 fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let storage = Pointer {
         block: "viewed-storage".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -180,8 +180,8 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
         "alias transport work: {samples:?}"
     );
 
-    let local = Memory::local_pointer("expired-view");
-    let before = Memory::new().with_block("local:expired-view", 4);
+    let local = SymbolicMemory::local_pointer("expired-view");
+    let before = SymbolicMemory::new().with_block("local:expired-view", 4);
     let after = before.without_local_block(&local.block);
     let context = PureFactContext::new()
         .assume_proposition(Proposition::ConditionIs(
@@ -207,7 +207,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
 
 #[test]
 fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let target = Pointer {
         block: "indexed-viewable-shapes".into(),
         offset: PointerOffsetTerm::Constant(10_000),
@@ -287,7 +287,7 @@ fn composition_store_separation_uses_checked_aliases_without_scanning_other_owne
             });
             let hop = hop.expect("the store's exact alias names its owned member");
             let store = MemoryDerivation::Store {
-                base: crate::kernel::intern_memory(Memory::new()),
+                base: crate::kernel::intern_memory(SymbolicMemory::new()),
                 pointer: write.clone(),
                 value: int32(7).into(),
             };
@@ -307,7 +307,7 @@ fn composition_store_separation_uses_checked_aliases_without_scanning_other_owne
                     .is_none()
             );
             let wider_store = MemoryDerivation::Store {
-                base: crate::kernel::intern_memory(Memory::new()),
+                base: crate::kernel::intern_memory(SymbolicMemory::new()),
                 pointer: write.clone(),
                 value: int64(7).into(),
             };
@@ -342,15 +342,15 @@ fn load_equality_resolves_through_stored_cell_chains_of_any_length() {
     let cell = |index: usize| base.offset_by_elements(MachineTerm::constant(index as u32), 4);
     let mut samples = Vec::new();
     for length in [32usize, 64, 96, 128] {
-        let mut memory =
-            Memory::new().store(cell(length), ProgramValue::Int32(MachineTerm::constant(42)));
+        let mut memory = SymbolicMemory::new()
+            .store(cell(length), ProgramValue::Int32(MachineTerm::constant(42)));
         for index in (0..length).rev() {
             let next = MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                 Box::new(cell(index + 1)),
                 crate::kernel::LoadKind::Int32,
             );
-            memory = Memory::new().store(cell(index), ProgramValue::Int32(next));
+            memory = SymbolicMemory::new().store(cell(index), ProgramValue::Int32(next));
         }
         let load = MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
@@ -382,7 +382,7 @@ fn load_equality_resolves_through_stored_cell_chains_of_any_length() {
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn shifted_constant_view_spans_match_without_ambient_search() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let base = Pointer::symbolic(Variable(9_319_000));
     let index = MachineTerm::Variable(Variable(9_319_001));
     let count = |length| {
@@ -556,7 +556,7 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
 fn ordering_states_of_one_path_does_not_walk_their_shared_entries() {
     let object = |index: u32| Pointer::symbolic(Variable(99_400 + u64::from(index)));
     for size in [16u32, 64, 256] {
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         let mut resources = ResourceContext::new();
         for index in 0..size {
             memory = memory.store(object(index), int32(index));

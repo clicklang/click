@@ -36,7 +36,7 @@ fn caller_state(pointer: &Pointer) -> ExecutionState {
     ));
     ExecutionState::new()
         .with_population_creation_tracking()
-        .with_memory(Memory::new().with_block(pointer.block.clone(), 4))
+        .with_memory(SymbolicMemory::new().with_block(pointer.block.clone(), 4))
         .with_resource_context(resources)
 }
 
@@ -132,10 +132,13 @@ fn aliased_byte_output_fixture(
     size: u32,
     initialized_output: bool,
 ) -> (ExecutionState, ProgramFunction, PureFactContext, Pointer) {
-    let word = Memory::local_pointer("output-word");
+    let word = SymbolicMemory::local_pointer("output-word");
     let alias = Pointer::symbolic(Variable(987_000));
-    let mut memory =
-        Memory::new().with_declared_scalar_block(word.block.clone(), 4, ProgramType::UInt32);
+    let mut memory = SymbolicMemory::new().with_declared_scalar_block(
+        word.block.clone(),
+        4,
+        ProgramType::UInt32,
+    );
     let mut assumptions = PureFactContext::new();
     let mut previous = alias.clone();
     for i in 0..size {

@@ -37,7 +37,7 @@ fn compound_read_queries_require_explicit_equations() {
             offset: PointerOffsetTerm::Constant(0),
         };
         let value = stored(format, number(format, 7));
-        let memory = intern_memory(Memory::new().store(slot.clone(), value.clone()));
+        let memory = intern_memory(SymbolicMemory::new().store(slot.clone(), value.clone()));
         let kind = LoadKind::of_value(&value).unwrap();
         if kind.is_word32() {
             crate::kernel::eval::record_load_access_width(memory.memory(), &slot, 4);

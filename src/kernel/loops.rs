@@ -3249,7 +3249,7 @@ mod exit_local_argument_tests;
 /// A value-only binding introduced by lowering is not an automatic object.
 /// If an exit never produced it, no common value can be read after the loop.
 /// Discard only loop-written names absent at entry, and only when every held
-/// binding has no declared storage. Memory and resource authority remain intact.
+/// binding has no declared storage. SymbolicMemory and resource authority remain intact.
 fn discard_loop_exit_partial_value_bindings(
     top: &ExecutionState,
     body: &ProgramStatement,
@@ -3435,7 +3435,7 @@ fn abstract_loop_exit_initialization(
 ///   havoc and checked write-set markers describe different states, not
 ///   physical blocks. Retain their common history and mint one new epoch,
 ///   avoiding a union that each residual check would have to scan.
-/// - **Memory state identity: fresh.** A forget mark says a memory is not known
+/// - **SymbolicMemory state identity: fresh.** A forget mark says a memory is not known
 ///   to be the memory it forgot from. When the exits' marks differ, the
 ///   successor's memory keeps only what every exit agrees on (the cells the
 ///   join has already made common) and is marked as forgetting from a
@@ -3518,7 +3518,7 @@ fn join_loop_exit_storage_bookkeeping(
             );
         }
         let minted = crate::kernel::intern_memory(
-            Memory::new().with_block(format!("loop-exit-join:{}", marker.0).as_str(), 0),
+            SymbolicMemory::new().with_block(format!("loop-exit-join:{}", marker.0).as_str(), 0),
         );
         memory.mark_forgotten_from(&minted);
         memory.record_diagnostic_transform(
@@ -4022,7 +4022,7 @@ fn loop_exit_resources_agree(
 /// path that built them happened to lay them out, because a layout is not
 /// something a path reaches:
 ///
-/// - memory, by [`Memory::same_contents_as`]: the same cells with the same
+/// - memory, by [`SymbolicMemory::same_contents_as`]: the same cells with the same
 ///   values, whether the cell cache holds one as a concrete cell or as a
 ///   slot of a seeded run;
 /// - resource ownership, by the normalized context, the form
@@ -7437,7 +7437,7 @@ fn loop_binder_declared_arguments(
     )
 }
 
-/// The read-only form of a resource the loop did not declare. Memory and
+/// The read-only form of a resource the loop did not declare. SymbolicMemory and
 /// composite resources have one; an exclusive token or instance does not, so
 /// the body simply does not hold it.
 fn viewed_form_of_resource_fact(fact: &ResourceFact) -> Option<ResourceFact> {

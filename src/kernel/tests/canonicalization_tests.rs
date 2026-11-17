@@ -36,7 +36,7 @@ fn floating_values_keep_their_declared_width_and_opaque_payload() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let float_value = ProgramValue::Float32(MachineTerm::constant(0x8000_0000));
-    let float_memory = Memory::new()
+    let float_memory = SymbolicMemory::new()
         .with_block("float-storage", 4)
         .store(float_pointer.clone(), float_value.clone());
     assert_eq!(float_value.program_type(), ProgramType::Float32);
@@ -58,7 +58,7 @@ fn floating_values_keep_their_declared_width_and_opaque_payload() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let double_value = ProgramValue::Float64(MachineTerm::uint64_constant(0x7ff8_0000_0000_0001));
-    let double_memory = Memory::new()
+    let double_memory = SymbolicMemory::new()
         .with_block("double-storage", 8)
         .store(double_pointer.clone(), double_value.clone());
     assert_eq!(double_value.program_type(), ProgramType::Float64);
@@ -259,7 +259,9 @@ fn index_loaded_from_an_opaque_cell_takes_a_canonical_offset() {
         block: "data".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = Memory::new().with_block("len", 4).with_block("data", 64);
+    let memory = SymbolicMemory::new()
+        .with_block("len", 4)
+        .with_block("data", 64);
     let state = ExecutionState::new()
         .with_local("len_ptr", ProgramValue::pointer(len_cell.clone()))
         .with_local("data", ProgramValue::pointer(data))
@@ -310,7 +312,7 @@ fn pointer_loaded_from_an_opaque_cell_is_named_by_its_read() {
         block: "pp".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = Memory::new().with_block("pp", 4);
+    let memory = SymbolicMemory::new().with_block("pp", 4);
     let state = ExecutionState::new()
         .with_local("pp", ProgramValue::pointer(cell.clone()))
         .with_memory(memory)
@@ -352,7 +354,7 @@ fn pointer_loaded_from_an_opaque_cell_is_named_by_its_read() {
 // --- canonical form: determinism and idempotence --------------------------
 
 fn unresolved_canonicalization_test_load() -> MachineTerm {
-    let memory = Memory::new().with_block("canonical-shapes", 8);
+    let memory = SymbolicMemory::new().with_block("canonical-shapes", 8);
     MachineTerm::MemoryLoad(
         ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
         Box::new(Pointer {
@@ -565,7 +567,7 @@ fn canonical_term_resolves_equal_loads_to_one_form() {
         block: "cells".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let base = Memory::new().with_block("cells", 4);
+    let base = SymbolicMemory::new().with_block("cells", 4);
     // The same unresolved load, read from two states that differ only by
     // a block this load cannot observe.
     let drifted = base.clone().with_block("unrelated", 4);
@@ -612,10 +614,12 @@ fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
         block: "condition-cells".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = Memory::new().with_block("condition-cells", 4).store(
-        pointer.clone(),
-        ProgramValue::Int32(MachineTerm::constant(7)),
-    );
+    let memory = SymbolicMemory::new()
+        .with_block("condition-cells", 4)
+        .store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(7)),
+        );
     let load = MachineTerm::MemoryLoad(
         ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
         Box::new(pointer),
@@ -667,7 +671,7 @@ fn representational_load_equality_holds_beyond_the_former_depth_preflight() {
         block: "deep-cells".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let base = Memory::new().with_block("deep-cells", 4);
+    let base = SymbolicMemory::new().with_block("deep-cells", 4);
     let drifted = base.clone().with_block("unrelated", 4);
     let mut left = MachineTerm::MemoryLoad(
         ProgramPoint::at(&(crate::kernel::intern_memory(base))),
@@ -718,9 +722,9 @@ fn shared_offsets_retain_state_identity_through_canonicalization() {
         block: "cells".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let base = Memory::new().with_block("cells", 4);
+    let base = SymbolicMemory::new().with_block("cells", 4);
     let drifted = base.clone().with_block("unrelated", 4);
-    let scaled = |memory: Memory| {
+    let scaled = |memory: SymbolicMemory| {
         PointerOffsetTerm::scaled_int32_node(
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
@@ -805,7 +809,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
     // `data[index]` with `index == 0` in scope is the cell `data[0]`: the
     // two structural reads retain different addresses. Congruence in the
     // equality graph identifies them only with the required index equality.
-    let memory = crate::kernel::intern_memory(Memory::new().with_block("data", 8));
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("data", 8));
     let index = MachineTerm::Variable(Variable(7));
     let indexed = MachineTerm::MemoryLoad(
         ProgramPoint::at(&memory),
@@ -916,7 +920,7 @@ fn substitution_reaches_through_a_load_variable_with_a_bound_index() {
     // the load variable's address. Instantiating `k := 0` must reach through
     // the load variable and produce the load variable used by a direct read
     // of `p[0]`.
-    let memory = crate::kernel::intern_memory(Memory::new().with_block("p", 12));
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("p", 12));
     let bound = Variable(3_000_000);
     let cell = |offset: PointerOffsetTerm| {
         MachineTerm::MemoryLoad(
@@ -957,7 +961,7 @@ fn load_variables_compare_as_loads_under_bounds_pinned_indices() {
     // `p[j]` and `p[2]` are one cell when `j <= 2` and `not (j < 2)`: no
     // recorded equality mentions the index, so the comparison must view the
     // load variables as their loads and decide the addresses from bounds.
-    let memory = crate::kernel::intern_memory(Memory::new().with_block("p", 12));
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("p", 12));
     let j = MachineTerm::Variable(Variable(7));
     let cell = |offset: PointerOffsetTerm| {
         crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
@@ -996,7 +1000,7 @@ fn load_variable_free_variables_include_its_state_cells() {
     // denotes a term mentioning that counter: goal-directed substitutions
     // and other variable-sensitive rules must see it through the load.
     let counter = Variable(11);
-    let written = Memory::new().with_block("p", 12).store(
+    let written = SymbolicMemory::new().with_block("p", 12).store(
         Pointer {
             block: "p".into(),
             offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(counter), 4),
@@ -1021,7 +1025,7 @@ fn load_variable_free_variables_include_its_state_cells() {
 fn symbolic_memory_block_sizes_are_free_and_substitutable() {
     let size_variable = Variable(12_345);
     let block = PointerBlock::Concrete("symbolic-size".to_string());
-    let memory = Memory {
+    let memory = SymbolicMemory {
         construction: None,
         pending_steps: None,
         blocks: std::sync::Arc::new(MemoryBlocks::from_iter([(
@@ -1075,7 +1079,7 @@ fn nested_state_load_named(depth: usize, name: impl Fn(MachineTerm) -> MachineTe
             8 * depth as u32 + 16,
         ))),
     )]));
-    let level_memory = |cells| Memory {
+    let level_memory = |cells| SymbolicMemory {
         construction: None,
         pending_steps: None,
         blocks: blocks.clone(),
@@ -1120,8 +1124,9 @@ fn a_live_memorys_counted_variables_are_its_walked_variables() {
         ),
     };
     let value = |variable: u64| ProgramValue::Int32(MachineTerm::Variable(Variable(variable)));
-    let source = crate::kernel::intern_memory(Memory::new().with_block("counted-source", 64));
-    let mut memory = Memory::new();
+    let source =
+        crate::kernel::intern_memory(SymbolicMemory::new().with_block("counted-source", 64));
+    let mut memory = SymbolicMemory::new();
     let mut states = Vec::new();
     for (offset, variable) in [(0, 7_950_010), (4, 7_950_011)] {
         memory = memory.store(at(offset), value(variable));
@@ -1247,7 +1252,7 @@ fn a_materialized_pointer_cell_is_named_by_the_load_it_holds() {
         block: "fields".into(),
         offset: PointerOffsetTerm::Constant(8),
     };
-    let entry = Memory::new().with_block("fields", 16);
+    let entry = SymbolicMemory::new().with_block("fields", 16);
     let loaded = crate::kernel::eval::canonical_cell_load(
         intern_memory(entry.clone()),
         field.clone(),
@@ -1255,7 +1260,7 @@ fn a_materialized_pointer_cell_is_named_by_the_load_it_holds() {
     );
     let read = Pointer::loaded(&loaded).expect("the cell's structural read");
     let pointer_at = |value: Pointer| ProgramValue::typed_pointer(value, ProgramType::Int32Pointer);
-    let name_at = |memory: Memory, cell: &Pointer| {
+    let name_at = |memory: SymbolicMemory, cell: &Pointer| {
         crate::kernel::eval::canonical_cell_load(
             intern_memory(memory),
             cell.clone(),
@@ -1337,12 +1342,12 @@ fn a_scaled_index_sum_is_one_atom_and_a_constant_index_is_a_shift() {
 fn a_store_through_a_wrapping_index_sum_is_placed_by_the_word_itself() {
     use crate::kernel::primitives::{AliasCandidates, SlotSet};
     let block = PointerBlock::Symbolic(Variable(7_960_100));
-    let source = crate::kernel::intern_memory(Memory::new().with_block("wrap-source", 64));
+    let source = crate::kernel::intern_memory(SymbolicMemory::new().with_block("wrap-source", 64));
     let base = Pointer {
         block: block.clone(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = Memory::new().with_seeded_cells(base, 4, ProgramType::Int32, 0, 8, source);
+    let memory = SymbolicMemory::new().with_seeded_cells(base, 4, ProgramType::Int32, 0, 8, source);
     let run = memory
         .cells
         .candidate_runs(&AliasCandidates::of_block(&block))

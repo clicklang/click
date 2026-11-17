@@ -211,7 +211,10 @@ pub(crate) fn program_checked_function_proposition_with_reason(
 /// unrelated cells, facts, and execution history are never visited. Read
 /// identity alone is insufficient: forgotten knowledge, havoc, stores, and
 /// allocation changes remain barriers even when some reads are unchanged.
-pub(in crate::kernel) fn memories_match_up_to_cached_reads(left: &Memory, right: &Memory) -> bool {
+pub(in crate::kernel) fn memories_match_up_to_cached_reads(
+    left: &SymbolicMemory,
+    right: &SymbolicMemory,
+) -> bool {
     let mut left = intern_memory_ref(left);
     let mut right = intern_memory_ref(right);
     while left != right {
@@ -289,7 +292,12 @@ mod cached_read_completion_tests {
         }
     }
 
-    fn cache(memory: &Memory, source: &Memory, count: u32, width: u32) -> Memory {
+    fn cache(
+        memory: &SymbolicMemory,
+        source: &SymbolicMemory,
+        count: u32,
+        width: u32,
+    ) -> SymbolicMemory {
         memory.clone().with_seeded_cells(
             pointer("cache", 0),
             width,
@@ -301,8 +309,8 @@ mod cached_read_completion_tests {
     }
 
     fn check_completion(
-        memory: Memory,
-        published: Memory,
+        memory: SymbolicMemory,
+        published: SymbolicMemory,
     ) -> Result<CheckedFunctionProposition, String> {
         let proposition = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
         let state = ExecutionState::new().with_memory(published);
@@ -423,7 +431,7 @@ mod cached_read_completion_tests {
 
     #[test]
     fn proposition_completion_accepts_own_read_cache_but_not_program_changes() {
-        let before = Memory::new();
+        let before = SymbolicMemory::new();
         let cached = cache(&before, &before, 8, 4);
         assert_ne!(before, cached);
         assert!(check_completion(cached.clone(), before.clone()).is_ok());
@@ -437,7 +445,7 @@ mod cached_read_completion_tests {
 
     #[test]
     fn proposition_completion_does_not_cross_call_havoc_for_cached_reads() {
-        let before = Memory::new();
+        let before = SymbolicMemory::new();
         let after = before.clone().with_call_memory_havoc(
             Variable(91_001),
             &[],
@@ -580,9 +588,9 @@ pub fn program_function_outcomes_program_state_equal_by_derivation(
 
 #[cfg(test)]
 fn memories_equal_by_derivation(
-    left_final: &Memory,
+    left_final: &SymbolicMemory,
     left_facts: &(impl ExecutionFactSource + ?Sized),
-    right_final: &Memory,
+    right_final: &SymbolicMemory,
     right_facts: &(impl ExecutionFactSource + ?Sized),
     assumptions: &PureFactContext,
 ) -> bool {
@@ -600,7 +608,7 @@ fn memories_equal_by_derivation(
     if left_stores.is_empty() || left_stores.len() != right_stores.len() {
         return false;
     }
-    let chain_reaches_final = |stores: &[&CertifiedMemoryStore], final_memory: &Memory| {
+    let chain_reaches_final = |stores: &[&CertifiedMemoryStore], final_memory: &SymbolicMemory| {
         stores
             .windows(2)
             .all(|pair| memories_definitionally_equal(&pair[0].after, &pair[1].before, assumptions))
@@ -638,8 +646,8 @@ fn memories_equal_by_derivation(
 /// no depth cut.
 #[cfg(test)]
 fn memories_equal_by_matching_derivations(
-    left: &Memory,
-    right: &Memory,
+    left: &SymbolicMemory,
+    right: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> bool {
     matching_recomputed_call_havoc_views(left, right, assumptions).is_some()
@@ -650,8 +658,8 @@ fn memories_equal_by_matching_derivations(
 /// construction uses these pairs to register another concrete view of an
 /// already checked call event; the pairs themselves are never authority.
 pub(crate) fn matching_recomputed_call_havoc_views(
-    left: &Memory,
-    right: &Memory,
+    left: &SymbolicMemory,
+    right: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> Option<Vec<(SharedMemory, SharedMemory)>> {
     fn transparent_base(derivation: &MemoryDerivation) -> Option<&SharedMemory> {
@@ -702,8 +710,8 @@ pub(crate) fn matching_recomputed_call_havoc_views(
             && intern_memory_ref(load_memory.memory()).arena_id() == base.arena_id()
     }
     fn match_inner(
-        left: &Memory,
-        right: &Memory,
+        left: &SymbolicMemory,
+        right: &SymbolicMemory,
         assumptions: &PureFactContext,
         views: &mut Vec<(SharedMemory, SharedMemory)>,
     ) -> bool {
@@ -875,7 +883,8 @@ mod range_list_equality_graph_tests {
     #[test]
     fn certified_range_list_endpoints_use_graph_with_state_scope() {
         let _session = crate::kernel::VerificationSession::enter();
-        let before = crate::kernel::intern_memory(Memory::new().with_block("range-list", 8));
+        let before =
+            crate::kernel::intern_memory(SymbolicMemory::new().with_block("range-list", 8));
         let pointer = |index| Pointer {
             block: "range-list".into(),
             offset: PointerOffsetTerm::scale_int32(index, 4),
@@ -944,8 +953,8 @@ mod range_list_equality_graph_tests {
 /// side of one rule, so it must select cells and blocks with exactly that
 /// filter and nothing wider.
 pub(in crate::kernel) fn memories_definitionally_equal(
-    left: &Memory,
-    right: &Memory,
+    left: &SymbolicMemory,
+    right: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> bool {
     if left.heap != right.heap {
@@ -973,8 +982,8 @@ pub(in crate::kernel) fn memories_definitionally_equal(
 }
 
 fn memory_cells_definitionally_contained(
-    source: &Memory,
-    target: &Memory,
+    source: &SymbolicMemory,
+    target: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> bool {
     for (source_pointer, source_value) in source
@@ -1058,7 +1067,7 @@ fn memory_cells_definitionally_contained(
 
 fn materialized_load_is_unchanged(
     value: &ProgramValue,
-    symbolic_memory: &Memory,
+    symbolic_memory: &SymbolicMemory,
     pointer: &Pointer,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -2140,9 +2149,9 @@ fn function_claim_holds_on_prepared_path(
                 .iter()
                 .any(crate::kernel::MemoryRange::is_unnamed_footprint);
             let mut effect_memory = caller_state.memory().clone();
-            let mut seen_transitions = Vec::<(Memory, Memory)>::new();
-            let is_function_fresh_heap_pointer = |pointer: &Pointer, current: &Memory| {
-                let matches_allocation = |memory: &Memory| {
+            let mut seen_transitions = Vec::<(SymbolicMemory, SymbolicMemory)>::new();
+            let is_function_fresh_heap_pointer = |pointer: &Pointer, current: &SymbolicMemory| {
+                let matches_allocation = |memory: &SymbolicMemory| {
                     memory.heap.live_allocations.keys().any(|base| {
                         // Freshness is a property of the allocation, not of
                         // the particular address selected within it. An
@@ -2319,11 +2328,11 @@ fn function_claim_holds_on_prepared_path(
 }
 
 pub(in crate::kernel) fn program_effect_memories_definitionally_equal(
-    left: &Memory,
-    right: &Memory,
+    left: &SymbolicMemory,
+    right: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> bool {
-    let without_locals = |memory: &Memory| {
+    let without_locals = |memory: &SymbolicMemory| {
         let mut external = memory.clone();
         std::sync::Arc::make_mut(&mut external.blocks).retain(|block, _| !block.is_local_block());
         std::sync::Arc::make_mut(&mut external.cells)
@@ -2348,9 +2357,9 @@ pub(in crate::kernel) fn program_effect_memories_definitionally_equal(
 /// symbolic allocation before direct `free`. Removing only those additions
 /// leaves a memory that must still match the preceding endpoint exactly.
 pub(in crate::kernel) fn program_effect_memory_advances_over_internal_heap_state(
-    before: &Memory,
-    after: &Memory,
-    function_entry: &Memory,
+    before: &SymbolicMemory,
+    after: &SymbolicMemory,
+    function_entry: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> bool {
     let fresh_blocks = after
@@ -2409,8 +2418,8 @@ pub(in crate::kernel) fn program_effect_memory_advances_over_internal_heap_state
 }
 
 fn heap_free_effect_is_valid(
-    before: &Memory,
-    after: &Memory,
+    before: &SymbolicMemory,
+    after: &SymbolicMemory,
     allocation_base: &Pointer,
     bytes: &AllocationSize,
 ) -> bool {
@@ -3131,7 +3140,7 @@ mod heap_free_effect_tests {
             MachineTerm::uint64_constant(4),
         );
         let wide = AllocationSize::new(bytes.clone(), AllocationSizeKind::UInt64);
-        let before = Memory::new();
+        let before = SymbolicMemory::new();
         let after = before
             .clone()
             .with_heap_allocation_claim(base.clone(), wide.clone())
@@ -3194,7 +3203,7 @@ mod checked_proposition_index_tests {
         let pointer = Pointer::symbolic(Variable(71_031));
         let equation = ExecutionPureFact::logical_read_equation(
             PointerValue::new(pointer.clone(), ProgramType::Int32Pointer),
-            Pointer::loaded_value(&intern_memory(Memory::new()), &pointer),
+            Pointer::loaded_value(&intern_memory(SymbolicMemory::new()), &pointer),
         );
         let mut paths = vec![
             lowering_candidate(false, vec![]),
@@ -3370,7 +3379,7 @@ mod heap_status_equality_tests {
             block: PointerBlock::Heap(424_242),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let mut base = Memory::new().with_block(block.block.clone(), 4);
+        let mut base = SymbolicMemory::new().with_block(block.block.clone(), 4);
         std::sync::Arc::make_mut(&mut base.heap)
             .live_allocations
             .insert(block.clone(), AllocationSize::int32(4));
@@ -3473,7 +3482,7 @@ mod wide_range_reader_tests {
 mod materialized_function_load_tests {
     use super::*;
 
-    fn callback_load(memory: &Memory, address: &Pointer, kind: LoadKind) -> ProgramValue {
+    fn callback_load(memory: &SymbolicMemory, address: &Pointer, kind: LoadKind) -> ProgramValue {
         let load = MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
             Box::new(address.clone()),
@@ -3492,7 +3501,7 @@ mod materialized_function_load_tests {
             block: "callback-cache".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let memory = Memory::new().with_block("callback-cache", 16);
+        let memory = SymbolicMemory::new().with_block("callback-cache", 16);
         let value = callback_load(
             &memory,
             &address,
@@ -3514,7 +3523,7 @@ mod materialized_function_load_tests {
             block: "callback-cache-controls".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let memory = Memory::new().with_block("callback-cache-controls", 16);
+        let memory = SymbolicMemory::new().with_block("callback-cache-controls", 16);
         let facts = PureFactContext::new();
         let value = callback_load(
             &memory,

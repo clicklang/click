@@ -627,7 +627,7 @@ pub(super) fn execute_branch_step_from_frontier_position(
         // The path facts of an undecided C condition carry the whole memory
         // state each load reads. Spelling them in the bounded source
         // vocabulary keeps the useful part -- which condition each arm
-        // assumes -- without the repeated `Memory` dump.
+        // assumes -- without the repeated `SymbolicMemory` dump.
         let paths = condition_transitions
             .iter()
             .enumerate()

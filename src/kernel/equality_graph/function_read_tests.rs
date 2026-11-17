@@ -25,7 +25,7 @@ fn function_pointer_read_requires_explicit_store_equation() {
     };
     let target = Pointer::function("callback");
     let stored = callback_value("callback");
-    let memory = intern_memory(Memory::new().store(slot.clone(), stored.clone()));
+    let memory = intern_memory(SymbolicMemory::new().store(slot.clone(), stored.clone()));
     for aliased in [false, true] {
         let query = if aliased {
             Pointer::symbolic(Variable(992001))

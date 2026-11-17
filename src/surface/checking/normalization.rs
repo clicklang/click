@@ -650,7 +650,7 @@ mod tests {
                 offset: PointerOffsetTerm::Constant(4),
             };
             let identity = crate::kernel::intern_memory(
-                Memory::new().with_block(format!("rewrite-origin-{case}"), 16),
+                SymbolicMemory::new().with_block(format!("rewrite-origin-{case}"), 16),
             );
             let observed = crate::kernel::intern_memory(
                 identity
@@ -716,8 +716,9 @@ mod tests {
             block: PointerBlock::Heap(930_001),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let memory =
-            crate::kernel::intern_memory(Memory::new().with_block(PointerBlock::Heap(930_001), 16));
+        let memory = crate::kernel::intern_memory(
+            SymbolicMemory::new().with_block(PointerBlock::Heap(930_001), 16),
+        );
         let loaded = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
             &source,
@@ -773,7 +774,7 @@ mod tests {
 
     #[test]
     fn pointer_rewrite_changes_every_matching_field_load_at_one_state() {
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let source = Pointer {
             block: PointerBlock::Symbolic(Variable(91)),
             offset: PointerOffsetTerm::Constant(0),
@@ -887,7 +888,7 @@ mod tests {
 
     #[test]
     fn rewrite_substitutes_index_and_base_equalities_inside_load_addresses() {
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let data = MachineTerm::Variable(Variable(51));
         let alias = MachineTerm::Variable(Variable(52));
         let index = MachineTerm::Variable(Variable(53));
@@ -1006,7 +1007,8 @@ mod tests {
 
     #[test]
     fn integer_observation_rewrite_requires_an_available_machine_equality() {
-        let memory = crate::kernel::intern_memory(Memory::new().with_block("rewrite-cell", 4));
+        let memory =
+            crate::kernel::intern_memory(SymbolicMemory::new().with_block("rewrite-cell", 4));
         let pointer = Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
@@ -1041,7 +1043,7 @@ mod tests {
     fn integer_range_fold_rewrite_changes_only_int32_endpoints() {
         let from = MachineTerm::Variable(Variable(71));
         let to = MachineTerm::Variable(Variable(72));
-        let memory = crate::kernel::intern_memory(Memory::new().with_block("fold", 4));
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("fold", 4));
         let body = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
             MachineTerm::MemoryLoad(
@@ -1149,16 +1151,18 @@ mod tests {
             block: PointerBlock::Concrete("rewrite-cell".into()),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let first_memory =
-            crate::kernel::intern_memory(Memory::new().with_block("rewrite-cell", 4).store(
+        let first_memory = crate::kernel::intern_memory(
+            SymbolicMemory::new().with_block("rewrite-cell", 4).store(
                 pointer.clone(),
                 ProgramValue::Int32(MachineTerm::constant(0)),
-            ));
-        let second_memory =
-            crate::kernel::intern_memory(Memory::new().with_block("rewrite-cell", 4).store(
+            ),
+        );
+        let second_memory = crate::kernel::intern_memory(
+            SymbolicMemory::new().with_block("rewrite-cell", 4).store(
                 pointer.clone(),
                 ProgramValue::Int32(MachineTerm::constant(7)),
-            ));
+            ),
+        );
         assert_ne!(first_memory, second_memory);
         let first_load = MachineTerm::MemoryLoad(
             crate::kernel::ProgramPoint::at(&first_memory),

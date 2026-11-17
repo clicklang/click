@@ -15,10 +15,14 @@ fn fixture(
     };
     let state = ExecutionState::new()
         .with_local("pool", ProgramValue::pointer(pointer.clone()))
-        .with_memory(Memory::new().with_block(pointer.block.clone(), 8).store(
-            pointer.offset_by_int32_elements(MachineTerm::constant(1)),
-            int32(4),
-        ));
+        .with_memory(
+            SymbolicMemory::new()
+                .with_block(pointer.block.clone(), 8)
+                .store(
+                    pointer.offset_by_int32_elements(MachineTerm::constant(1)),
+                    int32(4),
+                ),
+        );
     let slot = ResourceSpec::composite(
         ResourceAccessMode::Own,
         "slot".into(),

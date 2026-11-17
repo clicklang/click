@@ -202,7 +202,7 @@ fn contained_transfer_frontier_scales_with_selected_depth_and_indexed_definition
         block: "payload".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = Memory::new().with_block("payload", 4);
+    let memory = SymbolicMemory::new().with_block("payload", 4);
     let assumptions = PureFactContext::new();
     let root =
         ResourceFact::own_composite("wrapper-0000".into(), vec![ProgramValue::pointer(pointer)]);

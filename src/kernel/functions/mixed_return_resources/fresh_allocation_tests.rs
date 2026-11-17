@@ -8,7 +8,7 @@ pub(super) fn allocated_call(
     let caller = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block(held.block.clone(), 4)
                 .store(held.clone(), int32(17)),
         )

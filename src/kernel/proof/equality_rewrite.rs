@@ -2686,7 +2686,7 @@ mod tests {
     fn address_rewrite_preserves_the_registered_read_width_without_prior_target_reads() {
         for bytes in [4, 8] {
             let _session = VerificationSession::enter();
-            let memory = intern_memory(Memory::new());
+            let memory = intern_memory(SymbolicMemory::new());
             let index = MachineTerm::Variable(Variable(73_001));
             let base = Pointer {
                 block: PointerBlock::ExternalArgument,
@@ -2716,7 +2716,7 @@ mod tests {
     #[test]
     fn address_rewrite_reaches_legacy_pointer_reads_beyond_eight_levels() {
         let _session = VerificationSession::enter();
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let from = Pointer::symbolic(Variable(998_930));
         let to = Pointer::symbolic(Variable(998_931));
         let other = from.clone();
@@ -2756,7 +2756,7 @@ mod tests {
         let from = Pointer::symbolic(Variable(998_940));
         let to = Pointer::symbolic(Variable(998_941));
         let stored = ProgramValue::pointer(Pointer::symbolic(Variable(998_942)));
-        let memory = Memory::new().store(to.clone(), stored);
+        let memory = SymbolicMemory::new().store(to.clone(), stored);
         let memory = crate::kernel::intern_memory(memory);
         let cited =
             Proposition::ConditionIs(ConditionTerm::pointer_equal(from.clone(), to.clone()), true);
@@ -2812,7 +2812,7 @@ mod tests {
         let from = Pointer::symbolic(Variable(998_960));
         let to = Pointer::symbolic(Variable(998_961));
         let memory = crate::kernel::intern_memory(
-            Memory::new().store(to.clone(), ProgramValue::Int32(7u32.into())),
+            SymbolicMemory::new().store(to.clone(), ProgramValue::Int32(7u32.into())),
         );
         let read = |address: &Pointer| {
             let load = MachineTerm::MemoryLoad(
@@ -3370,7 +3370,7 @@ mod tests {
     fn native_read_rewrite_preserves_literal_guards_of_integer_claims() {
         let _session = crate::kernel::VerificationSession::enter();
         let read = MachineTerm::MemoryLoad(
-            ProgramPoint::at(&(intern_memory(Memory::new()))),
+            ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             Box::new(Pointer::symbolic(Variable(193_024))),
             LoadKind::Int32,
         );
@@ -3673,12 +3673,12 @@ mod tests {
             block: "integer-rewrite-retained_state".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = Memory::new().with_block("integer-rewrite-retained_state", 8);
+        let before = SymbolicMemory::new().with_block("integer-rewrite-retained_state", 8);
         let after = before.clone().store(
             pointer.clone(),
             ProgramValue::Int64(MachineTerm::int64_constant(9)),
         );
-        let observe = |memory: Memory| {
+        let observe = |memory: SymbolicMemory| {
             IntegerTerm::from_machine(
                 MachineIntegerType::Int64,
                 MachineTerm::MemoryLoad(
@@ -3867,7 +3867,7 @@ mod tests {
                 block: "compound-rewrite".into(),
                 offset: PointerOffsetTerm::Constant(0),
             };
-            let before = Memory::new().with_block("compound-rewrite", 16);
+            let before = SymbolicMemory::new().with_block("compound-rewrite", 16);
             let after = before.clone().with_block("local:compound-unrelated", 4);
             let changed = after.clone().store(
                 pointer.clone(),
@@ -3883,7 +3883,7 @@ mod tests {
                 LoadKind::Int32
             };
             crate::kernel::eval::declare_load_access_width(&pointer, if wide { 8 } else { 4 });
-            let load = |memory: &Memory, pointer: Pointer, kind| {
+            let load = |memory: &SymbolicMemory, pointer: Pointer, kind| {
                 MachineTerm::MemoryLoad(
                     ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                     Box::new(pointer),
@@ -4001,9 +4001,9 @@ mod tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         crate::kernel::eval::declare_load_access_width(&pointer, 8);
-        let before = Memory::new().with_block("compound-rewrite-work", 8);
+        let before = SymbolicMemory::new().with_block("compound-rewrite-work", 8);
         let after = before.clone().with_block("local:compound-rewrite-work", 4);
-        let expression = |memory: &Memory, size| {
+        let expression = |memory: &SymbolicMemory, size| {
             let mut term = MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                 Box::new(pointer.clone()),
@@ -4072,10 +4072,12 @@ mod tests {
         // of its own width, and a load whose width nobody recorded is taken
         // as the widest scalar access, which no `int32` store supplies.
         crate::kernel::eval::declare_load_access_width(&pointer, 4);
-        let memory = Memory::new().with_block("rewrite-presentation", 4).store(
-            pointer.clone(),
-            ProgramValue::Int32(MachineTerm::constant(42)),
-        );
+        let memory = SymbolicMemory::new()
+            .with_block("rewrite-presentation", 4)
+            .store(
+                pointer.clone(),
+                ProgramValue::Int32(MachineTerm::constant(42)),
+            );
         let changed = memory.clone().store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(43)),

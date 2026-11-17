@@ -11,14 +11,14 @@ fn unwritten_output_preserves_external_runs_without_expanding_their_slots() {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Pointer::symbolic(Variable(924_050));
         let output = Pointer::symbolic(Variable(924_051));
-        let before = Memory::new()
+        let before = SymbolicMemory::new()
             .with_seeded_cells(
                 field.clone(),
                 1,
                 ProgramType::UInt8,
                 0,
                 count,
-                intern_memory(Memory::new()),
+                intern_memory(SymbolicMemory::new()),
             )
             .with_uninitialized_object(output.clone(), 4);
         let (after, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -63,7 +63,7 @@ fn a_covering_query_scales_with_the_cells_it_crosses() {
     for count in [64i64, 512, 4096] {
         let block = format!("local:record-cells-{count}");
         let mut memory =
-            Memory::new().with_block(block.as_str(), u32::try_from(4 * count).unwrap());
+            SymbolicMemory::new().with_block(block.as_str(), u32::try_from(4 * count).unwrap());
         for index in 0..count {
             memory = memory.store(
                 element(&block, index),
@@ -102,7 +102,8 @@ fn forgotten_external_initialization_does_not_scan_unrelated_cached_cells() {
             block: PointerBlock::Heap(925_000 + u64::from(index)),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let mut before = Memory::new().store(field.clone(), ProgramValue::pointer(Pointer::null()));
+        let mut before =
+            SymbolicMemory::new().store(field.clone(), ProgramValue::pointer(Pointer::null()));
         for index in 0..count {
             before = before.store(
                 background(index),

@@ -193,7 +193,7 @@ mod tests {
         let selected = member(&pointer(997_041));
         let cell = Pointer::symbolic(Variable(997_042));
         let memory = crate::kernel::intern_memory(
-            Memory::new().store(cell.clone(), ProgramValue::Pointer(selected.clone())),
+            SymbolicMemory::new().store(cell.clone(), ProgramValue::Pointer(selected.clone())),
         );
         let read = PointerValue::from_read(
             Pointer::loaded_value(&memory, &cell),

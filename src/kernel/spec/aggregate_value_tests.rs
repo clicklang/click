@@ -12,7 +12,7 @@ fn logical_pointer_field_uses_current_pointee_memory() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let mut entry = ExecutionState::new().with_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_block(slot.block.clone(), 8)
             .with_block(pointee.block.clone(), 4)
             .store(slot.clone(), ProgramValue::pointer(pointee.clone()))

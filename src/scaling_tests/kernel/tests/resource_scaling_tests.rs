@@ -228,7 +228,7 @@ fn private_owner_projection_does_not_republish_discarded_pairings() {
         let mut resources = base;
         for index in 0..size {
             resources = resources.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
-                Memory::local_pointer(format!("hidden_{index}")),
+                SymbolicMemory::local_pointer(format!("hidden_{index}")),
                 0u32.into(),
                 1u32.into(),
             )));
@@ -1543,7 +1543,7 @@ fn a_recursive_footprint_is_constant_in_live_nodes() {
     let mut samples = Vec::new();
     for nodes in SIZES {
         // The live nodes: a known cell at each of them.
-        let memory = (0..nodes).fold(Memory::new(), |memory, node| {
+        let memory = (0..nodes).fold(SymbolicMemory::new(), |memory, node| {
             memory.store(
                 Pointer {
                     block: PointerBlock::Heap(TARGET_HEAP),
@@ -1630,7 +1630,7 @@ fn external_descriptor(identity: u64) -> Pointer {
 
 /// The pointer a load of `cell` reads in `source`, as execution materializes
 /// it: the value named by that read.
-fn materialized_pointer(source: &Memory, cell: &Pointer) -> ProgramValue {
+fn materialized_pointer(source: &SymbolicMemory, cell: &Pointer) -> ProgramValue {
     ProgramValue::Pointer(PointerValue::from_read(
         Pointer::loaded(&MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory_ref(source))),
@@ -1658,7 +1658,7 @@ fn unfold_beside_descriptors_of_its_type_ignores_unrelated_descriptors() {
         let definitions = slot_definitions();
         let region = external_descriptor(100_000);
         let other = external_descriptor(100_001);
-        let entry = Memory::new();
+        let entry = SymbolicMemory::new();
         let pool = match materialized_pointer(&entry, &region) {
             ProgramValue::Pointer(value) => value,
             _ => unreachable!("a pointer cell is materialized as a pointer"),
@@ -1817,7 +1817,7 @@ fn a_store_opens_no_folded_instance_whose_arguments_name_no_cached_cell() {
                 parameter_window_instance(STORE_KEPT_PARAMETER, 3 * TARGET_HEAP),
             ]);
         let memory = (0..size)
-            .fold(Memory::new(), |memory, index| {
+            .fold(SymbolicMemory::new(), |memory, index| {
                 memory.store(heap_base(index as u64 + 1), int32(index as u32))
             })
             .store(kept.clone(), int32(5));
@@ -1851,7 +1851,7 @@ fn a_store_opens_folded_instances_in_work_linear_in_the_aliasing_ones() {
         let cells = (0..size)
             .map(|index| parameter_base(FIRST_PARAMETER + index as u64))
             .collect::<Vec<_>>();
-        let memory = cells.iter().fold(Memory::new(), |memory, cell| {
+        let memory = cells.iter().fold(SymbolicMemory::new(), |memory, cell| {
             memory.store(cell.clone(), int32(5))
         });
         let state = ExecutionState::new()
@@ -1886,7 +1886,7 @@ fn a_store_forgets_a_folded_instance_cell_it_does_not_open() {
     ]);
     let state = ExecutionState::new()
         .with_resource_context(frame)
-        .with_memory(Memory::new().store(kept.clone(), int32(5)));
+        .with_memory(SymbolicMemory::new().store(kept.clone(), int32(5)));
     // No definitions armed: nothing can be opened.
     let (_, survived) = framed_store_beside_instances(&state, std::slice::from_ref(&kept));
     assert_eq!(survived, 0, "an unopened instance keeps nothing");
@@ -1968,7 +1968,7 @@ fn observable_projection_reuses_private_local_deltas_and_unchanged_queries() {
         let (_, sequence_work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 0..size {
                 resources = resources.clone().unchecked_with_fact(owned_range(
-                    Memory::local_pointer(format!("hidden_{index}")),
+                    SymbolicMemory::local_pointer(format!("hidden_{index}")),
                     0,
                     4,
                 ));
@@ -2008,7 +2008,7 @@ fn observable_projection_reuses_private_local_deltas_and_unchanged_queries() {
                 resources = resources
                     .clone()
                     .without_exact_representation(&owned_range(
-                        Memory::local_pointer(format!("hidden_{index}")),
+                        SymbolicMemory::local_pointer(format!("hidden_{index}")),
                         0,
                         4,
                     ))
@@ -2070,17 +2070,20 @@ fn observable_projection_shares_first_projection_across_cold_forks() {
                 .map(Into::into)
                 .collect(),
         );
-        let root =
-            ResourceContext::new().unchecked_with_facts(
-                [
-                    owned_range(heap_base(1), 0, 4),
-                    owned_range(heap_base(2), 0, 4),
-                ]
-                .into_iter()
-                .chain((0..size).map(|index| {
-                    owned_range(Memory::local_pointer(format!("hidden_{index}")), 0, 4)
-                })),
-            );
+        let root = ResourceContext::new().unchecked_with_facts(
+            [
+                owned_range(heap_base(1), 0, 4),
+                owned_range(heap_base(2), 0, 4),
+            ]
+            .into_iter()
+            .chain((0..size).map(|index| {
+                owned_range(
+                    SymbolicMemory::local_pointer(format!("hidden_{index}")),
+                    0,
+                    4,
+                )
+            })),
+        );
         let forks = [root.clone(), root.clone(), root.clone()];
         let expected = root.observable_composition();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -2124,7 +2127,7 @@ fn observable_projection_reuses_local_edits_across_sibling_paths() {
         ]);
         for i in 0..size {
             source = source.unchecked_with_fact(owned_range(
-                Memory::local_pointer(format!("hidden_{i}")),
+                SymbolicMemory::local_pointer(format!("hidden_{i}")),
                 0,
                 4,
             ));
@@ -2174,7 +2177,7 @@ fn observable_projection_tracks_supported_views_caches_and_owner_retirement() {
             .unchecked_with_facts([owner.clone(), owned_range(heap_base(2), 0, 4)]);
         for i in 0..size {
             source = source.unchecked_with_fact(owned_range(
-                Memory::local_pointer(format!("hidden_{i}")),
+                SymbolicMemory::local_pointer(format!("hidden_{i}")),
                 0,
                 4,
             ));
@@ -2203,9 +2206,9 @@ fn observable_projection_tracks_supported_views_caches_and_owner_retirement() {
             !retired.contains_exact_representation(&view),
             "a cached view cannot survive its owner"
         );
-        let hidden_owner = owned_range(Memory::local_pointer("hidden_0"), 0, 4);
+        let hidden_owner = owned_range(SymbolicMemory::local_pointer("hidden_0"), 0, 4);
         let hidden_view = ResourceFact::view_memory(MemoryRange::new(
-            Memory::local_pointer("hidden_0"),
+            SymbolicMemory::local_pointer("hidden_0"),
             0u32.into(),
             2u32.into(),
         ));
@@ -2343,10 +2346,10 @@ fn selected_ownership_overlap_ignores_ambient_aliases() {
 /// as a `malloc` that succeeded leaves it: the allocation token and complete
 /// byte access, both owned.
 fn with_live_allocation(
-    (memory, resources): (Memory, ResourceContext),
+    (memory, resources): (SymbolicMemory, ResourceContext),
     identity: u64,
     bytes: u32,
-) -> (Memory, ResourceContext) {
+) -> (SymbolicMemory, ResourceContext) {
     let pending = symbolic_base(identity);
     let (memory, _, base) = memory
         .with_pending_heap_allocation(
@@ -2390,7 +2393,7 @@ fn caller_beside_unrelated_allocations(unrelated: usize) -> ExecutionState {
             .collect(),
     );
     let (mut memory, mut resources) = locals.iter().fold(
-        (Memory::new(), ResourceContext::new()),
+        (SymbolicMemory::new(), ResourceContext::new()),
         |caller, (_, identity)| with_live_allocation(caller, *identity, 16),
     );
     // Writing the `int` retyped its bytes: the caller owns them as one
@@ -2418,7 +2421,7 @@ fn caller_beside_unrelated_allocations(unrelated: usize) -> ExecutionState {
         .with_cached_supported_expansion(&written_owner, vec![written_owner.clone()]);
     let mut state = ExecutionState::new().with_population_creation_tracking();
     for (name, identity) in &locals {
-        let slot = Memory::local_pointer(name);
+        let slot = SymbolicMemory::local_pointer(name);
         memory = memory
             .with_block(slot.block.clone(), 8)
             .store(slot.clone(), ProgramValue::pointer(heap_base(*identity)));

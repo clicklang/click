@@ -86,7 +86,7 @@ fn separation_candidates_preserve_derived_aliases_and_loaded_bases() {
     // No condition names `a`: the owner's loaded base must remain a
     // candidate because the memory edge itself resolves it to `a`.
     let slot = Pointer::symbolic(Variable(989_799));
-    let retained_state = Memory::new().store(slot.clone(), ProgramValue::Int32(a.clone()));
+    let retained_state = SymbolicMemory::new().store(slot.clone(), ProgramValue::Int32(a.clone()));
     let loaded = MachineTerm::MemoryLoad(
         ProgramPoint::at(&(crate::kernel::intern_memory(retained_state))),
         Box::new(slot),
@@ -1144,7 +1144,7 @@ fn unfolding_a_child_retains_its_checked_pointer_read_in_the_callers_graph() {
         unreachable!()
     };
     let stored = PointerValue::new(Pointer::symbolic(Variable(559)), ProgramType::Int32Pointer);
-    let state = state.with_memory(Memory::new().store(
+    let state = state.with_memory(SymbolicMemory::new().store(
         parent.pointer().clone(),
         ProgramValue::Pointer(stored.clone()),
     ));
@@ -2745,8 +2745,8 @@ fn resource_join_drops_projection_when_memory_footprints_diverge() {
     };
     let root = ResourceContext::new().unchecked_with_fact(support.clone());
     let support_occurrence = root.owned_occurrences_for_fact(&support)[0];
-    let left_memory = Memory::new().with_block("left-join", 8);
-    let right_memory = Memory::new().with_block("right-join", 8);
+    let left_memory = SymbolicMemory::new().with_block("left-join", 8);
+    let right_memory = SymbolicMemory::new().with_block("right-join", 8);
     let left = root
         .clone()
         .unchecked_with_supported_facts_from_occurrence_with_memory(
@@ -3307,17 +3307,17 @@ fn declared_resource_quantities_are_part_of_context_equality() {
 
     assert!(!resource_contexts_definitionally_equal_with_definitions(
         &[],
-        &Memory::new(),
+        &SymbolicMemory::new(),
         &one,
-        &Memory::new(),
+        &SymbolicMemory::new(),
         &two,
         &PureFactContext::new(),
     ));
     assert!(resource_contexts_definitionally_equal_with_definitions(
         &[],
-        &Memory::new(),
+        &SymbolicMemory::new(),
         &two_uncompacted,
-        &Memory::new(),
+        &SymbolicMemory::new(),
         &two,
         &PureFactContext::new(),
     ));
@@ -3363,7 +3363,7 @@ fn definitional_equality_reassembles_a_composite_only_where_its_facts_hold() {
         MemoryRange::new(pointer.clone(), 0.into(), 1.into()),
     ));
     let memory = |value: u32| {
-        Memory::new()
+        SymbolicMemory::new()
             .with_block(pointer.block.clone(), 4)
             .store(pointer.clone(), int32(value))
     };
@@ -3458,7 +3458,7 @@ fn incremental_memory_merge_retires_dependent_entries_once() {
         .next()
         .and_then(|entry| resources.storage.occurrence_by_entry.get(entry))
         .unwrap();
-    let memory = Memory::new().with_block("supported-merge", 8);
+    let memory = SymbolicMemory::new().with_block("supported-merge", 8);
     let resources = resources.unchecked_with_supported_facts_from_occurrence_with_memory(
         occurrence,
         &first,
@@ -4595,7 +4595,7 @@ fn symbolic_supplied_range_wakes_concrete_pending_dependency() {
             crate::kernel::program_expression::int32_literal(1),
         ),
     ];
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .store(seed, ProgramValue::pointer(intermediate.clone()))
         .store(intermediate, ProgramValue::pointer(target));
     let assumptions = PureFactContext::new().assume_condition(
@@ -4625,7 +4625,7 @@ fn observed_memory_projection_is_invalidated_by_overlap_but_not_disjoint_store()
         MachineTerm::constant(0),
         MachineTerm::constant(1),
     );
-    let base = Memory::new().with_block("observed-block", 32);
+    let base = SymbolicMemory::new().with_block("observed-block", 32);
     let resources = ResourceContext::new().unchecked_with_fact(support.clone());
     let support_occurrence = *resources
         .storage
@@ -4686,7 +4686,7 @@ fn observed_projection_tracks_loaded_address_prerequisite() {
         block: "loaded-address-selector".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .with_block("loaded-address-selector", 4)
         .with_block("loaded-address-data", 32)
         .with_block("loaded-address-unrelated", 4)
@@ -4762,7 +4762,7 @@ fn observed_projection_tracks_loaded_base_and_start_prerequisites() {
         block: "base-start-selector".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .with_block("base-start-selector", 8)
         .with_block("base-start-data", 32)
         .with_block("base-start-unrelated", 4)
@@ -4846,7 +4846,7 @@ fn observed_wide_footprint_and_unknown_loop_barrier_are_invalidated() {
         MachineTerm::constant(20_000),
         1,
     );
-    let memory = Memory::new().with_block("wide-block", 20_000);
+    let memory = SymbolicMemory::new().with_block("wide-block", 20_000);
     let resources = ResourceContext::new().unchecked_with_fact(support.clone());
     let entry = *resources
         .storage
@@ -4885,7 +4885,8 @@ fn observed_wide_footprint_and_unknown_loop_barrier_are_invalidated() {
 fn supported_projection_interval_updates_scale_with_index_height() {
     let mut samples = Vec::new();
     for unrelated_count in [4_usize, 16, 64, 256, 1024] {
-        let memory = Memory::new().with_block("projection-curve", (8 * unrelated_count + 8) as u32);
+        let memory =
+            SymbolicMemory::new().with_block("projection-curve", (8 * unrelated_count + 8) as u32);
         let mut resources = ResourceContext::new();
         for index in 0..unrelated_count {
             let support = ResourceFact::own_composite(
@@ -4966,7 +4967,7 @@ fn supported_projection_interval_updates_scale_with_index_height() {
 #[test]
 fn removing_symbolic_memory_observations_does_not_leave_alias_bucket_entries() {
     let support = ResourceFact::own_composite("symbolic_alias_support".into(), Vec::new());
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let mut resources = ResourceContext::new().unchecked_with_fact(support.clone());
     let support_occurrence = resources.owned_occurrences_for_fact(&support)[0];
     for iteration in 0..4 {
@@ -5194,7 +5195,7 @@ fn v11_unbound_owner_observation_composite_still_expands() {
         &resources,
         &parent,
         &[definition],
-        &crate::kernel::ProgramPoint::of_memory(&Memory::new()),
+        &crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new()),
         &PureFactContext::new(),
     )
     .expect("an unbound owner-supported observation remains expandable");
@@ -5256,7 +5257,7 @@ fn v11_composite_expansion_refuses_equal_ambient_child_without_destination() {
             &resources,
             &ResourceFact::view_composite("v11_box".into(), Vec::new()),
             &[definition],
-            &crate::kernel::ProgramPoint::of_memory(&Memory::new()),
+            &crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new()),
             &PureFactContext::new(),
         )
         .is_none()
@@ -6249,7 +6250,7 @@ fn named_population_members_keep_identity_and_fields_independent_of_count() {
     let mut created = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_heap_allocation_claim(pointer, AllocationSize::int32(4))
                 .unwrap(),
         );
@@ -6409,7 +6410,7 @@ fn predicate_population_state_reads_saved_count_without_transfer_rights() {
     let mut created = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_heap_allocation_claim(pointer.clone(), AllocationSize::int32(4))
                 .unwrap(),
         );
@@ -6590,7 +6591,7 @@ fn wide_shifted_suffix_coverage_checks_span_and_identity() {
 fn wide_range_observer_transport_rejects_changed_cells_and_low_word_equalities() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Pointer::symbolic(Variable(983_200));
-    let before = Memory::new().store(
+    let before = SymbolicMemory::new().store(
         pointer.clone(),
         ProgramValue::UInt64(MachineTerm::uint64_constant(3)),
     );

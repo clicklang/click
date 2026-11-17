@@ -245,7 +245,7 @@ pub(crate) fn machine_operation_of_integer_value(
 
 #[test]
 fn explicit_operation_identity_keeps_its_read_operands() {
-    use crate::kernel::{LoadKind, Memory, Pointer, ProgramValue, Variable};
+    use crate::kernel::{LoadKind, Pointer, ProgramValue, SymbolicMemory, Variable};
     let _session = crate::kernel::VerificationSession::enter();
     let format = MachineIntegerType::Int32;
     let x = MachineTerm::Variable(Variable(989_773));
@@ -257,7 +257,7 @@ fn explicit_operation_identity_keeps_its_read_operands() {
         x.clone(),
         MachineTerm::constant(1),
     );
-    let memory = Memory::new().store(address.clone(), ProgramValue::Int32(stored));
+    let memory = SymbolicMemory::new().store(address.clone(), ProgramValue::Int32(stored));
     let read = crate::kernel::canonical_form_of_load(
         crate::kernel::intern_memory_ref(&memory),
         address,

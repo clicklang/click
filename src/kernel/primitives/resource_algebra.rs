@@ -3189,7 +3189,7 @@ impl ResourceContext {
     /// The facts `ResourceFact::may_refer_to_memory_block` selects for
     /// `block`, drawn from the indexes instead of a scan: the memory facts
     /// based in the block, then the composite facts with a pointer argument
-    /// into it. Memory in other blocks, tokens and instances are never
+    /// into it. SymbolicMemory in other blocks, tokens and instances are never
     /// visited; a held composite is, since its arguments are not indexed by
     /// block. Charges one work unit per visited fact.
     pub(in crate::kernel) fn facts_that_may_refer_to_memory_block<'a>(
@@ -3247,7 +3247,7 @@ impl ResourceContext {
     }
 
     /// The memory facts based in `block`, from the block index: the `owns`
-    /// and `views` ranges a pointer formed in that block can lie in. Memory
+    /// and `views` ranges a pointer formed in that block can lie in. SymbolicMemory
     /// in other blocks, composite, iterated, token and instance facts are
     /// never visited. Charges one work unit per fact. For
     /// `ExternalArgument`, the block every pointer parameter shares, this is
@@ -4198,7 +4198,11 @@ impl ResourceContext {
     /// touched by a memory transition.  The transition is walked through the
     /// existing memory DAG; indexed block buckets bound the work to affected
     /// observations rather than the ambient resource frame.
-    pub(crate) fn invalidate_memory_support(mut self, before: &Memory, after: &Memory) -> Self {
+    pub(crate) fn invalidate_memory_support(
+        mut self,
+        before: &SymbolicMemory,
+        after: &SymbolicMemory,
+    ) -> Self {
         if before.diagnostic_identity() == after.diagnostic_identity()
             || self.storage.support_metadata_by_projection.is_empty()
         {
@@ -4277,8 +4281,8 @@ impl ResourceContext {
     /// facts filed under the written block.
     pub(crate) fn invalidate_iterated_facts(
         self,
-        before: &Memory,
-        after: &Memory,
+        before: &SymbolicMemory,
+        after: &SymbolicMemory,
         stores_checked: bool,
     ) -> Self {
         if !self.has_iterated_facts() || before.diagnostic_identity() == after.diagnostic_identity()
@@ -5696,7 +5700,7 @@ impl ResourceContext {
         support_occurrence: ResourceOccurrenceId,
         support: &ResourceFact,
         facts: impl IntoIterator<Item = ResourceFact>,
-        memory: &Memory,
+        memory: &SymbolicMemory,
     ) -> Self {
         self.unchecked_with_supported_facts_from_occurrence_with_memory_and_occurrences(
             support_occurrence,
@@ -5712,7 +5716,7 @@ impl ResourceContext {
         support_occurrence: ResourceOccurrenceId,
         support: &ResourceFact,
         facts: impl IntoIterator<Item = ResourceFact>,
-        memory: &Memory,
+        memory: &SymbolicMemory,
     ) -> (Self, Vec<(ResourceFact, ResourceOccurrenceId)>) {
         debug_assert!(support.is_own());
         debug_assert!(
@@ -6189,7 +6193,7 @@ impl ResourceContext {
         }
         for fact in body {
             next.insert_fact(fact.clone());
-            // Retain exact exclusive-identity checks. Memory/frame overlap
+            // Retain exact exclusive-identity checks. SymbolicMemory/frame overlap
             // discovery is the revalidation removed by this exchange rule.
             if let Some(error) = next.exclusive_validity_error(&fact) {
                 return Err(error);
@@ -7765,7 +7769,7 @@ impl ResourceContext {
     /// Normalizes only the resource buckets affected by `seeds`.
     ///
     /// Exact token/composite resources use their full resource key, so other
-    /// arguments in the same declared family are not visited. Memory uses its
+    /// arguments in the same declared family are not visited. SymbolicMemory uses its
     /// block bucket because splitting and recombining one exported range may
     /// touch adjacent residual ranges in that block.
     pub(crate) fn normalized_around_facts(
@@ -8649,7 +8653,7 @@ impl ResourceNormalizationIndex {
     /// equality: `data[0..n]` and `data[m..4]` under `n == m` are one range,
     /// and a lookup by the written spelling alone would never offer them to
     /// each other. The extra lookups cost the endpoint's equality class.
-    /// Memory keys also include the base root and its recorded aliases: an
+    /// SymbolicMemory keys also include the base root and its recorded aliases: an
     /// endpoint such as zero alone must not pair every external object with
     /// every other object in the same block.
     fn candidates_after(
@@ -8915,7 +8919,7 @@ fn shape_root_key(
 /// The bucket a non-memory fact is matched in by
 /// `direct_match_candidate_positions`, as a key: two facts one can entail
 /// share it, so a context can list compositions under their non-memory
-/// owned members (`CompositionMemberIndex`). Memory has none; its members
+/// owned members (`CompositionMemberIndex`). SymbolicMemory has none; its members
 /// are listed by block.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(in crate::kernel) enum OwnedMemberKey {
@@ -9537,7 +9541,8 @@ mod zero_quantity_graph_tests {
     #[test]
     fn zero_ownership_uses_graph_with_state_scope() {
         let _session = crate::kernel::VerificationSession::enter();
-        let before = crate::kernel::intern_memory(Memory::new().with_block("zero-quantity", 8));
+        let before =
+            crate::kernel::intern_memory(SymbolicMemory::new().with_block("zero-quantity", 8));
         let pointer = |index| Pointer {
             block: "zero-quantity".into(),
             offset: PointerOffsetTerm::scale_int32(index, 4),
@@ -12633,7 +12638,7 @@ impl ResourceFact {
     }
 }
 
-/// Memory-family normalization. The first two arms absorb an entailed fact
+/// SymbolicMemory-family normalization. The first two arms absorb an entailed fact
 /// into the entailing one, which includes an owner swallowing a viewed
 /// description of bytes it already covers.
 ///
@@ -12960,7 +12965,7 @@ mod support_removal_tests {
             block: "typed-loads".into(),
             offset: PointerOffsetTerm::Constant(8),
         };
-        let memory = Memory::new()
+        let memory = SymbolicMemory::new()
             .with_block("typed-loads", 24)
             .store(short_pointer.clone(), int16(0))
             .store(
@@ -13006,7 +13011,7 @@ mod support_removal_tests {
             block: "mixed-loads".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let first = Memory::new()
+        let first = SymbolicMemory::new()
             .with_block("mixed-loads", 8)
             .store(pointer.clone(), int16(0));
         let second = first.clone().store(pointer.clone(), int16(1));
@@ -13040,7 +13045,7 @@ mod support_removal_tests {
             block: "deep-load".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let memory = Memory::new()
+        let memory = SymbolicMemory::new()
             .with_block("deep-load", 8)
             .store(pointer.clone(), int16(0));
         let load = MachineTerm::MemoryLoad(

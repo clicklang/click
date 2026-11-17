@@ -934,7 +934,7 @@ impl TermClasses {
     }
 
     /// The operand of a read: the numeric address of `address`, not the
-    /// pointer. Memory is addressed, so two reads of one state at equal
+    /// pointer. SymbolicMemory is addressed, so two reads of one state at equal
     /// addresses read the same bytes even when the pointers are not equal
     /// (a C pointer comparison states only an address equality). Equal
     /// pointers have equal addresses, so pointer congruence still reaches
@@ -2135,7 +2135,7 @@ impl TermClasses {
     }
 
     fn intern_int32(&mut self, term: &crate::kernel::MachineTerm) -> u64 {
-        // This interner runs under the graph mutex. Memory canonicalization
+        // This interner runs under the graph mutex. SymbolicMemory canonicalization
         // can re-enter this graph through a cell-version walk; callers perform
         // it before locking, while raw reads here retain their own state.
         self.intern_machine(term, false)
@@ -3522,8 +3522,9 @@ mod tests {
         graph.add_offset_equality(&signed, &target);
         assert!(!graph.are_offsets_equal(&scaled(value.clone(), 8, false), &target));
         assert!(!graph.are_offsets_equal(&scaled(value, 4, true), &target));
-        let before =
-            crate::kernel::intern_memory(crate::kernel::Memory::new().with_block("offset", 8));
+        let before = crate::kernel::intern_memory(
+            crate::kernel::SymbolicMemory::new().with_block("offset", 8),
+        );
         let address = Pointer::symbolic(Variable(12));
         let after = crate::kernel::intern_memory(before.memory().clone().store(
             address.clone(),

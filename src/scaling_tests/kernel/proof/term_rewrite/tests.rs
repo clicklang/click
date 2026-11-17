@@ -175,8 +175,9 @@ fn registered_load_rewrite_keeps_branching_pointer_dag_compact() {
     let mut work = Vec::new();
     let mut last_load = None;
     for depth in [8usize, 16, 32, 64] {
-        let memory =
-            crate::kernel::intern_memory(Memory::new().with_block(format!("branch-{depth}"), 64));
+        let memory = crate::kernel::intern_memory(
+            SymbolicMemory::new().with_block(format!("branch-{depth}"), 64),
+        );
         let block = format!("branch-{depth}");
         let mut load = crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
@@ -616,7 +617,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
 
     fn memory_state_identity(depth: usize) -> crate::kernel::SharedMemory {
         let block = PointerBlock::Concrete("checked-fold-opaque".into());
-        let mut memory = Memory::new().with_block(block.clone(), depth as u32 + 1);
+        let mut memory = SymbolicMemory::new().with_block(block.clone(), depth as u32 + 1);
         for offset in 0..depth {
             memory = memory.store(
                 Pointer {
@@ -629,7 +630,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
         crate::kernel::intern_memory(memory)
     }
 
-    // Memory states are opaque to lexical collection. Keep the
+    // SymbolicMemory states are opaque to lexical collection. Keep the
     // expression and its carrier payload fixed while changing only the
     // state size; the checked rewrite work must stay unchanged.
     let fixed_source = Variable(3_010_000);
@@ -869,7 +870,7 @@ fn checked_substitution_collector_reuses_registered_load_dag() {
     let source = Variable(3_104_000);
     let mut work = Vec::new();
     for depth in [8usize, 16, 32, 64] {
-        let memory = crate::kernel::intern_memory(Memory::new().with_block("array", 16));
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("array", 16));
         let leaf_pointer = Pointer {
             block: PointerBlock::Concrete("array".into()),
             offset: PointerOffsetTerm::scaled_int32_node(
@@ -1103,7 +1104,7 @@ fn generic_read_alias_rewrite_work(count: u64, unrelated: u64, warm: bool) -> us
         algebraic_type: parameter.algebraic_type(),
         node: AlgebraicTermNode::Variable(Variable(996_030)),
     }));
-    let mut memory = Memory::new();
+    let mut memory = SymbolicMemory::new();
     for index in 0..=unrelated {
         memory = memory.store(
             Pointer {
@@ -1186,7 +1187,7 @@ fn full_pointer_read_version_rewrite_work(count: u64, unrelated: u64) -> usize {
         ProgramType::Int32PointerPointer,
     );
     let stored = ProgramValue::pointer(Pointer::symbolic(Variable(997_501)));
-    let mut memory = Memory::new();
+    let mut memory = SymbolicMemory::new();
     for index in 0..unrelated {
         memory = memory.store(
             Pointer::symbolic(Variable(998_500 + index)),
@@ -1251,7 +1252,7 @@ fn numeric_pointer_read_rewrite_work(
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::scale_int32(index, 8),
     };
-    let mut memory = Memory::new();
+    let mut memory = SymbolicMemory::new();
     for index in 0..unrelated {
         memory = memory.store(
             Pointer {
@@ -1577,7 +1578,7 @@ fn retained_rewrite_replacements_do_not_reindex_growing_prefixes() {
 fn resource_read_collection_scales_with_selected_arguments() {
     let mut work = Vec::new();
     for size in [8usize, 16, 32, 64] {
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let arguments = (0..size)
             .map(|index| {
                 AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::MemoryLoad(
@@ -1619,7 +1620,7 @@ fn one_proposition_read_comparison_batch_scales_with_selected_reads() {
     let mut work = Vec::new();
     for size in [8usize, 16, 32, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let reads: Vec<_> = (0..size)
             .map(|index| {
                 MachineTerm::MemoryLoad(

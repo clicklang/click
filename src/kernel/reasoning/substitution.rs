@@ -28,7 +28,7 @@ trait VariableSubstitution {
     fn program_value(&self, value: &ProgramValue) -> ProgramValue;
     fn expression_value(&self, value: &ExecutionValue) -> ExecutionValue;
     fn program_expression(&self, expression: &ProgramExpression) -> ProgramExpression;
-    fn memory(&self, memory: &Memory) -> Memory;
+    fn memory(&self, memory: &SymbolicMemory) -> SymbolicMemory;
     fn algebraic_term(&self, term: &AlgebraicTerm) -> AlgebraicTerm;
     fn spec_expression(&self, expression: &SpecExpression) -> SpecExpression;
     fn spec_integer(&self, expression: &SpecIntegerExpression) -> SpecIntegerExpression;
@@ -91,7 +91,7 @@ impl VariableSubstitution for BitvectorSubstitution<'_> {
     fn program_expression(&self, expression: &ProgramExpression) -> ProgramExpression {
         substitute_bitvector_variable_in_program_expression(expression, self.from, self.to)
     }
-    fn memory(&self, memory: &Memory) -> Memory {
+    fn memory(&self, memory: &SymbolicMemory) -> SymbolicMemory {
         substitute_bitvector_variable_in_memory(memory, self.from, self.to)
     }
     fn algebraic_term(&self, term: &AlgebraicTerm) -> AlgebraicTerm {
@@ -168,7 +168,7 @@ impl VariableSubstitution for PointerSubstitution<'_> {
     fn program_expression(&self, expression: &ProgramExpression) -> ProgramExpression {
         substitute_pointer_variable_in_program_expression(expression, self.from, self.to)
     }
-    fn memory(&self, memory: &Memory) -> Memory {
+    fn memory(&self, memory: &SymbolicMemory) -> SymbolicMemory {
         substitute_pointer_variable_in_memory(memory, self.from, self.to)
     }
     fn algebraic_term(&self, term: &AlgebraicTerm) -> AlgebraicTerm {
@@ -1801,7 +1801,7 @@ mod resource_frame_substitution_tests {
 
     #[test]
     fn unrelated_binder_preserves_nested_offset_state() {
-        let base = Memory::new();
+        let base = SymbolicMemory::new();
         let metadata = Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Add(
@@ -3075,7 +3075,7 @@ pub(crate) fn memory_bound_cell_visits() -> usize {
     MEMORY_BOUND_CELL_VISITS.with(std::cell::Cell::get)
 }
 
-fn collect_memory_bound_variables(memory: &Memory, variables: &mut BTreeSet<Variable>) {
+fn collect_memory_bound_variables(memory: &SymbolicMemory, variables: &mut BTreeSet<Variable>) {
     // While a fact set reserves a fact's variables, an interned state's
     // bound variables are walked once: they depend on the state alone,
     // and the set already reserves those of every state walked before.
@@ -3133,8 +3133,8 @@ fn collect_memory_bound_variables(memory: &Memory, variables: &mut BTreeSet<Vari
 /// differently from `base`: with `base`'s bound variables these include
 /// all of `memory`'s, and each is one of `memory`'s.
 fn collect_memory_bound_variables_entering(
-    base: &Memory,
-    memory: &Memory,
+    base: &SymbolicMemory,
+    memory: &SymbolicMemory,
     variables: &mut BTreeSet<Variable>,
 ) {
     for (before, after) in [
@@ -3392,7 +3392,7 @@ fn collect_bitvector_bound_variables(term: &MachineTerm, variables: &mut BTreeSe
             }
         }
         MachineTerm::MemoryLoad(memory, pointer, _) => {
-            // Memory states are immutable kernel values; their free
+            // SymbolicMemory states are immutable kernel values; their free
             // variable collector remains the source of truth for state
             // contents, while the pointer can contain nested fold terms.
             collect_memory_bitvector_variables(memory.memory(), variables);
@@ -4500,7 +4500,7 @@ fn rewrite_integer_memory_loadable_with_walker(
     let bytes = walker.bits(bytes);
     integer_substitution_refusal(walker.refusal())?;
     Ok(Proposition::MemoryLoadable {
-        // Memory states are immutable proof-state identities.  Keep the same
+        // SymbolicMemory states are immutable proof-state identities.  Keep the same
         // handle and rewrite only the selected address/width expressions.
         memory: memory.clone(),
         base: pointer.pointer().clone(),
@@ -6140,7 +6140,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_pointer(
 /// nested `unfold`s name a cell at each level, 96 variable substitutions cost
 /// 965,776 state rebuilds.
 ///
-/// Memory states are interned, so the rewrite of one is a pure function of its
+/// SymbolicMemory states are interned, so the rewrite of one is a pure function of its
 /// arena id and the `(from, to)` pair. Keyed by that id, each distinct
 /// state is rebuilt exactly once per substitution and the walk becomes
 /// linear in the DAG's nodes. The frame holds the borrowed replacement term's
@@ -6250,10 +6250,10 @@ fn substitute_bitvector_variable_in_shared_memory(
 /// rewrite` growing far faster than the proof, which is what `click profile`
 /// could not point at before.
 pub(in crate::kernel) fn substitute_bitvector_variable_in_memory(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     from: Variable,
     to: &MachineTerm,
-) -> Memory {
+) -> SymbolicMemory {
     // A state carried by value (a loadability or effect proposition) is
     // interned only to consult and fill the absent-variable memo; interning
     // an already-registered state is a shallow lookup.
@@ -6313,7 +6313,11 @@ fn run_slot_named_by_load_variable(
     (index < run.count() && !run.holes().contains(index)).then_some(index)
 }
 
-fn rewrite_memory_state(memory: &Memory, from: Variable, to: &MachineTerm) -> Memory {
+fn rewrite_memory_state(
+    memory: &SymbolicMemory,
+    from: Variable,
+    to: &MachineTerm,
+) -> SymbolicMemory {
     crate::instrumentation::measure_operation(
         "kernel",
         "substitution",
@@ -6344,8 +6348,11 @@ fn record_memory_lacks_variable(identity: (u32, u32), from: Variable) {
 #[test]
 fn state_size_substitution_preserves_declared_types_and_write_protection() {
     let from = Variable(84001);
-    let mut memory =
-        Memory::new().with_declared_scalar_block("local:word".into(), 4, ProgramType::UInt32);
+    let mut memory = SymbolicMemory::new().with_declared_scalar_block(
+        "local:word".into(),
+        4,
+        ProgramType::UInt32,
+    );
     let mut read_only = MemoryBlock::read_only(4);
     read_only.size = AllocationSize::int32(MachineTerm::Variable(from));
     std::sync::Arc::make_mut(&mut memory.blocks).insert("global:protected".into(), read_only);
@@ -6364,10 +6371,10 @@ fn state_size_substitution_preserves_declared_types_and_write_protection() {
 }
 
 fn substitute_bitvector_variable_in_memory_contents(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     from: Variable,
     to: &MachineTerm,
-) -> Memory {
+) -> SymbolicMemory {
     crate::instrumentation::record_deterministic_work(
         memory.cells.representation_len() + memory.union_cells.len() + memory.blocks.len(),
     );
@@ -6380,7 +6387,7 @@ fn substitute_bitvector_variable_in_memory_contents(
         },
         |run| run_slot_named_by_load_variable(run, from),
     ));
-    let mut result = Memory {
+    let mut result = SymbolicMemory {
         construction: None,
         pending_steps: None,
         blocks: std::sync::Arc::new(
@@ -7055,11 +7062,11 @@ fn substitute_pointer_variable_in_program_expression(
 }
 
 pub(crate) fn substitute_pointer_variable_in_memory(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     from: Variable,
     to: &Pointer,
-) -> Memory {
-    let mut result = Memory {
+) -> SymbolicMemory {
+    let mut result = SymbolicMemory {
         construction: None,
         pending_steps: None,
         blocks: std::sync::Arc::new(
@@ -8678,7 +8685,7 @@ mod integer_mixed_quantifier_tests {
     #[test]
     fn integer_witness_replacement_reserves_registered_pointer_integer() {
         let memory = crate::kernel::intern_memory(
-            crate::kernel::Memory::new().with_block("integer-witness-capture", 64),
+            crate::kernel::SymbolicMemory::new().with_block("integer-witness-capture", 64),
         );
         let source = Variable(9_100);
         // This ID is intentionally shared by the replacement's registered
@@ -9355,13 +9362,14 @@ mod integer_range_fold_substitution_tests {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(binder), 4),
         };
-        let source = crate::kernel::intern_memory(Memory::new().with_block("unrelated", 4).store(
-            Pointer {
-                block: PointerBlock::Concrete("unrelated".into()),
-                offset: PointerOffsetTerm::Constant(0),
-            },
-            ProgramValue::Int32(MachineTerm::constant(7)),
-        ));
+        let source =
+            crate::kernel::intern_memory(SymbolicMemory::new().with_block("unrelated", 4).store(
+                Pointer {
+                    block: PointerBlock::Concrete("unrelated".into()),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                ProgramValue::Int32(MachineTerm::constant(7)),
+            ));
         crate::kernel::eval::record_load_access_width(source.memory(), &pointer, 4);
         let original = crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
             ProgramPoint::at(&source),
@@ -9404,7 +9412,7 @@ mod integer_range_fold_substitution_tests {
     fn quantified_load_substitution_preserves_access_width() {
         let _session = crate::kernel::VerificationSession::enter();
         for bytes in [4, 8] {
-            let memory = crate::kernel::intern_memory(Memory::new());
+            let memory = crate::kernel::intern_memory(SymbolicMemory::new());
             let binder = Variable(70_156 + u64::from(bytes));
             let pointer = Pointer {
                 block: PointerBlock::ExternalArgument,
@@ -9444,7 +9452,7 @@ mod integer_range_fold_substitution_tests {
     #[test]
     fn int32_fold_substitution_rewrites_registered_load_address_only() {
         let item = Variable(70_056);
-        let memory = crate::kernel::intern_memory(Memory::new().with_block("array", 16));
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("array", 16));
         let pointer = Pointer {
             block: PointerBlock::Concrete("array".into()),
             offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(item), 4),
@@ -9488,7 +9496,7 @@ mod integer_range_fold_substitution_tests {
     #[test]
     fn int32_fold_substitution_canonicalizes_nonzero_load_base() {
         let item = Variable(70_058);
-        let memory = crate::kernel::intern_memory(Memory::new().with_block("array", 16));
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("array", 16));
         let pointer = Pointer {
             block: PointerBlock::Concrete("array".into()),
             offset: PointerOffsetTerm::Add(
@@ -9863,7 +9871,7 @@ mod checked_singleton_substitution_tests {
     fn checked_singleton_substitution_refuses_unsupported_carriers() {
         let source = Proposition::Predicate {
             name: "opaque".into(),
-            arguments: vec![Term::Memory(Memory::new())],
+            arguments: vec![Term::Memory(SymbolicMemory::new())],
         };
         assert_eq!(
             substitute_machine_constant_in_pure_proposition(&source, Variable(70_103), 7),

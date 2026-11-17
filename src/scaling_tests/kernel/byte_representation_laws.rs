@@ -20,7 +20,7 @@ fn target_fact_lowering_ignores_unrelated_state_and_store_history() {
     let costs = [4, 16, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Pointer::symbolic(Variable(8_390_003));
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for index in 0..size {
             memory = memory.store(
                 base.offset_by_bytes(index * 4),

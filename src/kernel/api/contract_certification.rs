@@ -511,7 +511,7 @@ pub fn execution_state_justifies_loadability_obligation(
 /// are read by key and an alias of an alias is not followed, so the work is
 /// bounded by the equalities stated about this one pointer.
 fn symbolic_base_aliases_a_held_cell(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     base: &Pointer,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -858,7 +858,7 @@ fn forall_loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Proposi
 /// holds. A proposition about a load's value supplies no validity evidence.
 pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
     assumptions: &PureFactContext,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     base: &Pointer,
 ) -> bool {
     if crate::kernel::assumptions::reasoning_interrupted() {
@@ -2682,9 +2682,9 @@ fn certified_function_path_parts<'a>(
 
 fn resource_contexts_definitionally_equal(
     function: &ProgramFunction,
-    left_memory: &Memory,
+    left_memory: &SymbolicMemory,
     left: &ResourceContext,
-    right_memory: &Memory,
+    right_memory: &SymbolicMemory,
     right: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -2700,9 +2700,9 @@ fn resource_contexts_definitionally_equal(
 
 pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions(
     composite_resource_definitions: &[CompositeResourceDefinition],
-    left_memory: &Memory,
+    left_memory: &SymbolicMemory,
     left: &ResourceContext,
-    right_memory: &Memory,
+    right_memory: &SymbolicMemory,
     right: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -2764,7 +2764,7 @@ pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions
         })
     };
     let definitionally_covers =
-        |available: &ResourceContext, required: &ResourceContext, memory: &Memory| {
+        |available: &ResourceContext, required: &ResourceContext, memory: &SymbolicMemory| {
             required.facts().iter().all(|fact| {
                 expose_composite_resource_fact(
                     available,
@@ -2850,7 +2850,7 @@ pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions
                             other: &ResourceContext,
                             other_composites: &[ResourceFact],
                             other_expanded: &ResourceContext,
-                            other_memory: &Memory| {
+                            other_memory: &SymbolicMemory| {
         composites.iter().all(|composite| {
             other_composites.contains(composite)
                 || other.satisfies_fact(composite, assumptions)
@@ -3429,7 +3429,7 @@ mod shared_contract_operand_tests {
             MachineTerm::Variable(Variable(1017151)),
             MachineTerm::constant(7),
         );
-        let before = crate::kernel::Memory::new().with_block("contract-expression-cell", 4);
+        let before = crate::kernel::SymbolicMemory::new().with_block("contract-expression-cell", 4);
         let after = before
             .clone()
             .store(pointer.clone(), ProgramValue::Int32(written.clone()));
@@ -3473,7 +3473,7 @@ mod shared_contract_operand_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let load = |id| {
-            let memory = crate::kernel::Memory::new()
+            let memory = crate::kernel::SymbolicMemory::new()
                 .with_block("contract-index", 4)
                 .store(
                     pointer.clone(),

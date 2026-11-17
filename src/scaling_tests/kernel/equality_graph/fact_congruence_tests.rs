@@ -245,7 +245,7 @@ fn cited_pointer_context_construction_scales_with_selected_conditions() {
 
 fn simplified_pointer_read_retention_work(count: u64, unrelated: u64) -> usize {
     let _session = VerificationSession::enter();
-    let memory = intern_memory(Memory::new());
+    let memory = intern_memory(SymbolicMemory::new());
     let mut context = PureFactContext::new();
     for index in 0..unrelated {
         context = context.assume_proposition(eq(var(90000 + index), var(91000 + index)));
@@ -301,8 +301,9 @@ fn later_pointer_read_definition_work(count: u32, unrelated: u64) -> usize {
         block: PointerBlock::Heap(986_001),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let mut memory =
-        intern_memory(Memory::new().store(other.clone(), ProgramValue::UInt32(0u32.into())));
+    let mut memory = intern_memory(
+        SymbolicMemory::new().store(other.clone(), ProgramValue::UInt32(0u32.into())),
+    );
     let name = |memory: &SharedMemory, cell: &Pointer| {
         Pointer::loaded_value(
             &crate::kernel::memory_history::canonical_value_load_memory(memory, cell, 8),
@@ -371,7 +372,7 @@ fn complete_pointer_read_registration_scales_with_new_definitions() {
             Pointer::symbolic(Variable(988_002)),
             ProgramType::Int32Pointer,
         );
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..steps {
                 memory = memory
@@ -414,7 +415,7 @@ fn pointer_domain_queries_scale_with_selected_read_definitions() {
             offset: PointerOffsetTerm::Constant(0),
         };
         let mut previous = target.clone();
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..steps {
                 memory = memory.clone().store(

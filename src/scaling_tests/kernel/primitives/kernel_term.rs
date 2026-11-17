@@ -357,7 +357,7 @@ fn machine_root_checking_views_keep_shared_prefixes_unboxed() {
 #[test]
 fn retained_load_terms_grow_without_rewalking_states_or_prior_arithmetic() {
     for unrelated in [0, 128, 512] {
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for index in 0..unrelated {
             memory = memory.with_block(format!("unrelated-read-{index}"), 4);
         }
@@ -410,7 +410,7 @@ fn retained_named_reads_do_not_rewalk_their_address_on_each_import() {
             );
         }
         let raw = MachineTerm::MemoryLoad(
-            ProgramPoint::at(&(intern_memory(Memory::new()))),
+            ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             Box::new(Pointer {
                 block: PointerBlock::Symbolic(Variable(993499)),
                 offset,
@@ -442,7 +442,7 @@ fn shared_read_selection_reuses_growing_arithmetic_prefixes() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let raw = MachineTerm::MemoryLoad(
-            ProgramPoint::at(&(intern_memory(Memory::new()))),
+            ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             Box::new(Pointer::symbolic(Variable(994110))),
             LoadKind::Int32,
         );
@@ -482,7 +482,7 @@ fn shared_read_selection_reuses_growing_arithmetic_prefixes() {
 fn nested_read_address_import_is_linear_beside_unrelated_memory() {
     for unrelated in [0, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for index in 0..unrelated {
             memory = memory.store(
                 Pointer::symbolic(Variable(997000 + index)),
@@ -566,7 +566,7 @@ fn shared_read_descriptor_identity_does_not_expand_offset_dags() {
                 )
             })
             .collect::<Vec<_>>();
-        let memory = intern_memory(Memory::new());
+        let memory = intern_memory(SymbolicMemory::new());
         for size in [16, 64, 256] {
             let mut offset = KernelPointerOffset::Constant(0).into_shared().unwrap();
             for _ in 0..size {
@@ -631,7 +631,7 @@ fn repeated_scalar_read_imports_reuse_live_address_components() {
                 byte_width: 4,
             },
         };
-        let memory = intern_memory(Memory::new());
+        let memory = intern_memory(SymbolicMemory::new());
         let retained = KernelTerm::scalar_read_descriptor(
             MachineIntegerType::Int32,
             &memory,
@@ -669,7 +669,7 @@ fn repeated_scalar_read_imports_reuse_live_address_components() {
 fn pointer_read_roots_and_handoffs_do_not_expand_defining_address_dags() {
     let _session = crate::kernel::VerificationSession::enter();
     for unrelated in [0, 128, 512] {
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for n in 0..unrelated {
             memory = memory.with_block(format!("pointer-read-unrelated-{n}"), 8);
         }
@@ -891,7 +891,7 @@ fn pointer_call_handoffs_retain_prepared_argument_dags() {
         Pointer::symbolic(Variable(1025200)),
         ProgramType::Int32Pointer,
     ));
-    let memory = intern_memory(Memory::new());
+    let memory = intern_memory(SymbolicMemory::new());
     for unrelated in [0, 128, 512] {
         let _unrelated = (0..unrelated)
             .map(|n| KernelTerm::variable(KernelType::Integer, Variable(1025201 + n)))
@@ -1025,8 +1025,9 @@ fn growing_common_boolean_comparisons_keep_operands_shared() {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
         let read = |block: &str| {
-            let memory =
-                crate::kernel::intern_memory(crate::kernel::Memory::new().with_block(block, 16));
+            let memory = crate::kernel::intern_memory(
+                crate::kernel::SymbolicMemory::new().with_block(block, 16),
+            );
             let pointer = crate::kernel::Pointer {
                 block: block.into(),
                 offset: crate::kernel::PointerOffsetTerm::Constant(0),
@@ -1227,7 +1228,7 @@ fn refused_boolean_transport_does_not_export_shared_guard_prefixes() {
                 assert!(
                     crate::kernel::memory_history::transport_framed_common_condition(
                         &root,
-                        &Memory::new(),
+                        &SymbolicMemory::new(),
                         None
                     )
                     .is_none()
@@ -1262,7 +1263,7 @@ fn boolean_transport_keeps_shared_arithmetic_operands() {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             let actual = crate::kernel::memory_history::transport_framed_common_condition(
                 &guard,
-                &Memory::new(),
+                &SymbolicMemory::new(),
                 None,
             )
             .unwrap();

@@ -66,7 +66,7 @@ fn cells_fact(capacity: u32) -> IteratedMemory {
 /// first `free` guard cells known to be zero, the next two known to be one,
 /// and the rest unknown.
 fn cells_state(capacity: u32, free: u32) -> ExecutionState {
-    let mut memory = Memory::new();
+    let mut memory = SymbolicMemory::new();
     for index in 0..capacity.min(free + 2) {
         memory = memory.store(cell(OCCUPIED, index), int32(u32::from(index >= free)));
     }
@@ -270,11 +270,11 @@ fn iterated_element_selection_checks_pointer_reads_across_states() {
         block: "iterated-pointer-slot".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let before = Memory::new()
+    let before = SymbolicMemory::new()
         .with_block("iterated-pointer-slot", 8)
         .store(cell(OCCUPIED, 0), int32(0));
     let after = before.clone().store(cell(UNRELATED, 0), int32(1));
-    let read = |memory: &Memory, address: &Pointer| Pointer {
+    let read = |memory: &SymbolicMemory, address: &Pointer| Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::scaled_int32_node(
             MachineTerm::MemoryLoad(

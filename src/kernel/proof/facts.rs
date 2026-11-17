@@ -4035,9 +4035,9 @@ fn collect_owned_atomic_conjuncts(fact: &Proposition, output: &mut Vec<Propositi
 mod integer_equality_fact_index_tests {
     use super::*;
     use crate::kernel::{
-        IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, MachineTerm, Memory, Pointer,
+        IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, MachineTerm, Pointer,
         PointerOffsetTerm, ProgramValue, SharedIntegerRangeEndpoint, SharedIntegerTerm,
-        SharedMachineIntegerTerm, Sort, Variable,
+        SharedMachineIntegerTerm, Sort, SymbolicMemory, Variable,
     };
 
     #[test]
@@ -4050,7 +4050,7 @@ mod integer_equality_fact_index_tests {
         let goal = Proposition::ConditionIs(
             ConditionTerm::equal(
                 MachineTerm::MemoryLoad(
-                    ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
                     Box::new(read.offset_by_bytes(4)),
                     crate::kernel::LoadKind::Int32,
                 ),
@@ -4147,7 +4147,7 @@ mod integer_equality_fact_index_tests {
     }
 
     fn loadable_forall(
-        memory: &Memory,
+        memory: &SymbolicMemory,
         binder: Variable,
         block: &str,
         free_offset: Option<Variable>,
@@ -4180,7 +4180,7 @@ mod integer_equality_fact_index_tests {
     }
 
     fn loadable_exists(
-        memory: &Memory,
+        memory: &SymbolicMemory,
         name: &str,
         binder: Variable,
         block: &str,
@@ -4397,8 +4397,9 @@ mod integer_equality_fact_index_tests {
 
     #[test]
     fn integer_alpha_fact_lookup_keeps_inequality_state_identity() {
-        let before =
-            crate::kernel::intern_memory(Memory::new().with_block("retained_state-alpha-facts", 8));
+        let before = crate::kernel::intern_memory(
+            SymbolicMemory::new().with_block("retained_state-alpha-facts", 8),
+        );
         let changed = crate::kernel::intern_memory(before.as_ref().clone().store(
             Pointer {
                 block: "retained_state-alpha-facts".into(),
@@ -4433,13 +4434,15 @@ mod integer_equality_fact_index_tests {
 
     #[test]
     fn quantified_loadable_alpha_index_renames_binder_but_keeps_exact_payload() {
-        let memory = Memory::new().with_block("quantified-viewable", 32).store(
-            Pointer {
-                block: "quantified-viewable".into(),
-                offset: PointerOffsetTerm::Constant(0),
-            },
-            ProgramValue::Int32(MachineTerm::Variable(Variable(207_000))),
-        );
+        let memory = SymbolicMemory::new()
+            .with_block("quantified-viewable", 32)
+            .store(
+                Pointer {
+                    block: "quantified-viewable".into(),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                ProgramValue::Int32(MachineTerm::Variable(Variable(207_000))),
+            );
         let changed_memory = memory.clone().store(
             Pointer {
                 block: "quantified-viewable".into(),
@@ -4510,7 +4513,7 @@ mod integer_equality_fact_index_tests {
 
     #[test]
     fn quantified_loadable_root_existential_ignores_display_name() {
-        let memory = Memory::new().with_block("root-existential-viewable", 32);
+        let memory = SymbolicMemory::new().with_block("root-existential-viewable", 32);
         let source = loadable_exists(
             &memory,
             "source_witness",
@@ -4588,7 +4591,7 @@ mod integer_equality_fact_index_tests {
     #[test]
     fn implication_extract_renames_existential_but_keeps_state_and_antecedent() {
         let block = "implication-existential-viewable";
-        let memory = Memory::new().with_block(block, 32);
+        let memory = SymbolicMemory::new().with_block(block, 32);
         let changed_memory = memory.clone().store(
             Pointer {
                 block: block.into(),
@@ -4640,7 +4643,7 @@ mod integer_equality_fact_index_tests {
 
     #[test]
     fn quantified_implication_extract_does_not_scan_unrelated_consequents() {
-        let memory = Memory::new().with_block("selected-implication", 32);
+        let memory = SymbolicMemory::new().with_block("selected-implication", 32);
         let antecedent = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
         let selected = loadable_exists(
             &memory,
@@ -4690,7 +4693,7 @@ mod integer_equality_fact_index_tests {
 
     #[test]
     fn quantified_loadable_alpha_index_query_does_not_scan_unrelated_facts() {
-        let memory = Memory::new().with_block("quantified-viewable-scale", 32);
+        let memory = SymbolicMemory::new().with_block("quantified-viewable-scale", 32);
         let source = loadable_forall(
             &memory,
             Variable(208_000),
@@ -4730,7 +4733,7 @@ mod integer_equality_fact_index_tests {
 
     #[test]
     fn quantified_loadable_alpha_budget_fails_closed_before_memory_substitution() {
-        let memory = Memory::new().with_block("quantified-viewable-budget", 8);
+        let memory = SymbolicMemory::new().with_block("quantified-viewable-budget", 8);
         let source = loadable_forall(
             &memory,
             Variable(210_000),
@@ -4888,8 +4891,9 @@ mod integer_equality_fact_index_tests {
 
     #[test]
     fn integer_alpha_fact_lookup_requires_the_same_load_state() {
-        let before =
-            crate::kernel::intern_memory(Memory::new().with_block("retained_state-alpha-facts", 8));
+        let before = crate::kernel::intern_memory(
+            SymbolicMemory::new().with_block("retained_state-alpha-facts", 8),
+        );
         let changed = crate::kernel::intern_memory(before.as_ref().clone().store(
             Pointer {
                 block: "retained_state-alpha-facts".into(),

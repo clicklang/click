@@ -13,7 +13,7 @@ fn read_validity_misses_do_not_walk_pointer_aliases() {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..4 {
                 assert!(!context.has_memory_read_defined_evidence(
-                    &Memory::new(),
+                    &SymbolicMemory::new(),
                     &base,
                     ProgramType::Int32
                 ));
@@ -89,7 +89,7 @@ fn selected_read_validity_and_kept_frames_ignore_large_alias_classes() {
             offset: PointerOffsetTerm::Constant(0),
         };
         let field = source.offset_by_bytes(4);
-        let memory = Memory::new()
+        let memory = SymbolicMemory::new()
             .with_heap_allocation_claim(source.clone(), AllocationSize::int32(16))
             .unwrap();
         let mut context =
@@ -155,7 +155,7 @@ fn read_validity_state_buckets_keep_exact_hits_and_bounded_misses() {
         let _session = crate::kernel::VerificationSession::enter();
         let source = Pointer::symbolic(Variable(920_000));
         let other = Pointer::symbolic(Variable(920_001));
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         let mut context = PureFactContext::new();
         for index in 0..size {
             memory = memory.store(other.clone(), ProgramValue::Int32((index as u32).into()));
@@ -165,7 +165,7 @@ fn read_validity_state_buckets_keep_exact_hits_and_bounded_misses() {
                 value_type: ProgramType::Int32,
             });
         }
-        let missing = Memory::new();
+        let missing = SymbolicMemory::new();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..4 {
                 assert!(context.has_memory_read_defined_evidence(

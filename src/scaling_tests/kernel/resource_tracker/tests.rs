@@ -214,7 +214,7 @@ fn retained_cell_stops_scale_with_new_steps_and_ignore_other_names() {
 fn fresh_cell_offsets_share_the_whole_block_version_prefix() {
     let samples = [8usize, 16, 32, 64].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
-        let entry = intern_memory(Memory::new());
+        let entry = intern_memory(SymbolicMemory::new());
         let mut memory = entry.memory().clone();
         for index in 0..size {
             memory = memory.store(
@@ -259,7 +259,7 @@ fn forgotten_cell_recovery_ignores_older_history_and_unrelated_cache_entries() {
         for size in [4, 16, 64] {
             let pointer = at(block("global:g"), 0);
             let assumptions = PureFactContext::new();
-            let mut before = Memory::new()
+            let mut before = SymbolicMemory::new()
                 .with_block(block("global:g"), 4)
                 .with_block(block("global:h"), (size * 4) as u32);
             for index in 0..size {
@@ -313,7 +313,7 @@ fn loop_kept_pointer_frame_ignores_unrelated_owners_and_ambiguous_buckets() {
                     index + 16,
                 )));
         }
-        let base = Memory::new();
+        let base = SymbolicMemory::new();
         let before = intern_memory(base.clone());
         let after = intern_memory(base.with_loop_memory_havoc_preserving_frame(
             Variable(980117),
@@ -427,7 +427,7 @@ fn shared_pointer_resource_read_collection_visits_each_node_once() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let address = Pointer::symbolic(crate::kernel::Variable(1081601));
-        let memory = intern_memory(Memory::new().store(address.clone(), one()));
+        let memory = intern_memory(SymbolicMemory::new().store(address.clone(), one()));
         let read = MachineTerm::MemoryLoad(
             ProgramPoint::at(&memory),
             Box::new(address),
@@ -467,7 +467,7 @@ fn shared_conditional_guard_reads_keep_state_identity_in_linear_work() {
     };
     for size in [16usize, 64, 256] {
         let _session = VerificationSession::enter();
-        let memory = intern_memory(Memory::new().with_declared_scalar_block(
+        let memory = intern_memory(SymbolicMemory::new().with_declared_scalar_block(
             block("global:g"),
             4,
             ProgramType::Int32,

@@ -22,7 +22,7 @@ fn caller_with_owned_end(pointer: &Pointer, owned_end: u32, bytes: u32) -> Execu
     ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block(pointer.block.clone(), bytes)
                 .store(pointer.clone(), int32(7)),
         )
@@ -58,7 +58,11 @@ fn reader_with_output(name: &str, output_start: u32, output_end: u32) -> Program
 
 /// `memory` with the first `cells` `int32` cells at `base` written, so a
 /// caller's automatic storage is initialized across a viewed range.
-fn with_initialized_cells(mut memory: Memory, base: &Pointer, cells: u32) -> Memory {
+fn with_initialized_cells(
+    mut memory: SymbolicMemory,
+    base: &Pointer,
+    cells: u32,
+) -> SymbolicMemory {
     for cell in 0..cells {
         memory = memory.store(base.offset_by_bytes(4 * cell), int32(7));
     }
@@ -347,7 +351,7 @@ fn candidate_composite_call_lends_primitive_body_and_recovers_head() {
         ResourceFact::own_composite("cell".into(), vec![ProgramValue::pointer(pointer.clone())]);
     let caller = ExecutionState::new()
         .with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block(pointer.block.clone(), 4)
                 .store(pointer.clone(), int32(7)),
         )
@@ -456,7 +460,7 @@ fn plan_composite_lend(function: &ProgramFunction) -> Result<(), RuntimeError> {
         ResourceFact::own_composite("cell".into(), vec![ProgramValue::pointer(pointer.clone())]);
     let caller = ExecutionState::new()
         .with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block(pointer.block.clone(), 4)
                 .store(pointer.clone(), int32(7)),
         )
@@ -591,7 +595,7 @@ fn adapter_caller(pointer: &Pointer) -> ExecutionState {
     };
     ExecutionState::new()
         .with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block(pointer.block.clone(), 8)
                 .store(pointer.clone(), int32(7))
                 .store(second, int32(9)),
@@ -920,7 +924,7 @@ fn candidate_composite_reader_can_be_called_twice() {
     let caller = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block(pointer.block.clone(), 4)
                 .store(pointer.clone(), int32(7)),
         )
@@ -1110,7 +1114,7 @@ fn candidate_local_array_view_uses_a_checked_loan_and_recovers() {
     let caller = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block(pointer.block.clone(), 4)
                 .store(pointer.clone(), int32(7)),
         );
@@ -1147,7 +1151,7 @@ fn candidate_local_array_view_out_of_bounds_is_refused() {
     let pointer = pointer();
     let function = reader_for_input("candidate_local_wide_reader", 4);
     let caller = ExecutionState::new().with_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_block(pointer.block.clone(), 4)
             .store(pointer.clone(), int32(7)),
     );
@@ -2199,7 +2203,7 @@ fn candidate_allows_a_mutable_effect_reserved_from_another_owned_occurrence() {
     let caller = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block(viewed.block.clone(), 8)
                 .store(viewed.clone(), int32(7)),
         )
@@ -2380,7 +2384,7 @@ fn composite_mutable_effect_paths(
     let caller = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block(pointer.block.clone(), 8)
                 .store(pointer.clone(), int32(7)),
         )
@@ -2436,7 +2440,7 @@ fn candidate_rejects_mutable_effect_overlapping_a_local_view() {
     let pointer = pointer();
     let function = reader_with_mutable_range("candidate_intrinsic_overlap_effect", 0, 1);
     let caller = ExecutionState::new().with_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_block(pointer.block.clone(), 8)
             .store(pointer.clone(), int32(7)),
     );
@@ -2913,7 +2917,7 @@ fn local_storage_classification_does_not_restore_partial_or_aliased_authority() 
         let state = ExecutionState::new()
             .with_population_creation_tracking()
             .with_memory(with_initialized_cells(
-                Memory::new().with_block(local.block.clone(), 16),
+                SymbolicMemory::new().with_block(local.block.clone(), 16),
                 &local,
                 4,
             ))

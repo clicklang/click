@@ -188,11 +188,11 @@ mod tests {
     #[test]
     fn overflow_conditions_keep_native_load_authority() {
         let _session = crate::kernel::VerificationSession::enter();
-        let before = crate::kernel::Memory::new()
+        let before = crate::kernel::SymbolicMemory::new()
             .with_block("overflow-read", 8)
             .with_block("overflow-other", 4);
         let after = before.clone().store(
-            crate::kernel::Memory::global_pointer("overflow-other"),
+            crate::kernel::SymbolicMemory::global_pointer("overflow-other"),
             ProgramValue::Int32(MachineTerm::constant(1)),
         );
         let memories = [before, after].map(crate::kernel::intern_memory);
@@ -203,7 +203,9 @@ mod tests {
                     op,
                     left: Box::new(MachineTerm::MemoryLoad(
                         ProgramPoint::at(memory),
-                        Box::new(crate::kernel::Memory::global_pointer("overflow-read")),
+                        Box::new(crate::kernel::SymbolicMemory::global_pointer(
+                            "overflow-read",
+                        )),
                         if format == MachineIntegerType::Int32 {
                             LoadKind::Int32
                         } else {

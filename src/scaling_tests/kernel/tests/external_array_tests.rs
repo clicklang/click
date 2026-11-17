@@ -11,7 +11,7 @@ fn external_array_unknown_states_and_noop_maps_scale_with_representation() {
         let _session = crate::kernel::VerificationSession::enter();
         let source = external(930_000);
         let target = external(930_001);
-        let before = Memory::new();
+        let before = SymbolicMemory::new();
         let (memory, work) = crate::instrumentation::measure_deterministic_work(|| {
             let memory = copy(before.clone(), &target, &source, count);
             let mut variables = std::collections::BTreeSet::new();
@@ -118,7 +118,7 @@ fn external_array_source_selection_skips_unrelated_parameter_cells() {
             block: "local:indexed-copy".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let mut memory = Memory::new()
+        let mut memory = SymbolicMemory::new()
             .with_block(target.block.clone(), 16)
             .store(source.clone(), ProgramValue::UInt32(9u32.into()));
         for index in 0..siblings {
@@ -150,7 +150,7 @@ fn external_array_ambiguous_run_aliasing_forgets_without_length_work() {
         let source = external(939_000);
         let target = external(939_001);
         let other = external(939_002);
-        let memory = copy(Memory::new(), &target, &source, count);
+        let memory = copy(SymbolicMemory::new(), &target, &source, count);
         let before = memory.clone();
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             memory.write_scalar_array_region(

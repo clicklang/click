@@ -1806,7 +1806,7 @@ impl PureFactContext {
     }
 
     /// Retain one deterministic path made only from exact int32 equality
-    /// conditions. Memory-canonicalized and pointer-offset-derived graph
+    /// conditions. SymbolicMemory-canonicalized and pointer-offset-derived graph
     /// edges deliberately remain for their own typed evidence kinds.
     pub(in crate::kernel) fn exact_bitvector_equality_path_evidence(
         &self,
@@ -3435,9 +3435,9 @@ mod intrinsic_context_tests {
 
     #[test]
     fn intrinsic_read_definitions_follow_growth_restore_and_new_sessions() {
-        use crate::kernel::{Memory, Pointer, VerificationSession, intern_memory};
+        use crate::kernel::{Pointer, SymbolicMemory, VerificationSession, intern_memory};
         let check = || {
-            let memory = intern_memory(Memory::new().with_block("intrinsic", 16));
+            let memory = intern_memory(SymbolicMemory::new().with_block("intrinsic", 16));
             let address = Pointer::symbolic(Variable(986010));
             let value = Pointer::symbolic(Variable(986011));
             let application = Pointer::loaded_value(&memory, &address);
@@ -3704,8 +3704,8 @@ mod shared_offset_evidence_tests {
     #[test]
     fn shared_offset_evidence_keeps_read_states_and_shared_premises() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = crate::kernel::Memory::global_pointer("offset-evidence");
-        let memory = crate::kernel::Memory::new().with_block("offset-evidence", 4);
+        let pointer = crate::kernel::SymbolicMemory::global_pointer("offset-evidence");
+        let memory = crate::kernel::SymbolicMemory::new().with_block("offset-evidence", 4);
         let read = |memory| {
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(crate::kernel::intern_memory(memory))),

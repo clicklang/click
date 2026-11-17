@@ -47,7 +47,7 @@ fn local_storage_classification_stops_at_a_fixed_ownership_gap() {
             let state = ExecutionState::new()
                 .with_population_creation_tracking()
                 .with_memory(with_initialized_cells(
-                    Memory::new().with_block(pointer.block.clone(), 16384),
+                    SymbolicMemory::new().with_block(pointer.block.clone(), 16384),
                     &pointer,
                     1024,
                 ))
@@ -147,7 +147,7 @@ fn returning_one_borrowed_owner_does_not_rebuild_its_memory_block() {
         let state = ExecutionState::new()
             .with_population_creation_tracking()
             .with_memory(with_initialized_cells(
-                Memory::new().with_block(pointer.block.clone(), 16384),
+                SymbolicMemory::new().with_block(pointer.block.clone(), 16384),
                 &pointer,
                 1024,
             ))
@@ -362,7 +362,7 @@ fn check_produced_call_return_lowering(axis: &str, overlap: bool) {
         resources.synchronize_memory_equalities(&facts);
         let state = ExecutionState::new()
             .with_population_creation_tracking()
-            .with_memory(Memory::new().with_block(selected.block.clone(), 8))
+            .with_memory(SymbolicMemory::new().with_block(selected.block.clone(), 8))
             .with_resource_context(resources);
         let output = ResourceSpec::owned_memory(MemorySegment::new(
             crate::kernel::program_expression::variable("p"),

@@ -170,7 +170,7 @@ impl LocalStructLayoutScope {
             .values()
             .map(|global| {
                 (
-                    Memory::global_pointer(global.kernel_name()),
+                    SymbolicMemory::global_pointer(global.kernel_name()),
                     (
                         global.kernel_name().clone(),
                         global.interface_type().to_kernel_type(),
@@ -179,7 +179,7 @@ impl LocalStructLayoutScope {
             })
             .chain(function.static_locals().values().map(|local| {
                 (
-                    Memory::static_pointer(function.name(), local.kernel_name()),
+                    SymbolicMemory::static_pointer(function.name(), local.kernel_name()),
                     (
                         local.kernel_name().clone(),
                         local.interface_type().to_kernel_type(),
@@ -2448,7 +2448,7 @@ fn synthesize_surface_atomic_proposition(
     // state. Its source call does not write that argument. Each array-ref
     // argument then lowers to a (memory, pointer) term pair and each value
     // argument to a single value term, so the remaining kernel argument list
-    // reads back unambiguously: a `Memory` term always opens an array-ref
+    // reads back unambiguously: a `SymbolicMemory` term always opens an array-ref
     // pair. The state the pair names is not written here — the current
     // memory needs no form, and every caller re-lowers the candidate and
     // compares it to the kernel fact, so a candidate built against the wrong

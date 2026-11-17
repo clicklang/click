@@ -197,7 +197,7 @@ fn recent_pointer_read_origin_avoids_older_alias_histories() {
             offset: PointerOffsetTerm::Constant(0),
         };
         let selected = cell("zz-recent-pointer-origin".into());
-        let mut memory = Memory::new().with_block(selected.block.clone(), 8);
+        let mut memory = SymbolicMemory::new().with_block(selected.block.clone(), 8);
         let mut older = Vec::new();
         for index in 0..size {
             let pointer = cell(format!("older-pointer-origin-{index:04}"));

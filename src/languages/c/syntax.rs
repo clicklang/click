@@ -3108,7 +3108,7 @@ impl ImportedFunction {
         {
             return Some(StaticAddress {
                 bounds: None,
-                pointer: crate::kernel::Memory::global_pointer(global.kernel_name()),
+                pointer: crate::kernel::SymbolicMemory::global_pointer(global.kernel_name()),
                 interface_type: global.interface_type(),
                 constant: global.is_constant(),
             });
@@ -3121,7 +3121,7 @@ impl ImportedFunction {
             let interface_type = global_array.complete_c_type()?;
             return Some(StaticAddress {
                 bounds: None,
-                pointer: crate::kernel::Memory::global_pointer(global_array.kernel_name()),
+                pointer: crate::kernel::SymbolicMemory::global_pointer(global_array.kernel_name()),
                 interface_type,
                 constant: global_array.is_constant(),
             });
@@ -3133,7 +3133,9 @@ impl ImportedFunction {
         {
             return Some(StaticAddress {
                 bounds: None,
-                pointer: crate::kernel::Memory::global_pointer(global_aggregate.kernel_name()),
+                pointer: crate::kernel::SymbolicMemory::global_pointer(
+                    global_aggregate.kernel_name(),
+                ),
                 interface_type: record_value_type(global_aggregate.layout()),
                 constant: global_aggregate.is_constant(),
             });
@@ -3146,7 +3148,7 @@ impl ImportedFunction {
             let interface_type = global_aggregate_array.complete_c_type()?;
             return Some(StaticAddress {
                 bounds: None,
-                pointer: crate::kernel::Memory::global_pointer(
+                pointer: crate::kernel::SymbolicMemory::global_pointer(
                     global_aggregate_array.kernel_name(),
                 ),
                 interface_type,
@@ -3158,7 +3160,7 @@ impl ImportedFunction {
         }) {
             return Some(StaticAddress {
                 bounds: None,
-                pointer: crate::kernel::Memory::static_pointer(
+                pointer: crate::kernel::SymbolicMemory::static_pointer(
                     &self.name,
                     static_local.kernel_name(),
                 ),
@@ -3171,7 +3173,7 @@ impl ImportedFunction {
         }) {
             return Some(StaticAddress {
                 bounds: None,
-                pointer: crate::kernel::Memory::static_pointer(
+                pointer: crate::kernel::SymbolicMemory::static_pointer(
                     &self.name,
                     static_array.kernel_name(),
                 ),
@@ -3184,7 +3186,7 @@ impl ImportedFunction {
         }) {
             return Some(StaticAddress {
                 bounds: None,
-                pointer: crate::kernel::Memory::static_pointer(
+                pointer: crate::kernel::SymbolicMemory::static_pointer(
                     &self.name,
                     static_aggregate.kernel_name(),
                 ),
@@ -3200,7 +3202,7 @@ impl ImportedFunction {
             })
             .map(|static_aggregate_array| StaticAddress {
                 bounds: None,
-                pointer: crate::kernel::Memory::static_pointer(
+                pointer: crate::kernel::SymbolicMemory::static_pointer(
                     &self.name,
                     static_aggregate_array.kernel_name(),
                 ),
@@ -3212,7 +3214,7 @@ impl ImportedFunction {
     fn static_address_expression(&self, expression: &CExpression) -> Option<StaticAddress> {
         match expression {
             CExpression::StringLiteral(literal) => Some(StaticAddress {
-                pointer: crate::kernel::Memory::string_literal_pointer(
+                pointer: crate::kernel::SymbolicMemory::string_literal_pointer(
                     literal.identity()?,
                     literal.bytes(),
                 ),

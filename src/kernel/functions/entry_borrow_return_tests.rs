@@ -134,7 +134,7 @@ fn run_mixed_call(
         ResourceFact::own_memory(MemoryRange::new(pointer.clone(), 0u32.into(), 1u32.into()));
     let state = ExecutionState::new()
         .with_population_creation_tracking()
-        .with_memory(Memory::new().with_block(pointer.block.clone(), 8))
+        .with_memory(SymbolicMemory::new().with_block(pointer.block.clone(), 8))
         .with_resource_context(ResourceContext::new().unchecked_with_fact(held));
     let function = mixed_memory_contract(composite, produced_first);
     let environment =
@@ -282,7 +282,7 @@ fn return_roles_follow_skipped_guards_and_deferred_output_emission() {
         selected_mutex_source: None,
     }];
     let state = ExecutionState::new().with_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_block(field.block.clone(), C_POINTER_BYTE_WIDTH)
             .with_block(target.block.clone(), 4)
             .store(field, ProgramValue::pointer(target)),
@@ -373,7 +373,7 @@ fn borrowed_composite_bodies_still_check_post_memory_against_the_retained_frame(
         ResourceContext::new_with_equalities(&facts).unchecked_with_fact(ResourceFact::own_memory(
             MemoryRange::new(retained_child.clone(), 0u32.into(), 1u32.into()),
         ));
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .with_block(field.block.clone(), C_POINTER_BYTE_WIDTH)
         .with_block(old_child.block.clone(), 4)
         .with_block(retained_child.block.clone(), 4)
@@ -456,7 +456,11 @@ fn unmatched_entry_borrow_descriptions_do_not_authorize_restoration() {
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(p.clone()))
         .with_local("q", ProgramValue::pointer(q.clone()))
-        .with_memory(Memory::new().with_block(p.block, 4).with_block(q.block, 4));
+        .with_memory(
+            SymbolicMemory::new()
+                .with_block(p.block, 4)
+                .with_block(q.block, 4),
+        );
     let evaluated = evaluate_contract_return_resource_context(
         function.contract_interface(),
         &[],

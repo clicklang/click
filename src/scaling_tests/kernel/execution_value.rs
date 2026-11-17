@@ -43,7 +43,7 @@ fn retained_execution_handoffs_do_not_walk_the_value_dag() {
 fn retaining_pointer_read_results_ignores_unrelated_read_definitions() {
     for unrelated in [0, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         for n in 0..unrelated {
             memory.symbolic_pointer_load(
                 &Pointer::symbolic(Variable(1019000 + n)),
@@ -202,10 +202,10 @@ fn pointer_local_bindings_preserve_prepared_dags_at_constant_work() {
 fn retained_pointer_cells_do_not_export_prepared_dags_or_scan_sibling_cells() {
     for unrelated in [0, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for n in 0..unrelated {
             memory = memory.store(
-                Memory::local_pointer(format!("unrelated_pointer_cell_{n}")),
+                SymbolicMemory::local_pointer(format!("unrelated_pointer_cell_{n}")),
                 ProgramValue::Int32(MachineTerm::constant(n)),
             );
         }
@@ -231,7 +231,7 @@ fn retained_pointer_cells_do_not_export_prepared_dags_or_scan_sibling_cells() {
                 ),
                 SharedPointerValue::import(&pointer),
             );
-            let address = Memory::local_pointer(format!("selected_{size}"));
+            let address = SymbolicMemory::local_pointer(format!("selected_{size}"));
             let exports = KernelTermExport::machine_export_count();
             let (stored, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let stored = memory

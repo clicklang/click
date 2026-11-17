@@ -181,7 +181,7 @@ fn project_children_into_ledger(
     state: ExecutionState,
     binding: &crate::kernel::LoanViewBinding,
     children: impl IntoIterator<Item = ResourceFact>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
     definitions: &[CompositeResourceDefinition],
     context_label: &str,
@@ -611,7 +611,7 @@ fn materialize_folded_composite_resource_memory(
     state: &ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
     assumptions: &PureFactContext,
-) -> Result<Memory, String> {
+) -> Result<SymbolicMemory, String> {
     let mut memory = state.memory().clone();
     for resource in state.resources().facts() {
         let (name, resource_arguments) = match resource.resource() {
@@ -2330,7 +2330,7 @@ fn project_held_resource_observable_facts(
     result: &ProgramValue,
     available_pure_facts: &mut ProofResourcePureFacts,
     spec_definitions: SpecDefinitions<'_>,
-) -> Result<Memory, String> {
+) -> Result<SymbolicMemory, String> {
     let (name, resource_arguments) = match resource.resource() {
         Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_) => {
             return Ok(state.memory().clone());
@@ -2525,7 +2525,7 @@ fn apply_composite_observation_law_with_facts<F: ResourcePureFacts>(
     spec_definitions: SpecDefinitions<'_>,
     lower_declared_source_facts: bool,
     compiled_definitions: Option<&[CompositeResourceDefinition]>,
-) -> Result<(Memory, ResourceContext, bool), String> {
+) -> Result<(SymbolicMemory, ResourceContext, bool), String> {
     let Some(composite_body) = definition.composite_body() else {
         return Ok((state.memory().clone(), ResourceContext::new(), false));
     };
@@ -2717,7 +2717,7 @@ fn append_composite_resource_loadable_facts<F: ResourcePureFacts>(
     composite_body: &CompositeResourceBody,
     substitutions: &BTreeMap<String, ContractExpression>,
     parameter_binding: ParameterBinding<'_>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     propositions: &mut F,
 ) -> Result<(), String> {
     for contained in composite_body.contains() {
@@ -2748,7 +2748,7 @@ fn append_composite_resource_loadable_facts<F: ResourcePureFacts>(
 fn append_resource_clause_loadable_fact_with_store<F: ResourcePureFacts>(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     propositions: &mut F,
 ) -> Result<(), ClickError> {
     let state = ExecutionState::new().with_memory(memory.clone());
@@ -2888,9 +2888,9 @@ fn materialize_composite_resource_memory(
     composite_body: &CompositeResourceBody,
     substitutions: &BTreeMap<String, ContractExpression>,
     parameter_binding: ParameterBinding<'_>,
-    memory: Memory,
+    memory: SymbolicMemory,
     assumptions: &PureFactContext,
-) -> Result<Memory, String> {
+) -> Result<SymbolicMemory, String> {
     // This pass names cells only. Tokens and nested resource heads cannot
     // materialize a cell, and their formation belongs to resource admission,
     // not to preparing the memory in which that admission will be checked.
@@ -2939,9 +2939,9 @@ pub(in crate::surface) fn instantiate_composite_resource_body_resources(
     composite_body: &CompositeResourceBody,
     substitutions: &BTreeMap<String, ContractExpression>,
     parameter_binding: ParameterBinding<'_>,
-    mut memory: Memory,
+    mut memory: SymbolicMemory,
     assumptions: &PureFactContext,
-) -> Result<(Memory, ResourceContext), String> {
+) -> Result<(SymbolicMemory, ResourceContext), String> {
     let mut resources = ResourceContext::new();
     // Every cell exposed by this one body expansion names the value it had
     // in the state before the expansion began.  Lower clauses against the
@@ -3020,7 +3020,7 @@ fn resource_value_substitutions(
 fn resource_value_substitutions_with_witnesses(
     definition: &ResourceDefinition,
     arguments: &[AlgebraicValue],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     resources: &ResourceContext,
     assumptions: &PureFactContext,
     resource_environment: &ResourceEnvironment,
@@ -5598,12 +5598,12 @@ fn instantiate_contract_segment(
 }
 
 fn materialize_composite_resource_cells_from_state(
-    mut memory: Memory,
-    naming_memory: &Memory,
+    mut memory: SymbolicMemory,
+    naming_memory: &SymbolicMemory,
     resource_clause: &ResourceClause,
     lowered: &ResourceFact,
     parameters: &[crate::languages::interface::ImportedParameter],
-) -> Memory {
+) -> SymbolicMemory {
     let Some((segment, range)) = (match resource_clause {
         ResourceClause::Conditional { .. } => None,
         ResourceClause::Named { .. } => None,
@@ -5919,7 +5919,7 @@ void child_release(struct child* obj) {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
         };
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let index = Variable(2_000_000);
         let index_term = || Box::new(MachineTerm::Variable(index));
         let below = |end: u32| {
@@ -6027,7 +6027,7 @@ void child_release(struct child* obj) {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
         };
-        let memory = Memory::new().store(
+        let memory = SymbolicMemory::new().store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(0)),
         );
@@ -6260,7 +6260,7 @@ mod wide_range_reader_tests {
                 end: literal(),
             },
         };
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let result = materialize_composite_resource_cells_from_state(
             memory.clone(),
             &memory,
@@ -6486,7 +6486,7 @@ mod declared_scalar_field_observation_tests {
                         ResourceFact::own_memory(range),
                     )
                 };
-                let memory = Memory::new();
+                let memory = SymbolicMemory::new();
                 let (named, work) = crate::instrumentation::measure_deterministic_work(|| {
                     materialize_composite_resource_cells_from_state(
                         memory.clone(),
@@ -6520,7 +6520,7 @@ mod declared_scalar_field_observation_tests {
     fn pointer_field_observation_is_one_complete_typed_read() {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Pointer::symbolic(Variable(985_803));
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let segment = field(
             ProgramExpression::Value(ProgramValue::pointer(base.clone())),
             ProgramType::Int32Pointer,
@@ -6568,7 +6568,7 @@ mod declared_scalar_field_observation_tests {
                 ProgramType::Int32,
             );
             let range = MemoryRange::new(base.clone(), 0.into(), (count + 4).into());
-            let memory = Memory::new();
+            let memory = SymbolicMemory::new();
             let named = materialize_composite_resource_cells_from_state(
                 memory.clone(),
                 &memory,

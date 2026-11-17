@@ -407,7 +407,7 @@ fn one() -> ProgramValue {
 }
 
 fn application(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     base: &Pointer,
     start: MachineTerm,
     end: MachineTerm,
@@ -489,7 +489,7 @@ fn a_store_at_the_exact_upper_endpoint_misses_the_prefix() {
     let _session = VerificationSession::enter();
     register_unmarked();
     let v = parameter_base(V);
-    let before = Memory::new();
+    let before = SymbolicMemory::new();
     let after = before.clone().store(element(&v, bv(HI)), one());
     let old = application(&before, &v, MachineTerm::constant(0), bv(HI));
     let new = application(&after, &v, MachineTerm::constant(0), bv(HI));
@@ -503,7 +503,7 @@ fn a_store_inside_the_range_is_refused() {
     let _session = VerificationSession::enter();
     register_unmarked();
     let v = parameter_base(V);
-    let before = Memory::new();
+    let before = SymbolicMemory::new();
     // `v[hi - 1]`, the last cell of `[lo, hi)`.
     let last = MachineTerm::subtract(bv(HI), MachineTerm::constant(1));
     let after = before.clone().store(element(&v, last.clone()), one());
@@ -521,7 +521,7 @@ fn a_store_below_a_nonzero_lower_endpoint_needs_its_order_fact() {
     let _session = VerificationSession::enter();
     register_unmarked();
     let v = parameter_base(V);
-    let before = Memory::new();
+    let before = SymbolicMemory::new();
     let after = before.clone().store(element(&v, bv(J)), one());
     let old = application(&before, &v, bv(LO), bv(HI));
     let new = application(&after, &v, bv(LO), bv(HI));
@@ -539,7 +539,7 @@ fn byte_widths_decide_partial_overlap_of_the_boundary_cells() {
     let _session = VerificationSession::enter();
     register_unmarked();
     let v = parameter_base(V);
-    let before = Memory::new();
+    let before = SymbolicMemory::new();
     let old = application(&before, &v, bv(LO), bv(HI));
     let last = MachineTerm::subtract(bv(HI), MachineTerm::constant(1));
     let wide = ProgramValue::Int64(MachineTerm::int64_constant(0));
@@ -586,7 +586,7 @@ fn an_alias_needs_a_stated_separation_with_checked_membership() {
     register_unmarked();
     let a = parameter_base(V);
     let b = parameter_base(W);
-    let before = Memory::new();
+    let before = SymbolicMemory::new();
     let after = before.clone().store(element(&b, bv(J)), one());
     let old = application(&before, &a, MachineTerm::constant(0), bv(N));
     let new = application(&after, &a, MachineTerm::constant(0), bv(N));
@@ -627,7 +627,7 @@ fn changed_endpoints_or_base_pointers_are_not_framed() {
     let _session = VerificationSession::enter();
     register_unmarked();
     let v = parameter_base(V);
-    let before = Memory::new();
+    let before = SymbolicMemory::new();
     let after = before.clone().store(element(&v, bv(HI)), one());
     let old = application(&before, &v, MachineTerm::constant(0), bv(HI));
     let longer = MachineTerm::add(bv(HI), MachineTerm::constant(1));
@@ -648,7 +648,7 @@ fn an_empty_fold_crosses_any_store_only_when_emptiness_is_checked() {
     let _session = VerificationSession::enter();
     register_unmarked();
     let v = parameter_base(V);
-    let before = Memory::new();
+    let before = SymbolicMemory::new();
     let after = before.clone().store(element(&v, bv(J)), one());
     let old = application(&before, &v, bv(LO), bv(HI));
     let new = application(&after, &v, bv(LO), bv(HI));
@@ -668,7 +668,7 @@ fn a_lifetime_end_of_the_array_is_never_crossed() {
         block: block.clone(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let declared = Memory::new().with_block(block.clone(), 16);
+    let declared = SymbolicMemory::new().with_block(block.clone(), 16);
     let ended = declared.without_local_block(&block);
     let old = application(
         &declared,
@@ -714,7 +714,7 @@ fn a_call_is_framed_only_by_its_checked_write_set() {
     let _session = VerificationSession::enter();
     register_unmarked();
     let v = parameter_base(V);
-    let before = Memory::new();
+    let before = SymbolicMemory::new();
     let havoc = |start: MachineTerm, end: MachineTerm| {
         before.clone().with_call_memory_havoc(
             Variable(2_000),
@@ -751,13 +751,13 @@ fn sibling_and_unrelated_histories_and_unsummarized_functions() {
     // A state built in an earlier session carries no derivation here.
     let foreign = {
         let _session = VerificationSession::enter();
-        Memory::new().store(
+        SymbolicMemory::new().store(
             element(&v, bv(HI)),
             ProgramValue::Int32(MachineTerm::constant(2)),
         )
     };
     let _session = VerificationSession::enter();
-    let base = Memory::new();
+    let base = SymbolicMemory::new();
     let left = base.clone().store(element(&v, bv(HI)), one());
     let right = base.clone().store(
         Pointer {
@@ -810,7 +810,7 @@ fn a_declined_definition_frames_nothing_even_across_an_unrelated_store() {
     );
     register_fold_read_definition(definition(peek));
     let v = parameter_base(V);
-    let before = Memory::new();
+    let before = SymbolicMemory::new();
     let after = before.clone().store(element(&v, bv(HI)), one());
     let old = application(&before, &v, MachineTerm::constant(0), bv(HI));
     let new = application(&after, &v, MachineTerm::constant(0), bv(HI));
@@ -828,7 +828,7 @@ fn a_transport_rewrites_only_fold_application_states() {
     let _session = VerificationSession::enter();
     register_unmarked();
     let v = parameter_base(V);
-    let before = Memory::new();
+    let before = SymbolicMemory::new();
     let after = before.clone().store(element(&v, bv(HI)), one());
     let old = IntegerTerm::PureFunctionApplication(application(
         &before,
@@ -903,7 +903,7 @@ fn an_offset_pointer_is_read_by_its_exact_byte_offset() {
     // `[0, i)`. The offset is read exactly, constant included.
     let w = byte_offset(&v, 4);
     let index = MachineTerm::subtract(bv(HI), MachineTerm::constant(2));
-    let before = Memory::new();
+    let before = SymbolicMemory::new();
     let after = before.clone().store(element(&w, index.clone()), one());
     let old = application(&before, &v, MachineTerm::constant(0), bv(HI));
     let new = application(&after, &v, MachineTerm::constant(0), bv(HI));
@@ -985,7 +985,7 @@ fn byte_fold_framing_refuses_overlap_and_counts_byte_endpoints() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::scale_int32(bv(V), 1),
     };
-    let at = |memory: &Memory, element_type| {
+    let at = |memory: &SymbolicMemory, element_type| {
         SharedPureApplication::intern(
             "byte_sum".into(),
             vec![
@@ -999,7 +999,7 @@ fn byte_fold_framing_refuses_overlap_and_counts_byte_endpoints() {
             ],
         )
     };
-    let before = Memory::new();
+    let before = SymbolicMemory::new();
     let old = at(&before, ProgramType::UInt8);
     let summary = registered_fold_read_summary("byte_sum").unwrap();
     assert!(
@@ -1069,7 +1069,7 @@ fn wide_ranges_refuse_signed_fold_framing_rules() {
     );
     let narrow = MemoryRange::new(base.clone(), 0u32.into(), 1u32.into());
     let interval = FoldReadInterval {
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         base: base.clone(),
         start: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, 0u32.into()),
         end: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, 1u32.into()),
@@ -1093,13 +1093,13 @@ fn fold_transport_crosses_unconditional_cache_forgetting_but_not_an_overlapping_
     let _session = VerificationSession::enter();
     register_unmarked();
     let v = parameter_base(V);
-    let before = Memory::new().with_seeded_cells(
+    let before = SymbolicMemory::new().with_seeded_cells(
         v.clone(),
         4,
         ProgramType::Int32,
         0,
         8,
-        crate::kernel::intern_memory(Memory::new()),
+        crate::kernel::intern_memory(SymbolicMemory::new()),
     );
     let forgotten =
         before.without_possible_aliasing_cells(&parameter_base(W), 4, &PureFactContext::new());
@@ -1138,7 +1138,7 @@ fn shared_fold_indices_require_exact_bounds_without_export() {
     };
     let pointer = base.offset_by_shared_elements(index, 4);
     let interval = FoldReadInterval {
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         base,
         start: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, MachineTerm::constant(0)),
         end: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, MachineTerm::constant(4)),

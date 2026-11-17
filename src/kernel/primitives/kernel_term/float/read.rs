@@ -47,10 +47,10 @@ mod tests {
     fn float_reads_keep_exact_states_widths_and_shared_addresses() {
         let first = {
             let _session = crate::kernel::VerificationSession::enter();
-            intern_memory(Memory::new())
+            intern_memory(SymbolicMemory::new())
         };
         let _session = crate::kernel::VerificationSession::enter();
-        let second = intern_memory(Memory::new());
+        let second = intern_memory(SymbolicMemory::new());
         let pointer = Pointer {
             block: PointerBlock::Symbolic(Variable(999814)),
             offset: PointerOffsetTerm::scaled_int32_node(

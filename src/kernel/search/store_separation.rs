@@ -11,7 +11,8 @@
 //! this.
 use crate::kernel::primitives::HashedOrdMapChange;
 use crate::kernel::{
-    CompareRelation, MachineIntegerType, Memory, Pointer, Proposition, SharedMachineIntegerTerm,
+    CompareRelation, MachineIntegerType, Pointer, Proposition, SharedMachineIntegerTerm,
+    SymbolicMemory,
 };
 
 /// One cached cell a statement forgot beside a store into the same array.
@@ -42,8 +43,8 @@ const MAX_COMPARED_PAIRS: usize = 64;
 /// slots are not inspected), at most
 /// [`MAX_COMPARED_PAIRS`] pairs are compared, and at most `limit` returned.
 pub(crate) fn cells_forgotten_beside_stores(
-    before: &Memory,
-    after: &Memory,
+    before: &SymbolicMemory,
+    after: &SymbolicMemory,
     limit: usize,
 ) -> Vec<ForgottenStoreCell> {
     let mut forgotten = Vec::new();

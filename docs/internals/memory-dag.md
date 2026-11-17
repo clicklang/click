@@ -10,10 +10,10 @@ change which C programs Click accepts.
 
 ## Representation
 
-`SharedMemory` is the stable identity of an interned `Memory` value. The
+`SharedMemory` is the stable identity of an interned `SymbolicMemory` value. The
 arena assigns dense identifiers. A separately stored `MemoryDerivation`
 describes the edge from an already-interned parent to a child state.
-Keeping derivations outside `Memory` means that equality, hashing, and ordering
+Keeping derivations outside `SymbolicMemory` means that equality, hashing, and ordering
 continue to describe memory values rather than the route used to produce them.
 
 Each map and set inside a state (`blocks`, `cells`, `union_cells`, the
@@ -69,7 +69,7 @@ entry by entry; the recorded edges are unchanged. Because every result is
 derived from its base's canonical storage, a statement executed twice from
 one state (planned, then checked) is recognized as the base's recorded child
 before any structural lookup: the arena indexes each base's recorded children
-by content hash, and `Memory::eq_relative_to` compares the two results'
+by content hash, and `SymbolicMemory::eq_relative_to` compares the two results'
 changes from the base (`HashedOrdMap::eq_relative_to`, which diffs against the
 base and so walks only the changed paths). The answer is exact whatever the
 states share; only the cost depends on the sharing.
@@ -163,7 +163,7 @@ cell map that has forgotten a store looks exactly like the cell map before
 that store. After `a[i] = 7; a[j] = 0;` the second write drops the possibly
 aliasing `a[i]` cell and the map is empty again, as it was at function entry.
 
-So `Memory` carries a `forgotten_from` mark: the interned identity of the
+So `SymbolicMemory` carries a `forgotten_from` mark: the interned identity of the
 state cached values were dropped from, part of equality, hashing, ordering
 and the interning key. A state means "the memory the mark denotes, with
 these cells known on top of it", so two executions reaching the same cells
@@ -203,7 +203,7 @@ onto these identities.
 
 Each point also records the memory the path had there and the steps the path
 took to reach it from its predecessor: `record_memory_derivation` adds each
-step to a log the executing `Memory` value carries (`pending_steps`, which is
+step to a log the executing `SymbolicMemory` value carries (`pending_steps`, which is
 not part of equality or the interning key and is never kept in the arena),
 and the next point takes the log. So a point's steps are the ones its own
 path took, even where the arena shares the resulting memory with another

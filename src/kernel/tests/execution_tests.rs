@@ -456,7 +456,7 @@ fn volatile_parameter_accesses_emit_ordered_facts() {
 #[test]
 fn a_state_scan_reserves_memory_havoc_marker_identities() {
     let state = ExecutionState::new().with_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_block("havoc:1000004", 0)
             .with_block("call-havoc:1000009", 0)
             .with_block("local:x", 4),
@@ -492,7 +492,7 @@ fn loop_back_edge_rejects_heap_and_resource_state_changes() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .with_heap_allocation_claim(allocation.clone(), AllocationSize::int32(16))
         .expect("test allocation claim should be fresh");
     let top = ExecutionState::new()
@@ -589,7 +589,7 @@ fn join_state_forgets_changed_scalars_and_memory() {
         .with_local("x", stable_x.clone())
         .with_local("y", int32(0))
         .with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block("heap", 4)
                 .store(pointer.clone(), int32(0)),
         )
@@ -597,7 +597,11 @@ fn join_state_forgets_changed_scalars_and_memory() {
     let state_one = ExecutionState::new()
         .with_local("x", stable_x.clone())
         .with_local("y", int32(1))
-        .with_memory(Memory::new().with_block("heap", 4).store(pointer, int32(1)));
+        .with_memory(
+            SymbolicMemory::new()
+                .with_block("heap", 4)
+                .store(pointer, int32(1)),
+        );
     let stable = BTreeMap::from([("x".into(), stable_x.clone())]);
 
     let abstract_zero =
@@ -872,7 +876,7 @@ fn symbolic_max_function_call_reports_branch_facts() {
 #[test]
 fn execution_derivation_matches_only_equivalent_call_havoc() {
     let assumptions = PureFactContext::new();
-    let base = Memory::new().with_block("arc", 16);
+    let base = SymbolicMemory::new().with_block("arc", 16);
     let first_range = memory_range(arc_pointer(0), 0, 1);
     let other_range = memory_range(arc_pointer(4), 0, 1);
     let left = FunctionOutcome::Return {
@@ -960,7 +964,7 @@ fn function_call_threads_memory_but_discards_callee_locals() {
     )];
     let final_state = ExecutionState::new()
         .with_local("caller", int32(42))
-        .with_memory(Memory::new().store(pointer.clone(), int32(9)))
+        .with_memory(SymbolicMemory::new().store(pointer.clone(), int32(9)))
         .with_resource_context(resources);
     let theorem = prove_symbolic_program_function_execution(
         state.clone(),
@@ -2087,7 +2091,7 @@ fn while_invariant_is_proof_obligation() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let invariant = Proposition::MemoryLoadable {
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         base: pointer,
         bytes: MachineTerm::constant(4),
         wide: false,

@@ -1532,7 +1532,7 @@ fn c_lowers_static_address_initializers_with_pointer_provenance() {
             .pointee_is_constant()
     );
 
-    let expected_pointer = crate::kernel::Memory::global_pointer("target");
+    let expected_pointer = crate::kernel::SymbolicMemory::global_pointer("target");
     let kernel = function.to_kernel_function();
     let global = kernel
         .global_variables()
@@ -1562,7 +1562,7 @@ fn c_lowers_static_address_initializers_with_pointer_provenance() {
     };
     assert_eq!(
         private_pointer.pointer(),
-        &crate::kernel::Memory::global_pointer(private_target.kernel_name())
+        &crate::kernel::SymbolicMemory::global_pointer(private_target.kernel_name())
     );
     assert_eq!(
         private_pointer.program_type(),
@@ -1623,7 +1623,7 @@ fn c_links_static_address_dependencies_after_later_definitions() {
     };
     assert_eq!(
         alias_pointer.pointer(),
-        &crate::kernel::Memory::global_pointer("target")
+        &crate::kernel::SymbolicMemory::global_pointer("target")
     );
 
     let alias_ref = kernel
@@ -1636,7 +1636,7 @@ fn c_links_static_address_dependencies_after_later_definitions() {
     };
     assert_eq!(
         alias_ref_pointer.pointer(),
-        &crate::kernel::Memory::global_pointer("alias")
+        &crate::kernel::SymbolicMemory::global_pointer("alias")
     );
     assert_eq!(
         kernel
@@ -1702,7 +1702,7 @@ fn c_lowers_static_subobject_address_initializers_with_byte_offsets() {
     };
     assert_eq!(
         table_middle_pointer.pointer(),
-        &crate::kernel::Memory::global_pointer("table").offset_by_bytes(4)
+        &crate::kernel::SymbolicMemory::global_pointer("table").offset_by_bytes(4)
     );
 
     let shared_layout = function.structs()["state"].clone();
@@ -1728,7 +1728,7 @@ fn c_lowers_static_subobject_address_initializers_with_byte_offsets() {
         };
         assert_eq!(
             pointer.pointer(),
-            &crate::kernel::Memory::global_pointer("shared").offset_by_bytes(offset)
+            &crate::kernel::SymbolicMemory::global_pointer("shared").offset_by_bytes(offset)
         );
     }
 
@@ -1742,7 +1742,7 @@ fn c_lowers_static_subobject_address_initializers_with_byte_offsets() {
     };
     assert_eq!(
         pointer.pointer(),
-        &crate::kernel::Memory::global_pointer("shared").offset_by_bytes(value_offset)
+        &crate::kernel::SymbolicMemory::global_pointer("shared").offset_by_bytes(value_offset)
     );
 }
 
@@ -5695,7 +5695,7 @@ fn c_embedded_struct_field_access_lowers_to_nested_scalar_offset() {
     };
     let resources = own_memory_context(packet.clone(), 0, 4);
     let state = crate::kernel::ExecutionState::new()
-        .with_memory(crate::kernel::Memory::new().with_classed_block(
+        .with_memory(crate::kernel::SymbolicMemory::new().with_classed_block(
             "packet".into(),
             function.parameters()[0].pointee_class(),
             8,
@@ -5703,7 +5703,7 @@ fn c_embedded_struct_field_access_lowers_to_nested_scalar_offset() {
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::Memory::new()
+            crate::kernel::SymbolicMemory::new()
                 .with_classed_block("packet".into(), function.parameters()[0].pointee_class(), 8)
                 .store(
                     crate::kernel::Pointer {
@@ -6098,7 +6098,7 @@ fn c_tagged_union_member_addresses_preserve_member_type_and_offset() {
     };
     let theorem = crate::kernel::prove_symbolic_program_function_execution(
         crate::kernel::ExecutionState::new().with_memory(
-            crate::kernel::Memory::new().with_classed_block(
+            crate::kernel::SymbolicMemory::new().with_classed_block(
                 "packet".into(),
                 address_number.to_kernel_function().parameters()[0].pointee_class(),
                 16,
@@ -6299,7 +6299,7 @@ fn c_enum_field_comparison_lowers_named_constant() {
     };
     let state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::Memory::new()
+            crate::kernel::SymbolicMemory::new()
                 .with_classed_block("packet".into(), function.parameters()[0].pointee_class(), 8)
                 .store(state_pointer, crate::kernel::int32(7)),
         )
@@ -6749,7 +6749,7 @@ fn c_chained_field_load_executes_through_typed_pointer_memory() {
         block: "leaf".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
-    let memory = crate::kernel::Memory::new()
+    let memory = crate::kernel::SymbolicMemory::new()
         .store(
             root.clone(),
             crate::kernel::ProgramValue::pointer(leaf.clone()),
@@ -7114,7 +7114,9 @@ fn c_syntax_targets_kernel_store_and_load() {
                 .binding_name(),
             crate::kernel::ProgramValue::pointer(pointer.clone()),
         )
-        .with_memory(crate::kernel::Memory::new().store(pointer.clone(), crate::kernel::int32(9)))
+        .with_memory(
+            crate::kernel::SymbolicMemory::new().store(pointer.clone(), crate::kernel::int32(9)),
+        )
         .with_resource_context(resources);
     let theorem = crate::kernel::prove_symbolic_program_execution(
         initial.clone(),
@@ -7162,7 +7164,7 @@ fn c_syntax_targets_kernel_struct_field_load() {
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let statement = function.body_kernel_statement();
-    let memory = crate::kernel::Memory::new()
+    let memory = crate::kernel::SymbolicMemory::new()
         .with_block("object", 4)
         .store(pointer.clone(), crate::kernel::int32(3));
     let initial = crate::kernel::ExecutionState::new()
@@ -7220,7 +7222,7 @@ fn c_syntax_targets_kernel_float64_struct_field_load() {
         1.25f64.to_bits(),
     ));
     let statement = function.body_kernel_statement();
-    let memory = crate::kernel::Memory::new()
+    let memory = crate::kernel::SymbolicMemory::new()
         .with_block("object", 8)
         .store(pointer.clone(), value.clone());
     let initial = crate::kernel::ExecutionState::new()
@@ -7278,7 +7280,7 @@ fn c_syntax_targets_kernel_struct_field_store() {
     };
     let resources = own_memory_context(pointer.clone(), 0, 1);
     let state = crate::kernel::ExecutionState::new()
-        .with_memory(crate::kernel::Memory::new().with_classed_block(
+        .with_memory(crate::kernel::SymbolicMemory::new().with_classed_block(
             "object".into(),
             function.parameters()[0].pointee_class(),
             4,
@@ -7290,7 +7292,7 @@ fn c_syntax_targets_kernel_struct_field_store() {
     ];
     let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::Memory::new()
+            crate::kernel::SymbolicMemory::new()
                 .with_classed_block("object".into(), function.parameters()[0].pointee_class(), 4)
                 .store(pointer, crate::kernel::int32(5)),
         )
@@ -7362,7 +7364,7 @@ fn c_syntax_targets_kernel_multifield_struct_offset_load() {
         block: "pair".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(4),
     };
-    let memory = crate::kernel::Memory::new()
+    let memory = crate::kernel::SymbolicMemory::new()
         .with_classed_block("pair".into(), function.parameters()[0].pointee_class(), 8)
         .store(second, crate::kernel::int32(7));
     let state = crate::kernel::ExecutionState::new()
@@ -7431,7 +7433,7 @@ fn c_syntax_targets_kernel_struct_pointer_field_roundtrip() {
     ]);
     let state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::Memory::new()
+            crate::kernel::SymbolicMemory::new()
                 .with_classed_block("owner".into(), function.parameters()[0].pointee_class(), 16)
                 .with_block("data", 4),
         )
@@ -7501,7 +7503,9 @@ fn c_syntax_targets_kernel_store_and_load_function_call() {
     )];
     let final_state = crate::kernel::ExecutionState::new()
         .with_local("caller", crate::kernel::int32(7))
-        .with_memory(crate::kernel::Memory::new().store(pointer.clone(), crate::kernel::int32(9)))
+        .with_memory(
+            crate::kernel::SymbolicMemory::new().store(pointer.clone(), crate::kernel::int32(9)),
+        )
         .with_resource_context(resources);
     let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
@@ -7545,7 +7549,7 @@ fn c_syntax_targets_kernel_pointer_addition_load() {
         block: "block".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(4),
     };
-    let memory = crate::kernel::Memory::new()
+    let memory = crate::kernel::SymbolicMemory::new()
         .with_block("block", 16)
         .store(second.clone(), crate::kernel::int32(23));
     let resources = view_memory_context(base.clone(), 1, 2);
@@ -7595,7 +7599,7 @@ fn c_syntax_targets_kernel_array_index_load() {
         block: "block".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(4),
     };
-    let memory = crate::kernel::Memory::new()
+    let memory = crate::kernel::SymbolicMemory::new()
         .with_block("block", 16)
         .store(second.clone(), crate::kernel::int32(23));
     let resources = view_memory_context(base.clone(), 1, 2);
@@ -7646,14 +7650,14 @@ fn c_syntax_targets_kernel_array_index_store() {
         block: "block".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(4),
     };
-    let memory = crate::kernel::Memory::new().with_block("block", 16);
+    let memory = crate::kernel::SymbolicMemory::new().with_block("block", 16);
     let resources = own_memory_context(base.clone(), 1, 2);
     let state = crate::kernel::ExecutionState::new()
         .with_memory(memory)
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::Memory::new()
+            crate::kernel::SymbolicMemory::new()
                 .with_block("block", 16)
                 .store(second, crate::kernel::int32(7)),
         )
@@ -7708,7 +7712,7 @@ fn c_syntax_targets_kernel_address_of_array_index() {
         block: local_q_block.clone(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
-    let memory = crate::kernel::Memory::new()
+    let memory = crate::kernel::SymbolicMemory::new()
         .with_block("block", 16)
         .store(second.clone(), crate::kernel::int32(23));
     let resources = view_memory_context(base.clone(), 1, 2);
@@ -7717,7 +7721,7 @@ fn c_syntax_targets_kernel_address_of_array_index() {
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::Memory::new()
+            crate::kernel::SymbolicMemory::new()
                 .with_block("block", 16)
                 .with_block(local_q_block.clone(), 8)
                 .store(second.clone(), crate::kernel::int32(23))
@@ -7833,7 +7837,7 @@ fn c_syntax_targets_kernel_logical_short_circuiting() {
         (
             crate::kernel::ExecutionState::new()
                 .with_memory(
-                    crate::kernel::Memory::new()
+                    crate::kernel::SymbolicMemory::new()
                         .with_block("block", 4)
                         .store(pointer.clone(), crate::kernel::int32(3)),
                 )
@@ -7846,7 +7850,7 @@ fn c_syntax_targets_kernel_logical_short_circuiting() {
         (
             crate::kernel::ExecutionState::new()
                 .with_memory(
-                    crate::kernel::Memory::new()
+                    crate::kernel::SymbolicMemory::new()
                         .with_block("block", 4)
                         .store(pointer.clone(), crate::kernel::int32(4)),
                 )
@@ -7947,7 +7951,7 @@ fn c_syntax_targets_kernel_local_address_of() {
     };
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
-        crate::kernel::Memory::new()
+        crate::kernel::SymbolicMemory::new()
             .with_block(local_x_block.clone(), 4)
             .store(local_pointer, crate::kernel::int32(5)),
     );
@@ -8005,7 +8009,7 @@ fn c_syntax_targets_kernel_local_array_storage() {
     };
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
-        crate::kernel::Memory::new()
+        crate::kernel::SymbolicMemory::new()
             .with_block(local_a_block.clone(), 12)
             .store(a0, crate::kernel::int32(5))
             .store(a1, crate::kernel::int32(7)),
@@ -8066,7 +8070,7 @@ fn c_syntax_lowers_local_array_initializer_stores() {
     };
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
-        crate::kernel::Memory::new()
+        crate::kernel::SymbolicMemory::new()
             .with_block(local_a_block.clone(), 12)
             .store(a0, crate::kernel::int32(1))
             .store(a1, crate::kernel::int32(2))
@@ -8126,7 +8130,7 @@ fn c_syntax_flattens_multidimensional_local_array_indices() {
     };
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
-        crate::kernel::Memory::new()
+        crate::kernel::SymbolicMemory::new()
             .with_block(local_values_block.clone(), 24)
             .store(first, crate::kernel::int32(1))
             .store(last, crate::kernel::int32(7)),
@@ -8175,7 +8179,7 @@ fn c_syntax_lowers_nested_multidimensional_array_initializers() {
     let state = crate::kernel::ExecutionState::new();
     let local_values_block = automatic_test_block(function.name(), 0);
     let final_state = crate::kernel::ExecutionState::new().with_memory(
-        crate::kernel::Memory::new()
+        crate::kernel::SymbolicMemory::new()
             .with_block(local_values_block.clone(), 24)
             .store(
                 crate::kernel::Pointer {
@@ -8279,7 +8283,7 @@ fn c_syntax_lowers_local_struct_array_fields_with_abi_stride() {
     };
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
-        crate::kernel::Memory::new()
+        crate::kernel::SymbolicMemory::new()
             .with_block(local_items_block.clone(), 16)
             .store(tag, crate::kernel::uint8(3))
             .store(value, crate::kernel::int32(7)),
@@ -8346,7 +8350,7 @@ fn c_syntax_lowers_local_struct_array_initializers() {
     let state = crate::kernel::ExecutionState::new();
     let local_items_block = automatic_test_block(function.name(), 0);
     let final_state = crate::kernel::ExecutionState::new().with_memory(
-        crate::kernel::Memory::new()
+        crate::kernel::SymbolicMemory::new()
             .with_block(local_items_block.clone(), 40)
             .store(
                 crate::kernel::Pointer {
@@ -8545,7 +8549,7 @@ fn c_syntax_local_array_decays_to_pointer_argument() {
         crate::kernel::ExecutionEnvironment::new().with_function((read_first).with_inline_body());
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
-        crate::kernel::Memory::new()
+        crate::kernel::SymbolicMemory::new()
             .with_block(local_a_block.clone(), 8)
             .with_block(local_result_block.clone(), 4)
             .store(a0, crate::kernel::int32(11))
@@ -8780,7 +8784,7 @@ fn c_wide_scalar_struct_fields_execute_at_declared_widths() {
     };
     let resources = own_memory_context(packet.clone(), 0, 8);
     let state = crate::kernel::ExecutionState::new()
-        .with_memory(crate::kernel::Memory::new().with_classed_block(
+        .with_memory(crate::kernel::SymbolicMemory::new().with_classed_block(
             "packet".into(),
             function.parameters()[0].pointee_class(),
             32,
@@ -8788,7 +8792,7 @@ fn c_wide_scalar_struct_fields_execute_at_declared_widths() {
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::Memory::new()
+            crate::kernel::SymbolicMemory::new()
                 .with_classed_block(
                     "packet".into(),
                     function.parameters()[0].pointee_class(),
@@ -9330,7 +9334,7 @@ fn c_struct_value_pointer_parameter_and_return_copy_pointee_identity() {
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let state = crate::kernel::ExecutionState::new().with_memory(
-        crate::kernel::Memory::new()
+        crate::kernel::SymbolicMemory::new()
             .with_block("packet", 16)
             .with_block("data", 4)
             .store(data.clone(), crate::kernel::int32(2))
@@ -9701,7 +9705,7 @@ fn c_struct_inline_scalar_array_field_supports_indexed_load_and_store() {
     };
     let resources = own_memory_context(packet.clone(), 0, 4);
     let state = crate::kernel::ExecutionState::new()
-        .with_memory(crate::kernel::Memory::new().with_classed_block(
+        .with_memory(crate::kernel::SymbolicMemory::new().with_classed_block(
             "packet".into(),
             function.parameters()[0].pointee_class(),
             16,
@@ -9709,7 +9713,7 @@ fn c_struct_inline_scalar_array_field_supports_indexed_load_and_store() {
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::Memory::new()
+            crate::kernel::SymbolicMemory::new()
                 .with_classed_block(
                     "packet".into(),
                     function.parameters()[0].pointee_class(),
@@ -9770,7 +9774,7 @@ fn c_struct_multidimensional_scalar_array_field_flattens_row_major() {
     };
     let resources = own_memory_context(packet.clone(), 0, 10);
     let state = crate::kernel::ExecutionState::new()
-        .with_memory(crate::kernel::Memory::new().with_classed_block(
+        .with_memory(crate::kernel::SymbolicMemory::new().with_classed_block(
             "packet".into(),
             function.parameters()[0].pointee_class(),
             28,
@@ -9778,7 +9782,7 @@ fn c_struct_multidimensional_scalar_array_field_flattens_row_major() {
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::Memory::new()
+            crate::kernel::SymbolicMemory::new()
                 .with_classed_block(
                     "packet".into(),
                     function.parameters()[0].pointee_class(),
@@ -9919,7 +9923,7 @@ fn c_struct_scalar_array_element_address_executes_at_element_width() {
     };
     let resources = own_memory_context(packet.clone(), 0, 10);
     let state = crate::kernel::ExecutionState::new()
-        .with_memory(crate::kernel::Memory::new().with_classed_block(
+        .with_memory(crate::kernel::SymbolicMemory::new().with_classed_block(
             "packet".into(),
             function.parameters()[0].pointee_class(),
             28,
@@ -9927,7 +9931,7 @@ fn c_struct_scalar_array_element_address_executes_at_element_width() {
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::Memory::new()
+            crate::kernel::SymbolicMemory::new()
                 .with_block(local_value_pointer_block.clone(), 8)
                 .with_classed_block(
                     "packet".into(),
@@ -10004,7 +10008,7 @@ fn c_struct_byte_array_element_address_executes_at_byte_width() {
     };
     let resources = own_memory_context(packet.clone(), 0, 2);
     let state = crate::kernel::ExecutionState::new()
-        .with_memory(crate::kernel::Memory::new().with_classed_block(
+        .with_memory(crate::kernel::SymbolicMemory::new().with_classed_block(
             "packet".into(),
             function.parameters()[0].pointee_class(),
             8,
@@ -10012,7 +10016,7 @@ fn c_struct_byte_array_element_address_executes_at_byte_width() {
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::Memory::new()
+            crate::kernel::SymbolicMemory::new()
                 .with_block(local_byte_pointer_block.clone(), 8)
                 .with_classed_block("packet".into(), function.parameters()[0].pointee_class(), 8)
                 .store(
@@ -10120,7 +10124,7 @@ fn c_embedded_struct_array_field_preserves_stride_and_accesses_leaf() {
     };
     let resources = own_memory_context(packet.clone(), 0, 6);
     let state = crate::kernel::ExecutionState::new()
-        .with_memory(crate::kernel::Memory::new().with_classed_block(
+        .with_memory(crate::kernel::SymbolicMemory::new().with_classed_block(
             "packet".into(),
             function.parameters()[0].pointee_class(),
             24,
@@ -10128,7 +10132,7 @@ fn c_embedded_struct_array_field_preserves_stride_and_accesses_leaf() {
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::Memory::new()
+            crate::kernel::SymbolicMemory::new()
                 .with_classed_block(
                     "packet".into(),
                     function.parameters()[0].pointee_class(),
@@ -10233,7 +10237,7 @@ fn c_multidimensional_embedded_struct_array_preserves_row_major_stride() {
     };
     let resources = own_memory_context(packet.clone(), 0, 10);
     let state = crate::kernel::ExecutionState::new()
-        .with_memory(crate::kernel::Memory::new().with_classed_block(
+        .with_memory(crate::kernel::SymbolicMemory::new().with_classed_block(
             "packet".into(),
             function.parameters()[0].pointee_class(),
             40,
@@ -10241,7 +10245,7 @@ fn c_multidimensional_embedded_struct_array_preserves_row_major_stride() {
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::Memory::new()
+            crate::kernel::SymbolicMemory::new()
                 .with_classed_block(
                     "packet".into(),
                     function.parameters()[0].pointee_class(),
@@ -11018,7 +11022,7 @@ fn c_syntax_targets_kernel_known_function_call_assignment() {
         crate::kernel::ExecutionEnvironment::new().with_function((increment).with_inline_body());
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
-        crate::kernel::Memory::new()
+        crate::kernel::SymbolicMemory::new()
             .with_block(local_result_block.clone(), 4)
             .store(local_pointer, crate::kernel::int32(42)),
     );
@@ -11590,7 +11594,7 @@ fn c_struct_union_fields_are_copyable_by_value_without_flattening_overlap() {
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let state = crate::kernel::ExecutionState::new().with_memory(
-        crate::kernel::Memory::new()
+        crate::kernel::SymbolicMemory::new()
             .with_block("packet", 16)
             .store(source.clone(), crate::kernel::int32(1))
             .store(source.offset_by_bytes(8), crate::kernel::int32(42)),
@@ -11826,7 +11830,7 @@ fn c_function_pointers_preserve_signature_and_dispatch_callback() {
                 state: Box::new(
                     crate::kernel::ExecutionState::new()
                         .with_memory(
-                            crate::kernel::Memory::new()
+                            crate::kernel::SymbolicMemory::new()
                                 .with_block(local_result_block.clone(), 4)
                                 .with_block(local_lifetime_0_result_block.clone(), 4)
                                 .store(
@@ -12037,7 +12041,7 @@ fn c_struct_function_pointer_fields_load_and_dispatch_known_targets() {
     );
     let state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::Memory::new()
+            crate::kernel::SymbolicMemory::new()
                 .with_classed_block("table".into(), apply.parameters()[0].pointee_class(), 8)
                 .store(table.clone(), callback),
         )
@@ -12113,7 +12117,7 @@ fn c_struct_function_pointer_fields_support_direct_calls() {
     );
     let state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::Memory::new()
+            crate::kernel::SymbolicMemory::new()
                 .with_classed_block("table".into(), apply.parameters()[0].pointee_class(), 8)
                 .store(table.clone(), callback),
         )
@@ -12377,12 +12381,12 @@ fn c_memory_safety_demo_fill_three_ints() {
         block: local_i_block.clone(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
-    let initial_memory = crate::kernel::Memory::new().with_block("buf", 12);
+    let initial_memory = crate::kernel::SymbolicMemory::new().with_block("buf", 12);
     let resources = own_memory_context(base.clone(), 0, 3);
     let state = crate::kernel::ExecutionState::new()
         .with_memory(initial_memory)
         .with_resource_context(resources.clone());
-    let final_memory = crate::kernel::Memory::new()
+    let final_memory = crate::kernel::SymbolicMemory::new()
         .with_block("buf", 12)
         .with_block(local_i_block.clone(), 4)
         .store(first, crate::kernel::int32(0))
@@ -12753,7 +12757,7 @@ fn c_struct_pointer_indirection_updates_one_pointer_cell() {
     );
     let state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::Memory::new()
+            crate::kernel::SymbolicMemory::new()
                 .with_classed_block("root".into(), function.parameters()[0].pointee_class(), 24)
                 .with_classed_block(
                     "replacement".into(),
@@ -12773,7 +12777,7 @@ fn c_struct_pointer_indirection_updates_one_pointer_cell() {
     let local_link_block = automatic_test_block(function.name(), 0);
     let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::Memory::new()
+            crate::kernel::SymbolicMemory::new()
                 .with_block(local_link_block.clone(), 8)
                 .with_classed_block("root".into(), function.parameters()[0].pointee_class(), 24)
                 .with_classed_block(

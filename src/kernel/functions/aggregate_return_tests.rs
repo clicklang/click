@@ -164,7 +164,7 @@ fn construction_return_rejects_missing_binding_authority_and_partial_values() {
             destination.clone(),
             AggregateLayout::new(8, 8, vec![]),
         ),
-        selected.clone().with_memory(Memory::new()),
+        selected.clone().with_memory(SymbolicMemory::new()),
     ] {
         let paths = execute_program_function_paths_with_contract_resources(
             &caller,
@@ -474,7 +474,7 @@ fn construction_destination_survives_substitution_and_requires_agreement_at_join
         statement: Box::new(program_skip()),
         outcome: StatementOutcome::Normal(Box::new(state.clone())),
     };
-    let at = Memory::frame_local_pointer(15, "caller");
+    let at = SymbolicMemory::frame_local_pointer(15, "caller");
     let mapped = crate::kernel::reasoning::substitute_pointer_variable_in_proposition(
         &proposition,
         variable,
@@ -505,10 +505,10 @@ fn construction_destination_survives_substitution_and_requires_agreement_at_join
 #[test]
 fn aggregate_copy_return_preserves_self_pointer_through_two_materializations() {
     let _session = crate::kernel::VerificationSession::enter();
-    let source = Memory::frame_local_pointer(100, "node");
+    let source = SymbolicMemory::frame_local_pointer(100, "node");
     let self_pointer =
         ProgramValue::typed_pointer(source.offset_by_bytes(8), ProgramType::Int32Pointer);
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .with_block(source.block.clone(), 16)
         .store(source.clone(), self_pointer.clone())
         .store(
@@ -550,12 +550,14 @@ fn aggregate_copy_return_preserves_self_pointer_through_two_materializations() {
 fn aggregate_copy_return_retirement_preserves_only_independently_live_backing() {
     for points_to_self in [false, true] {
         let _session = crate::kernel::VerificationSession::enter();
-        let source = Memory::frame_local_pointer(100, "descriptor");
-        let backing = Memory::frame_local_pointer(101, "caller_backing");
-        let caller = Memory::new().with_block(backing.block.clone(), 4).store(
-            backing.clone(),
-            ProgramValue::Int32(MachineTerm::constant(23)),
-        );
+        let source = SymbolicMemory::frame_local_pointer(100, "descriptor");
+        let backing = SymbolicMemory::frame_local_pointer(101, "caller_backing");
+        let caller = SymbolicMemory::new()
+            .with_block(backing.block.clone(), 4)
+            .store(
+                backing.clone(),
+                ProgramValue::Int32(MachineTerm::constant(23)),
+            );
         let referent = if points_to_self {
             source.offset_by_bytes(8)
         } else {
@@ -620,16 +622,16 @@ fn aggregate_copy_symbolic_result_has_a_fresh_identity_per_call() {
 #[test]
 fn aggregate_copy_result_preserves_unrelated_entry_byte_history() {
     let _session = crate::kernel::VerificationSession::enter();
-    let input = Memory::local_pointer("input-byte");
-    let before = Memory::new().with_block(input.block.clone(), 1);
-    let read = |memory: &Memory| {
+    let input = SymbolicMemory::local_pointer("input-byte");
+    let before = SymbolicMemory::new().with_block(input.block.clone(), 1);
+    let read = |memory: &SymbolicMemory| {
         MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
             Box::new(input.clone()),
             LoadKind::UInt8,
         )
     };
-    let equality = |memory: &Memory| {
+    let equality = |memory: &SymbolicMemory| {
         Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -672,13 +674,20 @@ fn aggregate_copy_result_preserves_unrelated_entry_byte_history() {
 #[test]
 fn aggregate_copy_return_refuses_partial_initialization_without_changing_state() {
     let _session = crate::kernel::VerificationSession::enter();
-    let source = Memory::frame_local_pointer(100, "partial");
+    let source = SymbolicMemory::frame_local_pointer(100, "partial");
     let mut state = ExecutionState::new()
         .with_population_creation_tracking()
-        .with_memory(Memory::new().with_block(source.block.clone(), 16).store(
-            source.clone(),
-            ProgramValue::typed_pointer(source.offset_by_bytes(8), ProgramType::Int32Pointer),
-        ));
+        .with_memory(
+            SymbolicMemory::new()
+                .with_block(source.block.clone(), 16)
+                .store(
+                    source.clone(),
+                    ProgramValue::typed_pointer(
+                        source.offset_by_bytes(8),
+                        ProgramType::Int32Pointer,
+                    ),
+                ),
+        );
     let before = state.clone();
     assert_eq!(
         complete_aggregate_return(
@@ -700,7 +709,7 @@ fn symbolic_construction_storage_requires_written_fields_before_copy_return() {
     let source = Pointer::symbolic(Variable(870_003));
     let mut state = ExecutionState::new()
         .with_population_creation_tracking()
-        .with_memory(Memory::new().with_uninitialized_block(source.block.clone(), 16));
+        .with_memory(SymbolicMemory::new().with_uninitialized_block(source.block.clone(), 16));
     let value = ProgramValue::typed_pointer(source.clone(), ProgramType::VoidPointer);
     assert_eq!(
         complete_aggregate_return(&mut state, &copy_function(), value.clone()),
@@ -725,7 +734,7 @@ fn symbolic_construction_storage_requires_written_fields_before_copy_return() {
 fn symbolic_construction_storage_is_unreadable_until_written() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = Pointer::symbolic(Variable(870_004));
-    let raw = Memory::new().with_uninitialized_block(source.block.clone(), 4);
+    let raw = SymbolicMemory::new().with_uninitialized_block(source.block.clone(), 4);
     for (mode, assumptions) in [
         ("ordinary", PureFactContext::new()),
         (
@@ -800,7 +809,8 @@ fn symbolic_construction_storage_respects_known_aliases() {
     for forgotten in [false, true] {
         for written in [false, true] {
             for read in [&source, &alias] {
-                let mut memory = Memory::new().with_uninitialized_block(source.block.clone(), 4);
+                let mut memory =
+                    SymbolicMemory::new().with_uninitialized_block(source.block.clone(), 4);
                 if written {
                     memory = memory.store(alias.clone(), ProgramValue::Int32(37u32.into()));
                 }
@@ -867,7 +877,7 @@ fn symbolic_construction_storage_respects_known_aliases() {
 #[test]
 fn naming_symbolic_construction_storage_does_not_initialize_it() {
     let source = Pointer::symbolic(Variable(870_007));
-    let raw = Memory::new().with_uninitialized_block(source.block.clone(), 4);
+    let raw = SymbolicMemory::new().with_uninitialized_block(source.block.clone(), 4);
     for address in [source.clone(), Pointer::symbolic(Variable(870_008))] {
         let named = raw
             .clone()
@@ -883,7 +893,7 @@ fn naming_symbolic_construction_storage_does_not_initialize_it() {
 fn symbolic_construction_initialization_survives_havoc_and_intersects_at_join() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = Pointer::symbolic(Variable(870_009));
-    let raw = Memory::new().with_uninitialized_block(source.block.clone(), 8);
+    let raw = SymbolicMemory::new().with_uninitialized_block(source.block.clone(), 8);
     let partial = raw
         .clone()
         .store(source.clone(), ProgramValue::Int32(37u32.into()));
@@ -915,8 +925,8 @@ fn symbolic_construction_initialization_substitution_preserves_size() {
     let _session = crate::kernel::VerificationSession::enter();
     let variable = Variable(870_012);
     let source = Pointer::symbolic(variable);
-    let raw = Memory::new().with_uninitialized_block(source.block.clone(), 4);
-    let destination = Memory::frame_local_pointer(20, "container").offset_by_bytes(8);
+    let raw = SymbolicMemory::new().with_uninitialized_block(source.block.clone(), 4);
+    let destination = SymbolicMemory::frame_local_pointer(20, "container").offset_by_bytes(8);
     let mapped = crate::kernel::reasoning::substitute_pointer_variable_in_memory(
         &raw,
         variable,
@@ -925,7 +935,7 @@ fn symbolic_construction_initialization_substitution_preserves_size() {
     assert!(mapped.may_read_uninitialized_object(&destination, 4));
     assert!(!mapped.may_read_uninitialized_object(&destination.offset_by_bytes(4), 4));
     assert!(!mapped.may_read_uninitialized_object(
-        &Memory::frame_local_pointer(20, "container").offset_by_bytes(4),
+        &SymbolicMemory::frame_local_pointer(20, "container").offset_by_bytes(4),
         4
     ));
     assert!(!mapped.has_initialized_bytes_at(&destination, 4));
@@ -939,7 +949,7 @@ fn construction_object_offsets_participate_in_fresh_variable_collection() {
     let source_variable = Variable(870_013);
     let offset_variable = Variable(870_014);
     let source = Pointer::symbolic(source_variable);
-    let raw = Memory::new().with_uninitialized_block(source.block.clone(), 4);
+    let raw = SymbolicMemory::new().with_uninitialized_block(source.block.clone(), 4);
     let destination = Pointer {
         block: "local:variable-container".into(),
         offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(offset_variable), 4),
@@ -958,7 +968,7 @@ fn construction_object_offsets_participate_in_fresh_variable_collection() {
     crate::kernel::reasoning::collect_shared_memory_bitvector_variables(&before, &mut cached);
     assert_eq!(cached, whole);
     let after = crate::kernel::intern_memory(mapped.store(
-        Memory::frame_local_pointer(22, "unrelated"),
+        SymbolicMemory::frame_local_pointer(22, "unrelated"),
         ProgramValue::Int32(37u32.into()),
     ));
     let mut updated = BTreeSet::new();
@@ -972,7 +982,7 @@ fn construction_object_offsets_participate_in_fresh_variable_collection() {
 fn construction_initialization_cannot_be_erased_or_seeded_by_a_proof_shortcut() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = Pointer::symbolic(Variable(870_015));
-    let raw = Memory::new().with_uninitialized_block(source.block.clone(), 4);
+    let raw = SymbolicMemory::new().with_uninitialized_block(source.block.clone(), 4);
     let assumptions = PureFactContext::new();
     let mut havoc = raw
         .clone()
@@ -990,7 +1000,7 @@ fn forgotten_construction_writes_keep_their_address_variables_reserved() {
     let source = Pointer::symbolic(Variable(870_017));
     let alias_variable = Variable(870_018);
     let alias = Pointer::symbolic(alias_variable);
-    let written = Memory::new()
+    let written = SymbolicMemory::new()
         .with_uninitialized_block(source.block.clone(), 4)
         .store(alias.clone(), ProgramValue::Int32(37u32.into()));
     let before = crate::kernel::intern_memory(written.clone());
@@ -1145,7 +1155,7 @@ fn construction_parameter_completion_checks_original_storage() {
 fn raw_object_footprint_does_not_resize_or_initialize_parent_storage() {
     let _session = crate::kernel::VerificationSession::enter();
     let at = Pointer::symbolic(Variable(873_031));
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .with_block(at.block.clone(), 32)
         .with_uninitialized_object(at.offset_by_bytes(8), 8);
     assert_eq!(memory.block_size(&at.block), Some(&32u32.into()));
@@ -1371,7 +1381,7 @@ fn aggregate_return_temporary_copy_requires_its_recorded_size() {
     let assumptions = PureFactContext::new();
     for bytes in [0, 8, 16] {
         let state = ExecutionState::new()
-            .with_memory(Memory::new().with_block(temporary.block.clone(), bytes));
+            .with_memory(SymbolicMemory::new().with_block(temporary.block.clone(), bytes));
         assert_eq!(
             crate::kernel::eval::missing_aggregate_copy_read_resource(
                 &state,
@@ -1392,7 +1402,7 @@ fn aggregate_return_temporary_copy_requires_its_recorded_size() {
             offset: PointerOffsetTerm::Constant(0),
         };
         let source = PointerValue::new(pointer, ProgramType::UInt8Pointer);
-        let state = ExecutionState::new().with_memory(Memory::new().with_block(block, 16));
+        let state = ExecutionState::new().with_memory(SymbolicMemory::new().with_block(block, 16));
         assert!(
             crate::kernel::eval::missing_aggregate_copy_read_resource(
                 &state,
@@ -1409,8 +1419,8 @@ fn aggregate_return_temporary_copy_requires_its_recorded_size() {
 #[test]
 fn copying_unknown_uint32_pointer_field_keeps_its_value_and_initialization_check() {
     let _session = crate::kernel::VerificationSession::enter();
-    let source = Memory::local_pointer("unsigned_pointer_source");
-    let target = Memory::local_pointer("unsigned_pointer_target");
+    let source = SymbolicMemory::local_pointer("unsigned_pointer_source");
+    let target = SymbolicMemory::local_pointer("unsigned_pointer_target");
     let layout = AggregateLayout::new(
         16,
         8,
@@ -1419,7 +1429,7 @@ fn copying_unknown_uint32_pointer_field_keeps_its_value_and_initialization_check
             AggregateField::new("size", 8, ProgramType::UInt64),
         ],
     );
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .with_block(source.block.clone(), 16)
         .with_block(target.block.clone(), 16)
         .with_initialized_object(&source, 16);
@@ -1434,7 +1444,7 @@ fn copying_unknown_uint32_pointer_field_keeps_its_value_and_initialization_check
         .unwrap()
         .without_local_block(&source.block);
     assert_eq!(copied.known_value(&target), Some(expected));
-    let uninitialized = Memory::new().with_uninitialized_block(source.block.clone(), 16);
+    let uninitialized = SymbolicMemory::new().with_uninitialized_block(source.block.clone(), 16);
     assert!(matches!(
         copy_aggregate_fields_checked(uninitialized, &source, &target, &layout),
         Err(UndefinedBehavior::UninitializedRead),
@@ -1444,10 +1454,10 @@ fn copying_unknown_uint32_pointer_field_keeps_its_value_and_initialization_check
 #[test]
 fn aggregate_return_storage_is_distinct_from_a_same_frame_source_named_return() {
     let _session = crate::kernel::VerificationSession::enter();
-    let source = Memory::frame_local_pointer(0, "__return");
+    let source = SymbolicMemory::frame_local_pointer(0, "__return");
     let self_pointer =
         ProgramValue::typed_pointer(source.offset_by_bytes(8), ProgramType::Int32Pointer);
-    let caller = Memory::new();
+    let caller = SymbolicMemory::new();
     let mut state = ExecutionState::new().with_memory(
         caller
             .clone()

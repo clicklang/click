@@ -3228,14 +3228,14 @@ mod tests {
     //! number of runs.
 
     use super::*;
-    use crate::kernel::primitives::{Memory, Variable};
+    use crate::kernel::primitives::{SymbolicMemory, Variable};
     use std::collections::BTreeMap;
 
     #[test]
     fn symbolic_run_reads_keep_the_element_width_instead_of_the_unknown_default() {
         for copy in [false, true] {
             let _session = crate::kernel::VerificationSession::enter();
-            let source = crate::kernel::intern_memory(Memory::new());
+            let source = crate::kernel::intern_memory(SymbolicMemory::new());
             let base = Pointer::symbolic(Variable(993_140)).offset_by_bytes(8);
             let destination = Pointer::symbolic(Variable(993_141));
             let run = CellRun::new_with_mode(
@@ -3276,7 +3276,7 @@ mod tests {
 
     fn source(tag: u32) -> SharedMemory {
         crate::kernel::intern_memory(
-            Memory::new().with_block(format!("cell-store-source-{tag}").as_str(), 4),
+            SymbolicMemory::new().with_block(format!("cell-store-source-{tag}").as_str(), 4),
         )
     }
 
@@ -3307,7 +3307,7 @@ mod tests {
         )
     }
 
-    /// Seeds `run` as `Memory::with_seeded_cells` does: every slot that
+    /// Seeds `run` as `SymbolicMemory::with_seeded_cells` does: every slot that
     /// already holds a cell is a hole of the new run. The model stores each
     /// seeded slot one by one.
     fn seed(store: &mut CellStore, model: &mut BTreeMap<Pointer, ProgramValue>, mut run: CellRun) {
@@ -3672,7 +3672,7 @@ mod tests {
         assert!(!store.same_cells_as(&extra));
     }
 
-    /// `Memory::same_contents_as` looks through the cell cache's layout and
+    /// `SymbolicMemory::same_contents_as` looks through the cell cache's layout and
     /// through nothing else. A block that is read-only on one side, a block
     /// one side lacks, an ended automatic object, and a forget mark (a
     /// state identity: the marked memory is not known to be the one it
@@ -3698,7 +3698,7 @@ mod tests {
             concrete.insert(seeded.slot_pointer(index), seeded.value(index));
         }
         let with_cells = |cells: &CellStore| {
-            let mut memory = Memory::new().with_block(block, 8);
+            let mut memory = SymbolicMemory::new().with_block(block, 8);
             memory.cells = std::sync::Arc::new(cells.clone());
             memory
         };
@@ -3708,7 +3708,7 @@ mod tests {
         assert!(as_run.same_contents_as(&as_cells));
         assert!(as_cells.same_contents_as(&as_run));
 
-        let mut read_only = Memory::new().with_read_only_block(block, 8);
+        let mut read_only = SymbolicMemory::new().with_read_only_block(block, 8);
         read_only.cells = std::sync::Arc::new(concrete.clone());
         assert!(!as_run.same_contents_as(&read_only));
 

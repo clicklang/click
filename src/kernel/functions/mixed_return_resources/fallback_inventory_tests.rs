@@ -210,7 +210,7 @@ fn body_returns_use_actual_joint_custody_for_their_output_partition() {
         .with_local("p", ProgramValue::pointer(p.clone()))
         .with_local("q", ProgramValue::pointer(q.clone()))
         .with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block(p.block.clone(), 4)
                 .with_block(q.block.clone(), 4),
         )

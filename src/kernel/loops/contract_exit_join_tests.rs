@@ -51,7 +51,7 @@ fn exit_disjunct_restates_model_getters_without_replacing_history() {
 }
 
 fn marker_exits(count: usize, ambient: usize) -> Vec<ExecutionState> {
-    let mut memory = Memory::new()
+    let mut memory = SymbolicMemory::new()
         .with_block("shared", (ambient * 4) as u32)
         .with_block("havoc:10000000", 0);
     for index in 0..ambient {
@@ -214,7 +214,7 @@ fn numeric_float_equality_does_not_materialize_positive_zero_bits() {
         block: PointerBlock::Concrete("shared".into()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = Memory::new().with_block("shared", 4);
+    let memory = SymbolicMemory::new().with_block("shared", 4);
     let zero = ProgramValue::Float32(MachineTerm::constant(0));
     let load = symbolic_storage_cell_value(&memory, &pointer, ProgramType::Float32, true).unwrap();
     // This equation also permits a negative-zero representation. Filling

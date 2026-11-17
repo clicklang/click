@@ -395,7 +395,10 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Pointer::symbolic(Variable(999979));
         let mut policies = Vec::new();
-        for memory in [Memory::new(), Memory::new().with_block("different", 4)] {
+        for memory in [
+            SymbolicMemory::new(),
+            SymbolicMemory::new().with_block("different", 4),
+        ] {
             let source = MachineTerm::Float32Binary {
                 operator: crate::kernel::FloatBinaryOperator::Add,
                 left: Box::new(MachineTerm::MemoryLoad(

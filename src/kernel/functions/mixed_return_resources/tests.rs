@@ -227,7 +227,7 @@ pub(super) fn prepare_scalar_transfer(
     facts: &PureFactContext,
 ) -> FunctionResourceTransfer {
     let state = ExecutionState::new()
-        .with_memory(Memory::new().with_block(pointer.block.clone(), 1024))
+        .with_memory(SymbolicMemory::new().with_block(pointer.block.clone(), 1024))
         .with_local("p", ProgramValue::pointer(pointer))
         .with_resource_context(caller);
     prepare_contract_resource_transfer(
@@ -355,7 +355,7 @@ fn verified_scalar_call_uses_transfer_and_raw_return_descriptions_still_validate
     let cell = owner(pointer.clone(), 0, 1);
     let state = ExecutionState::new()
         .with_population_creation_tracking()
-        .with_memory(Memory::new().with_block(pointer.block.clone(), 8))
+        .with_memory(SymbolicMemory::new().with_block(pointer.block.clone(), 8))
         .with_resource_context(
             ResourceContext::new_with_equalities(&facts).unchecked_with_fact(cell.clone()),
         );
@@ -872,7 +872,7 @@ fn a_borrowed_composites_post_footprint_cannot_overlap_a_transferred_cell() {
         ],
         vec![],
     )]);
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .with_block(field.block.clone(), C_POINTER_BYTE_WIDTH)
         .with_block(old_child.block.clone(), 4)
         .with_block(cell.block.clone(), 4)
@@ -962,7 +962,7 @@ fn fixed_range_transfers_preserve_typed_widths_and_partial_frames() {
         };
         let original = owner(0, end + 2);
         let state = ExecutionState::new()
-            .with_memory(Memory::new().with_block(pointer.block.clone(), 1024))
+            .with_memory(SymbolicMemory::new().with_block(pointer.block.clone(), 1024))
             .with_local(
                 "p",
                 ProgramValue::typed_pointer(pointer.clone(), pointer_type),
@@ -1032,7 +1032,7 @@ fn fixed_range_matching_retains_bound_types_width_and_single_use() {
             "p",
             ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int64Pointer),
         )
-        .with_memory(Memory::new().with_block(pointer.block.clone(), 1024))
+        .with_memory(SymbolicMemory::new().with_block(pointer.block.clone(), 1024))
         .with_resource_context(
             ResourceContext::new_with_equalities(&facts).unchecked_with_facts([
                 ResourceFact::own_memory(MemoryRange::new_with_element_width(
@@ -1132,7 +1132,7 @@ fn fixed_wide_range_returns_keep_their_original_index_kind() {
             "p",
             ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int64Pointer),
         )
-        .with_memory(Memory::new().with_block(pointer.block.clone(), 1024))
+        .with_memory(SymbolicMemory::new().with_block(pointer.block.clone(), 1024))
         .with_resource_context(
             ResourceContext::new_with_equalities(&facts).unchecked_with_fact(range(0, 8)),
         );
@@ -2065,7 +2065,7 @@ pub(super) fn selected_view_expansion_fixture() -> (
     ResourceOccurrenceId,
     LoanViewBinding,
     Vec<CompositeResourceDefinition>,
-    Memory,
+    SymbolicMemory,
 ) {
     selected_view_expansion_fixture_with_cells(1)
 }
@@ -2078,7 +2078,7 @@ fn selected_view_expansion_fixture_with_cells(
     ResourceOccurrenceId,
     LoanViewBinding,
     Vec<CompositeResourceDefinition>,
-    Memory,
+    SymbolicMemory,
 ) {
     use crate::kernel::program_expression::{int32_literal, variable};
     let facts = PureFactContext::new();
@@ -2161,7 +2161,7 @@ fn selected_view_expansion_fixture_with_cells(
         source,
         binding,
         definitions,
-        Memory::new().with_block(pointer.block, cells * 4),
+        SymbolicMemory::new().with_block(pointer.block, cells * 4),
     )
 }
 

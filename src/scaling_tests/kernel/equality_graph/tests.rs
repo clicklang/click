@@ -385,7 +385,7 @@ fn local_slot_alias_lookup_skips_unrelated_opaque_class_members() {
 // earlier misses.
 #[test]
 fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
-    let memory = crate::kernel::intern_memory(Memory::new());
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let p = at(symbolic(919_001), 0);
     let q = at(symbolic(919_002), 0);
     let variable = |address: &Pointer| {
@@ -477,7 +477,7 @@ fn load_congruence_work_ignores_classed_loads_of_other_states() {
         let mut classes = EqualityGraph::default();
         for index in 0..unrelated {
             let memory = crate::kernel::intern_memory(
-                crate::kernel::Memory::new()
+                crate::kernel::SymbolicMemory::new()
                     .with_block(symbolic(70_000 + index), 16)
                     .store(
                         at(symbolic(70_000 + index), 0),
@@ -488,7 +488,7 @@ fn load_congruence_work_ignores_classed_loads_of_other_states() {
             classes.add_equality(&at(loaded, 0), &at(symbolic(80_000 + index), 0));
         }
         let memory = crate::kernel::intern_memory(
-            crate::kernel::Memory::new().with_block(symbolic(90_000), 16),
+            crate::kernel::SymbolicMemory::new().with_block(symbolic(90_000), 16),
         );
         classes.add_equality(&at(symbolic(90_001), 0), &at(symbolic(90_002), 0));
         let left = name(&memory, at(symbolic(90_001), 0));
@@ -504,7 +504,7 @@ fn load_congruence_work_ignores_classed_loads_of_other_states() {
 
 #[test]
 fn same_state_load_queries_ignore_unrelated_applications() {
-    let memory = crate::kernel::intern_memory(Memory::new().with_block(symbolic(501), 16));
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block(symbolic(501), 16));
     let p = at(symbolic(502), 0);
     let q = at(symbolic(503), 0);
     let left = named_load(&memory, &p);
@@ -534,7 +534,7 @@ fn same_state_load_queries_ignore_unrelated_applications() {
 
 #[test]
 fn late_merges_and_repeated_queries_have_near_linear_total_work() {
-    let memory = crate::kernel::intern_memory(Memory::new().with_block(symbolic(601), 16));
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block(symbolic(601), 16));
     for size in [16u64, 64, 256, 1024] {
         let left = at(symbolic(602), 0);
         let right = at(symbolic(603), 0);
@@ -562,7 +562,7 @@ fn late_merges_and_repeated_queries_have_near_linear_total_work() {
 #[test]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn late_typed_load_merges_scale_with_existing_storage_relative_bridges() {
-    let memory = crate::kernel::intern_memory(Memory::new());
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let mut costs = Vec::new();
     for size in [4u64, 16, 64, 256] {
         let mut graph = EqualityGraph::default();
@@ -606,7 +606,7 @@ fn late_typed_load_merges_scale_with_existing_storage_relative_bridges() {
 
 #[test]
 fn branch_merges_do_not_reindex_the_large_shared_prefix() {
-    let memory = crate::kernel::intern_memory(Memory::new().with_block(symbolic(701), 16));
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block(symbolic(701), 16));
     let root = at(symbolic(702), 0);
     let mut costs = Vec::new();
     for size in [16u64, 64, 256, 1024] {
@@ -704,7 +704,7 @@ fn shifted_raw_read_dependency_lookup_ignores_unrelated_definitions() {
     let mut samples = Vec::new();
     for size in [16_u64, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let mut graph = EqualityGraph::default();
         for item in 0..size {
             let address = Pointer::symbolic(Variable(1_200_000 + item));
@@ -799,7 +799,7 @@ fn pointer_fact_source_order_queries_ignore_unrelated_admissions() {
 
 #[test]
 fn wide_read_metadata_does_not_publish_a_value_without_an_equation() {
-    use crate::kernel::{LoadKind, Memory, ProgramValue, intern_memory};
+    use crate::kernel::{LoadKind, ProgramValue, SymbolicMemory, intern_memory};
     for size in [8_u64, 32, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
         let mut graph = EqualityGraph::default();
@@ -807,7 +807,8 @@ fn wide_read_metadata_does_not_publish_a_value_without_an_equation() {
         let ((), production) = crate::instrumentation::measure_deterministic_work(|| {
             for item in 0..size {
                 let address = Pointer::symbolic(Variable(9_800_000 + item));
-                let named = intern_memory(Memory::new().with_block(format!("word-{item}"), 8));
+                let named =
+                    intern_memory(SymbolicMemory::new().with_block(format!("word-{item}"), 8));
                 let variable = crate::kernel::load_variable_for_cell_with_origin(
                     &named,
                     &address,

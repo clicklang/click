@@ -628,10 +628,14 @@ mod tests {
     #[test]
     fn float_readers_preserve_state_address_and_native_collection_modes() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = intern_memory(Memory::new().with_block("float-read-history", 4).store(
-            Memory::global_pointer("float-read-history"),
-            ProgramValue::Int32(MachineTerm::Variable(Variable(999811))),
-        ));
+        let memory = intern_memory(
+            SymbolicMemory::new()
+                .with_block("float-read-history", 4)
+                .store(
+                    SymbolicMemory::global_pointer("float-read-history"),
+                    ProgramValue::Int32(MachineTerm::Variable(Variable(999811))),
+                ),
+        );
         let pointer = Pointer {
             block: PointerBlock::Symbolic(Variable(999812)),
             offset: PointerOffsetTerm::scaled_int32_node(
@@ -677,7 +681,7 @@ mod tests {
         ] {
             let left = Box::new(MachineTerm::Variable(Variable(999933)));
             let right = Box::new(MachineTerm::MemoryLoad(
-                ProgramPoint::at(&(intern_memory(Memory::new()))),
+                ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
                 Box::new(Pointer::symbolic(Variable(999934))),
                 format.load_kind(),
             ));
@@ -726,7 +730,7 @@ mod tests {
         ] {
             let left = Box::new(MachineTerm::Variable(Variable(999933)));
             let right = Box::new(MachineTerm::MemoryLoad(
-                ProgramPoint::at(&(intern_memory(Memory::new()))),
+                ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
                 Box::new(Pointer::symbolic(Variable(999934))),
                 format.load_kind(),
             ));
@@ -938,10 +942,12 @@ mod tests {
                 .algebraic_type(),
             node: AlgebraicTermNode::MemoryLoad {
                 memory: crate::kernel::intern_memory(
-                    Memory::new().with_block("algebraic-reader", 8).store(
-                        Memory::global_pointer("algebraic-reader"),
-                        ProgramValue::UInt64(MachineTerm::Variable(Variable(999741))),
-                    ),
+                    SymbolicMemory::new()
+                        .with_block("algebraic-reader", 8)
+                        .store(
+                            SymbolicMemory::global_pointer("algebraic-reader"),
+                            ProgramValue::UInt64(MachineTerm::Variable(Variable(999741))),
+                        ),
                 ),
                 pointer: Box::new(Pointer {
                     block: PointerBlock::Symbolic(Variable(999742)),
@@ -1010,7 +1016,7 @@ mod tests {
                 IntegerTerm::Variable(Variable(999562)).into(),
             )),
             else_condition: Box::new(ConditionTerm::BoolLoad(
-                crate::kernel::intern_memory(Memory::new()),
+                crate::kernel::intern_memory(SymbolicMemory::new()),
                 Box::new(Pointer::symbolic(Variable(999563))),
             )),
         });
@@ -1055,10 +1061,10 @@ mod tests {
         for source in [
             ConditionTerm::BoolLoad(
                 crate::kernel::intern_memory(
-                    crate::kernel::Memory::new()
+                    crate::kernel::SymbolicMemory::new()
                         .with_block("bool-dependencies", 4)
                         .store(
-                            crate::kernel::Memory::global_pointer("bool-dependencies"),
+                            crate::kernel::SymbolicMemory::global_pointer("bool-dependencies"),
                             ProgramValue::Int32(MachineTerm::Variable(Variable(970_030))),
                         ),
                 ),
@@ -1510,7 +1516,7 @@ mod mixed_argument_tests {
             PureFunctionArgument::Value(ProgramValue::Parameter(Box::new(value))),
             PureFunctionArgument::Value(pointer.clone()),
             PureFunctionArgument::ArrayRef {
-                memory: Memory::new(),
+                memory: SymbolicMemory::new(),
                 pointer,
                 element_type: ProgramType::Int32,
             },

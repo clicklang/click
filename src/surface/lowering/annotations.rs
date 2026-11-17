@@ -9359,7 +9359,7 @@ impl AnnotationLowerer<'_> {
             let metadata = id
                 .metadata()
                 .ok_or_else(|| format!("unknown C static declaration `{id}`"))?;
-            let pointer = crate::kernel::Memory::global_pointer(&name);
+            let pointer = crate::kernel::SymbolicMemory::global_pointer(&name);
             if metadata.aggregate || metadata.array_shape.is_some() {
                 let pointer_type = if metadata.aggregate {
                     ProgramType::UInt8Pointer
@@ -9578,7 +9578,7 @@ impl AnnotationLowerer<'_> {
             };
             return Ok(SpecExpression::Value(
                 ProgramValue::typed_pointer_with_pointee_constant(
-                    crate::kernel::Memory::global_pointer(name),
+                    crate::kernel::SymbolicMemory::global_pointer(name),
                     pointer_type,
                     metadata.constant,
                 ),
@@ -10880,8 +10880,8 @@ mod integer_source_quantifier_tests {
     #[test]
     fn captured_integer_freshness_ignores_unrelated_heap_state() {
         use crate::kernel::{
-            MachineTerm, Memory, Pointer, PointerBlock, PointerOffsetTerm, ProgramType,
-            ProgramValue, SpecExpression, SpecPoint, SpecPureFunctionArgument,
+            MachineTerm, Pointer, PointerBlock, PointerOffsetTerm, ProgramType, ProgramValue,
+            SpecExpression, SpecPoint, SpecPureFunctionArgument, SymbolicMemory,
         };
 
         let explicit = Variable(2_001);
@@ -10890,7 +10890,7 @@ mod integer_source_quantifier_tests {
             block: PointerBlock::Heap(77),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let memory = Memory::new()
+        let memory = SymbolicMemory::new()
             .with_block(heap_pointer.block.clone(), 4)
             .store(
                 heap_pointer,

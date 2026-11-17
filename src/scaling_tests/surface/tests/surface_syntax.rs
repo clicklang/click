@@ -71,7 +71,7 @@ fn memory_erased_surface_selection_scales_by_index_height() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
     };
-    let load_fact = |memory: Memory, upper: u32| {
+    let load_fact = |memory: SymbolicMemory, upper: u32| {
         Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -86,8 +86,8 @@ fn memory_erased_surface_selection_scales_by_index_height() {
             true,
         )
     };
-    let recorded = load_fact(Memory::new().with_block("entry-marker", 0), 7);
-    let query = load_fact(Memory::new().with_block("later-marker", 0), 7);
+    let recorded = load_fact(SymbolicMemory::new().with_block("entry-marker", 0), 7);
+    let query = load_fact(SymbolicMemory::new().with_block("later-marker", 0), 7);
     let surface = ClickProposition::Comparison {
         left: current_var("x"),
         operator: ComparisonOperator::LessThan,
@@ -255,7 +255,9 @@ fn qualified_storage_source_index_preserves_forks_and_scales() {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: Box::new(MachineTerm::MemoryLoad(
-                    crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
+                    crate::kernel::ProgramPoint::at(
+                        &(crate::kernel::intern_memory(SymbolicMemory::new())),
+                    ),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,
                 )),

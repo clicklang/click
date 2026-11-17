@@ -945,7 +945,7 @@ mod tests {
     #[test]
     fn common_boolean_pointer_substitution_preserves_read_state() {
         let from = Variable(971_010);
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let source = ConditionTerm::BoolEqual(
             Box::new(ConditionTerm::BoolLoad(
                 memory.clone(),
