@@ -371,7 +371,7 @@ through two calls to a pointer-taking helper without resetting the state.
 - Named unions whose members are `int32`, `uint8`, or modeled pointer fields;
   they are embedded in structs and accessed through read-only member loads.
 
-Pointers are semantic objects with provenance blocks and pointer-offset terms.
+Pointers are semantic objects with address bases and address offsets.
 They are not modeled as `int32` values. The current target layout assumes
 8-byte pointer objects.
 
@@ -1232,6 +1232,9 @@ Supported C surface includes:
   Click does not infer behavior by enumerating same-signature project
   functions. Function pointers are not dereferenceable or subject to pointer
   arithmetic
+- C99 block-scope struct compound literals, such as
+  `&(struct pair){ .left = 20, .right = 22 }`, for mutable non-volatile
+  struct object types; see [compound literals](#block-scope-struct-compound-literals)
 - GNU statement expressions of the exact form `({ statements; value; })`;
   `statements` use the supported C statement grammar and execute in a nested
   scope, while the final `value` must be a modeled scalar, pointer, or function
@@ -1290,10 +1293,10 @@ Supported C surface includes:
   the verifier primitive [`__click_constant_p_unknown`](index.md#__click_constant_p_unknown), whose `extern` contract
   `click verify` lists among the assumptions as a `primitive`. See
   `mdtests/c_builtin_constant_p.md`
-- `sizeof(expression)` for an operand of scalar or pointer type, or a named
-  complete array object such as a local array or a string literal, whose size
-  is the whole array's. The operand is not evaluated; struct-valued operands
-  and other array operands are rejected. See `mdtests/c_sizeof_expression.md`
+- `sizeof(expression)` for an operand of scalar, pointer, or modeled struct
+  type, or a named complete array object such as a local array or a string
+  literal, whose size is the whole array's. The operand is not evaluated;
+  other array operands are rejected. See `mdtests/c_sizeof_expression.md`
   and `mdtests/string_get_size_tables_take_designators_sizeof_and_literal_branches.md`
 - a block-scope `extern` function prototype with the GNU `error` attribute,
   as the Linux `compiletime_assert` macro writes it, for example
@@ -1365,6 +1368,59 @@ Click follows the GCC/Clang/MSVC consensus for signed right shift: `int32 >> k`
 is arithmetic right shift with sign extension. This is implementation-defined
 in ISO C for negative signed values, but it is the behavior of the mainstream
 compilers Click is targeting.
+
+### Block-scope struct compound literals
+
+A `(struct T){ initializer-list }` expression is an unnamed aggregate lvalue.
+Its initializer uses the existing automatic struct initializer grammar:
+positional and designated members, nested brace groups for supported embedded
+members, and zero-filled omitted members. Struct typedef names are accepted.
+The object can be addressed, read or mutated through its members, copied into
+another struct, or passed to a function. A pointer-to-const view may refer to
+a mutable literal. `sizeof` and GNU `typeof` inspect its type without running
+its initializer.
+
+Storage belongs to the innermost enclosing C block, including the implicit
+blocks introduced by selection and iteration statements and their unbraced
+bodies. Initialization runs each
+time the expression is evaluated, once on a selected conditional branch.
+Repeated evaluations of one source occurrence within one active block use the
+same object; entering a loop body again creates a new block instance, with or without braces.
+Leaving the block retires the object. A load through an escaped pointer after
+that point is rejected. GNU statement-expression blocks end after their final
+value is evaluated, so returning a literal's address from one does not extend
+its lifetime. The frontend uses existing automatic aggregate allocation and
+lifetime-end operations; it adds no kernel primitive or axiom.
+
+File-scope compound literals, scalar and array compound literals, const-qualified
+or volatile struct object types, and aligned typedef object types remain outside
+this increment. Functions combining `goto` and compound literals are refused
+until jump edges retire the newly introduced lexical objects. Repeatable loop
+conditions and steps restrict literal initializer values to supported scalar-local
+and literal forms; calls and reads through pointers require a broader
+reinitialization/evaluation-order model. Const-qualified objects require immutable aggregate construction;
+merely adding a read-only pointer view does not make their storage immutable.
+Initializer lists with multiple side-effecting expressions, or a side-effecting
+expression beside another initializer's runtime read, are rejected until all
+permitted evaluation orders are modeled. Pure dynamic initializers and one
+side-effecting initializer beside literal values are supported. Initializer
+calls and updates retain their source positions for the enclosing expression's
+existing sequencing checks; hiding an effect inside a literal does not choose
+an outer operand's evaluation order.
+
+Checked examples: [`c_struct_compound_literal.md`](https://github.com/clicklang/click/blob/master/mdtests/c_struct_compound_literal.md),
+[`c_struct_compound_literal_designated.md`](https://github.com/clicklang/click/blob/master/mdtests/c_struct_compound_literal_designated.md),
+[`c_struct_compound_literal_mutable.md`](https://github.com/clicklang/click/blob/master/mdtests/c_struct_compound_literal_mutable.md),
+[`c_struct_compound_literal_argument.md`](https://github.com/clicklang/click/blob/master/mdtests/c_struct_compound_literal_argument.md),
+[`c_struct_compound_literal_evaluated_once.md`](https://github.com/clicklang/click/blob/master/mdtests/c_struct_compound_literal_evaluated_once.md),
+[`c_struct_compound_literal_conditional.md`](https://github.com/clicklang/click/blob/master/mdtests/c_struct_compound_literal_conditional.md),
+[`c_struct_compound_literal_loop.md`](https://github.com/clicklang/click/blob/master/mdtests/c_struct_compound_literal_loop.md),
+[`c_struct_compound_literal_expired.md`](https://github.com/clicklang/click/blob/master/mdtests/c_struct_compound_literal_expired.md),
+and [`c_struct_compound_literal_gnu_expired.md`](https://github.com/clicklang/click/blob/master/mdtests/c_struct_compound_literal_gnu_expired.md).
+
+<!-- verified-example: mdtests/c_struct_compound_literal.md -->
+<!-- verified-example: mdtests/c_struct_compound_literal_argument.md -->
+<!-- verified-example: mdtests/c_struct_compound_literal_loop.md -->
 
 ## File-scope scalar globals
 

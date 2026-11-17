@@ -438,13 +438,13 @@ impl ObservationComparisons {
         let source = Proposition::ConditionIs(condition.clone(), truth);
         if let ConditionTerm::PointerOffsetEqual(left, right) = condition {
             use crate::kernel::machine_integer::comparison::ComparisonOperand;
-            fn operand(offset: &PointerOffsetTerm) -> Option<ComparisonOperand<'_>> {
+            fn operand(offset: &AddressOffset) -> Option<ComparisonOperand<'_>> {
                 match offset {
-                    PointerOffsetTerm::Int32Scaled {
+                    AddressOffset::Int32Scaled {
                         value,
                         byte_width: 4,
                     } => Some(ComparisonOperand::Observation(value.clone())),
-                    PointerOffsetTerm::Constant(bytes) if bytes % 4 == 0 => {
+                    AddressOffset::Constant(bytes) if bytes % 4 == 0 => {
                         i32::try_from(bytes / 4).ok().map(|value| {
                             ComparisonOperand::Constant(MachineTerm::constant(value as u32))
                         })
@@ -668,12 +668,12 @@ mod compound_observation_lookup_tests {
         for truth in [false, true] {
             for width in [4, 8] {
                 let source = ConditionTerm::PointerOffsetEqual(
-                    PointerOffsetTerm::Int32Scaled {
+                    AddressOffset::Int32Scaled {
                         value: MachineOperandView::Shared(&root).retain(ty),
                         byte_width: width,
                     }
                     .into(),
-                    PointerOffsetTerm::Constant(0).into(),
+                    AddressOffset::Constant(0).into(),
                 );
                 let mut index = ObservationComparisons::default();
                 let parent = index.clone();
@@ -956,7 +956,7 @@ impl PureFactContext {
 #[cfg(test)]
 mod resource_relation_tests {
     use super::*;
-    use crate::kernel::{LoadKind, Pointer, PointerValue, ProgramType, Variable};
+    use crate::kernel::{Address, LoadKind, PointerValue, ProgramType, Variable};
 
     fn relation(term: MachineTerm, pointer: PointerValue, separate: bool) -> Proposition {
         let left = Resource::Composite {
@@ -995,7 +995,7 @@ mod resource_relation_tests {
     #[test]
     fn resource_relation_keys_match_read_names_without_erasing_their_identity() {
         let _session = crate::kernel::VerificationSession::enter();
-        let address = Pointer::symbolic(Variable(3_219_300));
+        let address = Address::symbolic(Variable(3_219_300));
         let memory = crate::kernel::intern_memory(Memory::new());
         let other_memory = crate::kernel::intern_memory(
             Memory::new().store(address.clone(), ProgramValue::Int32(9u32.into())),

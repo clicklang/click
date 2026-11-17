@@ -378,27 +378,24 @@ fn bv(variable: u32) -> MachineTerm {
 }
 
 /// An `int32` array parameter's base, spelled as the kernel spells one.
-fn parameter_base(variable: u32) -> Pointer {
-    Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(bv(variable), 4),
+fn parameter_base(variable: u32) -> Address {
+    Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scale_int32(bv(variable), 4),
     }
 }
 
-fn element(base: &Pointer, index: MachineTerm) -> Pointer {
-    Pointer {
-        block: base.block.clone(),
-        offset: PointerOffsetTerm::add(
-            base.offset.clone(),
-            PointerOffsetTerm::scale_int32(index, 4),
-        ),
+fn element(base: &Address, index: MachineTerm) -> Address {
+    Address {
+        base: base.base.clone(),
+        offset: AddressOffset::add(base.offset.clone(), AddressOffset::scale_int32(index, 4)),
     }
 }
 
-fn byte_offset(pointer: &Pointer, bytes: i64) -> Pointer {
-    Pointer {
-        block: pointer.block.clone(),
-        offset: PointerOffsetTerm::add(pointer.offset.clone(), PointerOffsetTerm::Constant(bytes)),
+fn byte_offset(pointer: &Address, bytes: i64) -> Address {
+    Address {
+        base: pointer.base.clone(),
+        offset: AddressOffset::add(pointer.offset.clone(), AddressOffset::Constant(bytes)),
     }
 }
 
@@ -408,7 +405,7 @@ fn one() -> ProgramValue {
 
 fn application(
     memory: &Memory,
-    base: &Pointer,
+    base: &Address,
     start: MachineTerm,
     end: MachineTerm,
 ) -> SharedPureApplication {
@@ -663,10 +660,10 @@ fn an_empty_fold_crosses_any_store_only_when_emptiness_is_checked() {
 fn a_lifetime_end_of_the_array_is_never_crossed() {
     let _session = VerificationSession::enter();
     register_unmarked();
-    let block = PointerBlock::from("local:f:buffer");
-    let base = Pointer {
-        block: block.clone(),
-        offset: PointerOffsetTerm::Constant(0),
+    let block = AddressBase::from("local:f:buffer");
+    let base = Address {
+        base: block.clone(),
+        offset: AddressOffset::Constant(0),
     };
     let declared = Memory::new().with_block(block.clone(), 16);
     let ended = declared.without_local_block(&block);
@@ -691,7 +688,7 @@ fn a_lifetime_end_of_the_array_is_never_crossed() {
         })
     ));
     // Another object's lifetime end is the block rule's to cross.
-    let other = PointerBlock::from("local:f:other");
+    let other = AddressBase::from("local:f:other");
     let both = declared.clone().with_block(other.clone(), 4);
     let other_ended = both.without_local_block(&other);
     let old = application(
@@ -760,9 +757,9 @@ fn sibling_and_unrelated_histories_and_unsummarized_functions() {
     let base = Memory::new();
     let left = base.clone().store(element(&v, bv(HI)), one());
     let right = base.clone().store(
-        Pointer {
-            block: PointerBlock::from("local:f:other"),
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: AddressBase::from("local:f:other"),
+            offset: AddressOffset::Constant(0),
         },
         one(),
     );
@@ -981,9 +978,9 @@ fn byte_fold_framing_refuses_overlap_and_counts_byte_endpoints() {
             SpecIntegerExpression::FromMachine(Box::new(read)),
         ),
     ));
-    let base = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(bv(V), 1),
+    let base = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scale_int32(bv(V), 1),
     };
     let at = |memory: &Memory, element_type| {
         SharedPureApplication::intern(
@@ -1060,7 +1057,7 @@ fn truncating_integer_terms_require_native_guards_before_fold_admission() {
 // Native write sets and separation ranges must not enter signed fold arithmetic.
 #[test]
 fn wide_ranges_refuse_signed_fold_framing_rules() {
-    let base = Pointer::symbolic(Variable(984_100));
+    let base = Address::symbolic(Variable(984_100));
     let wide = MemoryRange::new_wide(
         base.clone(),
         MachineTerm::uint64_constant(0),
@@ -1132,9 +1129,9 @@ fn shared_fold_indices_require_exact_bounds_without_export() {
         [x.clone(), x],
     );
     let index = MachineOperandView::Shared(&root).retain(MachineIntegerType::Int32);
-    let base = Pointer {
-        block: "retained_fold_indices".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: "retained_fold_indices".into(),
+        offset: AddressOffset::Constant(0),
     };
     let pointer = base.offset_by_shared_elements(index, 4);
     let interval = FoldReadInterval {

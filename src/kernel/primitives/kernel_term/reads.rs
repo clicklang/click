@@ -5,8 +5,8 @@ use super::*;
 #[derive(Clone, Debug)]
 pub struct KernelMemoryRead {
     memory: SharedMemory,
-    address: SharedPointerAddress,
-    observation: Option<SharedPointerAddress>,
+    address: SharedAddress,
+    observation: Option<SharedAddress>,
 }
 impl PartialEq for KernelMemoryRead {
     fn eq(&self, other: &Self) -> bool {
@@ -33,17 +33,17 @@ impl Hash for KernelMemoryRead {
     }
 }
 impl KernelMemoryRead {
-    pub(crate) fn new(memory: SharedMemory, address: SharedPointerAddress) -> Self {
+    pub(crate) fn new(memory: SharedMemory, address: SharedAddress) -> Self {
         Self {
             memory,
             address,
             observation: None,
         }
     }
-    pub(crate) fn parts(&self) -> (&SharedMemory, &SharedPointerAddress) {
+    pub(crate) fn parts(&self) -> (&SharedMemory, &SharedAddress) {
         (&self.memory, &self.address)
     }
-    pub(crate) fn observe(&self, address: SharedPointerAddress) -> Self {
+    pub(crate) fn observe(&self, address: SharedAddress) -> Self {
         Self {
             memory: self.memory.clone(),
             address: self.address.clone(),
@@ -78,10 +78,10 @@ impl KernelTerm {
         // Later arithmetic and ordinary pointer values belong to their own
         // producer slices. Do not clone or hash a growing displacement merely
         // to ask whether it is an undisplaced read atom.
-        if !matches!(value.pointer().offset, PointerOffsetTerm::Constant(0))
+        if !matches!(value.pointer().offset, AddressOffset::Constant(0))
             || !matches!(
-                value.pointer().block,
-                PointerBlock::LoadedPointer(_) | PointerBlock::FunctionSymbolic(_)
+                value.pointer().base,
+                AddressBase::LoadedPointer(_) | AddressBase::FunctionSymbolic(_)
             )
         {
             return None;
@@ -94,14 +94,14 @@ impl KernelTerm {
         Some(Self::shared_pointer_read(
             SharedPointerValue::import(value),
             memory.into_shared_memory(),
-            SharedPointerAddress::import(&address),
+            SharedAddress::import(&address),
         ))
     }
 
     pub(crate) fn shared_pointer_read(
         value: SharedPointerValue,
         memory: SharedMemory,
-        address: SharedPointerAddress,
+        address: SharedAddress,
     ) -> Self {
         Self::intern(
             KernelType::Program(value.node().program_type),
@@ -136,7 +136,7 @@ impl KernelTerm {
     pub(crate) fn scalar_read_descriptor(
         format: MachineIntegerType,
         memory: &SharedMemory,
-        address: &Pointer,
+        address: &Address,
         kind: LoadKind,
     ) -> Option<Self> {
         let address = Self::scalar_read_address(address)?;
@@ -146,11 +146,11 @@ impl KernelTerm {
     }
 
     /// Prepare the immutable address at a native read's admission boundary.
-    pub(crate) fn scalar_read_address(address: &Pointer) -> Option<SharedPointerAddress> {
+    pub(crate) fn scalar_read_address(address: &Address) -> Option<SharedAddress> {
         if !exact_address(address) {
             return None;
         }
-        Some(SharedPointerAddress::import(address))
+        Some(SharedAddress::import(address))
     }
 
     /// Retain the selected common address. This only constructs read syntax;
@@ -158,7 +158,7 @@ impl KernelTerm {
     pub(crate) fn shared_scalar_read_descriptor(
         format: MachineIntegerType,
         memory: &SharedMemory,
-        address: &SharedPointerAddress,
+        address: &SharedAddress,
         kind: LoadKind,
     ) -> Self {
         Self::intern(
@@ -177,15 +177,14 @@ impl KernelTerm {
 /// the producer-local legacy boundary until their own shared forms migrate.
 /// Shared index identities include their nested read states, so admitting
 /// an address never re-walks the retained index expression.
-fn exact_address(address: &Pointer) -> bool {
+fn exact_address(address: &Address) -> bool {
     let mut pending = vec![&address.offset];
     while let Some(offset) = pending.pop() {
         crate::instrumentation::record_deterministic_work(1);
         match offset {
-            PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => {}
-            PointerOffsetTerm::Add(a, b) => pending.extend([b.as_ref(), a.as_ref()]),
-            PointerOffsetTerm::Int32Scaled { value, .. }
-            | PointerOffsetTerm::Int64Scaled { value, .. } => {
+            AddressOffset::Constant(_) | AddressOffset::Variable(_) => {}
+            AddressOffset::Add(a, b) => pending.extend([b.as_ref(), a.as_ref()]),
+            AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
                 // The child identity already includes every read state.
                 // Never export or walk its retained expression prefix here.
                 if value.shared_operand().is_none() {
@@ -206,7 +205,7 @@ mod tests {
     fn pointer_read_execution_results_keep_definition_type_and_complete_payload() {
         let _session = VerificationSession::enter();
         let memory = Memory::new();
-        let address = Pointer::symbolic(Variable(1018000));
+        let address = Address::symbolic(Variable(1018000));
         for ty in [
             ProgramType::Int32Pointer,
             ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
@@ -234,7 +233,7 @@ mod tests {
                 retained_state.arena_id(),
                 intern_memory(memory.clone()).arena_id()
             );
-            assert_eq!(cell, &SharedPointerAddress::import(&address));
+            assert_eq!(cell, &SharedAddress::import(&address));
             assert!(value.same_source_payload(&expected));
             assert!(root.0.argument_leaf.get().is_none());
             let ProgramValue::Pointer(restored) = result.native_payload().unwrap() else {
@@ -253,7 +252,7 @@ mod tests {
     #[test]
     fn pointer_read_root_retains_definition_after_registry_reset() {
         let _session = VerificationSession::enter();
-        let address = Pointer::symbolic(Variable(1018001));
+        let address = Address::symbolic(Variable(1018001));
         let memory = Memory::new();
         let native = memory.symbolic_pointer_load(&address, ProgramType::UInt8Pointer);
         let retained = crate::kernel::ExecutionValue::retain_native(native);
@@ -269,7 +268,7 @@ mod tests {
             panic!("read root");
         };
         assert_eq!(retained_state.arena_id(), intern_memory(memory).arena_id());
-        assert_eq!(cell, &SharedPointerAddress::import(&address));
+        assert_eq!(cell, &SharedAddress::import(&address));
         assert!(matches!(
             root.pointer_native(),
             Some(ProgramValue::Pointer(_))
@@ -279,7 +278,7 @@ mod tests {
     #[test]
     fn scalar_reads_retain_exact_descriptors_and_survive_registry_reset() {
         let _session = VerificationSession::enter();
-        let address = Pointer::symbolic(Variable(993100));
+        let address = Address::symbolic(Variable(993100));
         let memory = intern_memory(Memory::new().store(
             address.clone(),
             ProgramValue::Int32(MachineTerm::constant(7)),
@@ -299,7 +298,7 @@ mod tests {
                 MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(address.clone()), kind);
             let term = KernelTermImport::default().machine(format, &native);
             assert!(
-                matches!(term.node(), KernelTermNode::MemoryLoad { memory: m, address: p, kind: k } if m == &memory && p == &SharedPointerAddress::import(&address) && *k == kind)
+                matches!(term.node(), KernelTermNode::MemoryLoad { memory: m, address: p, kind: k } if m == &memory && p == &SharedAddress::import(&address) && *k == kind)
             );
             assert!(term.is_shared_machine_operand());
             crate::kernel::eval::clear_load_variable_registry();
@@ -319,7 +318,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let memory = intern_memory(Memory::new());
         let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(1017200)),
+            Address::symbolic(Variable(1017200)),
             ProgramType::Int32Pointer,
         );
         let mut outputs = Vec::new();
@@ -332,9 +331,9 @@ mod tests {
                 ))],
             );
             let payload = call.payload_id();
-            let address = Pointer {
-                block: PointerBlock::PureFunctionApplication(call),
-                offset: PointerOffsetTerm::Constant(0),
+            let address = Address {
+                base: AddressBase::PureFunctionApplication(call),
+                offset: AddressOffset::Constant(0),
             };
             let root = KernelTerm::scalar_read_descriptor(
                 MachineIntegerType::Int32,
@@ -347,7 +346,7 @@ mod tests {
             let MachineTerm::MemoryLoad(_, address, _) = &output else {
                 panic!("read")
             };
-            let PointerBlock::PureFunctionApplication(call) = &address.block else {
+            let AddressBase::PureFunctionApplication(call) = &address.base else {
                 panic!("call address")
             };
             assert_eq!(call.payload_id(), payload);
@@ -369,7 +368,7 @@ mod tests {
     #[test]
     fn scalar_read_identity_distinguishes_state_address_and_kind() {
         let _session = VerificationSession::enter();
-        let address = Pointer::symbolic(Variable(993110));
+        let address = Address::symbolic(Variable(993110));
         let memory = intern_memory(Memory::new());
         let written = intern_memory(Memory::new().store(
             address.clone(),
@@ -390,7 +389,7 @@ mod tests {
             first,
             load(
                 ProgramPoint::at(&memory),
-                Pointer::symbolic(Variable(993111)),
+                Address::symbolic(Variable(993111)),
                 LoadKind::Int32
             )
         );
@@ -406,7 +405,7 @@ mod tests {
         let format = MachineIntegerType::Int32;
         let raw = MachineTerm::MemoryLoad(
             ProgramPoint::at(&(intern_memory(Memory::new()))),
-            Box::new(Pointer::symbolic(Variable(993120))),
+            Box::new(Address::symbolic(Variable(993120))),
             LoadKind::Int32,
         );
         let (name, descriptor) = crate::kernel::eval::load_variable_for_term(&raw).unwrap();
@@ -425,7 +424,7 @@ mod tests {
         let format = MachineIntegerType::UInt32;
         let raw = MachineTerm::MemoryLoad(
             ProgramPoint::at(&(intern_memory(Memory::new()))),
-            Box::new(Pointer::symbolic(Variable(993126))),
+            Box::new(Address::symbolic(Variable(993126))),
             LoadKind::UInt32,
         );
         let (name, descriptor) = crate::kernel::eval::load_variable_for_term(&raw).unwrap();
@@ -450,7 +449,7 @@ mod tests {
         let format = MachineIntegerType::Int32;
         let raw = MachineTerm::MemoryLoad(
             ProgramPoint::at(&(intern_memory(Memory::new()))),
-            Box::new(Pointer::symbolic(Variable(993125))),
+            Box::new(Address::symbolic(Variable(993125))),
             LoadKind::Int32,
         );
         let (name, descriptor) = crate::kernel::eval::load_variable_for_term(&raw).unwrap();
@@ -469,7 +468,7 @@ mod tests {
     #[test]
     fn nested_scalar_reads_retain_both_states_without_registered_names() {
         let _session = VerificationSession::enter();
-        let p = Pointer::symbolic(Variable(993140));
+        let p = Address::symbolic(Variable(993140));
         let before = intern_memory(Memory::new());
         let after = intern_memory(
             Memory::new().store(p.clone(), ProgramValue::Int32(MachineTerm::constant(1))),
@@ -477,9 +476,9 @@ mod tests {
         let nested = |inner: SharedMemory, outer: SharedMemory, kind| {
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&outer),
-                Box::new(Pointer {
-                    block: PointerBlock::Symbolic(Variable(993141)),
-                    offset: PointerOffsetTerm::scaled_int32_node(
+                Box::new(Address {
+                    base: AddressBase::Symbolic(Variable(993141)),
+                    offset: AddressOffset::scaled_int32_node(
                         MachineTerm::MemoryLoad(
                             ProgramPoint::at(&inner),
                             Box::new(p.clone()),
@@ -525,11 +524,11 @@ mod tests {
         let read = |memory| {
             MachineTerm::MemoryLoad(
                 memory,
-                Box::new(Pointer::symbolic(Variable(993150))),
+                Box::new(Address::symbolic(Variable(993150))),
                 LoadKind::Int32,
             )
         };
-        let offset = PointerOffsetTerm::scaled_int32_node(read(ProgramPoint::at(&first)), 4);
+        let offset = AddressOffset::scaled_int32_node(read(ProgramPoint::at(&first)), 4);
         assert_eq!(offset.map_scaled_operands(Clone::clone), offset);
         assert_ne!(
             offset.map_scaled_operands(|value| SharedMachineIntegerTerm::index(
@@ -544,12 +543,12 @@ mod tests {
                 MachineIntegerType::Int32,
                 &MachineTerm::MemoryLoad(
                     ProgramPoint::at(&outer),
-                    Box::new(Pointer {
-                        block: PointerBlock::Symbolic(Variable(993151)),
-                        offset: PointerOffsetTerm::scaled_int32_node(
+                    Box::new(Address {
+                        base: AddressBase::Symbolic(Variable(993151)),
+                        offset: AddressOffset::scaled_int32_node(
                             MachineTerm::MemoryLoad(
                                 inner,
-                                Box::new(Pointer::symbolic(Variable(993150))),
+                                Box::new(Address::symbolic(Variable(993150))),
                                 LoadKind::Int32,
                             ),
                             4,
@@ -578,7 +577,7 @@ mod tests {
         ] {
             let read = MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(intern_memory(Memory::new()))),
-                Box::new(Pointer::symbolic(Variable(993160))),
+                Box::new(Address::symbolic(Variable(993160))),
                 kind,
             );
             let (name, descriptor) = crate::kernel::eval::load_variable_for_term(&read).unwrap();
@@ -591,12 +590,12 @@ mod tests {
             );
             assert_eq!(index, descriptor);
             let offset = if wide {
-                PointerOffsetTerm::scaled_int64_node(index, 4, true)
+                AddressOffset::scaled_int64_node(index, 4, true)
             } else {
-                PointerOffsetTerm::scaled_int32_node(index, 4)
+                AddressOffset::scaled_int32_node(index, 4)
             };
-            let (PointerOffsetTerm::Int32Scaled { value, .. }
-            | PointerOffsetTerm::Int64Scaled { value, .. }) = &offset
+            let (AddressOffset::Int32Scaled { value, .. }
+            | AddressOffset::Int64Scaled { value, .. }) = &offset
             else {
                 unreachable!()
             };
@@ -607,9 +606,9 @@ mod tests {
             crate::kernel::eval::clear_load_variable_registry();
             assert_eq!(value.structural_value(), &descriptor);
             let restored = if wide {
-                PointerOffsetTerm::scaled_int64_node(value.structural_value().clone(), 4, true)
+                AddressOffset::scaled_int64_node(value.structural_value().clone(), 4, true)
             } else {
-                PointerOffsetTerm::scaled_int32_node(value.structural_value().clone(), 4)
+                AddressOffset::scaled_int32_node(value.structural_value().clone(), 4)
             };
             assert_eq!(offset, restored);
         }
@@ -618,14 +617,14 @@ mod tests {
     #[test]
     fn forming_an_outer_read_does_not_fold_the_index_read_to_its_stored_value() {
         let _session = VerificationSession::enter();
-        let p = Pointer::symbolic(Variable(993162));
+        let p = Address::symbolic(Variable(993162));
         let memory = intern_memory(
             Memory::new().store(p.clone(), ProgramValue::Int32(MachineTerm::constant(3))),
         );
         let index = crate::kernel::eval::canonical_form_of_load(memory.clone(), p, LoadKind::Int32);
-        let address = Pointer {
-            block: PointerBlock::Symbolic(Variable(993163)),
-            offset: PointerOffsetTerm::scaled_int32_node(index, 4),
+        let address = Address {
+            base: AddressBase::Symbolic(Variable(993163)),
+            offset: AddressOffset::scaled_int32_node(index, 4),
         };
         let outer =
             crate::kernel::eval::canonical_form_of_load(memory, address.clone(), LoadKind::Int32);
@@ -636,8 +635,8 @@ mod tests {
         else {
             panic!("outer read")
         };
-        assert_eq!(actual, &SharedPointerAddress::import(&address));
-        let KernelPointerOffset::Int32Scaled { value, .. } = actual.node().offset.node() else {
+        assert_eq!(actual, &SharedAddress::import(&address));
+        let KernelAddressOffset::Int32Scaled { value, .. } = actual.node().offset.node() else {
             panic!("index read retained")
         };
         assert!(matches!(value.node(), KernelTermNode::MemoryLoad { .. }));
@@ -650,15 +649,15 @@ mod tests {
         let mut retained = Vec::new();
         for class in [CScalarClass::Int, CScalarClass::Char] {
             let expected = Some(CAccessClass::Scalar(class));
-            let index = PointerOffsetTerm::scaled_int64_node(
+            let index = AddressOffset::scaled_int64_node(
                 MachineTerm::PointerAddress(
-                    Box::new(Pointer::symbolic(Variable(993161))),
+                    Box::new(Address::symbolic(Variable(993161))),
                     crate::kernel::AddressObjectClass::new(expected.clone()),
                 ),
                 1,
                 true,
             );
-            let PointerOffsetTerm::Int64Scaled { value, .. } = &index else {
+            let AddressOffset::Int64Scaled { value, .. } = &index else {
                 unreachable!()
             };
             assert!(value.shared_operand().is_none());
@@ -674,11 +673,11 @@ mod tests {
     #[test]
     fn read_addresses_outside_the_shared_fragment_keep_the_exact_legacy_payload() {
         let _session = VerificationSession::enter();
-        let address = Pointer {
-            block: PointerBlock::Symbolic(Variable(993130)),
-            offset: PointerOffsetTerm::scaled_int32_node(
+        let address = Address {
+            base: AddressBase::Symbolic(Variable(993130)),
+            offset: AddressOffset::scaled_int32_node(
                 MachineTerm::PointerAddress(
-                    Box::new(Pointer::symbolic(Variable(993131))),
+                    Box::new(Address::symbolic(Variable(993131))),
                     crate::kernel::AddressObjectClass::NONE,
                 ),
                 4,

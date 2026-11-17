@@ -176,7 +176,7 @@ the construction interface's checked preconditions. The callee constructs
 there. At each call, instantiate that symbolic destination with the caller's
 actual object, including alias relations with evaluated arguments. Bind
 postcondition `result` to this same destination after successful completion.
-Do not use the existing fresh `PointerBlock::Temporary` result for this mode.
+Do not use the existing fresh `AddressBase::Temporary` result for this mode.
 
 Ordinary execution, modular summary application and retained checking must
 consume the same destination relation. Expansion serializes enough evidence

@@ -15,7 +15,7 @@ fn a_selected_return_backing_does_not_walk_other_call_loans() {
                 &ledger,
                 owner,
                 reader,
-                Pointer::symbolic(Variable(8_913_000 + u64::from(item))),
+                Address::symbolic(Variable(8_913_000 + u64::from(item))),
             );
             ledger = next;
             if item == 0 {

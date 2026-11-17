@@ -42,7 +42,7 @@ fn shared_machine_collectors_preserve_carriers_binders_and_loads() {
         let memory = crate::kernel::intern_memory(Memory::new());
         let load = crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
-            &Pointer::symbolic(Variable(989965)),
+            &Address::symbolic(Variable(989965)),
             crate::kernel::LoadKind::Int32,
             4,
         );
@@ -259,12 +259,12 @@ fn machine_fold_endpoints_retain_mathematical_variables_in_conversions() {
 // observation: these edges must not implicitly Deref the shared operand.
 fn check_pointer_index_collectors(native: &MachineTerm, machine: &SharedMachineIntegerTerm) {
     let offset = if machine.ty() == MachineIntegerType::Int32 {
-        PointerOffsetTerm::Int32Scaled {
+        AddressOffset::Int32Scaled {
             value: machine.clone(),
             byte_width: 4,
         }
     } else {
-        PointerOffsetTerm::Int64Scaled {
+        AddressOffset::Int64Scaled {
             value: machine.clone(),
             byte_width: 8,
             unsigned: true,

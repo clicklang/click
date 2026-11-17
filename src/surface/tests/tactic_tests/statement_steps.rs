@@ -264,13 +264,13 @@ fn clone_field_stores_with_observed_source_resource_verify() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_00")]
 fn simple_statement_transition_does_not_transport_facts_automatically() {
     let base_memory = Memory::new();
-    let first = Pointer {
-        block: "arg-memory".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let first = Address {
+        base: "arg-memory".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let second = Pointer {
-        block: "arg-memory".into(),
-        offset: PointerOffsetTerm::Constant(4),
+    let second = Address {
+        base: "arg-memory".into(),
+        offset: AddressOffset::Constant(4),
     };
     let first_value = MachineTerm::MemoryLoad(
         crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(base_memory.clone()))),
@@ -1143,15 +1143,15 @@ fn execute_step_expands_call_assign_fact_from_internal_state() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_04")]
 fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
-    let owner = Pointer {
-        block: "arg-memory".into(),
-        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(41)), 4),
+    let owner = Address {
+        base: "arg-memory".into(),
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(41)), 4),
     };
-    let data = Pointer {
-        block: "arg-memory".into(),
-        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(42)), 4),
+    let data = Address {
+        base: "arg-memory".into(),
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(42)), 4),
     };
-    let read = Pointer::loaded_value(&crate::kernel::intern_memory(Memory::new()), &owner);
+    let read = Address::loaded_value(&crate::kernel::intern_memory(Memory::new()), &owner);
     let proposition = Proposition::ConditionIs(
         ConditionTerm::pointer_value_equal(
             crate::kernel::PointerValue::new(read, ProgramType::Int32Pointer),
@@ -1202,11 +1202,11 @@ fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_04")]
 fn synthesizes_a_reassigned_pointer_parameter_at_entry() {
-    let passed = Pointer {
-        block: "arg-memory".into(),
-        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(43)), 4),
+    let passed = Address {
+        base: "arg-memory".into(),
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(43)), 4),
     };
-    let current = Pointer::symbolic(Variable(44));
+    let current = Address::symbolic(Variable(44));
     let proposition = Proposition::ConditionIs(
         ConditionTerm::pointer_value_equal(
             crate::kernel::PointerValue::new(passed.clone(), ProgramType::Int32Pointer),
@@ -1242,18 +1242,18 @@ fn synthesizes_a_reassigned_pointer_parameter_at_entry() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_05")]
 fn synthesizes_dynamically_indexed_pointer_offset_equality() {
-    let owner_offset = PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(41)), 4);
-    let data_offset = PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(42)), 4);
+    let owner_offset = AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(41)), 4);
+    let data_offset = AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(42)), 4);
     let index = MachineTerm::Variable(Variable(43));
     let proposition = Proposition::ConditionIs(
         ConditionTerm::PointerOffsetEqual(
-            Box::new(PointerOffsetTerm::Add(
+            Box::new(AddressOffset::Add(
                 Box::new(data_offset.clone()),
-                Box::new(PointerOffsetTerm::scaled_int32_node(index.clone(), 4)),
+                Box::new(AddressOffset::scaled_int32_node(index.clone(), 4)),
             )),
-            Box::new(PointerOffsetTerm::Add(
+            Box::new(AddressOffset::Add(
                 Box::new(owner_offset.clone()),
-                Box::new(PointerOffsetTerm::Constant(4)),
+                Box::new(AddressOffset::Constant(4)),
             )),
         ),
         true,
@@ -1276,12 +1276,12 @@ fn synthesizes_dynamically_indexed_pointer_offset_equality() {
         ),
     ];
     let arguments = [
-        ProgramExpression::Value(ProgramValue::pointer(Pointer {
-            block: "arg-memory".into(),
+        ProgramExpression::Value(ProgramValue::pointer(Address {
+            base: "arg-memory".into(),
             offset: owner_offset,
         })),
-        ProgramExpression::Value(ProgramValue::pointer(Pointer {
-            block: "arg-memory".into(),
+        ProgramExpression::Value(ProgramValue::pointer(Address {
+            base: "arg-memory".into(),
             offset: data_offset,
         })),
         ProgramExpression::Value(ProgramValue::Int32(index)),

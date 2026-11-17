@@ -30,8 +30,8 @@ fn memory_havoc_write_set_identity(mutable_ranges: &[MemoryRange]) -> String {
 
 enum HavocIdentityTask {
     Text(&'static str),
-    Pointer(Pointer),
-    PointerOffset(PointerOffsetTerm),
+    Pointer(Address),
+    PointerOffset(AddressOffset),
     Bitvector(MachineTerm),
     Condition(ConditionTerm),
     FloatCondition {
@@ -46,30 +46,30 @@ fn write_havoc_string(identity: &mut String, tag: &str, value: &str) {
     identity.push_str(value);
 }
 
-fn write_havoc_block(identity: &mut String, block: PointerBlock) {
+fn write_havoc_block(identity: &mut String, block: AddressBase) {
     match block {
-        PointerBlock::ReferenceCarrier { referent, instance } => {
+        AddressBase::ReferenceCarrier { referent, instance } => {
             identity.push_str("bref;");
-            write_havoc_block(identity, Memory::local_pointer(referent.as_ref()).block);
+            write_havoc_block(identity, Memory::local_pointer(referent.as_ref()).base);
             let _ = write!(identity, "{instance:?};");
         }
-        PointerBlock::AggregateReturn { frame } => {
+        AddressBase::AggregateReturn { frame } => {
             let _ = write!(identity, "breturn{frame};");
         }
-        PointerBlock::ContractResult => identity.push_str("br;"),
-        PointerBlock::ContractException => identity.push_str("bexception;"),
-        PointerBlock::StaticObject { binding } => {
+        AddressBase::ContractResult => identity.push_str("br;"),
+        AddressBase::ContractException => identity.push_str("bexception;"),
+        AddressBase::StaticObject { binding } => {
             write_havoc_string(identity, "bst", &binding.to_string())
         }
-        PointerBlock::AutomaticLocal { binding, instance } => {
+        AddressBase::AutomaticLocal { binding, instance } => {
             write_havoc_string(identity, "bl", &binding.to_string());
             let _ = write!(identity, "{instance:?};");
         }
-        PointerBlock::PureFunctionApplication(application) => {
+        AddressBase::PureFunctionApplication(application) => {
             let _ = write!(identity, "bpure{};", application.id());
         }
-        PointerBlock::Concrete(name) => write_havoc_string(identity, "bc", &name),
-        PointerBlock::StringLiteral {
+        AddressBase::Concrete(name) => write_havoc_string(identity, "bc", &name),
+        AddressBase::StringLiteral {
             identity: name,
             bytes,
         } => {
@@ -80,24 +80,24 @@ fn write_havoc_block(identity: &mut String, block: PointerBlock) {
             }
             identity.push(';');
         }
-        PointerBlock::Function(name) => write_havoc_string(identity, "bf", &name),
-        PointerBlock::FunctionSymbolic(variable) => {
+        AddressBase::Function(name) => write_havoc_string(identity, "bf", &name),
+        AddressBase::FunctionSymbolic(variable) => {
             let _ = write!(identity, "bfs{};", variable.0);
         }
-        PointerBlock::ExternalArgument => identity.push_str("be;"),
-        PointerBlock::ExternalObject(variable) => {
+        AddressBase::ExternalArgument => identity.push_str("be;"),
+        AddressBase::ExternalObject(variable) => {
             let _ = write!(identity, "beo{};", variable.0);
         }
-        PointerBlock::Symbolic(variable) => {
+        AddressBase::Symbolic(variable) => {
             let _ = write!(identity, "bs{};", variable.0);
         }
-        PointerBlock::LoadedPointer(identity_id) => {
+        AddressBase::LoadedPointer(identity_id) => {
             let _ = write!(identity, "blp{};", identity_id.0);
         }
-        PointerBlock::Heap(value) => {
+        AddressBase::Heap(value) => {
             let _ = write!(identity, "bh{value};");
         }
-        PointerBlock::Temporary(value) => {
+        AddressBase::Temporary(value) => {
             let _ = write!(identity, "bt{value};");
         }
     }
@@ -272,7 +272,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
             HavocIdentityTask::Pointer(pointer) => {
                 crate::instrumentation::record_deterministic_work(1);
                 identity.push_str("pointer(");
-                write_havoc_block(&mut identity, pointer.block);
+                write_havoc_block(&mut identity, pointer.base);
                 identity.push(',');
                 tasks.push(HavocIdentityTask::Text(")"));
                 tasks.push(HavocIdentityTask::PointerOffset(pointer.offset));
@@ -280,10 +280,10 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
             HavocIdentityTask::PointerOffset(offset) => {
                 crate::instrumentation::record_deterministic_work(1);
                 match offset {
-                    PointerOffsetTerm::Constant(value) => {
+                    AddressOffset::Constant(value) => {
                         let _ = write!(identity, "oc{value};");
                     }
-                    PointerOffsetTerm::Variable(variable) => {
+                    AddressOffset::Variable(variable) => {
                         if !push_registered_load(
                             &mut identity,
                             &mut tasks,
@@ -293,22 +293,22 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                             let _ = write!(identity, "ov{};", variable.0);
                         }
                     }
-                    PointerOffsetTerm::Add(left, right) => {
+                    AddressOffset::Add(left, right) => {
                         identity.push_str("oa(");
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::PointerOffset(*right));
                         tasks.push(HavocIdentityTask::Text(","));
                         tasks.push(HavocIdentityTask::PointerOffset(*left));
                     }
-                    PointerOffsetTerm::Int32Scaled { value, byte_width }
-                    | PointerOffsetTerm::Int64Scaled {
+                    AddressOffset::Int32Scaled { value, byte_width }
+                    | AddressOffset::Int64Scaled {
                         value, byte_width, ..
                     } => {
                         identity.push_str("os(");
                         tasks.push(HavocIdentityTask::Text(")"));
-                        tasks.push(HavocIdentityTask::PointerOffset(
-                            PointerOffsetTerm::Constant(byte_width),
-                        ));
+                        tasks.push(HavocIdentityTask::PointerOffset(AddressOffset::Constant(
+                            byte_width,
+                        )));
                         tasks.push(HavocIdentityTask::Text(","));
                         tasks.push(HavocIdentityTask::Bitvector(
                             value.structural_value().clone(),
@@ -714,10 +714,10 @@ mod call_havoc_local_retention_tests {
 
     #[test]
     fn call_havoc_drops_explicitly_written_local_fields_and_keeps_disjoint_cells() {
-        let block: PointerBlock = "local:borrowed-guard".into();
-        let at = |offset| Pointer {
-            block: block.clone(),
-            offset: PointerOffsetTerm::Constant(offset),
+        let block: AddressBase = "local:borrowed-guard".into();
+        let at = |offset| Address {
+            base: block.clone(),
+            offset: AddressOffset::Constant(offset),
         };
         let before = Memory::new()
             .with_block(block.clone(), 16)
@@ -758,12 +758,12 @@ mod call_havoc_local_retention_tests {
 
     #[test]
     fn call_havoc_preserves_only_existing_local_initialization() {
-        let at = |offset| Pointer {
-            block: "local:initialization".into(),
-            offset: PointerOffsetTerm::Constant(offset),
+        let at = |offset| Address {
+            base: "local:initialization".into(),
+            offset: AddressOffset::Constant(offset),
         };
         let before = Memory::new()
-            .with_block(at(0).block.clone(), 16)
+            .with_block(at(0).base.clone(), 16)
             .store(at(0), ProgramValue::Int32(MachineTerm::constant(7)));
         let range = MemoryRange::new_with_element_width(at(0), 0u32.into(), 16u32.into(), 1);
         let facts = PureFactContext::new();
@@ -809,19 +809,19 @@ mod call_havoc_local_retention_tests {
             &facts,
             None
         ));
-        let retired = after.without_local_block(&at(0).block);
+        let retired = after.without_local_block(&at(0).base);
         assert!(!retired.has_initialized_bytes_at(&at(0), 4));
         assert!(!retired.is_loadable_concretely(&at(0), 4));
     }
 
     #[test]
     fn call_havoc_drops_explicitly_written_local_union_views() {
-        let pointer = Pointer {
-            block: "local:borrowed-union".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "local:borrowed-union".into(),
+            offset: AddressOffset::Constant(0),
         };
         let before = Memory::new()
-            .with_block(pointer.block.clone(), 8)
+            .with_block(pointer.base.clone(), 8)
             .store_union_views(
                 pointer.clone(),
                 8,
@@ -851,12 +851,12 @@ mod call_havoc_local_retention_tests {
 
     #[test]
     fn call_havoc_drops_a_local_cell_written_through_an_interior_alias() {
-        let pointer = Pointer {
-            block: "local:interior-field".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "local:interior-field".into(),
+            offset: AddressOffset::Constant(0),
         };
-        let alias = Pointer::symbolic(Variable(944_021));
-        let before = Memory::new().with_block(pointer.block.clone(), 4).store(
+        let alias = Address::symbolic(Variable(944_021));
+        let before = Memory::new().with_block(pointer.base.clone(), 4).store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(7)),
         );
@@ -893,13 +893,13 @@ mod call_havoc_local_retention_tests {
 
     #[test]
     fn call_havoc_drops_local_cell_when_write_range_is_assumed_equal_to_it() {
-        let local = Pointer {
-            block: PointerBlock::Concrete("local:t".to_string()),
-            offset: PointerOffsetTerm::Constant(0),
+        let local = Address {
+            base: AddressBase::Concrete("local:t".to_string()),
+            offset: AddressOffset::Constant(0),
         };
-        let symbolic = Pointer {
-            block: PointerBlock::Symbolic(Variable(944_001)),
-            offset: PointerOffsetTerm::Constant(0),
+        let symbolic = Address {
+            base: AddressBase::Symbolic(Variable(944_001)),
+            offset: AddressOffset::Constant(0),
         };
         let assumed_alias_range = MemoryRange::new(
             symbolic.clone(),
@@ -911,16 +911,16 @@ mod call_havoc_local_retention_tests {
             true,
         ));
         let unrelated_range = MemoryRange::new(
-            Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Constant(0),
             },
             MachineTerm::constant(0),
             MachineTerm::constant(1),
         );
         let value = ProgramValue::Int32(MachineTerm::constant(41));
         let before = Memory::new()
-            .with_block(local.block.clone(), 4)
+            .with_block(local.base.clone(), 4)
             .store(local.clone(), value.clone());
 
         let retained = before.clone().with_call_memory_havoc(
@@ -967,16 +967,16 @@ mod call_havoc_union_view_tests {
     /// that result and refuses the one that keeps the written view.
     #[test]
     fn call_havoc_drops_union_views_in_its_write_set_and_the_checker_agrees() {
-        let block: PointerBlock = "global:union-havoc".into();
-        let written = Pointer {
-            block: block.clone(),
-            offset: PointerOffsetTerm::Constant(0),
+        let block: AddressBase = "global:union-havoc".into();
+        let written = Address {
+            base: block.clone(),
+            offset: AddressOffset::Constant(0),
         };
-        let sibling = Pointer {
-            block: block.clone(),
-            offset: PointerOffsetTerm::Constant(8),
+        let sibling = Address {
+            base: block.clone(),
+            offset: AddressOffset::Constant(8),
         };
-        let view = |pointer: &Pointer, value: u32| {
+        let view = |pointer: &Address, value: u32| {
             (
                 pointer.clone(),
                 ProgramType::Int32,
@@ -1030,7 +1030,7 @@ mod call_havoc_union_view_tests {
 mod forget_cached_values_tests {
     use super::*;
 
-    fn int32_view(pointer: &Pointer, value: u32) -> (Pointer, ProgramType, ProgramValue) {
+    fn int32_view(pointer: &Address, value: u32) -> (Address, ProgramType, ProgramValue) {
         (
             pointer.clone(),
             ProgramType::Int32,
@@ -1038,12 +1038,12 @@ mod forget_cached_values_tests {
         )
     }
 
-    fn zeroed_heap_with_cell() -> (Memory, Pointer) {
-        let base = Pointer {
-            block: PointerBlock::Heap(944_100),
-            offset: PointerOffsetTerm::Constant(0),
+    fn zeroed_heap_with_cell() -> (Memory, Address) {
+        let base = Address {
+            base: AddressBase::Heap(944_100),
+            offset: AddressOffset::Constant(0),
         };
-        let mut memory = Memory::new().with_block(base.block.clone(), 8);
+        let mut memory = Memory::new().with_block(base.base.clone(), 8);
         let heap = std::sync::Arc::make_mut(&mut memory.heap);
         heap.live_allocations
             .insert(base.clone(), AllocationSize::int32(8));
@@ -1056,22 +1056,22 @@ mod forget_cached_values_tests {
     /// cell, unless the view's storage is preserved.
     #[test]
     fn loop_havoc_drops_union_views_outside_preserved_blocks() {
-        let written = Pointer {
-            block: "global:loop-union".into(),
-            offset: PointerOffsetTerm::Constant(4),
+        let written = Address {
+            base: "global:loop-union".into(),
+            offset: AddressOffset::Constant(4),
         };
-        let preserved = Pointer {
-            block: "local:loop-union-kept".into(),
-            offset: PointerOffsetTerm::Constant(4),
+        let preserved = Address {
+            base: "local:loop-union-kept".into(),
+            offset: AddressOffset::Constant(4),
         };
         let before = Memory::new()
-            .with_block(written.block.clone(), 12)
-            .with_block(preserved.block.clone(), 12)
+            .with_block(written.base.clone(), 12)
+            .with_block(preserved.base.clone(), 12)
             .store_union_views(written.clone(), 8, vec![int32_view(&written, 3)])
             .store_union_views(preserved.clone(), 8, vec![int32_view(&preserved, 5)]);
         let after = before.with_loop_memory_havoc_preserving_loans(
             Variable(944_101),
-            &BTreeSet::from([preserved.block.clone()]),
+            &BTreeSet::from([preserved.base.clone()]),
             None,
             None,
         );
@@ -1088,9 +1088,9 @@ mod forget_cached_values_tests {
     #[test]
     fn loop_havoc_drops_the_zero_reading_under_a_forgotten_cell() {
         let (before, base) = zeroed_heap_with_cell();
-        let beside = Pointer {
-            block: base.block.clone(),
-            offset: PointerOffsetTerm::Constant(4),
+        let beside = Address {
+            base: base.base.clone(),
+            offset: AddressOffset::Constant(4),
         };
         // The cell covers the first four bytes, so only the bytes beside it
         // read as zero.
@@ -1111,15 +1111,15 @@ mod forget_cached_values_tests {
     /// before it and reach into it, or be a run of slots over it.
     #[test]
     fn a_zero_reading_is_refused_for_bytes_a_cell_covers() {
-        let base = Pointer {
-            block: PointerBlock::Heap(944_104),
-            offset: PointerOffsetTerm::Constant(0),
+        let base = Address {
+            base: AddressBase::Heap(944_104),
+            offset: AddressOffset::Constant(0),
         };
-        let at = |offset: i64| Pointer {
-            block: base.block.clone(),
-            offset: PointerOffsetTerm::Constant(offset),
+        let at = |offset: i64| Address {
+            base: base.base.clone(),
+            offset: AddressOffset::Constant(offset),
         };
-        let mut memory = Memory::new().with_block(base.block.clone(), 16);
+        let mut memory = Memory::new().with_block(base.base.clone(), 16);
         let heap = std::sync::Arc::make_mut(&mut memory.heap);
         heap.live_allocations
             .insert(base.clone(), AllocationSize::int32(16));
@@ -1140,12 +1140,9 @@ mod forget_cached_values_tests {
         assert!(wide.is_zeroed_heap_address(&at(8), 4, &facts));
         // A symbolic offset into a block that holds a cell is not separated
         // from it by any constant.
-        let symbolic = Pointer {
-            block: base.block.clone(),
-            offset: PointerOffsetTerm::scaled_int32_node(
-                MachineTerm::Variable(Variable(944_105)),
-                4,
-            ),
+        let symbolic = Address {
+            base: base.base.clone(),
+            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(944_105)), 4),
         };
         assert!(memory.is_zeroed_heap_address(&symbolic, 4, &facts));
         assert!(!narrow.is_zeroed_heap_address(&symbolic, 4, &facts));
@@ -1157,7 +1154,7 @@ mod forget_cached_values_tests {
     #[test]
     fn interface_join_drops_a_zero_reading_one_arm_wrote_over() {
         let (wrote, base) = zeroed_heap_with_cell();
-        let mut untouched = Memory::new().with_block(base.block.clone(), 8);
+        let mut untouched = Memory::new().with_block(base.base.clone(), 8);
         let heap = std::sync::Arc::make_mut(&mut untouched.heap);
         heap.live_allocations
             .insert(base.clone(), AllocationSize::int32(8));
@@ -1171,9 +1168,9 @@ mod forget_cached_values_tests {
             .clone()
             .with_interface_memory_havoc(Variable(944_103), &BTreeSet::new(), &arms)
             .expect("joinable arms");
-        let beside = Pointer {
-            block: base.block.clone(),
-            offset: PointerOffsetTerm::Constant(4),
+        let beside = Address {
+            base: base.base.clone(),
+            offset: AddressOffset::Constant(4),
         };
         assert!(!from_wrote.is_zeroed_heap_address(&beside, 4, &PureFactContext::new()));
         assert_eq!(from_wrote.heap, from_untouched.heap);
@@ -1197,9 +1194,9 @@ mod havoc_identity_tests {
 
     fn range(depth: usize, tail: u32) -> MemoryRange {
         MemoryRange::new(
-            Pointer {
-                block: "deep-havoc-range".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: "deep-havoc-range".into(),
+                offset: AddressOffset::Constant(0),
             },
             nested_term(depth, tail),
             MachineTerm::constant(1_024),
@@ -1209,18 +1206,18 @@ mod havoc_identity_tests {
     #[test]
     fn outcome_slot_havoc_identities_are_separate_from_program_storage() {
         let identities = [
-            PointerBlock::ContractException,
-            PointerBlock::ContractResult,
-            PointerBlock::ExternalArgument,
-            PointerBlock::AggregateReturn { frame: 0 },
-            PointerBlock::from("local:exception"),
-            PointerBlock::from("local:__click_exception"),
+            AddressBase::ContractException,
+            AddressBase::ContractResult,
+            AddressBase::ExternalArgument,
+            AddressBase::AggregateReturn { frame: 0 },
+            AddressBase::from("local:exception"),
+            AddressBase::from("local:__click_exception"),
         ]
         .map(|block| {
             let range = MemoryRange::new(
-                Pointer {
-                    block,
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: block,
+                    offset: AddressOffset::Constant(0),
                 },
                 MachineTerm::constant(0),
                 MachineTerm::constant(1),
@@ -1291,7 +1288,7 @@ fn memory_havoc_write_set_fingerprint(mutable_ranges: &[MemoryRange]) -> u32 {
         .iter()
         .map(|range| {
             (
-                format!("{:?}", range.base().block),
+                format!("{:?}", range.base().base),
                 range.constant_start(),
                 range.constant_end(),
             )
@@ -1312,7 +1309,7 @@ fn memory_havoc_write_set_fingerprint(mutable_ranges: &[MemoryRange]) -> u32 {
 /// this consumer must never search the resource input for a successful check.
 pub(crate) fn resource_context_has_symbolic_range_read(
     resources: &ResourceContext,
-    base: &Pointer,
+    base: &Address,
     bytes: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -1506,7 +1503,7 @@ impl LocalEnvironment {
         name: impl Into<BindingName>,
         value: ProgramValue,
         program_type: ProgramType,
-        slot: Pointer,
+        slot: Address,
         volatile: bool,
         pointee_volatile: bool,
         constant: bool,
@@ -1545,7 +1542,7 @@ impl LocalEnvironment {
         &mut self,
         name: impl Into<BindingName>,
         program_type: ProgramType,
-        slot: Pointer,
+        slot: Address,
         volatile: bool,
         pointee_volatile: bool,
         constant: bool,
@@ -1569,7 +1566,7 @@ impl LocalEnvironment {
         &mut self,
         name: impl Into<BindingName>,
         program_type: ProgramType,
-        slot: Pointer,
+        slot: Address,
         volatile: bool,
         pointee_volatile: bool,
         constant: bool,
@@ -1595,7 +1592,7 @@ impl LocalEnvironment {
         name: impl Into<BindingName>,
         element_type: ProgramType,
         length: u32,
-        slot: Pointer,
+        slot: Address,
     ) {
         let name = self.resolve_binding(&name.into());
         self.set_array_object_at_with_constant(name, element_type, length, slot, false);
@@ -1606,7 +1603,7 @@ impl LocalEnvironment {
         name: impl Into<BindingName>,
         element_type: ProgramType,
         length: u32,
-        slot: Pointer,
+        slot: Address,
         constant: bool,
     ) {
         let name = self.resolve_binding(&name.into());
@@ -1625,7 +1622,7 @@ impl LocalEnvironment {
         &mut self,
         name: impl Into<BindingName>,
         layout: AggregateLayout,
-        slot: Pointer,
+        slot: Address,
     ) {
         let name = self.resolve_binding(&name.into());
         self.set_aggregate_object_at_with_constant(name, layout, slot, false);
@@ -1635,7 +1632,7 @@ impl LocalEnvironment {
         &mut self,
         name: impl Into<BindingName>,
         layout: AggregateLayout,
-        slot: Pointer,
+        slot: Address,
         constant: bool,
     ) {
         let name = self.resolve_binding(&name.into());
@@ -1704,7 +1701,7 @@ impl LocalEnvironment {
         name: impl Into<BindingName>,
         value: impl Into<StoredExecutionValue>,
         program_type: ProgramType,
-        slot: Pointer,
+        slot: Address,
         volatile: bool,
         pointee_volatile: bool,
         constant: bool,
@@ -1836,7 +1833,7 @@ impl LocalEnvironment {
 
     pub fn aggregate_object_values(
         &self,
-    ) -> impl Iterator<Item = (&BindingName, &AggregateLayout, &Pointer)> + '_ {
+    ) -> impl Iterator<Item = (&BindingName, &AggregateLayout, &Address)> + '_ {
         self.bindings
             .iter()
             .filter_map(|(name, binding)| match binding {
@@ -1854,7 +1851,7 @@ impl LocalEnvironment {
     pub fn held_value_local(
         &self,
         name: impl Into<BindingName>,
-    ) -> Option<(ProgramType, &Pointer)> {
+    ) -> Option<(ProgramType, &Address)> {
         let name = self.resolve_binding(&name.into());
         match self.bindings.get(&name)? {
             LocalBinding::AggregateObject { layout, slot, .. } => {
@@ -1868,7 +1865,7 @@ impl LocalEnvironment {
     /// the object's address.
     pub fn held_value_locals(
         &self,
-    ) -> impl Iterator<Item = (&BindingName, ProgramType, &Pointer)> + '_ {
+    ) -> impl Iterator<Item = (&BindingName, ProgramType, &Address)> + '_ {
         self.aggregate_object_values()
             .filter_map(|(name, layout, slot)| Some((name, layout.value_type()?, slot)))
     }
@@ -1963,16 +1960,16 @@ impl LocalEnvironment {
         self.bindings.get(&name)
     }
 
-    pub(in crate::kernel) fn slot(&self, name: impl Into<BindingName>) -> Option<&Pointer> {
+    pub(in crate::kernel) fn slot(&self, name: impl Into<BindingName>) -> Option<&Address> {
         let name = self.resolve_binding(&name.into());
         self.binding(&name).map(LocalBinding::slot)
     }
 
-    pub(in crate::kernel) fn slots(&self) -> impl Iterator<Item = &Pointer> {
+    pub(in crate::kernel) fn slots(&self) -> impl Iterator<Item = &Address> {
         self.slots.keys()
     }
 
-    pub(crate) fn name_for_slot(&self, pointer: &Pointer) -> Option<&BindingName> {
+    pub(crate) fn name_for_slot(&self, pointer: &Address) -> Option<&BindingName> {
         self.slots.get(pointer)
     }
 
@@ -1981,8 +1978,8 @@ impl LocalEnvironment {
     /// [`Self::names_with_slot_in`] finds them.
     pub(crate) fn array_objects_with_slot_in(
         &self,
-        block: &PointerBlock,
-    ) -> Vec<(&BindingName, ProgramType, &Pointer)> {
+        block: &AddressBase,
+    ) -> Vec<(&BindingName, ProgramType, &Address)> {
         self.names_with_slot_in(block)
             .into_iter()
             .filter_map(|name| match self.binding(name)? {
@@ -1996,17 +1993,17 @@ impl LocalEnvironment {
 
     /// The names whose slots lie in `block`, found through the slot index:
     /// pointers order by block first, so they are one run of slot keys.
-    pub(in crate::kernel) fn names_with_slot_in(&self, block: &PointerBlock) -> Vec<&BindingName> {
+    pub(in crate::kernel) fn names_with_slot_in(&self, block: &AddressBase) -> Vec<&BindingName> {
         let mut names = Vec::new();
-        let mut at = Pointer {
-            block: block.clone(),
-            offset: PointerOffsetTerm::Constant(i64::MIN),
+        let mut at = Address {
+            base: block.clone(),
+            offset: AddressOffset::Constant(i64::MIN),
         };
         if let Some(name) = self.slots.get(&at) {
             names.push(name);
         }
         while let Some((pointer, name)) = self.slots.get_greater_than(&at) {
-            if &pointer.block != block {
+            if &pointer.base != block {
                 break;
             }
             names.push(name);
@@ -2049,7 +2046,7 @@ impl LocalEnvironment {
     pub(crate) fn aggregate_object_pointer(
         &self,
         name: impl Into<BindingName>,
-    ) -> Option<&Pointer> {
+    ) -> Option<&Address> {
         let name = self.resolve_binding(&name.into());
         match self.binding(&name) {
             Some(LocalBinding::AggregateObject { slot, .. }) => Some(slot),
@@ -2070,7 +2067,7 @@ impl LocalEnvironment {
 }
 
 impl LocalBinding {
-    pub(in crate::kernel) fn slot(&self) -> &Pointer {
+    pub(in crate::kernel) fn slot(&self) -> &Address {
         match self {
             Self::Object { slot, .. }
             | Self::UninitializedObject { slot, .. }
@@ -2081,11 +2078,11 @@ impl LocalBinding {
     }
 }
 
-fn held_pointer_block(binding: &LocalBinding) -> Option<&PointerBlock> {
+fn held_address_base(binding: &LocalBinding) -> Option<&AddressBase> {
     let LocalBinding::Object { value, .. } = binding else {
         return None;
     };
-    Some(&value.pointer()?.pointer().block)
+    Some(&value.pointer()?.pointer().base)
 }
 
 /// The numeric value of a scalar of integer or truth type.
@@ -2276,7 +2273,7 @@ impl LocalEnvironment {
     /// built from the bindings.
     pub(in crate::kernel) fn from_parts(
         bindings: crate::persistent::PersistentMap<BindingName, LocalBinding>,
-        slots: crate::persistent::PersistentMap<Pointer, BindingName>,
+        slots: crate::persistent::PersistentMap<Address, BindingName>,
     ) -> Self {
         let held_terms = bindings
             .iter()
@@ -2285,11 +2282,11 @@ impl LocalEnvironment {
             })
             .collect();
         let mut pointer_objects_by_block = crate::persistent::PersistentMap::<
-            PointerBlock,
+            AddressBase,
             crate::persistent::PersistentMap<BindingName, ()>,
         >::default();
         for (name, binding) in bindings.iter() {
-            if let Some(block) = held_pointer_block(binding) {
+            if let Some(block) = held_address_base(binding) {
                 let mut names = pointer_objects_by_block
                     .get(block)
                     .cloned()
@@ -2320,8 +2317,8 @@ impl LocalEnvironment {
         let old_slot = old.map(LocalBinding::slot).cloned();
         let old_held = old.and_then(held_fingerprint);
         let new_held = held_fingerprint(&binding);
-        let old_block = old.and_then(held_pointer_block).cloned();
-        let new_block = held_pointer_block(&binding);
+        let old_block = old.and_then(held_address_base).cloned();
+        let new_block = held_address_base(&binding);
         if old_block.as_ref() != new_block {
             if let Some(block) = old_block.as_ref() {
                 self.remove_pointer_object(block, &name);
@@ -2353,7 +2350,7 @@ impl LocalEnvironment {
         self.slots.insert(slot, name);
     }
 
-    fn remove_pointer_object(&mut self, block: &PointerBlock, name: impl Into<BindingName>) {
+    fn remove_pointer_object(&mut self, block: &AddressBase, name: impl Into<BindingName>) {
         let name = self.resolve_binding(&name.into());
         let Some(mut names) = self.pointer_objects_by_block.get(block).cloned() else {
             return;
@@ -2370,7 +2367,7 @@ impl LocalEnvironment {
     /// Looking up a spelling visits these candidates, never unrelated locals.
     pub(crate) fn pointer_objects_in_block<'a>(
         &'a self,
-        block: &PointerBlock,
+        block: &AddressBase,
     ) -> impl Iterator<Item = (&'a BindingName, &'a PointerValue)> {
         self.pointer_objects_by_block
             .get(block)
@@ -2549,15 +2546,15 @@ impl LocalEnvironment {
     /// is no earlier environment. The walk visits only the changed bindings
     /// of environments derived from one another, as
     /// [`Self::changed_integer_holdings`] does.
-    pub(crate) fn changed_pointer_blocks<'a>(
+    pub(crate) fn changed_address_bases<'a>(
         &'a self,
         earlier: Option<&'a Self>,
-    ) -> Vec<(&'a BindingName, &'a PointerBlock)> {
+    ) -> Vec<(&'a BindingName, &'a AddressBase)> {
         let changed = |name: &'a BindingName,
                        now: Option<&'a LocalBinding>,
                        before: Option<&LocalBinding>| {
-            let block = held_pointer_block(now?)?;
-            (before.and_then(held_pointer_block) != Some(block)).then_some((name, block))
+            let block = held_address_base(now?)?;
+            (before.and_then(held_address_base) != Some(block)).then_some((name, block))
         };
         match earlier {
             Some(earlier) => self
@@ -2577,10 +2574,10 @@ impl LocalEnvironment {
     pub(crate) fn holds_pointer_in_block(
         &self,
         name: impl Into<BindingName>,
-        block: &PointerBlock,
+        block: &AddressBase,
     ) -> bool {
         let name = self.resolve_binding(&name.into());
-        self.bindings.get(&name).and_then(held_pointer_block) == Some(block)
+        self.bindings.get(&name).and_then(held_address_base) == Some(block)
     }
 
     /// Whether the scalar object `name` holds exactly `term`.
@@ -2647,7 +2644,7 @@ impl LocalEnvironment {
         if let Some(fingerprint) = held_fingerprint(&binding) {
             self.held_terms.remove(&(fingerprint, name.clone()));
         }
-        if let Some(block) = held_pointer_block(&binding) {
+        if let Some(block) = held_address_base(&binding) {
             self.remove_pointer_object(block, &name);
         }
         self.bindings.remove(&name);
@@ -2704,7 +2701,7 @@ impl MemoryBlock {
 /// by the first rung of `range_proven_disjoint_from_pointer`, so the producer
 /// and the checker both visit these alone.
 fn call_havoc_candidates(mutable_ranges: &[MemoryRange]) -> AliasCandidates {
-    AliasCandidates::of_blocks(mutable_ranges.iter().map(|range| &range.base().block))
+    AliasCandidates::of_blocks(mutable_ranges.iter().map(|range| &range.base().base))
 }
 
 /// What a caller keeps unchanged across one call: the residual resource context
@@ -3040,7 +3037,7 @@ impl CallKeptRanges {
     /// ([`PureFactContext::kept_range_holding_access`]).
     pub(in crate::kernel) fn holds_access(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> bool {
@@ -3082,7 +3079,7 @@ impl CallKeptRanges {
         &self,
         assumptions: &PureFactContext,
         placement: Option<&PureFactContext>,
-        pointer: &Pointer,
+        pointer: &Address,
         bytes: u32,
     ) -> Option<MemoryRange> {
         let query = |ranges: &ResourceContext, include_views| {
@@ -3163,8 +3160,8 @@ impl CallKeptRanges {
                     false,
                 )
                 .or_else(|| {
-                    let mut blocks = BTreeSet::from([&pointer.block]);
-                    blocks.extend(bases.iter().map(|base| &base.block));
+                    let mut blocks = BTreeSet::from([&pointer.base]);
+                    blocks.extend(bases.iter().map(|base| &base.base));
                     query(
                         &opened(&mut blocks.into_iter().flat_map(|block| {
                             residual.owned_composites_with_argument_block(block)
@@ -3244,7 +3241,7 @@ impl CallKeptOwnership {
     /// each, never a scan.
     fn member_holding(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> Option<MemoryRange> {
@@ -3284,7 +3281,7 @@ enum CallHavocCellRule {
 /// keeps owning ([`CallKeptOwnership`]). An interior field alias can write
 /// part of a cached cell even when its start differs from the cell's start.
 fn call_havoc_keeps_cell(
-    pointer: &Pointer,
+    pointer: &Address,
     value: &ProgramValue,
     mutable_ranges: &[MemoryRange],
     assumptions: &PureFactContext,
@@ -3292,20 +3289,20 @@ fn call_havoc_keeps_cell(
     preserve_local_slots: bool,
 ) -> CallHavocCellRule {
     if preserve_local_slots
-        && pointer.block.is_local_block()
+        && pointer.base.is_local_block()
         // An opaque pointer may reach a local even when no exact alias has
         // yet been stated. Absence of an alias is not separation evidence.
-        && mutable_ranges.iter().all(|range| !matches!(range.base().block, PointerBlock::Symbolic(_)))
+        && mutable_ranges.iter().all(|range| !matches!(range.base().base, AddressBase::Symbolic(_)))
         && !mutable_ranges.iter().any(|range| {
-            range.base().block == pointer.block
+            range.base().base == pointer.base
                 || assumptions
                     .equality_graph
-                    .pointer_in_block(range.base(), &pointer.block)
+                    .pointer_in_block(range.base(), &pointer.base)
                     .is_some()
         })
     {
         return if mutable_ranges.iter().all(|range| {
-            range.base().block == pointer.block
+            range.base().base == pointer.base
                 || !pointers_proven_equal_for_memory_resolution(range.base(), pointer, assumptions)
         }) {
             CallHavocCellRule::Separate
@@ -3348,7 +3345,7 @@ fn call_write_set_marker(
     variable: u64,
     mutable_ranges: &[MemoryRange],
     kept_ranges: Option<&CallKeptRanges>,
-) -> PointerBlock {
+) -> AddressBase {
     let mut marker = format!(
         "call-write-set:{variable}:{}",
         memory_havoc_write_set_identity(mutable_ranges)
@@ -3363,11 +3360,11 @@ fn call_write_set_marker(
 /// Membership in the blocks a memory join keeps: a set, or a query a join
 /// answers from the state's own indexes without listing every block.
 pub(crate) trait BlockMembership {
-    fn contains_block(&self, block: &PointerBlock) -> bool;
+    fn contains_block(&self, block: &AddressBase) -> bool;
 }
 
-impl BlockMembership for BTreeSet<PointerBlock> {
-    fn contains_block(&self, block: &PointerBlock) -> bool {
+impl BlockMembership for BTreeSet<AddressBase> {
+    fn contains_block(&self, block: &AddressBase) -> bool {
         self.contains(block)
     }
 }
@@ -3389,12 +3386,12 @@ impl BlockMembership for BTreeSet<PointerBlock> {
 /// loan the ledger would have permitted a write through is a promise nothing
 /// proved (`docs/internals/stable-views.md`).
 fn loan_preserving_havoc_keeps_cell(
-    pointer: &Pointer,
+    pointer: &Address,
     byte_width: u32,
     preserved_blocks: &dyn BlockMembership,
     ledger: Option<&crate::kernel::loans::LoanLedger>,
 ) -> bool {
-    preserved_blocks.contains_block(&pointer.block)
+    preserved_blocks.contains_block(&pointer.base)
         || ledger.is_some_and(|ledger| {
             byte_width != 0
                 && ledger.has_indexed_memory_overlap(&MemoryRange::new_with_element_width(
@@ -3418,7 +3415,7 @@ fn loan_preserving_havoc_keeps_run(
     ledger: Option<&crate::kernel::loans::LoanLedger>,
 ) -> (SlotSet, crate::kernel::primitives::RuleAnswer) {
     let exact = crate::kernel::primitives::RuleAnswer::Exact;
-    if preserved_blocks.contains_block(&run.base().block) {
+    if preserved_blocks.contains_block(&run.base().base) {
         return (SlotSet::All, exact);
     }
     let Some(ledger) = ledger else {
@@ -3499,8 +3496,8 @@ where
 
 /// The widest typed overlay recorded at each address, so that the loan
 /// question above covers every byte the cell can be read as.
-fn union_overlay_widths(memory: &Memory) -> BTreeMap<Pointer, u32> {
-    let mut widths = BTreeMap::<Pointer, u32>::new();
+fn union_overlay_widths(memory: &Memory) -> BTreeMap<Address, u32> {
+    let mut widths = BTreeMap::<Address, u32>::new();
     for (pointer, program_type) in memory.union_cells.keys() {
         widths
             .entry(pointer.clone())
@@ -3514,7 +3511,7 @@ fn union_overlay_widths(memory: &Memory) -> BTreeMap<Pointer, u32> {
 /// `pointer`.
 ///
 /// The deciding rule is the equality invariant: differently spelled pointer
-/// blocks are not separate unless [`PointerBlock::proven_distinct`] or the
+/// blocks are not separate unless [`AddressBase::proven_distinct`] or the
 /// assumptions say so, so two edges control every answer. Entries whose block
 /// is proven distinct from the query pointer's never contain it. Entries in a
 /// block merely spelled differently do, once an assumed pointer equality names
@@ -3523,18 +3520,18 @@ fn union_overlay_widths(memory: &Memory) -> BTreeMap<Pointer, u32> {
 /// the free-retirement path separately requires separation before keeping a
 /// cached cell, and clears whole blocks for known aliases of the base.
 fn heap_allocation_may_contain_pointer(
-    base: &Pointer,
-    pointer: &Pointer,
+    base: &Address,
+    pointer: &Address,
     assumptions: &PureFactContext,
 ) -> bool {
-    if base != pointer && base.block.proven_distinct(&pointer.block) {
+    if base != pointer && base.base.proven_distinct(&pointer.base) {
         return false;
     }
-    if base.block != pointer.block {
+    if base.base != pointer.base {
         return base.offset == pointer.offset
             && pointers_proven_equal_for_memory_resolution(base, pointer, assumptions);
     }
-    if base.block != PointerBlock::ExternalArgument {
+    if base.base != AddressBase::ExternalArgument {
         return true;
     }
 
@@ -3543,23 +3540,23 @@ fn heap_allocation_may_contain_pointer(
 
 /// Whether `pointer`, in the external argument block, is `base` or an address
 /// built by adding to `base`'s offset.
-fn external_argument_offset_derives_from(base: &Pointer, pointer: &Pointer) -> bool {
+fn external_argument_offset_derives_from(base: &Address, pointer: &Address) -> bool {
     if pointer.offset == base.offset {
         return true;
     }
 
-    fn contains_base_offset(term: &PointerOffsetTerm, base: &PointerOffsetTerm) -> bool {
+    fn contains_base_offset(term: &AddressOffset, base: &AddressOffset) -> bool {
         match term {
-            PointerOffsetTerm::Add(left, right) => {
+            AddressOffset::Add(left, right) => {
                 left.as_ref() == base
                     || right.as_ref() == base
                     || contains_base_offset(left, base)
                     || contains_base_offset(right, base)
             }
-            PointerOffsetTerm::Constant(_)
-            | PointerOffsetTerm::Variable(_)
-            | PointerOffsetTerm::Int32Scaled { .. }
-            | PointerOffsetTerm::Int64Scaled { .. } => false,
+            AddressOffset::Constant(_)
+            | AddressOffset::Variable(_)
+            | AddressOffset::Int32Scaled { .. }
+            | AddressOffset::Int64Scaled { .. } => false,
         }
     }
 
@@ -3594,7 +3591,7 @@ impl Memory {
             && self.heap == other.heap
     }
 
-    pub fn with_block(mut self, block: impl Into<PointerBlock>, size: u32) -> Self {
+    pub fn with_block(mut self, block: impl Into<AddressBase>, size: u32) -> Self {
         let block = block.into();
         // Havoc marker blocks mean "the state may have changed", never "a
         // fresh block appeared"; recording a benign block-declaration edge
@@ -3610,9 +3607,9 @@ impl Memory {
             self.record_diagnostic_transform(
                 "insert havoc marker",
                 vec![diagnostic_base],
-                vec![ProgramValue::pointer(Pointer {
-                    block,
-                    offset: PointerOffsetTerm::Constant(0),
+                vec![ProgramValue::pointer(Address {
+                    base: block,
+                    offset: AddressOffset::Constant(0),
                 })],
             );
             return self;
@@ -3625,10 +3622,10 @@ impl Memory {
 
     /// Declared automatic scalars use allocation ownership, never the legacy
     /// implicit local access rule. One block lookup is independent of other cells.
-    pub(in crate::kernel) fn requires_explicit_scalar_ownership(&self, pointer: &Pointer) -> bool {
+    pub(in crate::kernel) fn requires_explicit_scalar_ownership(&self, pointer: &Address) -> bool {
         crate::instrumentation::record_deterministic_work(1);
         self.blocks
-            .get(&pointer.block)
+            .get(&pointer.base)
             .is_some_and(|block| block.declared_scalar_type.is_some())
     }
 
@@ -3636,10 +3633,10 @@ impl Memory {
     /// records one (`design/effective-types.md`).
     pub(in crate::kernel) fn declared_class(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
     ) -> Option<crate::kernel::effective_type::CAccessClass> {
         crate::instrumentation::record_deterministic_work(1);
-        self.blocks.get(&pointer.block)?.declared_class.clone()
+        self.blocks.get(&pointer.base)?.declared_class.clone()
     }
 
     /// The effective type a C store gave the heap cell starting at
@@ -3647,9 +3644,9 @@ impl Memory {
     /// (`design/effective-types.md`).
     pub(in crate::kernel) fn heap_effective_class(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
     ) -> Option<crate::kernel::effective_type::CAccessClass> {
-        if !matches!(pointer.block, PointerBlock::Heap(_)) {
+        if !matches!(pointer.base, AddressBase::Heap(_)) {
             return None;
         }
         self.heap
@@ -3663,12 +3660,12 @@ impl Memory {
     #[cfg(test)]
     pub(in crate::kernel) fn with_heap_effective_type(
         mut self,
-        pointer: &Pointer,
+        pointer: &Address,
         width: u32,
         class: Option<crate::kernel::effective_type::CAccessClass>,
         value: &ProgramValue,
     ) -> Self {
-        if !matches!(pointer.block, PointerBlock::Heap(_)) {
+        if !matches!(pointer.base, AddressBase::Heap(_)) {
             return self;
         }
         let mut record = self.heap.effective_types.clone();
@@ -3683,7 +3680,7 @@ impl Memory {
     /// the declaration, so the block-declared derivation covers it.
     pub(crate) fn with_classed_block(
         self,
-        block: PointerBlock,
+        block: AddressBase,
         declared_class: Option<crate::kernel::effective_type::CAccessClass>,
         size: u32,
     ) -> Self {
@@ -3692,7 +3689,7 @@ impl Memory {
 
     pub(in crate::kernel) fn with_classed_block_or_read_only(
         self,
-        block: PointerBlock,
+        block: AddressBase,
         declared_class: Option<crate::kernel::effective_type::CAccessClass>,
         size: u32,
         read_only: bool,
@@ -3715,7 +3712,7 @@ impl Memory {
     #[cfg(test)]
     pub(in crate::kernel) fn with_declared_scalar_block(
         self,
-        block: PointerBlock,
+        block: AddressBase,
         size: u32,
         program_type: ProgramType,
     ) -> Self {
@@ -3728,7 +3725,7 @@ impl Memory {
     /// type gives (`design/effective-types.md`).
     pub(in crate::kernel) fn with_classed_scalar_block(
         mut self,
-        block: PointerBlock,
+        block: AddressBase,
         size: u32,
         program_type: ProgramType,
         declared_class: Option<crate::kernel::effective_type::CAccessClass>,
@@ -3746,7 +3743,7 @@ impl Memory {
     /// Complete scalar construction without changing its size, type, cells,
     /// ownership, or allocation generation. Checked declaration execution is
     /// the only caller; later alias writes see the block's read-only status.
-    pub(in crate::kernel) fn freeze_declared_scalar(self, block: &PointerBlock) -> Self {
+    pub(in crate::kernel) fn freeze_declared_scalar(self, block: &AddressBase) -> Self {
         assert!(
             self.blocks
                 .get(block)
@@ -3760,7 +3757,7 @@ impl Memory {
     /// An aggregate with temporary lifetime cannot be modified (C11 6.2.4p8).
     pub(in crate::kernel) fn freeze_aggregate_result(
         self,
-        block: &PointerBlock,
+        block: &AddressBase,
         declared_class: Option<crate::kernel::effective_type::CAccessClass>,
     ) -> Self {
         self.freeze_declared_object(block, declared_class)
@@ -3768,7 +3765,7 @@ impl Memory {
 
     fn freeze_declared_object(
         mut self,
-        block: &PointerBlock,
+        block: &AddressBase,
         declared_class: Option<crate::kernel::effective_type::CAccessClass>,
     ) -> Self {
         let base = intern_derivation_base(&mut self);
@@ -3794,7 +3791,7 @@ impl Memory {
     /// proof-entry state, not an allocation transition or lifetime reset:
     /// existing writes remain recorded, a symbolic identity can still alias
     /// arguments, and no memory-DAG transport edge is granted.
-    pub fn with_uninitialized_block(mut self, block: impl Into<PointerBlock>, size: u32) -> Self {
+    pub fn with_uninitialized_block(mut self, block: impl Into<AddressBase>, size: u32) -> Self {
         let diagnostic_base = self.clone();
         let block = block.into();
         std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), MemoryBlock::new(size));
@@ -3802,17 +3799,17 @@ impl Memory {
             "declare uninitialized block",
             vec![diagnostic_base],
             vec![
-                ProgramValue::pointer(Pointer {
-                    block: block.clone(),
-                    offset: PointerOffsetTerm::Constant(0),
+                ProgramValue::pointer(Address {
+                    base: block.clone(),
+                    offset: AddressOffset::Constant(0),
                 }),
                 ProgramValue::Int32(size.into()),
             ],
         );
         self.with_uninitialized_object(
-            Pointer {
-                block,
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: block,
+                offset: AddressOffset::Constant(0),
             },
             size,
         )
@@ -3828,7 +3825,7 @@ impl Memory {
     /// Record an unwritten object footprint without declaring or resizing its
     /// containing allocation. Proof-entry ownership supplies its storage
     /// authority and liveness separately; this marker supplies neither.
-    pub fn with_uninitialized_object(mut self, pointer: Pointer, size: u32) -> Self {
+    pub fn with_uninitialized_object(mut self, pointer: Address, size: u32) -> Self {
         let diagnostic_base = self.clone();
         std::sync::Arc::make_mut(&mut self.heap)
             .uninitialized_objects
@@ -3848,20 +3845,20 @@ impl Memory {
     /// objects. Different symbolic spellings do not establish separation.
     pub(in crate::kernel) fn may_read_uninitialized_object(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         bytes: u32,
     ) -> bool {
         if bytes == 0 {
             return false;
         }
-        AliasCandidates::of_block(&pointer.block).any_entry(
+        AliasCandidates::of_block(&pointer.base).any_entry(
             &self.heap.uninitialized_objects,
             |base, size| {
                 crate::instrumentation::record_deterministic_work(1);
                 if *size == 0 {
                     return false;
                 }
-                if base.block == pointer.block
+                if base.base == pointer.base
                     && let (Some(start), Some(at)) =
                         (base.offset.as_const(), pointer.offset.as_const())
                     && let (Some(end), Some(read_end)) = (
@@ -3876,8 +3873,8 @@ impl Memory {
                 // when its address is built from the object's own base; any
                 // other parameter's memory is held by a resource of its own,
                 // which a valid context keeps disjoint from this one.
-                if base.block == PointerBlock::ExternalArgument
-                    && pointer.block == PointerBlock::ExternalArgument
+                if base.base == AddressBase::ExternalArgument
+                    && pointer.base == AddressBase::ExternalArgument
                 {
                     return external_argument_offset_derives_from(base, pointer);
                 }
@@ -3888,7 +3885,7 @@ impl Memory {
 
     pub(in crate::kernel) fn with_block_or_read_only(
         self,
-        block: impl Into<PointerBlock>,
+        block: impl Into<AddressBase>,
         size: u32,
         read_only: bool,
     ) -> Self {
@@ -3901,7 +3898,7 @@ impl Memory {
 
     pub(in crate::kernel) fn with_read_only_block(
         mut self,
-        block: impl Into<PointerBlock>,
+        block: impl Into<AddressBase>,
         size: u32,
     ) -> Self {
         let block = block.into();
@@ -3918,7 +3915,7 @@ impl Memory {
     /// symbolic load identity independent of the caller's memory state.
     pub(in crate::kernel) fn with_block_without_derivation(
         mut self,
-        block: impl Into<PointerBlock>,
+        block: impl Into<AddressBase>,
         size: u32,
     ) -> Self {
         let diagnostic_base = self.clone();
@@ -3928,9 +3925,9 @@ impl Memory {
             "declare synthetic block",
             vec![diagnostic_base],
             vec![
-                ProgramValue::pointer(Pointer {
-                    block: block.clone(),
-                    offset: PointerOffsetTerm::Constant(0),
+                ProgramValue::pointer(Address {
+                    base: block.clone(),
+                    offset: AddressOffset::Constant(0),
                 }),
                 ProgramValue::Int32(size.into()),
             ],
@@ -3942,7 +3939,7 @@ impl Memory {
     /// or before a declaration is re-entered. The tombstone is semantic: it
     /// makes aliases to the old object invalid instead of merely making an
     /// eventual load unresolved because the block disappeared.
-    pub(crate) fn without_local_block(&self, block: &PointerBlock) -> Self {
+    pub(crate) fn without_local_block(&self, block: &AddressBase) -> Self {
         if !self.blocks.contains_key(block) && self.forgotten.ended_local_blocks.contains(block) {
             return self.clone();
         }
@@ -3985,7 +3982,7 @@ impl Memory {
 
     pub(in crate::kernel) fn free_heap_block(
         self,
-        pointer: &Pointer,
+        pointer: &Address,
         assumptions: &PureFactContext,
     ) -> Result<Self, InvalidFree> {
         self.free_heap_block_with_owned_frame(pointer, assumptions, &ResourceContext::new())
@@ -3996,7 +3993,7 @@ impl Memory {
     /// its owners coexist with the consumed bytes and survive their retirement.
     pub(in crate::kernel) fn free_heap_block_with_owned_frame(
         self,
-        pointer: &Pointer,
+        pointer: &Address,
         assumptions: &PureFactContext,
         kept_owners: &ResourceContext,
     ) -> Result<Self, InvalidFree> {
@@ -4009,20 +4006,20 @@ impl Memory {
     /// names their two reads and publishes their equalities beside the free.
     pub(in crate::kernel) fn free_heap_block_and_owned_pointer_frames(
         mut self,
-        pointer: &Pointer,
+        pointer: &Address,
         assumptions: &PureFactContext,
         kept_owners: &ResourceContext,
-    ) -> Result<(Self, Vec<(Pointer, ProgramType)>), InvalidFree> {
+    ) -> Result<(Self, Vec<(Address, ProgramType)>), InvalidFree> {
         // An aliased spelling of this allocation (a contract-returned pointer
         // proven equal to it, e.g. `ensures result == p`) is one address too.
         // Retiring through one identity has to retire it through both, else a
         // load through the other could read a stale cached cell or a stale
         // zeroed/uninitialized status after the free. Blocks proven distinct
         // from this allocation's own block keep everything.
-        let mut aliased_blocks = BTreeSet::<PointerBlock>::new();
+        let mut aliased_blocks = BTreeSet::<AddressBase>::new();
         for alias in assumptions.exact_pointer_aliases(pointer) {
-            if alias.block != pointer.block && !alias.block.proven_distinct(&pointer.block) {
-                aliased_blocks.insert(alias.block.clone());
+            if alias.base != pointer.base && !alias.base.proven_distinct(&pointer.base) {
+                aliased_blocks.insert(alias.base.clone());
             }
         }
         if self.heap.deallocated_allocations.contains_key(pointer) {
@@ -4032,7 +4029,7 @@ impl Memory {
         // proven distinct from the freed pointer's: `heap_allocation_may_
         // contain_pointer` answers `false` for every other block, and the
         // aliased spellings above are not proven distinct by construction.
-        let candidates = AliasCandidates::of_block(&pointer.block);
+        let candidates = AliasCandidates::of_block(&pointer.base);
         if !self.heap.live_allocations.contains_key(pointer) {
             return Err(
                 if candidates.any_entry(&self.heap.live_allocations, |base, _| {
@@ -4052,8 +4049,8 @@ impl Memory {
             .live_allocations
             .remove(pointer)
             .expect("the live allocation was found above");
-        if pointer.block != PointerBlock::ExternalArgument {
-            std::sync::Arc::make_mut(&mut self.blocks).remove(&pointer.block);
+        if pointer.base != AddressBase::ExternalArgument {
+            std::sync::Arc::make_mut(&mut self.blocks).remove(&pointer.base);
         }
         for aliased in &aliased_blocks {
             std::sync::Arc::make_mut(&mut self.blocks).remove(aliased);
@@ -4065,13 +4062,13 @@ impl Memory {
         // die with it: keeping them would let loads through that spelling see
         // uninitialized or zeroed-after-free knowledge nobody retired.
         let mut retired = aliased_blocks.clone();
-        retired.insert(pointer.block.clone());
-        let retired_key = |base: &Pointer| {
-            retired.contains(&base.block) && base.offset == pointer.offset
+        retired.insert(pointer.base.clone());
+        let retired_key = |base: &Address| {
+            retired.contains(&base.base) && base.offset == pointer.offset
                 || heap_allocation_may_contain_pointer(base, pointer, assumptions)
         };
         let heap = std::sync::Arc::make_mut(&mut self.heap);
-        let freed_within = |base: &Pointer| retired_key(base);
+        let freed_within = |base: &Address| retired_key(base);
         candidates.retain_map(&mut heap.live_allocations, |base, _| !freed_within(base));
         candidates.retain_set(&mut heap.uninitialized_allocations, |base| {
             !freed_within(base)
@@ -4093,7 +4090,7 @@ impl Memory {
         self.forget_cached_values(
             ForgetScope::candidates(&candidates),
             |cell, value| {
-                if aliased_blocks.contains(&cell.block) || freed_within(cell) {
+                if aliased_blocks.contains(&cell.base) || freed_within(cell) {
                     CachedValueFate::Retired
                 } else if pointer.blocks_proven_distinct(cell) {
                     CachedValueFate::Kept
@@ -4134,36 +4131,36 @@ impl Memory {
 
     pub(in crate::kernel) fn live_heap_block_size(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
     ) -> Option<&AllocationSize> {
         self.heap.live_allocations.get(pointer)
     }
 
     pub(crate) fn is_live_heap_address(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         assumptions: &PureFactContext,
     ) -> bool {
         // An allocation based in a block proven distinct from the pointer's
         // never contains it, so only the candidate entries are asked.
         self.heap.live_allocations.contains_key(pointer)
-            || AliasCandidates::of_block(&pointer.block)
+            || AliasCandidates::of_block(&pointer.base)
                 .any_entry(&self.heap.live_allocations, |base, _| {
                     heap_allocation_may_contain_pointer(base, pointer, assumptions)
                 })
     }
 
-    pub(in crate::kernel) fn heap_live_allocation_bases(&self) -> impl Iterator<Item = &Pointer> {
+    pub(in crate::kernel) fn heap_live_allocation_bases(&self) -> impl Iterator<Item = &Address> {
         self.heap.live_allocations.keys()
     }
 
     pub(in crate::kernel) fn is_uninitialized_heap_address(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         byte_width: u32,
         assumptions: &PureFactContext,
     ) -> bool {
-        let candidates = AliasCandidates::of_block(&pointer.block);
+        let candidates = AliasCandidates::of_block(&pointer.base);
         candidates.any_element(&self.heap.uninitialized_allocations, |base| {
             heap_allocation_may_contain_pointer(base, pointer, assumptions)
         }) || candidates.any_entry(&self.heap.zeroed_prefix_allocations, |base, prefix| {
@@ -4196,7 +4193,7 @@ impl Memory {
         if mutable_ranges.is_empty() {
             return;
         }
-        let written = |base: &Pointer| {
+        let written = |base: &Address| {
             mutable_ranges
                 .iter()
                 .any(|range| heap_allocation_may_contain_pointer(base, range.base(), assumptions))
@@ -4204,7 +4201,7 @@ impl Memory {
         // An allocation based in a block proven distinct from every range
         // base contains none of them.
         let candidates =
-            AliasCandidates::of_blocks(mutable_ranges.iter().map(|range| &range.base().block));
+            AliasCandidates::of_blocks(mutable_ranges.iter().map(|range| &range.base().base));
         if !candidates.any_element(&self.heap.zeroed_allocations, |base| written(base))
             && !candidates.any_entry(&self.heap.zeroed_prefix_allocations, |base, _| {
                 written(base)
@@ -4235,7 +4232,7 @@ impl Memory {
     /// split off the cells it can relate to the load.
     pub(in crate::kernel) fn stored_bytes_overlap(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         byte_width: u32,
     ) -> bool {
         /// The widest cell a store records, in bytes (`Int128`).
@@ -4248,9 +4245,9 @@ impl Memory {
         let mut visited = 0usize;
         let found = match stem {
             None => {
-                let at = |offset: i64| Pointer {
-                    block: pointer.block.clone(),
-                    offset: PointerOffsetTerm::Constant(offset),
+                let at = |offset: i64| Address {
+                    base: pointer.base.clone(),
+                    offset: AddressOffset::Constant(offset),
                 };
                 let low = start.saturating_sub(WIDEST_CELL_BYTES - 1);
                 let cell_overlaps =
@@ -4269,7 +4266,7 @@ impl Memory {
                             })
                         });
                 cell_overlaps
-                    || self.cells.runs_in_block(&pointer.block).any(|run| {
+                    || self.cells.runs_in_block(&pointer.base).any(|run| {
                         visited += 1;
                         match run.base().offset.as_const() {
                             Some(run_start) => {
@@ -4286,7 +4283,7 @@ impl Memory {
                     })
             }
             Some(_) => {
-                let candidates = AliasCandidates::of_block(&pointer.block);
+                let candidates = AliasCandidates::of_block(&pointer.base);
                 visited += 1;
                 candidates.entries(self.cells.concrete()).next().is_some()
                     || self.cells.candidate_runs(&candidates).next().is_some()
@@ -4298,7 +4295,7 @@ impl Memory {
 
     pub(in crate::kernel) fn is_zeroed_heap_address(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         byte_width: u32,
         assumptions: &PureFactContext,
     ) -> bool {
@@ -4308,7 +4305,7 @@ impl Memory {
         if self.stored_bytes_overlap(pointer, byte_width) {
             return false;
         }
-        let candidates = AliasCandidates::of_block(&pointer.block);
+        let candidates = AliasCandidates::of_block(&pointer.base);
         candidates.any_element(&self.heap.zeroed_allocations, |base| {
             heap_allocation_may_contain_pointer(base, pointer, assumptions)
         }) || candidates.any_entry(&self.heap.zeroed_prefix_allocations, |base, prefix| {
@@ -4328,10 +4325,10 @@ impl Memory {
 
     pub(in crate::kernel) fn is_deallocated_heap_address(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         assumptions: &PureFactContext,
     ) -> bool {
-        AliasCandidates::of_block(&pointer.block)
+        AliasCandidates::of_block(&pointer.base)
             .any_entry(&self.heap.deallocated_allocations, |base, _| {
                 heap_allocation_may_contain_pointer(base, pointer, assumptions)
             })
@@ -4353,13 +4350,13 @@ impl Memory {
     /// symbolic block that is not itself recorded as freed answers `None`.
     pub(in crate::kernel) fn deallocated_heap_allocation_holding(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         assumptions: &PureFactContext,
-    ) -> Option<Pointer> {
+    ) -> Option<Address> {
         if self.heap.deallocated_allocations.is_empty() {
             return None;
         }
-        let candidates = AliasCandidates::only_block(&pointer.block);
+        let candidates = AliasCandidates::only_block(&pointer.base);
         let mut visited = 0usize;
         let found = candidates
             .entries(&self.heap.deallocated_allocations)
@@ -4378,7 +4375,7 @@ impl Memory {
     /// accompanying memory resources.
     pub(in crate::kernel) fn with_heap_allocation_claim(
         mut self,
-        base: Pointer,
+        base: Address,
         bytes: AllocationSize,
     ) -> Option<Self> {
         if bytes.bytes().as_const() == Some(0)
@@ -4413,31 +4410,31 @@ impl Memory {
     /// deallocation. Return resources install any post-call claim afterwards.
     pub(in crate::kernel) fn retire_contract_heap_allocation_claim(
         mut self,
-        base: &Pointer,
+        base: &Address,
         bytes: &MachineTerm,
         assumptions: &PureFactContext,
     ) -> Self {
         let prior = intern_derivation_base(&mut self);
-        let mut retired_blocks = BTreeSet::from([base.block.clone()]);
+        let mut retired_blocks = BTreeSet::from([base.base.clone()]);
         for alias in assumptions.exact_pointer_aliases(base) {
-            if !alias.block.proven_distinct(&base.block) {
-                retired_blocks.insert(alias.block.clone());
+            if !alias.base.proven_distinct(&base.base) {
+                retired_blocks.insert(alias.base.clone());
             }
         }
-        let retired_claim = |candidate: &Pointer| {
+        let retired_claim = |candidate: &Address| {
             heap_allocation_may_contain_pointer(candidate, base, assumptions)
                 || pointers_proven_equal_for_memory_resolution(candidate, base, assumptions)
         };
         // A symbolic alias block can hold cells at interior offsets. As at a
         // definite free, dropping that block's cached cells is conservative:
         // an undecided contract can replace the allocation entirely.
-        let retired_cell = |candidate: &Pointer| {
-            retired_blocks.contains(&candidate.block) || retired_claim(candidate)
+        let retired_cell = |candidate: &Address| {
+            retired_blocks.contains(&candidate.base) || retired_claim(candidate)
         };
 
         // Neither predicate holds in a block proven distinct from the base's,
         // and the retired alias blocks are not proven distinct from it.
-        let candidates = AliasCandidates::of_block(&base.block);
+        let candidates = AliasCandidates::of_block(&base.base);
         let heap = std::sync::Arc::make_mut(&mut self.heap);
         candidates.retain_map(&mut heap.live_allocations, |candidate, _| {
             !retired_claim(candidate)
@@ -4465,7 +4462,7 @@ impl Memory {
             ask_every_slot,
         );
         for block in &retired_blocks {
-            if *block != PointerBlock::ExternalArgument {
+            if *block != AddressBase::ExternalArgument {
                 std::sync::Arc::make_mut(&mut self.blocks).remove(block);
             }
         }
@@ -4490,7 +4487,7 @@ impl Memory {
 
     pub(in crate::kernel) fn with_pending_heap_allocation(
         self,
-        base: Pointer,
+        base: Address,
         bytes: AllocationSize,
         zeroed: bool,
     ) -> Self {
@@ -4499,7 +4496,7 @@ impl Memory {
 
     pub(in crate::kernel) fn with_pending_typed_heap_allocation(
         mut self,
-        base: Pointer,
+        base: Address,
         bytes: AllocationSize,
         zeroed: bool,
         object_class: Option<crate::kernel::effective_type::CAccessClass>,
@@ -4533,11 +4530,11 @@ impl Memory {
 
     pub(in crate::kernel) fn with_pending_heap_reallocation(
         mut self,
-        base: Pointer,
-        old_pointer: Pointer,
+        base: Address,
+        old_pointer: Address,
         old_bytes: AllocationSize,
         zeroed_prefix: Option<MachineTerm>,
-        copied_cells: Vec<(PointerOffsetTerm, ProgramValue)>,
+        copied_cells: Vec<(AddressOffset, ProgramValue)>,
         initialized_prefix: Vec<(i64, u32)>,
     ) -> Self {
         let diagnostic_base = self.clone();
@@ -4570,7 +4567,7 @@ impl Memory {
     /// the one block.
     pub(in crate::kernel) fn initialized_runs_in_block(
         &self,
-        block: &PointerBlock,
+        block: &AddressBase,
     ) -> Vec<(i64, u32)> {
         self.heap.initialized.constant_runs_in_block(block)
     }
@@ -4587,14 +4584,12 @@ impl Memory {
     /// that the object is still live. No facts or memory history are consulted.
     pub(crate) fn fresh_allocation_identity(&self, result: &PointerValue) -> Option<PointerValue> {
         let base = result.pointer();
-        match base.block {
-            PointerBlock::Heap(_) => Some(result.clone()),
-            PointerBlock::Symbolic(variable)
-                if self.heap.pending_allocations.contains_key(base) =>
-            {
-                let resolved = Pointer {
-                    block: PointerBlock::Heap(variable.0),
-                    offset: PointerOffsetTerm::Constant(0),
+        match base.base {
+            AddressBase::Heap(_) => Some(result.clone()),
+            AddressBase::Symbolic(variable) if self.heap.pending_allocations.contains_key(base) => {
+                let resolved = Address {
+                    base: AddressBase::Heap(variable.0),
+                    offset: AddressOffset::Constant(0),
                 };
                 Some(crate::kernel::eval::rebase_resolved_allocation(
                     result, base, &resolved,
@@ -4605,17 +4600,17 @@ impl Memory {
     }
 
     pub(in crate::kernel) fn heap_identity_in_use(&self, identity: u64) -> bool {
-        self.blocks.contains_key(&PointerBlock::Heap(identity))
+        self.blocks.contains_key(&AddressBase::Heap(identity))
             || self
                 .heap
                 .deallocated_allocations
                 .keys()
-                .any(|base| base.block == PointerBlock::Heap(identity))
+                .any(|base| base.base == AddressBase::Heap(identity))
             || self
                 .heap
                 .pending_allocations
                 .keys()
-                .any(|base| base.block == PointerBlock::Symbolic(Variable(identity)))
+                .any(|base| base.base == AddressBase::Symbolic(Variable(identity)))
     }
 
     /// Whether heap identity `identity` had been handed out by this
@@ -4623,41 +4618,41 @@ impl Memory {
     /// a proof, so an identity this answers false for is allocated after it.
     /// Allocation bases sit at offset zero, so each record is one lookup.
     pub(in crate::kernel) fn heap_identity_allocated(&self, identity: u64) -> bool {
-        let base = |block| Pointer {
-            block,
-            offset: PointerOffsetTerm::Constant(0),
+        let base = |block| Address {
+            base: block,
+            offset: AddressOffset::Constant(0),
         };
-        self.blocks.contains_key(&PointerBlock::Heap(identity))
+        self.blocks.contains_key(&AddressBase::Heap(identity))
             || self
                 .heap
                 .deallocated_allocations
-                .contains_key(&base(PointerBlock::Heap(identity)))
+                .contains_key(&base(AddressBase::Heap(identity)))
             || self
                 .heap
                 .pending_allocations
-                .contains_key(&base(PointerBlock::Symbolic(Variable(identity))))
+                .contains_key(&base(AddressBase::Symbolic(Variable(identity))))
     }
 
     /// Every heap identity [`Self::heap_identity_allocated`] answers true
     /// for, ascending. Costs the heap records this state holds.
     pub(in crate::kernel) fn allocated_heap_identities(&self) -> Vec<u64> {
-        let heap_base = |identity| Pointer {
-            block: PointerBlock::Heap(identity),
-            offset: PointerOffsetTerm::Constant(i64::MIN),
+        let heap_base = |identity| Address {
+            base: AddressBase::Heap(identity),
+            offset: AddressOffset::Constant(i64::MIN),
         };
         let mut identities = self
             .blocks
-            .range(PointerBlock::Heap(0)..PointerBlock::Temporary(0))
+            .range(AddressBase::Heap(0)..AddressBase::Temporary(0))
             .filter_map(|(block, _)| match block {
-                PointerBlock::Heap(identity) => Some(*identity),
+                AddressBase::Heap(identity) => Some(*identity),
                 _ => None,
             })
             .chain(
                 self.heap
                     .deallocated_allocations
                     .range(heap_base(0)..)
-                    .map_while(|(base, _)| match base.block {
-                        PointerBlock::Heap(identity) => Some(identity),
+                    .map_while(|(base, _)| match base.base {
+                        AddressBase::Heap(identity) => Some(identity),
                         _ => None,
                     }),
             )
@@ -4665,8 +4660,8 @@ impl Memory {
                 self.heap
                     .pending_allocations
                     .keys()
-                    .filter_map(|base| match base.block {
-                        PointerBlock::Symbolic(variable) => Some(variable.0),
+                    .filter_map(|base| match base.base {
+                        AddressBase::Symbolic(variable) => Some(variable.0),
                         _ => None,
                     }),
             )
@@ -4678,9 +4673,9 @@ impl Memory {
 
     pub(in crate::kernel) fn resolve_pending_heap_allocation(
         mut self,
-        base: &Pointer,
+        base: &Address,
         succeeds: bool,
-    ) -> Option<(Self, AllocationSize, Pointer)> {
+    ) -> Option<(Self, AllocationSize, Address)> {
         let prior = Some(intern_derivation_base(&mut self));
         let bytes = std::sync::Arc::make_mut(&mut self.heap)
             .pending_allocations
@@ -4689,15 +4684,15 @@ impl Memory {
             .zeroed_pending_allocations
             .remove(base);
         let resolved_base = if succeeds {
-            let PointerBlock::Symbolic(variable) = base.block else {
+            let AddressBase::Symbolic(variable) = base.base else {
                 return None;
             };
-            Pointer {
-                block: PointerBlock::Heap(variable.0),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: AddressBase::Heap(variable.0),
+                offset: AddressOffset::Constant(0),
             }
         } else {
-            Pointer::null()
+            Address::null()
         };
         let object_class = std::sync::Arc::make_mut(&mut self.heap)
             .pending_object_classes
@@ -4705,7 +4700,7 @@ impl Memory {
         if succeeds {
             let mut block = MemoryBlock::with_symbolic_size(bytes.clone());
             block.declared_class = object_class;
-            std::sync::Arc::make_mut(&mut self.blocks).insert(resolved_base.block.clone(), block);
+            std::sync::Arc::make_mut(&mut self.blocks).insert(resolved_base.base.clone(), block);
             std::sync::Arc::make_mut(&mut self.heap)
                 .live_allocations
                 .insert(resolved_base.clone(), bytes.clone());
@@ -4723,7 +4718,7 @@ impl Memory {
                     &mut self,
                     MemoryDerivation::HeapAllocated {
                         base: prior,
-                        block: resolved_base.block.clone(),
+                        block: resolved_base.base.clone(),
                         bytes: bytes.bytes().clone(),
                     },
                 );
@@ -4739,10 +4734,10 @@ impl Memory {
 
     pub(in crate::kernel) fn resolve_pending_heap_reallocation(
         mut self,
-        base: &Pointer,
+        base: &Address,
         succeeds: bool,
         assumptions: &PureFactContext,
-    ) -> Option<(Self, AllocationSize, Pointer, PendingReallocation)> {
+    ) -> Option<(Self, AllocationSize, Address, PendingReallocation)> {
         let diagnostic_base = self.clone();
         let pending = std::sync::Arc::make_mut(&mut self.heap)
             .pending_reallocations
@@ -4786,8 +4781,8 @@ impl Memory {
             );
             for (offset, value) in &pending.copied_cells {
                 memory = memory.store(
-                    Pointer {
-                        block: resolved_base.block.clone(),
+                    Address {
+                        base: resolved_base.base.clone(),
                         offset: offset.clone(),
                     },
                     value.clone(),
@@ -4797,9 +4792,9 @@ impl Memory {
             // block, where no cached cell carried their value across.
             for (start, length) in &pending.initialized_prefix {
                 memory = memory.with_initialized_object(
-                    &Pointer {
-                        block: resolved_base.block.clone(),
-                        offset: PointerOffsetTerm::Constant(*start),
+                    &Address {
+                        base: resolved_base.base.clone(),
+                        offset: AddressOffset::Constant(*start),
                     },
                     *length,
                 );
@@ -4847,7 +4842,7 @@ impl Memory {
         // a zero reading answers for exactly those.
         match mutable_ranges {
             Some(ranges) => {
-                self.forget_zero_readings_under(ranges.iter().map(|range| &range.base().block))
+                self.forget_zero_readings_under(ranges.iter().map(|range| &range.base().base))
             }
             None => self.forget_every_zero_reading(),
         }
@@ -5102,13 +5097,13 @@ impl Memory {
             let mut visited = 0usize;
             for (pointer, value) in local_block_entries(memory.cells.logical()) {
                 visited += 1;
-                if !preserved_blocks.contains_block(&pointer.block) {
+                if !preserved_blocks.contains_block(&pointer.base) {
                     record.record(pointer, value.byte_width());
                 }
             }
             for ((pointer, program_type), _) in local_block_entries(&memory.union_cells) {
                 visited += 1;
-                if !preserved_blocks.contains_block(&pointer.block) {
+                if !preserved_blocks.contains_block(&pointer.base) {
                     record.record(pointer, program_type.byte_width());
                 }
             }
@@ -5248,7 +5243,7 @@ impl Memory {
                     preserved_blocks,
                     ledger,
                 ) {
-                    blocks.insert(pointer.block.clone());
+                    blocks.insert(pointer.base.clone());
                 }
             }
             for ((pointer, program_type), _) in memory.union_cells.iter() {
@@ -5259,7 +5254,7 @@ impl Memory {
                     preserved_blocks,
                     ledger,
                 ) {
-                    blocks.insert(pointer.block.clone());
+                    blocks.insert(pointer.base.clone());
                 }
             }
             crate::instrumentation::record_deterministic_work(visited);
@@ -5519,9 +5514,7 @@ impl Memory {
         let mut expected = before.clone();
         expected.record_dropped_initialized_cells(&dropped_initialized);
         expected.forget_zero_readings_under(
-            dropped_initialized
-                .iter()
-                .map(|(pointer, _)| &pointer.block),
+            dropped_initialized.iter().map(|(pointer, _)| &pointer.base),
         );
         expected.forget_zeroed_allocations_written_by(mutable_ranges, assumptions);
         if !self.heap.eq_relative_to(&expected.heap, &before.heap) {
@@ -5557,7 +5550,7 @@ impl Memory {
     /// may hold the range). Those fall back to the stores themselves.
     pub(crate) fn with_seeded_cells(
         mut self,
-        base: Pointer,
+        base: Address,
         element_width: u32,
         element_type: ProgramType,
         first: u32,
@@ -5611,7 +5604,7 @@ impl Memory {
     /// base that may lie in a live allocation.
     pub(crate) fn with_named_cell_run(
         self,
-        base: Pointer,
+        base: Address,
         element_width: u32,
         element_type: ProgramType,
         first: u32,
@@ -5621,8 +5614,8 @@ impl Memory {
         if first >= count {
             return Ok(self);
         }
-        if base.block.is_local_block()
-            || matches!(base.block, PointerBlock::Heap(_))
+        if base.base.is_local_block()
+            || matches!(base.base, AddressBase::Heap(_))
             || !self.run_can_stand_for_cells_at(&base)
         {
             return Err(self);
@@ -5653,7 +5646,7 @@ impl Memory {
     /// typed union views or a base that may lie in a live allocation.
     pub(crate) fn with_constant_run(
         self,
-        base: Pointer,
+        base: Address,
         element_type: ProgramType,
         count: u32,
         value: ProgramValue,
@@ -5661,15 +5654,15 @@ impl Memory {
         if count == 0 {
             return Ok(self);
         }
-        if base.block.is_local_block()
-            || matches!(base.block, PointerBlock::Heap(_))
+        if base.base.is_local_block()
+            || matches!(base.base, AddressBase::Heap(_))
             || value.program_type() != element_type
             || !self.run_can_stand_for_cells_at(&base)
-            || AliasCandidates::only_block(&base.block)
+            || AliasCandidates::only_block(&base.base)
                 .entries(self.cells.concrete())
                 .next()
                 .is_some()
-            || self.cells.runs_in_block(&base.block).next().is_some()
+            || self.cells.runs_in_block(&base.base).next().is_some()
         {
             return Err(self);
         }
@@ -5705,16 +5698,16 @@ impl Memory {
     /// `Err` hands the memory back unchanged for the caller's own stores.
     pub(crate) fn with_constant_runs(
         mut self,
-        base: &Pointer,
+        base: &Address,
         runs: &[ConstantRun],
     ) -> Result<Self, Self> {
-        if matches!(base.block, PointerBlock::Heap(_))
+        if matches!(base.base, AddressBase::Heap(_))
             || !self.run_can_stand_for_cells_at(base)
-            || AliasCandidates::only_block(&base.block)
+            || AliasCandidates::only_block(&base.base)
                 .entries(self.cells.concrete())
                 .next()
                 .is_some()
-            || self.cells.runs_in_block(&base.block).next().is_some()
+            || self.cells.runs_in_block(&base.base).next().is_some()
             || runs.iter().any(|run| {
                 run.stride == 0 || (run.count > 1 && run.value.byte_width() > run.stride)
             })
@@ -5750,7 +5743,7 @@ impl Memory {
     /// The caller has separately checked read/write authority and coercion.
     pub(in crate::kernel) fn initialize_scalar_array(
         self,
-        base: &Pointer,
+        base: &Address,
         element_type: ProgramType,
         count: u32,
         value: ProgramValue,
@@ -5769,7 +5762,7 @@ impl Memory {
 
     pub(in crate::kernel) fn write_scalar_array_region(
         mut self,
-        base: &Pointer,
+        base: &Address,
         element_type: ProgramType,
         count: u32,
         value: ProgramValue,
@@ -5783,10 +5776,10 @@ impl Memory {
             .ok_or(RuntimeError::TypeMismatch)?;
         let state_copy = copy
             && matches!(&value, ProgramValue::Pointer(source) if
-            !source.pointer().block.is_local_block()
-            || self.cells.runs_in_block(&source.pointer().block)
+            !source.pointer().base.is_local_block()
+            || self.cells.runs_in_block(&source.pointer().base)
                 .any(|run| !matches!(run.value_mode(), RunValueMode::Constant(_))));
-        if !base.block.is_local_block() || state_copy {
+        if !base.base.is_local_block() || state_copy {
             return self.write_scalar_array_state(
                 base,
                 element_type,
@@ -5797,13 +5790,13 @@ impl Memory {
                 assumptions,
             );
         }
-        let valid_region = |pointer: &Pointer| {
-            pointer.block.is_local_block()
+        let valid_region = |pointer: &Address| {
+            pointer.base.is_local_block()
                 && pointer.offset.as_const().is_some_and(|offset| {
                     offset >= 0
                         && offset % i64::from(element_type.byte_width()) == 0
                         && self
-                            .block_size(&pointer.block)
+                            .block_size(&pointer.base)
                             .and_then(MachineTerm::as_const)
                             .is_some_and(|size| {
                                 offset
@@ -5818,13 +5811,13 @@ impl Memory {
         ) || !valid_region(base)
             || !self.run_can_stand_for_cells_at(base)
             || (fresh
-                && (base.offset != PointerOffsetTerm::Constant(0)
-                    || self.block_size(&base.block).and_then(MachineTerm::as_const) != Some(bytes)
-                    || AliasCandidates::only_block(&base.block)
+                && (base.offset != AddressOffset::Constant(0)
+                    || self.block_size(&base.base).and_then(MachineTerm::as_const) != Some(bytes)
+                    || AliasCandidates::only_block(&base.base)
                         .entries(self.cells.concrete())
                         .next()
                         .is_some()
-                    || self.cells.runs_in_block(&base.block).next().is_some()))
+                    || self.cells.runs_in_block(&base.base).next().is_some()))
         {
             return Err(RuntimeError::FunctionContract(
                 "scalar-array write requires a valid aligned local region; fresh initialization requires complete empty storage".into(),
@@ -5844,9 +5837,9 @@ impl Memory {
                 || !self.run_can_stand_for_cells_at(pointer)
                 || (bytes != 0 && !self.has_initialized_bytes_under(pointer, bytes, assumptions))
                 || (fresh
-                    && (pointer.offset != PointerOffsetTerm::Constant(0)
+                    && (pointer.offset != AddressOffset::Constant(0)
                         || self
-                            .block_size(&pointer.block)
+                            .block_size(&pointer.base)
                             .and_then(MachineTerm::as_const)
                             != Some(bytes)))
             {
@@ -5867,7 +5860,7 @@ impl Memory {
                     "scalar-array copy requires complete represented scalar values: {reason}"
                 ))
             };
-            for run in self.cells.runs_in_block(&pointer.block) {
+            for run in self.cells.runs_in_block(&pointer.base) {
                 crate::instrumentation::record_deterministic_work(1);
                 let Some(run_start) = run.base().offset.as_const() else {
                     return Err(invalid("symbolic run address"));
@@ -5901,9 +5894,9 @@ impl Memory {
                     }
                 }
             }
-            let at = |offset| Pointer {
-                block: pointer.block.clone(),
-                offset: PointerOffsetTerm::Constant(offset),
+            let at = |offset| Address {
+                base: pointer.base.clone(),
+                offset: AddressOffset::Constant(offset),
             };
             // Reject symbolic-address caches with one indexed lookup. Concrete
             // cells are visited only inside the selected byte region, plus the
@@ -5917,7 +5910,7 @@ impl Memory {
                     std::ops::Bound::Unbounded,
                 ))
                 .next()
-                .is_some_and(|(at, _)| at.block == pointer.block)
+                .is_some_and(|(at, _)| at.base == pointer.base)
             {
                 return Err(invalid("symbolic cached address"));
             }
@@ -5974,9 +5967,9 @@ impl Memory {
         if !fresh {
             self = self.without_possible_aliasing_cells(base, bytes, assumptions);
         }
-        let target_at = |index| Pointer {
-            block: base.block.clone(),
-            offset: PointerOffsetTerm::Constant(
+        let target_at = |index| Address {
+            base: base.base.clone(),
+            offset: AddressOffset::Constant(
                 base.offset.as_const().unwrap()
                     + i64::from(index) * i64::from(element_type.byte_width()),
             ),
@@ -6013,7 +6006,7 @@ impl Memory {
     // bytes remain symbolic. Known automatic storage must be initialized.
     pub(in crate::kernel) fn write_scalar_array_state(
         mut self,
-        base: &Pointer,
+        base: &Address,
         element: ProgramType,
         count: u32,
         value: ProgramValue,
@@ -6039,37 +6032,35 @@ impl Memory {
             }
             return Ok(self);
         }
-        let valid = |pointer: &Pointer| {
+        let valid = |pointer: &Address| {
             let (stem, constant) = offset_stem_and_constant(&pointer.offset);
             let width = i64::from(element.byte_width());
             let aligned = constant % width == 0
                 && match stem {
                     None => true,
-                    Some(PointerOffsetTerm::Int32Scaled { byte_width, .. }) => {
-                        byte_width % width == 0
-                    }
+                    Some(AddressOffset::Int32Scaled { byte_width, .. }) => byte_width % width == 0,
                     _ => false,
                 };
-            pointer != &Pointer::null()
+            pointer != &Address::null()
                 && constant.checked_add(i64::from(bytes)).is_some()
                 && aligned
                 && self.run_can_stand_for_cells_at(pointer)
-                && if self.has_block(&pointer.block) {
+                && if self.has_block(&pointer.base) {
                     self.access_in_bounds(pointer, bytes)
                 } else {
                     matches!(
-                        pointer.block,
-                        PointerBlock::ExternalArgument | PointerBlock::ExternalObject(_)
+                        pointer.base,
+                        AddressBase::ExternalArgument | AddressBase::ExternalObject(_)
                     )
                 }
         };
         if !valid(base)
             || (fresh
-                && (!base.block.is_local_block()
-                    || base.offset != PointerOffsetTerm::Constant(0)
-                    || self.block_size(&base.block).and_then(MachineTerm::as_const) != Some(bytes)
-                    || self.cells.runs_in_block(&base.block).next().is_some()
-                    || AliasCandidates::only_block(&base.block)
+                && (!base.base.is_local_block()
+                    || base.offset != AddressOffset::Constant(0)
+                    || self.block_size(&base.base).and_then(MachineTerm::as_const) != Some(bytes)
+                    || self.cells.runs_in_block(&base.base).next().is_some()
+                    || AliasCandidates::only_block(&base.base)
                         .entries(self.cells.concrete())
                         .next()
                         .is_some()))
@@ -6085,7 +6076,7 @@ impl Memory {
             };
             let pointer = pointer.pointer();
             if !valid(pointer)
-                || (pointer.block.is_local_block()
+                || (pointer.base.is_local_block()
                     && !self.has_initialized_bytes_under(pointer, bytes, assumptions))
             {
                 return Err(RuntimeError::FunctionContract(
@@ -6095,7 +6086,7 @@ impl Memory {
             let (stem, start) = offset_stem_and_constant(&pointer.offset);
             let width = i64::from(element.byte_width());
             let mut represented = IndexIntervals::default();
-            for run in self.cells.runs_in_block(&pointer.block) {
+            for run in self.cells.runs_in_block(&pointer.base) {
                 crate::instrumentation::record_deterministic_work(1);
                 let (run_stem, run_start) = offset_stem_and_constant(&run.base().offset);
                 if run_stem != stem {
@@ -6224,17 +6215,17 @@ impl Memory {
     /// Whether a run at `base` stands for the cells it seeds with nothing
     /// else to do: no typed union view to displace, and no live allocation
     /// the base may lie in to mark initialized.
-    fn run_can_stand_for_cells_at(&self, base: &Pointer) -> bool {
+    fn run_can_stand_for_cells_at(&self, base: &Address) -> bool {
         self.heap.uninitialized_objects.is_empty()
             && self.union_cells.is_empty()
-            && !AliasCandidates::of_block(&base.block)
+            && !AliasCandidates::of_block(&base.base)
                 .any_entry(&self.heap.live_allocations, |_, _| true)
     }
 
     /// The run of [`Self::with_seeded_cells`], its preconditions checked.
     fn with_run_of_cells(
         mut self,
-        base: Pointer,
+        base: Address,
         element_width: u32,
         element_type: ProgramType,
         first: u32,
@@ -6256,7 +6247,7 @@ impl Memory {
         // An element that already holds a cell keeps it: seeding skips it,
         // so it is a hole of the new run from the start. Only the cells of
         // the run's own block can be one of its slots.
-        let own = AliasCandidates::only_block(&base.block);
+        let own = AliasCandidates::only_block(&base.base);
         for (pointer, _) in own.entries(self.cells.concrete()) {
             if let Some(index) = probe.slot_index(pointer) {
                 holes.insert(index);
@@ -6298,7 +6289,7 @@ impl Memory {
         self
     }
 
-    pub fn store(self, pointer: Pointer, value: ProgramValue) -> Self {
+    pub fn store(self, pointer: Address, value: ProgramValue) -> Self {
         self.store_with_context(pointer, value, &PureFactContext::new())
     }
 
@@ -6308,7 +6299,7 @@ impl Memory {
     #[cfg(test)]
     pub(crate) fn materialize_symbolic_cell(
         self,
-        pointer: Pointer,
+        pointer: Address,
         program_type: ProgramType,
     ) -> Self {
         let value =
@@ -6325,7 +6316,7 @@ impl Memory {
     /// that identity without accepting an arbitrary cached value.
     pub(crate) fn materialize_cell_from_source(
         self,
-        pointer: Pointer,
+        pointer: Address,
         program_type: ProgramType,
         source: SharedMemory,
     ) -> Self {
@@ -6344,7 +6335,7 @@ impl Memory {
     /// Kernel producers supply the value they observed or proved at this point.
     pub(in crate::kernel) fn materialize_named_cell(
         mut self,
-        pointer: Pointer,
+        pointer: Address,
         value: ProgramValue,
     ) -> Self {
         if self.cells.contains_key(&pointer) {
@@ -6357,16 +6348,16 @@ impl Memory {
         }
         // A logical name does not initialize an automatic object either.
         // A real local store has already materialized its cell above.
-        if pointer.block.is_local_block() && self.has_block(&pointer.block) {
+        if pointer.base.is_local_block() && self.has_block(&pointer.base) {
             return self;
         }
         // A named load must not turn fresh malloc storage into a value.  The
         // exact typed-cell mark is the authority that a prior C store
         // initialized this address; the lookup is local to its heap block.
-        if matches!(pointer.block, PointerBlock::Heap(_)) {
-            let base = Pointer {
-                block: pointer.block.clone(),
-                offset: PointerOffsetTerm::Constant(0),
+        if matches!(pointer.base, AddressBase::Heap(_)) {
+            let base = Address {
+                base: pointer.base.clone(),
+                offset: AddressOffset::Constant(0),
             };
             if (self.heap.uninitialized_allocations.contains(&base)
                 || self.heap.zeroed_allocations.contains(&base)
@@ -6387,7 +6378,7 @@ impl Memory {
     /// edge only with distinctness evidence checked in the querying context.
     pub fn store_with_context(
         self,
-        pointer: Pointer,
+        pointer: Address,
         value: ProgramValue,
         context: &PureFactContext,
     ) -> Self {
@@ -6402,7 +6393,7 @@ impl Memory {
     #[cfg(test)]
     pub(in crate::kernel) fn store_classed_with_context(
         self,
-        pointer: Pointer,
+        pointer: Address,
         value: ProgramValue,
         context: &PureFactContext,
         class: Option<crate::kernel::effective_type::CAccessClass>,
@@ -6413,20 +6404,20 @@ impl Memory {
     /// Apply a program store and its cache invalidation as one transition.
     pub(in crate::kernel) fn store_invalidating_with_context(
         self,
-        pointer: Pointer,
+        pointer: Address,
         value: ProgramValue,
         context: &PureFactContext,
     ) -> Self {
         self.store_with_effective_type(pointer, value.into(), context, None, true)
     }
 
-    pub(in crate::kernel) fn store_retained(self, pointer: Pointer, value: ExecutionValue) -> Self {
+    pub(in crate::kernel) fn store_retained(self, pointer: Address, value: ExecutionValue) -> Self {
         self.store_with_effective_type(pointer, value.into(), &PureFactContext::new(), None, false)
     }
 
     pub(in crate::kernel) fn store_retained_with_context(
         self,
-        pointer: Pointer,
+        pointer: Address,
         value: ExecutionValue,
         context: &PureFactContext,
     ) -> Self {
@@ -6435,7 +6426,7 @@ impl Memory {
 
     pub(in crate::kernel) fn store_retained_classed_with_context(
         self,
-        pointer: Pointer,
+        pointer: Address,
         value: ExecutionValue,
         context: &PureFactContext,
         class: Option<crate::kernel::effective_type::CAccessClass>,
@@ -6445,7 +6436,7 @@ impl Memory {
 
     fn store_with_effective_type(
         mut self,
-        pointer: Pointer,
+        pointer: Address,
         value: StoredMemoryValue,
         context: &PureFactContext,
         effective_type: Option<Option<crate::kernel::effective_type::CAccessClass>>,
@@ -6478,7 +6469,7 @@ impl Memory {
                 .record(&pointer, value.byte_width());
         }
         if let Some(class) = effective_type
-            && matches!(pointer.block, PointerBlock::Heap(_))
+            && matches!(pointer.base, AddressBase::Heap(_))
         {
             let mut record = self.heap.effective_types.clone();
             if record.record(&pointer, value.byte_width(), class, value.native()) {
@@ -6501,7 +6492,7 @@ impl Memory {
         self
     }
 
-    pub fn load(&self, pointer: &Pointer) -> ExpressionOutcome {
+    pub fn load(&self, pointer: &Address) -> ExpressionOutcome {
         match self.cells.get(pointer) {
             Some(value) => ExpressionOutcome::Value(value),
             None => ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
@@ -6512,7 +6503,7 @@ impl Memory {
     /// differ, ascending. A pointer differs exactly when some entry keyed by
     /// it is in one map's diff, so this walks only the paths the states
     /// do not share.
-    pub fn differing_cell_pointers(&self, other: &Self) -> Vec<Pointer> {
+    pub fn differing_cell_pointers(&self, other: &Self) -> Vec<Address> {
         let mut pointers = self
             .cells
             .differing_pointers(&other.cells)
@@ -6553,9 +6544,9 @@ impl Memory {
     pub(in crate::kernel) fn differing_cell_pointers_meeting_load(
         &self,
         other: &Self,
-        pointer: &Pointer,
+        pointer: &Address,
         bytes: u32,
-    ) -> Vec<Pointer> {
+    ) -> Vec<Address> {
         let differing = self.cells.differing_cells(&other.cells);
         let mut pointers = differing.pointers.into_iter().collect::<BTreeSet<_>>();
         for (run, slots) in differing.run_slots {
@@ -6594,12 +6585,12 @@ impl Memory {
 
     pub(in crate::kernel) fn known_retained_value(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
     ) -> Option<ExecutionValue> {
         self.cells.get_retained(pointer)
     }
 
-    pub(in crate::kernel) fn known_value(&self, pointer: &Pointer) -> Option<ProgramValue> {
+    pub(in crate::kernel) fn known_value(&self, pointer: &Address) -> Option<ProgramValue> {
         self.cells.get(pointer)
     }
 
@@ -6631,7 +6622,7 @@ impl Memory {
             .collect()
     }
 
-    pub(in crate::kernel) fn has_known_cell_at(&self, pointer: &Pointer) -> bool {
+    pub(in crate::kernel) fn has_known_cell_at(&self, pointer: &Address) -> bool {
         self.cells.contains_key(pointer) || self.has_union_overlay_at(pointer)
     }
 
@@ -6639,16 +6630,16 @@ impl Memory {
     /// since `(Pointer, ProgramType)` keys order by pointer first.
     fn union_views_at<'a>(
         &'a self,
-        pointer: &'a Pointer,
-    ) -> impl Iterator<Item = (&'a (Pointer, ProgramType), &'a ProgramValue)> + 'a {
+        pointer: &'a Address,
+    ) -> impl Iterator<Item = (&'a (Address, ProgramType), &'a ProgramValue)> + 'a {
         self.union_cells
-            .range::<_, (Pointer, ProgramType)>((pointer.clone(), ProgramType::Void)..)
+            .range::<_, (Address, ProgramType)>((pointer.clone(), ProgramType::Void)..)
             .take_while(move |((cell_pointer, _), _)| cell_pointer == pointer)
             .map(|(key, value)| (key, value.native()))
     }
 
     /// Drops every typed union view at exactly `pointer`.
-    fn remove_union_views_at(&mut self, pointer: &Pointer) {
+    fn remove_union_views_at(&mut self, pointer: &Address) {
         let views = self
             .union_views_at(pointer)
             .map(|(key, _)| key.clone())
@@ -6668,7 +6659,7 @@ impl Memory {
     /// block holding it; a symbolic offset by the same spelling.
     pub(in crate::kernel) fn has_initialized_bytes_at(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         byte_width: u32,
     ) -> bool {
         self.heap.initialized.covers(pointer, byte_width)
@@ -6681,10 +6672,10 @@ impl Memory {
     /// initialized. Walks the bytes left to right, one predecessor lookup in
     /// each map per run or cell crossed: the work is the entries inside the
     /// interval, not the block or the memory.
-    fn written_interval(&self, block: &PointerBlock, start: i64, end: i64) -> bool {
-        let at = |offset: i64| Pointer {
-            block: block.clone(),
-            offset: PointerOffsetTerm::Constant(offset),
+    fn written_interval(&self, block: &AddressBase, start: i64, end: i64) -> bool {
+        let at = |offset: i64| Address {
+            base: block.clone(),
+            offset: AddressOffset::Constant(offset),
         };
         let concrete = self.cells.concrete();
         let mut cursor = start;
@@ -6718,7 +6709,7 @@ impl Memory {
     /// and a constant, as an element access is.
     pub(in crate::kernel) fn has_initialized_bytes_under(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         byte_width: u32,
         assumptions: &PureFactContext,
     ) -> bool {
@@ -6740,7 +6731,7 @@ impl Memory {
 
     fn has_initialized_bytes_at_spelling_under(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         byte_width: u32,
         assumptions: &PureFactContext,
     ) -> bool {
@@ -6748,12 +6739,12 @@ impl Memory {
             return true;
         }
         if let Some(offset) = pointer.offset.as_const() {
-            return self.written_interval(&pointer.block, offset, offset + i64::from(byte_width));
+            return self.written_interval(&pointer.base, offset, offset + i64::from(byte_width));
         }
         let (atoms, shift) =
             crate::kernel::reasoning::memory_resolution::offset_atoms_and_constant(&pointer.offset);
         let [
-            PointerOffsetTerm::Int32Scaled {
+            AddressOffset::Int32Scaled {
                 value,
                 byte_width: scale,
             },
@@ -6780,7 +6771,7 @@ impl Memory {
         ) else {
             return false;
         };
-        start < end && self.written_interval(&pointer.block, start, end)
+        start < end && self.written_interval(&pointer.base, start, end)
     }
 
     /// Whether any typed union overlay is recorded at exactly this pointer.
@@ -6792,13 +6783,13 @@ impl Memory {
     /// this answers `false` wherever [`Self::known_value`] answers `Some`; it is
     /// asked anyway where the consequence of the two ever coexisting would be
     /// a wrong value rather than a lost one.
-    pub(in crate::kernel) fn has_union_overlay_at(&self, pointer: &Pointer) -> bool {
+    pub(in crate::kernel) fn has_union_overlay_at(&self, pointer: &Address) -> bool {
         self.union_views_at(pointer).next().is_some()
     }
 
     pub(in crate::kernel) fn known_union_value(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         value_type: ProgramType,
     ) -> Option<ProgramValue> {
         self.known_retained_union_value(pointer, value_type)
@@ -6807,7 +6798,7 @@ impl Memory {
 
     pub(in crate::kernel) fn known_retained_union_value(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         value_type: ProgramType,
     ) -> Option<ExecutionValue> {
         self.union_cells
@@ -6817,7 +6808,7 @@ impl Memory {
 
     /// The pointer a typed union view records at exactly `pointer`, when one
     /// does: one key range, as [`Self::union_views_at`] reads it.
-    pub(in crate::kernel) fn known_union_pointer(&self, pointer: &Pointer) -> Option<ProgramValue> {
+    pub(in crate::kernel) fn known_union_pointer(&self, pointer: &Address) -> Option<ProgramValue> {
         self.union_views_at(pointer)
             .find(|(_, value)| matches!(value, ProgramValue::Pointer(_)))
             .map(|(_, value)| value.clone())
@@ -6826,7 +6817,7 @@ impl Memory {
     #[cfg(test)]
     pub(in crate::kernel) fn store_union(
         self,
-        pointer: Pointer,
+        pointer: Address,
         value_type: ProgramType,
         value: ProgramValue,
     ) -> Self {
@@ -6846,9 +6837,9 @@ impl Memory {
     /// image rather than from sequential writes.
     pub(in crate::kernel) fn store_union_views(
         self,
-        written_pointer: Pointer,
+        written_pointer: Address,
         written_bytes: u32,
-        views: Vec<(Pointer, ProgramType, ProgramValue)>,
+        views: Vec<(Address, ProgramType, ProgramValue)>,
     ) -> Self {
         self.store_retained_union_views(
             written_pointer,
@@ -6862,9 +6853,9 @@ impl Memory {
 
     pub(in crate::kernel) fn store_retained_union_views(
         self,
-        written_pointer: Pointer,
+        written_pointer: Address,
         written_bytes: u32,
-        views: Vec<(Pointer, ProgramType, ExecutionValue)>,
+        views: Vec<(Address, ProgramType, ExecutionValue)>,
     ) -> Self {
         let diagnostic_base = self.clone();
         let mut memory = self.without_possible_aliasing_cells(
@@ -6908,7 +6899,7 @@ impl Memory {
     /// which no execution of the copy produces.
     pub(in crate::kernel) fn without_field_cells(
         &self,
-        base: &Pointer,
+        base: &Address,
         offset_bytes: u32,
         program_type: ProgramType,
     ) -> Self {
@@ -6923,15 +6914,15 @@ impl Memory {
         let field_end = field_start + i64::from(program_type.byte_width());
         let mut memory = self.clone();
         let source = intern_memory_ref(&memory);
-        let overlaps = |pointer: &Pointer| {
-            pointer.block == base.block
+        let overlaps = |pointer: &Address| {
+            pointer.base == base.base
                 && pointer
                     .offset
                     .as_const()
                     .is_some_and(|offset| offset >= field_start && offset < field_end)
         };
         // `overlaps` holds only in the base's own block.
-        let own = AliasCandidates::only_block(&base.block);
+        let own = AliasCandidates::only_block(&base.base);
         memory.forget_cached_values(
             ForgetScope::candidates(&own),
             |pointer, _| {
@@ -6946,14 +6937,14 @@ impl Memory {
         // The field's bytes now hold something the copy cannot name, whether
         // or not a value was cached for them, so no zero reading answers for
         // them either.
-        memory.forget_zero_readings_under(std::iter::once(&base.block));
+        memory.forget_zero_readings_under(std::iter::once(&base.base));
         // The copy wrote the field with no value it can name, from a source
         // whose field it could not check, so its bytes are not known
         // initialized either.
         memory.forget_initialized_bytes(
-            &Pointer {
-                block: base.block.clone(),
-                offset: PointerOffsetTerm::Constant(field_start),
+            &Address {
+                base: base.base.clone(),
+                offset: AddressOffset::Constant(field_start),
             },
             program_type.byte_width(),
         );
@@ -6978,7 +6969,7 @@ impl Memory {
         memory
     }
 
-    pub(in crate::kernel) fn without_cell(&self, pointer: &Pointer) -> Self {
+    pub(in crate::kernel) fn without_cell(&self, pointer: &Address) -> Self {
         let diagnostic_base = self.clone();
         let mut memory = self.clone();
         std::sync::Arc::make_mut(&mut memory.cells).remove(pointer);
@@ -7007,11 +6998,11 @@ impl Memory {
     /// also makes external reads check it: their input observations may predate
     /// the marker, so losing a cached value must retain those initialized bytes.
     /// Heap stores already record their bytes. Costs only the dropped cells.
-    fn record_dropped_initialized_cells(&mut self, dropped: &[(Pointer, u32)]) {
+    fn record_dropped_initialized_cells(&mut self, dropped: &[(Address, u32)]) {
         let mut record = self.heap.initialized.clone();
         let mut changed = false;
         for (pointer, width) in dropped {
-            if pointer.block.is_local_block() || !self.heap.uninitialized_objects.is_empty() {
+            if pointer.base.is_local_block() || !self.heap.uninitialized_objects.is_empty() {
                 changed |= record.record(pointer, *width);
             }
         }
@@ -7058,13 +7049,13 @@ impl Memory {
     pub(super) fn forget_cached_values(
         &mut self,
         scope: ForgetScope<'_>,
-        mut fate: impl FnMut(&Pointer, CachedValue<'_>) -> CachedValueFate,
+        mut fate: impl FnMut(&Address, CachedValue<'_>) -> CachedValueFate,
         run_rule: impl FnMut(&CellRun) -> (SlotSet, crate::kernel::primitives::RuleAnswer),
     ) -> bool {
         let mut forgotten_cells = Vec::new();
         let dropped_run_slots;
         {
-            let mut keep_cell = |pointer: &Pointer, value: &ProgramValue| match fate(
+            let mut keep_cell = |pointer: &Address, value: &ProgramValue| match fate(
                 pointer,
                 CachedValue::Cell(value),
             ) {
@@ -7105,7 +7096,7 @@ impl Memory {
         }
         if !self.union_cells.is_empty() {
             let mut keep_view =
-                |(pointer, program_type): &(Pointer, ProgramType),
+                |(pointer, program_type): &(Address, ProgramType),
                  value: &crate::kernel::StoredMemoryValue| match fate(
                     pointer,
                     CachedValue::UnionView(*program_type, value.native()),
@@ -7136,7 +7127,7 @@ impl Memory {
         // A run's slots are cells too, dropped by `run_rule` as a whole run
         // without `fate` being asked; preserve their initialization evidence.
         self.record_dropped_initialized_run_slots(&dropped_run_slots);
-        self.forget_zero_readings_under(forgotten_cells.iter().map(|(pointer, _)| &pointer.block));
+        self.forget_zero_readings_under(forgotten_cells.iter().map(|(pointer, _)| &pointer.base));
         !forgotten_cells.is_empty()
     }
 
@@ -7148,7 +7139,7 @@ impl Memory {
     /// call's write set takes it ([`Self::forget_zeroed_allocations_written_by`]).
     /// Costs nothing when no allocation reads as zero, and otherwise the
     /// distinct blocks plus the readings dropped.
-    fn forget_zero_readings_under<'a>(&mut self, blocks: impl Iterator<Item = &'a PointerBlock>) {
+    fn forget_zero_readings_under<'a>(&mut self, blocks: impl Iterator<Item = &'a AddressBase>) {
         if self.heap.zeroed_allocations.len() == 0 && self.heap.zeroed_prefix_allocations.is_empty()
         {
             return;
@@ -7181,7 +7172,7 @@ impl Memory {
         let mut record = self.heap.initialized.clone();
         let mut changed = false;
         for DroppedRunSlots { run, elements } in dropped {
-            if !run.base().block.is_local_block() && self.heap.uninitialized_objects.is_empty() {
+            if !run.base().base.is_local_block() && self.heap.uninitialized_objects.is_empty() {
                 continue;
             }
             let width = run.value_width();
@@ -7197,7 +7188,7 @@ impl Memory {
                         .map(|last| last + i64::from(width)),
                 );
                 if let Some((start, end)) = span {
-                    if record.covers_interval(&first.block, start, end) {
+                    if record.covers_interval(&first.base, start, end) {
                         continue;
                     }
                     if run.element_width() == width
@@ -7224,7 +7215,7 @@ impl Memory {
     /// cells describe values; this record outlives forgetting those values.
     pub(in crate::kernel) fn with_initialized_object(
         mut self,
-        pointer: &Pointer,
+        pointer: &Address,
         bytes: u32,
     ) -> Self {
         if !self.heap.initialized.covers(pointer, bytes) {
@@ -7247,7 +7238,7 @@ impl Memory {
     /// Forgets the initialization of the `byte_width` bytes at `pointer`
     /// (see [`InitializedBytes::forget`]), leaving the heap shared when the
     /// record holds none of them.
-    fn forget_initialized_bytes(&mut self, pointer: &Pointer, byte_width: u32) {
+    fn forget_initialized_bytes(&mut self, pointer: &Address, byte_width: u32) {
         let mut record = self.heap.initialized.clone();
         if record.forget(pointer, byte_width) {
             std::sync::Arc::make_mut(&mut self.heap).initialized = record;
@@ -7297,7 +7288,7 @@ impl Memory {
     /// knowledge rather than keeping a stale value.
     pub(in crate::kernel) fn without_possible_aliasing_cells(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> Self {
@@ -7325,12 +7316,12 @@ impl Memory {
     /// completed result. Initialization records outlive discarded values.
     fn prepare_store_cache(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> Option<(Self, bool)> {
-        let normalized_pointer = Pointer {
-            block: pointer.block.clone(),
+        let normalized_pointer = Address {
+            base: pointer.base.clone(),
             offset: normalize_exact_memory_loads_in_pointer_offset(&pointer.offset, assumptions),
         };
         // Computed once for the whole scan; the cells it is compared against
@@ -7348,7 +7339,7 @@ impl Memory {
         // by each ladder below (its bytes are `Separate` and its address is
         // proven distinct on the first rung), so only the candidates are
         // asked.
-        let candidates = AliasCandidates::of_block(&normalized_pointer.block);
+        let candidates = AliasCandidates::of_block(&normalized_pointer.base);
         // Ownership first. A cell that a resource composition owns through a
         // different member than the written bytes is kept by the partition
         // law, whichever rung below would have found that out; asking it
@@ -7380,15 +7371,15 @@ impl Memory {
         // Objects a known address equality ties to the written one may share
         // the written bytes.
         let address_connected = assumptions.address_connected_objects(&normalized_pointer);
-        let cell_fate = |cell_pointer: &Pointer, cell_value: &ProgramValue| {
-            let normalized_cell_pointer = Pointer {
-                block: cell_pointer.block.clone(),
+        let cell_fate = |cell_pointer: &Address, cell_value: &ProgramValue| {
+            let normalized_cell_pointer = Address {
+                base: cell_pointer.base.clone(),
                 offset: normalize_exact_memory_loads_in_pointer_offset(
                     &cell_pointer.offset,
                     assumptions,
                 ),
             };
-            if normalized_cell_pointer.block == normalized_pointer.block
+            if normalized_cell_pointer.base == normalized_pointer.base
                 && written
                     .as_ref()
                     .is_some_and(|written| written.overwrites(&normalized_cell_pointer, cell_value))
@@ -7451,15 +7442,15 @@ impl Memory {
                 CachedValueFate::Forgotten
             }
         };
-        let view_fate = |cell_pointer: &Pointer, cell_type: ProgramType| {
-            let normalized_cell_pointer = Pointer {
-                block: cell_pointer.block.clone(),
+        let view_fate = |cell_pointer: &Address, cell_type: ProgramType| {
+            let normalized_cell_pointer = Address {
+                base: cell_pointer.base.clone(),
                 offset: normalize_exact_memory_loads_in_pointer_offset(
                     &cell_pointer.offset,
                     assumptions,
                 ),
             };
-            if normalized_cell_pointer.block == normalized_pointer.block
+            if normalized_cell_pointer.base == normalized_pointer.base
                 && written.as_ref().is_some_and(|written| {
                     written.overwrites_typed(&normalized_cell_pointer, cell_type)
                 })
@@ -7538,12 +7529,12 @@ impl Memory {
                 // taken (`never_address_taken_local_versus_pointer_value`),
                 // so a store through one asks only the cells a pointer can
                 // reach, unless a stated equality places it in such a local.
-                (matches!(normalized_pointer.block, PointerBlock::Symbolic(_))
+                (matches!(normalized_pointer.base, AddressBase::Symbolic(_))
                     && !assumptions
                         .exact_pointer_aliases(&normalized_pointer)
                         .any(|alias| {
                             crate::kernel::primitives::block_is_never_address_taken_local(
-                                &alias.block,
+                                &alias.base,
                             )
                         }))
                 .then(|| memory.cells.pointer_reachable_cells())
@@ -7582,18 +7573,18 @@ impl Memory {
     /// Value-only parameters never own storage. Give their pseudo-slots a
     /// separate namespace so a caller's same-named local cannot supply a cell
     /// or be overwritten by a parameter assignment.
-    pub(in crate::kernel) fn value_parameter_pointer(name: impl Into<BindingName>) -> Pointer {
+    pub(in crate::kernel) fn value_parameter_pointer(name: impl Into<BindingName>) -> Address {
         let name = name.into();
         let block = match name {
-            BindingName::ReferenceCarrier(referent) => PointerBlock::ReferenceCarrier {
+            BindingName::ReferenceCarrier(referent) => AddressBase::ReferenceCarrier {
                 referent,
                 instance: LocalStorageInstance::ValueParameter,
             },
-            BindingName::Local(binding) => PointerBlock::AutomaticLocal {
+            BindingName::Local(binding) => AddressBase::AutomaticLocal {
                 binding,
                 instance: LocalStorageInstance::ValueParameter,
             },
-            BindingName::Static(binding) => PointerBlock::StaticObject { binding },
+            BindingName::Static(binding) => AddressBase::StaticObject { binding },
             BindingName::Named(name) => format!("local:value-parameter:{name}").into(),
             BindingName::ContractResult
             | BindingName::ContractException
@@ -7601,50 +7592,50 @@ impl Memory {
                 unreachable!("contract outcome is not an automatic declaration")
             }
         };
-        Pointer {
-            block,
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: block,
+            offset: AddressOffset::Constant(0),
         }
     }
 
-    pub(in crate::kernel) fn local_pointer(name: impl Into<BindingName>) -> Pointer {
+    pub(in crate::kernel) fn local_pointer(name: impl Into<BindingName>) -> Address {
         let name = name.into();
         let block = match name {
-            BindingName::ReferenceCarrier(referent) => PointerBlock::ReferenceCarrier {
+            BindingName::ReferenceCarrier(referent) => AddressBase::ReferenceCarrier {
                 referent,
                 instance: LocalStorageInstance::Implicit,
             },
-            BindingName::Local(binding) => PointerBlock::AutomaticLocal {
+            BindingName::Local(binding) => AddressBase::AutomaticLocal {
                 binding,
                 instance: LocalStorageInstance::Implicit,
             },
-            BindingName::Static(binding) => PointerBlock::StaticObject { binding },
+            BindingName::Static(binding) => AddressBase::StaticObject { binding },
             BindingName::Named(name) => format!("local:{name}").into(),
             BindingName::Generated(_) => unreachable!("a logical binder has no storage"),
-            BindingName::ContractResult => PointerBlock::ContractResult,
-            BindingName::ContractException => PointerBlock::ContractException,
+            BindingName::ContractResult => AddressBase::ContractResult,
+            BindingName::ContractException => AddressBase::ContractException,
         };
-        Pointer {
-            block,
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: block,
+            offset: AddressOffset::Constant(0),
         }
     }
 
     pub(in crate::kernel) fn local_lifetime_pointer(
         lifetime: u64,
         name: impl Into<BindingName>,
-    ) -> Pointer {
+    ) -> Address {
         let name = name.into();
         let block = match name {
-            BindingName::ReferenceCarrier(referent) => PointerBlock::ReferenceCarrier {
+            BindingName::ReferenceCarrier(referent) => AddressBase::ReferenceCarrier {
                 referent,
                 instance: LocalStorageInstance::Lifetime(lifetime),
             },
-            BindingName::Local(binding) => PointerBlock::AutomaticLocal {
+            BindingName::Local(binding) => AddressBase::AutomaticLocal {
                 binding,
                 instance: LocalStorageInstance::Lifetime(lifetime),
             },
-            BindingName::Static(binding) => PointerBlock::StaticObject { binding },
+            BindingName::Static(binding) => AddressBase::StaticObject { binding },
             BindingName::Named(name) => format!("local:lifetime:{lifetime}:{name}").into(),
             BindingName::ContractResult
             | BindingName::ContractException
@@ -7652,15 +7643,15 @@ impl Memory {
                 unreachable!("contract outcome is not an automatic declaration")
             }
         };
-        Pointer {
-            block,
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: block,
+            offset: AddressOffset::Constant(0),
         }
     }
 
-    pub(crate) fn global_pointer(name: impl Into<BindingName>) -> Pointer {
+    pub(crate) fn global_pointer(name: impl Into<BindingName>) -> Address {
         let block = match name.into() {
-            BindingName::Static(binding) => PointerBlock::StaticObject { binding },
+            BindingName::Static(binding) => AddressBase::StaticObject { binding },
             BindingName::Named(name) => format!("global:{name}").into(),
             BindingName::ReferenceCarrier(_)
             | BindingName::Local(_)
@@ -7670,25 +7661,25 @@ impl Memory {
                 unreachable!("non-global binding used as a global")
             }
         };
-        Pointer {
-            block,
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: block,
+            offset: AddressOffset::Constant(0),
         }
     }
 
-    pub(crate) fn string_literal_pointer(identity: &StringLiteralId, bytes: &[u8]) -> Pointer {
-        Pointer {
-            block: PointerBlock::StringLiteral {
+    pub(crate) fn string_literal_pointer(identity: &StringLiteralId, bytes: &[u8]) -> Address {
+        Address {
+            base: AddressBase::StringLiteral {
                 identity: identity.clone(),
                 bytes: bytes.to_vec(),
             },
-            offset: PointerOffsetTerm::Constant(0),
+            offset: AddressOffset::Constant(0),
         }
     }
 
-    pub(crate) fn static_pointer(function: &str, name: impl Into<BindingName>) -> Pointer {
+    pub(crate) fn static_pointer(function: &str, name: impl Into<BindingName>) -> Address {
         let block = match name.into() {
-            BindingName::Static(binding) => PointerBlock::StaticObject { binding },
+            BindingName::Static(binding) => AddressBase::StaticObject { binding },
             BindingName::Named(name) => format!("static:{function}:{name}").into(),
             BindingName::ReferenceCarrier(_)
             | BindingName::Local(_)
@@ -7698,56 +7689,56 @@ impl Memory {
                 unreachable!("non-static binding used as a static")
             }
         };
-        Pointer {
-            block,
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: block,
+            offset: AddressOffset::Constant(0),
         }
     }
 
     /// Materialized return storage has a typed identity, never a C local name.
-    pub(in crate::kernel) fn aggregate_return_pointer(frame: u64) -> Pointer {
-        Pointer {
-            block: PointerBlock::AggregateReturn { frame },
-            offset: PointerOffsetTerm::Constant(0),
+    pub(in crate::kernel) fn aggregate_return_pointer(frame: u64) -> Address {
+        Address {
+            base: AddressBase::AggregateReturn { frame },
+            offset: AddressOffset::Constant(0),
         }
     }
 
     pub(in crate::kernel) fn frame_local_pointer(
         frame: u64,
         name: impl Into<BindingName>,
-    ) -> Pointer {
+    ) -> Address {
         match name.into() {
-            BindingName::ReferenceCarrier(referent) => Pointer {
-                block: PointerBlock::ReferenceCarrier {
+            BindingName::ReferenceCarrier(referent) => Address {
+                base: AddressBase::ReferenceCarrier {
                     referent,
                     instance: LocalStorageInstance::Frame(frame),
                 },
-                offset: PointerOffsetTerm::Constant(0),
+                offset: AddressOffset::Constant(0),
             },
-            BindingName::Local(binding) => Pointer {
-                block: PointerBlock::AutomaticLocal {
+            BindingName::Local(binding) => Address {
+                base: AddressBase::AutomaticLocal {
                     binding,
                     instance: LocalStorageInstance::Frame(frame),
                 },
-                offset: PointerOffsetTerm::Constant(0),
+                offset: AddressOffset::Constant(0),
             },
-            BindingName::Static(binding) => Pointer {
-                block: PointerBlock::StaticObject { binding },
-                offset: PointerOffsetTerm::Constant(0),
+            BindingName::Static(binding) => Address {
+                base: AddressBase::StaticObject { binding },
+                offset: AddressOffset::Constant(0),
             },
             BindingName::ContractResult
             | BindingName::ContractException
             | BindingName::Generated(_) => {
                 unreachable!("contract outcome is not a frame-local declaration")
             }
-            BindingName::Named(name) => Pointer {
-                block: format!("local:frame:{frame}:{name}").into(),
-                offset: PointerOffsetTerm::Constant(0),
+            BindingName::Named(name) => Address {
+                base: format!("local:frame:{frame}:{name}").into(),
+                offset: AddressOffset::Constant(0),
             },
         }
     }
 
-    pub(crate) fn has_block(&self, block: &PointerBlock) -> bool {
+    pub(crate) fn has_block(&self, block: &AddressBase) -> bool {
         self.blocks.contains_key(block)
     }
 
@@ -7762,7 +7753,7 @@ impl Memory {
                 .any(|block| !block.is_local_block() && !block.is_havoc_block())
     }
 
-    pub(in crate::kernel) fn is_ended_local_block(&self, block: &PointerBlock) -> bool {
+    pub(in crate::kernel) fn is_ended_local_block(&self, block: &AddressBase) -> bool {
         self.forgotten.ended_local_blocks.contains(block)
     }
 
@@ -7785,16 +7776,16 @@ impl Memory {
             && self
                 .union_cells
                 .diff(&other.union_cells)
-                .all(|change| blocks.contains_block(&change.key().0.block))
+                .all(|change| blocks.contains_block(&change.key().0.base))
     }
 
     /// The automatic objects whose lifetimes this memory records as ended.
-    pub(in crate::kernel) fn ended_local_blocks(&self) -> impl Iterator<Item = &PointerBlock> {
+    pub(in crate::kernel) fn ended_local_blocks(&self) -> impl Iterator<Item = &AddressBase> {
         self.forgotten.ended_local_blocks.iter()
     }
 
-    pub(in crate::kernel) fn is_ended_local_address(&self, pointer: &Pointer) -> bool {
-        self.forgotten.ended_local_blocks.contains(&pointer.block)
+    pub(in crate::kernel) fn is_ended_local_address(&self, pointer: &Address) -> bool {
+        self.forgotten.ended_local_blocks.contains(&pointer.base)
     }
 
     /// Whether this memory has already given this block to an automatic
@@ -7804,20 +7795,20 @@ impl Memory {
     /// Handing the same block to a second object would make the two one
     /// object at every site that reads `a.block == b.block`, so a declaration
     /// asks this before it mints.
-    pub(in crate::kernel) fn local_block_is_occupied(&self, block: &PointerBlock) -> bool {
+    pub(in crate::kernel) fn local_block_is_occupied(&self, block: &AddressBase) -> bool {
         self.blocks.contains_key(block) || self.forgotten.ended_local_blocks.contains(block)
     }
 
     /// A sufficient, search-free condition for transporting loadability of
     /// an exact range. Unlike value equality, this ignores writes, but never
     /// ignores changed block sizes or allocation retirement metadata.
-    pub(in crate::kernel) fn read_region_identity(&self, base: &Pointer) -> ReadRegionIdentity {
+    pub(in crate::kernel) fn read_region_identity(&self, base: &Address) -> ReadRegionIdentity {
         crate::instrumentation::record_deterministic_work(1);
         let stored = crate::kernel::eval::pointer_read_over_immediate_store(base);
         let base = stored.as_ref().unwrap_or(base);
         ReadRegionIdentity {
-            block_size: self.block_allocation_size(&base.block).cloned(),
-            local_lifetime_ended: self.forgotten.ended_local_blocks.contains(&base.block),
+            block_size: self.block_allocation_size(&base.base).cloned(),
+            local_lifetime_ended: self.forgotten.ended_local_blocks.contains(&base.base),
             heap: self.heap.clone(),
         }
     }
@@ -7826,25 +7817,25 @@ impl Memory {
         // Call-havoc markers are concrete blocks with this prefix. Bound the
         // B-tree query to that lexical interval so a load does not scan
         // unrelated memory blocks on the evaluator hot path.
-        let first = PointerBlock::Concrete("call-havoc:".to_string());
-        let end = PointerBlock::Concrete("call-havoc;".to_string());
+        let first = AddressBase::Concrete("call-havoc:".to_string());
+        let end = AddressBase::Concrete("call-havoc;".to_string());
         self.blocks.range(first..end).next().is_some()
     }
 
-    pub(in crate::kernel) fn is_read_only_block(&self, block: &PointerBlock) -> bool {
+    pub(in crate::kernel) fn is_read_only_block(&self, block: &AddressBase) -> bool {
         self.blocks
             .get(block)
             .is_some_and(MemoryBlock::is_read_only)
     }
 
-    pub(in crate::kernel) fn block_size(&self, block: &PointerBlock) -> Option<&MachineTerm> {
+    pub(in crate::kernel) fn block_size(&self, block: &AddressBase) -> Option<&MachineTerm> {
         self.blocks.get(block).map(MemoryBlock::size)
     }
 
     /// The block's byte count with its format; see [`MemoryBlock::allocation_size`].
     pub(in crate::kernel) fn block_allocation_size(
         &self,
-        block: &PointerBlock,
+        block: &AddressBase,
     ) -> Option<&AllocationSize> {
         self.blocks.get(block).map(MemoryBlock::allocation_size)
     }
@@ -7853,7 +7844,7 @@ impl Memory {
     /// `pointer`. Freed allocations are few, so this scans them directly.
     pub(in crate::kernel) fn freed_heap_allocation_may_contain(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         assumptions: &PureFactContext,
     ) -> bool {
         self.heap
@@ -7864,14 +7855,14 @@ impl Memory {
 
     pub(in crate::kernel) fn is_loadable_concretely(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         byte_width: u32,
     ) -> bool {
         // Read-only blocks are created only for fully materialized C string
         // literals. Their bytes are stable for the lifetime of the program,
         // so any in-bounds byte range is loadable even when it spans the
         // literal's individual uint8 cells.
-        if self.is_read_only_block(&pointer.block) {
+        if self.is_read_only_block(&pointer.base) {
             return self.access_in_bounds(pointer, byte_width);
         }
         // The width alone decides, so a run slot's value is not named: a
@@ -7884,13 +7875,13 @@ impl Memory {
         self.blocks
             .iter()
             .filter(|&(block, contents)| {
-                contents.is_read_only() && matches!(block, PointerBlock::StringLiteral { .. })
+                contents.is_read_only() && matches!(block, AddressBase::StringLiteral { .. })
             })
             .map(|(block, contents)| Proposition::MemoryLoadable {
                 memory: self.clone(),
-                base: Pointer {
-                    block: block.clone(),
-                    offset: PointerOffsetTerm::Constant(0),
+                base: Address {
+                    base: block.clone(),
+                    offset: AddressOffset::Constant(0),
                 },
                 bytes: contents.size().clone(),
                 wide: false,
@@ -7900,22 +7891,22 @@ impl Memory {
 
     pub(in crate::kernel) fn can_store_concretely(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         value: &ProgramValue,
     ) -> bool {
-        !self.is_read_only_block(&pointer.block)
+        !self.is_read_only_block(&pointer.base)
             && (self.cells.contains_key(pointer)
                 || self.access_in_bounds(pointer, value.byte_width()))
     }
 
-    pub(in crate::kernel) fn access_in_bounds(&self, pointer: &Pointer, byte_width: u32) -> bool {
+    pub(in crate::kernel) fn access_in_bounds(&self, pointer: &Address, byte_width: u32) -> bool {
         let Some(offset) = pointer.offset.as_const() else {
             return false;
         };
         let Ok(offset) = u32::try_from(offset) else {
             return false;
         };
-        let Some(block) = self.blocks.get(&pointer.block) else {
+        let Some(block) = self.blocks.get(&pointer.base) else {
             return false;
         };
         let Some(block_size) = block.size().as_const() else {
@@ -7926,7 +7917,7 @@ impl Memory {
             .is_some_and(|end| end <= block_size)
     }
 
-    pub(in crate::kernel) fn symbolic_int32_load(&self, pointer: &Pointer) -> ProgramValue {
+    pub(in crate::kernel) fn symbolic_int32_load(&self, pointer: &Address) -> ProgramValue {
         int32(MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
@@ -7936,7 +7927,7 @@ impl Memory {
 
     /// A signed byte read: the two's-complement conversion of the byte's
     /// one unsigned read ([`MachineTerm::memory_read`]).
-    pub(in crate::kernel) fn symbolic_int8_load(&self, pointer: &Pointer) -> ProgramValue {
+    pub(in crate::kernel) fn symbolic_int8_load(&self, pointer: &Address) -> ProgramValue {
         int8(MachineTerm::memory_read(
             crate::kernel::intern_memory(self.clone()),
             pointer.clone(),
@@ -7944,7 +7935,7 @@ impl Memory {
         ))
     }
 
-    pub(in crate::kernel) fn symbolic_int16_load(&self, pointer: &Pointer) -> ProgramValue {
+    pub(in crate::kernel) fn symbolic_int16_load(&self, pointer: &Address) -> ProgramValue {
         int16(MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
@@ -7952,7 +7943,7 @@ impl Memory {
         ))
     }
 
-    pub(in crate::kernel) fn symbolic_uint8_load(&self, pointer: &Pointer) -> ProgramValue {
+    pub(in crate::kernel) fn symbolic_uint8_load(&self, pointer: &Address) -> ProgramValue {
         uint8(MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
@@ -7960,7 +7951,7 @@ impl Memory {
         ))
     }
 
-    pub(in crate::kernel) fn symbolic_uint16_load(&self, pointer: &Pointer) -> ProgramValue {
+    pub(in crate::kernel) fn symbolic_uint16_load(&self, pointer: &Address) -> ProgramValue {
         uint16(MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
@@ -7968,7 +7959,7 @@ impl Memory {
         ))
     }
 
-    pub(in crate::kernel) fn symbolic_uint32_load(&self, pointer: &Pointer) -> ProgramValue {
+    pub(in crate::kernel) fn symbolic_uint32_load(&self, pointer: &Address) -> ProgramValue {
         uint32(MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
@@ -7976,7 +7967,7 @@ impl Memory {
         ))
     }
 
-    pub(in crate::kernel) fn symbolic_int64_load(&self, pointer: &Pointer) -> ProgramValue {
+    pub(in crate::kernel) fn symbolic_int64_load(&self, pointer: &Address) -> ProgramValue {
         ProgramValue::Int64(MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
@@ -7984,7 +7975,7 @@ impl Memory {
         ))
     }
 
-    pub(in crate::kernel) fn symbolic_uint64_load(&self, pointer: &Pointer) -> ProgramValue {
+    pub(in crate::kernel) fn symbolic_uint64_load(&self, pointer: &Address) -> ProgramValue {
         ProgramValue::UInt64(MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
@@ -7994,7 +7985,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_wide_integer_load(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         ty: MachineIntegerType,
     ) -> Option<ProgramValue> {
         if ty.format().bits() != 128 {
@@ -8012,7 +8003,7 @@ impl Memory {
         })
     }
 
-    pub(in crate::kernel) fn symbolic_float32_load(&self, pointer: &Pointer) -> ProgramValue {
+    pub(in crate::kernel) fn symbolic_float32_load(&self, pointer: &Address) -> ProgramValue {
         ProgramValue::Float32(MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
@@ -8020,7 +8011,7 @@ impl Memory {
         ))
     }
 
-    pub(in crate::kernel) fn symbolic_float64_load(&self, pointer: &Pointer) -> ProgramValue {
+    pub(in crate::kernel) fn symbolic_float64_load(&self, pointer: &Address) -> ProgramValue {
         ProgramValue::Float64(MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
@@ -8029,16 +8020,16 @@ impl Memory {
     }
 
     /// [`Self::symbolic_pointer_load`] for a logical read: the pointer read
-    /// is named by the cell's version ([`Pointer::version_read`]).
+    /// is named by the cell's version ([`Address::version_read`]).
     pub(in crate::kernel) fn symbolic_pointer_version_load(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         value_type: ProgramType,
     ) -> ProgramValue {
         let retained_state = crate::kernel::intern_memory(self.clone());
         // A version read is a named read, or a value the memory holds for the
         // cell, either of which already carries its definition.
-        match Pointer::version_read_value(&retained_state, pointer) {
+        match Address::version_read_value(&retained_state, pointer) {
             Ok(held) => ProgramValue::Pointer(held.with_type(value_type)),
             Err(value) => ProgramValue::Pointer(PointerValue::from_read(
                 value,
@@ -8051,11 +8042,11 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_pointer_load(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         value_type: ProgramType,
     ) -> ProgramValue {
         let retained_state = crate::kernel::intern_memory(self.clone());
-        let value = Pointer::loaded(&MachineTerm::MemoryLoad(
+        let value = Address::loaded(&MachineTerm::MemoryLoad(
             ProgramPoint::at(&retained_state),
             Box::new(pointer.clone()),
             LoadKind::Int32,
@@ -8202,7 +8193,7 @@ impl ExecutionState {
     /// authority. Function entry validates it against the construction layout.
     pub fn with_aggregate_return_destination(
         mut self,
-        pointer: Pointer,
+        pointer: Address,
         layout: AggregateLayout,
     ) -> Self {
         self.aggregate_destination = Some(Arc::new(AggregateDestination { pointer, layout }));
@@ -8822,9 +8813,9 @@ impl ExecutionState {
                 return Err("Requires owns authority(R(p))".into());
             }
             let external = is_external_population_anchor(anchor);
-            let count = if !external && anchor.offset == PointerOffsetTerm::Constant(0) {
+            let count = if !external && anchor.offset == AddressOffset::Constant(0) {
                 events
-                    .observe_term(&anchor.block, description.family())
+                    .observe_term(&anchor.base, description.family())
                     .map_err(|_| "Requires a current authority count")?
             } else {
                 let imported = events
@@ -9221,16 +9212,16 @@ impl ExecutionState {
     }
 
     #[cfg(test)]
-    pub(in crate::kernel) fn population_storage_created_here(&self, pointer: &Pointer) -> bool {
-        pointer.offset == PointerOffsetTerm::Constant(0)
-            && (matches!(&pointer.block, PointerBlock::Heap(_))
+    pub(in crate::kernel) fn population_storage_created_here(&self, pointer: &Address) -> bool {
+        pointer.offset == AddressOffset::Constant(0)
+            && (matches!(&pointer.base, AddressBase::Heap(_))
                 && self.memory.live_heap_block_size(pointer).is_some()
-                || pointer.block.is_local_block() && self.memory.has_block(&pointer.block))
+                || pointer.base.is_local_block() && self.memory.has_block(&pointer.base))
             && self
                 .population_effects
                 .creation
                 .as_ref()
-                .is_some_and(|events| events.created_here(&pointer.block))
+                .is_some_and(|events| events.created_here(&pointer.base))
     }
 
     /// The only state transition that creates or retires a population
@@ -9280,17 +9271,17 @@ impl ExecutionState {
                 .map_err(|_| format!("Requires count({}(...)) == 0 and no outstanding member custody before authority retirement", description.family()))?;
         }
         if !imported_retirement
-            && (anchor.offset != PointerOffsetTerm::Constant(0)
-                || !(matches!(&anchor.block, PointerBlock::Heap(_))
+            && (anchor.offset != AddressOffset::Constant(0)
+                || !(matches!(&anchor.base, AddressBase::Heap(_))
                     && self.memory.live_heap_block_size(anchor).is_some()
-                    || anchor.block.is_local_block() && self.memory.has_block(&anchor.block)))
+                    || anchor.base.is_local_block() && self.memory.has_block(&anchor.base)))
         {
             return Err("Requires live base storage for authority(R(p))".into());
         }
         let mut next = self.clone();
         let evidence = if establish {
             let (history, evidence) = events
-                .checked_establish(&anchor.block, description)
+                .checked_establish(&anchor.base, description)
                 .map_err(|refusal| format!("authority establishment refused: {refusal}"))?;
             let resources = self
                 .resources
@@ -9309,7 +9300,7 @@ impl ExecutionState {
             let (history, evidence) = if imported_retirement {
                 events.checked_retire_imported(description, assumptions)
             } else {
-                events.checked_retire(&anchor.block, description)
+                events.checked_retire(&anchor.base, description)
             }
             .map_err(|refusal| format!("authority retirement refused: {refusal}"))?;
             next.resources = resources;
@@ -9412,10 +9403,10 @@ impl ExecutionState {
             return Err(format!("Requires owns {name}(p)"));
         }
         if !imported_member_exchange
-            && (anchor.offset != PointerOffsetTerm::Constant(0)
-                || !(matches!(&anchor.block, PointerBlock::Heap(_))
+            && (anchor.offset != AddressOffset::Constant(0)
+                || !(matches!(&anchor.base, AddressBase::Heap(_))
                     && self.memory.live_heap_block_size(anchor).is_some()
-                    || anchor.block.is_local_block() && self.memory.has_block(&anchor.block)))
+                    || anchor.base.is_local_block() && self.memory.has_block(&anchor.base)))
         {
             return Err("Requires live base storage for R(p)".into());
         }
@@ -9546,7 +9537,7 @@ impl ExecutionState {
         };
         let exchange = if definition.has_fixed_exclusive_memory() {
             events.checked_exclusive_member_exchange_quantity(
-                &anchor.block,
+                &anchor.base,
                 &description,
                 produce,
                 quantity,
@@ -9554,7 +9545,7 @@ impl ExecutionState {
             )
         } else {
             events.checked_member_exchange_quantity(
-                &anchor.block,
+                &anchor.base,
                 &description,
                 produce,
                 quantity,
@@ -9626,7 +9617,7 @@ impl ExecutionState {
             else {
                 return Ok(());
             };
-            events.member_created(&pointer.pointer().block, description.family())
+            events.member_created(&pointer.pointer().base, description.family())
         } else {
             return Ok(());
         };
@@ -9634,7 +9625,7 @@ impl ExecutionState {
         Ok(())
     }
 
-    pub(in crate::kernel) fn record_population_storage_creation(&mut self, block: PointerBlock) {
+    pub(in crate::kernel) fn record_population_storage_creation(&mut self, block: AddressBase) {
         if let Some(events) = &self.population_effects.creation {
             Arc::make_mut(&mut self.population_effects).creation = Some(events.created(block));
         }
@@ -9642,7 +9633,7 @@ impl ExecutionState {
 
     pub(in crate::kernel) fn record_pending_population_storage_creation(
         &mut self,
-        block: PointerBlock,
+        block: AddressBase,
     ) {
         if let Some(events) = &self.population_effects.creation {
             Arc::make_mut(&mut self.population_effects).creation =
@@ -9652,8 +9643,8 @@ impl ExecutionState {
 
     pub(in crate::kernel) fn resolve_pending_population_storage_creation(
         &mut self,
-        pending_block: &PointerBlock,
-        live_block: Option<PointerBlock>,
+        pending_block: &AddressBase,
+        live_block: Option<AddressBase>,
     ) {
         if let Some(events) = &self.population_effects.creation {
             let next = events.resolve_pending(pending_block, live_block);
@@ -9665,7 +9656,7 @@ impl ExecutionState {
 
     pub(in crate::kernel) fn retire_population_storage(
         &mut self,
-        block: &PointerBlock,
+        block: &AddressBase,
     ) -> Result<(), RuntimeError> {
         if let Some(events) = &self.population_effects.creation {
             let next = events.retired(block).map_err(|refusal| {
@@ -9682,7 +9673,7 @@ impl ExecutionState {
     /// still owns them. The caller environment is restored only afterward.
     pub(in crate::kernel) fn retired_population_creation_for_blocks(
         &self,
-        blocks: &[PointerBlock],
+        blocks: &[AddressBase],
     ) -> Result<
         Option<super::super::population_authority::storage_creation::CreationEvents>,
         RuntimeError,
@@ -9702,7 +9693,7 @@ impl ExecutionState {
 
     pub(in crate::kernel) fn population_storage_retirement_refusal(
         &self,
-        block: &PointerBlock,
+        block: &AddressBase,
     ) -> Option<RuntimeError> {
         self.population_effects
             .creation
@@ -10110,9 +10101,9 @@ impl ExecutionState {
         // A local's slot is at offset zero of its block, so a run holds one
         // only at the slot spelled that way, looked up rather than visited.
         let run_slots = self.memory.cells.runs().filter_map(|run| {
-            let pointer = Pointer {
-                block: run.base().block.clone(),
-                offset: PointerOffsetTerm::Constant(0),
+            let pointer = Address {
+                base: run.base().base.clone(),
+                offset: AddressOffset::Constant(0),
             };
             let index = run.live_slot_index(&pointer)?;
             Some((pointer, run.value(index)))
@@ -10122,7 +10113,7 @@ impl ExecutionState {
             .cells
             .concrete()
             .iter()
-            .filter(|(pointer, _)| pointer.offset == PointerOffsetTerm::Constant(0))
+            .filter(|(pointer, _)| pointer.offset == AddressOffset::Constant(0))
             .map(|(pointer, value)| (pointer.clone(), value.native().clone()))
             .chain(run_slots)
             .filter_map(|(pointer, value)| {
@@ -10154,9 +10145,9 @@ impl ExecutionState {
             let Some(pointer) = self.locals.slot(name) else {
                 continue;
             };
-            if pointer.offset == PointerOffsetTerm::Constant(0)
+            if pointer.offset == AddressOffset::Constant(0)
                 && self.memory.cells.bitvector_variable_at(pointer) == Some(variable)
-                && held.is_none_or(|(first, _): (&Pointer, &BindingName)| pointer < first)
+                && held.is_none_or(|(first, _): (&Address, &BindingName)| pointer < first)
             {
                 held = Some((pointer, name));
             }
@@ -10168,7 +10159,7 @@ impl ExecutionState {
     pub(crate) fn local_name_holding_bitvector_variable_at(
         &self,
         variable: Variable,
-        pointer: &Pointer,
+        pointer: &Address,
     ) -> Option<&BindingName> {
         if crate::instrumentation::deadline_exceeded() {
             return None;
@@ -10317,7 +10308,7 @@ thread_local! {
     /// block, recorded once when the block is created. Alignment of such a
     /// block is intrinsic, like a heap block's, so the decision consults
     /// this instead of a path fact on every implicit address-of read.
-    static BLOCK_ALIGNMENT_REGISTRY: std::cell::RefCell<BTreeMap<PointerBlock, u64>> =
+    static BLOCK_ALIGNMENT_REGISTRY: std::cell::RefCell<BTreeMap<AddressBase, u64>> =
         const { std::cell::RefCell::new(BTreeMap::new()) };
 }
 
@@ -10326,24 +10317,24 @@ thread_local! {
     /// frame block arrived. The callee's copy and the caller's argument are
     /// two objects; a diagnostic reads this to name the second. Nothing
     /// that decides a proof reads it.
-    static AGGREGATE_ARGUMENT_SOURCES: std::cell::RefCell<BTreeMap<PointerBlock, Pointer>> =
+    static AGGREGATE_ARGUMENT_SOURCES: std::cell::RefCell<BTreeMap<AddressBase, Address>> =
         const { std::cell::RefCell::new(BTreeMap::new()) };
 }
 
 /// Records that the aggregate parameter stored in `slot` was copied from
 /// `source`. One entry per parameter bound; a later binding of the same
 /// frame block replaces it.
-pub(crate) fn register_aggregate_argument_source(slot: &PointerBlock, source: &Pointer) {
+pub(crate) fn register_aggregate_argument_source(slot: &AddressBase, source: &Address) {
     AGGREGATE_ARGUMENT_SOURCES.with(|sources| {
         sources.borrow_mut().insert(slot.clone(), source.clone());
     });
 }
 
-pub(crate) fn registered_aggregate_argument_source(slot: &PointerBlock) -> Option<Pointer> {
+pub(crate) fn registered_aggregate_argument_source(slot: &AddressBase) -> Option<Address> {
     AGGREGATE_ARGUMENT_SOURCES.with(|sources| sources.borrow().get(slot).cloned())
 }
 
-pub(crate) fn register_block_alignment(block: &PointerBlock, alignment: u32) {
+pub(crate) fn register_block_alignment(block: &AddressBase, alignment: u32) {
     if alignment < 2 {
         return;
     }
@@ -10354,7 +10345,7 @@ pub(crate) fn register_block_alignment(block: &PointerBlock, alignment: u32) {
     });
 }
 
-pub(crate) fn registered_block_alignment(block: &PointerBlock) -> Option<u64> {
+pub(crate) fn registered_block_alignment(block: &AddressBase) -> Option<u64> {
     BLOCK_ALIGNMENT_REGISTRY.with(|registry| registry.borrow().get(block).copied())
 }
 
@@ -10363,7 +10354,7 @@ pub(crate) fn registered_block_alignment(block: &PointerBlock) -> Option<u64> {
 /// payload before invoking this helper; the charge here accounts for the
 /// registry lookup itself and never scans unrelated entries.
 pub(crate) fn registered_block_alignment_charged(
-    block: &PointerBlock,
+    block: &AddressBase,
     key_payload: usize,
 ) -> Option<u64> {
     BLOCK_ALIGNMENT_REGISTRY.with(|registry| {
@@ -10382,7 +10373,7 @@ pub(crate) fn registered_block_alignment_charged(
 /// value a reusable session captures and restores.
 #[derive(Clone)]
 pub(crate) struct BlockRegistriesState {
-    alignment: BTreeMap<PointerBlock, u64>,
+    alignment: BTreeMap<AddressBase, u64>,
     never_address_taken: BTreeSet<BindingName>,
     never_address_taken_key: std::sync::Arc<()>,
 }
@@ -10474,8 +10465,8 @@ pub(crate) fn withdraw_never_address_taken_locals(taken: &BTreeSet<BindingName>)
 
 /// The declaration a storage block belongs to. Typed C blocks carry this
 /// directly; non-C legacy blocks retain their original prefix grammar.
-fn local_block_object_name(block: &PointerBlock) -> Option<BindingName> {
-    if let PointerBlock::AutomaticLocal { binding, .. } = block {
+fn local_block_object_name(block: &AddressBase) -> Option<BindingName> {
+    if let AddressBase::AutomaticLocal { binding, .. } = block {
         return Some(binding.clone().into());
     }
     let rest = block.strip_prefix("local:")?;
@@ -10511,7 +10502,7 @@ fn local_block_object_name(block: &PointerBlock) -> Option<BindingName> {
 /// designate. The caller must still defer to an equality the context *states*
 /// about the pointer, because an assumed `p == &x` would otherwise be refuted
 /// and the context silently made inconsistent.
-pub(crate) fn block_is_never_address_taken_local(block: &PointerBlock) -> bool {
+pub(crate) fn block_is_never_address_taken_local(block: &AddressBase) -> bool {
     let Some(name) = local_block_object_name(block) else {
         return false;
     };
@@ -10533,20 +10524,20 @@ mod hidden_local_distinctness_tests {
     #[test]
     fn a_pointer_value_never_reaches_a_local_whose_address_is_never_taken() {
         set_never_address_taken_locals(BTreeSet::from(["hidden".into()]));
-        let hidden: PointerBlock = "local:hidden".into();
-        let taken: PointerBlock = "local:taken".into();
+        let hidden: AddressBase = "local:hidden".into();
+        let taken: AddressBase = "local:taken".into();
         for value in [
-            PointerBlock::Symbolic(Variable(7)),
-            PointerBlock::FunctionSymbolic(Variable(8)),
-            PointerBlock::ExternalObject(Variable(9)),
-            PointerBlock::ExternalArgument,
+            AddressBase::Symbolic(Variable(7)),
+            AddressBase::FunctionSymbolic(Variable(8)),
+            AddressBase::ExternalObject(Variable(9)),
+            AddressBase::ExternalArgument,
         ] {
             assert!(value.proven_distinct(&hidden), "{value:?}");
             assert!(hidden.proven_distinct(&value), "{value:?}");
         }
-        assert!(!PointerBlock::Symbolic(Variable(7)).proven_distinct(&taken));
+        assert!(!AddressBase::Symbolic(Variable(7)).proven_distinct(&taken));
         clear_never_address_taken_locals();
-        assert!(!PointerBlock::Symbolic(Variable(7)).proven_distinct(&hidden));
+        assert!(!AddressBase::Symbolic(Variable(7)).proven_distinct(&hidden));
     }
 }
 
@@ -10556,23 +10547,23 @@ mod contract_retirement_tests {
 
     #[test]
     fn retirement_drops_zeroed_status_under_each_equal_base_spelling() {
-        let base = Pointer {
-            block: PointerBlock::Heap(922_200),
-            offset: PointerOffsetTerm::Constant(0),
+        let base = Address {
+            base: AddressBase::Heap(922_200),
+            offset: AddressOffset::Constant(0),
         };
         let aliases = [
-            Pointer {
-                block: PointerBlock::Symbolic(Variable(922_201)),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: AddressBase::Symbolic(Variable(922_201)),
+                offset: AddressOffset::Constant(0),
             },
-            Pointer {
-                block: PointerBlock::Symbolic(Variable(922_202)),
-                offset: PointerOffsetTerm::Constant(4),
+            Address {
+                base: AddressBase::Symbolic(Variable(922_202)),
+                offset: AddressOffset::Constant(4),
             },
         ];
-        let unrelated = Pointer {
-            block: PointerBlock::Heap(922_203),
-            offset: PointerOffsetTerm::Constant(0),
+        let unrelated = Address {
+            base: AddressBase::Heap(922_203),
+            offset: AddressOffset::Constant(0),
         };
         let assumptions = aliases.iter().fold(PureFactContext::new(), |facts, alias| {
             facts.assume_proposition(Proposition::ConditionIs(
@@ -10614,9 +10605,9 @@ mod union_store_tests {
     /// A direct member store invalidates every overlapping old member view.
     #[test]
     fn union_store_invalidates_the_other_members_stale_overlay() {
-        let base = Pointer {
-            block: PointerBlock::Concrete("local:u".to_string()),
-            offset: PointerOffsetTerm::Constant(0),
+        let base = Address {
+            base: AddressBase::Concrete("local:u".to_string()),
+            offset: AddressOffset::Constant(0),
         };
         let memory = Memory::new()
             .store_union(base.clone(), ProgramType::UInt8, crate::kernel::uint8(0xAA))
@@ -10647,13 +10638,13 @@ mod interface_join_tombstone_tests {
     /// distinguished.
     #[test]
     fn interface_join_keeps_one_arm_deallocation() {
-        let base = Pointer {
-            block: PointerBlock::Heap(923_001),
-            offset: PointerOffsetTerm::Constant(0),
+        let base = Address {
+            base: AddressBase::Heap(923_001),
+            offset: AddressOffset::Constant(0),
         };
         // Arm B kept it live.
         let alive = Memory::new()
-            .with_block(base.block.clone(), 8)
+            .with_block(base.base.clone(), 8)
             .with_heap_allocation_claim(base.clone(), AllocationSize::int32(8))
             .expect("fresh allocation on arm B");
         // Arm A freed it.
@@ -10690,22 +10681,22 @@ mod interface_join_tombstone_tests {
 mod join_allocation_spelling_tests {
     use super::*;
 
-    fn heap_base(identity: u64) -> Pointer {
-        Pointer {
-            block: PointerBlock::Heap(identity),
-            offset: PointerOffsetTerm::Constant(0),
+    fn heap_base(identity: u64) -> Address {
+        Address {
+            base: AddressBase::Heap(identity),
+            offset: AddressOffset::Constant(0),
         }
     }
 
     /// Each arm holds its allocation live under its own spelling, so the
     /// join unions two live entries.
-    fn joined(p: &Pointer, q: &Pointer) -> Memory {
+    fn joined(p: &Address, q: &Address) -> Memory {
         let arm_a = Memory::new()
-            .with_block(p.block.clone(), 8)
+            .with_block(p.base.clone(), 8)
             .with_heap_allocation_claim(p.clone(), AllocationSize::int32(8))
             .expect("arm A claim");
         let arm_b = Memory::new()
-            .with_block(q.block.clone(), 8)
+            .with_block(q.base.clone(), 8)
             .with_heap_allocation_claim(q.clone(), AllocationSize::int32(8))
             .expect("arm B claim");
         let arms = [&arm_a, &arm_b];
@@ -10731,9 +10722,9 @@ mod join_allocation_spelling_tests {
     #[test]
     fn join_of_two_spellings_of_one_allocation_frees_once() {
         let p = heap_base(924_001);
-        let q = Pointer {
-            block: PointerBlock::Symbolic(Variable(924_005)),
-            offset: PointerOffsetTerm::Constant(0),
+        let q = Address {
+            base: AddressBase::Symbolic(Variable(924_005)),
+            offset: AddressOffset::Constant(0),
         };
         let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
             ConditionTerm::pointer_equal(p.clone(), q.clone()),
@@ -10835,7 +10826,7 @@ pub(super) enum CachedValueFate {
 pub(super) enum ForgetScope<'a> {
     Ordered {
         candidates: &'a AliasCandidates,
-        selected: &'a [Pointer],
+        selected: &'a [Address],
         runs: Option<&'a [cell_store::RunKey]>,
     },
     /// Every cached value, for a transition that may have written anywhere.
@@ -10845,7 +10836,7 @@ pub(super) enum ForgetScope<'a> {
     /// ([`CellStore::retain_candidates_outside_by`]).
     Candidates {
         candidates: &'a AliasCandidates,
-        cells_kept: &'a [(Pointer, Pointer)],
+        cells_kept: &'a [(Address, Address)],
     },
 }
 
@@ -10870,7 +10861,7 @@ fn ask_every_slot(_: &CellRun) -> (SlotSet, crate::kernel::primitives::RuleAnswe
 /// except from inside a debug self-check that re-asks a retain predicate:
 /// that would record, in a debug build only, cells a release build keeps
 /// by a whole-run answer.
-fn push_dropped_initialized(dropped: &mut Vec<(Pointer, u32)>, cell: (Pointer, u32)) {
+fn push_dropped_initialized(dropped: &mut Vec<(Address, u32)>, cell: (Address, u32)) {
     if !crate::instrumentation::in_uncharged_debug_check() {
         dropped.push(cell);
     }
@@ -10882,7 +10873,7 @@ fn push_dropped_initialized(dropped: &mut Vec<(Pointer, u32)>, cell: (Pointer, u
 fn local_block_entries<'a, K: BlockKeyed, V>(
     map: &'a HashedOrdMap<K, V>,
 ) -> impl Iterator<Item = (&'a K, &'a V)> + 'a {
-    map.range(K::first_key_of(&PointerBlock::from("local:"))..)
+    map.range(K::first_key_of(&AddressBase::from("local:"))..)
         .take_while(|(key, _)| key.key_block().is_local_block())
 }
 
@@ -10893,12 +10884,12 @@ mod initialization_record_tests {
     #[test]
     fn unwritten_output_keeps_forgotten_external_input_fields_initialized() {
         let _session = crate::kernel::VerificationSession::enter();
-        let output = Pointer::symbolic(Variable(924_040));
+        let output = Address::symbolic(Variable(924_040));
         for field in [
-            Pointer::symbolic(Variable(924_041)),
-            Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(924_042)), 4),
+            Address::symbolic(Variable(924_041)),
+            Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(924_042)), 4),
             },
         ] {
             for seeded in [false, true] {
@@ -10912,7 +10903,7 @@ mod initialization_record_tests {
                         intern_memory(Memory::new()),
                     )
                 } else {
-                    Memory::new().store(field.clone(), ProgramValue::pointer(Pointer::null()))
+                    Memory::new().store(field.clone(), ProgramValue::pointer(Address::null()))
                 };
                 assert!(!input.has_initialized_bytes_at(&field, 8));
                 let before = input.with_uninitialized_object(output.clone(), 4);
@@ -10932,8 +10923,8 @@ mod initialization_record_tests {
     #[test]
     fn forgotten_external_observations_preserve_only_the_bytes_observed() {
         let _session = crate::kernel::VerificationSession::enter();
-        let field = Pointer::symbolic(Variable(924_043));
-        let output = Pointer::symbolic(Variable(924_044));
+        let field = Address::symbolic(Variable(924_043));
+        let output = Address::symbolic(Variable(924_044));
         for count in [0, 1, 2] {
             let before = Memory::new()
                 .with_seeded_cells(
@@ -10952,17 +10943,17 @@ mod initialization_record_tests {
         }
     }
 
-    fn element(block: &str, index: i64) -> Pointer {
-        Pointer {
-            block: PointerBlock::from(block),
-            offset: PointerOffsetTerm::Constant(4 * index),
+    fn element(block: &str, index: i64) -> Address {
+        Address {
+            base: AddressBase::from(block),
+            offset: AddressOffset::Constant(4 * index),
         }
     }
 
-    fn unplaced(block: &str) -> Pointer {
-        Pointer {
-            block: PointerBlock::from(block),
-            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(924_001)), 4),
+    fn unplaced(block: &str) -> Address {
+        Address {
+            base: AddressBase::from(block),
+            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(924_001)), 4),
         }
     }
 
@@ -11085,7 +11076,7 @@ mod initialization_record_tests {
         let block = "local:record-lifetime";
         let forgotten = forgotten_pair(block);
         assert!(forgotten.has_initialized_bytes_at(&element(block, 0), 4));
-        let ended = forgotten.without_local_block(&PointerBlock::from(block));
+        let ended = forgotten.without_local_block(&AddressBase::from(block));
         assert!(!ended.has_initialized_bytes_at(&element(block, 0), 4));
     }
 
@@ -11094,9 +11085,9 @@ mod initialization_record_tests {
         let block = "local:record-index";
         let forgotten = forgotten_pair(block);
         let index = MachineTerm::Variable(Variable(924_004));
-        let read = Pointer {
-            block: PointerBlock::from(block),
-            offset: PointerOffsetTerm::scale_int32(index.clone(), 4),
+        let read = Address {
+            base: AddressBase::from(block),
+            offset: AddressOffset::scale_int32(index.clone(), 4),
         };
         let bounded = |high: u32| {
             PureFactContext::new()
@@ -11135,9 +11126,9 @@ mod initialization_record_tests {
         let written = written_pair(block);
         assert!(!written.has_initialized_bytes_at(&element(block, 0), 8));
         let index = MachineTerm::Variable(Variable(924_007));
-        let read = Pointer {
-            block: PointerBlock::from(block),
-            offset: PointerOffsetTerm::scale_int32(index.clone(), 4),
+        let read = Address {
+            base: AddressBase::from(block),
+            offset: AddressOffset::scale_int32(index.clone(), 4),
         };
         assert!(written.has_initialized_bytes_under(&read, 4, &index_between(&index, 0, 1)));
         assert!(!written.has_initialized_bytes_under(&read, 4, &index_between(&index, 0, 2)));
@@ -11178,8 +11169,8 @@ mod local_variable_spelling_tests {
     #[test]
     fn pointer_object_index_tracks_rebindings_and_scope_changes() {
         let blocks = [
-            PointerBlock::Symbolic(Variable(971_030)),
-            PointerBlock::Symbolic(Variable(971_031)),
+            AddressBase::Symbolic(Variable(971_030)),
+            AddressBase::Symbolic(Variable(971_031)),
         ];
         let mut locals = LocalEnvironment::new();
         for step in 0..60usize {
@@ -11191,9 +11182,9 @@ mod local_variable_spelling_tests {
             } else {
                 locals.set(
                     &name,
-                    ProgramValue::pointer(Pointer {
-                        block: blocks[step % 2].clone(),
-                        offset: PointerOffsetTerm::Constant(step as i64),
+                    ProgramValue::pointer(Address {
+                        base: blocks[step % 2].clone(),
+                        offset: AddressOffset::Constant(step as i64),
                     }),
                 );
             }
@@ -11212,7 +11203,7 @@ mod local_variable_spelling_tests {
                     .object_values()
                     .filter_map(|(name, value)| {
                         let pointer = value.pointer()?.pointer();
-                        (&pointer.block == block).then(|| (name, pointer.clone()))
+                        (&pointer.base == block).then(|| (name, pointer.clone()))
                     })
                     .collect::<Vec<_>>();
                 for indexed in [&locals, &saved, &rebuilt] {
@@ -11356,7 +11347,7 @@ mod kept_range_identity_tests {
     fn ranges(id: u64) -> HashedOrdMap<MemoryRange, ()> {
         ResourceContext::new()
             .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
-                Pointer::symbolic(Variable(id)),
+                Address::symbolic(Variable(id)),
                 0.into(),
                 4.into(),
             )))
@@ -11383,7 +11374,7 @@ mod kept_range_identity_tests {
     fn kept_range_hash_collisions_distinguish_composite_exclusions() {
         let composite = ResourceContext::new().unchecked_with_fact(ResourceFact::own_composite(
             "boxed".into(),
-            vec![ProgramValue::pointer(Pointer::symbolic(Variable(9)))],
+            vec![ProgramValue::pointer(Address::symbolic(Variable(9)))],
         ));
         let intern = |original, introduced| {
             intern_kept_range_set_with_exclusions_and_hash(
@@ -11432,7 +11423,7 @@ mod kept_range_identity_tests {
     #[test]
     fn owned_range_index_keeps_duplicates_until_the_last_withdrawal() {
         let fact = ResourceFact::own_memory(MemoryRange::new(
-            Pointer::symbolic(Variable(7)),
+            Address::symbolic(Variable(7)),
             0.into(),
             4.into(),
         ));

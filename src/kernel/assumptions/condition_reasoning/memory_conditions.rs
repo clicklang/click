@@ -214,7 +214,7 @@ impl PureFactContext {
         &self,
         left: &Memory,
         right: &Memory,
-        pointer: &Pointer,
+        pointer: &Address,
     ) -> bool {
         // Memories match up to the load's pointer, not exactly, so every
         // effect fact is a candidate; other proposition facts are not.
@@ -353,7 +353,7 @@ impl PureFactContext {
     pub(in crate::kernel) fn resolve_memory_load_value(
         &self,
         memory: &Memory,
-        pointer: &Pointer,
+        pointer: &Address,
         kind: LoadKind,
     ) -> Option<ProgramValue> {
         let byte_width = kind.byte_width();
@@ -366,11 +366,11 @@ impl PureFactContext {
         // load unresolved. Runs use compact slot selection even for symbolic
         // indexes: an unresolved alias is not a reason to enumerate the array.
         let mut unresolved_alias = false;
-        let mut first_equal: Option<(Pointer, ProgramValue)> = None;
+        let mut first_equal: Option<(Address, ProgramValue)> = None;
         let normalized = std::cell::OnceCell::new();
-        let consider = |cell_pointer: &Pointer,
+        let consider = |cell_pointer: &Address,
                         value: &ProgramValue,
-                        first_equal: &mut Option<(Pointer, ProgramValue)>| {
+                        first_equal: &mut Option<(Address, ProgramValue)>| {
             if pointers_proven_distinct_for_memory_resolution(cell_pointer, pointer, self) {
                 return false;
             }
@@ -390,7 +390,7 @@ impl PureFactContext {
         // `run_slots_resolving_load` answer as elsewhere, so only the
         // candidates are asked. Each candidate asked, cell or run, is one
         // unit, independent of the run's logical element count.
-        let candidates = crate::kernel::primitives::AliasCandidates::of_block(&pointer.block);
+        let candidates = crate::kernel::primitives::AliasCandidates::of_block(&pointer.base);
         for run in memory.cells.candidate_runs(&candidates) {
             crate::instrumentation::record_deterministic_work(1);
             match crate::kernel::reasoning::memory_resolution::run_slots_resolving_load(
@@ -548,9 +548,9 @@ mod tests {
                 .with_block("held-read-right", 4),
         );
         let read = |block: &str| {
-            let pointer = Pointer {
-                block: block.into(),
-                offset: PointerOffsetTerm::Constant(0),
+            let pointer = Address {
+                base: block.into(),
+                offset: AddressOffset::Constant(0),
             };
             let variable = crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,

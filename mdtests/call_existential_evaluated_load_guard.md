@@ -52,9 +52,9 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
     } by {
         known();
     }
-    obtain (rest: Path) {
+    let rest = obtain(exists (rest: Path) {
         pick(at(before_call, a[i]), rest) == r
-    }
+    });
     step();
     solve();
 }

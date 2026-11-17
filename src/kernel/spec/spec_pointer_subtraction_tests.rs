@@ -2,9 +2,9 @@ use super::*;
 
 #[test]
 fn specification_subtraction_retains_pointer_provenance_and_overflow_guards() {
-    let external = |variable| Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
+    let external = |variable| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
     };
     let left = external(32_000);
     let right = external(32_001);

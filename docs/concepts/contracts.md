@@ -93,7 +93,7 @@ requires x > 0;
 ```
 
 To use an existential requirement in a proof, state its proposition in
-`obtain (...) { ... };` after it is available.
+`let k = obtain(exists (x: Type) { ... });` after it is available.
 
 ## Guarantees
 

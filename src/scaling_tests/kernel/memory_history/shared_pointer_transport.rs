@@ -28,19 +28,19 @@ fn shared_pointer_transport_walks_offset_dags_once_beside_unrelated_state() {
                     LoadKind::Int32,
                 ),
             );
-            let mut offset = KernelPointerOffset::Int32Scaled {
+            let mut offset = KernelAddressOffset::Int32Scaled {
                 value: index,
                 byte_width: 4,
             }
             .into_shared()
             .unwrap();
             for _ in 0..size {
-                offset = KernelPointerOffset::Add([offset.clone(), offset])
+                offset = KernelAddressOffset::Add([offset.clone(), offset])
                     .into_shared()
                     .unwrap();
             }
-            let source = SharedPointerAddress::new(
-                SharedPointerBlock::import(&PointerBlock::Symbolic(Variable(1009000))),
+            let source = SharedAddress::new(
+                SharedAddressBase::import(&AddressBase::Symbolic(Variable(1009000))),
                 offset,
             );
             let exports = KernelTermExport::machine_export_count();
@@ -49,7 +49,7 @@ fn shared_pointer_transport_walks_offset_dags_once_beside_unrelated_state() {
             });
             assert!(matches!(
                 output.node().offset.node(),
-                KernelPointerOffset::Add(_)
+                KernelAddressOffset::Add(_)
             ));
             assert!(
                 work <= 50 * size + 2000,

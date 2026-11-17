@@ -4,13 +4,13 @@ use crate::kernel::binary_node;
 fn var(id: u64) -> MachineTerm {
     MachineTerm::Variable(Variable(id))
 }
-fn address(id: u64) -> Pointer {
-    Pointer {
-        block: "array".into(),
-        offset: PointerOffsetTerm::scale_int32(var(id), 4),
+fn address(id: u64) -> Address {
+    Address {
+        base: "array".into(),
+        offset: AddressOffset::scale_int32(var(id), 4),
     }
 }
-fn load(memory: &SharedMemory, pointer: &Pointer, bytes: u32) -> MachineTerm {
+fn load(memory: &SharedMemory, pointer: &Address, bytes: u32) -> MachineTerm {
     MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
         memory,
         pointer,
@@ -90,7 +90,7 @@ fn int32_load_congruence_keeps_states_blocks_and_widths_distinct() {
     );
     let changed = load(&after, &address(2), 4);
     let mut other_block = address(2);
-    other_block.block = "other".into();
+    other_block.base = "other".into();
     let other = load(&memory, &other_block, 4);
     let narrow = load(&memory, &address(3), 2);
     let wide = load(&memory, &address(4), 8);
@@ -236,11 +236,11 @@ fn explicit_cross_state_load_equality_composes_without_merging_states() {
 fn reads_at_equal_addresses_are_equal_without_equal_pointers() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = intern_memory(Memory::new().with_block("left", 64).with_block("right", 64));
-    let at = |block: &str, bytes: i64| Pointer {
-        block: block.into(),
-        offset: PointerOffsetTerm::Constant(bytes),
+    let at = |block: &str, bytes: i64| Address {
+        base: block.into(),
+        offset: AddressOffset::Constant(bytes),
     };
-    let address_of = |pointer: Pointer| MachineTerm::pointer_address(pointer);
+    let address_of = |pointer: Address| MachineTerm::pointer_address(pointer);
     let after = intern_memory(
         memory
             .memory()
@@ -270,12 +270,12 @@ fn native_pointer_aliases_reach_named_nested_pointer_reads() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = memory();
     let field = address(940_061);
-    let arena = Pointer::symbolic(Variable(940_062));
-    let native = Pointer::loaded_value(&memory, &field);
+    let arena = Address::symbolic(Variable(940_062));
+    let native = Address::loaded_value(&memory, &field);
     let mut graph = EqualityGraph::default();
     graph.add_equality(&native, &arena);
-    let named_read = |address: &Pointer| {
-        let value = Pointer::loaded(&load(&memory, address, 8)).unwrap();
+    let named_read = |address: &Address| {
+        let value = Address::loaded(&load(&memory, address, 8)).unwrap();
         graph.register_pointer_read_definition(&value, &memory, address);
         value
     };
@@ -297,7 +297,7 @@ fn native_pointer_aliases_reach_named_nested_pointer_reads() {
     // The pointee width does not enter a read's identity: the same read
     // with another stride names the same pointer, and its displacement
     // still distinguishes it.
-    let other_stride = Pointer::loaded(&load(&memory, &field, 8)).unwrap();
+    let other_stride = Address::loaded(&load(&memory, &field, 8)).unwrap();
     assert_eq!(other_stride, named_arena);
     assert!(graph.are_equal(&other_stride, &arena));
     assert!(!graph.are_equal(&other_stride.offset_by_bytes(8), &arena));
@@ -370,7 +370,7 @@ fn a_late_zero_index_alias_transfers_an_admitted_read_order() {
 fn reads_of_one_cell_at_both_signednesses_are_related() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = memory();
-    let read = |pointer: &Pointer, kind| {
+    let read = |pointer: &Address, kind| {
         MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
             &memory, pointer, kind, 4,
         ))
@@ -488,9 +488,9 @@ fn structural_read_graph_registration_keeps_native_version_identity() {
     let named =
         crate::kernel::canonical_form_of_load(before.clone(), pointer.clone(), LoadKind::Int32);
     let beside = intern_memory(before.memory().clone().store(
-        Pointer {
-            block: "beside-array".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: "beside-array".into(),
+            offset: AddressOffset::Constant(0),
         },
         ProgramValue::Int32(var(993182)),
     ));

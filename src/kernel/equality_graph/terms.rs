@@ -12,9 +12,7 @@
 //! projection retains word-constructor folding identities via indexed nodes.
 //! Shallow keys preserve widths, signedness, and machine-term state identity.
 
-use super::{
-    AffineOffset, MachineAtom, OffsetAtom, Pointer, PointerBlock, PointerOffsetTerm, Variable,
-};
+use super::{Address, AddressBase, AddressOffset, AffineOffset, MachineAtom, OffsetAtom, Variable};
 use crate::kernel::unary_node;
 use crate::kernel::unary_term;
 use crate::kernel::{MachineBinaryOp, MachineIntegerType};
@@ -235,7 +233,7 @@ pub(super) fn uint64_binary(
 /// A scalar variable without this typed producer metadata stays opaque.
 pub(super) fn int32_read(
     term: &crate::kernel::MachineTerm,
-) -> Option<(crate::kernel::SharedMemory, Pointer)> {
+) -> Option<(crate::kernel::SharedMemory, Address)> {
     let read = crate::kernel::eval::scalar_read_observation(
         crate::kernel::MachineOperandView::Legacy(term),
     )?;
@@ -244,7 +242,7 @@ pub(super) fn int32_read(
 
 pub(super) fn uint64_read(
     term: &crate::kernel::MachineTerm,
-) -> Option<(crate::kernel::SharedMemory, Pointer)> {
+) -> Option<(crate::kernel::SharedMemory, Address)> {
     use crate::kernel::{LoadKind, MachineTerm as T};
     match term {
         T::MemoryLoad(memory, pointer, LoadKind::Bits64) => {
@@ -612,13 +610,13 @@ pub(super) struct TermClasses {
     // Only applications with literal-folding rules need revisiting when an
     // existing class first learns a constant. Boolean observations do not.
     constant_uses: PersistentMap<u64, PersistentSet<u64>>,
-    non_affine_address_blocks: PersistentSet<PointerBlock>,
-    address_blocks: PersistentMap<u64, PointerBlock>,
+    non_affine_address_blocks: PersistentSet<AddressBase>,
+    address_blocks: PersistentMap<u64, AddressBase>,
     history: Option<Arc<MergeHistory>>,
     // Node IDs are local to a persistent registration prefix. The last marker
     // detects divergent query registrations without scanning that prefix.
     markers: PersistentMap<u64, Arc<()>>,
-    address_uses: PersistentMap<PointerBlock, PersistentMap<u64, Arc<PointerOffsetTerm>>>,
+    address_uses: PersistentMap<AddressBase, PersistentMap<u64, Arc<AddressOffset>>>,
     address_nodes: PersistentSet<u64>,
     // A displacement definition is permanent for one raw address spelling.
     // Repeated queries reuse it without re-registering its base or closure.
@@ -629,7 +627,7 @@ pub(super) struct TermClasses {
     numeric_shifts: PersistentMap<u64, (u64, i64)>,
     // One explicit pointer spelling per numeric-address class. This is byte
     // geometry only: numeric equality must never merge pointer provenance.
-    numeric_addresses: PersistentMap<u64, Pointer>,
+    numeric_addresses: PersistentMap<u64, Address>,
     // The address node of each registered (block, raw offset) spelling. Its
     // affine definition is permanent, so a repeated registration (every
     // pointer equality query registers both sides) returns it after interning
@@ -644,22 +642,16 @@ pub(super) struct TermClasses {
     addresses_by_offset: PersistentMap<u64, PersistentMap<u64, u64>>,
     // Retained concrete address evidence follows typed class merges. This
     // disambiguates parameters sharing the external address-space block.
-    storage_addresses: PersistentMap<u64, Option<Pointer>>,
+    storage_addresses: PersistentMap<u64, Option<Address>>,
     // One producer-registered additive spelling per index width and address
     // class. A narrow spelling must not discard the wide coordinate whose
     // bounds justify a borrow. Queries never enumerate class members.
-    additive_addresses: PersistentMap<u64, (Option<Arc<Pointer>>, Option<Arc<Pointer>>)>,
+    additive_addresses: PersistentMap<u64, (Option<Arc<Address>>, Option<Arc<Address>>)>,
     // The offset views of same-block pointer equations. These checked
     // producer spellings carry no block identity and are applied only in the
     // query's own block.
-    additive_offsets: PersistentMap<
-        u64,
-        (
-            Option<Arc<PointerOffsetTerm>>,
-            Option<Arc<PointerOffsetTerm>>,
-        ),
-    >,
-    alignment_witnesses: PersistentMap<u64, (u64, Pointer)>,
+    additive_offsets: PersistentMap<u64, (Option<Arc<AddressOffset>>, Option<Arc<AddressOffset>>)>,
+    alignment_witnesses: PersistentMap<u64, (u64, Address)>,
     // Byte products `x * K` whose `int32` multiplication the context knows
     // does not wrap, keyed by the product's shared kernel term: the element
     // index `x` and stride `K` their byte offset is one exact offset with.
@@ -670,33 +662,33 @@ pub(super) struct TermClasses {
     byte_product_nodes: PersistentMap<u64, u64>,
     // One zero-offset pointer read or pure-call value per class. Congruence emits only
     // newly identified pairs for the legacy affine/index projection.
-    pointer_value_witnesses: PersistentMap<u64, PointerBlock>,
+    pointer_value_witnesses: PersistentMap<u64, AddressBase>,
     pointer_values: PersistentMap<u64, crate::kernel::PointerValue>,
     bounds_values: PersistentMap<u64, crate::kernel::PointerValue>,
-    read_domains: crate::kernel::pointer_provenance::ValueClasses<Pointer>,
-    read_provenance_nodes: PersistentMap<Pointer, u64>,
+    read_domains: crate::kernel::pointer_provenance::ValueClasses<Address>,
+    read_provenance_nodes: PersistentMap<Address, u64>,
     // Every registered opaque origin, including symbols and complete reads.
     // A domain query reads this index without registering terms or reads.
-    bounds_origin_nodes: PersistentMap<Pointer, u64>,
-    pointer_value_merges: imbl::Vector<(PointerBlock, PointerBlock)>,
+    bounds_origin_nodes: PersistentMap<Address, u64>,
+    pointer_value_merges: imbl::Vector<(AddressBase, AddressBase)>,
     nodes: PersistentMap<Node, u64>,
-    load_blocks: PersistentMap<PointerBlock, u64>,
+    load_blocks: PersistentMap<AddressBase, u64>,
     // The load nodes, four-byte and narrow, already queued for registration.
     registered_int32_loads: PersistentSet<u64>,
     // Registration dependencies are drained before any public answer. Keeping
     // this worklist iterative handles loads used as indices of further loads.
-    pending_loads: Vec<(u64, crate::kernel::SharedMemory, crate::kernel::Pointer)>,
+    pending_loads: Vec<(u64, crate::kernel::SharedMemory, crate::kernel::Address)>,
     // Signed byte reads still to be related to their unsigned read (R-mem).
-    pending_signed_byte_reads: Vec<(u64, crate::kernel::SharedMemory, crate::kernel::Pointer)>,
+    pending_signed_byte_reads: Vec<(u64, crate::kernel::SharedMemory, crate::kernel::Address)>,
     // `uint32` reads still to be related to their cell's `int32` read by σ
     // (R-mem at 32 bits).
-    pending_unsigned_word_reads: Vec<(u64, crate::kernel::SharedMemory, crate::kernel::Pointer)>,
+    pending_unsigned_word_reads: Vec<(u64, crate::kernel::SharedMemory, crate::kernel::Address)>,
     // 8- and 16-bit reads whose load application is still to be registered
     // (`enqueue_narrow_load`).
     pending_narrow_loads: Vec<(
         u64,
         crate::kernel::SharedMemory,
-        crate::kernel::Pointer,
+        crate::kernel::Address,
         crate::kernel::LoadKind,
     )>,
     // The endpoints of recorded true 64-bit equality facts, by class. A
@@ -852,11 +844,7 @@ impl TermClasses {
         Some(merges)
     }
 
-    pub(super) fn address(
-        &mut self,
-        block: PointerBlock,
-        offset: PointerOffsetTerm,
-    ) -> (u64, bool) {
+    pub(super) fn address(&mut self, block: AddressBase, offset: AddressOffset) -> (u64, bool) {
         let (address, new, raw_offset) = self.address_without_shift(block.clone(), offset.clone());
         // Preserve the byte displacement as an operation on the complete
         // address. Flattening it into a block's affine coordinates can hide
@@ -864,12 +852,12 @@ impl TermClasses {
         // One selected prefix suffices; do not recursively publish prefixes
         // or enumerate other addresses in the class.
         let shift = match &offset {
-            PointerOffsetTerm::Add(base, displacement) => displacement
+            AddressOffset::Add(base, displacement) => displacement
                 .as_const()
                 .filter(|bytes| *bytes != 0)
                 .map(|bytes| (base.as_ref().clone(), bytes)),
-            PointerOffsetTerm::Constant(bytes) if *bytes != 0 => {
-                Some((PointerOffsetTerm::Constant(0), *bytes))
+            AddressOffset::Constant(bytes) if *bytes != 0 => {
+                Some((AddressOffset::Constant(0), *bytes))
             }
             _ => None,
         };
@@ -888,7 +876,7 @@ impl TermClasses {
                 .registered_address_shifts
                 .with_value((address, raw_offset));
         }
-        if let PointerOffsetTerm::Add(base, displacement) = &offset
+        if let AddressOffset::Add(base, displacement) = &offset
             && displacement.as_const().is_none()
             && !self
                 .registered_address_shifts
@@ -925,7 +913,7 @@ impl TermClasses {
         address: u64,
         kind: crate::kernel::LoadKind,
         value: u64,
-        block: PointerBlock,
+        block: AddressBase,
     ) {
         let address = self.read_address(address);
         let read = self.intern_node(Node::PointerRead(retained_state, address, kind));
@@ -960,19 +948,17 @@ impl TermClasses {
         numeric
     }
 
-    pub(super) fn numeric_address(&mut self, pointer: &Pointer) -> u64 {
-        let address = self
-            .address(pointer.block.clone(), pointer.offset.clone())
-            .0;
+    pub(super) fn numeric_address(&mut self, pointer: &Address) -> u64 {
+        let address = self.address(pointer.base.clone(), pointer.offset.clone()).0;
         let numeric = self.read_address(address);
         self.retain_numeric_address(self.root(numeric), pointer.clone());
         numeric
     }
 
-    fn retain_numeric_address(&mut self, root: u64, pointer: Pointer) {
-        let displaced = |p: &Pointer| match &p.offset {
-            PointerOffsetTerm::Add(_, offset) => offset.as_const().is_some_and(|bytes| bytes != 0),
-            PointerOffsetTerm::Constant(bytes) => *bytes != 0,
+    fn retain_numeric_address(&mut self, root: u64, pointer: Address) {
+        let displaced = |p: &Address| match &p.offset {
+            AddressOffset::Add(_, offset) => offset.as_const().is_some_and(|bytes| bytes != 0),
+            AddressOffset::Constant(bytes) => *bytes != 0,
             _ => false,
         };
         if self
@@ -984,7 +970,7 @@ impl TermClasses {
         }
     }
 
-    pub(super) fn numeric_address_spelling(&mut self, pointer: &Pointer) -> Pointer {
+    pub(super) fn numeric_address_spelling(&mut self, pointer: &Address) -> Address {
         let numeric = self.numeric_address(pointer);
         self.numeric_addresses
             .get(&self.root(numeric))
@@ -992,7 +978,7 @@ impl TermClasses {
             .clone()
     }
 
-    fn retain_pointer_value_witness(&mut self, root: u64, block: PointerBlock) {
+    fn retain_pointer_value_witness(&mut self, root: u64, block: AddressBase) {
         if let Some(other) = self.pointer_value_witnesses.get(&root) {
             if other != &block {
                 self.pointer_value_merges.push_back((other.clone(), block));
@@ -1002,9 +988,7 @@ impl TermClasses {
         }
     }
 
-    pub(super) fn take_pointer_value_merges(
-        &mut self,
-    ) -> imbl::Vector<(PointerBlock, PointerBlock)> {
+    pub(super) fn take_pointer_value_merges(&mut self) -> imbl::Vector<(AddressBase, AddressBase)> {
         std::mem::take(&mut self.pointer_value_merges)
     }
 
@@ -1019,18 +1003,18 @@ impl TermClasses {
     /// native addresses retain the existing late-merge registration machinery.
     pub(super) fn index_address_query(
         &mut self,
-        base: &Pointer,
+        base: &Address,
         index: &crate::kernel::KernelTerm,
         width: u32,
-        representative: PointerBlock,
+        representative: AddressBase,
         delta: &AffineOffset,
     ) -> u64 {
         use crate::kernel::MachineOperandView as V;
-        let base_address = self.address(base.block.clone(), base.offset.clone()).0;
+        let base_address = self.address(base.base.clone(), base.offset.clone()).0;
         let base_offset = self.intern(&base.offset);
         let index_class = self.shared_int32_class(index);
         let displacement = self.intern_node(Node::Int32Scaled(index_class, i64::from(width)));
-        let zero_base = base.offset == PointerOffsetTerm::Constant(0);
+        let zero_base = base.offset == AddressOffset::Constant(0);
         let raw = if zero_base {
             displacement
         } else {
@@ -1054,7 +1038,7 @@ impl TermClasses {
         self.close_with_affine_definition(vec![(raw, normalized)], true);
         let block = *self
             .load_blocks
-            .get(&base.block)
+            .get(&base.base)
             .expect("registered base block");
         let address = self.intern_node(Node::Address(block, normalized));
         if let Some(bytes) = self
@@ -1075,10 +1059,10 @@ impl TermClasses {
             let shifted = self.intern_node(Node::AddressOffset(base_address, displacement));
             self.close_with_affine_definition(vec![(address, shifted)], true);
         }
-        if representative != base.block
+        if representative != base.base
             && let Some(delta_node) = self.intern_affine_offset(delta)
         {
-            self.address(representative.clone(), PointerOffsetTerm::Constant(0));
+            self.address(representative.clone(), AddressOffset::Constant(0));
             let translated = self.intern_node(Node::Add(raw, delta_node));
             let normalized = affine
                 .as_ref()
@@ -1098,8 +1082,8 @@ impl TermClasses {
 
     fn address_without_shift(
         &mut self,
-        block: PointerBlock,
-        offset: PointerOffsetTerm,
+        block: AddressBase,
+        offset: AddressOffset,
     ) -> (u64, bool, u64) {
         // Affine normalization is already trusted by pointer equality. Keep
         // the original syntax connected to its definitional normal form so
@@ -1135,15 +1119,15 @@ impl TermClasses {
             uses.insert(id, Arc::new(offset));
             self.address_uses.insert(block.clone(), uses);
         }
-        if new_block && let PointerBlock::PureFunctionApplication(application) = block {
+        if new_block && let AddressBase::PureFunctionApplication(application) = block {
             // Give the call its zero-offset address once. Arguments may enqueue
             // nested calls; the shared dependency worklist drains them iteratively.
-            let zero = if operand == self.intern(&PointerOffsetTerm::Constant(0)) {
+            let zero = if operand == self.intern(&AddressOffset::Constant(0)) {
                 id
             } else {
                 self.address_without_shift(
-                    PointerBlock::PureFunctionApplication(application.clone()),
-                    PointerOffsetTerm::Constant(0),
+                    AddressBase::PureFunctionApplication(application.clone()),
+                    AddressOffset::Constant(0),
                 )
                 .0
             };
@@ -1155,17 +1139,17 @@ impl TermClasses {
 
     /// Only original concrete address inputs carry storage evidence. Affine
     /// projections into a representative's coordinates must never mint it.
-    pub(super) fn retain_storage_address(&mut self, id: u64, storage: &Pointer) {
+    pub(super) fn retain_storage_address(&mut self, id: u64, storage: &Address) {
         let root = self.root(id);
         let retained = match self.storage_addresses.get(&root) {
             None => Some(storage.clone()),
-            Some(Some(previous)) if previous.block == storage.block => Some(previous.clone()),
+            Some(Some(previous)) if previous.base == storage.base => Some(previous.clone()),
             _ => None,
         };
         self.storage_addresses.insert(root, retained);
     }
 
-    pub(super) fn storage_address(&self, id: u64) -> Option<Pointer> {
+    pub(super) fn storage_address(&self, id: u64) -> Option<Address> {
         self.storage_addresses
             .get(&self.root(id))
             .cloned()
@@ -1200,7 +1184,7 @@ impl TermClasses {
         ) {
             (None, right) => right,
             (left, None) => left,
-            (Some(Some(left)), Some(Some(right))) if left.block == right.block => Some(Some(right)),
+            (Some(Some(left)), Some(Some(right))) if left.base == right.base => Some(Some(right)),
             _ => Some(None),
         };
         if let Some(merged) = merged {
@@ -1209,8 +1193,8 @@ impl TermClasses {
         self.storage_addresses.remove(&moved);
     }
 
-    pub(super) fn retain_additive_address(&mut self, id: u64, pointer: &Pointer) {
-        if !matches!(pointer.offset, PointerOffsetTerm::Add(_, _)) {
+    pub(super) fn retain_additive_address(&mut self, id: u64, pointer: &Address) {
+        if !matches!(pointer.offset, AddressOffset::Add(_, _)) {
             return;
         }
         let wide = Self::additive_offset_is_wide(&pointer.offset);
@@ -1238,11 +1222,11 @@ impl TermClasses {
     // Prefer that producer over a wide prefix followed by a signed displacement;
     // both denote the same checked address, but only the former retains the
     // native index on which the caller stated its window bounds.
-    fn prefer_wide_offset(new: &PointerOffsetTerm, prior: &PointerOffsetTerm) -> bool {
-        let native = |offset: &PointerOffsetTerm| {
+    fn prefer_wide_offset(new: &AddressOffset, prior: &AddressOffset) -> bool {
+        let native = |offset: &AddressOffset| {
             matches!(offset,
-            PointerOffsetTerm::Add(_, right) if matches!(right.as_ref(),
-                PointerOffsetTerm::Int64Scaled { unsigned: true, .. }))
+            AddressOffset::Add(_, right) if matches!(right.as_ref(),
+                AddressOffset::Int64Scaled { unsigned: true, .. }))
         };
         native(new) && !native(prior)
     }
@@ -1250,24 +1234,24 @@ impl TermClasses {
     // An external-buffer spelling retains the complete caller coordinate.
     // A captured batch cursor's symbolic base can hide a prefix displacement;
     // choose the checked external producer on a tie without searching aliases.
-    fn prefer_wide_address(new: &Pointer, prior: &Pointer) -> bool {
+    fn prefer_wide_address(new: &Address, prior: &Address) -> bool {
         Self::prefer_wide_offset(&new.offset, &prior.offset)
             || !Self::prefer_wide_offset(&prior.offset, &new.offset)
-                && matches!(new.block, PointerBlock::ExternalArgument)
-                && matches!(prior.block, PointerBlock::Symbolic(_))
+                && matches!(new.base, AddressBase::ExternalArgument)
+                && matches!(prior.base, AddressBase::Symbolic(_))
     }
 
-    fn additive_offset_is_wide(offset: &PointerOffsetTerm) -> bool {
+    fn additive_offset_is_wide(offset: &AddressOffset) -> bool {
         let mut pending = vec![offset];
         let mut wide = false;
         while let Some(offset) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
             match offset {
-                PointerOffsetTerm::Add(left, right) => {
+                AddressOffset::Add(left, right) => {
                     pending.push(left);
                     pending.push(right);
                 }
-                PointerOffsetTerm::Int64Scaled { .. } => {
+                AddressOffset::Int64Scaled { .. } => {
                     wide = true;
                     break;
                 }
@@ -1277,8 +1261,8 @@ impl TermClasses {
         wide
     }
 
-    fn retain_additive_offset(&mut self, id: u64, offset: &PointerOffsetTerm) {
-        if !matches!(offset, PointerOffsetTerm::Add(_, _)) {
+    fn retain_additive_offset(&mut self, id: u64, offset: &AddressOffset) {
+        if !matches!(offset, AddressOffset::Add(_, _)) {
             return;
         }
         let wide = Self::additive_offset_is_wide(offset);
@@ -1304,9 +1288,9 @@ impl TermClasses {
 
     pub(super) fn additive_offset(
         &mut self,
-        offset: &PointerOffsetTerm,
+        offset: &AddressOffset,
         wide: bool,
-    ) -> Option<PointerOffsetTerm> {
+    ) -> Option<AddressOffset> {
         let id = self.intern(offset);
         let (narrow, wide_spelling) = self.additive_offsets.get(&self.root(id))?;
         (if wide {
@@ -1340,14 +1324,14 @@ impl TermClasses {
         self.additive_offsets.remove(&moved);
     }
 
-    pub(super) fn additive_address(&self, id: u64) -> Option<Pointer> {
+    pub(super) fn additive_address(&self, id: u64) -> Option<Address> {
         self.additive_addresses
             .get(&self.root(id))
             .and_then(|(narrow, wide)| narrow.as_ref().or(wide.as_ref()))
             .map(|pointer| (**pointer).clone())
     }
 
-    pub(super) fn wide_additive_address(&self, id: u64) -> Option<Pointer> {
+    pub(super) fn wide_additive_address(&self, id: u64) -> Option<Address> {
         self.additive_addresses
             .get(&self.root(id))
             .and_then(|(_, wide)| wide.as_ref())
@@ -1377,7 +1361,7 @@ impl TermClasses {
         self.additive_addresses.remove(&moved);
     }
 
-    pub(super) fn retain_alignment(&mut self, id: u64, alignment: u64, pointer: &Pointer) {
+    pub(super) fn retain_alignment(&mut self, id: u64, alignment: u64, pointer: &Address) {
         let root = self.root(id);
         if self
             .alignment_witnesses
@@ -1389,7 +1373,7 @@ impl TermClasses {
         }
     }
 
-    pub(super) fn alignment_witness(&self, id: u64) -> Option<(u64, Pointer)> {
+    pub(super) fn alignment_witness(&self, id: u64) -> Option<(u64, Address)> {
         self.alignment_witnesses.get(&self.root(id)).cloned()
     }
 
@@ -1407,8 +1391,8 @@ impl TermClasses {
 
     pub(super) fn shift_addresses(
         &mut self,
-        moved: &PointerBlock,
-        kept: &PointerBlock,
+        moved: &AddressBase,
+        kept: &AddressBase,
         delta: &AffineOffset,
     ) {
         if !self.affine_addresses_complete(moved) {
@@ -1428,7 +1412,7 @@ impl TermClasses {
         for (id, offset) in uses.iter() {
             crate::instrumentation::record_deterministic_work(1);
             let translated =
-                PointerOffsetTerm::Add(Box::new((**offset).clone()), Box::new(delta.clone()));
+                AddressOffset::Add(Box::new((**offset).clone()), Box::new(delta.clone()));
             let (new, _) = self.address(kept.clone(), translated);
             self.close(vec![(*id, new)]);
         }
@@ -1460,7 +1444,7 @@ impl TermClasses {
     /// A non-affine offset equality can add suppliers not represented by an
     /// affine interval tree. Report unknown only for address blocks reached by
     /// that equality's registered parent dependencies. No class/frame walk.
-    pub(super) fn affine_addresses_complete(&self, block: &PointerBlock) -> bool {
+    pub(super) fn affine_addresses_complete(&self, block: &AddressBase) -> bool {
         !self.non_affine_address_blocks.contains(block)
     }
 
@@ -1579,9 +1563,9 @@ impl TermClasses {
         Some(result)
     }
 
-    fn intern(&mut self, term: &PointerOffsetTerm) -> u64 {
+    fn intern(&mut self, term: &AddressOffset) -> u64 {
         enum Work<'a> {
-            Term(&'a PointerOffsetTerm),
+            Term(&'a AddressOffset),
             Add,
         }
         let mut pending = vec![Work::Term(term)];
@@ -1596,15 +1580,15 @@ impl TermClasses {
                     Node::Add(left, right)
                 }
                 Work::Term(term) => match term {
-                    PointerOffsetTerm::Constant(value) => Node::Constant(*value),
-                    PointerOffsetTerm::Variable(variable) => Node::Variable(*variable),
-                    PointerOffsetTerm::Add(left, right) => {
+                    AddressOffset::Constant(value) => Node::Constant(*value),
+                    AddressOffset::Variable(variable) => Node::Variable(*variable),
+                    AddressOffset::Add(left, right) => {
                         pending.push(Work::Add);
                         pending.push(Work::Term(right));
                         pending.push(Work::Term(left));
                         continue;
                     }
-                    PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+                    AddressOffset::Int32Scaled { value, byte_width } => {
                         let node = Node::Int32Scaled(
                             match value.operand_view() {
                                 crate::kernel::MachineOperandView::Legacy(term) => {
@@ -1626,7 +1610,7 @@ impl TermClasses {
                         }
                         node
                     }
-                    PointerOffsetTerm::Int64Scaled {
+                    AddressOffset::Int64Scaled {
                         value,
                         byte_width,
                         unsigned,
@@ -1671,7 +1655,7 @@ impl TermClasses {
             self.byte_product_nodes.insert(key, id);
         }
         if let Some((index, stride)) = self.defined_byte_products.get(&key).cloned() {
-            let element = self.intern(&PointerOffsetTerm::Int32Scaled {
+            let element = self.intern(&AddressOffset::Int32Scaled {
                 value: index,
                 byte_width: stride,
             });
@@ -1696,7 +1680,7 @@ impl TermClasses {
         self.defined_byte_products
             .insert(key, (index.clone(), stride));
         if let Some(node) = self.byte_product_nodes.get(&key).copied() {
-            let element = self.intern(&PointerOffsetTerm::Int32Scaled {
+            let element = self.intern(&AddressOffset::Int32Scaled {
                 value: index,
                 byte_width: stride,
             });
@@ -1908,7 +1892,7 @@ impl TermClasses {
                 self.close_with_affine_definition(vec![(value, call)], true);
                 self.retain_pointer_value_witness(
                     self.root(value),
-                    PointerBlock::PureFunctionApplication(application),
+                    AddressBase::PureFunctionApplication(application),
                 );
                 continue;
             }
@@ -1960,9 +1944,7 @@ impl TermClasses {
             }
             if let Some((id, memory, pointer, kind)) = self.pending_narrow_loads.pop() {
                 crate::instrumentation::record_deterministic_work(1);
-                let address = self
-                    .address(pointer.block.clone(), pointer.offset.clone())
-                    .0;
+                let address = self.address(pointer.base.clone(), pointer.offset.clone()).0;
                 let address = self.read_address(address);
                 self.register_application(
                     id,
@@ -1987,9 +1969,7 @@ impl TermClasses {
             // Integer reads use the same complete address application as
             // pointer and uint64 reads. A checked equality between addresses
             // must reindex this read even when no affine block relabel exists.
-            let address = self
-                .address(pointer.block.clone(), pointer.offset.clone())
-                .0;
+            let address = self.address(pointer.base.clone(), pointer.offset.clone()).0;
             let address = self.read_address(address);
             self.register_application(id, Application::Int32Load(memory.read_identity(), address));
             // Canonicalization recorded this exact cell projection when it
@@ -2355,22 +2335,14 @@ impl TermClasses {
         id
     }
 
-    pub(super) fn are_equal(
-        &mut self,
-        left: &PointerOffsetTerm,
-        right: &PointerOffsetTerm,
-    ) -> bool {
+    pub(super) fn are_equal(&mut self, left: &AddressOffset, right: &AddressOffset) -> bool {
         let left = self.intern(left);
         let right = self.intern(right);
         self.register_pending_loads();
         self.root(left) == self.root(right)
     }
 
-    pub(super) fn add_equality(
-        &mut self,
-        left: &PointerOffsetTerm,
-        right: &PointerOffsetTerm,
-    ) -> bool {
+    pub(super) fn add_equality(&mut self, left: &AddressOffset, right: &AddressOffset) -> bool {
         let left_id = self.intern(left);
         let right_id = self.intern(right);
         self.retain_additive_offset(left_id, left);
@@ -2731,7 +2703,7 @@ impl TermClasses {
             }
             self.mark_non_affine(id);
         }
-        // PointerOffsetTerm folds literal int32 indices to byte constants.
+        // AddressOffset folds literal int32 indices to byte constants.
         // Join that definitional form without solving any scalar arithmetic.
         if let Application::Int32Scaled(value, width) = signature
             && let Some(value) = self.int32_constants.get(&value)
@@ -2755,7 +2727,7 @@ impl TermClasses {
             let constant = self.intern_node(Node::Constant(bytes));
             pending.push((id, constant));
         }
-        // PointerOffsetTerm removes zero addends at construction. Retain
+        // AddressOffset removes zero addends at construction. Retain
         // that identity when a selected scaled index learns zero later;
         // parent-use indexing then reconnects the existing address and reads.
         if let Application::Add(left, right) = signature
@@ -3236,18 +3208,18 @@ fn function_contract_group(name: &str, values: &[crate::kernel::Term]) -> String
 mod tests {
     use super::super::EqualityGraph;
     use super::*;
-    use crate::kernel::{ConditionTerm, MachineTerm, Pointer, PureFactContext};
+    use crate::kernel::{Address, ConditionTerm, MachineTerm, PureFactContext};
 
-    fn var(id: u64) -> PointerOffsetTerm {
-        PointerOffsetTerm::Variable(Variable(id))
+    fn var(id: u64) -> AddressOffset {
+        AddressOffset::Variable(Variable(id))
     }
-    fn equality(left: &PointerOffsetTerm, right: &PointerOffsetTerm) -> ConditionTerm {
+    fn equality(left: &AddressOffset, right: &AddressOffset) -> ConditionTerm {
         ConditionTerm::pointer_offset_equal(left.clone(), right.clone())
     }
 
-    fn add(left: PointerOffsetTerm, right: PointerOffsetTerm) -> PointerOffsetTerm {
+    fn add(left: AddressOffset, right: AddressOffset) -> AddressOffset {
         // Preserve nested applications rather than folding constants here.
-        PointerOffsetTerm::Add(Box::new(left), Box::new(right))
+        AddressOffset::Add(Box::new(left), Box::new(right))
     }
 
     #[test]
@@ -3269,9 +3241,9 @@ mod tests {
                 4,
             )
             .unwrap();
-        let written = PointerOffsetTerm::add(
-            PointerOffsetTerm::Constant(12),
-            PointerOffsetTerm::scale_int32(native, 4),
+        let written = AddressOffset::add(
+            AddressOffset::Constant(12),
+            AddressOffset::scale_int32(native, 4),
         );
         let mut terms = TermClasses::default();
         let exports = KernelTermExport::machine_export_count();
@@ -3333,8 +3305,8 @@ mod tests {
         assert!(!graph.are_offsets_equal(&a, &b));
         graph.add_offset_equality(&a, &b);
         assert!(!graph.are_offsets_equal(
-            &add(a, PointerOffsetTerm::Constant(1)),
-            &add(b, PointerOffsetTerm::Constant(2)),
+            &add(a, AddressOffset::Constant(1)),
+            &add(b, AddressOffset::Constant(2)),
         ));
     }
 
@@ -3421,30 +3393,30 @@ mod tests {
 
     #[test]
     fn affine_completeness_follows_only_affected_address_dependencies() {
-        let base = Pointer::symbolic(Variable(895_050));
-        let other = Pointer::symbolic(Variable(895_051));
-        let alias = Pointer::symbolic(Variable(895_052));
+        let base = Address::symbolic(Variable(895_050));
+        let other = Address::symbolic(Variable(895_051));
+        let alias = Address::symbolic(Variable(895_052));
         let mut graph = EqualityGraph::default();
-        graph.address_class(&Pointer {
-            block: base.block.clone(),
+        graph.address_class(&Address {
+            base: base.base.clone(),
             offset: add(var(895_053), var(895_054)),
         });
         graph.address_class(&other.offset_by_bytes(8));
         let sibling = graph.clone();
         graph.add_offset_equality(&var(895_053), &var(895_055));
-        assert!(!graph.affine_addresses_complete(&base.block));
-        assert!(graph.affine_addresses_complete(&other.block));
-        assert!(sibling.affine_addresses_complete(&base.block));
+        assert!(!graph.affine_addresses_complete(&base.base));
+        assert!(graph.affine_addresses_complete(&other.base));
+        assert!(sibling.affine_addresses_complete(&base.base));
         // A newly registered parent inherits the already-affected operand.
-        let late = Pointer::symbolic(Variable(895_056));
-        graph.address_class(&Pointer {
-            block: late.block.clone(),
+        let late = Address::symbolic(Variable(895_056));
+        graph.address_class(&Address {
+            base: late.base.clone(),
             offset: add(var(895_055), var(895_057)),
         });
-        assert!(!graph.affine_addresses_complete(&late.block));
+        assert!(!graph.affine_addresses_complete(&late.base));
         graph.add_equality(&base, &alias);
-        assert!(!graph.affine_addresses_complete(&alias.block));
-        assert!(graph.affine_addresses_complete(&other.block));
+        assert!(!graph.affine_addresses_complete(&alias.base));
+        assert!(graph.affine_addresses_complete(&other.base));
     }
 
     #[test]
@@ -3457,18 +3429,17 @@ mod tests {
         assert!(branch.are_offsets_equal(&c, &a));
         assert!(branch.are_offsets_equal(&a, &a));
         assert!(!parent.are_offsets_equal(&a, &c));
-        let plus_one =
-            |x| PointerOffsetTerm::Add(Box::new(x), Box::new(PointerOffsetTerm::Constant(1)));
+        let plus_one = |x| AddressOffset::Add(Box::new(x), Box::new(AddressOffset::Constant(1)));
         assert!(branch.are_offsets_equal(&plus_one(a), &plus_one(c)));
     }
 
     #[test]
     fn late_wide_constants_reconnect_offsets_without_using_low_words_or_wrapping() {
         let value = MachineTerm::Variable(Variable(895_080));
-        let base = Pointer::symbolic(Variable(895_081));
-        let scaled = |width, unsigned| Pointer {
-            block: base.block.clone(),
-            offset: PointerOffsetTerm::scaled_int64_node(value.clone(), width, unsigned),
+        let base = Address::symbolic(Variable(895_081));
+        let scaled = |width, unsigned| Address {
+            base: base.base.clone(),
+            offset: AddressOffset::scaled_int64_node(value.clone(), width, unsigned),
         };
         for unsigned in [false, true] {
             for width in [1, 4, 8] {
@@ -3497,9 +3468,9 @@ mod tests {
         high_word.add_uint64_equality(&value, &MachineTerm::uint64_constant(1u64 << 32));
         assert!(high_word.are_equal(
             &scaled(4, true),
-            &Pointer {
-                block: base.block.clone(),
-                offset: PointerOffsetTerm::Constant(4i64 << 32)
+            &Address {
+                base: base.base.clone(),
+                offset: AddressOffset::Constant(4i64 << 32)
             }
         ));
         assert!(!high_word.are_equal(&scaled(4, true), &base));
@@ -3514,7 +3485,7 @@ mod tests {
     fn offset_equality_preserves_width_signedness_and_state_identity() {
         let _session = crate::kernel::VerificationSession::enter();
         let scaled =
-            |value, width, unsigned| PointerOffsetTerm::scaled_int64_node(value, width, unsigned);
+            |value, width, unsigned| AddressOffset::scaled_int64_node(value, width, unsigned);
         let value = MachineTerm::Variable(Variable(10));
         let signed = scaled(value.clone(), 4, false);
         let target = var(11);
@@ -3524,7 +3495,7 @@ mod tests {
         assert!(!graph.are_offsets_equal(&scaled(value, 4, true), &target));
         let before =
             crate::kernel::intern_memory(crate::kernel::Memory::new().with_block("offset", 8));
-        let address = Pointer::symbolic(Variable(12));
+        let address = Address::symbolic(Variable(12));
         let after = crate::kernel::intern_memory(before.memory().clone().store(
             address.clone(),
             crate::kernel::ProgramValue::Int32(MachineTerm::constant(9)),
@@ -3550,8 +3521,8 @@ mod tests {
         let (a, b, c) = (var(20), var(21), var(22));
         let ab = equality(&a, &b);
         let bc = equality(&b, &c);
-        let p = Pointer::symbolic(Variable(23));
-        let q = Pointer::symbolic(Variable(24));
+        let p = Address::symbolic(Variable(23));
+        let q = Address::symbolic(Variable(24));
         let pq = ConditionTerm::pointer_equal(p.clone(), q.clone());
         let context = PureFactContext::new()
             .assume_condition(ab.clone(), true)
@@ -3578,7 +3549,7 @@ mod tests {
     fn complete_pointer_identity_tracks_symbolic_bounds_widths() {
         use crate::kernel::{PointerValue, ProgramType, SubobjectBounds};
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer::symbolic(Variable(942_001));
+        let pointer = Address::symbolic(Variable(942_001));
         let width = MachineTerm::Variable(Variable(942_002));
         let bounded = |width| {
             PointerValue::new(pointer.clone(), ProgramType::Int32Pointer).with_bounds(Some(

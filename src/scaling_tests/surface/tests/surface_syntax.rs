@@ -67,9 +67,9 @@ fn indexed_surface_resolution_ignores_unrelated_available_facts() {
 
 #[test]
 fn memory_erased_surface_selection_scales_by_index_height() {
-    let pointer = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     };
     let load_fact = |memory: Memory, upper: u32| {
         Proposition::ConditionIs(
@@ -227,10 +227,10 @@ fn nested_implication_lowering_records_in_linear_work() {
 
 #[test]
 fn qualified_storage_source_index_preserves_forks_and_scales() {
-    fn pair(index: u32) -> (Pointer, ContractExpression, ClickProposition, Proposition) {
-        let pointer = Pointer {
-            block: PointerBlock::Concrete(format!("global:state#file-static:file{index}.c")),
-            offset: PointerOffsetTerm::Constant(0),
+    fn pair(index: u32) -> (Address, ContractExpression, ClickProposition, Proposition) {
+        let pointer = Address {
+            base: AddressBase::Concrete(format!("global:state#file-static:file{index}.c")),
+            offset: AddressOffset::Constant(0),
         };
         let expression = ContractExpression::QualifiedC {
             name: format!("file{index}::state"),

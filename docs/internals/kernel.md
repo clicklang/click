@@ -600,7 +600,7 @@ In `src/kernel/`:
   some widths stay context-implied while machine operators carry formats is
   explained in `design/machine-integers.md`; the older typed-index rulings
   against format-carrying nodes were superseded.
-- `PointerOffsetTerm`: pointer-offset expressions.
+- `AddressOffset`: pointer-offset expressions.
 - `ConditionTerm`: proof-level truth-valued conditions: machine comparisons
   `Compare { format, relation, left, right }` and overflow tests
   `Overflows { format, op, left, right }` at every machine-integer format,
@@ -610,7 +610,7 @@ In `src/kernel/`:
   `int32`, whose order its canonical words compare exactly, so a fact has
   one representation. Every other order is filed at its own format: a `uint32`
   order is `Compare { format: UInt32, .. }` of the operands' words.
-- `ProgramValue`, `ProgramType`, `Pointer`, `Memory`, `ExecutionState`: C semantic state,
+- `ProgramValue`, `ProgramType`, `Address`, `Memory`, `ExecutionState`: C semantic state,
   including the non-object `Void` return value, scalar `int8`, `int16`, `int32`,
   `uint8`, `uint16`, `uint32`, `int64`, and `uint64`, pointers, and typed
   memory loads/stores.
@@ -1047,7 +1047,7 @@ small ABI boundary: Click's struct-pointer view is `int32*`, while the internal
 address-backed return slot is `uint8*`. The return transition accepts only
 those two modeled data-pointer views, retags the address at that boundary, and
 copies every modeled leaf into a fresh typed
-`PointerBlock::AggregateReturn { frame }` block. Consequently a
+`AddressBase::AggregateReturn { frame }` block. Consequently a
 postcondition such as `result.inner.flag == source.inner.flag` compares the
 fresh result cell with the source state without turning the returned
 aggregate into an alias or weakening ordinary pointer-return type checks.
@@ -1139,8 +1139,8 @@ arithmetic that is modular by definition. A key that *is* ordered — the
 pairwise scan — is an ordering question wearing a key's clothes, and takes the
 signed reading.
 
-A **byte offset** is mathematical. `PointerOffsetTerm` adds exactly, and
-`PointerOffsetTerm::scale_int32` sign-extends its index before multiplying by
+A **byte offset** is mathematical. `AddressOffset` adds exactly, and
+`AddressOffset::scale_int32` sign-extends its index before multiplying by
 the element width, so a pointer's displacement from its block is an `i64` that
 never wraps. An **element index** is modular. `MachineTerm` is a 32-bit
 machine value, so `MachineTerm::add` and `MachineTerm::subtract` wrap:
@@ -1150,7 +1150,7 @@ machine value, so `MachineTerm::add` and `MachineTerm::subtract` wrap:
 The two meet in `element_index_from_offset`, which divides a byte offset by an
 element width and folds the pieces with the *modular* add. What it returns is
 therefore the element delta only **modulo `2^32`**, and the same is true of
-`Pointer::element_index_from_base_with_width` and of every endpoint a rule
+`Address::element_index_from_base_with_width` and of every endpoint a rule
 builds with `MachineTerm::add(base_index, range.start())`. So is
 `affine_bitvector_difference_constant`, which walks two index terms as affine
 forms in `i64`: the constant it returns is the true difference modulo `2^32`,
@@ -1167,7 +1167,7 @@ A residue is **not** enough for **membership**, in either its pointer form
 inside that one"). The wrapped reading of a residue `r` is `r - 2^32`, which is
 *outside*, so a positive conclusion has to rule it out. That is
 `exact_affine_index_difference`, which answers only for a residue it can show
-is the difference, and `Pointer::exact_element_delta_from_base`, which keeps
+is the difference, and `Address::exact_element_delta_from_base`, which keeps
 the exact `i64` constant part of a delta beside its one symbolic index rather
 than folding them with an add that wraps.
 
@@ -1364,7 +1364,7 @@ statement that holds the expression:
 An aggregate expression result carries an `AggregateResultLayout`, retaining
 its byte layout and declared access class. A call publishes its already
 materialized return object under its step. A selected ternary arm copies its
-aggregate into fresh `PointerBlock::Temporary` storage and publishes that
+aggregate into fresh `AddressBase::Temporary` storage and publishes that
 address under the operator step. No `LocalEnvironment` binding is introduced.
 `ExecutionState::aggregate_step_objects` indexes these objects by step, and an
 explicit full-expression boundary retires their storage and ownership. A loop
@@ -1571,7 +1571,7 @@ stays within its own range:
 | `1_000_000 .. 2_000_000` | the execution's fresh-identity counter |
 | `2_000_000 .. 4_000_000` | the surface's quantifier variables; lowering refuses at the ceiling |
 | `4_000_000 .. 4_000_000_000`, stepping by `65_536` | the surface's algebraic binders; lowering refuses at the ceiling |
-| `4_000_000_000 .. 8_000_000_000` | symbolic pointer blocks |
+| `4_000_000_000 .. 8_000_000_000` | symbolic address bases |
 | `1 << 40 .. 1 << 41` | load variables (`LOAD_VARIABLE_BASE`) |
 | `1 << 41 .. 1 << 42` | match-arm binders (`MATCH_BINDER_VARIABLE_BASE`) |
 | `1 << 42 .. 1 << 43` | universal-introduction witnesses (`UNIVERSAL_WITNESS_VARIABLE_BASE`) |
@@ -1742,13 +1742,13 @@ A contract's return value is `BindingName::ContractResult`, with Surface spellin
 `result`. It is distinct from all `Named`, automatic, and static bindings,
 including source C variables named `result`. Fixed-state elaboration carries its
 value in a dedicated context field rather than a string-keyed lexical map. Its
-value-only bookkeeping slot is `PointerBlock::ContractResult`, raised as
+value-only bookkeeping slot is `AddressBase::ContractResult`, raised as
 `result.storage()` when an exact slot address is needed; this does not declare
 C storage or grant memory ownership. Aggregate results still bind their actual
 returned object address. No string is decoded into a contract-result identity.
 
 The thrown `int32` payload likewise uses `BindingName::ContractException` and
-its own `PointerBlock::ContractException` bookkeeping slot. Exceptional
+its own `AddressBase::ContractException` bookkeeping slot. Exceptional
 postconditions bind `exception` to that typed payload. The exact slot address
 raises to `exception.storage()` and grants no storage or ownership. Neither `exception` nor the former internal
 name `__click_exception` is decoded into a kernel identity, so a source
@@ -1844,7 +1844,7 @@ the call returns. Direct recursion, mutual recursion, and source-order-forward
 calls are certified as one closed transaction before any resulting rules are
 made available outside it.
 
-An opaque pointer return is a symbolic pointer block that may alias any
+An opaque pointer return is a symbolic address base that may alias any
 existing block. Only a certified postcondition or resource fact can establish
 that it equals an argument or is distinct from existing storage; an opaque
 return is not treated as an allocation.
@@ -1980,7 +1980,7 @@ Smart execution and exact certification share the same bounded order
 derivations. In particular, a strict upper bound justifies the non-wrapping
 step from `x` to `x + 1` even when the two `x` loads use memory states
 connected by deterministic derivation edges. Resource separation also treats
-intrinsically distinct pointer blocks as context-free evidence. Consequently,
+intrinsically distinct address bases as context-free evidence. Consequently,
 an opaque-call premise proved during search always has a checked derivation
 rather than becoming an assumed verification condition.
 

@@ -52,7 +52,7 @@ fn commuted_word_tag_or_ignores_unrelated_facts() {
         let (_, value) = word();
         let tag = MachineTerm::Variable(Variable(997_080));
         let tag_value =
-            ProgramValue::UInt64(tag.clone()).complete_word(Pointer::symbolic(Variable(997_081)));
+            ProgramValue::UInt64(tag.clone()).complete_word(Address::symbolic(Variable(997_081)));
         let mut context = PureFactContext::new().assume_condition(
             ConditionTerm::uint64_less_equal(tag, MachineTerm::uint64_constant(1)),
             true,

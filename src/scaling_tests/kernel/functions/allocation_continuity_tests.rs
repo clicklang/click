@@ -29,9 +29,9 @@ fn allocating_call_does_not_expand_the_callers_kept_objects() {
         vec![],
     )]);
     let interface = boxed.contract_interface();
-    let heap = |id: u64| Pointer {
-        block: PointerBlock::Heap(id),
-        offset: PointerOffsetTerm::Constant(0),
+    let heap = |id: u64| Address {
+        base: AddressBase::Heap(id),
+        offset: AddressOffset::Constant(0),
     };
     let bytes = MachineTerm::constant(4);
     let samples = [16, 64, 256]
@@ -175,19 +175,19 @@ fn allocation_companion_alias_lookup_ignores_unrelated_storage_and_alias_stars()
                 facts = facts.assume_condition(
                     ConditionTerm::pointer_equal(
                         base.clone(),
-                        Pointer::symbolic(Variable(10_000_000 + id)),
+                        Address::symbolic(Variable(10_000_000 + id)),
                     ),
                     true,
                 );
                 facts = facts.assume_condition(
                     ConditionTerm::pointer_equal(
-                        Pointer::symbolic(Variable(20_000_000 + id)),
-                        Pointer::symbolic(Variable(30_000_000 + id)),
+                        Address::symbolic(Variable(20_000_000 + id)),
+                        Address::symbolic(Variable(30_000_000 + id)),
                     ),
                     true,
                 );
             }
-            let alias = Pointer::symbolic(Variable(if hit {
+            let alias = Address::symbolic(Variable(if hit {
                 10_000_000 + size - 1
             } else {
                 40_000_000

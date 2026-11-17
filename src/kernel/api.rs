@@ -58,22 +58,22 @@ pub(crate) struct MemoryAccessElementBound {
 
 pub(crate) fn memory_access_element_bound(
     memory: &Memory,
-    pointer: &Pointer,
+    pointer: &Address,
     byte_width: u32,
 ) -> Option<MemoryAccessElementBound> {
-    let size = memory.block_size(&pointer.block)?;
+    let size = memory.block_size(&pointer.base)?;
     let mut pending = vec![&pointer.offset];
     let mut widest: Option<(&MachineTerm, u32)> = None;
     while let Some(term) = pending.pop() {
         match term {
-            PointerOffsetTerm::Add(left, right) => {
+            AddressOffset::Add(left, right) => {
                 pending.push(right);
                 pending.push(left);
             }
             // A widened index is spelled as the C index it widens: a
             // `uint32` index zero-extends to the 64-bit offset.
-            PointerOffsetTerm::Int32Scaled { value, byte_width }
-            | PointerOffsetTerm::Int64Scaled {
+            AddressOffset::Int32Scaled { value, byte_width }
+            | AddressOffset::Int64Scaled {
                 value, byte_width, ..
             } => {
                 let value = match value.structural_value() {
@@ -85,8 +85,8 @@ pub(crate) fn memory_access_element_bound(
                     widest = Some((value, stride));
                 }
             }
-            PointerOffsetTerm::Constant(_) => {}
-            PointerOffsetTerm::Variable(_) => return None,
+            AddressOffset::Constant(_) => {}
+            AddressOffset::Variable(_) => return None,
         }
     }
     let (index, stride) = widest?;
@@ -313,12 +313,12 @@ pub fn float64(bits: impl Into<MachineTerm>) -> ProgramValue {
 /// materialization of loads embedded in the key and pointer forms.
 pub(crate) fn memory_holds_live_heap_allocation_at(
     memory: &super::Memory,
-    pointer: &Pointer,
+    pointer: &Address,
     assumptions: &PureFactContext,
 ) -> bool {
     memory.is_live_heap_address(pointer, assumptions)
         || memory.heap_live_allocation_bases().any(|base| {
-            base.block == pointer.block
+            base.base == pointer.base
                 && super::assumptions::pointer_offsets_equal_after_exact_materialization(
                     &base.offset,
                     &pointer.offset,
@@ -1656,11 +1656,11 @@ enum JoinLocals<'a> {
 struct InterfacePreservedBlocks<'a> {
     locals: &'a LocalEnvironment,
     differing: &'a BTreeSet<&'a BindingName>,
-    visited: &'a BTreeSet<PointerBlock>,
+    visited: &'a BTreeSet<AddressBase>,
 }
 
 impl crate::kernel::primitives::BlockMembership for InterfacePreservedBlocks<'_> {
-    fn contains_block(&self, block: &PointerBlock) -> bool {
+    fn contains_block(&self, block: &AddressBase) -> bool {
         self.visited.contains(block)
             || self
                 .locals
@@ -1960,7 +1960,7 @@ fn abstract_execution_state_for_join_across_with_policy(
                         join_variable(&mut variables, &mut budget)?,
                     )),
                     ProgramType::FunctionPointer(_) => ProgramValue::typed_pointer(
-                        Pointer::symbolic_function(join_variable(&mut variables, &mut budget)?),
+                        Address::symbolic_function(join_variable(&mut variables, &mut budget)?),
                         *program_type,
                     ),
                     ProgramType::Int8Array(_) => {
@@ -1980,13 +1980,13 @@ fn abstract_execution_state_for_join_across_with_policy(
                         unreachable!("array objects use LocalBinding::ArrayObject")
                     }
                     _ => ProgramValue::typed_pointer(
-                        Pointer::symbolic(join_variable(&mut variables, &mut budget)?),
+                        Address::symbolic(join_variable(&mut variables, &mut budget)?),
                         *program_type,
                     ),
                 }
                 .into()
             };
-        preserved_blocks.insert(slot.block.clone());
+        preserved_blocks.insert(slot.base.clone());
         abstract_objects.push((name.clone(), abstract_value, *program_type));
     }
 
@@ -3681,7 +3681,7 @@ pub(crate) fn execution_state_with_assumed_mutex_inputs(
 
 pub(crate) fn program_mutex_guard_resource(
     state: &ExecutionState,
-    mutex: &Pointer,
+    mutex: &Address,
     abstract_entry: bool,
 ) -> Option<ResourceFact> {
     crate::kernel::mutexes::guard_resource(state, mutex, abstract_entry)
@@ -3689,7 +3689,7 @@ pub(crate) fn program_mutex_guard_resource(
 
 pub(crate) fn program_mutex_live_resource(
     state: &ExecutionState,
-    mutex: &Pointer,
+    mutex: &Address,
     abstract_entry: bool,
 ) -> Option<ResourceFact> {
     crate::kernel::mutexes::live_resource(state, mutex, abstract_entry)
@@ -3698,7 +3698,7 @@ pub(crate) fn program_mutex_live_resource(
 /// Construct a contract requirement; this does not establish ownership.
 pub(crate) fn program_mutex_use_resource_with_type(
     state: &ExecutionState,
-    mutex: &Pointer,
+    mutex: &Address,
     protected: ResourceDescription,
 ) -> ResourceFact {
     let fact = program_mutex_use_resource(state, mutex);
@@ -3709,7 +3709,7 @@ pub(crate) fn program_mutex_use_resource_with_type(
     ResourceFact::own(Resource::MutexUse(identity))
 }
 
-pub(crate) fn program_mutex_use_resource(state: &ExecutionState, mutex: &Pointer) -> ResourceFact {
+pub(crate) fn program_mutex_use_resource(state: &ExecutionState, mutex: &Address) -> ResourceFact {
     crate::kernel::mutexes::use_resource(state, mutex)
 }
 
@@ -4056,8 +4056,8 @@ fn install_borrowed_contract_inputs(
         if matches!(
             input.fact.resource(),
             Resource::Memory(range)
-                if range.base().block.is_local_block()
-                    || state.memory().is_read_only_block(&range.base().block)
+                if range.base().base.is_local_block()
+                    || state.memory().is_read_only_block(&range.base().base)
         ) {
             continue;
         }
@@ -4090,8 +4090,8 @@ fn install_borrowed_contract_inputs(
         if matches!(
             viewed.resource(),
             Resource::Memory(range)
-                if range.base().block.is_local_block()
-                    || state.memory().is_read_only_block(&range.base().block)
+                if range.base().base.is_local_block()
+                    || state.memory().is_read_only_block(&range.base().base)
         ) {
             continue;
         }
@@ -5862,9 +5862,9 @@ mod proof_case_evidence_tests {
 
     #[test]
     fn branch_memory_delta_uses_the_full_changed_cell_width() {
-        let pointer = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
         };
         let escrow = ResourceFact::own_memory(MemoryRange::new(
             pointer.clone(),
@@ -5883,16 +5883,16 @@ mod proof_case_evidence_tests {
         let base = Memory::new()
             .with_block("arg", 8)
             .store(pointer.clone(), int32(0));
-        let later_byte = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(1),
+        let later_byte = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(1),
         };
         let changed = base.clone().store(later_byte, int32(1));
         assert!(validate_branch_memory_delta_against_loans(&base, &changed, &ledger).is_err());
         let disjoint = base.clone().store(
-            Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Constant(4),
+            Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Constant(4),
             },
             int32(1),
         );
@@ -7564,8 +7564,8 @@ pub fn contract_refinement_context(
     };
     if pointer.program_type() != target.function_pointer_type()
         || pointer.program_type() != source.function_pointer_type()
-        || !matches!(pointer.pointer().block, PointerBlock::FunctionSymbolic(_))
-        || pointer.pointer().offset != PointerOffsetTerm::Constant(0)
+        || !matches!(pointer.pointer().base, AddressBase::FunctionSymbolic(_))
+        || pointer.pointer().offset != AddressOffset::Constant(0)
     {
         return None;
     }
@@ -7644,15 +7644,15 @@ pub(crate) fn prove_program_function_contract_refinement(
     }
     let theorem = match &context.source_contract {
         None => {
-            if context.pointer.pointer().block
-                != PointerBlock::Function(context.function_name.clone())
+            if context.pointer.pointer().base
+                != AddressBase::Function(context.function_name.clone())
             {
                 return None;
             }
             conclusion
         }
         Some(source) => {
-            let PointerBlock::FunctionSymbolic(variable) = &context.pointer.pointer().block else {
+            let AddressBase::FunctionSymbolic(variable) = &context.pointer.pointer().base else {
                 return None;
             };
             let premise = Proposition::Predicate {
@@ -7767,12 +7767,12 @@ pub(crate) fn prove_executed_contract_refinement(
     else {
         return None;
     };
-    let PointerBlock::FunctionSymbolic(variable) = pointer.pointer().block else {
+    let AddressBase::FunctionSymbolic(variable) = pointer.pointer().base else {
         return None;
     };
     if name != &target.predicate_name()
         || pointer.program_type() != target.function_pointer_type()
-        || pointer.pointer().offset != PointerOffsetTerm::Constant(0)
+        || pointer.pointer().offset != AddressOffset::Constant(0)
     {
         return None;
     }
@@ -7939,12 +7939,12 @@ pub(crate) fn prove_executed_concrete_contract_refinement(
     else {
         return None;
     };
-    if pointer.pointer().block != PointerBlock::Function(callee_name.to_string()) {
+    if pointer.pointer().base != AddressBase::Function(callee_name.to_string()) {
         return None;
     }
     if name != &target.predicate_name()
         || pointer.program_type() != target.function_pointer_type()
-        || pointer.pointer().offset != PointerOffsetTerm::Constant(0)
+        || pointer.pointer().offset != AddressOffset::Constant(0)
     {
         return None;
     }
@@ -8501,7 +8501,7 @@ pub fn prove_uint32_ge_implies_reversed_le(greater: MachineTerm, lower: MachineT
 }
 
 #[cfg(test)]
-pub fn prove_memory_load(memory: Memory, pointer: Pointer) -> Theorem {
+pub fn prove_memory_load(memory: Memory, pointer: Address) -> Theorem {
     let outcome = memory.load(&pointer);
     Theorem::new(Proposition::MemoryLoads {
         memory,
@@ -8513,7 +8513,7 @@ pub fn prove_memory_load(memory: Memory, pointer: Pointer) -> Theorem {
 #[cfg(test)]
 pub fn prove_memory_load_after_store_same(
     memory: Memory,
-    pointer: Pointer,
+    pointer: Address,
     value: ProgramValue,
 ) -> Theorem {
     let stored = memory.store(pointer.clone(), value.clone());
@@ -8527,9 +8527,9 @@ pub fn prove_memory_load_after_store_same(
 #[cfg(test)]
 pub fn prove_memory_load_after_store_other(
     memory: Memory,
-    stored_pointer: Pointer,
+    stored_pointer: Address,
     stored_value: ProgramValue,
-    loaded_pointer: Pointer,
+    loaded_pointer: Address,
 ) -> Option<Theorem> {
     if stored_pointer == loaded_pointer {
         return None;

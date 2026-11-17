@@ -766,8 +766,8 @@ impl PointerOffsetCongruenceEvidence {
 
     pub(in crate::kernel) fn checks(
         &self,
-        left: &PointerOffsetTerm,
-        right: &PointerOffsetTerm,
+        left: &AddressOffset,
+        right: &AddressOffset,
         assumptions: &PureFactContext,
     ) -> bool {
         match self {
@@ -796,10 +796,8 @@ impl PointerOffsetCongruenceEvidence {
                 second,
                 swapped,
             } => {
-                let (
-                    PointerOffsetTerm::Add(left_a, left_b),
-                    PointerOffsetTerm::Add(right_a, right_b),
-                ) = (left, right)
+                let (AddressOffset::Add(left_a, left_b), AddressOffset::Add(right_a, right_b)) =
+                    (left, right)
                 else {
                     return false;
                 };
@@ -813,11 +811,11 @@ impl PointerOffsetCongruenceEvidence {
             }
             Self::Int32Scaled { byte_width, path } => {
                 let (
-                    PointerOffsetTerm::Int32Scaled {
+                    AddressOffset::Int32Scaled {
                         value: left,
                         byte_width: left_width,
                     },
-                    PointerOffsetTerm::Int32Scaled {
+                    AddressOffset::Int32Scaled {
                         value: right,
                         byte_width: right_width,
                     },
@@ -838,11 +836,11 @@ impl PointerOffsetCongruenceEvidence {
                 equality,
             } => {
                 let (
-                    PointerOffsetTerm::Int32Scaled {
+                    AddressOffset::Int32Scaled {
                         value: left,
                         byte_width: left_width,
                     },
-                    PointerOffsetTerm::Int32Scaled {
+                    AddressOffset::Int32Scaled {
                         value: right,
                         byte_width: right_width,
                     },
@@ -860,12 +858,12 @@ impl PointerOffsetCongruenceEvidence {
                 path,
             } => {
                 let (
-                    PointerOffsetTerm::Int64Scaled {
+                    AddressOffset::Int64Scaled {
                         value: left,
                         byte_width: left_width,
                         unsigned: left_unsigned,
                     },
-                    PointerOffsetTerm::Int64Scaled {
+                    AddressOffset::Int64Scaled {
                         value: right,
                         byte_width: right_width,
                         unsigned: right_unsigned,
@@ -1192,7 +1190,7 @@ impl LoadAddressCongruenceEvidence {
             && left.kind == right.kind
             && *left_pointer == self.left_pointer
             && *right_pointer == self.right_pointer
-            && left_pointer.block == right_pointer.block
+            && left_pointer.base == right_pointer.base
             && self
                 .offset
                 .checks(&left_pointer.offset, &right_pointer.offset, assumptions)
@@ -1402,7 +1400,7 @@ impl ExecutionBudget {
     ///
     /// The range overlaps none of the reserved ones: the execution counter
     /// runs `1_000_000 .. 2_000_000`, quantifiers stop at `4_000_000`,
-    /// algebraic binders stop at `4_000_000_000`, symbolic pointer blocks span
+    /// algebraic binders stop at `4_000_000_000`, symbolic address bases span
     /// `4_000_000_000 .. 8_000_000_000`, load variables span
     /// `1 << 40 .. 1 << 41`, and spec fold binders span
     /// `1 << 43 .. 1 << 44`. The kernel test
@@ -1441,7 +1439,7 @@ impl ExecutionBudget {
     /// The range overlaps none of the reserved ones: the C identities run
     /// below `1_000_000`, the execution counter runs
     /// `1_000_000 .. 2_000_000`, surface quantifiers run below `4_000_000`,
-    /// algebraic binders stop at `4_000_000_000`, symbolic pointer blocks span
+    /// algebraic binders stop at `4_000_000_000`, symbolic address bases span
     /// `4_000_000_000 .. 8_000_000_000`, load variables span
     /// `1 << 40 .. 1 << 41`, match binders span `1 << 41 .. 1 << 42`, and
     /// spec fold binders span `1 << 43 .. 1 << 44`. The

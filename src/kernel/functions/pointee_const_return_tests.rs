@@ -11,7 +11,7 @@ fn function(constant: bool) -> ProgramFunction {
 }
 
 fn pointer(constant: bool) -> ProgramValue {
-    ProgramValue::typed_pointer(Pointer::symbolic(Variable(910)), ProgramType::UInt8Pointer)
+    ProgramValue::typed_pointer(Address::symbolic(Variable(910)), ProgramType::UInt8Pointer)
         .with_pointer_pointee_constant(constant)
 }
 
@@ -72,9 +72,9 @@ fn pointee_const_return_function_address_cannot_convert_to_mutable_callback() {
     let value = type_function_address_value(
         &ProgramExpression::FunctionAddress("text".to_string()),
         ProgramValue::typed_pointer(
-            Pointer {
-                block: PointerBlock::Function("text".to_string()),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: AddressBase::Function("text".to_string()),
+                offset: AddressOffset::Constant(0),
             },
             ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
         ),
@@ -140,7 +140,7 @@ fn pointee_const_return_string_literal_storage_is_read_only_but_type_is_mutable(
     };
     assert!(
         matches!(value, ProgramValue::Pointer(pointer) if !pointer.pointee_constant()
-            && state.memory.is_read_only_block(&pointer.block))
+            && state.memory.is_read_only_block(&pointer.base))
     );
     assert!(
         coerce_function_return_value(

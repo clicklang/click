@@ -563,12 +563,12 @@ mod tests {
     fn shared_pointer_certification_preserves_complete_metadata_and_bounds_admission() {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
         use crate::kernel::{
-            IntegerTerm, ObjectTypeEvidence, Pointer, PointerValue, SharedPointerValue,
+            Address, IntegerTerm, ObjectTypeEvidence, PointerValue, SharedPointerValue,
             SubobjectBounds,
         };
         let _session = VerificationSession::enter();
         let base = PointerValue::new(
-            Pointer::symbolic(Variable(999980)),
+            Address::symbolic(Variable(999980)),
             ProgramType::Int32Pointer,
         );
         let class = CAccessClass::Scalar(CScalarClass::Int);
@@ -585,9 +585,9 @@ mod tests {
             base.clone().with_pointee_volatile(true),
             base.clone().with_type(ProgramType::VoidPointer),
             base.clone()
-                .with_provenance(std::sync::Arc::new(Pointer::symbolic(Variable(999979)))),
+                .with_provenance(std::sync::Arc::new(Address::symbolic(Variable(999979)))),
             base.clone()
-                .with_bounds_owner(Some(std::sync::Arc::new(Pointer::symbolic(Variable(
+                .with_bounds_owner(Some(std::sync::Arc::new(Address::symbolic(Variable(
                     999978,
                 ))))),
             base.clone().with_bounds(Some(bounds)),
@@ -637,15 +637,15 @@ mod tests {
 
     #[test]
     fn shared_captured_pointer_certification_preserves_memory_state() {
-        use crate::kernel::{Memory, Pointer, PointerValue, SharedPointerValue};
+        use crate::kernel::{Address, Memory, PointerValue, SharedPointerValue};
         let _session = VerificationSession::enter();
         let memory = Memory::new();
         let changed = memory.clone().store(
-            Pointer::null(),
+            Address::null(),
             ProgramValue::Int32(MachineTerm::constant(1)),
         );
         let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(999976)),
+            Address::symbolic(Variable(999976)),
             ProgramType::Int32Pointer,
         );
         let root = KernelTerm::shared_pointer_value(SharedPointerValue::import(&pointer));
@@ -679,23 +679,18 @@ mod tests {
 
     #[test]
     fn shared_algebraic_read_certification_preserves_address_and_state_identity() {
-        use crate::kernel::{
-            AlgebraicTermNode, AlgebraicType, Memory, Pointer, SharedPointerAddress,
-        };
+        use crate::kernel::{Address, AlgebraicTermNode, AlgebraicType, Memory, SharedAddress};
         let _session = VerificationSession::enter();
         let memory = crate::kernel::intern_memory_ref(&Memory::new());
         let changed = crate::kernel::intern_memory_ref(&memory.memory().clone().store(
-            Pointer::null(),
+            Address::null(),
             ProgramValue::Int32(MachineTerm::constant(1)),
         ));
-        let pointer = Pointer::symbolic(Variable(999974));
-        let other = Pointer::symbolic(Variable(999973));
+        let pointer = Address::symbolic(Variable(999974));
+        let other = Address::symbolic(Variable(999973));
         let ty = AlgebraicType::parameter("T".into());
-        let root = KernelTerm::algebraic_read(
-            ty.clone(),
-            memory.clone(),
-            SharedPointerAddress::import(&pointer),
-        );
+        let root =
+            KernelTerm::algebraic_read(ty.clone(), memory.clone(), SharedAddress::import(&pointer));
         for (state, address, expected) in [
             (&memory, &pointer, true),
             (&changed, &pointer, false),
@@ -704,7 +699,7 @@ mod tests {
             let right = KernelTerm::algebraic_read(
                 ty.clone(),
                 state.clone(),
-                SharedPointerAddress::import(address),
+                SharedAddress::import(address),
             );
             let native = AlgebraicTerm {
                 algebraic_type: ty.clone(),
@@ -727,7 +722,7 @@ mod tests {
     #[test]
     fn shared_pointer_opaque_indices_keep_the_native_refusal() {
         use crate::kernel::{
-            IntegerTerm, KernelPointerOffset, Pointer, PointerValue, SharedPointerAddress,
+            Address, IntegerTerm, KernelAddressOffset, PointerValue, SharedAddress,
             SharedPointerValue,
         };
         let _session = VerificationSession::enter();
@@ -741,13 +736,13 @@ mod tests {
         let index = KernelTerm::retained_native_machine_operand(MachineIntegerType::Int32, &native);
         assert!(matches!(index.node(), N::Legacy(_)));
         let base = SharedPointerValue::import(&PointerValue::new(
-            Pointer::null(),
+            Address::null(),
             ProgramType::Int32Pointer,
         ));
         let mut value = base.node().clone();
-        value.address = SharedPointerAddress::new(
-            value.address.node().block.clone(),
-            KernelPointerOffset::Int32Scaled {
+        value.address = SharedAddress::new(
+            value.address.node().base.clone(),
+            KernelAddressOffset::Int32Scaled {
                 value: index,
                 byte_width: 4,
             }
@@ -946,7 +941,7 @@ mod tests {
 
     #[test]
     fn algebraic_call_certification_ignores_allocation_but_keeps_written_inputs() {
-        use crate::kernel::{AlgebraicTermNode, AlgebraicType, Memory, Pointer, Variable};
+        use crate::kernel::{Address, AlgebraicTermNode, AlgebraicType, Memory, Variable};
         let _session = VerificationSession::enter();
         let ty = AlgebraicType::parameter("T".into());
         let variable = AlgebraicTerm {
@@ -979,12 +974,12 @@ mod tests {
         let memory = Memory::new();
         let other = memory
             .clone()
-            .store(Pointer::null(), ProgramValue::Int32(1u32.into()));
+            .store(Address::null(), ProgramValue::Int32(1u32.into()));
         let read = |memory: &Memory| AlgebraicTerm {
             algebraic_type: ty.clone(),
             node: AlgebraicTermNode::MemoryLoad {
                 memory: crate::kernel::intern_memory_ref(memory),
-                pointer: Box::new(Pointer::null()),
+                pointer: Box::new(Address::null()),
             },
         };
         assert!(!algebraic_equal(
@@ -1050,13 +1045,13 @@ mod tests {
         let _session = VerificationSession::enter();
         let memory = crate::kernel::Memory::new();
         let changed = memory.clone().store(
-            crate::kernel::Pointer::null(),
+            crate::kernel::Address::null(),
             ProgramValue::Int32(MachineTerm::constant(1)),
         );
         let read = |memory: &crate::kernel::Memory| {
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
-                Box::new(crate::kernel::Pointer::null()),
+                Box::new(crate::kernel::Address::null()),
                 crate::kernel::LoadKind::Int32,
             )
         };
@@ -1065,7 +1060,7 @@ mod tests {
             Operand::Legacy(&read(&changed))
         ));
         let pointer = crate::kernel::PointerValue::new(
-            crate::kernel::Pointer::null(),
+            crate::kernel::Address::null(),
             crate::kernel::ProgramType::Int32Pointer,
         );
         let qualified = pointer.clone().with_pointee_constant(true);
@@ -1138,26 +1133,26 @@ mod tests {
     #[test]
     fn retained_syntax_preserves_captured_and_pointer_index_states() {
         use crate::kernel::{
-            LoadKind, Memory, Pointer, PointerOffsetTerm, PointerValue, ProgramType, Variable,
+            Address, AddressOffset, LoadKind, Memory, PointerValue, ProgramType, Variable,
         };
         let _session = VerificationSession::enter();
         let memory = Memory::new();
         let other = memory.clone().store(
-            Pointer::null(),
+            Address::null(),
             ProgramValue::Int32(MachineTerm::constant(5)),
         );
         let pointer = |retained_state: &Memory| {
             PointerValue::new(
-                Pointer {
-                    block: "indexed".into(),
-                    offset: PointerOffsetTerm::Int32Scaled {
+                Address {
+                    base: "indexed".into(),
+                    offset: AddressOffset::Int32Scaled {
                         value: SharedMachineIntegerTerm::index(
                             MachineIntegerType::Int32,
                             MachineTerm::MemoryLoad(
                                 ProgramPoint::at(
                                     &(crate::kernel::intern_memory_ref(retained_state)),
                                 ),
-                                Box::new(Pointer::symbolic(Variable(712))),
+                                Box::new(Address::symbolic(Variable(712))),
                                 LoadKind::Int32,
                             ),
                         ),
@@ -1181,9 +1176,9 @@ mod tests {
     #[test]
     fn retained_syntax_preserves_unchecked_evidence_and_hidden_declaration_class() {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
-        use crate::kernel::{ObjectTypeEvidence, Pointer, PointerValue, ProgramType};
+        use crate::kernel::{Address, ObjectTypeEvidence, PointerValue, ProgramType};
         let _session = VerificationSession::enter();
-        let base = PointerValue::new(Pointer::null(), ProgramType::Int32Pointer);
+        let base = PointerValue::new(Address::null(), ProgramType::Int32Pointer);
         let class = CAccessClass::Scalar(CScalarClass::Int);
         let evidence = |fingerprint| ObjectTypeEvidence {
             class: class.clone(),

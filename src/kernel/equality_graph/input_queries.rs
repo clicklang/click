@@ -10,8 +10,8 @@ use std::collections::BTreeSet;
 impl EqualityGraph {
     pub(in crate::kernel) fn offsets_with_an_alias_at_root(
         &self,
-        root: &Option<PointerOffsetTerm>,
-    ) -> Vec<PointerOffsetTerm> {
+        root: &Option<AddressOffset>,
+    ) -> Vec<AddressOffset> {
         self.admitted
             .pointer_offset_aliases_by_root
             .get(root)
@@ -24,27 +24,27 @@ impl EqualityGraph {
             .collect()
     }
 
-    pub(in crate::kernel) fn has_pointer_block_aliases(&self) -> bool {
-        !self.admitted.pointer_block_aliases.is_empty()
+    pub(in crate::kernel) fn has_address_base_aliases(&self) -> bool {
+        !self.admitted.address_base_aliases.is_empty()
     }
 
     pub(in crate::kernel) fn exact_pointer_offset_aliases(
         &self,
-        pointer: &Pointer,
-    ) -> impl Iterator<Item = Pointer> + '_ {
-        let block = pointer.block.clone();
+        pointer: &Address,
+    ) -> impl Iterator<Item = Address> + '_ {
+        let block = pointer.base.clone();
         self.admitted
             .pointer_offset_aliases
             .get(&pointer.offset)
             .into_iter()
             .flat_map(|aliases| aliases.iter())
-            .map(move |offset| Pointer {
-                block: block.clone(),
+            .map(move |offset| Address {
+                base: block.clone(),
                 offset: offset.clone(),
             })
     }
 
-    pub(in crate::kernel) fn exact_pointer_offset_alias_count(&self, pointer: &Pointer) -> usize {
+    pub(in crate::kernel) fn exact_pointer_offset_alias_count(&self, pointer: &Address) -> usize {
         self.admitted
             .pointer_offset_aliases
             .get(&pointer.offset)
@@ -53,17 +53,17 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn exactly_aliased_pointers(
         &self,
-    ) -> impl ExactSizeIterator<Item = &Pointer> {
-        self.admitted.pointer_block_aliases.keys()
+    ) -> impl ExactSizeIterator<Item = &Address> {
+        self.admitted.address_base_aliases.keys()
     }
 
     /// A unique directly stated alias, selected by cached bucket length.
     /// Multiple alternatives belong to premise search, not checked lookup.
     pub(in crate::kernel) fn unique_exact_pointer_alias(
         &self,
-        pointer: &Pointer,
-    ) -> Option<&Pointer> {
-        let aliases = self.admitted.pointer_block_aliases.get(pointer)?;
+        pointer: &Address,
+    ) -> Option<&Address> {
+        let aliases = self.admitted.address_base_aliases.get(pointer)?;
         if aliases.len() != 1 {
             return None;
         }
@@ -72,10 +72,10 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn exact_pointer_aliases(
         &self,
-        pointer: &Pointer,
-    ) -> impl Iterator<Item = &Pointer> {
+        pointer: &Address,
+    ) -> impl Iterator<Item = &Address> {
         self.admitted
-            .pointer_block_aliases
+            .address_base_aliases
             .get(pointer)
             .into_iter()
             .flat_map(|aliases| aliases.iter().map(|(alias, _)| alias))
@@ -198,8 +198,8 @@ impl EqualityGraph {
 impl EqualityGraph {
     pub(in crate::kernel) fn parameter_store_alias_bases(
         &self,
-        base: &Pointer,
-    ) -> Option<BTreeSet<Pointer>> {
+        base: &Address,
+    ) -> Option<BTreeSet<Address>> {
         let mut pending = vec![base.clone()];
         let mut seen = BTreeSet::new();
         let mut bases = BTreeSet::new();
@@ -254,7 +254,7 @@ impl EqualityGraph {
             {
                 for endpoint in endpoints.iter() {
                     crate::instrumentation::record_deterministic_work(1);
-                    if let Some(aliases) = self.admitted.pointer_block_aliases.get(endpoint) {
+                    if let Some(aliases) = self.admitted.address_base_aliases.get(endpoint) {
                         pending.extend(aliases.keys().cloned());
                     }
                 }
@@ -265,8 +265,8 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn address_connected_objects(
         &self,
-        pointer: &Pointer,
-    ) -> BTreeSet<Pointer> {
+        pointer: &Address,
+    ) -> BTreeSet<Address> {
         let mut reached_objects = BTreeSet::new();
         if self
             .admitted

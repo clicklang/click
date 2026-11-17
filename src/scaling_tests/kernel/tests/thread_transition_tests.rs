@@ -23,7 +23,7 @@ fn pending_status_resolution_scales_with_explicit_intervening_work() {
     for size in [8usize, 16, 32, 64] {
         let mut pending = PendingThreadCreate::new(
             status.clone(),
-            Pointer::null(),
+            Address::null(),
             ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
             &base,
             &base,
@@ -194,7 +194,7 @@ fn joining_one_worker_keeps_the_current_frame_as_owners_and_aliases_grow() {
                     assumptions = assumptions.assume_condition(
                         ConditionTerm::pointer_equal(
                             pointer(0),
-                            Pointer::symbolic(Variable(8_796_000 + index as u64)),
+                            Address::symbolic(Variable(8_796_000 + index as u64)),
                         ),
                         true,
                     );

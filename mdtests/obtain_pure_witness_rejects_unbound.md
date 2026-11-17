@@ -4,7 +4,7 @@
 theorem unrelated_name(x: int32) {
     requires exists (k: int32) { k == x };
     ensures exists (z: int32) { z == x } by {
-        obtain (k: int32) { k == x }
+        let k = obtain(exists (k: int32) { k == x });
         have missing == x by known();
         witness(k);
         known();

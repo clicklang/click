@@ -15,9 +15,9 @@ fn loaded_quantifier_matching_ignores_ambient_facts_and_retained_memory_size() {
             for index in 0..size {
                 let block = format!("unrelated-{index}");
                 memory = memory.with_block(block.clone(), 8).store(
-                    Pointer {
-                        block: block.into(),
-                        offset: PointerOffsetTerm::Constant(0),
+                    Address {
+                        base: block.into(),
+                        offset: AddressOffset::Constant(0),
                     },
                     ProgramValue::Int32(MachineTerm::constant(index as u32)),
                 );
@@ -40,9 +40,9 @@ fn loaded_quantifier_matching_ignores_ambient_facts_and_retained_memory_size() {
             });
             assert!(found.is_some());
             let changed = intern_memory(memory.as_ref().clone().store(
-                Pointer {
-                    block: "loaded-quantifier".into(),
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: "loaded-quantifier".into(),
+                    offset: AddressOffset::Constant(0),
                 },
                 ProgramValue::Int32(MachineTerm::constant(7)),
             ));

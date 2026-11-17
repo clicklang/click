@@ -292,12 +292,12 @@ impl Hash for NamedMutexAuthorities {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{MutexIdentity, MutexUseIdentity, Pointer, ResourceContext};
+    use crate::kernel::{Address, MutexIdentity, MutexUseIdentity, ResourceContext};
 
     fn authority(epoch: u64) -> ResourceFact {
         ResourceFact::own(Resource::MutexLive(MutexIdentity {
             epoch: Some(epoch),
-            mutex: Pointer::symbolic(Variable(400)),
+            mutex: Address::symbolic(Variable(400)),
         }))
     }
 
@@ -306,7 +306,7 @@ mod tests {
             protected: None,
             binding: None,
             initialization: Some(epoch),
-            mutex: Pointer::symbolic(mutex),
+            mutex: Address::symbolic(mutex),
         }))
     }
 

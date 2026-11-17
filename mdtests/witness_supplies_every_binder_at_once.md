@@ -16,7 +16,7 @@ theorem split_sum(n: Integer) {
 theorem reopen(n: Integer) {
     requires exists (a: Integer, b: Integer) { a + b == n and 0 <= a and 0 <= b };
     ensures exists (b: Integer, a: Integer) { a + b == n and 0 <= a and 0 <= b } by {
-        obtain (a: Integer, b: Integer) { a + b == n and 0 <= a and 0 <= b }
+        let (a, b) = obtain(exists (a: Integer, b: Integer) { a + b == n and 0 <= a and 0 <= b });
         witness(b, a);
         solve();
     }

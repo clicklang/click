@@ -1215,7 +1215,7 @@ pub(super) fn aggregate_parameter_copy_changed(
         .differing_cell_pointers(&exit_state.memory)
         .into_iter()
         .any(|pointer| {
-            pointer.block == slot.block
+            pointer.base == slot.base
                 && pointer
                     .offset
                     .as_const()

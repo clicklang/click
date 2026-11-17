@@ -1213,9 +1213,8 @@ impl TermClasses {
                         Node::MachineNarrow(MachineAtom::new(canonical, atom))
                     } else if wide {
                         if let Some((memory, pointer)) = uint64_read(term) {
-                            let address = self
-                                .address(pointer.block.clone(), pointer.offset.clone())
-                                .0;
+                            let address =
+                                self.address(pointer.base.clone(), pointer.offset.clone()).0;
                             let numeric = self.read_address(address);
                             // Values enter through explicit equations, never cell-cache lookups.
                             Node::UInt64Read(memory.read_identity(), numeric)
@@ -1299,8 +1298,8 @@ impl TermClasses {
                         let bounds = self.bounds_node(pointer);
                         let metadata = pointer
                             .clone()
-                            .with_address(crate::kernel::Pointer::null())
-                            .with_provenance(std::sync::Arc::new(crate::kernel::Pointer::null()))
+                            .with_address(crate::kernel::Address::null())
+                            .with_provenance(std::sync::Arc::new(crate::kernel::Address::null()))
                             .with_root_bounds();
                         let head = self.opaque_argument(&A::Value(ProgramValue::Pointer(metadata)));
                         let node = self.intern_node(Node::Apply(head, root));
@@ -1673,8 +1672,8 @@ impl TermClasses {
 
     pub(in crate::kernel::equality_graph) fn merge_pointer_read_domains(
         &mut self,
-        a: &crate::kernel::Pointer,
-        b: &crate::kernel::Pointer,
+        a: &crate::kernel::Address,
+        b: &crate::kernel::Address,
     ) -> bool {
         if self.read_domains.equal(a, b) {
             return false;
@@ -1708,8 +1707,8 @@ impl TermClasses {
 
     pub(in crate::kernel::equality_graph) fn merge_provenance(
         &mut self,
-        a: &crate::kernel::Pointer,
-        b: &crate::kernel::Pointer,
+        a: &crate::kernel::Address,
+        b: &crate::kernel::Address,
     ) -> bool {
         let a = self.provenance_node(a);
         let b = self.provenance_node(b);
@@ -1718,8 +1717,8 @@ impl TermClasses {
 
     pub(in crate::kernel::equality_graph) fn provenance_equal(
         &mut self,
-        a: &crate::kernel::Pointer,
-        b: &crate::kernel::Pointer,
+        a: &crate::kernel::Address,
+        b: &crate::kernel::Address,
     ) -> bool {
         let a = self.provenance_node(a);
         let b = self.provenance_node(b);
@@ -1804,7 +1803,7 @@ impl TermClasses {
             let width = self.intern_int32(&bounds.width);
             let head = self.intern_node(Node::Apply(head, width));
             let start = self
-                .address(bounds.start.block.clone(), bounds.start.offset.clone())
+                .address(bounds.start.base.clone(), bounds.start.offset.clone())
                 .0;
             self.intern_node(Node::Apply(head, start))
         } else if value.bounds_are_known() {
@@ -1823,13 +1822,13 @@ impl TermClasses {
         node
     }
 
-    fn bounds_owner_node(&mut self, origin: &crate::kernel::Pointer) -> u64 {
+    fn bounds_owner_node(&mut self, origin: &crate::kernel::Address) -> u64 {
         let node = self.bounds_owner_node_without_calls(origin);
         self.retain_pointer_call_component(origin, node, ArgumentTag::PointerCallBounds);
         node
     }
 
-    fn bounds_owner_node_without_calls(&mut self, origin: &crate::kernel::Pointer) -> u64 {
+    fn bounds_owner_node_without_calls(&mut self, origin: &crate::kernel::Address) -> u64 {
         let origin = self.read_domains.representative(origin);
         if let Some(node) = self.bounds_origin_nodes.get(&origin) {
             return *node;
@@ -1841,7 +1840,7 @@ impl TermClasses {
             )
             .unwrap_or(read.defining_memory);
             let cell = self
-                .address(read.defining_address.block, read.defining_address.offset)
+                .address(read.defining_address.base, read.defining_address.offset)
                 .0;
             let head = self.intern_node(Node::ArgumentTag(ArgumentTag::PointerBoundsRead(
                 source.read_identity(),
@@ -1864,7 +1863,7 @@ impl TermClasses {
     /// and witness maintenance belongs to producers, never this query.
     pub(in crate::kernel::equality_graph) fn opaque_pointer_domain(
         &self,
-        origin: &crate::kernel::Pointer,
+        origin: &crate::kernel::Address,
     ) -> crate::kernel::assumptions::PointerDomain {
         use crate::kernel::assumptions::PointerDomain;
         crate::instrumentation::record_deterministic_work(1);
@@ -1882,7 +1881,7 @@ impl TermClasses {
     /// to the root-bounds tag. Numeric address equality cannot do so.
     pub(in crate::kernel::equality_graph) fn bounds_owner_is_root(
         &mut self,
-        origin: &crate::kernel::Pointer,
+        origin: &crate::kernel::Address,
     ) -> bool {
         let bounds = self.bounds_owner_node(origin);
         let root = self.intern_node(Node::ArgumentTag(ArgumentTag::PointerRootBounds));
@@ -1892,8 +1891,8 @@ impl TermClasses {
 
     pub(in crate::kernel::equality_graph) fn bounds_owners_equal(
         &mut self,
-        a: &crate::kernel::Pointer,
-        b: &crate::kernel::Pointer,
+        a: &crate::kernel::Address,
+        b: &crate::kernel::Address,
     ) -> bool {
         let a = self.bounds_owner_node(a);
         let b = self.bounds_owner_node(b);
@@ -1901,7 +1900,7 @@ impl TermClasses {
         self.root(a) == self.root(b)
     }
 
-    fn provenance_node(&mut self, origin: &crate::kernel::Pointer) -> u64 {
+    fn provenance_node(&mut self, origin: &crate::kernel::Address) -> u64 {
         let node = self.provenance_node_without_calls(origin);
         self.retain_pointer_call_component(origin, node, ArgumentTag::PointerCallProvenance);
         node
@@ -1912,11 +1911,11 @@ impl TermClasses {
     /// selected identity definition so nested calls stay iterative.
     fn retain_pointer_call_component(
         &mut self,
-        origin: &crate::kernel::Pointer,
+        origin: &crate::kernel::Address,
         component: u64,
         tag: ArgumentTag,
     ) {
-        let PointerBlock::PureFunctionApplication(application) = &origin.block else {
+        let AddressBase::PureFunctionApplication(application) = &origin.base else {
             return;
         };
         // This internal constructor names numeric coordinates only. Equal
@@ -1924,7 +1923,7 @@ impl TermClasses {
         if application.integer_address_bits().is_some() {
             return;
         }
-        if origin.offset != PointerOffsetTerm::Constant(0) {
+        if origin.offset != AddressOffset::Constant(0) {
             return;
         }
         let key = Node::PointerFunctionIdentity(application.clone());
@@ -1939,7 +1938,7 @@ impl TermClasses {
         self.close_with_affine_definition(vec![(component, projected)], true);
     }
 
-    fn provenance_node_without_calls(&mut self, origin: &crate::kernel::Pointer) -> u64 {
+    fn provenance_node_without_calls(&mut self, origin: &crate::kernel::Address) -> u64 {
         // Congruence here uses the cell a complete pointer was read from.
         // Equality of the loaded pointer's numeric address never merges this
         // node with a different value origin.
@@ -1947,12 +1946,12 @@ impl TermClasses {
         if let Some(node) = self.read_provenance_nodes.get(&origin) {
             return *node;
         }
-        if let crate::kernel::PointerBlock::LoadedPointer(identity) = &origin.block
+        if let crate::kernel::AddressBase::LoadedPointer(identity) = &origin.base
             && let Some((memory, cell)) = crate::kernel::eval::registered_pointer_load(*identity)
         {
             let source = crate::kernel::prelude::canonical_load_projection_source(&memory, &cell)
                 .unwrap_or(memory);
-            let cell = self.address(cell.block, cell.offset).0;
+            let cell = self.address(cell.base, cell.offset).0;
             let head = self.intern_node(Node::ArgumentTag(ArgumentTag::ProvenanceRead(
                 source.read_identity(),
             )));
@@ -2106,8 +2105,8 @@ impl TermClasses {
             ),
             C::PointerEqual(a, b) => (
                 PointerEq,
-                self.address(a.block.clone(), a.offset.clone()).0,
-                self.address(b.block.clone(), b.offset.clone()).0,
+                self.address(a.base.clone(), a.offset.clone()).0,
+                self.address(b.base.clone(), b.offset.clone()).0,
             ),
             C::PointerOffsetEqual(a, b) => (OffsetEq, self.intern(a), self.intern(b)),
             C::BoolApplication(_) | C::BoolIf { .. } | C::BoolEqual(..) | C::BoolLoad(..) => {
@@ -2117,7 +2116,7 @@ impl TermClasses {
         };
         let node = self.intern_node(Node::Condition(kind, left, right));
         if let C::PointerEqual(a, b) = condition
-            && a.block == b.block
+            && a.base == b.base
         {
             // These are two views of the same predicate, not a new premise.
             // Retaining both avoids reconstructing a cancelled base from an
@@ -2205,9 +2204,7 @@ impl TermClasses {
             }
             C::BoolLoad(memory, pointer) => {
                 let head = self.intern_node(Node::BoolRead(memory.read_identity()));
-                let address = self
-                    .address(pointer.block.clone(), pointer.offset.clone())
-                    .0;
+                let address = self.address(pointer.base.clone(), pointer.offset.clone()).0;
                 self.intern_node(Node::Apply(head, address))
             }
             condition => self.condition_node(condition)?,

@@ -169,8 +169,8 @@ impl EqualityGraph {
     /// must still match, so this does not cancel scaling or discard a base.
     pub(in crate::kernel) fn exact_pointer_offset_equality_source(
         &self,
-        left: &PointerOffsetTerm,
-        right: &PointerOffsetTerm,
+        left: &AddressOffset,
+        right: &AddressOffset,
     ) -> Option<&Proposition> {
         let left_index = crate::kernel::reasoning::shared_element_index_from_offset(left, 4)?;
         let right_index = crate::kernel::reasoning::shared_element_index_from_offset(right, 4)?;
@@ -242,8 +242,8 @@ impl EqualityGraph {
     /// equalities, excluding `pointer` itself: the pointer counterpart of
     /// [`Self::scalar_evidence_class`]. The edges are symmetric, so the walk
     /// costs the equalities in this one component.
-    pub(in crate::kernel) fn pointer_alias_class(&self, pointer: &Pointer) -> Vec<Pointer> {
-        let aliases = &self.admitted.pointer_block_aliases;
+    pub(in crate::kernel) fn pointer_alias_class(&self, pointer: &Address) -> Vec<Address> {
+        let aliases = &self.admitted.address_base_aliases;
         if !aliases.contains_key(pointer) {
             return Vec::new();
         }
@@ -402,10 +402,7 @@ impl EqualityGraph {
     /// admitted scalar/offset source mentions its coordinate. A read inside
     /// the selected offset still stays on the ordinary store ladder; a read
     /// in an unrelated source does not disable this shortcut.
-    pub(in crate::kernel) fn offset_has_source_dependencies(
-        &self,
-        offset: &PointerOffsetTerm,
-    ) -> bool {
+    pub(in crate::kernel) fn offset_has_source_dependencies(&self, offset: &AddressOffset) -> bool {
         let root = crate::kernel::primitives::offset_root_atom(offset);
         if self
             .admitted
@@ -417,7 +414,7 @@ impl EqualityGraph {
         let mut variables = BTreeSet::new();
         let selector = ConditionTerm::PointerOffsetEqual(
             Box::new(offset.clone()),
-            Box::new(PointerOffsetTerm::Constant(0)),
+            Box::new(AddressOffset::Constant(0)),
         );
         if crate::kernel::reasoning::variable_collection::collect_condition_coordinate_index_variables(&selector, &mut variables) { return true; }
         variables

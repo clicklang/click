@@ -14,7 +14,7 @@ fn typed_offset_evidence_refuses_cold_arithmetic_without_exports() {
             right =
                 KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [right.clone(), right]);
         }
-        let offset = |root: &KernelTerm| PointerOffsetTerm::Int32Scaled {
+        let offset = |root: &KernelTerm| AddressOffset::Int32Scaled {
             value: MachineOperandView::Shared(root).retain(ty),
             byte_width: 4,
         };

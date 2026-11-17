@@ -208,11 +208,11 @@ fn algebraic_closure_pointer_payloads_require_full_value_equality() {
         "PointerModel",
         AlgebraicValueType::Program(ProgramType::Int32Pointer),
     );
-    let pointer = |name: &str| Pointer {
-        block: name.into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = |name: &str| Address {
+        base: name.into(),
+        offset: AddressOffset::Constant(0),
     };
-    let node = |p: Pointer| {
+    let node = |p: Address| {
         constructor(
             &ty,
             "Node",
@@ -312,9 +312,9 @@ fn scalar_constant_conflicts_preserve_machine_widths() {
 #[test]
 fn scalar_read_conflicts_require_the_same_state() {
     let _session = crate::kernel::VerificationSession::enter();
-    let p = Pointer {
-        block: "cell".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let p = Address {
+        base: "cell".into(),
+        offset: AddressOffset::Constant(0),
     };
     let before = Memory::new().with_block("cell", 4).store(
         p.clone(),
