@@ -1462,7 +1462,7 @@ impl<'a> Proof<'a> {
             for fact in state.state().added_facts() {
                 let surface = super::super::surface_synthesis::synthesize_surface_proposition_with_bound_variable_names(
                     fact, ParameterBinding::default(), &source_state, &names,
-                ).ok_or_else(|| self.step_error("an introduced type bound has no Surface spelling"))?;
+                ).ok_or_else(|| self.step_error("an introduced type bound has no Surface form"))?;
                 locals
                     .surface_facts
                     .record_lowering(&surface, fact)

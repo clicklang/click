@@ -3482,7 +3482,7 @@ impl<'a> Proof<'a> {
         };
         if let Some(surface) = non_execution_surface {
             let surface = surface.ok_or_else(|| self.step_error(
-                "a generated prerequisite has no Surface spelling; this is a raise-lower principle defect",
+                "a generated prerequisite has no Surface form; this is a raise-lower principle defect",
             ).with_unresolved_requirement(&ProofObligation::verification_condition(requirement.proposition.clone())))?;
             let lowered = self.lower_surface_goal(&surface, "proof definedness requirement")?;
             if !lowered_states_requirement(&lowered, requirement) {

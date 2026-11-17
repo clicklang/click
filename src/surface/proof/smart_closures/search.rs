@@ -6092,7 +6092,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 )
                 .ok_or_else(|| {
                     search_input
-                        .step_error("a separation restriction source has no Surface spelling")
+                        .step_error("a separation restriction source has no Surface form")
                 })
             };
             let (a, b) = (source(a)?, source(b)?);
@@ -8383,7 +8383,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// (`value <= C` with `C <= c`), the shape a loop's negated guard leaves
     /// on its counter. The proof cites only facts it establishes itself, two
     /// nested `have`s closed by the direct logical closer, so the context
-    /// bound needs no Surface spelling; the transitivity theorem then closes
+    /// bound needs no Surface form; the transitivity theorem then closes
     /// the goal.
     pub(in crate::surface::proof) fn try_selected_constant_bound_weakening(
         search_input: &Proof<'a>,

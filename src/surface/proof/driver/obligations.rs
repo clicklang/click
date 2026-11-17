@@ -147,7 +147,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         crate::surface::printing::source_click_proposition(&spelling.surface)
                     }
                     None => format!(
-                        "{} (no Surface spelling: report this as a bug)",
+                        "{} (no Surface form: report this as a bug)",
                         driver_proof
                             .execution()
                             .map(|execution| {
@@ -687,7 +687,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             scope.succeed();
             return Ok(Some(closed));
         }
-        // The generated invariant bundle can have no Surface spelling. Its
+        // The generated invariant bundle can have no Surface form. Its
         // conjunction and implication structure is nevertheless checked by
         // the kernel, so descend that structure directly and retain the
         // ordinary Both/Intro certificate nodes.
