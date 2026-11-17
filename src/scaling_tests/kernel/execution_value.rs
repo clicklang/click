@@ -646,3 +646,119 @@ fn algebraic_storage_comparison_visits_shared_pairs_once() {
         previous = Some(work);
     }
 }
+
+#[test]
+fn pointer_storage_keys_keep_growing_offsets_shared_and_session_scoped() {
+    use crate::kernel::{KernelPointerOffset, SharedPointerAddress};
+    use std::hash::Hash;
+    let mut previous = None;
+    for size in [16, 64, 256] {
+        let value = SharedPointerValue::import_produced(&PointerValue::new(
+            Pointer::symbolic(Variable(998760)),
+            ProgramType::Int32Pointer,
+        ));
+        let mut payload = value.node().clone();
+        let index = KernelTerm::variable(KernelType::Program(ProgramType::Int64), Variable(998761));
+        let mut offset = KernelPointerOffset::Int64Scaled {
+            value: index,
+            byte_width: 8,
+            unsigned: false,
+        }
+        .into_shared()
+        .unwrap();
+        for _ in 0..size {
+            offset = KernelPointerOffset::Add([offset.clone(), offset])
+                .into_shared()
+                .unwrap();
+        }
+        payload.address = SharedPointerAddress::new(payload.address.node().block.clone(), offset);
+        payload.designation = payload.address.clone();
+        let root = KernelTerm::shared_pointer_value(SharedPointerValue::new(payload));
+        let exports = KernelTermExport::machine_export_count();
+        let mut cold = Vec::new();
+        for _ in 0..2 {
+            let _session = crate::kernel::VerificationSession::enter();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let stored = StoredExecutionValue::from(ExecutionValue::Shared(root.clone()));
+                stored.hash(&mut std::collections::hash_map::DefaultHasher::new());
+            });
+            cold.push(work);
+            let _nested = crate::kernel::VerificationSession::enter();
+            let (_, warm) = crate::instrumentation::measure_deterministic_work(|| {
+                let stored = StoredExecutionValue::from(ExecutionValue::Shared(root.clone()));
+                for _ in 0..32 {
+                    stored.hash(&mut std::collections::hash_map::DefaultHasher::new());
+                }
+            });
+            assert_eq!(warm, 0);
+        }
+        assert!(cold[0] > 0);
+        assert_eq!(cold[0], cold[1]);
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(!root.has_cached_native_argument());
+        if let Some(previous) = previous {
+            assert!(cold[0] <= previous * 5, "{previous} -> {}", cold[0]);
+        }
+        previous = Some(cold[0]);
+    }
+}
+
+#[test]
+fn pointer_storage_comparison_visits_shared_offset_pairs_once() {
+    use crate::kernel::effective_type::{CAccessClass, CScalarClass};
+    use crate::kernel::{KernelPointerOffset, SharedPointerAddress};
+    use std::hash::Hash;
+    let mut previous = None;
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let natives = [CScalarClass::Int, CScalarClass::Char].map(|class| {
+            PointerOffsetTerm::scaled_int64_node(
+                MachineTerm::PointerAddress(
+                    Box::new(Pointer::symbolic(Variable(998765))),
+                    crate::kernel::AddressObjectClass::new(Some(CAccessClass::Scalar(class))),
+                ),
+                1,
+                true,
+            )
+        });
+        assert_eq!(natives[0], natives[1]);
+        let mut offsets = natives.each_ref().map(KernelPointerOffset::import);
+        assert_ne!(offsets[0], offsets[1]);
+        for _ in 0..size {
+            offsets = offsets.map(|offset| {
+                KernelPointerOffset::Add([offset.clone(), offset])
+                    .into_shared()
+                    .unwrap()
+            });
+        }
+        let value = SharedPointerValue::import_produced(&PointerValue::new(
+            Pointer::symbolic(Variable(998766)),
+            ProgramType::Int32Pointer,
+        ));
+        let values = offsets.map(|offset| {
+            let mut payload = value.node().clone();
+            payload.address =
+                SharedPointerAddress::new(payload.address.node().block.clone(), offset);
+            payload.designation = payload.address.clone();
+            StoredExecutionValue::from(ExecutionValue::Shared(KernelTerm::shared_pointer_value(
+                SharedPointerValue::new(payload),
+            )))
+        });
+        let exports = KernelTermExport::machine_export_count();
+        for value in &values {
+            value.hash(&mut std::collections::hash_map::DefaultHasher::new());
+        }
+        let (order, work) =
+            crate::instrumentation::measure_deterministic_work(|| values[0].cmp(&values[1]));
+        assert!(order.is_eq());
+        assert!(work > 0);
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        for value in &values {
+            assert!(!value.shared().unwrap().has_cached_native_argument());
+        }
+        if let Some(previous) = previous {
+            assert!(work <= previous * 5, "{previous} -> {work}");
+        }
+        previous = Some(work);
+    }
+}

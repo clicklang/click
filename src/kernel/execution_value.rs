@@ -4,6 +4,7 @@ use super::prelude::*;
 pub(in crate::kernel) mod storage_keys;
 use storage_keys::{
     AlgebraicStorageKey, BooleanStorageKey, FloatStorageKey, NativeStorageIdentity,
+    PointerStorageKey,
 };
 
 #[derive(Clone, Debug, Eq)]
@@ -484,6 +485,7 @@ enum StoredIdentity<'a> {
 enum StoredKey {
     Machine(SharedMachineIntegerTerm),
     Algebraic(AlgebraicStorageKey),
+    Pointer(PointerStorageKey),
     Boolean(BooleanStorageKey),
     Float32(FloatStorageKey),
     Float64(FloatStorageKey),
@@ -491,6 +493,15 @@ enum StoredKey {
 }
 impl StoredKey {
     fn for_value(value: &ExecutionValue) -> Self {
+        match value {
+            ExecutionValue::Native(ProgramValue::Pointer(pointer)) => {
+                return Self::Pointer(PointerStorageKey::native(pointer));
+            }
+            ExecutionValue::Shared(root) if root.pointer_payload().is_some() => {
+                return Self::Pointer(storage_keys::pointer_for_root(root));
+            }
+            _ => {}
+        }
         if let Some(root) = value.algebraic() {
             return Self::Algebraic(storage_keys::algebraic_for_root(&root));
         }
@@ -540,6 +551,7 @@ impl StoredExecutionValue {
             StoredKey::Algebraic(key) => {
                 StoredIdentity::Native(NativeStorageIdentity::Algebraic(key))
             }
+            StoredKey::Pointer(key) => StoredIdentity::Native(NativeStorageIdentity::Pointer(key)),
             StoredKey::Boolean(key) => StoredIdentity::Native(NativeStorageIdentity::Boolean(key)),
             StoredKey::Float32(key) => StoredIdentity::Native(NativeStorageIdentity::Float32(key)),
             StoredKey::Float64(key) => StoredIdentity::Native(NativeStorageIdentity::Float64(key)),
