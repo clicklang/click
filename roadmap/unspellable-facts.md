@@ -622,6 +622,28 @@ selected API/proof/specification/execution/scaling checks and quality checks
 passed. Three exact regular Integer/return fixtures passed with zero
 fact-stability differences.
 
+### 10d Shared Boolean connective storage keys
+
+Local/outcome Boolean key operations retain raw C-word distinctions and project
+logical connective keys from common children instead of caching an enclosing
+native Bool value tree. Cached fingerprints make repeated hashing constant;
+comparison, construction and disposal handle deep/shared key structure without
+recursive prefix copies. Key memos belong to one verification: a fresh outer
+session clears them, while nested entries and state restores retain structural
+keys. A red regression reproduced earlier-session warming (20 work units then
+zero); the fixed route pays the same cold work in each verification.
+
+Scalar condition leaves keep their selected native descriptor readers for the
+later proposition/argument-storage slices. Memory structural hashes and exact
+outcome refresh retain their separate contracts. Growing connective keys cause
+zero machine exports, leave the native argument cache empty and have constant
+warm hash work. A 4,096-deep key constructs and drops on a 256 KiB stack.
+
+Final integrated 10a–10e validation passed all 3,240 selected API/proof/spec/
+execution/scaling checks, including the session-isolation regressions. All ten
+exact regular Boolean/float fixtures passed with zero fact-stability differences;
+quality checks passed. The focused execution-value suite passed all 29 checks.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential
