@@ -2602,6 +2602,7 @@ fn collect_term_memory_loads(
         },
         Term::StatementOutcome(outcome) => match outcome.as_ref() {
             StatementOutcome::Normal(state)
+            | StatementOutcome::LoopTestFalse(state)
             | StatementOutcome::Break(state)
             | StatementOutcome::Continue(state)
             | StatementOutcome::Jump { state, .. } => {

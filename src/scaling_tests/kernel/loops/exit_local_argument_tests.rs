@@ -99,7 +99,7 @@ fn exit_argument_checks_reuse_the_checked_path_context() {
             root = root.with_fact(fact(931_000 + index, index as u32));
         }
         let path = root.with_fact(selected.clone());
-        let exit = LoopBreakExit::from_store(ExecutionState::new(), &path);
+        let exit = LoopEarlyExit::from_store(ExecutionState::new(), &path);
         let facts = exit
             .pure_facts()
             .iter()

@@ -18,7 +18,7 @@ use crate::kernel::{
     ExecutionEnvironment, ExecutionPureFact, ExecutionSemantics, ExecutionState, ExpressionOutcome,
     FunctionContract, FunctionContractClaim, FunctionContractClaimKey, FunctionContractClaimTarget,
     FunctionContractExecutionMode, FunctionExecutionCandidates, FunctionOutcome,
-    FunctionSpecification, LoopBreakExit, LoopEffect, LoopEffectCheck, LoopEffectSpan,
+    FunctionSpecification, LoopEarlyExit, LoopEffect, LoopEffectCheck, LoopEffectSpan,
     LoopFinalExitCandidate, LoopInvariantCheck, LoopReturnExit, MachineTerm, Memory, MemoryRange,
     MemorySegment, Pointer, PointerBlock, PointerOffsetTerm, ProgramExpression, ProgramFunction,
     ProgramStatement, ProgramType, ProgramValue, ProofObligation, Proposition,

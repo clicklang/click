@@ -2175,8 +2175,8 @@ fn loop_exit_duplicate_invariants_verify_and_reject_false_claims() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_08")]
-fn changed_break_exit_does_not_label_head_invariants_as_exit_facts() {
-    let (source, sources) = loop_fixture("loop_body_break_exit_joined_state");
+fn changed_early_exit_does_not_label_head_invariants_as_exit_facts() {
+    let (source, sources) = loop_fixture("loop_body_early_exit_joined_state");
     let sources = borrowed_sources(&sources);
     let source = source.replace(
         "invariant r == 0;",
@@ -2835,7 +2835,7 @@ test_batches! {
         whole_claim_expansion_reconstructs_nested_decided_branch_and_loop_match,
     ],
     loop_batch_08: [
-        changed_break_exit_does_not_label_head_invariants_as_exit_facts,
+        changed_early_exit_does_not_label_head_invariants_as_exit_facts,
         conditional_loop_resources_parse_print_and_resolve_scope,
         conditional_loop_resources_reject_unsupported_binding_and_body_items,
         loop_return_closers_do_not_require_distinct_result_values,

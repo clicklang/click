@@ -191,3 +191,36 @@ mod scaling_tests {
     use super::*;
     include!("../../../scaling_tests/kernel/eval/statements/aggregate_results.rs");
 }
+
+#[test]
+fn loop_test_retires_aggregate_storage_on_true_and_false_outcomes() {
+    let _session = VerificationSession::enter();
+    let (state, source, layout) = fixture(2);
+    let result = materialize(
+        &state,
+        &source,
+        &layout,
+        &mut ExecutionBudget::for_new_execution(),
+    );
+    let pointer = result.aggregate_step_objects.get(&0).unwrap().clone();
+    for truth in [false, true] {
+        let statement = ProgramStatement::LoopTest {
+            condition: crate::kernel::program_expression::int32_literal(u32::from(truth)),
+            aggregate_steps: vec![0],
+        };
+        let outcome = execute_execution_statement(&result, &statement, &PureFactContext::default())
+            .expect("the condition and its cleanup have one successor");
+        let ended = match (truth, outcome) {
+            (true, StatementOutcome::Normal(state))
+            | (false, StatementOutcome::LoopTestFalse(state)) => state,
+            (_, outcome) => panic!("unexpected test outcome {outcome:?}"),
+        };
+        assert!(!ended.memory.has_block(&pointer.block));
+        assert!(ended.aggregate_step_objects.is_empty());
+        assert!(ended.step_result(0).is_none());
+    }
+    assert!(
+        result.memory.has_block(&pointer.block),
+        "each decision forks the original state"
+    );
+}

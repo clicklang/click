@@ -1181,6 +1181,7 @@ pub(crate) fn modified_by_value_aggregate_parameter_with_current_ensure_in_sourc
 pub(super) fn statement_outcome_state(outcome: &StatementOutcome) -> Option<&ExecutionState> {
     match outcome {
         StatementOutcome::Normal(state)
+        | StatementOutcome::LoopTestFalse(state)
         | StatementOutcome::Break(state)
         | StatementOutcome::Continue(state)
         | StatementOutcome::Jump { state, .. } => Some(state),

@@ -1240,6 +1240,9 @@ fn walk_execution_statement_outcome<S: VariableSubstitution + ?Sized>(
         StatementOutcome::Normal(state) => {
             StatementOutcome::Normal(Box::new(walk_execution_state(state, s)))
         }
+        StatementOutcome::LoopTestFalse(state) => {
+            StatementOutcome::LoopTestFalse(Box::new(walk_execution_state(state, s)))
+        }
         StatementOutcome::Break(state) => {
             StatementOutcome::Break(Box::new(walk_execution_state(state, s)))
         }
@@ -2873,6 +2876,7 @@ pub(in crate::kernel) fn collect_statement_outcome_bound_variables(
 ) {
     match outcome {
         StatementOutcome::Normal(state)
+        | StatementOutcome::LoopTestFalse(state)
         | StatementOutcome::Break(state)
         | StatementOutcome::Continue(state)
         | StatementOutcome::Jump { state, .. } => {

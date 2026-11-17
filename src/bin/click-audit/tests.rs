@@ -1421,7 +1421,7 @@ uint32 count_live(struct cell* node) {
 
 #[test]
 fn audits_an_omitted_preservation_with_two_body_breaks() {
-    // `stop_at` from `mdtests/loop_body_break_exit.md` with both phases
+    // `stop_at` from `mdtests/loop_body_early_exit.md` with both phases
     // omitted: a `while (true)` whose only ways out are two `break`s in
     // nested C `if`s. `click verify` passed while the expansion the audit
     // checks did not: the preservation driver runs sibling arms on one

@@ -6309,7 +6309,7 @@ void fill(int32* p, int32 n) {{
 /// the C's own nested `if`s, so the exits are C paths; without it the C is
 /// one store and one `break`, and the exits are the proof's case splits, as
 /// in the rbtree insert fixup.
-fn loop_with_break_exits(exits: usize, c_branches: bool) -> (String, String) {
+fn loop_with_early_exits(exits: usize, c_branches: bool) -> (String, String) {
     fn c_tree(low: usize, high: usize, indent: usize) -> String {
         let pad = " ".repeat(indent);
         if high - low == 1 {
@@ -6384,8 +6384,8 @@ void paint(struct node* p, int32 k) {{
     (c_source, click_source)
 }
 
-fn loop_with_break_exits_work(exits: usize, c_branches: bool) -> usize {
-    let (c_source, click_source) = loop_with_break_exits(exits, c_branches);
+fn loop_with_early_exits_work(exits: usize, c_branches: bool) -> usize {
+    let (c_source, click_source) = loop_with_early_exits(exits, c_branches);
     let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
         verify_c_sources(&click_source, &[("paint.c", &c_source)])
     });
@@ -6419,9 +6419,9 @@ fn loop_with_break_exits_work(exits: usize, c_branches: bool) -> usize {
 /// history walked in full again it is 9.5 times, against 3.97.
 #[test]
 #[ignore = "nightly: 20s in the parallel gate"]
-fn loop_break_exit_join_work_is_near_linear_in_the_exits() {
+fn loop_early_exit_join_work_is_near_linear_in_the_exits() {
     let samples =
-        [32usize, 128, 512].map(|exits| (exits, loop_with_break_exits_work(exits, false)));
+        [32usize, 128, 512].map(|exits| (exits, loop_with_early_exits_work(exits, false)));
     for pair in samples.windows(2) {
         let ((_, smaller), (_, larger)) = (pair[0], pair[1]);
         assert!(
@@ -6433,7 +6433,7 @@ fn loop_break_exit_join_work_is_near_linear_in_the_exits() {
     // work is the tactics' and is proportional already; what was quadratic
     // there was the uncharged source layout of the branch tree, which this
     // only exercises.
-    let branches = [16usize, 64].map(|exits| (exits, loop_with_break_exits_work(exits, true)));
+    let branches = [16usize, 64].map(|exits| (exits, loop_with_early_exits_work(exits, true)));
     assert!(
         branches[1].1 * 100 <= branches[0].1 * 430,
         "loop exit work over C branches must be near linear in the exits: {branches:?}"
@@ -6447,7 +6447,7 @@ fn loop_break_exit_join_work_is_near_linear_in_the_exits() {
 /// cell once and has called nothing; every writing exit holds that view
 /// twice and has ended the helper's local, so each of them reaches the
 /// join's normalized resource comparison and its storage-bookkeeping join.
-fn loop_with_break_exits_project(exit_count: usize) -> (String, String) {
+fn loop_with_early_exits_project(exit_count: usize) -> (String, String) {
     let mut c_source = String::from(
         "struct node { int32 shade; };\n\nstatic void repaint(struct node* p) {\n    int32 next = 1;\n    p->shade = next;\n}\n\nvoid paint(struct node* p, int32 flag) {\n    while (true) {\n        if (flag == 0) {\n            break;\n        }\n",
     );
@@ -6504,7 +6504,7 @@ fn loop_exit_join_scaling_on_this_thread() {
     let samples = [1, 2, 4, 8]
         .into_iter()
         .map(|size| {
-            let (c_source, click_source) = loop_with_break_exits_project(size);
+            let (c_source, click_source) = loop_with_early_exits_project(size);
             let (verified, mut sample) = scaling_sample(size, || {
                 verify_c_sources(&click_source, &[("exits.c", c_source.as_str())])
             });

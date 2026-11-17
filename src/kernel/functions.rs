@@ -22039,7 +22039,8 @@ pub(super) fn function_outcome_from_body(
             FunctionOutcome::RuntimeError(RuntimeError::MissingReturn),
             obligations,
         ),
-        StatementOutcome::Break(_)
+        StatementOutcome::LoopTestFalse(_)
+        | StatementOutcome::Break(_)
         | StatementOutcome::Continue(_)
         | StatementOutcome::Jump { .. } => (
             FunctionOutcome::RuntimeError(RuntimeError::MissingReturn),
