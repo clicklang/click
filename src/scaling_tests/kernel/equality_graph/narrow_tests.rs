@@ -126,10 +126,20 @@ fn narrow_cast_chains_fold_a_late_constant_in_linear_work() {
 
 #[test]
 fn narrow_store_equation_queries_do_not_walk_alias_classes_or_unrelated_cells() {
+    narrow_store_equation_query_scaling([1, 4, 8, 16]);
+}
+
+#[test]
+#[ignore = "nightly: 9s parallel, large narrow-store query histories across all formats and alias patterns"]
+fn narrow_store_equation_queries_with_large_histories() {
+    narrow_store_equation_query_scaling([16, 64, 256, 1024]);
+}
+
+fn narrow_store_equation_query_scaling(sizes: [u64; 4]) {
     for format in [Ty::Int8, Ty::UInt8, Ty::Int16, Ty::UInt16] {
         for related in [false, true] {
             let mut samples = Vec::new();
-            for size in [16_u64, 64, 256, 1024] {
+            for size in sizes {
                 let _session = crate::kernel::VerificationSession::enter();
                 let cell = |i| Address {
                     base: "narrow".into(),
