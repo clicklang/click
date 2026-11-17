@@ -1,6 +1,42 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: consumed field refusal, preservation expansion and cold replay"]
+fn consumed_field_refusal_keeps_an_ordinary_preservation_repair() {
+    let (source, sources) =
+        mdtest_sources("mdtests/resource_unfold_field_binding_rejects_consumed_read.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let error = verify_c_sources(&source, &sources).unwrap_err();
+    assert!(
+        error.message().contains("before.prefix"),
+        "{}",
+        error.report()
+    );
+    assert!(
+        error.message().contains("unfold(before)` consumed it"),
+        "{}",
+        error.report()
+    );
+    // Only the intentionally invalid invariant changes in the positive control.
+    let control = source.replace(
+        "invariant 0 <= i and i <= old(before.prefix);",
+        "invariant 0 <= i and i <= p;",
+    );
+    assert_ne!(control, source);
+    verify_c_sources(&control, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!source.contains("transport("), "{source}");
+    let expanded = expand_c_claim_source_by_label(&control, &sources, "claim.contract").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("claim.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 #[ignore = "nightly: repeated entry guard provenance"]
 fn entry_requirement_provenance_survives_repeated_extent_guards() {
     let sources = [("entry.c", "int32 entry(int32 a[], int32 n) { return 0; }")];
