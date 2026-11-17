@@ -569,10 +569,14 @@ int32 probe(struct View& target, const struct View& source) {
  owns target.data;
  owns target.extent.size;
  views source.extent.size;
+ requires separate(memory((&target as (uint8*))[0..16]), memory(source.extent.size));
  ensures target.data == old(target.data);
  ensures target.extent.size == source.extent.size;
  ensures source.extent.size == old(source.extent.size);
  ensures result == 0;
+} by {
+ step() by { solve(); }
+ step() by { known(); }
 }
 "#;
     let path = project.directory.join("copy.click");
