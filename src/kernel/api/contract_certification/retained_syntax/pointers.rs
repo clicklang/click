@@ -147,18 +147,18 @@ impl<'a> Value<'a> {
             Self::Shared(value) => Address::Shared(&value.node().provenance),
         }
     }
-    fn opaque_extent(self) -> Option<Address<'a>> {
+    fn bounds_owner(self) -> Option<Address<'a>> {
         match self {
-            Self::Native(value) => value.opaque_extent().map(Address::Native),
-            Self::Shared(value) => value.node().opaque_extent.as_ref().map(Address::Shared),
+            Self::Native(value) => value.bounds_owner().map(Address::Native),
+            Self::Shared(value) => value.node().bounds_owner.as_ref().map(Address::Shared),
         }
     }
-    fn extent(self) -> Option<(Address<'a>, Operand<'a>)> {
+    fn bounds(self) -> Option<(Address<'a>, Operand<'a>)> {
         match self {
-            Self::Native(value) => value.extent().map(|extent| {
+            Self::Native(value) => value.bounds().map(|bounds| {
                 (
-                    Address::Native(&extent.start),
-                    Operand::Legacy(&extent.width),
+                    Address::Native(&bounds.start),
+                    Operand::Legacy(&bounds.width),
                 )
             }),
             Self::Shared(value) => {
@@ -166,12 +166,12 @@ impl<'a> Value<'a> {
                     .node()
                     .qualifiers
                     .as_ref()?
-                    .extent
+                    .bounds
                     .as_ref()
-                    .map(|extent| {
+                    .map(|bounds| {
                         (
-                            Address::Shared(&extent.start),
-                            Operand::Shared(&extent.width),
+                            Address::Shared(&bounds.start),
+                            Operand::Shared(&bounds.width),
                         )
                     })
             }
@@ -257,23 +257,23 @@ impl Comparison {
         {
             return false;
         }
-        match (a.opaque_extent(), b.opaque_extent()) {
+        match (a.bounds_owner(), b.bounds_owner()) {
             (Some(a), Some(b)) if self.addresses(a, b) => {}
             (None, None) => {}
             _ => return false,
         }
-        match (a.extent(), b.extent()) {
+        match (a.bounds(), b.bounds()) {
             (Some((ap, aw)), Some((bp, bw))) => {
                 if !self.addresses(ap, bp) {
                     return false;
                 }
-                // Extent widths have an existing native-syntax admission rule.
+                // Bounds widths have an existing native-syntax admission rule.
                 // Export only this selected width, never the complete pointer;
                 // a shared identity shortcut would admit additional widths.
                 let native = |value| match value {
                     Operand::Legacy(value) => Cow::Borrowed(value),
                     Operand::Shared(root) => Cow::Owned(
-                        crate::kernel::KernelTermExport::machine(root).expect("extent width"),
+                        crate::kernel::KernelTermExport::machine(root).expect("bounds width"),
                     ),
                 };
                 let (aw, bw) = (native(aw), native(bw));

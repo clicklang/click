@@ -441,15 +441,15 @@ fn pointer_storage_keys_preserve_the_complete_native_identity_tuple() {
             .with_provenance(std::sync::Arc::new(other.clone())),
         pointer
             .clone()
-            .with_opaque_extent(Some(std::sync::Arc::new(other.clone()))),
-        pointer.clone().with_root_extent(),
+            .with_bounds_owner(Some(std::sync::Arc::new(other.clone()))),
+        pointer.clone().with_root_bounds(),
         pointer
             .clone()
-            .with_root_extent()
-            .with_opaque_extent(Some(std::sync::Arc::new(other.clone()))),
+            .with_root_bounds()
+            .with_bounds_owner(Some(std::sync::Arc::new(other.clone()))),
     ];
     for width in [0, 1, 8] {
-        values.push(pointer.clone().with_extent(Some(SubobjectExtent {
+        values.push(pointer.clone().with_bounds(Some(SubobjectBounds {
             start: other.clone(),
             width: MachineTerm::constant(width),
         })));

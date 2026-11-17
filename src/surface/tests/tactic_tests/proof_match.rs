@@ -147,7 +147,7 @@ fn modeled_tree_rotate_left_checks_model_and_ownership() {
         // Only the left rotation's C body changes. The complete original
         // example was checked above; every other C byte and the full sidecar
         // stay identical, so make the mutated function itself reject.
-        let extent = |text: &str| {
+        let text_span = |text: &str| {
             let signature = "struct tree_node *tree_rotate_left(";
             assert_eq!(text.matches(signature).count(), 1);
             let start = text.find(signature).unwrap();
@@ -155,8 +155,8 @@ fn modeled_tree_rotate_left_checks_model_and_ownership() {
             let end = body + text[body..].find("\n}").unwrap() + "\n}".len();
             (body, end)
         };
-        let (before_body, before_end) = extent(c);
-        let (after_body, after_end) = extent(&bad_c);
+        let (before_body, before_end) = text_span(c);
+        let (after_body, after_end) = text_span(&bad_c);
         assert_eq!(&c[..before_body], &bad_c[..after_body]);
         assert_eq!(&c[before_end..], &bad_c[after_end..]);
         assert!(

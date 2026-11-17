@@ -2441,7 +2441,7 @@ fn loop_local_pointer_invariants_retain_declared_element_types() {
 }
 
 #[test]
-#[ignore = "nightly: local pointer extent mutation and expansion"]
+#[ignore = "nightly: local pointer bounds mutation and expansion"]
 fn loop_local_pointer_invariants_refuse_short_wide_views_and_expand() {
     let (click, sources) = loop_fixture("loop_local_pointer_element_types");
     let sources = borrowed_sources(&sources);

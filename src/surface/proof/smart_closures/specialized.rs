@@ -88,16 +88,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         use SpecialArithmeticNode::*;
         let (indices, result, polynomial) = match node {
-            IntegerProductBounds { bounds, result }
-            | IntegerDivisionBounds { bounds, result }
-            | IntegerMultiplyOrder { bounds, result }
-            | IntegerQuotientBound { bounds, result }
-            | IntegerBoundExclusion { bounds, result }
-            | IntegerRelationTransport { bounds, result }
-            | IntegerQuotientShift { bounds, result }
-            | IntegerCastIdentity { bounds, result }
-            | IntegerOperationIdentity { bounds, result }
-            | UnsignedSumBound { bounds, result } => (bounds.clone(), result, false),
+            IntegerCastIdentity { bounds, result } | UnsignedSumBound { bounds, result } => {
+                (bounds.clone(), result, false)
+            }
             IntegerPolynomialIdentity { result, .. } => (Vec::new(), result, true),
             PointerTranslation {
                 relation,

@@ -19,7 +19,7 @@ fn an_opaque_candidate_does_not_walk_its_unusable_memory_frame() {
             Pointer::symbolic(Variable(995_081)),
             ProgramType::Int32Pointer,
         );
-        assert!(!alias.extent_is_known());
+        assert!(!alias.bounds_are_known());
         let context = PureFactContext::new()
             .assume_condition(ConditionTerm::pointer_value_equal(previous, alias), true);
         let mut memory = base;
@@ -61,11 +61,11 @@ fn provenance_misses_do_not_enumerate_direct_alias_stars() {
             );
         }
         assert!(facts.provenance_equal(&pointer(0), &pointer(size)));
-        assert!(facts.opaque_extents_equal(&pointer(0), &pointer(size)));
+        assert!(facts.bounds_owners_equal(&pointer(0), &pointer(size)));
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..4 {
                 assert!(!facts.provenance_equal(&pointer(0), &pointer(size + 1)));
-                assert!(!facts.opaque_extents_equal(&pointer(0), &pointer(size + 1)));
+                assert!(!facts.bounds_owners_equal(&pointer(0), &pointer(size + 1)));
             }
         });
         samples.push(work);

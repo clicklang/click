@@ -1,6 +1,6 @@
 # A loop invariant states a viewable prefix that grows with the index
 
-`viewable(a[0..i])` is a stated range, so its extent half — `i` read as an
+`viewable(a[0..i])` is a stated range, so its span half — `i` read as an
 element count, `0 <= i` and `i <= 1073741823` for four-byte elements — is part
 of the invariant: owed at entry and at the back edge, assumed at the head. The
 kernel once spelled the count bound as an unsigned comparison with a sign-bit

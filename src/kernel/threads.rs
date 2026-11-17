@@ -524,6 +524,7 @@ impl ThreadLedger {
         self.storage.local_views.get(fact)
     }
 
+    #[cfg(test)]
     pub(super) fn witnesses_loan_recovery(
         &self,
         origin: &LoanLedger,

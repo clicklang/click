@@ -570,7 +570,7 @@ write. Binding a reference is not an assignment, so `assignment(r, N)` is
 refused; a store through `r` is selected by its statement.
 
 A reference argument bound to a native scalar field keeps that field's selected
-extent, matching the complete pointer value of `&object.field` in a contract.
+bounds, matching the complete pointer value of `&object.field` in a contract.
 An access beyond the member remains invalid even when a sibling field is also
 available. See the checked
 [member-reference equality](https://github.com/clicklang/click/blob/master/mdtests/cpp_a_member_reference_parameter_retains_its_member_equality.md)
@@ -1595,7 +1595,7 @@ in explicitly locked project headers. Their spans retain that header's identity;
 each function body and its field-use spans belong to that function's definition source.
 
 Embedded mutable records with trivial destruction retain nominal child
-identities and exact ABI extents, offsets and alignment. Contracts can describe
+identities and exact ABI sizes, offsets and alignment. Contracts can describe
 nested fields using C's existing struct metadata, as the `nested-record` fixture
 shows when an outer scalar update preserves fields in two separate child
 objects. Declaration validation follows embedded-field reachability and rejects
@@ -1638,7 +1638,7 @@ resizes the parent allocation nor initializes siblings. Repeated initialization
 outside the prefix, mismatched nominal constructor targets, base construction,
 and nontrivial embedded destruction remain refused. Constructor proof entries
 describe unwritten object footprints without fixing their containing allocation's
-extent. Ordinary, expanded and retained checks cover an automatic descriptor
+size. Ordinary, expanded and retained checks cover an automatic descriptor
 with a pointer field and a nested uint64 extent while preserving backing memory.
 A nested self-pointer regression also constructs a child at a nonzero parent
 offset and reads through the pointer to that child's own field.

@@ -1199,8 +1199,8 @@ fn pointer_translation(
     if let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) = goal {
         let same_domain = |a: &PointerValue, b: &PointerValue| {
             a.provenance() == b.provenance()
-                && a.extent() == b.extent()
-                && a.extent_is_known() == b.extent_is_known()
+                && a.bounds() == b.bounds()
+                && a.bounds_are_known() == b.bounds_are_known()
         };
         let linked = match relation {
             Proposition::ConditionIs(ConditionTerm::PointerValueEqual(a, b), true) => {

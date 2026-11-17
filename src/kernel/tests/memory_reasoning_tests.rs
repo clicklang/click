@@ -117,7 +117,7 @@ fn loadability_coverage_refuses_a_negative_signed_additive_shift() {
 }
 
 #[test]
-fn loadability_coverage_compares_wide_concrete_extents_exactly() {
+fn loadability_coverage_compares_wide_concrete_spans_exactly() {
     let memory = Memory::new();
     let base = Pointer {
         block: PointerBlock::ExternalArgument,
@@ -4097,11 +4097,11 @@ fn a_pointerless_state_equality_drops_only_a_local_no_pointer_can_reach() {
     let declared_hidden = Memory::new().with_block("local:hidden", 4);
     assert!(
         !memories_proven_equal_for_memory_resolution(&declared_addressed, &declared_neither, &bare),
-        "an addressable automatic object's extent is part of the state"
+        "an addressable automatic object's size is part of the state"
     );
     assert!(
         memories_proven_equal_for_memory_resolution(&declared_hidden, &declared_neither, &bare),
-        "an object no pointer can reach has no extent a load consults"
+        "an object no pointer can reach has no size a load consults"
     );
 
     // And the caller that does have a pointer now asks about it.
@@ -5660,7 +5660,7 @@ fn freed_external_allocation_is_not_still_available() {
         offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(93_503)), 4),
     };
     let live = Memory::new()
-        .with_heap_allocation_claim(base.clone(), HeapExtent::int32(8))
+        .with_heap_allocation_claim(base.clone(), AllocationSize::int32(8))
         .expect("a fresh external allocation claim is accepted");
     let freed = live
         .clone()
@@ -5889,7 +5889,7 @@ fn string_literal_blocks_separate_only_by_their_bytes() {
 /// Constant range endpoints are `int32` values, and their guard arithmetic
 /// must be the true difference. Subtracting the bit patterns underflows for a
 /// negative start: in debug that panicked inside the guard, and in release it
-/// wrapped to a small unsigned value and declared an impossible extent valid.
+/// wrapped to a small unsigned value and declared an impossible span valid.
 mod constant_range_byte_count_guards {
     use super::*;
 
@@ -5917,9 +5917,9 @@ mod constant_range_byte_count_guards {
     }
 
     #[test]
-    fn a_negative_start_whose_extent_does_not_fit_is_refused() {
+    fn a_negative_start_whose_span_does_not_fit_is_refused() {
         // The true element count is 4_000_000_000, so four bytes each is far
-        // past a `u32` extent. Subtracting the bit patterns would have
+        // past a `u32` span. Subtracting the bit patterns would have
         // underflowed here instead of reaching this comparison.
         assert!(refuses(&guards(-2_000_000_000, 2_000_000_000, 4)));
         assert!(refuses(&guards(i32::MIN, 0, 4)));
@@ -5938,7 +5938,7 @@ mod constant_range_byte_count_guards {
     /// at the widest `int32` range there is, which is why no one-byte range can
     /// fail the fits guard — only the forward guard.
     #[test]
-    fn the_widest_fitting_extent_is_at_the_boundary() {
+    fn the_widest_fitting_span_is_at_the_boundary() {
         assert!(guards(i32::MIN, i32::MAX, 1).is_empty());
         assert!(guards(0, 1_073_741_823, 4).is_empty());
         assert!(refuses(&guards(0, 1_073_741_824, 4)));
@@ -5947,17 +5947,17 @@ mod constant_range_byte_count_guards {
     }
 }
 
-/// Every rule that reads an assumed loadable extent at element granularity
-/// must first establish that the extent is a valid 32-bit byte extent.
+/// Every rule that reads an assumed loadable span at element granularity
+/// must first establish that the span is a valid 32-bit byte span.
 ///
 /// The witness is one shape: `loadable(v[0..n])` at `n == 1 << 30` has the
-/// byte extent `n * 4`, which is `1 << 32`, which is `0`. The fact is true and
-/// covers nothing. A rule that divides that extent by four and reads `n`
+/// byte span `n * 4`, which is `1 << 32`, which is `0`. The fact is true and
+/// covers nothing. A rule that divides that span by four and reads `n`
 /// elements out of it turns nothing into real bytes, and
-/// `mdtests/wrapped_viewable_extent_is_not_a_cell.md` is the surface witness
+/// `mdtests/wrapped_viewable_span_is_not_a_cell.md` is the surface witness
 /// for the cell rules specifically. These cover each reader directly, in both
 /// polarities: refused without the bound, accepted with it.
-mod wrapped_assumed_extent_is_refused {
+mod wrapped_assumed_span_is_refused {
     use super::*;
 
     const WRAPPING_COUNT: u32 = 1 << 30;
@@ -5970,7 +5970,7 @@ mod wrapped_assumed_extent_is_refused {
     }
 
     /// `loadable(v[0..count])` with a symbolic element count, plus the order
-    /// facts a reader needs about an index inside it. The extent bound is the
+    /// facts a reader needs about an index inside it. The span bound is the
     /// one fact that varies.
     fn context(count: Variable, bounded: bool) -> (Memory, PureFactContext) {
         let memory = Memory::new();
@@ -6003,7 +6003,7 @@ mod wrapped_assumed_extent_is_refused {
     }
 
     #[test]
-    fn wrapped_goal_extent_cannot_pass_by_a_signed_residue() {
+    fn wrapped_goal_span_cannot_pass_by_a_signed_residue() {
         let memory = Memory::new();
         let range_base = array_base(0);
         let range_bytes = MachineTerm::constant(16);
@@ -6022,7 +6022,7 @@ mod wrapped_assumed_extent_is_refused {
                 &wrapped_base,
                 &wrapped_bytes,
             ),
-            "a signed residue must not make an overflowing goal extent fit"
+            "a signed residue must not make an overflowing goal span fit"
         );
         assert!(
             !assumptions.proves_loadable_cell_from_region(
@@ -6059,7 +6059,7 @@ mod wrapped_assumed_extent_is_refused {
                 &wrapped_base,
                 &symbolic_bytes,
             ),
-            "symbolic extents must carry evidence that their sum did not wrap"
+            "symbolic spans must carry evidence that their sum did not wrap"
         );
 
         assert!(
@@ -6084,7 +6084,7 @@ mod wrapped_assumed_extent_is_refused {
             assert_eq!(
                 assumptions.proves_memory_access(&memory, &array_base(0), 4),
                 bounded,
-                "a cell inside `v[0..n]` needs the range's extent bound (bounded: {bounded})"
+                "a cell inside `v[0..n]` needs the range's span bound (bounded: {bounded})"
             );
             assert_eq!(
                 assumptions.proves_memory_access(&memory, &array_base(4), 4),
@@ -6094,7 +6094,7 @@ mod wrapped_assumed_extent_is_refused {
         }
     }
 
-    /// The memory-resolution reader, which reads the same extent as an element
+    /// The memory-resolution reader, which reads the same span as an element
     /// count to place a pointer inside it.
     #[test]
     fn memory_resolution_refuses_a_wrapped_range() {
@@ -6108,7 +6108,7 @@ mod wrapped_assumed_extent_is_refused {
                     &MachineTerm::constant(4),
                 ),
                 bounded,
-                "memory resolution reads the extent at element granularity too \
+                "memory resolution reads the span at element granularity too \
                  (bounded: {bounded})"
             );
         }
@@ -6116,21 +6116,21 @@ mod wrapped_assumed_extent_is_refused {
 
     /// The region reader used by covering-span certification.
     #[test]
-    fn a_region_read_refuses_a_wrapped_extent() {
+    fn a_region_read_refuses_a_wrapped_span() {
         let count = Variable(9_100_002);
         for bounded in [false, true] {
             let (_, assumptions) = context(count, bounded);
-            let extent =
+            let span =
                 MachineTerm::multiply(MachineTerm::Variable(count), MachineTerm::constant(4));
             assert_eq!(
                 assumptions.proves_loadable_cell_from_region(
                     &array_base(0),
-                    &extent,
+                    &span,
                     &array_base(4),
                     4,
                 ),
                 bounded,
-                "a region's extent is read as an element count (bounded: {bounded})"
+                "a region's span is read as an element count (bounded: {bounded})"
             );
         }
     }
@@ -6138,7 +6138,7 @@ mod wrapped_assumed_extent_is_refused {
     /// A constant range whose element count wraps is decided without facts,
     /// and so is the widest one that does not.
     #[test]
-    fn a_constant_wrapped_extent_needs_no_facts_to_refuse() {
+    fn a_constant_wrapped_span_needs_no_facts_to_refuse() {
         let memory = Memory::new();
         let wrapped = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
             memory: memory.clone(),
@@ -6153,7 +6153,7 @@ mod wrapped_assumed_extent_is_refused {
         // and covers nothing, so no cell comes out of it.
         assert!(
             !wrapped.proves_memory_access(&memory, &array_base(0), 4),
-            "a constant wrapped extent yields no cell"
+            "a constant wrapped span yields no cell"
         );
         let widest = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
             memory: memory.clone(),
@@ -6166,14 +6166,14 @@ mod wrapped_assumed_extent_is_refused {
         });
         assert!(
             widest.proves_memory_access(&memory, &array_base(0), 4),
-            "one element fewer is the widest extent that fits, and it still works"
+            "one element fewer is the widest span that fits, and it still works"
         );
     }
 
-    /// One-byte elements cannot wrap: the extent is the count, unscaled, so
+    /// One-byte elements cannot wrap: the span is the count, unscaled, so
     /// nothing has to be established before reading it.
     #[test]
-    fn a_byte_range_needs_no_extent_bound() {
+    fn a_byte_range_needs_no_span_bound() {
         let count = Variable(9_100_004);
         let memory = Memory::new();
         let assumptions = PureFactContext::new()
@@ -6227,7 +6227,7 @@ mod stated_range_guard_derivation {
     fn a_range_carries_its_count_bounds() {
         let count = MachineTerm::Variable(Variable(9_200_000));
         assert_eq!(
-            crate::kernel::stated_loadable_extent_guards(&int32_range_loadable(count.clone())),
+            crate::kernel::stated_loadable_span_guards(&int32_range_loadable(count.clone())),
             vec![
                 Proposition::ConditionIs(
                     ConditionTerm::signed_less_equal(MachineTerm::constant(0), count.clone()),
@@ -6249,7 +6249,7 @@ mod stated_range_guard_derivation {
     fn a_conjunction_of_ranges_carries_both() {
         let left = MachineTerm::Variable(Variable(9_200_001));
         let right = MachineTerm::Variable(Variable(9_200_002));
-        let guards = crate::kernel::stated_loadable_extent_guards(&Proposition::And(
+        let guards = crate::kernel::stated_loadable_span_guards(&Proposition::And(
             Box::new(int32_range_loadable(left)),
             Box::new(int32_range_loadable(right)),
         ));
@@ -6272,7 +6272,7 @@ mod stated_range_guard_derivation {
             body: Box::new(body.clone()),
         };
         assert!(
-            crate::kernel::stated_loadable_extent_guards(&quantified).is_empty(),
+            crate::kernel::stated_loadable_span_guards(&quantified).is_empty(),
             "a quantified range states no scope-level bound"
         );
         let implication = Proposition::Implies(
@@ -6283,7 +6283,7 @@ mod stated_range_guard_derivation {
             Box::new(body),
         );
         assert!(
-            crate::kernel::stated_loadable_extent_guards(&implication).is_empty(),
+            crate::kernel::stated_loadable_span_guards(&implication).is_empty(),
             "a conditional range states no unconditional bound"
         );
     }
@@ -6311,13 +6311,13 @@ mod stated_range_guard_derivation {
             MachineTerm::Variable(lo),
         );
         assert_eq!(
-            crate::kernel::stated_loadable_extent_guards(&moved),
+            crate::kernel::stated_loadable_span_guards(&moved),
             crate::kernel::memory_range_element_count_guards(moved_count, 4),
             "the moved range's guards are over the moved count"
         );
         assert_ne!(
-            crate::kernel::stated_loadable_extent_guards(&moved),
-            crate::kernel::stated_loadable_extent_guards(&range),
+            crate::kernel::stated_loadable_span_guards(&moved),
+            crate::kernel::stated_loadable_span_guards(&range),
             "and are not the guards of the range before substitution"
         );
     }
@@ -6327,11 +6327,11 @@ mod stated_range_guard_derivation {
     /// the bare `int32` word under an unsigned comparison.
     #[test]
     fn a_symbolic_range_fits_guard_compares_sigma_of_its_count() {
-        use crate::kernel::{ConditionTerm, MachineIntegerType, MemoryRangeExtent};
+        use crate::kernel::{ConditionTerm, MachineIntegerType, MemoryRangeSpan};
         let start = MachineTerm::Variable(Variable(9_200_020));
         let end = MachineTerm::Variable(Variable(9_200_021));
-        let MemoryRangeExtent::Guards(guards) =
-            crate::kernel::memory_range_byte_count_extent(start.clone(), end.clone(), 4)
+        let MemoryRangeSpan::Guards(guards) =
+            crate::kernel::memory_range_byte_count_span(start.clone(), end.clone(), 4)
         else {
             panic!("symbolic endpoints carry guards");
         };
@@ -6347,7 +6347,7 @@ mod stated_range_guard_derivation {
         assert_eq!(guards[1], Proposition::ConditionIs(fits, true));
     }
 
-    /// A range of one-byte elements keeps its extent unscaled, `a[0..n]` over
+    /// A range of one-byte elements keeps its span unscaled, `a[0..n]` over
     /// `uint8` being `n` bytes, and carries its count bound like a wider
     /// range. One-byte elements have no count limit below `i32::MAX`, so the
     /// nonnegative count is the whole guard.
@@ -6364,7 +6364,7 @@ mod stated_range_guard_derivation {
             wide: false,
         };
         assert_eq!(
-            crate::kernel::stated_loadable_extent_guards(&range),
+            crate::kernel::stated_loadable_span_guards(&range),
             vec![Proposition::ConditionIs(
                 ConditionTerm::signed_less_equal(MachineTerm::constant(0), count),
                 true,
@@ -6372,10 +6372,10 @@ mod stated_range_guard_derivation {
         );
     }
 
-    /// A constant extent carries nothing: a cell width or a constant range's
+    /// A constant span carries nothing: a cell width or a constant range's
     /// size is already a true count of bytes, decided where it was lowered.
     #[test]
-    fn an_unscaled_extent_carries_nothing() {
+    fn an_unscaled_span_carries_nothing() {
         let cell = Proposition::MemoryLoadable {
             memory: Memory::new(),
             base: Pointer {
@@ -6385,11 +6385,11 @@ mod stated_range_guard_derivation {
             bytes: MachineTerm::constant(4),
             wide: false,
         };
-        assert!(crate::kernel::stated_loadable_extent_guards(&cell).is_empty());
+        assert!(crate::kernel::stated_loadable_span_guards(&cell).is_empty());
     }
 
     #[test]
-    fn shared_extent_guards_match_wide_integer_arithmetic_at_boundaries() {
+    fn shared_span_guards_match_wide_integer_arithmetic_at_boundaries() {
         let start_var = Variable(9_200_020);
         let end_var = Variable(9_200_021);
         let assumptions = PureFactContext::new();
@@ -6403,7 +6403,7 @@ mod stated_range_guard_derivation {
                 MachineTerm::Variable(end_var),
                 width,
             );
-            let guards = crate::kernel::memory_range_extent_guard_spellings(&range);
+            let guards = crate::kernel::memory_range_span_guard_spellings(&range);
             let limit = (u32::MAX / width).min(i32::MAX as u32) as i32;
             let endpoints = [
                 i32::MIN,
@@ -6487,7 +6487,7 @@ fn a_constant_length_range_bounds_its_own_outside_conclusion() {
 }
 
 #[test]
-fn a_stated_ranges_extent_facts_bound_its_outside_conclusion() {
+fn a_stated_ranges_span_facts_bound_its_outside_conclusion() {
     let count = MachineTerm::Variable(Variable(93_941));
     let assumptions = PureFactContext::new()
         .assume_condition(
@@ -6501,7 +6501,7 @@ fn a_stated_ranges_extent_facts_bound_its_outside_conclusion() {
             ),
             true,
         );
-    // `p[0..n]` has no constant count, so the bound is the valid-byte-extent
+    // `p[0..n]` has no constant count, so the bound is the valid-byte-span
     // condition the stated range carries.
     assert!(outside_range_probe(
         MachineTerm::constant(0),
@@ -6675,9 +6675,9 @@ mod membership_needs_an_unwrapped_difference {
     }
 
     // Raw result storage and typed field writes use different element units.
-    // Containment must compare complete byte extents, including shifted fields.
+    // Containment must compare complete byte spans, including shifted fields.
     #[test]
-    fn constant_typed_fields_fit_only_inside_their_raw_byte_extent() {
+    fn constant_typed_fields_fit_only_inside_their_raw_byte_span() {
         let at = Pointer::symbolic(Variable(93_953));
         let bytes = MemoryRange::new_with_element_width(at.clone(), 0u32.into(), 16u32.into(), 1);
         let field = |offset, width, count| {
@@ -6805,7 +6805,7 @@ mod membership_needs_an_unwrapped_difference {
         let end = MachineTerm::add(index.clone(), MachineTerm::constant(4));
         // A residue in the upper half is refused outright: reading it as an
         // offset would place the index `2^31` elements above the start, and no
-        // valid extent reaches that far.
+        // valid span reaches that far.
         assert!(!element_delta_in_range_by_affine_arithmetic(
             &delta(
                 MachineTerm::subtract(index.clone(), MachineTerm::constant(1)),
@@ -6828,9 +6828,9 @@ mod membership_needs_an_unwrapped_difference {
 
 /// The three assumption-carrying state comparisons decide whether two
 /// states agree about one load. Their cell filter is
-/// `PointerBlock::observable_by_load`; the filter on the `blocks` extent map
+/// `PointerBlock::observable_by_load`; the filter on the `blocks` size map
 /// beside it was a block-name shortcut, `!block.starts_with("local:")`, which
-/// dropped every local's extent from the comparison and never looked at the
+/// dropped every local's size from the comparison and never looked at the
 /// retirement tombstones at all.
 mod state_object_agreement {
     use super::*;
@@ -6842,7 +6842,7 @@ mod state_object_agreement {
 
     /// A pointer the verifier cannot resolve to a named object: `&a` handed to
     /// a callee and returned is spelled like this, so it may designate the
-    /// local whose extent the two states disagree about.
+    /// local whose size the two states disagree about.
     fn unresolved_pointer() -> Pointer {
         Pointer {
             block: PointerBlock::Symbolic(Variable(94_100)),
@@ -6896,7 +6896,7 @@ mod state_object_agreement {
     }
 
     /// The other polarity, and it has three parts. Declaring a block writes
-    /// nothing, so an extent alone never decides a load — which is what
+    /// nothing, so a size alone never decides a load — which is what
     /// `canonical_memory_for_pointer_load` says by keeping only the load's own
     /// block. A local whose address is never taken anywhere in the program is
     /// not memory any pointer value designates, so its retirement is invisible
@@ -7297,7 +7297,7 @@ fn a_cell_straddling_two_owned_members_is_not_separated_from_either() {
 }
 
 #[test]
-fn symbolic_zero_based_membership_requires_index_and_byte_extent_bounds() {
+fn symbolic_zero_based_membership_requires_index_and_byte_span_bounds() {
     let base = Pointer::symbolic(Variable(94_000));
     let index = MachineTerm::Variable(Variable(94_001));
     let end = MachineTerm::Variable(Variable(94_002));
@@ -7305,9 +7305,9 @@ fn symbolic_zero_based_membership_requires_index_and_byte_extent_bounds() {
     let range = memory_range(base.clone(), 0, end.clone());
     let lower = ConditionTerm::signed_less_equal(0.into(), index.clone());
     let upper = ConditionTerm::signed_less_than(index.clone(), end.clone());
-    let extent_lower = ConditionTerm::signed_less_equal(0.into(), end.clone());
-    let extent_upper = ConditionTerm::signed_less_equal(end.clone(), 1_073_741_823.into());
-    let bounds = [lower, upper, extent_lower, extent_upper];
+    let span_lower = ConditionTerm::signed_less_equal(0.into(), end.clone());
+    let span_upper = ConditionTerm::signed_less_equal(end.clone(), 1_073_741_823.into());
+    let bounds = [lower, upper, span_lower, span_upper];
     let context = |omit: Option<usize>| {
         bounds
             .iter()
@@ -7351,7 +7351,7 @@ fn symbolic_zero_based_membership_requires_index_and_byte_extent_bounds() {
 }
 
 /// A range of one-byte elements narrows by its endpoints as a range of wider
-/// elements does: `loadable(a[0..n])` over `uint8`, whose extent is the
+/// elements does: `loadable(a[0..n])` over `uint8`, whose span is the
 /// unscaled `n`, gives `loadable(a[0..k])` from `0 <= k` and `k <= n`, and
 /// gives nothing without `k <= n`.
 #[test]
@@ -7381,23 +7381,23 @@ fn a_byte_range_narrows_by_its_endpoints() {
     assert!(!held.proves_memory_loadable(&memory, &base, &k));
 }
 
-mod loadable_extent_graph_tests {
+mod loadable_span_graph_tests {
     use super::*;
 
     fn var(id: u64) -> MachineTerm {
         MachineTerm::Variable(Variable(id))
     }
 
-    fn extent(value: MachineTerm) -> MachineTerm {
+    fn span(value: MachineTerm) -> MachineTerm {
         MachineTerm::add(value, MachineTerm::constant(1))
     }
 
     #[test]
-    fn memory_resolution_and_range_reader_share_graph_extent_equality() {
+    fn memory_resolution_and_range_reader_share_graph_span_equality() {
         let memory = Memory::new();
         let base = Pointer::symbolic(Variable(9_320_000));
-        let range_bytes = extent(var(9_320_001));
-        let goal_bytes = extent(var(9_320_002));
+        let range_bytes = span(var(9_320_001));
+        let goal_bytes = span(var(9_320_002));
         let fact = Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
@@ -7422,7 +7422,7 @@ mod loadable_extent_graph_tests {
     #[cfg(test)]
     mod scaling_tests {
         include!(
-            "../../scaling_tests/kernel/tests/memory_reasoning_tests/loadable_extent_graph_tests.rs"
+            "../../scaling_tests/kernel/tests/memory_reasoning_tests/loadable_span_graph_tests.rs"
         );
     }
 }

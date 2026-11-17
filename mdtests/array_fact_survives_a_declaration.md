@@ -1,7 +1,7 @@
 # a fact about an array survives a declaration
 
 `int32 t;` brings a new object into the memory model and writes nothing. It
-has its own name, so the extent, contents, overlays, liveness and heap status
+has its own name, so the size, contents, overlays, liveness and heap status
 of `a` are all the ones they were, and a fact about `a` as a whole is still
 the fact — exactly as `a[0] == 5` has always survived this step.
 

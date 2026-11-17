@@ -831,8 +831,8 @@ fn shared_overflow_spelling_does_not_export_growing_operands() {
 }
 
 #[test]
-fn pointer_comparison_spelling_does_not_export_extent_payloads() {
-    use crate::kernel::{KernelTermExport, KernelTermImport, PointerValue, SubobjectExtent};
+fn pointer_comparison_spelling_does_not_export_bounds_payloads() {
+    use crate::kernel::{KernelTermExport, KernelTermImport, PointerValue, SubobjectBounds};
     for size in [8, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Pointer::symbolic(Variable(999990));
@@ -845,8 +845,8 @@ fn pointer_comparison_spelling_does_not_export_extent_payloads() {
                 MachineTerm::constant(1),
             );
         }
-        let value = PointerValue::new(pointer.clone(), ProgramType::Int32Pointer).with_extent(
-            Some(SubobjectExtent {
+        let value = PointerValue::new(pointer.clone(), ProgramType::Int32Pointer).with_bounds(
+            Some(SubobjectBounds {
                 start: pointer,
                 width,
             }),
@@ -876,7 +876,7 @@ fn pointer_comparison_spelling_does_not_export_extent_payloads() {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         assert!(
             work <= 128,
-            "{size} unspelled extent operations: {work} work"
+            "{size} unspelled bounds operations: {work} work"
         );
     }
 }

@@ -13,7 +13,7 @@ pub(in crate::kernel) struct InputData {
     >,
     pub(in crate::kernel) provenance_graph:
         crate::kernel::pointer_provenance::ValueClasses<Pointer>,
-    pub(in crate::kernel) extent_graph: crate::kernel::pointer_provenance::ValueClasses<Pointer>,
+    pub(in crate::kernel) bounds_graph: crate::kernel::pointer_provenance::ValueClasses<Pointer>,
     pub(in crate::kernel) pointer_value_classes:
         crate::kernel::pointer_provenance::ValueClasses<PointerValue>,
     pub(in crate::kernel) pointer_value_equalities:

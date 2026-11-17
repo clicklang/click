@@ -42,7 +42,7 @@ fn opaque_memory_borrow_fixture() -> (ResourceFact, CheckedResourceFact) {
     let owner =
         crate::kernel::MemoryRange::from_pointer_value(&pointer, 0u32.into(), 4u32.into(), 4);
     let requested = crate::kernel::MemoryRange::from_pointer_value(
-        &pointer.with_root_extent(),
+        &pointer.with_root_bounds(),
         1u32.into(),
         2u32.into(),
         4,

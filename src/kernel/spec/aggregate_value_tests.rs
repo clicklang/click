@@ -28,7 +28,7 @@ fn logical_pointer_field_uses_current_pointee_memory() {
         slot.clone(),
     );
     let load = SpecExpression::MemoryLoad {
-        memory: SpecMemory::Current,
+        memory: SpecPoint::Current,
         pointer: Box::new(SpecExpression::AggregateFieldValue {
             parameter: "input".to_string().into(),
             pointer: Box::new(SpecExpression::ProgramExpression(

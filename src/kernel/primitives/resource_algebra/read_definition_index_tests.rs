@@ -16,8 +16,8 @@ fn token_discovery_follows_a_producer_defined_pointer_read() {
         .register_pointer_read_definition(&value, &memory, &field);
     let wrap =
         |pointer| PointerValue::from_read(pointer, ProgramType::Int32Pointer, &memory, &field);
-    let held = ResourceFact::own_designated_allocation(wrap(read), &HeapExtent::int32(4));
-    let required = ResourceFact::own_designated_allocation(wrap(value), &HeapExtent::int32(4));
+    let held = ResourceFact::own_designated_allocation(wrap(read), &AllocationSize::int32(4));
+    let required = ResourceFact::own_designated_allocation(wrap(value), &AllocationSize::int32(4));
     assert!(
         resource_fact_entails(&held, &required, &facts),
         "the common matcher knows the producer definition"
@@ -81,9 +81,9 @@ fn definitions_registered_after_publication_select_existing_payloads() {
     let value = Pointer::symbolic(Variable(976_200));
     let read = Pointer::loaded_value(&memory, &field);
     let wrap = |p| PointerValue::from_read(p, ProgramType::Int32Pointer, &memory, &field);
-    let held = ResourceFact::own_designated_allocation(wrap(read), &HeapExtent::int32(4));
+    let held = ResourceFact::own_designated_allocation(wrap(read), &AllocationSize::int32(4));
     let required =
-        ResourceFact::own_designated_allocation(wrap(value.clone()), &HeapExtent::int32(4));
+        ResourceFact::own_designated_allocation(wrap(value.clone()), &AllocationSize::int32(4));
     let facts = PureFactContext::new();
     let resources = ResourceContext::new().unchecked_with_fact(held.clone());
     resources.synchronize_memory_equalities(&facts);

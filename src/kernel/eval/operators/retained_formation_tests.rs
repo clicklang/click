@@ -254,14 +254,14 @@ fn coordinate_reconstruction_keeps_the_selected_read_state() {
 fn wide_block_bounds_keep_signed_extension_and_opaque_offset_refusals() {
     let _session = crate::kernel::VerificationSession::enter();
     let ty = MachineIntegerType::Int32;
-    let extent = HeapExtent::new(MachineTerm::uint64_constant(64), HeapExtentKind::UInt64);
+    let size = AllocationSize::new(MachineTerm::uint64_constant(64), AllocationSizeKind::UInt64);
     let index = MachineTerm::Variable(Variable(993400));
     let offset = PointerOffsetTerm::Int32Scaled {
         value: retained(ty, &index),
         byte_width: 4,
     };
     let exports = KernelTermExport::machine_export_count();
-    let guards = wide_block_bounds_of_32_bit_offset(&offset, &extent).unwrap();
+    let guards = wide_block_bounds_of_32_bit_offset(&offset, &size).unwrap();
     assert_eq!(KernelTermExport::machine_export_count(), exports);
     for n in [-1, 0, 16, 17] {
         let context = PureFactContext::new().assume_condition(
@@ -275,9 +275,10 @@ fn wide_block_bounds_keep_signed_extension_and_opaque_offset_refusals() {
             (0..=16).contains(&n)
         );
     }
-    assert!(wide_block_bounds_of_32_bit_offset(
-        &PointerOffsetTerm::Variable(Variable(993401)), &extent,
-    ).is_none());
+    assert!(
+        wide_block_bounds_of_32_bit_offset(&PointerOffsetTerm::Variable(Variable(993401)), &size,)
+            .is_none()
+    );
 }
 
 #[test]

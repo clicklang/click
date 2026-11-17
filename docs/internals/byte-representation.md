@@ -314,7 +314,7 @@ whole-struct byte equality.
 ## Bounded lookup and scaling
 
 The copied source cells are found with one range query over the copied
-block and extent (`representation_copy_cell_moves`), and the byte view's
+block and span (`representation_copy_cell_moves`), and the byte view's
 containing cell with a query over the at most seven constant offsets below
 the access (`containing_integer_cell`). Neither scans memory, other blocks,
 or old states. Each planted cell pays the ordinary `Memory::store` cost.
@@ -322,7 +322,7 @@ The regressions measure deterministic work at four or more sizes, under the
 [efficiency contract](verification-efficiency.md):
 
 - `src/scaling_tests/kernel/tests/representation_copy_tests.rs`:
-  `representation_copy_lookup_work_is_linear_in_the_copied_extent` (4 to 64
+  `representation_copy_lookup_work_is_linear_in_the_copied_span` (4 to 64
   cells) and
   `fixed_representation_copy_lookup_work_is_independent_of_unrelated_memory`
   (8 to 512 unrelated cells, constant work);

@@ -56,7 +56,7 @@ fn separation_names_loaded_pointer_fields_at_their_declared_type() {
 }
 
 #[test]
-fn separate_round_trips_without_generating_extent_obligations() {
+fn separate_round_trips_without_generating_span_obligations() {
     use crate::kernel::{MemoryRange, PointerValue, Resource};
     for wide in [false, true] {
         let pointer = PointerValue::new(
@@ -145,7 +145,7 @@ fn separate_round_trips_without_generating_extent_obligations() {
         assert_eq!(lowered, expected, "{text}");
         assert!(
             obligations.is_empty(),
-            "naming ranges must not owe physical extents: {obligations:?}"
+            "naming ranges must not owe physical spans: {obligations:?}"
         );
     }
 }
@@ -3157,89 +3157,6 @@ mod scaling_tests {
 }
 
 #[test]
-fn a_load_made_between_recorded_points_is_read_at_the_next_one() {
-    // A call's region makes memories no point records: the load its contract
-    // reads is registered in one of them. The first recorded memory after it
-    // still reads the same bytes there, so the load is spelled at that point.
-    let cell = Pointer {
-        block: PointerBlock::Concrete("between-points".into()),
-        offset: PointerOffsetTerm::Constant(0),
-    };
-    let other = Pointer {
-        block: PointerBlock::Concrete("between-points-other".into()),
-        offset: PointerOffsetTerm::Constant(0),
-    };
-    let with_memory = |memory: Memory| {
-        ExecutionState::new().with_memory(memory).with_local(
-            "p",
-            ProgramValue::typed_pointer(cell.clone(), ProgramType::Int32Pointer),
-        )
-    };
-    let blocks = || {
-        Memory::new()
-            .with_block("between-points", 4)
-            .with_block("between-points-other", 4)
-    };
-    let before = with_memory(blocks().store(cell.clone(), int32(1)));
-    crate::kernel::intern_memory_ref(before.memory());
-    // The call leaves the cell's contents unknown; its contract says 5.
-    let middle = blocks();
-    let load = MachineTerm::MemoryLoad(
-        crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&middle))),
-        Box::new(cell.clone()),
-        crate::kernel::LoadKind::Int32,
-    );
-    let (variable, _) = crate::kernel::load_variable_for_term(&load).unwrap();
-    let after = with_memory(middle.store(other, int32(1)));
-    crate::kernel::intern_memory_ref(after.memory());
-    let now = with_memory(after.memory().clone().store(cell.clone(), int32(9)));
-    crate::kernel::intern_memory_ref(now.memory());
-    let exit = ProgramPointSelector::from(ProgramPointRef {
-        region: CodeRegionRef::Region(0),
-        kind: ProgramPointKind::Exit,
-    });
-    let mut recorded_states = RecordedStates::new();
-    recorded_states.insert(
-        ProgramPointRef {
-            region: CodeRegionRef::Region(0),
-            kind: ProgramPointKind::Entry,
-        },
-        before,
-    );
-    recorded_states.insert(exit.clone(), after);
-    let fact = Proposition::ConditionIs(
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(variable)),
-            right: Box::new(MachineTerm::constant(5)),
-        },
-        true,
-    );
-    let spelled = {
-        let _points = SynthesisRecordedPointsScope::enter(&recorded_states);
-        synthesize_surface_proposition_at_entry_and_post(
-            &fact,
-            ParameterBinding::default(),
-            &now,
-            &now,
-        )
-    }
-    .expect("the load must be spelled at the point after the memory it was made in");
-    assert!(
-        format!("{spelled:?}").contains(&format!("{exit:?}")),
-        "the load must be read at the next recorded point: {spelled:?}"
-    );
-    let lowered = relower_written_proposition_with_states(&spelled, &now, &now, &recorded_states)
-        .expect("the spelling must lower through its recorded state");
-    assert_eq!(
-        crate::kernel::proof::proposition_identity_key(&lowered),
-        crate::kernel::proof::proposition_identity_key(&fact),
-        "the spelling must name the load made between the points"
-    );
-}
-
-#[test]
 fn a_pointer_a_local_no_longer_holds_is_spelled_where_it_was_introduced() {
     // `q = view(p); q = r;` leaves the value `view` returned in no local, so
     // the current state cannot name it; the point after the first call held
@@ -3313,54 +3230,6 @@ fn a_pointer_a_local_no_longer_holds_is_spelled_where_it_was_introduced() {
         crate::kernel::proof::proposition_identity_key(&fact),
         "the spelling must name the pointer `q` held"
     );
-}
-
-#[test]
-fn recorded_memories_near_a_read_are_offered_after_it_then_before_it() {
-    // Memories interned in program order: `first` and `second` are recorded,
-    // `between` is made between them and `last` after both. A read in
-    // `between` is next recorded at `second`; a read in `last` was last
-    // recorded at `second`, then `first`.
-    let memory = |block: &str| {
-        // Give each point distinct bytes; a declaration alone preserves
-        // read identity and intentionally selects its newest recorded point.
-        let memory = Memory::new().with_block(block, 4).store(
-            Pointer {
-                block: block.into(),
-                offset: PointerOffsetTerm::Constant(0),
-            },
-            ProgramValue::Int32(MachineTerm::constant(0)),
-        );
-        crate::kernel::intern_memory_ref(&memory)
-    };
-    let point = |index| {
-        ProgramPointSelector::from(ProgramPointRef {
-            region: CodeRegionRef::Region(index),
-            kind: ProgramPointKind::Exit,
-        })
-    };
-    let first = memory("near-first");
-    let between = memory("near-between");
-    let second = memory("near-second");
-    let last = memory("near-last");
-    let mut recorded_states = RecordedStates::new();
-    recorded_states.insert(
-        point(0),
-        ExecutionState::new().with_memory(first.memory().clone()),
-    );
-    recorded_states.insert(
-        point(1),
-        ExecutionState::new().with_memory(second.memory().clone()),
-    );
-    let near = |memory| {
-        recorded_states
-            .points_near_memory(memory)
-            .map(|(selector, _)| selector.clone())
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(near(&between), vec![point(1), point(0)]);
-    assert_eq!(near(&last), vec![point(1), point(0)]);
-    assert_eq!(near(&first), vec![point(0), point(1)]);
 }
 
 #[test]
@@ -7708,6 +7577,20 @@ fn mixed_format_integer_comparisons_of_bitwise_values_round_trip() {
                         original,
                         "{printed}"
                     );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn closed_word32_equality_guards_with_selected_literal_arms_round_trip() {
+    use crate::kernel::MachineIntegerType as T;
+    for (format, spelling) in [(T::Int32, "int32"), (T::UInt32, "uint32")] {
+        for guard in ["x == 9", "x != 9"] {
+            for replacement in [9, 10] {
+                for reverse in [false, true] {
+                    check_conditional_round_trip(format, spelling, guard, reverse, replacement);
                 }
             }
         }

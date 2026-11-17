@@ -130,9 +130,7 @@ use surface_construction::*;
 pub(super) use surface_synthesis::synthesize_surface_proposition_at_entry_and_post;
 #[cfg(test)]
 use surface_synthesis::{SURFACE_SYNTHESIS_DEPTH_LIMIT, bitvector_term_is_load_free};
-pub(super) use surface_synthesis::{
-    callback_source_name, synthesize_surface_equality_across_points, synthesize_surface_proposition,
-};
+pub(super) use surface_synthesis::{callback_source_name, synthesize_surface_proposition};
 use surface_synthesis::{
     surface_synthesis_exhaustion_description, surface_synthesis_failure,
     synthesize_surface_machine_expression,
@@ -2858,7 +2856,7 @@ fn evaluate_entry_resource_context(
             &evaluation_state,
             &resource_specs,
             &definitions,
-            &assumptions.clone().assume_entry_clause_extents(),
+            &assumptions.clone().assume_entry_clause_spans(),
             &mut budget,
         ) {
             Ok(Ok(evaluated)) => evaluated,

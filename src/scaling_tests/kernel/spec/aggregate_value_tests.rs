@@ -64,7 +64,7 @@ fn logical_fields_are_bounded_and_do_not_grant_pointer_access() {
         assert!(values[0].obligations.is_empty());
         samples.push(work);
         let ordinary = SpecExpression::MemoryLoad {
-            memory: SpecMemory::Current,
+            memory: SpecPoint::Current,
             pointer: Box::new(SpecExpression::Value(ProgramValue::pointer(slot.clone()))),
             value_type: ProgramType::Int32,
         };

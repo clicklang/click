@@ -1,4 +1,4 @@
-# An alias of a complete entry pointer read retains its scalar extent
+# An alias of a complete entry pointer read retains its scalar bounds
 
 ```c filename=probe.c
 struct Pair { int32 first; int32 second; };

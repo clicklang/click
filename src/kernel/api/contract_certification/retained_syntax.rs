@@ -560,11 +560,11 @@ mod tests {
     use crate::kernel::{KernelTermExport, VerificationSession};
 
     #[test]
-    fn shared_pointer_certification_preserves_complete_metadata_and_extent_admission() {
+    fn shared_pointer_certification_preserves_complete_metadata_and_bounds_admission() {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
         use crate::kernel::{
             IntegerTerm, ObjectTypeEvidence, Pointer, PointerValue, SharedPointerValue,
-            SubobjectExtent,
+            SubobjectBounds,
         };
         let _session = VerificationSession::enter();
         let base = PointerValue::new(
@@ -572,7 +572,7 @@ mod tests {
             ProgramType::Int32Pointer,
         );
         let class = CAccessClass::Scalar(CScalarClass::Int);
-        let extent = SubobjectExtent {
+        let bounds = SubobjectBounds {
             start: base.pointer().clone(),
             width: MachineTerm::constant(4),
         };
@@ -587,11 +587,11 @@ mod tests {
             base.clone()
                 .with_provenance(std::sync::Arc::new(Pointer::symbolic(Variable(999979)))),
             base.clone()
-                .with_opaque_extent(Some(std::sync::Arc::new(Pointer::symbolic(Variable(
+                .with_bounds_owner(Some(std::sync::Arc::new(Pointer::symbolic(Variable(
                     999978,
                 ))))),
-            base.clone().with_extent(Some(extent)),
-            base.clone().with_extent(Some(SubobjectExtent {
+            base.clone().with_bounds(Some(bounds)),
+            base.clone().with_bounds(Some(SubobjectBounds {
                 start: base.pointer().clone(),
                 width: MachineTerm::IntegerToMachine {
                     destination: MachineIntegerType::Int32,
@@ -631,7 +631,7 @@ mod tests {
                 }
             }
         }
-        // A shared extent must not acquire the numeric identity shortcut.
+        // Shared bounds must not acquire the numeric identity shortcut.
         assert!(!Comparison::default().pointer_value(&values[8], &values[8]));
     }
 

@@ -9,7 +9,7 @@ use click::cli::{
     read_click_project, read_mdtest, read_mdtest_project_if_needed,
     read_verification_inputs_for_project, source_refs,
 };
-use click::instrumentation::{self, ArtifactReuseRejection, HiddenPrerequisiteRoute};
+use click::instrumentation::{self, HiddenPrerequisiteRoute};
 use click::surface::{
     c_tactic_source_position, project_tactic_source_position, verify_c_project, verify_c_sources,
     verify_program_prepared_project,
@@ -341,12 +341,6 @@ const NIGHTLY: &[&str] = &[
     "wide_read_model_arm_rejects_changed_word.md",                             // 0.7s
 ];
 
-/// The artifact reuse rejection ratchet (`docs/internals/testing.md`): count
-/// contract certification rejections of checked execution artifacts over the
-/// whole unfiltered corpus, by reason. A count may only fall; lower its pin
-/// when it does.
-const ARTIFACT_REUSE_REJECTION_BASELINE: &[(ArtifactReuseRejection, usize)] = &[];
-
 /// The hidden prerequisite ratchet (`docs/internals/testing.md`): count the
 /// prerequisites simple statement checking derived by a search the proof does
 /// not retain, over the whole unfiltered corpus, by route and top rule. A
@@ -529,12 +523,10 @@ fn mdtests() {
     } else {
         false
     };
-    let filtered_by_name = filtered;
     // Without its nightly fixtures the corpus is partial, as in a partition:
     // the hidden prerequisite ratchet still catches a rise but cannot see a
-    // fall, and the artifact reuse ratchet waits for a whole-corpus run.
+    // fall.
     let partial = partitioned || skipped_nightly;
-    let filtered = filtered || partial;
 
     assert!(
         !paths.is_empty(),
@@ -547,12 +539,10 @@ fn mdtests() {
     // available to each file, so concurrency cannot change a verdict. Peak
     // memory stays small: on 2026-09-11 the whole corpus peaked at 171 MB
     // serially and 291 MB on 8 workers.
-    let _ = instrumentation::take_artifact_reuse_rejection_census();
     let _ = instrumentation::take_hidden_prerequisite_census();
     let _ = instrumentation::take_backwards_memory_derivation_census();
     let workers = std::thread::available_parallelism().map_or(1, usize::from);
     let failures = limits::run_parallel(&paths, workers, |path| run_mdtest_in_thread(path));
-    let census = instrumentation::take_artifact_reuse_rejection_census();
     let hidden_prerequisites = instrumentation::take_hidden_prerequisite_census();
     // Which producers still end a step on a state older than itself, so
     // that the step is recorded on no history. A knowledge-losing forget
@@ -566,15 +556,6 @@ fn mdtests() {
     );
     if failures.is_empty() {
         if !filtered
-            && std::env::var_os(RUN_QUARANTINED).is_none()
-            && let Some(mismatch) = instrumentation::artifact_reuse_rejection_census_mismatch(
-                &census,
-                ARTIFACT_REUSE_REJECTION_BASELINE,
-            )
-        {
-            panic!("artifact reuse rejection ratchet (tests/mdtests.rs baselines):\n{mismatch}");
-        }
-        if !filtered_by_name
             && std::env::var_os(RUN_QUARANTINED).is_none()
             && let Some(mismatch) = instrumentation::hidden_prerequisite_census_mismatch(
                 &hidden_prerequisites,

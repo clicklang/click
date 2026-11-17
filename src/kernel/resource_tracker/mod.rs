@@ -119,7 +119,7 @@ impl std::fmt::Debug for StatePoint<'_> {
 /// A resource the tracker can answer about, borrowed from the caller so that
 /// asking costs nothing on the naming path.
 ///
-/// New kinds — a byte range, a struct extent, a composite instance, a local —
+/// New kinds — a byte range, a struct object, a composite instance, a local —
 /// are added as variants here and in [`OwnedResource`]; callers that only
 /// build and pass a resource do not change.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -452,7 +452,7 @@ pub(crate) enum SeparationCheck {
     /// separate from it.
     NoCheckedWriteSet,
     /// A fact about a block as a whole is only carried across a step that
-    /// leaves the block's cells, overlays, extent, liveness and heap status
+    /// leaves the block's cells, overlays, size, liveness and heap status
     /// all untouched, which the step the walk stopped at was not shown to do.
     /// Stated separations are not consulted, because this answer is embedded
     /// in a name and memoized per state.
@@ -1050,7 +1050,7 @@ thread_local! {
 /// keeps this argument. The version is therefore only sound when `memory` and
 /// the returned state agree on everything the body can see through `p`:
 /// the contents of every cell of `block`, the union overlays in `block`, the
-/// block's own extent and liveness, and the heap status that decides whether
+/// block's own size and liveness, and the heap status that decides whether
 /// a read of `block` is defined at all.
 ///
 /// **How that is obtained.** By asking [`step_effect::affects`] about

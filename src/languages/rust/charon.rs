@@ -2034,10 +2034,10 @@ impl BodyAdapter<'_, '_> {
                 let a::TyKind::Ref(_, array, source_kind) = source.kind() else {
                     return Err(unsupported("array unsize source"));
                 };
-                let a::TyKind::Array(element, extent, _) = array.kind() else {
+                let a::TyKind::Array(element, array_length, _) = array.kind() else {
                     return Err(unsupported("array unsize source"));
                 };
-                let Some(extent) = extent.as_usize_literal() else {
+                let Some(array_length) = array_length.as_usize_literal() else {
                     return Err(unsupported("symbolic array unsize"));
                 };
                 let mutable = matches!(destination.kind(), a::TyKind::Ref(_, _, a::RefKind::Mut));
@@ -2052,8 +2052,8 @@ impl BodyAdapter<'_, '_> {
                                     mutable: false,
                                 })))
                     || (mutable && *source_kind != a::RefKind::Mut)
-                    || length.as_usize_literal() != Some(extent)
-                    || extent
+                    || length.as_usize_literal() != Some(array_length)
+                    || array_length
                         > i32::MAX as u128
                             / match self.adapter.ty(element)? {
                                 Type::U8 => 1,
@@ -3768,6 +3768,7 @@ pub(super) fn decode_crate(
         temporaries::collapse_iterator_moves(&mut locals, &mut blocks, &temporaries);
         temporaries::bind_range_payloads(&mut locals, &mut blocks, &temporaries);
         temporaries::return_values(&mut locals, &mut blocks, &return_place);
+        temporaries::remove_unused(&mut locals, &mut blocks, &temporaries);
         functions.push(out::Function {
             sites: source_statements
                 .iter()
@@ -4191,7 +4192,7 @@ mod tests {
             };
             *count = length;
             // Only examine storage lowering: remove the four-element copy,
-            // whose type deliberately does not change with the test extent.
+            // whose type deliberately does not change with the test length.
             for block in &mut mir.blocks {
                 block.statements.retain(|s| !matches!(s, S::Assign { target: E::Local { name }, .. } if name == "array"));
             }

@@ -172,33 +172,33 @@ impl<'a, R: PointerRewrite> Rewrite<'a, R> {
         let source = value.node();
         let address = self.address(&source.address)?;
         let provenance = self.address(&source.provenance)?;
-        let opaque_extent = source
-            .opaque_extent
+        let bounds_owner = source
+            .bounds_owner
             .as_ref()
             .map(|address| self.address(address))
             .transpose()?;
         let mut qualifiers = source.qualifiers.clone();
-        let mut extent_changed = false;
-        if let Some(extent) = source.qualifiers.as_ref().and_then(|q| q.extent.as_ref()) {
-            let start = self.address(&extent.start)?;
-            let width = self.numeric(&extent.width)?;
-            if start != extent.start || width != extent.width {
-                extent_changed = true;
-                Arc::make_mut(qualifiers.as_mut().expect("extent qualifiers")).extent =
-                    Some(KernelSubobjectExtent { start, width });
+        let mut bounds_changed = false;
+        if let Some(bounds) = source.qualifiers.as_ref().and_then(|q| q.bounds.as_ref()) {
+            let start = self.address(&bounds.start)?;
+            let width = self.numeric(&bounds.width)?;
+            if start != bounds.start || width != bounds.width {
+                bounds_changed = true;
+                Arc::make_mut(qualifiers.as_mut().expect("bounds qualifiers")).bounds =
+                    Some(KernelSubobjectBounds { start, width });
             }
         }
         if address == source.address
             && provenance == source.provenance
-            && opaque_extent == source.opaque_extent
-            && !extent_changed
+            && bounds_owner == source.bounds_owner
+            && !bounds_changed
         {
             return Ok(value.clone());
         }
         Ok(SharedPointerValue::new(KernelPointerValue {
             address,
             provenance,
-            opaque_extent,
+            bounds_owner,
             program_type: source.program_type,
             qualifiers,
         }))
@@ -273,7 +273,7 @@ mod tests {
             .unwrap();
         assert_eq!(output.node().address, replacement);
         assert_eq!(output.node().provenance, source.node().provenance);
-        assert_eq!(output.node().opaque_extent, source.node().opaque_extent);
+        assert_eq!(output.node().bounds_owner, source.node().bounds_owner);
         assert!(Arc::ptr_eq(
             output.node().qualifiers.as_ref().unwrap(),
             source.node().qualifiers.as_ref().unwrap()
@@ -363,7 +363,7 @@ mod tests {
                 .qualifiers
                 .as_ref()
                 .unwrap()
-                .extent
+                .bounds
                 .as_ref()
                 .unwrap()
                 .width

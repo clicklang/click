@@ -56,7 +56,7 @@ Surface entry setup preserve this metadata and start with an unwritten symbolic
 object footprint. This footprint does not fix the containing allocation's size;
 field liveness comes from the entry contract. At a call, constructors can select
 an aligned subobject within a known parent allocation. Completion and summaries
-initialize only the child's fields, preserving the parent's extent and sibling
+initialize only the child's fields, preserving the parent's size and sibling
 storage. C++ member-initializer lists now lower embedded construction to these
 checked child calls, within a public non-default `noexcept` constructor profile.
 Definitions may come from the selected file or locked header dependencies;
@@ -77,7 +77,7 @@ Scalar declaration construction also has a checked initial-value transition.
 byte ownership, evaluates the initializer, checks its native conversion, and
 writes the initial value. A read-only scalar is then frozen in both its local
 binding and its allocation metadata. Freezing preserves the declared type,
-extent, allocation generation, initialized cells, and ownership; even an
+size, allocation generation, initialized cells, and ownership; even an
 unqualified alias cannot write that allocation. Ordinary assignment has no
 initialization privilege. There is no reusable operation that can initialize a
 read-only object again after forgetting its value.

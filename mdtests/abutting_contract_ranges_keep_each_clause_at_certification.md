@@ -3,7 +3,7 @@
 Two memory clauses whose ranges abut, such as `x[0..(i + 1)]` and
 `x[j..(j + 1)]` under `i + 1 == j`, are joined into one range `x[0..(j + 1)]`
 when the contract entry's resources are normalized. The proof holds each
-clause as written: its extent guards and its `viewable` fact. Certification
+clause as written: its span guards and its `viewable` fact. Certification
 must authorize the same facts, and it used to derive them only from the joined
 range, where `viewable(x[j..(j + 1)])` or the guard `0 <= j` needs order
 reasoning through the equality. The contract context now carries each

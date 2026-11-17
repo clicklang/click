@@ -206,7 +206,7 @@ fn compact_array_regions_copy_and_overwrite_preserve_neighbors_and_scale() {
 }
 
 #[test]
-fn scalar_array_states_preserve_sparse_lanes_without_extent_work() {
+fn scalar_array_states_preserve_sparse_lanes_without_length_work() {
     let mut samples = Vec::new();
     for count in [8, 1024, 1_000_000] {
         let _session = crate::kernel::VerificationSession::enter();

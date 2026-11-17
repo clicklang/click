@@ -114,8 +114,8 @@ impl<K: Ord + Clone> ValueClasses<K> {
 
 pub(super) fn prefer_pointer(left: &PointerValue, right: &PointerValue) -> PointerValue {
     // A contract supplies the provenance of an opaque incoming value. Its
-    // explicit subobject boundary takes precedence over an unknown extent.
-    if !left.extent_is_known() && right.extent_is_known()
+    // explicit subobject boundary takes precedence over unknown bounds.
+    if !left.bounds_are_known() && right.bounds_are_known()
         || matches!(right.pointer().block, super::PointerBlock::Function(_))
             && !matches!(left.pointer().block, super::PointerBlock::Function(_))
     {
@@ -246,8 +246,8 @@ mod tests {
     fn equality_of_widened_views_does_not_widen_the_original_input() {
         let input = value(815_001);
         let parent = value(815_002);
-        let byte_view = input.clone().with_root_extent();
-        let parent_view = parent.clone().with_root_extent();
+        let byte_view = input.clone().with_root_bounds();
+        let parent_view = parent.clone().with_root_bounds();
         let context = PureFactContext::new().assume_proposition(equality(&byte_view, &parent_view));
         let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
             MemoryRange::from_pointer_value(&parent, 0u32.into(), 2u32.into(), 4),
@@ -286,7 +286,7 @@ mod tests {
             4,
             &context
         ));
-        let selected = byte_view.with_extent(Some(SubobjectExtent {
+        let selected = byte_view.with_bounds(Some(SubobjectBounds {
             start: input.pointer().clone(),
             width: 4u32.into(),
         }));
@@ -322,7 +322,7 @@ mod tests {
     #[test]
     fn a_narrowed_read_does_not_narrow_its_enclosing_pointer() {
         let parent = value(824_001);
-        let member = parent.clone().with_extent(Some(SubobjectExtent {
+        let member = parent.clone().with_bounds(Some(SubobjectBounds {
             start: parent.pointer().clone(),
             width: 4u32.into(),
         }));
@@ -336,8 +336,8 @@ mod tests {
             &cell,
         );
         let context = PureFactContext::new().assume_proposition(equality(&read, &member));
-        assert!(context.pointer_value_at_entry(&read).extent().is_some());
-        assert!(context.pointer_value_at_entry(&parent).extent().is_none());
+        assert!(context.pointer_value_at_entry(&read).bounds().is_some());
+        assert!(context.pointer_value_at_entry(&parent).bounds().is_none());
         assert!(!context.contains_known(&equality(&parent, &member)));
         assert!(!context.pointer_provenance_match(&parent, &read));
     }

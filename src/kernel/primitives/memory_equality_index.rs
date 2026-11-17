@@ -101,7 +101,7 @@ impl PartialOrd for AddressCoordinate {
 /// Positive concrete read cores contribute physical byte intervals.
 /// Unsupported entries are counted too: an incomplete interval index can
 /// supply positive candidates, but cannot establish a decisive miss.
-pub(super) fn read_extent(fact: &ResourceFact) -> Option<u64> {
+pub(super) fn read_span(fact: &ResourceFact) -> Option<u64> {
     if let ResourceFact::Own(_, quantity) = fact
         && !quantity.as_const().is_some_and(|value| (value as i32) > 0)
     {
@@ -110,7 +110,7 @@ pub(super) fn read_extent(fact: &ResourceFact) -> Option<u64> {
     let range = fact.memory_range()?;
     // Native constant bounds can supply a physical interval only when both
     // scaled endpoints fit the pointer coordinate domain. Symbolic native
-    // bounds remain unsupported; their low words never supply an extent.
+    // bounds remain unsupported; their low words never supply a span.
     if let Some((start, end)) = range.wide_bounds() {
         let start = start.uint64_as_const()?;
         let end = end.uint64_as_const()?;
@@ -125,16 +125,16 @@ pub(super) fn read_extent(fact: &ResourceFact) -> Option<u64> {
     let end = end.as_const()? as i32;
     let count = u64::try_from(i64::from(end) - i64::from(start)).ok()?;
     let width = u64::from(range.element_width());
-    let extent = count.checked_mul(width)?;
-    (extent > 0).then_some(extent)
+    let span = count.checked_mul(width)?;
+    (span > 0).then_some(span)
 }
 
 // A symbolic interval with a constant modular endpoint difference can
 // supply a candidate at its exact start. This is only candidate eligibility:
 // the ordinary checker still proves signed bounds, width and quantity. Do not
 // put such intervals in a complete physical containment summary.
-fn start_access_extent(fact: &ResourceFact) -> Option<u64> {
-    read_extent(fact).or_else(|| {
+fn start_access_span(fact: &ResourceFact) -> Option<u64> {
+    read_span(fact).or_else(|| {
         if let ResourceFact::Own(_, quantity) = fact
             && !quantity.as_const().is_some_and(|value| (value as i32) > 0)
         {
@@ -153,14 +153,14 @@ fn start_access_extent(fact: &ResourceFact) -> Option<u64> {
 // eight bytes may read one logical four-byte element, including an interior
 // element of a longer range. Those partial reads retain the range checker.
 fn exact_access_sizes(fact: &ResourceFact) -> Vec<u32> {
-    let Some(extent) = read_extent(fact).and_then(|extent| u32::try_from(extent).ok()) else {
+    let Some(span) = read_span(fact).and_then(|span| u32::try_from(span).ok()) else {
         return Vec::new();
     };
-    let width = fact.memory_range().expect("memory extent").element_width();
-    match (extent, width) {
+    let width = fact.memory_range().expect("memory span").element_width();
+    match (span, width) {
         (8, 4) => Vec::new(),
         (4, 4) => vec![4, 8],
-        _ => vec![extent],
+        _ => vec![span],
     }
 }
 
@@ -176,7 +176,7 @@ struct AddressBucket {
     // Writes must not enumerate covering views before reaching an owner.
     // Both summaries follow the same persistent updates and class merges.
     write_intervals: ReadIntervals,
-    // All memory owners, independently of views or representable extents.
+    // All memory owners, independently of views or representable spans.
     // Cardinality selects a sole supplier; quantity and bounds are checked later.
     owners: ResourceEntryIds,
     suppliers: ResourceEntryIds,
@@ -201,12 +201,12 @@ impl MemoryAddresses {
         insert: bool,
         fact: &ResourceFact,
     ) {
-        let extent = read_extent(fact);
+        let span = read_span(fact);
         for (kind, pointer) in range_addresses(range, owned) {
             let Some(offset) = AffineOffset::of(&pointer.offset) else {
                 continue;
             };
-            self.update_coordinate(pointer.block, kind, offset, entry, insert, extent);
+            self.update_coordinate(pointer.block, kind, offset, entry, insert, span);
         }
         self.update_memory_count(range.base().block.clone(), entry, owned, insert);
     }
@@ -229,7 +229,7 @@ impl MemoryAddresses {
             self.incomplete = true;
             return;
         };
-        let extent = read_extent(fact);
+        let span = read_span(fact);
         for (kind, pointer) in range_addresses(range, owned) {
             let Some(pointer) = graph.canonical_pointer(&pointer) else {
                 continue;
@@ -240,7 +240,7 @@ impl MemoryAddresses {
                 pointer.offset,
                 entry,
                 insert,
-                extent,
+                span,
             );
         }
         self.update_memory_count(base.representative, entry, owned, insert);
@@ -285,7 +285,7 @@ impl MemoryAddresses {
         offset: AffineOffset,
         entry: ResourceEntryId,
         insert: bool,
-        read_extent: Option<u64>,
+        read_span: Option<u64>,
     ) {
         let mut bucket = self.classes.get(&block).cloned().unwrap_or_default();
         let Some(key) = offset.checked_add(&bucket.origin) else {
@@ -299,7 +299,7 @@ impl MemoryAddresses {
         if insert == present {
             return;
         }
-        if let Some(extent) = read_extent {
+        if let Some(span) = read_span {
             for intervals in std::iter::once(&mut bucket.read_intervals)
                 .chain((key.0 == AddressKind::OwnedStart).then_some(&mut bucket.write_intervals))
             {
@@ -307,7 +307,7 @@ impl MemoryAddresses {
                     if let Some(end) = key
                         .1
                         .0
-                        .checked_add(&AffineOffset::constant(i128::from(extent)))
+                        .checked_add(&AffineOffset::constant(i128::from(span)))
                     {
                         intervals.insert(key.1.clone(), AddressCoordinate(end), entry);
                     }
@@ -549,20 +549,20 @@ impl AddressPoints {
                 bucket.owners.without_value(&entry)
             };
         }
-        if let Some(extent) = start_access_extent(fact) {
+        if let Some(span) = start_access_span(fact) {
             for access in std::iter::once(&mut bucket.read_capacities)
                 .chain(fact.is_own().then_some(&mut bucket.write_capacities))
             {
-                let entries = access.get(&extent).cloned().unwrap_or_default();
+                let entries = access.get(&span).cloned().unwrap_or_default();
                 let entries = if insert {
                     entries.with_value(entry)
                 } else {
                     entries.without_value(&entry)
                 };
                 if entries.is_empty() {
-                    access.remove(&extent);
+                    access.remove(&span);
                 } else {
-                    access.insert(extent, entries);
+                    access.insert(span, entries);
                 }
             }
         }
@@ -915,7 +915,7 @@ impl ObjectEvidenceSources {
     }
 
     /// Select one admitted footprint's address coordinates through the class
-    /// index. Its quantity and extent grant no authority to a logical read.
+    /// index. Its quantity and span grant no authority to a logical read.
     pub(in crate::kernel) fn memory_address_spelling(
         &self,
         pointer: &Pointer,
@@ -1773,7 +1773,7 @@ impl ResourceContext {
             let held_class = graph.footprint_class(held);
             let query_class = graph.footprint_class(range);
             let nonempty = |range: &MemoryRange| {
-                if read_extent(&ResourceFact::own_memory(range.clone()))
+                if read_span(&ResourceFact::own_memory(range.clone()))
                     .is_some_and(|bytes| bytes > 0)
                 {
                     return true;
@@ -1846,7 +1846,7 @@ impl ResourceContext {
                 return Clear;
             }
         }
-        let Some(extent) = read_extent(fact) else {
+        let Some(span) = read_span(fact) else {
             // This recursive query has constant endpoints and cannot repeat
             // the symbolic-bound route.
             return self.bounded_owned_overlap(fact, assumptions);
@@ -1936,7 +1936,7 @@ impl ResourceContext {
         };
         if !start.is_constant()
             || !end.is_constant()
-            || end.constant_difference(&start) != Some(i128::from(extent))
+            || end.constant_difference(&start) != Some(i128::from(span))
         {
             return Unsupported;
         }
@@ -3428,7 +3428,7 @@ mod tests {
     }
 
     #[test]
-    fn mixed_extent_reads_find_covering_view_hidden_by_shorter_predecessor() {
+    fn mixed_span_reads_find_covering_view_hidden_by_shorter_predecessor() {
         let base = Pointer::symbolic(Variable(851_020));
         let alias = Pointer::symbolic(Variable(851_021));
         let empty = PureFactContext::new();

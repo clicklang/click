@@ -4234,8 +4234,8 @@ fn folded_composite_body_cells_supply_dependent_entry_arguments_without_opening(
         &state,
         &clauses,
         &[definition],
-        // Match the function-entry API: the caller establishes these extents.
-        &PureFactContext::new().assume_entry_clause_extents(),
+        // Match the function-entry API: the caller establishes these spans.
+        &PureFactContext::new().assume_entry_clause_spans(),
         &mut ExecutionBudget::default(),
     )
     .unwrap()
@@ -6250,7 +6250,7 @@ fn named_population_members_keep_identity_and_fields_independent_of_count() {
         .with_population_creation_tracking()
         .with_memory(
             Memory::new()
-                .with_heap_allocation_claim(pointer, HeapExtent::int32(4))
+                .with_heap_allocation_claim(pointer, AllocationSize::int32(4))
                 .unwrap(),
         );
     created.record_population_storage_creation(block.clone());
@@ -6410,7 +6410,7 @@ fn predicate_population_state_reads_saved_count_without_transfer_rights() {
         .with_population_creation_tracking()
         .with_memory(
             Memory::new()
-                .with_heap_allocation_claim(pointer.clone(), HeapExtent::int32(4))
+                .with_heap_allocation_claim(pointer.clone(), AllocationSize::int32(4))
                 .unwrap(),
         );
     created.record_population_storage_creation(pointer.block.clone());
@@ -6484,7 +6484,7 @@ fn predicate_population_state_reads_saved_count_without_transfer_rights() {
 // A suffix uses a non-wrapping, full-width subtraction and the same backing
 // identity. Neither a low-word bound nor an invented endpoint supplies it.
 #[test]
-fn wide_shifted_suffix_coverage_checks_extent_and_identity() {
+fn wide_shifted_suffix_coverage_checks_span_and_identity() {
     let _session = crate::kernel::VerificationSession::enter();
     let base = Pointer::symbolic(Variable(983_100));
     let whole = MachineTerm::Variable(Variable(983_101));
@@ -7325,7 +7325,7 @@ fn translated_owner_coordinates_preserve_overlap_and_branch_isolation() {
 }
 
 #[test]
-fn translated_owner_coordinates_keep_native_extent_and_symbolic_origin() {
+fn translated_owner_coordinates_keep_native_span_and_symbolic_origin() {
     let _session = crate::kernel::VerificationSession::enter();
     let assumptions = PureFactContext::new();
     let owned = |variable, delta, start, end| {

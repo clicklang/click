@@ -1,5 +1,5 @@
 //! Pointer representation-independent checking policy. Address equality is not
-//! provenance or extent evidence. Callers retain the existing checked authority
+//! provenance or bounds evidence. Callers retain the existing checked authority
 //! for each relation; these readers neither search nor create evidence.
 use super::*;
 use crate::kernel::{
@@ -11,16 +11,16 @@ use std::collections::{HashMap, HashSet};
 pub(super) struct Origins<'a, A, W> {
     pub(super) provenance: &'a A,
     pub(super) opaque: Option<&'a A>,
-    pub(super) extent: Option<(&'a A, &'a W)>,
+    pub(super) bounds: Option<(&'a A, &'a W)>,
     pub(super) known: bool,
 }
 impl<'a> Origins<'a, Pointer, MachineTerm> {
     pub(super) fn native(value: &'a PointerValue) -> Self {
         Self {
             provenance: value.provenance(),
-            opaque: value.opaque_extent(),
-            extent: value.extent().map(|e| (&e.start, &e.width)),
-            known: value.extent_is_known(),
+            opaque: value.bounds_owner(),
+            bounds: value.bounds().map(|e| (&e.start, &e.width)),
+            known: value.bounds_are_known(),
         }
     }
 }
@@ -30,11 +30,11 @@ impl<'a> Origins<'a, SharedPointerAddress, KernelTerm> {
         let q = p.qualifiers.as_ref();
         Self {
             provenance: &p.provenance,
-            opaque: p.opaque_extent.as_ref(),
-            extent: q
-                .and_then(|q| q.extent.as_ref())
+            opaque: p.bounds_owner.as_ref(),
+            bounds: q
+                .and_then(|q| q.bounds.as_ref())
                 .map(|e| (&e.start, &e.width)),
-            known: q.is_some_and(|q| q.extent_known),
+            known: q.is_some_and(|q| q.bounds_known),
         }
     }
 }
@@ -51,7 +51,7 @@ impl OriginChecks<Pointer, MachineTerm> for PureFactContext {
         self.provenance_equal(a, b)
     }
     fn opaque(&self, a: &Pointer, b: &Pointer) -> bool {
-        self.opaque_extents_equal(a, b)
+        self.bounds_owners_equal(a, b)
     }
     fn address(&self, a: &Pointer, b: &Pointer) -> bool {
         self.equality_graph.are_equal(a, b)
@@ -60,7 +60,7 @@ impl OriginChecks<Pointer, MachineTerm> for PureFactContext {
         a == b
     }
     fn opaque_is_root(&self, a: &Pointer) -> bool {
-        self.equality_graph.opaque_extent_is_root(a)
+        self.equality_graph.bounds_owner_is_root(a)
     }
 }
 pub(super) fn origins_match<A, W>(
@@ -69,7 +69,7 @@ pub(super) fn origins_match<A, W>(
     checks: &impl OriginChecks<A, W>,
 ) -> bool {
     checks.provenance(a.provenance, b.provenance)
-        && match (a.extent, b.extent) {
+        && match (a.bounds, b.bounds) {
             (None, None) if a.known && b.known => true,
             (None, None) if !a.known && !b.known => a
                 .opaque
@@ -85,9 +85,9 @@ pub(super) fn access_match<A, W>(
     checks: &impl OriginChecks<A, W>,
 ) -> bool {
     checks.provenance(required.0, available.0)
-        && required.1.is_none_or(|extent| match available.1 {
-            Some(source) => checks.opaque(extent, source),
-            None => available.2 && checks.opaque_is_root(extent),
+        && required.1.is_none_or(|bounds| match available.1 {
+            Some(source) => checks.opaque(bounds, source),
+            None => available.2 && checks.opaque_is_root(bounds),
         })
 }
 /// Only the existing complete-read resolver may supply a stored value. A
@@ -216,7 +216,7 @@ pub(super) fn shared_offsets_equal_with_load_atoms(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{KernelTermExport, SubobjectExtent, VerificationSession};
+    use crate::kernel::{KernelTermExport, SubobjectBounds, VerificationSession};
     use std::collections::HashMap;
 
     // This oracle adapter names only the explicitly selected input addresses.
@@ -240,14 +240,14 @@ mod tests {
                 result
                     .addresses
                     .extend(shared.addresses().cloned().zip(native.pointers().cloned()));
-                if let Some(e) = native.extent() {
+                if let Some(e) = native.bounds() {
                     result.widths.insert(
                         shared
                             .node()
                             .qualifiers
                             .as_ref()
                             .unwrap()
-                            .extent
+                            .bounds
                             .as_ref()
                             .unwrap()
                             .width
@@ -266,7 +266,7 @@ mod tests {
         }
         fn opaque(&self, a: &SharedPointerAddress, b: &SharedPointerAddress) -> bool {
             self.facts
-                .opaque_extents_equal(&self.addresses[a], &self.addresses[b])
+                .bounds_owners_equal(&self.addresses[a], &self.addresses[b])
         }
         fn address(&self, a: &SharedPointerAddress, b: &SharedPointerAddress) -> bool {
             self.facts
@@ -279,7 +279,7 @@ mod tests {
         fn opaque_is_root(&self, a: &SharedPointerAddress) -> bool {
             self.facts
                 .equality_graph
-                .opaque_extent_is_root(&self.addresses[a])
+                .bounds_owner_is_root(&self.addresses[a])
         }
     }
 
@@ -368,7 +368,7 @@ mod tests {
         assert!(shared_addresses_equal_with_load_atoms(&a, &b, &|_, _| true));
     }
     #[test]
-    fn shared_origins_require_the_same_extent_start_and_width_evidence() {
+    fn shared_origins_require_the_same_bounds_start_and_width_evidence() {
         let _session = VerificationSession::enter();
         let a = Pointer::symbolic(Variable(1012000));
         let b = Pointer::symbolic(Variable(1012001));
@@ -376,7 +376,7 @@ mod tests {
         let make = |start, width| {
             PointerValue::new(a.clone(), ProgramType::Int32Pointer)
                 .with_provenance(provenance.clone())
-                .with_extent(Some(SubobjectExtent {
+                .with_bounds(Some(SubobjectBounds {
                     start,
                     width: MachineTerm::constant(width),
                 }))
@@ -409,7 +409,7 @@ mod tests {
         }
     }
     #[test]
-    fn shared_access_keeps_complete_value_and_root_extent_authority() {
+    fn shared_access_keeps_complete_value_and_root_bounds_authority() {
         let _session = VerificationSession::enter();
         let memory = crate::kernel::intern_memory(Memory::new());
         let cell = Pointer::symbolic(Variable(1012100));
@@ -424,7 +424,7 @@ mod tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let stored = PointerValue::new(base.clone(), ProgramType::Int32Pointer);
-        let bounded = stored.clone().with_extent(Some(SubobjectExtent {
+        let bounded = stored.clone().with_bounds(Some(SubobjectBounds {
             start: base.clone(),
             width: MachineTerm::constant(4),
         }));

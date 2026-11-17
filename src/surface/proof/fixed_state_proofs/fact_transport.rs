@@ -284,8 +284,8 @@ fn check_fixed_state_fact_transport_using_facts_inner(
             ));
         }
         // Citing a stated range cites both of its halves; see
-        // `cite_range_extent_guards`.
-        crate::surface::proof::theorem_application::cite_range_extent_guards(
+        // `cite_range_span_guards`.
+        crate::surface::proof::theorem_application::cite_range_span_guards(
             &premise,
             &mut explicit_premises,
             |guard| available.exact_available_across_effects(guard, &[]),

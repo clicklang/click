@@ -3576,9 +3576,9 @@ fn stores_beside_many_owned_size_t_ranges_scale_near_linearly() {
 }
 
 /// [`stores_beside_many_owned_size_t_ranges`] with the stored array a heap
-/// block of 64-bit extent: the function also owns
+/// block of 64-bit size: the function also owns
 /// `allocation(value, length * 4u64)`, so its range is the block's wide
-/// range beside its `uint64` token (`design/heap-extents.md`, stage 3).
+/// range beside its `uint64` token (`design/heap-allocation-sizes.md`, stage 3).
 fn stores_beside_many_owned_64_bit_blocks(size: usize) -> (String, String) {
     let (c_source, click_source) = stores_beside_many_owned_size_t_ranges(size);
     let click_source = click_source.replace(
@@ -3611,10 +3611,10 @@ fn stores_beside_many_owned_64_bit_blocks_scale_near_linearly() {
     assert_near_linear_scaling("stores beside many owned 64-bit blocks", &samples);
 }
 
-/// One function that allocates a block of 64-bit extent, lends it to
+/// One function that allocates a block of 64-bit size, lends it to
 /// `calls` calls that each borrow and return its `uint64` token
 /// (`owns allocation(p, n * 4u64)`), and frees it: every call decides the
-/// token's extent and the allocation's continuity.
+/// token's size and the allocation's continuity.
 fn calls_borrowing_a_64_bit_block(calls: usize) -> (String, String) {
     let mut c_source = String::from(
         "void *malloc(unsigned long size);\nvoid free(void *ptr);\n\nvoid keep(int *p, unsigned long n) {\n}\n\nint f(unsigned long n) {\n    int *p = malloc(n * sizeof(int));\n    if (p == 0) {\n        return 0;\n    }\n",
@@ -5823,7 +5823,7 @@ fn bounded_size_t_index_stores(stores: usize) -> (String, String) {
 
 /// [`stores_to_bounded_unordered_indices_are_near_linear`] over a range with
 /// 64-bit bounds. Each store is placed in `a[0..n]` by the wide membership
-/// rule, which decides `ck < n` and the range's extent limit by keyed
+/// rule, which decides `ck < n` and the range's span limit by keyed
 /// lookups, and drops the earlier cells it may alias, none of which is
 /// ordered against it. Neither may scan the other indices' bounds.
 #[test]
@@ -7921,66 +7921,6 @@ fn a_linear_goal_costs_a_constant_per_equality_connected_to_its_atoms() {
 }
 
 #[test]
-fn nearest_statement_states_are_lazy_ordered_and_logarithmic() {
-    let point = |index, kind| ProgramPointRef {
-        region: CodeRegionRef::Region(index),
-        kind,
-    };
-    for size in [16usize, 64, 256, 1024, 4096] {
-        let mut retained_states = RecordedStates::new();
-        for index in 0..size {
-            retained_states.insert(point(index, ProgramPointKind::Entry), ExecutionState::new());
-            retained_states.insert(point(index, ProgramPointKind::Exit), ExecutionState::new());
-        }
-        retained_states.insert(
-            ProgramPointSelector::Mark("unrelated".into()),
-            ExecutionState::new(),
-        );
-        let anchor = size / 2;
-        let (nearest, work) = crate::instrumentation::measure_deterministic_work(|| {
-            retained_states
-                .statement_entries_nearest(anchor)
-                .take(3)
-                .map(|(p, _)| p.clone())
-                .collect::<Vec<_>>()
-        });
-        assert_eq!(
-            nearest,
-            (anchor - 2..=anchor)
-                .rev()
-                .map(|i| point(i, ProgramPointKind::Entry))
-                .collect::<Vec<_>>()
-        );
-        let height = usize::BITS - size.leading_zeros();
-        assert!(
-            work <= 16 * height as usize + 32,
-            "size {size}: {work} tree work"
-        );
-        let all = retained_states
-            .statement_entries_nearest(anchor)
-            .map(|(p, _)| p.clone())
-            .collect::<Vec<_>>();
-        assert_eq!(
-            all,
-            (0..=anchor)
-                .rev()
-                .chain(anchor + 1..size)
-                .map(|i| point(i, ProgramPointKind::Entry))
-                .collect::<Vec<_>>()
-        );
-        retained_states.remove(&point(anchor, ProgramPointKind::Entry));
-        assert_eq!(
-            retained_states
-                .statement_entries_nearest(anchor)
-                .next()
-                .unwrap()
-                .0,
-            &point(anchor - 1, ProgramPointKind::Entry)
-        );
-    }
-}
-
-#[test]
 fn recorded_value_names_index_only_the_locals_each_point_changes() {
     use crate::kernel::{MachineTerm, Variable};
     let point = |index| ProgramPointRef {
@@ -8104,28 +8044,6 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
             "size {size}: naming one cell value did {work} work"
         );
     }
-}
-
-#[test]
-fn nearest_statement_states_stop_at_an_exhausted_deadline() {
-    let mut retained_states = RecordedStates::new();
-    for index in 0..256 {
-        retained_states.insert(
-            ProgramPointRef {
-                region: CodeRegionRef::Region(index),
-                kind: ProgramPointKind::Entry,
-            },
-            ExecutionState::new(),
-        );
-    }
-    let mut entries = retained_states.statement_entries_nearest(128);
-    crate::instrumentation::with_deadline(std::time::Duration::ZERO, || {
-        assert!(entries.next().is_none());
-    });
-    assert!(
-        entries.next().is_none(),
-        "a cancelled traversal must stay stopped"
-    );
 }
 
 #[test]

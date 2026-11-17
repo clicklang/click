@@ -10,7 +10,7 @@ The representation repair is implemented: composite unfolds observe complete
 pointer cells, symbolic storage uses the same `LoadedPointer` identity as an
 ordinary read, and same-source pointer observation runs preserve bytes in the
 memory-history checker. The named-cell rule compares the full typed read,
-including provenance and extent. Scalar load handles no longer double as
+including provenance and bounds. Scalar load handles no longer double as
 pointer parameters in symbolic arrays.
 
 Composite fields and ranges take their canonical typed observations from the

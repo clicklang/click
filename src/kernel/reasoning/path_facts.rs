@@ -1010,10 +1010,10 @@ pub(in crate::kernel) fn element_count_from_bytes(
 /// `uint64`, or a `uint64` constant divisible by `w`.
 ///
 /// Reading `n * w` as `n` elements needs the product not to have wrapped. A
-/// heap block's `uint64` extent is admitted only once `n <= PTRDIFF_MAX / w`
+/// heap block's `uint64` size is admitted only once `n <= PTRDIFF_MAX / w`
 /// is decided for each constant factor `w` of a top-level product
 /// (`allocation_size_validity_refusal` in `eval/statements.rs`), so this is
-/// for such extents only, never for an arbitrary `uint64` term.
+/// for such sizes only, never for an arbitrary `uint64` term.
 pub(in crate::kernel) fn uint64_element_count_from_bytes(
     bytes: &MachineTerm,
     element_width: u32,
@@ -1041,20 +1041,20 @@ pub(in crate::kernel) fn uint64_element_count_from_bytes(
     }
 }
 
-/// An admitted 64-bit heap extent and a byte count `bytes` in the extent's
+/// An admitted 64-bit allocation size and a byte count `bytes` in the size's
 /// elements: `(n, ceil(bytes / k))` for `n * k` with a constant `k`, else
-/// `(extent, bytes)`. Then `bytes <= extent` iff `ceil(bytes / k) <= n`, and
-/// `extent < bytes` iff `n < ceil(bytes / k)`.
+/// `(size, bytes)`. Then `bytes <= size` iff `ceil(bytes / k) <= n`, and
+/// `size < bytes` iff `n < ceil(bytes / k)`.
 ///
 /// Like [`uint64_element_count_from_bytes`], this is exact only for a heap
-/// extent admitted with `n <= PTRDIFF_MAX / k` decided
-/// (`uint64_heap_extent_bytes_are_exact` in `eval/statements.rs`), so that
+/// size admitted with `n <= PTRDIFF_MAX / k` decided
+/// (`uint64_allocation_size_bytes_are_exact` in `eval/statements.rs`), so that
 /// `n * k` did not wrap; never for an arbitrary `uint64` term.
-pub(in crate::kernel) fn uint64_extent_in_elements(
-    extent: &MachineTerm,
+pub(in crate::kernel) fn uint64_size_in_elements(
+    size: &MachineTerm,
     bytes: u64,
 ) -> (&MachineTerm, MachineTerm) {
-    if let binary_term!(UInt64, Multiply, left, right) = extent {
+    if let binary_term!(UInt64, Multiply, left, right) = size {
         match (left.uint64_as_const(), right.uint64_as_const()) {
             (_, Some(width)) if width > 0 => {
                 return (left, MachineTerm::uint64_constant(bytes.div_ceil(width)));
@@ -1065,7 +1065,7 @@ pub(in crate::kernel) fn uint64_extent_in_elements(
             _ => {}
         }
     }
-    (extent, MachineTerm::uint64_constant(bytes))
+    (size, MachineTerm::uint64_constant(bytes))
 }
 
 /// A byte offset `index * stride + field` into an array of `stride`-byte

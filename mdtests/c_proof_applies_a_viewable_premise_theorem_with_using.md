@@ -1,21 +1,21 @@
 # A C proof applies a `viewable`-premise theorem with `using`
 
 `mdtests/sweep_maintains_a_zero_unmarked_count.md` applies a theorem with
-`viewable` premises from a C proof, and states every extent bound the
+`viewable` premises from a C proof, and states every span bound the
 application owes as its own `using` entry. Naming the range and then restating
 the bound the range already carries was not a style choice: an `apply … using`
 list that named only the range was refused with
 
 ```text
 theorem `...` requirement 1 `(n >= 0 && viewable(v[0..n]))` states a memory
-range, so applying it needs that range to be a valid 32-bit byte extent here:
+range, so applying it needs that range to be a valid 32-bit byte span here:
 `n <= 1073741823 is true` is not an available fact
 ```
 
 although the contract states exactly that bound.
 
 Citing a stated range cites what the range says. `viewable(p[a..b])` means both
-that `a..b` is a valid 32-bit byte extent and that those bytes are viewable, so
+that `a..b` is a valid 32-bit byte span and that those bytes are viewable, so
 a `using` list that names the range has named both halves. `transport … using`
 already reads a cited range that way; `apply … using` now does too. The
 relaxation is one-sided: a guard joins the evidence set only where it is

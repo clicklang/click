@@ -766,7 +766,7 @@ pub(super) fn zero_aggregate_array_fields(
 /// Whether a borrowed local view names storage its block actually has.
 ///
 /// Only a range whose bounds are constant can be placed against the block's
-/// extent. One with symbolic bounds keeps the previous treatment: it is the
+/// size. One with symbolic bounds keeps the previous treatment: it is the
 /// caller's own stack object either way, and tightening that case belongs
 /// with the range-arithmetic work rather than here.
 pub(super) fn local_view_range_within_block(range: &MemoryRange, memory: &Memory) -> bool {
@@ -781,7 +781,7 @@ pub(super) fn local_view_range_within_block(range: &MemoryRange, memory: &Memory
     };
     // An empty range names no storage, and `end < start` is how a range says
     // so: `memory_range_byte_count` scales the signed count, so this is the
-    // same reading the extent guards use.
+    // same reading the span guards use.
     if end <= start {
         return true;
     }
@@ -812,7 +812,7 @@ pub(super) fn aggregate_argument_read_refusal(
         };
         if let Some(refusal) = crate::kernel::eval::subobject_access_refusal(
             source.pointer(),
-            source.extent(),
+            source.bounds(),
             layout.size_bytes(),
             &ExecutionFacts::new(),
             &[],

@@ -1,8 +1,8 @@
 # realloc preserves complete cells in arbitrary byte layouts
 
-Heap allocation and `realloc` use byte extents even when the receiving pointer
+Heap allocation and `realloc` use byte sizes even when the receiving pointer
 has a wider logical element type. Typed loads and stores remain bounded by the
-actual byte extent, and initialized cells are copied only when the complete
+actual byte size, and initialized cells are copied only when the complete
 cell fits in the resized block.
 
 ```c filename=arbitrary_layout_realloc.c

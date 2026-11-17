@@ -150,7 +150,7 @@ struct StaticAddress {
     interface_type: InterfaceType,
     constant: bool,
     /// The member subobject the address selects, if any.
-    extent: Option<crate::kernel::SubobjectExtent>,
+    bounds: Option<crate::kernel::SubobjectBounds>,
 }
 
 /// One string literal occurrence, with static storage and a source identity.
@@ -577,11 +577,6 @@ impl CGlobalArray {
 
     pub fn is_incomplete(&self) -> bool {
         self.length.is_none()
-    }
-
-    pub fn interface_type(&self) -> InterfaceType {
-        self.complete_c_type()
-            .expect("incomplete external array has no C type")
     }
 
     pub(crate) fn complete_c_type(&self) -> Option<InterfaceType> {
@@ -1504,11 +1499,6 @@ impl CArrayInitializer {
         self.length
     }
 
-    /// The value of every element the initializer does not list.
-    pub fn zero(&self) -> &CExpression {
-        &self.zero
-    }
-
     /// The listed elements, ascending by index.
     pub fn elements(&self) -> &[(u32, CExpression)] {
         &self.elements
@@ -1805,10 +1795,6 @@ impl CStaticAggregateArray {
         &self.struct_name
     }
 
-    pub fn layout(&self) -> &RecordLayout {
-        &self.layout
-    }
-
     pub fn length(&self) -> u32 {
         self.length
     }
@@ -2098,10 +2084,6 @@ impl CFieldSourceId {
 impl CFieldSource {
     pub fn id(&self) -> &CFieldSourceId {
         &self.id
-    }
-
-    pub fn position(&self) -> &SourcePosition {
-        &self.position
     }
 
     pub fn field_name(&self) -> &str {
@@ -2475,9 +2457,6 @@ impl std::fmt::Debug for CSite {
 impl CStatementSite {
     pub(crate) fn source_bindings(&self) -> Option<&CSourceBindings> {
         self.source_bindings.as_deref()
-    }
-    pub fn position(&self) -> &SourcePosition {
-        &self.position
     }
 
     /// The statement's place among the statements as written; see the field.
@@ -3004,7 +2983,7 @@ pub enum CExpression {
         struct_name: String,
     },
     /// A struct member's address narrowed to the member's `width` bytes
-    /// (`design/pointer-subobject-extents.md`); lowers to the kernel's
+    /// (`design/pointer-subobject-bounds.md`); lowers to the kernel's
     /// `ProgramExpression::Subobject`.
     Subobject {
         pointer: Box<CExpression>,
@@ -3128,7 +3107,7 @@ impl ImportedFunction {
             .find(|global| name.is_named(global.name()) || global.kernel_name() == name)
         {
             return Some(StaticAddress {
-                extent: None,
+                bounds: None,
                 pointer: crate::kernel::Memory::global_pointer(global.kernel_name()),
                 interface_type: global.interface_type(),
                 constant: global.is_constant(),
@@ -3141,7 +3120,7 @@ impl ImportedFunction {
         {
             let interface_type = global_array.complete_c_type()?;
             return Some(StaticAddress {
-                extent: None,
+                bounds: None,
                 pointer: crate::kernel::Memory::global_pointer(global_array.kernel_name()),
                 interface_type,
                 constant: global_array.is_constant(),
@@ -3153,7 +3132,7 @@ impl ImportedFunction {
             .find(|global| name.is_named(global.name()) || global.kernel_name() == name)
         {
             return Some(StaticAddress {
-                extent: None,
+                bounds: None,
                 pointer: crate::kernel::Memory::global_pointer(global_aggregate.kernel_name()),
                 interface_type: record_value_type(global_aggregate.layout()),
                 constant: global_aggregate.is_constant(),
@@ -3166,7 +3145,7 @@ impl ImportedFunction {
         {
             let interface_type = global_aggregate_array.complete_c_type()?;
             return Some(StaticAddress {
-                extent: None,
+                bounds: None,
                 pointer: crate::kernel::Memory::global_pointer(
                     global_aggregate_array.kernel_name(),
                 ),
@@ -3178,7 +3157,7 @@ impl ImportedFunction {
             name.is_named(static_local.name()) || static_local.kernel_name() == name
         }) {
             return Some(StaticAddress {
-                extent: None,
+                bounds: None,
                 pointer: crate::kernel::Memory::static_pointer(
                     &self.name,
                     static_local.kernel_name(),
@@ -3191,7 +3170,7 @@ impl ImportedFunction {
             name.is_named(static_array.name()) || static_array.kernel_name() == name
         }) {
             return Some(StaticAddress {
-                extent: None,
+                bounds: None,
                 pointer: crate::kernel::Memory::static_pointer(
                     &self.name,
                     static_array.kernel_name(),
@@ -3204,7 +3183,7 @@ impl ImportedFunction {
             name.is_named(static_aggregate.name()) || static_aggregate.kernel_name() == name
         }) {
             return Some(StaticAddress {
-                extent: None,
+                bounds: None,
                 pointer: crate::kernel::Memory::static_pointer(
                     &self.name,
                     static_aggregate.kernel_name(),
@@ -3220,7 +3199,7 @@ impl ImportedFunction {
                     || static_aggregate_array.kernel_name() == name
             })
             .map(|static_aggregate_array| StaticAddress {
-                extent: None,
+                bounds: None,
                 pointer: crate::kernel::Memory::static_pointer(
                     &self.name,
                     static_aggregate_array.kernel_name(),
@@ -3242,7 +3221,7 @@ impl ImportedFunction {
                     u32::try_from(literal.bytes().len()).expect("literal length fits u32"),
                 ),
                 constant: false,
-                extent: None,
+                bounds: None,
             }),
             CExpression::Variable(name) => self.static_object_address(name),
             CExpression::Field {
@@ -3275,7 +3254,7 @@ impl ImportedFunction {
             }
             CExpression::Subobject { pointer, width } => {
                 let mut address = self.static_address_expression(pointer)?;
-                address.extent = Some(crate::kernel::SubobjectExtent::constant(
+                address.bounds = Some(crate::kernel::SubobjectBounds::constant(
                     address.pointer.clone(),
                     *width,
                 ));
@@ -3334,7 +3313,7 @@ impl ImportedFunction {
         Some(crate::kernel::ProgramValue::Pointer(
             crate::kernel::PointerValue::new(address.pointer, declared_type.to_kernel_type())
                 .with_pointee_constant(declared_pointee_constant)
-                .with_extent(address.extent),
+                .with_bounds(address.bounds),
         ))
     }
 
@@ -3769,10 +3748,6 @@ impl CEnumDefinition {
     pub fn value(&self, name: &str) -> Option<i64> {
         self.values.get(name).copied()
     }
-
-    pub fn compatible_type(&self) -> InterfaceType {
-        self.compatible_type
-    }
 }
 
 impl CUnionLayout {
@@ -3804,10 +3779,6 @@ impl CUnionField {
 
     pub fn pointee_is_constant(&self) -> bool {
         self.pointee_constant
-    }
-
-    pub fn enum_name(&self) -> Option<&str> {
-        self.enum_name.as_deref()
     }
 
     pub fn offset_bytes(&self) -> u32 {
@@ -6453,7 +6424,7 @@ fn align_up(offset: u32, alignment: u32) -> Option<u32> {
 }
 
 /// The address of `field` within the struct at `base`. The member is its own
-/// subobject (`design/pointer-subobject-extents.md`): arithmetic from its
+/// subobject (`design/pointer-subobject-bounds.md`): arithmetic from its
 /// address stays inside it, and an access through it may not reach a sibling
 /// at an adjacent address. A union member is not narrowed; union members
 /// overlap by design.
@@ -10071,7 +10042,7 @@ impl Parser {
                     array_element_width: None,
                     pointee_struct_class: None,
                     slice_length_parameter: None,
-                    fixed_reference_extent: None,
+                    fixed_reference_bounds: None,
                 });
                 if self.peek() != Some(&Token::Comma) {
                     return Ok(parameters);
@@ -10206,7 +10177,7 @@ impl Parser {
                         array_element_width: None,
                         pointee_struct_class: None,
                         slice_length_parameter: None,
-                        fixed_reference_extent: None,
+                        fixed_reference_bounds: None,
                     });
                     if self.peek() != Some(&Token::Comma) {
                         return Ok(parameters);
@@ -10246,7 +10217,7 @@ impl Parser {
                         array_element_width: Some(element_width),
                         pointee_struct_class: None,
                         slice_length_parameter: None,
-                        fixed_reference_extent: None,
+                        fixed_reference_bounds: None,
                     });
                     if self.peek() != Some(&Token::Comma) {
                         return Ok(parameters);
@@ -10259,7 +10230,7 @@ impl Parser {
                 interface_type,
                 name: kernel_name,
                 slice_length_parameter: None,
-                fixed_reference_extent: None,
+                fixed_reference_bounds: None,
                 volatile: object_volatile,
                 pointee_volatile,
                 constant: object_constant,
@@ -16418,7 +16389,7 @@ impl Parser {
     /// The modeled memory functions describe their native `void *` arguments
     /// as byte ranges. Retag an object pointer for that contract after the
     /// native call's qualifier checks. This is an implicit conversion: it
-    /// retains the argument's provenance, subobject extent and qualifiers.
+    /// retains the argument's provenance, subobject bounds and qualifiers.
     /// Ordinary functions, indirect calls and internal-linkage names keep
     /// their own declared interfaces.
     fn adapt_library_memory_argument(
@@ -21036,8 +21007,8 @@ impl ImportedParameter {
         if let Some(index) = self.slice_length_parameter {
             parameter = parameter.with_slice_length_parameter(index);
         }
-        if let Some(bytes) = self.fixed_reference_extent {
-            parameter = parameter.with_fixed_reference_extent(bytes);
+        if let Some(bytes) = self.fixed_reference_bounds {
+            parameter = parameter.with_fixed_reference_bounds(bytes);
         }
         parameter
     }
@@ -21248,7 +21219,7 @@ mod scope_metadata_tests {
     }
 
     #[test]
-    fn explicit_scalar_array_fields_preserve_extent_and_check_full_layout() {
+    fn explicit_scalar_array_fields_preserve_length_and_check_full_layout() {
         for length in [1, 1024, 1_000_000] {
             let width = length * 4;
             let fields = vec![

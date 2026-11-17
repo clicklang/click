@@ -137,7 +137,7 @@ impl ContractClosingContext {
                             &state,
                             self.function.resource_requires(),
                             self.function.composite_resource_definitions(),
-                            &self.entry_assumptions.clone().assume_entry_clause_extents(),
+                            &self.entry_assumptions.clone().assume_entry_clause_spans(),
                             &mut budget,
                         )
                         .map_err(|limit| limit.describe().to_string())?
@@ -205,39 +205,8 @@ impl ClosedContractExit {
     }
 
     #[cfg(test)]
-    pub(in crate::kernel) fn path_index(&self) -> usize {
-        self.path_index
-    }
-    #[cfg(test)]
     pub(in crate::kernel) fn matches_path(&self, path: &SymbolicExecutionPath) -> bool {
         Arc::ptr_eq(&self.origin.proposition, &path.theorem.proposition)
-    }
-    pub(in crate::kernel) fn covers(&self, claim: &FunctionContractClaim) -> bool {
-        match claim.target() {
-            FunctionContractClaimTarget::EnsureResource(_) => self.resources.contains(claim.key()),
-            FunctionContractClaimTarget::BodySafety => self.complete_boundary,
-            FunctionContractClaimTarget::Effect => true,
-            _ => false,
-        }
-    }
-
-    #[cfg(test)]
-    pub(super) fn fixture(path_index: usize, path: &SymbolicExecutionPath) -> Self {
-        Self::fixture_for_claims(path_index, path, [])
-    }
-
-    #[cfg(test)]
-    pub(super) fn fixture_for_claims(
-        path_index: usize,
-        path: &SymbolicExecutionPath,
-        claims: impl IntoIterator<Item = FunctionContractClaimKey>,
-    ) -> Self {
-        Self {
-            path_index,
-            origin: path.theorem.clone(),
-            resources: Arc::new(claims.into_iter().collect()),
-            complete_boundary: true,
-        }
     }
 }
 

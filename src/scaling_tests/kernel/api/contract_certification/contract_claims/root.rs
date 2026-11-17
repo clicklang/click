@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn selected_root_goal_and_script_join_do_not_scan_other_obligations() {
     for size in [16_usize, 64, 256, 512] {
-        let (base, _) = crate::kernel::api::contract_certification::contract_claims::contract_closing_tests::fixture(1);
+        let base = crate::kernel::api::contract_certification::contract_claims::contract_closing_tests::fixture();
         let ensure = base.contract_ensures()[0].clone();
         let function = base.with_contract(
             vec![],

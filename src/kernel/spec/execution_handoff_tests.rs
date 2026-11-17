@@ -419,10 +419,10 @@ fn pointer_lowering_keeps_producers_and_complete_metadata() {
         ProgramType::VoidPointer,
     )
     .with_address(Pointer::symbolic(Variable(999981)))
-    .with_opaque_extent(Some(Arc::new(Pointer::symbolic(Variable(999983)))))
+    .with_bounds_owner(Some(Arc::new(Pointer::symbolic(Variable(999983)))))
     .with_pointee_volatile(true)
     .with_pointee_constant(true)
-    .with_extent(Some(SubobjectExtent {
+    .with_bounds(Some(SubobjectBounds {
         start: Pointer::symbolic(Variable(999984)),
         width: MachineTerm::Variable(Variable(999985)),
     }))
@@ -535,16 +535,16 @@ fn pointer_lowering_keeps_producers_and_complete_metadata() {
 }
 
 #[test]
-fn explicit_pointer_cast_lowering_keeps_native_extent_rules() {
+fn explicit_pointer_cast_lowering_keeps_native_bounds_rules() {
     let _session = crate::kernel::VerificationSession::enter();
-    for (source, target, keeps_extent) in [
+    for (source, target, keeps_bounds) in [
         (ProgramType::VoidPointer, ProgramType::VoidPointer, false),
         (ProgramType::Int32Pointer, ProgramType::UInt8Pointer, false),
         (ProgramType::Int8Pointer, ProgramType::UInt8Pointer, true),
     ] {
         let pointer = PointerValue::new(Pointer::symbolic(Variable(999940)), source)
             .with_pointee_constant(true)
-            .with_extent(Some(SubobjectExtent {
+            .with_bounds(Some(SubobjectBounds {
                 start: Pointer::symbolic(Variable(999940)),
                 width: MachineTerm::constant(4),
             }));
@@ -572,7 +572,7 @@ fn explicit_pointer_cast_lowering_keeps_native_extent_rules() {
         let ProgramValue::Pointer(expected) = old.value.into_native() else {
             panic!()
         };
-        assert_eq!(expected.extent().is_some(), keeps_extent);
+        assert_eq!(expected.bounds().is_some(), keeps_bounds);
         assert!(
             actual
                 .value

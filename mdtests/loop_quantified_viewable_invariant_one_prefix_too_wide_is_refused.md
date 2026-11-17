@@ -5,9 +5,9 @@ The negative of
 This invariant covers one prefix more than the loop has visited:
 `forall (k: int32) { 0 <= k and k <= i + 1 implies viewable(a[0..k]) }`. It
 holds on entry, where `k <= 1 <= n`, but once `i == n` it claims
-`viewable(a[0..n + 1])`, and for `n == 1073741823` even its extent bound
+`viewable(a[0..n + 1])`, and for `n == 1073741823` even its span bound
 `n + 1 <=u 1073741823` is false. The binder is bounded only by `i + 1`, which
-`i <= n` and `n <= 1073741823` bound by `1073741824`, so the extent bound is
+`i <= n` and `n <= 1073741823` bound by `1073741824`, so the span bound is
 not decided for every `k` the invariant covers. The head assumes it as the
 invariant's content, so it is owed where the invariant is established, and the
 closer at the back edge is refused for it: the unproved bundle spells the

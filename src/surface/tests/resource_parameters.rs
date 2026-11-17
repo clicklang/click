@@ -166,9 +166,11 @@ fn generic_pointer_struct_parameters_apply_and_expand() {
         let expanded = expand_c_claim_source_by_label(&source, &sources, label).unwrap();
         without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     }
-    let verified =
-        without_implicit_solve(|| verify_click_theorems_with_program_sources(&source, &sources))
-            .unwrap();
+    let context = crate::surface::verification::ProgramSourceContext::bundle(&sources);
+    let verified = without_implicit_solve(|| {
+        crate::surface::verification::verify_click_theorem_context(&source, &context, "padded")
+    })
+    .unwrap();
     let padded = verified
         .iter()
         .find(|theorem| theorem.theorem_definition.name() == "padded")

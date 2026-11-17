@@ -380,7 +380,7 @@ fn load_equality_resolves_through_stored_cell_chains_of_any_length() {
 
 #[test]
 #[ignore = "nightly: 1.4s in the parallel gate"]
-fn shifted_constant_view_extents_match_without_ambient_search() {
+fn shifted_constant_view_spans_match_without_ambient_search() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = Memory::new();
     let base = Pointer::symbolic(Variable(9_319_000));

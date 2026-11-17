@@ -6,7 +6,7 @@ use super::*;
 
 #[test]
 #[ignore = "nightly: 1.4s in the parallel gate"]
-fn charon_split_at_checked_byte_reads_do_not_enumerate_slice_extent() {
+fn charon_split_at_checked_byte_reads_do_not_enumerate_slice_length() {
     let export = decode(ARTIFACT, "split.rs", SOURCE).unwrap();
     let prepared = super::super::super::import::prepared_for_test(export).unwrap();
     let mut previous = None;
@@ -22,7 +22,7 @@ fn charon_split_at_checked_byte_reads_do_not_enumerate_slice_extent() {
         if let Some(previous) = previous {
             assert!(
                 work <= previous + 1000,
-                "extent {length}: {work}, previous {previous}"
+                "length {length}: {work}, previous {previous}"
             );
         }
         previous = Some(work);

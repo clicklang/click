@@ -16,11 +16,11 @@ step is unchanged from the version with `n`.
 
 The theorem also carries `hi <= 1073741823`, which with `0 <= lo` bounds the
 range's element count by the largest count a four-byte range can have and still
-be a valid 32-bit byte extent. The induction hypothesis needs that bound at the
+be a valid 32-bit byte span. The induction hypothesis needs that bound at the
 smaller endpoint like every other precondition, and the narrowing step needs the
 count itself pinned to `0..=1073741823`, which the two `have`s state. This is a
 real precondition of the shape, not bookkeeping: a range of `1 << 30` `int32`
-elements has a byte extent of `1 << 32`, which wraps to `0`.
+elements has a byte span of `1 << 32`, which wraps to `0`.
 
 ```click
 import click::integer;

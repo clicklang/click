@@ -77,7 +77,7 @@ fn worker() -> (VerifiedFunctionRule, VerifiedFunctionTerminationRule) {
         vec![],
         vec![SpecProposition::Comparison {
             left: SpecExpression::MemoryLoad {
-                memory: SpecMemory::Current,
+                memory: SpecPoint::Current,
                 pointer: Box::new(SpecExpression::ProgramExpression(
                     crate::kernel::program_expression::variable("p"),
                 )),
@@ -101,44 +101,8 @@ fn worker() -> (VerifiedFunctionRule, VerifiedFunctionTerminationRule) {
 fn certify_worker(
     function: ProgramFunction,
 ) -> (VerifiedFunctionRule, VerifiedFunctionTerminationRule) {
-    let argument = if matches!(
-        function.parameters()[0].program_type(),
-        ProgramType::UInt8Pointer | ProgramType::VoidPointer
-    ) {
-        ProgramExpression::Value(ProgramValue::typed_pointer(
-            pointer(0),
-            function.parameters()[0].program_type(),
-        ))
-    } else {
-        crate::kernel::program_expression::pointer_value(pointer(0))
-    };
-    let certification_parent = if matches!(
-        function.parameters()[0].program_type(),
-        ProgramType::UInt8Pointer | ProgramType::VoidPointer
-    ) {
-        byte_parent()
-    } else {
-        parent(1)
-    };
-    let execution = certify_contract_with_kernel_artifacts(
-        certification_parent,
-        function.clone(),
-        vec![argument],
-        vec![],
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-    );
-    let claims =
-        program_verified_function_contract_claims(&function, &execution).unwrap_or_else(|| {
-            panic!(
-                "worker body and returned ownership certify: {:?}; diagnostic: {:?}",
-                program_unverified_function_contract_claims(&function, &execution),
-                execution.reuse_diagnostic(),
-            )
-        });
-    let rule =
-        program_verified_function_rule(function.clone(), &claims).expect("checked worker rule");
+    let rule = crate::kernel::program_recursive_function_contract_hypothesis(function.clone())
+        .expect("worker contract rule");
     let verdicts = program_verified_function_termination_rules(
         std::slice::from_ref(&rule),
         &[],
