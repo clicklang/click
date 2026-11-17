@@ -7048,7 +7048,7 @@ pub(crate) fn prove_prepared_function_contract_execution_paths(
                         crate::kernel::functions::evaluate_composite_resource_relation_propositions(
                             &composite,
                             definitions,
-                            entry_state.memory(),
+                            &entry_state.program_point(),
                             &reuse_assumptions,
                         )
                     else {

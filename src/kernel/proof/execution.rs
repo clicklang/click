@@ -2333,7 +2333,7 @@ impl CheckedResourceRewrite {
                     crate::kernel::functions::evaluate_composite_resource_relation_propositions(
                         selected,
                         function.composite_resource_definitions(),
-                        after_state.memory(),
+                        &after_state.program_point(),
                         assumptions,
                     )
                 {
@@ -3041,7 +3041,7 @@ impl CheckedResourceObservation {
                 crate::kernel::functions::evaluate_composite_resource_relation_propositions(
                     &relation_authority,
                     function.composite_resource_definitions(),
-                    after_state.memory(),
+                    &after_state.program_point(),
                     assumptions,
                 )
         {
@@ -7487,7 +7487,7 @@ fn retain_return_context(
                 crate::kernel::functions::evaluate_composite_resource_relation_propositions(
                     &authority,
                     definition,
-                    published.memory(),
+                    &published.program_point(),
                     executed_under,
                 )
             {

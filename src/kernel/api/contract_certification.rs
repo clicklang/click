@@ -2749,7 +2749,7 @@ pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions
                                 evaluate_composite_resource_relation_propositions(
                                     fact,
                                     composite_resource_definitions,
-                                    memory,
+                                    &crate::kernel::ProgramPoint::of_memory(memory),
                                     assumptions,
                                 )
                             })
@@ -2883,7 +2883,7 @@ pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions
                 || crate::kernel::functions::assembled_composite_body_facts_hold(
                     composite,
                     composite_resource_definitions,
-                    other_memory,
+                    &crate::kernel::ProgramPoint::of_memory(other_memory),
                     other_expanded,
                     assumptions,
                 )
