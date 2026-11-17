@@ -4652,7 +4652,7 @@ fn execute_verified_function_applications_with_suspension(
         };
 
         let mut return_state = caller_state.clone();
-        return_state.set_memory(post_state.memory.clone());
+        return_state.set_memory_of(&post_state);
         refresh_call_written_locals(
             &mut return_state,
             &transfer.memory_effects,
@@ -16415,7 +16415,7 @@ pub(super) fn function_return_resources_definitionally_established(
         return false;
     };
     let assumptions = assumptions_with_propositions(assumptions, &post_resource_facts);
-    let mut post_state = callee_state.with_memory(exit_memory);
+    let mut post_state = callee_state.with_memory_continuing(&claim_return_state, exit_memory);
     post_state.resources = post_resources;
     post_state.population_access = return_state.population_access.clone();
     post_state.observed_population_families = return_state.observed_population_families.clone();
@@ -21880,7 +21880,7 @@ pub(super) fn function_outcome_from_body(
             let retired_creation_blocks = match retired_memory {
                 Ok(memory) => {
                     let blocks = retired_automatistorage_creation_blocks(&state, &memory);
-                    caller_state.set_memory(memory);
+                    caller_state.set_memory_continuing(&state, memory);
                     blocks
                 }
                 Err(error) => return (FunctionOutcome::RuntimeError(error), obligations),
@@ -21970,7 +21970,7 @@ pub(super) fn function_outcome_from_body(
             let retired_creation_blocks = match retired_memory {
                 Ok(memory) => {
                     let blocks = retired_automatistorage_creation_blocks(&state, &memory);
-                    caller_state.set_memory(memory);
+                    caller_state.set_memory_continuing(&state, memory);
                     blocks
                 }
                 Err(error) => return (FunctionOutcome::RuntimeError(error), obligations),

@@ -2091,7 +2091,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         }
         projection_state = projected;
     }
-    state = state.with_memory(projection_state.memory().clone());
+    state = state.with_memory_of(&projection_state);
     let lowered_requirement_facts =
         crate::surface::lowering::requirement_propositions_with_sources_and_assumptions(
             function_block.requires(),
