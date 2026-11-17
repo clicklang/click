@@ -230,7 +230,6 @@ src/surface/proof/proof_object/trace_surface.rs	presentation	Proof::trace_pointe
 src/surface/proof/pure_theorems.rs	mixed	::check_direct_pure_goal_with_proof	driver	1
 src/surface/proof/pure_theorems.rs	mixed	::check_direct_pure_goal_with_proof	try_solve_closure	1
 src/surface/proof/pure_theorems.rs	mixed	::check_pure_script_with_proof	driver	3
-src/surface/proof/pure_theorems.rs	mixed	::check_pure_structural_induction	driver	1
 src/surface/proof/pure_theorems.rs	mixed	::verify_contract_refinement_theorem	driver	1
 src/surface/proof/pure_theorems.rs	mixed	::verify_theorem_ensure	driver	2
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::carried_machine_facts	resolve_solve_premises	1

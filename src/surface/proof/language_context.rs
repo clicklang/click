@@ -4,9 +4,7 @@
 //! lookup. They are intentionally separate from the persistent checked state
 //! owned by the proof object.
 
-use super::pure_theorems::{
-    PureInductionSetup, PureStructuralInductionBranchSetup, PureTheoremContext,
-};
+use super::pure_theorems::{PureInductionSetup, PureTheoremContext};
 use super::*;
 use std::sync::Arc;
 
@@ -25,9 +23,7 @@ pub(in crate::surface::proof) struct PureProofContext<'a> {
     pub(in crate::surface::proof) source_names: BTreeMap<Variable, SurfaceBinder>,
     pub(in crate::surface::proof) spec_definitions: SpecDefinitions<'a>,
     pub(in crate::surface::proof) theorem_environment: &'a TheoremEnvironment,
-    pub(in crate::surface::proof) induction_setup: Option<PureInductionSetup>,
-    pub(in crate::surface::proof) structural_induction_setup:
-        Option<PureStructuralInductionBranchSetup>,
+    pub(in crate::surface::proof) induction_setup: Option<Arc<PureInductionSetup>>,
 }
 
 /// The facts a fixed-state phase started from, in order. A phase over a

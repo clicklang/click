@@ -8352,10 +8352,6 @@ pub struct VerifiedPureTheorem {
 #[derive(Clone)]
 pub(crate) enum TheoremProofCompletion {
     Proposition(crate::kernel::proof::CheckedProposition),
-    /// Constructor coverage/descent is checked by the structural rule. Each
-    /// arm retains its exact local completion; this grants no new binder sort
-    /// to the whole-contract theorem authority.
-    StructuralInduction(Vec<crate::kernel::proof::CheckedProposition>),
 }
 
 impl std::fmt::Debug for TheoremProofCompletion {
@@ -8364,10 +8360,6 @@ impl std::fmt::Debug for TheoremProofCompletion {
             Self::Proposition(completion) => f
                 .debug_struct("PropositionCompletion")
                 .field("closed_without_assumptions", &completion.is_closed())
-                .finish(),
-            Self::StructuralInduction(arms) => f
-                .debug_struct("StructuralInductionCompletion")
-                .field("checked_arms", &arms.len())
                 .finish(),
         }
     }
@@ -10142,15 +10134,6 @@ impl VerifiedPureTheorem {
         {
             return Err(ClickError::new(
                 "theorem presentation does not match its retained completion",
-            ));
-        }
-        if let Some(TheoremProofCompletion::StructuralInduction(completions)) =
-            &self.checked_completion
-            && !matches!(self.proof.as_ref().map(ProofCertificate::steps),
-                Some([ProofStep::Induct { .. }, ProofStep::Match { arms, .. }]) if arms.len() == completions.len())
-        {
-            return Err(ClickError::new(
-                "structural induction presentation lost its checked arms",
             ));
         }
         self.proof.clone().ok_or_else(|| {

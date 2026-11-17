@@ -2895,12 +2895,21 @@ constructor cases; each immediate recursive field admits `ih(field)`, and
 `ih(field, other, ...)` states the theorem at that field and any well-typed
 terms in the remaining parameter positions.
 
-The declaration and its exhaustive `match` are the two top-level tactics in
-this form of a pure theorem proof. The match must inspect the inducted
-parameter itself. Each arm proves the theorem goal; a join `ensuring`
-interface is not supported. Both statements use the ordinary `induct` and
-`match` Surface and certificate nodes. Expansion preserves the declaration
-and expands the proofs inside the match arms. The retired
+The declaration preserves the goal and introduces the local hypothesis at
+its written position. Helper proofs may precede it or separate it from a
+`match`. A match on the inducted parameter exposes hypotheses for that arm's
+immediate recursive fields; matches on other values do not. The match may
+appear inside `if`, `have`, or other ordinary proof blocks, and may use the
+ordinary shared continuation after its arms. Field names remain arm-local.
+
+The original theorem goal must still be focused at each declaration. All
+structural declarations in one proof name the same theorem parameter and
+hypothesis; a path cannot introduce that hypothesis twice. The declaration
+may be in a proof block when that block is proving the original theorem goal.
+Expansion can therefore copy a shared declaration into earlier branches.
+Each match arm is checked by the ordinary pure-match driver, which does not accept a
+join `ensuring` interface. Expansion preserves the declaration and checked
+match structure and expands its helper proofs and continuations. The retired
 `induct(xs) as ih { ... }` spelling is refused.
 
 **Failure, checking, and tools:**
@@ -2911,7 +2920,7 @@ a parameter list of the wrong length, and an instantiation whose substituted
 requirements are unavailable. Click checks every arm; expansion recurses through
 the arm certificates.
 
-**Checked examples:** [`algebraic_structural_induction.md`](https://github.com/clicklang/click/blob/master/mdtests/algebraic_structural_induction.md), [`algebraic_structural_induction_generalizes_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/algebraic_structural_induction_generalizes_parameters.md)
+**Checked examples:** [`structural_induction_surrounding_helpers.md`](https://github.com/clicklang/click/blob/master/mdtests/structural_induction_surrounding_helpers.md), [`structural_induction_continuation.md`](https://github.com/clicklang/click/blob/master/mdtests/structural_induction_continuation.md), [`algebraic_structural_induction.md`](https://github.com/clicklang/click/blob/master/mdtests/algebraic_structural_induction.md), [`algebraic_structural_induction_generalizes_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/algebraic_structural_induction_generalizes_parameters.md)
 
 ### Induction hypothesis application
 

@@ -1032,6 +1032,7 @@ pub(in crate::surface::proof) struct PureMatchPlan {
     presentation: PropositionPresentation,
     locals: ProofLocals,
     site: ProofStepSite,
+    induction_case: bool,
 }
 
 impl<'a> Proof<'a> {
@@ -1072,6 +1073,11 @@ impl<'a> Proof<'a> {
             let mut bindings = BTreeSet::new();
             for name in &arm.bindings {
                 if !bindings.insert(name)
+                    || (self.state().locals().induction_active
+                        && context
+                            .induction_setup
+                            .as_ref()
+                            .is_some_and(|setup| setup.hypothesis == *name))
                     || self.state.locals().values.contains_key(name)
                     || context.theorem_context.values.contains_key(name)
                     || context.theorem_context.integer_values.contains_key(name)
@@ -1079,9 +1085,8 @@ impl<'a> Proof<'a> {
                         .theorem_context
                         .declaration_bindings
                         .contains_key(name)
-                    || context
-                        .structural_induction_setup
-                        .as_ref()
+                    || self
+                        .structural_induction_setup()
                         .is_some_and(|setup| setup.algebraic_values.contains_key(name))
                 {
                     return Err(
@@ -1112,6 +1117,11 @@ impl<'a> Proof<'a> {
                 presentation,
                 locals: self.state.locals().clone(),
                 site: self.site.clone(),
+                induction_case: self.state().locals().induction_active
+                    && context
+                        .induction_setup
+                        .as_ref()
+                        .is_some_and(|setup| setup.structural_root.as_ref() == Some(&value)),
             },
         ))
     }
@@ -1215,6 +1225,17 @@ impl<'a> Proof<'a> {
                 proof.step_error("could not introduce the checked constructor equation")
             })?;
         let mut entered = proof.with_kernel_state(state);
+        if plan.induction_case {
+            entered = entered.enter_structural_induction_case(
+                &plan.source.scrutinee,
+                &plan.source.arms[index],
+            )?;
+            entered = entered.refine_structural_case_goal(
+                &plan.source.scrutinee,
+                &plan.source.arms[index],
+                false,
+            )?;
+        }
         entered.node = ProofNode::marker(
             &proof.node,
             proof.focused_branch_id(),
@@ -1231,8 +1252,51 @@ impl<'a> Proof<'a> {
         Ok(entered)
     }
 
-    pub(in crate::surface::proof) fn leave_pure_match_case(&self, plan: &PureMatchPlan) -> Self {
-        self.with_kernel_state(self.state.with_locals(plan.locals.clone()))
+    pub(in crate::surface::proof) fn leave_pure_match_case(
+        &self,
+        plan: &PureMatchPlan,
+        index: usize,
+    ) -> Result<Self, ClickError> {
+        let proof = if plan.induction_case {
+            self.refine_structural_case_goal(
+                &plan.source.scrutinee,
+                &plan.source.arms[index],
+                true,
+            )?
+        } else {
+            self.clone()
+        };
+        let mut locals = plan.locals.clone();
+        let mut values = PersistentBinderMap::default();
+        let mut algebraic = PersistentBinderMap::default();
+        let mut integers = PersistentBinderMap::default();
+        for name in &plan.source.arms[index].bindings {
+            if let Some(value) = proof.state().locals().values.get(name) {
+                values.insert(name.clone(), value.clone());
+            }
+            if let Some(value) = proof.local_algebraic_values().get(name) {
+                algebraic.insert(name.clone(), value.clone());
+                locals
+                    .retained_match_algebraic
+                    .insert(name.clone(), value.clone());
+            }
+            if let Some(value) = proof.local_integer_values().get(name) {
+                integers.insert(name.clone(), value.clone());
+                locals
+                    .retained_match_integers
+                    .insert(name.clone(), value.clone());
+            }
+        }
+        locals
+            .value_names
+            .update_values(&PersistentBinderMap::default(), &values);
+        locals
+            .value_names
+            .update_algebraics(&PersistentBinderMap::default(), &algebraic);
+        locals
+            .value_names
+            .update_integers(&PersistentBinderMap::default(), &integers);
+        Ok(proof.with_kernel_state(proof.state.with_locals(locals)))
     }
 }
 

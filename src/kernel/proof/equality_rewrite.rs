@@ -59,6 +59,14 @@ impl CheckedEqualityRewrite {
         if proposed == &self.proposition {
             return true;
         }
+        // Lowering a reflexive constructor comparison yields true. Retain
+        // that exact spelling instead of leaving an unraisable raw equality.
+        if super::fact_reasoning::computes_leaf(&self.proposition)
+            && super::fact_reasoning::computes_leaf(proposed)
+        {
+            self.proposition = proposed.clone();
+            return true;
+        }
         // Surface lowering folds constant Integer expressions while an
         // exact substitution can leave their arithmetic structure intact.
         // Accept only the same normalized claim used by the checked Integer

@@ -706,8 +706,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .into_iter()
             .filter_map(|name| {
                 search_input
-                    .local_algebraic_values()
-                    .get(&name)
+                    .known_algebraic_value(&name)
                     .cloned()
                     .map(|value| (name, value))
             })
@@ -1008,13 +1007,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .into_iter()
             .filter_map(|name| {
                 search_input
-                    .local_algebraic_values()
-                    .get(&name)
+                    .known_algebraic_value(&name)
                     .cloned()
                     .or_else(|| {
-                        context
-                            .structural_induction_setup
-                            .as_ref()?
+                        search_input
+                            .structural_induction_setup()?
                             .algebraic_values
                             .get(&name)
                             .cloned()

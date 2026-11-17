@@ -1509,6 +1509,7 @@ fn collect_spec_bound_identities(
     });
 }
 
+#[cfg(test)]
 pub(crate) fn collect_spec_algebraic_expression_bitvector_variables(
     expression: &SpecAlgebraicExpression,
     variables: &mut BTreeSet<Variable>,

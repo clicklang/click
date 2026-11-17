@@ -131,6 +131,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             return Ok(None);
         };
         let Some(all_done) = leading_done
+            .restore_induction_scope_from(&split_proof)
             .focus_branch(ids[1])?
             .driver()
             .run_addressed_linear_script(&last.tactics, &last.sites, &mut None, unfinished)?
@@ -173,7 +174,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             let Some(body_done) = closed.or(pending) else {
                 return Ok(None);
             };
-            let body_done = body_done.leave_pure_match_case(plan);
+            let body_done = body_done.leave_pure_match_case(plan, *index)?;
             let done = if written < arm_tactics[*index].len() {
                 let Some(done) = body_done.driver().run_addressed_linear_script(
                     &arm_tactics[*index][written..],
@@ -197,7 +198,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             if let Some(trace) = trace {
                 trace.arms[*index] = Some(done.pure_match_arm_trace(&arm, &marker, source, *index));
             }
-            return Ok(Some(done.leave_pure_match_case(plan)));
+            return Ok(Some(done.leave_pure_match_case(plan, *index)?));
         }
         let middle = indices.len() / 2;
         let (split_proof, split, ids) = driver_proof.split_pure_match_group()?;
@@ -219,6 +220,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             return Ok(None);
         };
         let Some(done) = left_done
+            .restore_induction_scope_from(&split_proof)
             .focus_branch(ids[1])?
             .driver()
             .run_pure_match_group(
@@ -499,6 +501,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         return Ok(None);
                     };
                     let Some(both_done) = then_done
+                        .restore_induction_scope_from(&split_proof)
                         .focus_branch(ids[1])?
                         .driver()
                         .run_addressed_linear_script(
@@ -545,6 +548,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         return Ok(None);
                     };
                     let Some(both_done) = left_done
+                        .restore_induction_scope_from(&split_proof)
                         .focus_branch(ids[1])?
                         .driver()
                         .run_addressed_linear_script(

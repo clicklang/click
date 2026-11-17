@@ -975,10 +975,21 @@ fn theorem_application_argument_type(
         _ => {}
     }
 
-    if let Ok(value) = capture_fixed_state_algebraic_expression(
+    let algebraic_bindings = contract_expression_referenced_names(argument)
+        .into_iter()
+        .filter_map(|name| {
+            context
+                .algebraic_values
+                .get(&name)
+                .cloned()
+                .map(|value| (name, value))
+        })
+        .collect();
+    if let Ok(value) = capture_fixed_state_algebraic_expression_with_values(
         argument,
         ContractEnvironment::new(context.values, context.array_refs)
             .with_parameters(context.parameters),
+        algebraic_bindings,
         FixedStateFrame::new(
             context.pre_state,
             context.post_state,

@@ -109,7 +109,6 @@ Paths below are relative to `src/surface/`.
 | `verify_one_loop_preservation_proof` | 2 | Driver dispatch. Invariant search is under `region_solve.is_some()`; retained bodies take a different route. Also prepares invariant obligations through the driver. The surrounding state-join/revalidation work still needs its own cost audit. |
 | `check_direct_pure_goal_with_proof` | 2 | Driver dispatch. Discharges entry obligations, then runs ordinary solve for an omitted or written solver proof. |
 | `check_pure_script_with_proof` | 1 | Driver dispatch. Runs written proof steps and discharges outstanding entry obligations. |
-| `check_pure_structural_induction` | 1 | Driver dispatch. Interprets the prepared explicit induction-case scripts. This says nothing about binder freshening or preparation cost. |
 | `verify_contract_refinement_theorem` | 1 | Driver dispatch. Executes the refinement proof script. |
 | `verify_theorem_ensure` | 1 | Driver dispatch. The inventoried calls discharge declaration-entry obligations, including trusted-theorem declaration paths. |
 | `try_steps` | 1 | Search support. `proof/attempt.rs` tries candidate steps under an attempt budget; production callers are in `smart_closures/search.rs`. |
