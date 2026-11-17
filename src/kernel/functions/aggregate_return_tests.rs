@@ -377,7 +377,7 @@ fn construction_temporary_retirement_preserves_copies_and_external_backing() {
             panic!("one materialization path");
         };
         let StatementOutcome::Normal(state) = &path.outcome else {
-            panic!("materialization must finish");
+            panic!("materialization must finish: {:?}", path.outcome);
         };
         let temporary = state
             .locals
@@ -1267,7 +1267,10 @@ fn value_only_constructor_preserves_descriptor_across_result_copy_chains() {
                 outcome: StatementOutcome::Normal(state),
                 ..
             } => state,
-            _ => panic!("descriptor construction and copies must complete"),
+            Proposition::ProgramStatementVerifies { outcome, .. } => {
+                panic!("descriptor construction and copies must complete: {outcome:?}")
+            }
+            _ => panic!("descriptor construction and copies must produce a statement outcome"),
         };
         let result = state.locals.aggregate_object_pointer("result").unwrap();
         let backing = state.locals.slot("backing").unwrap();

@@ -4,7 +4,6 @@ use super::*;
 
 pub(super) enum Construction {
     Body(Box<ConstructedReturnBody>),
-    Unsupported,
 }
 
 #[derive(Clone, Copy)]
@@ -145,6 +144,7 @@ pub(super) fn construct(
     composition: ReturnResourceComposition,
     borrowed: bool,
     assumptions: &PureFactContext,
+    mut admission: Option<&mut ReturnFrontierAdmission>,
 ) -> Option<Construction> {
     let name = match support.resource() {
         Resource::Instance(instance) => instance.name(),
@@ -284,7 +284,20 @@ pub(super) fn construct(
                 .ok()?
                 .ok()?
         };
+        let transferred = if let Some(admission) = admission.as_deref_mut() {
+            admission.admit(&fact, assumptions)?
+        } else {
+            None
+        };
         let origin = if fact.is_view() {
+            ReturnOwnershipOrigin::Description
+        } else if let Some(input) = transferred {
+            ReturnOwnershipOrigin::ConsumedCell(input)
+        } else if admission
+            .as_ref()
+            .is_some_and(|admission| !admission.executed_body)
+            && fact.memory_own_range().is_some()
+        {
             ReturnOwnershipOrigin::Description
         } else if borrowed
             && (fixed_memory_shape(spec, &parameters).is_some()
@@ -306,13 +319,15 @@ pub(super) fn construct(
         } else {
             ReturnOwnershipOrigin::Description
         };
-        let (next, emitted) = match context.admit_without_discovery([fact.clone()], assumptions) {
-            OwnershipAdmission::Admitted { context, inserted } => (context, inserted),
-            OwnershipAdmission::Conflict(_) => {
-                return None;
-            }
-            OwnershipAdmission::Unsupported(_) => {
-                return Some(Construction::Unsupported);
+        let (next, emitted) = if admission.is_some() {
+            context.unchecked_with_facts_and_occurrences([fact.clone()])
+        } else {
+            match context.admit_without_discovery([fact.clone()], assumptions) {
+                OwnershipAdmission::Admitted { context, inserted } => (context, inserted),
+                OwnershipAdmission::Conflict(_) => {
+                    return None;
+                }
+                OwnershipAdmission::Unsupported(_) => return None,
             }
         };
         context = next;

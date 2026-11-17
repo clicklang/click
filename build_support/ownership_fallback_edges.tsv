@@ -21,7 +21,6 @@ src/kernel/functions.rs	legacy-caller	::checked_frontier_coverage	try_compose_wi
 src/kernel/functions.rs	legacy-caller	::checked_one_level_frontier	expand_composite_resource_fact_with_children	1
 src/kernel/functions.rs	legacy-caller	::checked_one_level_frontier	try_compose_with_fact	1
 src/kernel/functions.rs	legacy-caller	::construct_composite_resource_body	try_compose_with_facts	1
-src/kernel/functions.rs	legacy-caller	::construct_composite_resource_body	try_compose_with_legacy_discovery_and_occurrences	1
 src/kernel/functions.rs	legacy-caller	::construct_program_function_resource	try_compose_with_fact	1
 src/kernel/functions.rs	legacy-caller	::contract_exit_outcome_with_boundary_transfer	validity_error	2
 src/kernel/functions.rs	legacy-caller	::evaluate_contract_return_resource_context	try_compose_with_facts_delaying_normalization	1
@@ -40,7 +39,6 @@ src/kernel/functions.rs	legacy-caller	::prepare_contract_resource_transfer_unexp
 src/kernel/functions.rs	legacy-caller	::prepare_contract_resource_transfer_unexplained	try_compose_with_facts_delaying_normalization	3
 src/kernel/functions.rs	legacy-caller	::prepare_verified_function_call	expand_all_composite_resource_facts_at_state	1
 src/kernel/functions.rs	legacy-caller	::produced_composite_frontier_conflict	expand_composite_resource_fact_with_children	1
-src/kernel/functions.rs	legacy-caller	::produced_composite_frontier_conflict	returned_boundary_conflict_with_legacy_discovery	1
 src/kernel/functions.rs	legacy-caller	::resource_clause_supply_with_fact	expand_composite_resource_fact_with_children	1
 src/kernel/functions.rs	legacy-caller	::resource_context_contains_exact_owned_fact	validity_error	1
 src/kernel/functions.rs	legacy-caller	::rewrite_resource_instance_selecting_children_unspelled	try_compose_into_valid_context_delaying_normalization	3
@@ -56,15 +54,12 @@ src/kernel/functions/composite_expansion.rs	legacy-caller	::expand_composite_res
 src/kernel/functions/contract_refinement.rs	legacy-caller	::framed_resource_transition_refines	try_compose_with_facts_delaying_normalization	1
 src/kernel/functions/mixed_return_resources.rs	legacy-caller	::project_return_resource_cores	expand_all_composite_resource_facts_at_state	1
 src/kernel/functions/mixed_return_resources.rs	legacy-caller	::project_return_resource_cores	expand_composite_resource_fact_with_children	1
-src/kernel/functions/mixed_return_resources.rs	legacy-caller	EvaluatedReturnResources::admit_clause	try_compose_with_legacy_discovery_and_occurrences	1
 src/kernel/functions/named_contract_refinement.rs	legacy-caller	::state_with_refinement_instances	try_compose_into_valid_context_delaying_normalization	1
 src/kernel/loans.rs	legacy-caller	::lend_owned_view_to_suspended_worker	try_compose_with_fact_with_occurrence	1
 src/kernel/loans.rs	legacy-caller	::plan_stable_view_transfer_with_protocol_effect	try_compose_with_fact	3
 src/kernel/loans.rs	legacy-caller	::plan_stable_view_transfer_with_protocol_effect	try_compose_with_fact_with_occurrence	3
 src/kernel/loans.rs	legacy-caller	::plan_stable_view_transfer_with_protocol_effect	validity_error	1
 src/kernel/loans.rs	legacy-caller	StableViewTransferPlan::lend_local_views_with_worker_shares	try_compose_with_fact_with_occurrence	1
-src/kernel/loans.rs	legacy-caller	StableViewTransferPlan::recover_stable_views_impl	try_compose_into_valid_context_delaying_normalization	1
-src/kernel/loans.rs	legacy-caller	StableViewTransferPlan::recover_stable_views_impl	try_compose_with_legacy_discovery_and_occurrences	1
 src/kernel/loans/mutex_calls.rs	legacy-caller	MutexUseCallTransfer::finish_checked_ledger	try_compose_with_facts_delaying_normalization	1
 src/kernel/loans/mutex_calls.rs	legacy-caller	MutexUseCallTransfer::finish_suspended_checked_ledger	try_compose_with_facts_delaying_normalization	1
 src/kernel/loans/mutex_calls.rs	legacy-caller	MutexUseCallTransfer::prepare	try_compose_with_facts_delaying_normalization	1
@@ -95,7 +90,6 @@ src/kernel/primitives/resource_algebra.rs	legacy-caller	ResourceContext::try_com
 src/kernel/primitives/resource_algebra.rs	legacy-caller	ResourceContext::try_compose_with_facts_delaying_normalization_with_occurrences	validity_error	1
 src/kernel/primitives/resource_algebra/legacy_search.rs	legacy-caller	PendingOwnershipAdmission::resume_legacy_discovery	legacy_memory_boundary_conflict	1
 src/kernel/primitives/resource_algebra/legacy_search.rs	legacy-caller	ResourceContext::compose_selected_occurrences	resume_legacy_discovery	1
-src/kernel/primitives/resource_algebra/legacy_search.rs	legacy-caller	ResourceContext::returned_boundary_conflict_with_legacy_discovery	legacy_memory_boundary_conflict	1
 src/kernel/primitives/resource_algebra/legacy_search.rs	legacy-caller	ResourceContext::try_compose_with_legacy_discovery_and_occurrences	resume_legacy_discovery	1
 src/kernel/proof/execution.rs	legacy-caller	::checks_population_authority_exchange	try_compose_with_fact	1
 src/kernel/proof/execution.rs	legacy-caller	::interface_join_resources	try_compose_into_valid_context_delaying_normalization	1

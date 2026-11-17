@@ -11186,6 +11186,9 @@ pub(super) struct ResourceContextIndex {
     pub(super) owned_memory_by_block: PersistentMap<PointerBlock, ResourceEntryIds>,
     /// Automatic memory owners, indexed independently of external and global
     /// holdings. Addressability is checked when projecting observable facts.
+    pub(super) owned_hidden_memory_generation: Option<u64>,
+    pub(super) owned_physical_memory_by_block: PersistentMap<PointerBlock, ResourceEntryIds>,
+    pub(super) owned_hidden_memory_by_block: PersistentMap<PointerBlock, ResourceEntryIds>,
     pub(super) owned_automatic_memory_by_block: PersistentMap<PointerBlock, ResourceEntryIds>,
     /// The blocks holding two or more owned memory ranges. Only those can
     /// contribute same-block separation candidates, so projecting a
@@ -11829,6 +11832,8 @@ impl ResourceInstance {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ResourceContextValidityError {
+    /// The bounded checker lacks indexed evidence; this is not an overlap claim.
+    UnsupportedOwnershipBoundary,
     InvalidExclusiveAccess(ResourceFact),
     DuplicateOwnedResourceFact(ResourceFact),
     OverlappingOwnedMemoryResources {
@@ -11840,6 +11845,7 @@ pub enum ResourceContextValidityError {
 impl std::fmt::Display for ResourceContextValidityError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
+            Self::UnsupportedOwnershipBoundary => "ownership separation is outside the indexed checking fragment; provide explicit separation or a supported resource frontier",
             Self::InvalidExclusiveAccess(_) => {
                 "field-bearing resource instances and mutex guards require exclusive ownership with quantity one"
             }

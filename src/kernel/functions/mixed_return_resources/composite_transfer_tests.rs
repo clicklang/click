@@ -247,6 +247,45 @@ fn borrowed_parameter_bounded_bodies_keep_entry_footprint_origin() {
             .unwrap()
             .boundary
             .len(),
-        1
+        0, // The literal condition cannot change between entry and return.
     );
+}
+
+#[test]
+fn dynamic_flat_returns_cannot_reuse_a_composite_childs_static_input_recipe() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let (state, facts, owner) = super::summary_transfer_tests::symbolic_state();
+    for flat_first in [false, true] {
+        let template = contract();
+        let flat = ResourceSpec::owned_memory(
+            MemorySegment::new(variable("q"), int32_literal(0), variable("n"))
+                .with_uninitialized(true),
+        )
+        .with_role(ResourceTransferRole::Produce)
+        .with_state_source(ResourceStateSource::Post);
+        let head = template.resource_ensures()[0].clone();
+        let outputs = if flat_first {
+            vec![flat, head]
+        } else {
+            vec![head, flat]
+        };
+        let function = template
+            .clone()
+            .with_resource_summary(template.resource_requires().to_vec(), outputs);
+        let mut transfer = super::tests::prepare_mixed_scalar(&function, &state, &facts);
+        assert_eq!(transfer.consumed_cell_returns.children.len(), 1);
+        transfer
+            .consumed_cell_returns
+            .retain_frontier([owner.memory_own_range().unwrap().clone()], &facts);
+        assert!(matches!(
+            returned(
+                &function,
+                &state,
+                &transfer,
+                ReturnResourceComposition::ApplyTransfers(&transfer.consumed_cell_returns),
+                &facts
+            ),
+            Err(RuntimeError::ProducedCompositeOverlapsHeldResource { .. })
+        ));
+    }
 }

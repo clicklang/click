@@ -368,7 +368,13 @@ fn named_fixed_memory_preserves_the_consumed_input_selected_at_entry() {
     assert_eq!(transfer.consumed_cell_returns.children.len(), 1);
     let selected = transfer.consumed_cell_returns.children[&vec![0, 0]];
     let outputs = EvaluatedReturnResources::new(&facts)
-        .admit_clause(head, ReturnOwnershipOrigin::Description, Some(0), &facts)
+        .admit_clause(
+            head,
+            ReturnOwnershipOrigin::Description,
+            Some(0),
+            None,
+            &facts,
+        )
         .unwrap();
     let bodies = ConstructedReturnBodies::try_construct(
         &outputs,

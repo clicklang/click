@@ -29,6 +29,11 @@ These names describe different things:
   The kernel represents points with `ProgramPoint`. A read's address, type,
   and version point determine its identity.
 
+A pending log of recorded transitions reaches a successor point even when
+its final memory contents equal its predecessor's. Repeatedly requesting that
+successor, or creating an evaluation frame there, retains its point ID. The
+predecessor point and log identity select it; snapshot equality does not.
+
 Evaluating a read at a later program point can select an earlier version
 point when the intervening operations leave that cell unchanged. Two
 program points can therefore name the same read without being the same

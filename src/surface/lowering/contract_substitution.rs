@@ -2505,6 +2505,11 @@ pub(in crate::surface) fn collect_click_proposition_referenced_names(
 /// Lexical binders remove only named dependencies, never physical declarations.
 pub(in crate::surface) trait ReferencedBinding: Ord + From<String> {
     fn program(binding: &crate::kernel::BindingName) -> Option<Self>;
+    fn captured_value(_value: &ProgramValue, _names: &mut BTreeSet<Self>)
+    where
+        Self: Sized,
+    {
+    }
     fn leave_scope(names: &mut BTreeSet<Self>, binder: &Self) -> bool
     where
         Self: Sized,

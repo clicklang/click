@@ -70,6 +70,68 @@ impl Boundary<'_> {
         {
             self.errors.push(format!("{}: legacy loop preparation belongs only to the explicit independent-input adapter", self.path));
         }
+        if self.path == "src/kernel/loans.rs"
+            && matches!(
+                self.function.as_str(),
+                "recover_stable_views_impl"
+                    | "recover_returned_views"
+                    | "recover_suspended_views"
+                    | "restore_returned_escrows"
+            )
+            && matches!(
+                name,
+                "try_compose_into_valid_context_delaying_normalization"
+                    | "try_compose_with_legacy_discovery_and_occurrences"
+                    | "returned_boundary_conflict_with_legacy_discovery"
+                    | "resume_legacy_discovery"
+                    | "legacy_memory_boundary_conflict"
+                    | "validity_error"
+                    | "owned_occurrences_for_fact"
+                    | "permitted_descriptions"
+            )
+        {
+            self.errors.push(format!(
+                "{}: escrow recovery must consume checked restoration evidence ({name})",
+                self.path
+            ));
+        }
+        if self.path == "src/kernel/primitives/memory_equality_index.rs"
+            && self.function == "constant_owned_overlap"
+            && name == "decide"
+        {
+            self.errors.push(format!(
+                "{}: ownership endpoints require exact facts or direct indexed bounds",
+                self.path
+            ));
+        }
+        if ((self.path == "src/kernel/functions/mixed_return_resources.rs"
+            && matches!(
+                self.function.as_str(),
+                "admit_clause"
+                    | "finish"
+                    | "take_returned_footprint"
+                    | "admit"
+                    | "finish_group"
+                    | "retain_frontier"
+            ))
+            || (self.path == "src/kernel/functions.rs"
+                && matches!(
+                    self.function.as_str(),
+                    "produced_composite_frontier_conflict"
+                        | "construct_composite_resource_body"
+                        | "recover_candidate_stable_view_resources"
+                )))
+            && matches!(
+                name,
+                "try_compose_with_legacy_discovery_and_occurrences"
+                    | "returned_boundary_conflict_with_legacy_discovery"
+                    | "resume_legacy_discovery"
+                    | "legacy_memory_boundary_conflict"
+                    | "validity_error"
+            )
+        {
+            self.errors.push(format!("{}: {} must construct ownership partitions and check only bounded boundaries ({name})", self.path, self.function));
+        }
         if (self.path == "src/kernel/functions/mixed_return_resources.rs"
             && self.function == "build"
             && name == "normalized")

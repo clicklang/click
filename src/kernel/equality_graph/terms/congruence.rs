@@ -1687,7 +1687,10 @@ impl TermClasses {
         // Merge just the domain nodes that selected consumers already named;
         // later consumers select the retained domain representative directly.
         let mut pending = Vec::new();
-        for nodes in [&mut self.read_provenance_nodes, &mut self.read_bounds_nodes] {
+        for nodes in [
+            &mut self.read_provenance_nodes,
+            &mut self.bounds_origin_nodes,
+        ] {
             let a = nodes.get(&left).copied();
             let b = nodes.get(&right).copied();
             nodes.remove(&left);
@@ -1828,7 +1831,7 @@ impl TermClasses {
 
     fn bounds_owner_node_without_calls(&mut self, origin: &crate::kernel::Pointer) -> u64 {
         let origin = self.read_domains.representative(origin);
-        if let Some(node) = self.read_bounds_nodes.get(&origin) {
+        if let Some(node) = self.bounds_origin_nodes.get(&origin) {
             return *node;
         }
         if let Some(read) = origin.as_loaded_value() {
@@ -1844,15 +1847,35 @@ impl TermClasses {
                 source.read_identity(),
             )));
             let node = self.intern_node(Node::Apply(head, cell));
-            self.read_bounds_nodes.insert(origin, node);
+            self.bounds_origin_nodes.insert(origin, node);
             return node;
         }
-        self.intern_node(Node::OpaqueArgument(SharedPureApplication::intern(
+        let node = self.intern_node(Node::OpaqueArgument(SharedPureApplication::intern(
             "<pointer-bounds-origin>".into(),
             vec![A::Value(ProgramValue::Pointer(
                 crate::kernel::PointerValue::new(origin.clone(), ProgramType::VoidPointer),
             ))],
-        )))
+        )));
+        self.bounds_origin_nodes.insert(origin, node);
+        node
+    }
+
+    /// Read an admitted domain witness. All node creation, read registration
+    /// and witness maintenance belongs to producers, never this query.
+    pub(in crate::kernel::equality_graph) fn opaque_pointer_domain(
+        &self,
+        origin: &crate::kernel::Pointer,
+    ) -> crate::kernel::assumptions::PointerDomain {
+        use crate::kernel::assumptions::PointerDomain;
+        crate::instrumentation::record_deterministic_work(1);
+        let origin = self.read_domains.representative(origin);
+        let Some(node) = self.bounds_origin_nodes.get(&origin) else {
+            return PointerDomain::Unknown;
+        };
+        let Some(witness) = self.bounds_values.get(&self.root(*node)) else {
+            return PointerDomain::Unknown;
+        };
+        PointerDomain::intrinsic(witness)
     }
 
     /// Only a complete pointer-value equality can connect opaque bounds
