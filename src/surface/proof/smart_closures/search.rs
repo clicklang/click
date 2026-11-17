@@ -2321,14 +2321,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
-        let Some(witnessed) = attempt::candidate_outcome(search_input.driver().apply_step(
-            ProofStep::Witness(ProofWitness::single(
-                written_name.as_ref().unwrap_or(name).clone(),
-                ContractExpression::ProgramExpression(ProgramExpression::Value(
-                    ProgramValue::Int32(MachineTerm::constant(0)),
-                )),
-            )),
-        ))?
+        let Some(witnessed) = attempt::candidate_outcome(
+            search_input
+                .driver()
+                .apply_step(ProofStep::Witness(ProofWitness::single(
+                    written_name
+                        .as_deref()
+                        .or_else(|| name.written())
+                        .unwrap_or("value")
+                        .to_owned(),
+                    ContractExpression::ProgramExpression(ProgramExpression::Value(
+                        ProgramValue::Int32(MachineTerm::constant(0)),
+                    )),
+                ))),
+        )?
         else {
             return Ok(None);
         };
@@ -2425,12 +2431,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
-        let candidate_names = std::iter::once(source_name.clone()).chain((0..4096).map(|suffix| {
-            format!(
-                "{}_witness_{}_{suffix}",
-                source_name, selection.source_id.outer_ordinal
-            )
-        }));
+        let source_name = source_name.written().unwrap_or("value");
+        let candidate_names =
+            std::iter::once(source_name.to_owned()).chain((0..4096).map(|suffix| {
+                format!(
+                    "{}_witness_{}_{suffix}",
+                    source_name, selection.source_id.outer_ordinal
+                )
+            }));
         let Some(choice_name) = candidate_names.into_iter().find(|candidate| {
             search_input.local_binding(candidate).is_none()
                 && !context
@@ -2468,7 +2476,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }),
             proposition: Box::new(ClickProposition::Exists {
                 click_type: click_type.clone(),
-                name: choice_name.clone(),
+                name: choice_name.clone().into(),
                 written_name: None,
                 body: Box::new(body),
             }),
@@ -2502,7 +2510,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
-        let witness_name = written_name.as_ref().unwrap_or(name).clone();
+        let witness_name = written_name
+            .as_deref()
+            .or_else(|| name.written())
+            .unwrap_or("value")
+            .to_owned();
         let Some(witnessed) = attempt::candidate_outcome(chosen.driver().apply_step(
             ProofStep::Witness(ProofWitness::single(
                 witness_name,
@@ -2601,7 +2613,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     return Ok(None);
                 };
                 vec![
-                    ProofStep::IntroAs(name.clone()),
+                    ProofStep::IntroBinder(name.clone()),
                     ProofStep::Intro,
                     ProofStep::InstantiateUsing {
                         quantified: entry(conjunct),
@@ -5247,7 +5259,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     };
                     substitute_click_proposition(
                         else_branch.surface_goal()?,
-                        &std::iter::once((name, right)).collect(),
+                        &std::iter::once((name, right)).collect::<BTreeMap<_, _>>(),
                     )
                     .ok()
                 });
@@ -6392,7 +6404,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     #[inline(never)]
     pub(in crate::surface::proof) fn try_constructor_witness_exists_closure(
         search_input: &Proof<'a>,
-        name: &str,
+        name: &SurfaceBinder,
         var: Variable,
         body: &Proposition,
         introduced_surfaces: &[ClickProposition],
@@ -6497,7 +6509,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .values
                 .iter()
                 .find(|(_, value)| *value == field)
-                .map(|(name, _)| name.clone())
+                .map(|(name, _)| SurfaceBinder::from(name))
                 .or_else(|| {
                     variable.and_then(|variable| {
                         context
@@ -6546,7 +6558,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     #[inline(never)]
     pub(in crate::surface::proof) fn try_structural_exists_solve_closure(
         search_input: &Proof<'a>,
-        name: &str,
+        name: &SurfaceBinder,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
@@ -7576,8 +7588,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .execution_proposition_fixed_state_view()
                 .and_then(|view| {
                     view.requirement_facts
-                        .as_slice()
-                        .iter()
+                        .propositions()
                         .zip(view.original_requirements)
                         .find(|(fact, _)| *fact == kernel)
                         .and_then(|(_, requirement)| requirement.proposition().cloned())

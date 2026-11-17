@@ -182,7 +182,7 @@ fn value_or_match(scrutinee: SpecAlgebraicExpression) -> SpecExpression {
             },
             SpecAlgebraicMatchArm {
                 variant: "Some".to_string(),
-                bindings: vec!["value".to_string()],
+                bindings: vec!["value".to_string().into()],
                 binding_types: vec![AlgebraicValueType::Program(ProgramType::Int32)],
                 body: SpecExpression::ProgramExpression(ProgramExpression::Variable(
                     ("value".to_string()).into(),
@@ -596,11 +596,11 @@ fn nested_match_binder_remains_symbolic_inside_its_arm() {
             },
             SpecAlgebraicMatchArm {
                 variant: "Present".to_string(),
-                bindings: vec!["maybe".to_string()],
+                bindings: vec!["maybe".to_string().into()],
                 binding_types: vec![maybe_value_type],
                 body: value_or_match(SpecAlgebraicExpression {
                     algebraic_type: maybe_type,
-                    node: SpecAlgebraicExpressionNode::Binding("maybe".to_string()),
+                    node: SpecAlgebraicExpressionNode::Binding("maybe".to_string().into()),
                 }),
             },
         ],
@@ -662,7 +662,7 @@ fn algebraic_result_match_on_symbolic_value_remains_one_term() {
                 },
                 SpecAlgebraicResultMatchArm {
                     variant: "Some".to_string(),
-                    bindings: vec!["value".to_string()],
+                    bindings: vec!["value".to_string().into()],
                     binding_types: vec![AlgebraicValueType::Program(ProgramType::Int32)],
                     binding_variables: vec![None],
                     body: Box::new(SpecAlgebraicExpression {
@@ -735,7 +735,6 @@ fn pure_pointer_result_preserves_type_and_unsupported_results_are_explicit() {
             result_object_class: Some(crate::kernel::effective_type::CAccessClass::Struct(
                 crate::kernel::effective_type::CStructClass::opaque("node"),
             )),
-            projection: None,
         };
         let result = evaluate_spec_expression_paths_with_loop_entry_in(
             &ExecutionState::new(),
@@ -788,7 +787,6 @@ fn pure_function_application_is_not_eagerly_evaluated() {
         result_type: ProgramType::Int32,
         pointer_result: None,
         result_object_class: None,
-        projection: None,
     };
     let paths = evaluate_spec_expression_paths_with_loop_entry_in(
         &ExecutionState::new(),
@@ -828,7 +826,6 @@ fn pure_function_application_retains_symbolic_algebraic_argument() {
         result_type: ProgramType::Int32,
         pointer_result: None,
         result_object_class: None,
-        projection: None,
     };
     let paths = evaluate_spec_expression_paths_with_loop_entry_in(
         &ExecutionState::new(),
@@ -930,7 +927,7 @@ fn nominal_pointer_constructor_matches_preserve_the_checked_payload() {
             scrutinee: Box::new(constructor.clone()),
             arms: vec![SpecAlgebraicMatchArm {
                 variant: "At".to_string(),
-                bindings: vec!["p".to_string()],
+                bindings: vec!["p".to_string().into()],
                 binding_types: vec![field_type.clone()],
                 body: SpecExpression::ProgramExpression(ProgramExpression::Variable(
                     ("p".to_string()).into(),
@@ -963,7 +960,7 @@ fn nominal_pointer_constructor_matches_preserve_the_checked_payload() {
                 scrutinee: Box::new(constructor),
                 arms: vec![SpecAlgebraicResultMatchArm {
                     variant: "At".to_string(),
-                    bindings: vec!["p".to_string()],
+                    bindings: vec!["p".to_string().into()],
                     binding_types: vec![field_type.clone()],
                     binding_variables: vec![None],
                     body: Box::new(SpecAlgebraicExpression {
@@ -1132,71 +1129,6 @@ fn signed_match_is_fact_stable_and_retains_guarded_definedness() {
             matches!(guard.as_ref(), Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) if left == &maybe_variable(variable) && matches!(&right.node, AlgebraicTermNode::Constructor { variant, .. } if variant == "Some"))
         );
     }
-}
-
-#[test]
-fn common_constructor_projection_preserves_fields_and_refusals() {
-    let pointer = PointerValue::new(
-        Pointer::symbolic(Variable(999650)),
-        ProgramType::Int32Pointer,
-    )
-    .with_pointee_constant(true);
-    let mut native = KernelMatch::test_scrutinee(vec![
-        AlgebraicValueType::Program(ProgramType::Int32),
-        AlgebraicValueType::Program(ProgramType::Int32Pointer),
-    ]);
-    native.node = AlgebraicTermNode::Constructor {
-        variant: "Arm".into(),
-        fields: vec![
-            AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::add(
-                MachineTerm::Variable(Variable(999651)),
-                MachineTerm::constant(1),
-            ))),
-            AlgebraicValue::Program(ProgramValue::Pointer(pointer.clone())),
-        ],
-    };
-    let root = KernelTermImport::default().algebraic(&native);
-    let shared = [SpecCallArgument::Shared(root.clone())];
-    let native = [SpecCallArgument::Native(PureFunctionArgument::Algebraic(
-        native,
-    ))];
-    let exports = KernelTermExport::algebraic_export_count();
-    for (field, ty) in [(0, ProgramType::Int32), (1, ProgramType::Int32Pointer)] {
-        let projection = PureProjection {
-            argument: 0,
-            variant: "Arm".into(),
-            field,
-        };
-        let result = projected_field(&projection, &shared, ty, true).unwrap();
-        let expected = projected_field(&projection, &native, ty, true).unwrap();
-        assert_eq!(
-            format!("{:?}", result.into_native()),
-            format!("{:?}", expected.into_native())
-        );
-        assert_eq!(
-            projected_field(&projection, &shared, ty, false)
-                .unwrap()
-                .into_native(),
-            projected_field(&projection, &native, ty, false)
-                .unwrap()
-                .into_native()
-        );
-    }
-    for (argument, variant, field, ty) in [
-        (1, "Arm", 0, ProgramType::Int32),
-        (0, "Other", 0, ProgramType::Int32),
-        (0, "Arm", 2, ProgramType::Int32),
-        (0, "Arm", 0, ProgramType::UInt32),
-    ] {
-        let projection = PureProjection {
-            argument,
-            variant: variant.into(),
-            field,
-        };
-        assert!(projected_field(&projection, &shared, ty, true).is_none());
-        assert!(projected_field(&projection, &native, ty, true).is_none());
-    }
-    assert_eq!(KernelTermExport::algebraic_export_count(), exports);
 }
 
 #[test]
@@ -1436,7 +1368,6 @@ fn algebraic_program_call_results_retain_shared_arguments() {
         result_type: ProgramType::Parameter(TypeParameterName::of(&ty)),
         pointer_result: None,
         result_object_class: None,
-        projection: None,
     };
     let state = ExecutionState::new();
     let scope = SpecScope {

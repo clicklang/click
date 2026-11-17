@@ -1846,7 +1846,7 @@ impl CheckedResourceRewrite {
             &singleton,
             selected,
             std::slice::from_ref(definition),
-            before_state.memory(),
+            &before_state.program_point(),
             assumptions,
         )
         .ok_or("cannot instantiate authority transfer wrapper")?;
@@ -2282,7 +2282,7 @@ impl CheckedResourceRewrite {
                     &singleton,
                     selected,
                     std::slice::from_ref(definition),
-                    before_state.memory(),
+                    &before_state.program_point(),
                     assumptions,
                 )
                 .ok_or("member body access cannot instantiate its private body")?;
@@ -2738,7 +2738,7 @@ fn checked_borrowing_fold_hold(
         &temporary,
         selected,
         function.composite_resource_definitions(),
-        before_state.memory(),
+        &before_state.program_point(),
         assumptions,
     )
     .ok_or("a loan hold's composite body could not be instantiated")?;
@@ -2977,7 +2977,7 @@ impl CheckedResourceObservation {
                     &temporary,
                     &definition_authority,
                     function.composite_resource_definitions(),
-                    after_state.memory(),
+                    &after_state.program_point(),
                     assumptions,
                 )
                 .ok_or("the observed composite body could not be instantiated")?;
@@ -5414,7 +5414,7 @@ fn interface_resources_guard_heap_frees(
                     .unchecked_with_fact(resource.clone()),
                 resource,
                 function.composite_resource_definitions(),
-                arm_states[arm_index].memory(),
+                &arm_states[arm_index].program_point(),
                 arm_facts[arm_index].assumptions(),
             )
             .is_some_and(|expanded| {
@@ -5870,8 +5870,9 @@ pub(crate) enum CheckedBranchSplitError {
     InvalidEvidence,
 }
 
-/// A complete, kernel-checked direct call with exactly one feasible normal
-/// successor and one feasible exceptional successor. Individual statement
+/// A complete, kernel-checked direct call with one normal successor and one
+/// exceptional successor. An arm may be inconsistent with the root facts;
+/// its proof then closes by contradiction. Individual statement
 /// theorems prove each arm; this witness proves that neither arm was omitted.
 /// Its source and fact root are exact, so it cannot authorize a fork at a
 /// different call or after the proof context has changed.
@@ -5932,12 +5933,7 @@ impl CheckedCallOutcomeSplit {
                 else {
                     return false;
                 };
-                if **proved_state != state
-                    || **proved_statement != statement
-                    || outcome != expected
-                    || path_facts
-                        .iter()
-                        .any(|fact| root_facts.directly_conflicts_with(fact))
+                if **proved_state != state || **proved_statement != statement || outcome != expected
                 {
                     return false;
                 }
@@ -6190,7 +6186,7 @@ impl ExecutionFrontier {
 /// the `try` for normal completion.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct EvidenceTryFrame {
-    pub(crate) binding: String,
+    pub(crate) binding: BindingName,
     pub(crate) handler: Arc<ProgramStatement>,
     pub(crate) tail_after_try: Option<Arc<ProgramStatement>>,
     pub(crate) cleanup_unwind: bool,
@@ -6219,7 +6215,7 @@ pub(crate) struct ProofExecutionContinuation {
 /// carries one of these.
 #[derive(Clone)]
 pub(crate) struct ExceptionalContinuation {
-    pub(crate) binding: String,
+    pub(crate) binding: BindingName,
     pub(crate) handler: Arc<ProgramStatement>,
     pub(crate) handler_first_index: usize,
     pub(crate) cleanup_unwind: bool,
@@ -6853,22 +6849,19 @@ fn statements_have_same_source(left: &ProgramStatement, right: &ProgramStatement
         }
         (
             ProgramStatement::Loop {
-                test: left_test,
+                test: left_loop_test,
                 update: left_update,
-                condition: left_condition,
                 body: left_body,
                 ..
             },
             ProgramStatement::Loop {
-                test: right_test,
+                test: right_loop_test,
                 update: right_update,
-                condition: right_condition,
                 body: right_body,
                 ..
             },
         ) => {
-            left_condition == right_condition
-                && left_test == right_test
+            left_loop_test.for_repeated_iteration() == right_loop_test.for_repeated_iteration()
                 && left_update == right_update
                 && statements_have_same_source(left_body, right_body)
         }
@@ -6956,24 +6949,20 @@ fn checked_source_statement_matches(proved: &ProgramStatement, source: &ProgramS
     }
     let (
         ProgramStatement::Loop {
-            test: proved_test,
+            test: proved_loop_test,
             update: proved_update,
-            condition: proved_condition,
-            do_while: proved_do_while,
             body: proved_body,
             ..
         },
         ProgramStatement::Loop {
-            test: source_test,
+            test: source_loop_test,
             update: source_update,
-            condition: source_condition,
             invariant,
             invariant_checks,
             effect_checks,
             resource_specs,
             ranking_measures,
             structural_measure,
-            do_while: source_do_while,
             body: source_body,
             ..
         },
@@ -6987,10 +6976,8 @@ fn checked_source_statement_matches(proved: &ProgramStatement, source: &ProgramS
         && resource_specs.is_empty()
         && ranking_measures.is_empty()
         && structural_measure.is_none()
-        && proved_test == source_test
+        && proved_loop_test == source_loop_test
         && proved_update == source_update
-        && proved_condition == source_condition
-        && proved_do_while == source_do_while
         && proved_body == source_body
 }
 
@@ -7046,9 +7033,8 @@ fn checked_condition_event(
             }
         }
         ProgramStatement::Loop {
-            test,
+            test: loop_test,
             update,
-            condition,
             invariant,
             invariant_checks,
             effect_checks,
@@ -7057,25 +7043,24 @@ fn checked_condition_event(
             structural_measure,
             body,
             ..
-        } if &condition == proved_condition => {
+        } if loop_test.execution_parts().0 == proved_condition => {
+            let (_, _, test) = loop_test.execution_parts();
             if value {
                 let loop_head = ProgramStatement::Loop {
-                    test: test.clone(),
+                    test: loop_test.for_repeated_iteration(),
                     update: update.clone(),
-                    condition,
                     invariant,
                     invariant_checks,
                     effect_checks,
                     resource_specs,
                     ranking_measures,
                     structural_measure,
-                    do_while: false,
                     backedge_target: None,
                     natural_exit_target: None,
                     body: body.clone(),
                 };
                 prepend_checked_evidence_statement(
-                    crate::kernel::program_loop_pass(&body, update.as_deref(), test.as_ref()),
+                    crate::kernel::program_loop_pass(&body, update.as_deref(), test),
                     Some(loop_head),
                 )
             } else {
@@ -9284,8 +9269,8 @@ impl ExecutionProofCore {
         // Binding micro-steps and handler heads are meaningful only while
         // a `try` frame is open; without one there is nothing to route to.
         let frame_binding_matches = |frame: &EvidenceTryFrame| match proved_statement {
-            ProgramStatement::Declare { name, .. } => name.binding().is_named(&frame.binding),
-            ProgramStatement::Assign { name, .. } => name.is_named(&frame.binding),
+            ProgramStatement::Declare { name, .. } => name.binding() == &frame.binding,
+            ProgramStatement::Assign { name, .. } => name == &frame.binding,
             _ => false,
         };
         if let Some(frame) = self.evidence_try_stack.last()
@@ -9322,7 +9307,11 @@ impl ExecutionProofCore {
                         if let Some(tail) = tail {
                             frame.handler = tail;
                         } else {
-                            self.evidence_try_stack.pop();
+                            let completed = self
+                                .evidence_try_stack
+                                .pop()
+                                .expect("handler frame just matched");
+                            return Some(completed.tail_after_try);
                         }
                     }
                     return Some(self.evidence_source.clone());
@@ -9382,11 +9371,20 @@ impl ExecutionProofCore {
                             matches!(tail_head.as_ref(), ProgramStatement::Throw(_))
                                 && tail_tail.is_none()
                         });
-                    self.evidence_try_stack.pop();
+                    let completed = self
+                        .evidence_try_stack
+                        .pop()
+                        .expect("handler frame just matched");
                     if cleanup_rethrows {
                         return Some(self.evidence_source.clone());
                     }
-                    return Some(handler_tail);
+                    return Some(match (handler_tail, completed.tail_after_try) {
+                        (Some(handler), Some(tail)) => {
+                            Some(Arc::new(ProgramStatement::seq(handler, tail)))
+                        }
+                        (Some(handler), None) => Some(handler),
+                        (None, tail) => tail,
+                    });
                 }
             }
             return None;
@@ -9523,25 +9521,22 @@ impl ExecutionProofCore {
                 };
                 let do_while_initial_body = match &*next {
                     ProgramStatement::Loop {
-                        test,
+                        test: loop_test,
                         update,
-                        condition,
                         invariant,
                         invariant_checks,
                         effect_checks,
                         resource_specs,
                         ranking_measures,
                         structural_measure,
-                        do_while: true,
                         backedge_target: None,
                         natural_exit_target: None,
                         body,
-                    } if !matches!(&**proved_statement, ProgramStatement::Loop { .. }) => {
-                        let pass = crate::kernel::program_loop_pass(
-                            body,
-                            update.as_deref(),
-                            test.as_ref(),
-                        );
+                    } if loop_test.execution_parts().1
+                        && !matches!(&**proved_statement, ProgramStatement::Loop { .. }) =>
+                    {
+                        let (_, _, test) = loop_test.execution_parts();
+                        let pass = crate::kernel::program_loop_pass(body, update.as_deref(), test);
                         let (body_head, body_tail) = split_shared_source(&pass);
                         if !statements_have_same_source(&body_head, proved_statement) {
                             return Err(EvidenceRefusal {
@@ -9552,16 +9547,14 @@ impl ExecutionProofCore {
                             });
                         }
                         let loop_head = ProgramStatement::Loop {
-                            test: test.clone(),
+                            test: loop_test.for_repeated_iteration(),
                             update: update.clone(),
-                            condition: condition.clone(),
                             invariant: invariant.clone(),
                             invariant_checks: invariant_checks.clone(),
                             effect_checks: effect_checks.clone(),
                             resource_specs: resource_specs.clone(),
                             ranking_measures: ranking_measures.clone(),
                             structural_measure: structural_measure.clone(),
-                            do_while: false,
                             backedge_target: None,
                             natural_exit_target: None,
                             body: body.clone(),
@@ -9628,21 +9621,21 @@ impl ExecutionProofCore {
         // statement, never to the loop: the source is the body followed by
         // an ordinary loop head, as for a statement theorem.
         while let ProgramStatement::Loop {
-            test,
+            test: loop_test,
             update,
-            condition,
             invariant,
             invariant_checks,
             effect_checks,
             resource_specs,
             ranking_measures,
             structural_measure,
-            do_while: true,
             backedge_target,
             natural_exit_target,
             body,
         } = &*next
+            && loop_test.execution_parts().1
         {
+            let (_, _, test) = loop_test.execution_parts();
             if backedge_target.is_some() || natural_exit_target.is_some() {
                 return Err(EvidenceRefusal {
                     reason: "condition evidence does not decide the frontier's next `if` or `while`",
@@ -9652,16 +9645,14 @@ impl ExecutionProofCore {
                 });
             }
             let loop_head = ProgramStatement::Loop {
-                test: test.clone(),
+                test: loop_test.for_repeated_iteration(),
                 update: update.clone(),
-                condition: condition.clone(),
                 invariant: invariant.clone(),
                 invariant_checks: invariant_checks.clone(),
                 effect_checks: effect_checks.clone(),
                 resource_specs: resource_specs.clone(),
                 ranking_measures: ranking_measures.clone(),
                 structural_measure: structural_measure.clone(),
-                do_while: false,
                 backedge_target: None,
                 natural_exit_target: None,
                 body: body.clone(),
@@ -9670,7 +9661,7 @@ impl ExecutionProofCore {
                 Arc::new(crate::kernel::program_loop_pass(
                     body,
                     update.as_deref(),
-                    test.as_ref(),
+                    test,
                 )),
                 Some(prepend_shared_source(Arc::new(loop_head), tail)),
             );
@@ -9687,9 +9678,8 @@ impl ExecutionProofCore {
             tail = rest;
         }
         let decided = match &*next {
-            ProgramStatement::If { condition, .. } | ProgramStatement::Loop { condition, .. } => {
-                condition
-            }
+            ProgramStatement::If { condition, .. } => condition,
+            ProgramStatement::Loop { test, .. } => test.execution_parts().0,
             _ => {
                 return Err(EvidenceRefusal {
                     reason: "condition evidence does not decide the frontier's next `if` or `while`",
@@ -9723,9 +9713,8 @@ impl ExecutionProofCore {
                 }
             }
             ProgramStatement::Loop {
-                test,
+                test: loop_test,
                 update,
-                condition,
                 invariant,
                 invariant_checks,
                 effect_checks,
@@ -9735,24 +9724,22 @@ impl ExecutionProofCore {
                 body,
                 ..
             } => {
+                let (_, _, test) = loop_test.execution_parts();
                 if value {
                     let loop_head = ProgramStatement::Loop {
-                        test: test.clone(),
+                        test: loop_test.for_repeated_iteration(),
                         update: update.clone(),
-                        condition: condition.clone(),
                         invariant: invariant.clone(),
                         invariant_checks: invariant_checks.clone(),
                         effect_checks: effect_checks.clone(),
                         resource_specs: resource_specs.clone(),
                         ranking_measures: ranking_measures.clone(),
                         structural_measure: structural_measure.clone(),
-                        do_while: false,
                         backedge_target: None,
                         natural_exit_target: None,
                         body: body.clone(),
                     };
-                    let pass =
-                        crate::kernel::program_loop_pass(body, update.as_deref(), test.as_ref());
+                    let pass = crate::kernel::program_loop_pass(body, update.as_deref(), test);
                     let body_then_head =
                         Arc::new(ProgramStatement::seq(Arc::new(pass), Arc::new(loop_head)));
                     Some(prepend_shared_source(body_then_head, tail))

@@ -44,3 +44,21 @@ fn metadata_work_scales_with_nodes_and_aliases_without_outer_environments() {
             .contains("cycle")
     );
 }
+
+#[test]
+fn pointer_qualification_metadata_costs_only_its_explicit_nodes() {
+    let sources = BTreeSet::from(["fixture.cpp".into()]);
+    for size in [1, 16, 256, 1024] {
+        let pointer = json!({"kind":"pointer","pointee":ty()});
+        let mut qualified = pointer.clone();
+        qualified["pointee"]["is_const"] = true.into();
+        let cast = json!({"kind":"pointer_qualification", "value":{"kind":"null_pointer", "value_type":pointer, "span":span()}, "value_type":qualified, "span":span()});
+        let statement = json!({"kind":"return", "value":cast, "cleanups":[], "span":span()});
+        let function = fixture(Value::Array(vec![statement; size]));
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            check_function(&function, "fixture.cpp", &sources)
+        });
+        result.unwrap();
+        assert!(work >= size && work <= 24 * size + 16, "{size}: {work}");
+    }
+}

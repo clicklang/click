@@ -1,9 +1,8 @@
 import click::bytes;
 import click::cstr;
 
-// The C library's byte functions, with C's `size_t` counts. C converts
-// `memset`'s `int` fill value to `unsigned char`; Click models that narrowing
-// only for a representable value, so the value is required to be one.
+// The C library's byte functions, with C's `size_t` counts. memset converts
+// its int fill value to unsigned char, reducing it modulo 256.
 extern uint8* memcpy(uint8 destination[], const uint8 source[], uint64 bytes) {
     views source[0..bytes];
     owns uninitialized(destination[0..bytes]);
@@ -20,12 +19,10 @@ extern int32 memcmp(const uint8 left[], const uint8 right[], uint64 bytes) {
 }
 
 extern uint8* memset(uint8 destination[], int32 value, uint64 bytes) {
-    requires 0 <= value;
-    requires value <= 255;
     owns uninitialized(destination[0..bytes]);
     ensures result == destination;
     ensures (0u64..bytes).all(|k| {
-        defined(destination[k]) and destination[k] == value
+        defined(destination[k]) and destination[k] == (value as uint8)
     });
 }
 

@@ -114,8 +114,16 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
                 )
             },
         )?;
-        let Some(close_proof) = close_proof else {
-            return Ok(closed);
+        let (body, close_proof) = match close_proof {
+            None => return Ok(closed),
+            Some(crate::surface::proof::ScopeCloseProof::By(close_proof)) => {
+                (scope.body.certificate(), Some(close_proof))
+            }
+            Some(crate::surface::proof::ScopeCloseProof::BlockTail(haves)) => {
+                let mut steps = scope.body.certificate().steps().to_vec();
+                steps.extend(haves.steps().iter().cloned());
+                (ProofCertificate::from_steps(steps)?, None)
+            }
         };
         Ok(Proof {
             node: ProofNode::step_child(
@@ -123,8 +131,8 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
                 closed.focused_branch_id(),
                 Arc::new(ProofStep::Open {
                     resource: resource.clone(),
-                    proof: Box::new(scope.body.certificate()),
-                    close_proof: Some(close_proof),
+                    proof: Box::new(body),
+                    close_proof,
                 }),
             ),
             ..closed

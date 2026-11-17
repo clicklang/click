@@ -5000,6 +5000,7 @@ pub(crate) fn term_is_shallow_structural_cache_key(term: &MachineTerm) -> bool {
         }
         match node {
             Node::Term(term, depth) => match term {
+                MachineTerm::ThreadHandle(_) => {}
                 bits32_constant!(_)
                 | MachineTerm::Variable(_)
                 | int64_constant!(_)
@@ -5553,6 +5554,7 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &MachineTerm) -> MachineTerm 
                 #[cfg(test)]
                 ATOMIC_CANONICALIZATION_TERM_VISITS.with(|visits| visits.set(visits.get() + 1));
                 match term {
+                    MachineTerm::ThreadHandle(_) => results.push(term.clone()),
                     bits32_constant!(_)
                     | MachineTerm::Variable(_)
                     | int64_constant!(_)
@@ -6225,67 +6227,70 @@ pub(crate) fn certified_store_equations(
 ) -> Vec<Proposition> {
     facts
         .fact_iter()
-        .filter_map(|fact| {
-            let store = fact.certified_store_data()?;
-            let value = match store.value.numeric_value() {
-                ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
-                ProgramValue::Int8(term) => term.clone(),
-                ProgramValue::Bool(term)
-                | ProgramValue::Int16(term)
-                | ProgramValue::Int32(term)
-                | ProgramValue::UInt8(term)
-                | ProgramValue::UInt16(term)
-                | ProgramValue::UInt32(term)
-                | ProgramValue::Int64(term)
-                | ProgramValue::UInt64(term)
-                | ProgramValue::Int128(term)
-                | ProgramValue::UInt128(term) => term.clone(),
-                ProgramValue::Void
-                | ProgramValue::Pointer(_)
-                | ProgramValue::Parameter(_)
-                | ProgramValue::Float32(_)
-                | ProgramValue::Float64(_) => {
-                    return None;
-                }
-            };
-            // What the store wrote is the read of its own kind there,
-            // equated at the stored value's format. Bool uses its byte carrier.
-            let kind = LoadKind::of_value(&store.value)?;
-            // The store wrote a four-byte word, so the read naming it is a
-            // four-byte access. A word read without a recorded width is named
-            // under the eight-byte fallback, which the equality graph does
-            // not register as a word read, and a later typed read of the same
-            // cell names it under another width than this equation does.
-            // Record the width before naming the read, as a typed load
-            // producer does. Every other kind's fallback is its own width.
-            if kind.is_word32() {
-                crate::kernel::eval::record_load_access_width(
-                    &store.after,
-                    &store.pointer,
-                    store.value.byte_width(),
-                );
-            }
-            // The store record establishes the value of this exact read.
-            // Publish its registered version name, the same term logical
-            // lowering constructs at the post-store state. The private
-            // store record retains the raw memory relation; no history or
-            // ambient fact search is needed to name its read.
-            let read = crate::kernel::canonical_form_of_load(
-                crate::kernel::intern_memory(store.after.clone()),
-                store.pointer.clone(),
-                kind,
-            );
-            let format = match store.value.numeric_value() {
-                ProgramValue::Bool(_) => MachineIntegerType::UInt8,
-                value => MachineIntegerType::from_program_type(value.program_type())?,
-            };
-            // Use the language comparison constructor as well as its width:
-            // 64/128-bit equality has one sign-free, signed-format spelling.
-            let condition =
-                ConditionTerm::machine_compare(format, CompareRelation::Equal, read, value);
-            Some(Proposition::ConditionIs(condition, true))
-        })
+        .filter_map(|fact| fact.certified_store_data()?.value_equation.clone())
         .collect()
+}
+
+/// Construct the value equation from this one store's operands at admission.
+/// Later consumers reuse the retained equation instead of naming its read again.
+pub(super) fn store_value_equation(
+    after: &Memory,
+    pointer: &Pointer,
+    value: &ProgramValue,
+) -> Option<Proposition> {
+    let stored_bits = match value.numeric_value() {
+        ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
+        ProgramValue::Int8(term) => term.clone(),
+        ProgramValue::Bool(term)
+        | ProgramValue::Int16(term)
+        | ProgramValue::Int32(term)
+        | ProgramValue::UInt8(term)
+        | ProgramValue::UInt16(term)
+        | ProgramValue::UInt32(term)
+        | ProgramValue::Int64(term)
+        | ProgramValue::UInt64(term)
+        | ProgramValue::Int128(term)
+        | ProgramValue::UInt128(term) => term.clone(),
+        ProgramValue::Void
+        | ProgramValue::Pointer(_)
+        | ProgramValue::Parameter(_)
+        | ProgramValue::Float32(_)
+        | ProgramValue::Float64(_) => {
+            return None;
+        }
+    };
+    // What the store wrote is the read of its own kind there,
+    // equated at the stored value's format. Bool uses its byte carrier.
+    let kind = LoadKind::of_value(value)?;
+    // The store wrote a four-byte word, so the read naming it is a
+    // four-byte access. A word read without a recorded width is named
+    // under the eight-byte fallback, which the equality graph does
+    // not register as a word read, and a later typed read of the same
+    // cell names it under another width than this equation does.
+    // Record the width before naming the read, as a typed load
+    // producer does. Every other kind's fallback is its own width.
+    if kind.is_word32() {
+        crate::kernel::eval::record_load_access_width(after, pointer, value.byte_width());
+    }
+    // The store record establishes the value of this exact read.
+    // Publish its registered version name, the same term logical
+    // lowering constructs at the post-store state. The private
+    // store record retains the raw memory relation; no history or
+    // ambient fact search is needed to name its read.
+    let read = crate::kernel::canonical_form_of_load(
+        crate::kernel::intern_memory(after.clone()),
+        pointer.clone(),
+        kind,
+    );
+    let format = match value.numeric_value() {
+        ProgramValue::Bool(_) => MachineIntegerType::UInt8,
+        value => MachineIntegerType::from_program_type(value.program_type())?,
+    };
+    // Use the language comparison constructor as well as its width:
+    // 64/128-bit equality has one sign-free, signed-format spelling.
+    let condition =
+        ConditionTerm::machine_compare(format, CompareRelation::Equal, read, stored_bits);
+    Some(Proposition::ConditionIs(condition, true))
 }
 
 pub(crate) fn certified_store_loadability_facts(
@@ -6563,6 +6568,7 @@ fn collect_operand_memories(
 
 fn collect_bitvector_memories(term: &MachineTerm, memories: &mut Vec<SharedMemory>) {
     match term {
+        MachineTerm::ThreadHandle(_) => {}
         MachineTerm::Constant { .. } | MachineTerm::Variable(_) => {}
         MachineTerm::PointerAddress(_, _) => {}
         MachineTerm::MemoryLoad(memory, _, _) => {
@@ -6913,6 +6919,7 @@ fn transport_framed_atomic_bitvector(
         return None;
     }
     Some(match term {
+        MachineTerm::ThreadHandle(_) => term.clone(),
         MachineTerm::Constant { .. } => term.clone(),
         MachineTerm::PointerAddress(_, _) => term.clone(),
         MachineTerm::Variable(variable) => {
@@ -7209,6 +7216,7 @@ fn normalize_exact_memory_loads_in_bitvector_iterative(
                     continue;
                 }
                 match term {
+                    MachineTerm::ThreadHandle(_) => results.push(term),
                     MachineTerm::Cast {
                         spelling: MachineCastSpelling::Generic,
                         value,

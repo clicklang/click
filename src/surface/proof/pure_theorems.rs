@@ -240,8 +240,7 @@ pub(super) struct PureTheoremContext {
     pub(super) declaration_bindings: BTreeMap<String, ContractExpression>,
     pub(super) memory: Memory,
     pub(super) values: BTreeMap<String, ProgramValue>,
-    pub(super) integer_values:
-        crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+    pub(super) integer_values: PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     pub(super) array_refs: ClickArrayRefs,
     pub(super) requires: Vec<Proposition>,
     pub(super) surface_requirements: SurfacePropositionMap,
@@ -281,7 +280,7 @@ impl PureTheoremContext {
             let promoted = super::surface_lowering::promote_integer_expression(
                 &value,
                 &context.integer_values,
-                &crate::persistent::PersistentMap::default(),
+                &PersistentBinderMap::default(),
             );
             let is_integer = match click_type.as_ref() {
                 Some(ClickType::Integer) => true,
@@ -315,10 +314,9 @@ impl PureTheoremContext {
                                     .get(&name)
                                     .map(|value| (name, value.clone()))
                             })
-                            .fold(
-                                crate::persistent::PersistentMap::default(),
-                                |values, (name, value)| values.with_inserted(name, value),
-                            );
+                            .fold(PersistentBinderMap::default(), |values, (name, value)| {
+                                values.with_inserted(name, value)
+                            });
                         let spec = crate::surface::lowering::elaborate_fixed_state_proposition_with_algebraic_and_integer_values(
                             &ClickProposition::Comparison {
                                 left: promoted,
@@ -356,7 +354,7 @@ impl PureTheoremContext {
                 // A narrow typed `let` names its native sum (G2), as the
                 // clauses read it; the bare value would be C's promoted one.
                 ContractExpression::Let {
-                    name: name.clone(),
+                    name: name.clone().into(),
                     click_type: click_type.clone(),
                     value: Box::new(value),
                     body: Box::new(ContractExpression::ProgramExpression(
@@ -411,10 +409,10 @@ pub(super) struct PureStructuralInductionBranchSetup {
 pub(super) fn induction_argument_name(argument: &ContractExpression) -> Option<&str> {
     match argument {
         ContractExpression::Binding(name)
-        | ContractExpression::AlgebraicVariable { name, .. }
         | ContractExpression::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) => Some(name),
+        ContractExpression::AlgebraicVariable { name, .. } => name.written(),
         _ => None,
     }
 }
@@ -952,7 +950,7 @@ fn check_pure_structural_induction(
     };
     let parameter_expression = ContractExpression::AlgebraicVariable {
         // Arbitrary types have no exhaustive constructor schema.
-        name: parameter.clone(),
+        name: parameter.clone().into(),
         algebraic_type: parameter_type.clone(),
         binder_index: parameter_index,
     };
@@ -1093,7 +1091,7 @@ fn check_pure_structural_induction(
                         unreachable!("algebraic field conversion preserves its family")
                     };
                     let symbolic = ContractExpression::AlgebraicVariable {
-                        name: binding.clone(),
+                        name: binding.clone().into(),
                         algebraic_type,
                         binder_index: theorem.parameters().len()
                             + 1
@@ -1444,7 +1442,7 @@ pub(super) fn pure_theorem_context(
                 Some((
                     name.clone(),
                     ContractExpression::AlgebraicVariable {
-                        name,
+                        name: name.into(),
                         algebraic_type: algebraic_type.clone(),
                         binder_index,
                     },
@@ -1536,13 +1534,13 @@ pub(in crate::surface) fn assumed_theorem_certification_authorities(
 
 fn pure_theorem_parameter_integer_values(
     parameters: &[FunctionParameter],
-) -> crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression> {
+) -> PersistentBinderMap<crate::kernel::SpecIntegerExpression> {
     parameters
         .iter()
         .enumerate()
         .filter(|(_, parameter)| matches!(parameter.click_type(), ClickType::Integer))
         .fold(
-            crate::persistent::PersistentMap::default(),
+            PersistentBinderMap::default(),
             |values, (index, parameter)| {
                 values.with_inserted(
                     parameter.name().to_string(),
@@ -3241,6 +3239,10 @@ pub(super) fn click_function_applications(
         applications: &mut Vec<ClickFunctionApplication>,
     ) {
         match term {
+            ContractExpression::IntegerContext(value) => {
+                expression(value, known_facts, applications)
+            }
+
             ContractExpression::Proposition(proposition) => {
                 proposition_inner(proposition, known_facts, applications)
             }
@@ -3477,7 +3479,7 @@ pub(super) fn lower_pure_theorem_proposition_with_integer_values(
     theorem_name: &str,
     proposition: &ClickProposition,
     contract_environment: ContractEnvironment<'_>,
-    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+    integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     memory: &Memory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
@@ -3498,7 +3500,7 @@ pub(super) fn lower_pure_theorem_proposition_with_algebraic_and_integer_values(
     proposition: &ClickProposition,
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
-    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+    integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     memory: &Memory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
@@ -3525,7 +3527,7 @@ pub(super) fn lower_pure_theorem_proposition_recording_introductions(
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
-    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+    integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     memory: &Memory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<(Proposition, crate::kernel::LoweringIntroductions), String> {
@@ -3559,7 +3561,7 @@ pub(super) fn lower_pure_theorem_proposition_with_algebraic_values(
         proposition,
         contract_environment,
         algebraic_values,
-        &crate::persistent::PersistentMap::default(),
+        &PersistentBinderMap::default(),
         memory,
         spec_definitions,
     )

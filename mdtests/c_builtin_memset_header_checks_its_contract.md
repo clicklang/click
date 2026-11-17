@@ -1,7 +1,7 @@
 # A `memset` declared by the built-in `<string.h>` keeps its contract
 
-The built-in header's `memset` prototype binds to the library contract, so a
-fill value outside `0..=255` is refused at the call.
+The built-in header's `memset` prototype binds to the library contract. A
+fill value outside `0..=255` is accepted with C's unsigned-character conversion.
 
 ```c filename=builtin_memset.c
 #include <string.h>
@@ -23,5 +23,5 @@ int32 fill(uint8 d[]) {
 ```
 
 ```expect
-fail: unproved obligation: `300 <= 255`
+pass
 ```

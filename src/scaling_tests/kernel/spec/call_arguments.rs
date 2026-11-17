@@ -12,8 +12,11 @@ fn call_argument_paths_retain_shared_prefixes_without_exporting() {
                 [root.clone(), root],
             );
         }
-        let mut values = crate::persistent::PersistentMap::default();
-        values.insert("x".to_string(), root.clone());
+        let mut values: crate::persistent::PersistentMap<
+            crate::kernel::BindingName,
+            crate::kernel::KernelTerm,
+        > = crate::persistent::PersistentMap::default();
+        values.insert("x".into(), root.clone());
         let state = ExecutionState::new();
         let scope = SpecScope {
             values: Some(&values),
@@ -49,7 +52,6 @@ fn call_argument_paths_retain_shared_prefixes_without_exporting() {
                 "retained_argument",
                 std::slice::from_ref(&argument),
                 ProgramType::UInt32,
-                None,
                 None,
                 None,
                 &PureFactContext::new(),
@@ -88,7 +90,6 @@ fn call_argument_paths_retain_shared_prefixes_without_exporting() {
                 ProgramType::Int32Pointer,
                 Some(&origins),
                 None,
-                None,
                 &PureFactContext::new(),
                 &mut SpecEvaluation::logical(&mut execution),
             )
@@ -124,7 +125,6 @@ fn retained_constant_call_arguments_keep_existing_decision_identity() {
         "retained_steps",
         &[argument],
         ProgramType::Int32,
-        None,
         None,
         None,
         &PureFactContext::new(),

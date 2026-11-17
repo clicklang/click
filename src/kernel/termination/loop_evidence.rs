@@ -16,14 +16,12 @@ enum ShapeHead {
     If(ProgramExpression),
     Loop {
         has_update: bool,
-        test_position: Option<LoopTestPosition>,
-        condition: ProgramExpression,
-        do_while: bool,
+        test_position: LoopTestPosition,
         backedge_target: Option<ControlTargetId>,
         natural_exit_target: Option<ControlTargetId>,
     },
     Switch(ProgramExpression, Vec<Option<u32>>),
-    Try(String, bool),
+    Try(BindingName, bool),
     Leaf(ProgramStatement),
 }
 
@@ -34,18 +32,14 @@ impl ShapeHead {
             ProgramStatement::Seq(statements) => Self::Sequence(statements.len()),
             ProgramStatement::If { condition, .. } => Self::If(condition.clone()),
             ProgramStatement::Loop {
-                test,
+                test: loop_test,
                 update,
-                condition,
-                do_while,
                 backedge_target,
                 natural_exit_target,
                 ..
             } => Self::Loop {
                 has_update: update.is_some(),
-                test_position: test.as_ref().map(|test| test.position),
-                condition: condition.clone(),
-                do_while: *do_while,
+                test_position: loop_test.position,
                 backedge_target: *backedge_target,
                 natural_exit_target: *natural_exit_target,
             },
@@ -71,8 +65,11 @@ fn children_all(
 ) -> bool {
     match statement {
         ProgramStatement::Loop {
-            test, update, body, ..
-        } => program_loop_regions(body, update.as_deref(), test.as_ref()).all(visit),
+            test: loop_test,
+            update,
+            body,
+            ..
+        } => program_loop_regions(body, update.as_deref(), Some(loop_test)).all(visit),
         ProgramStatement::Seq(statements) => statements.iter().all(|child| visit(child)),
         ProgramStatement::If {
             then_branch,
@@ -83,8 +80,8 @@ fn children_all(
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
         } => visit(try_body) && visit(handler),
-
-        ProgramStatement::Skip
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)
         | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
@@ -128,12 +125,16 @@ impl LoopSourceIndex {
             index.loops.push(0..0);
             index.shape.push(ShapeHead::Loop {
                 has_update: false,
-                test_position: None,
-                condition: crate::kernel::program_expression::int32_literal(1),
-                do_while: false,
+                test_position: LoopTestPosition::BeforeBody,
                 backedge_target: Some(target),
                 natural_exit_target: exit,
             });
+            index
+                .shape
+                .push(ShapeHead::Leaf(ProgramStatement::LoopTest {
+                    condition: crate::kernel::program_expression::int32_literal(1),
+                    aggregate_steps: Vec::new(),
+                }));
         }
         index.collect(body);
         if natural.is_some() {
@@ -549,10 +550,13 @@ pub(super) mod tests {
                 .contains("nonexistent loop 1")
         );
         let mut different = source.clone();
-        let ProgramStatement::Loop { condition, .. } = &mut different else {
+        let ProgramStatement::Loop {
+            test: loop_test, ..
+        } = &mut different
+        else {
             unreachable!()
         };
-        *condition = int32_literal(1);
+        *loop_test = LoopTestRegion::expression(int32_literal(1), loop_test.position);
         assert!(
             function
                 .open_loop_proof(0, different)

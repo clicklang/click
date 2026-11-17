@@ -315,22 +315,58 @@ fn pointer_conditional_handoffs_keep_selected_roots_metadata_and_refusals() {
     }
 }
 
+fn closed_comparison_if(
+    then_branch: SpecExpression,
+    else_branch: SpecExpression,
+    operator: ComparisonOperator,
+    truth: bool,
+) -> SpecExpression {
+    let bound = match operator {
+        ComparisonOperator::LessThan => {
+            if truth {
+                10
+            } else {
+                8
+            }
+        }
+        ComparisonOperator::Equal => {
+            if truth {
+                9
+            } else {
+                8
+            }
+        }
+        ComparisonOperator::NotEqual => {
+            if truth {
+                8
+            } else {
+                9
+            }
+        }
+        _ => unreachable!("test guard operator"),
+    };
+    SpecExpression::If {
+        condition: Box::new(SpecProposition::Comparison {
+            left: SpecExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(9))),
+            operator,
+            right: SpecExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(bound))),
+        }),
+        then_branch: Box::new(then_branch),
+        else_branch: Box::new(else_branch),
+    }
+}
+
 fn closed_order_if(
     then_branch: SpecExpression,
     else_branch: SpecExpression,
     truth: bool,
 ) -> SpecExpression {
-    SpecExpression::If {
-        condition: Box::new(SpecProposition::Comparison {
-            left: SpecExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(9))),
-            operator: ComparisonOperator::LessThan,
-            right: SpecExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(
-                if truth { 10 } else { 8 },
-            ))),
-        }),
-        then_branch: Box::new(then_branch),
-        else_branch: Box::new(else_branch),
-    }
+    closed_comparison_if(
+        then_branch,
+        else_branch,
+        ComparisonOperator::LessThan,
+        truth,
+    )
 }
 
 fn lower_closed_order_if(

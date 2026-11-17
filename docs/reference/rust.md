@@ -190,7 +190,7 @@ implementation, signature, and associated-item checks across module paths.
 Crate units support by-value returns of supported flat records, including owned
 array fields and records with `Drop`. The concrete return layout enters the
 kernel's aggregate-return interface: field values copy into fresh caller
-storage, and Rust live flags transfer ownership once. Reference, array, and
+storage. Reference, array, and
 nested-record returns remain unsupported. By-value flat-record parameters use
 the kernel aggregate-parameter interface: each callee receives independent
 storage. Compiler moves consume the caller’s live value; compiler copies
@@ -267,8 +267,21 @@ scalar type and binds as in Rust, tighter than a binary operator.
 
 A parameter may be a reference, `&T` or `&mut T`, to a scalar or a struct.
 The contract names what it refers to as Rust does: `*value` for the
-referent and `parent.left` for a field. The type does not grant authority;
-the contract still states `views` or `owns`. Lifetimes may be written or
+referent and `parent.left` for a field. The type grants the authority a
+safe caller holds: `value: &mut T` owns `*value` and `value: &T` views it,
+a slice `bytes: &mut [T]` or `bytes: &[T]` owns or views
+`bytes[0..bytes.len()]`, and an array `bytes: &[T; N]` owns or views
+`bytes[0..N]`, with no clause written. The derived clause is the
+one a sidecar would write, so the callee is checked against it and each
+caller must hold it. A sidecar that writes an `owns`, `views`, `consumes` or
+`produces` clause naming the parameter states its authority itself, and
+nothing is derived for it: `views parent.right` on a `&mut Pair` promises
+the caller the field is not written. `owns` through a shared reference is
+refused. The rule covers free functions and inherent methods whose referent
+is a scalar, a slice or array of scalars or a struct of scalar fields; a
+receiver, a trait method, a generic function, an `extern` or `contract`
+declaration, an enum and any other referent keep only their written clauses.
+Lifetimes may be written or
 left out, `fn pick<'a>(value: &'a u32) -> u32`; the contract does not use
 them. Type parameters are limited to the supported
 [callable bounds](#function-pointers-and-named-contracts) and
@@ -290,7 +303,6 @@ fn choose(x: i32) -> i32 {
 }
 
 fn set_seven(value: &mut i32) {
-    owns *value;
     ensures *value == 8;
 }
 
@@ -449,10 +461,8 @@ body of `half` unfolded, prints as its constructor at its element type,
 `Slice<u8>::Slice(&bytes[1], 2u64)`. In a theorem
 written in Click syntax, the library's calls print as calls,
 `slice::len(Slice<uint8>::Slice(p, n))`. `.len()` and `.as_ptr()` of a
-constructed slice, such as a subslice, reduce as they are read, so
-`bytes[k..].len()` is its length with no `unfold`; the same holds for a
-slice a theorem's parameter is bound to, so a library axiom over a slice
-applies to `Slice<u8>::Slice(bytes, bytes.len())`. A subslice,
+constructed slice, such as a subslice, stay the calls written; `unfold`
+opens one to the constructor's field, and `solve` opens it itself. A subslice,
 `bytes[a..b]`, `bytes[a..]` or `bytes[..b]` of a slice parameter or a slice
 value, is the slice value with data `bytes.as_ptr() + a` and length `b - a`
 (`b` defaults to the length). It has no memory effect: `bytes[1..3][0]` reads
@@ -1570,12 +1580,14 @@ implementation. The compiler selects drop order and drop flags through its
 ULLBC control flow; Click does not reconstruct cleanup
 from source scopes. Destructor bodies require verified sidecar contracts.
 
-Private checked live flags require a live source and dead destination for a
-move, and consume the source. Reads and drops require a live value. Cleanup
-must consume every destructor-bearing local before return. The flags prevent
-stale struct bytes from justifying duplicate moves, duplicate drops, or omitted
-cleanup. Struct storage uses existing checked stack allocation and typed field
-loads/stores. Moving a reference field carries the same borrowed address; it
+The imported MIR is drop-elaborated, so rustc has already decided which
+values are live at each move, read and drop. A move copies the struct's fields
+into its destination and a drop runs its destructor; Click adds no live flags
+of its own, so no generated name appears in a proof's state or a step's
+frontier. The compiler places each drop on the paths where its value is
+still live, as in a branch that moves a guard and one that keeps it.
+Struct storage uses
+existing checked stack allocation and typed field loads/stores. Moving a reference field carries the same borrowed address; it
 does not create allocation or deallocation authority.
 
 Borrowing fields of local owned structs is supported. In
@@ -1983,8 +1995,9 @@ parameters use pointer-shaped sidecar parameters with explicit `owns` clauses;
 shared references use explicit `views` where access is required. Borrowed
 references carry no allocation or deallocation authority.
 
-This frontend does not infer sidecar authority from a Rust reference. Contracts
-must provide the resources they use. Reborrows of caller storage retain the
+A reference parameter's type grants authority over its referent (see
+[Signatures in Rust syntax](#signatures-in-rust-syntax)); every other resource
+a contract uses is written. Reborrows of caller storage retain the
 same modeled pointer: writes through the child are observed through its parent.
 The compiler establishes when parent reuse is legal; the kernel establishes
 that each modeled access is justified by the supplied resources.

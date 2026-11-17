@@ -588,15 +588,30 @@ fn attach_deferred_close_proof(steps: &mut [ProofStep], step: &ProofStep) -> boo
     else {
         return false;
     };
-    if let Some(ProofStep::Open {
+    let Some(ProofStep::Open {
         resource: scope,
+        proof: scope_body,
         close_proof: slot @ None,
-        ..
     }) = steps.last_mut()
-        && proof.steps().is_empty()
-        && scope == resource
-    {
+    else {
+        return false;
+    };
+    if scope != resource {
+        return false;
+    }
+    if proof.steps().is_empty() {
         *slot = Some(close_proof.clone());
+        return true;
+    }
+    // A deferred block tail (`ProofOpen::deferred_block_tail`): its `have`s
+    // end the scope's block, which keeps no `by`.
+    if close_proof.steps().is_empty() {
+        let mut body = scope_body.steps().to_vec();
+        body.extend(proof.steps().iter().cloned());
+        let Ok(body) = ProofCertificate::from_steps(body) else {
+            return false;
+        };
+        **scope_body = body;
         return true;
     }
     false
@@ -1487,8 +1502,7 @@ pub(super) struct LoopReturnProof {
 
 #[derive(Clone)]
 pub(super) struct DeferredPostExecutionTactic {
-    pub(super) lexical_bindings:
-        Option<crate::persistent::PersistentMap<String, ContractExpression>>,
+    pub(super) lexical_bindings: Option<PersistentBinderMap<ContractExpression>>,
     pub(super) tactic_index: usize,
     pub(super) source_index: usize,
     pub(super) tactic: PostExecutionTactic,
@@ -1817,7 +1831,7 @@ pub(super) struct ExecutionView<'a> {
     function_entry_state: Option<&'a ExecutionState>,
     /// Lexical names available where this certificate is emitted. They are
     /// presentation hints, never proof authority.
-    pub(super) proof_bindings: Option<&'a PersistentMap<String, ContractExpression>>,
+    pub(super) proof_bindings: Option<&'a PersistentBinderMap<ContractExpression>>,
 }
 
 impl<'a> ExecutionView<'a> {

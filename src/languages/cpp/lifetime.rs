@@ -11,6 +11,10 @@ pub(super) struct LifetimePlan {
 }
 
 impl LifetimePlan {
+    pub(super) fn has_destructors(&self) -> bool {
+        !self.destructors.is_empty()
+    }
+
     /// A validated import with no destructors needs no per-function cleanup
     /// inventory. Trivial lifetime events are still emitted by lowering.
     pub(super) fn for_lowering(

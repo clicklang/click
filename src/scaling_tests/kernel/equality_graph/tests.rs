@@ -798,11 +798,11 @@ fn pointer_fact_source_order_queries_ignore_unrelated_admissions() {
 }
 
 #[test]
-fn self_named_wide_read_observations_register_once_across_metadata() {
+fn wide_read_metadata_does_not_publish_a_value_without_an_equation() {
     use crate::kernel::{LoadKind, Memory, ProgramValue, intern_memory};
     for size in [8_u64, 32, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let graph = EqualityGraph::default();
+        let mut graph = EqualityGraph::default();
         let mut reads = Vec::new();
         let ((), production) = crate::instrumentation::measure_deterministic_work(|| {
             for item in 0..size {
@@ -839,8 +839,7 @@ fn self_named_wide_read_observations_register_once_across_metadata() {
                     )
                 );
                 assert!(!graph.are_uint64_equal(&value, &MachineTerm::uint64_constant(0)));
-                // A genuinely different observation of the same read must
-                // still be processed by an already populated graph.
+                // Changing cached metadata does not publish a value equality.
                 let resolved = intern_memory(named.memory().clone().materialize_named_cell(
                     address.clone(),
                     ProgramValue::UInt64(MachineTerm::uint64_constant(17)),
@@ -856,6 +855,8 @@ fn self_named_wide_read_observations_register_once_across_metadata() {
                         &resolved,
                     )
                 );
+                assert!(!graph.are_uint64_equal(&value, &MachineTerm::uint64_constant(17)));
+                graph.add_uint64_equality(&value, &MachineTerm::uint64_constant(17));
                 assert!(graph.are_uint64_equal(&value, &MachineTerm::uint64_constant(17)));
                 assert!(!graph.are_uint64_equal(&value, &MachineTerm::uint64_constant(0)));
                 reads.push(value);

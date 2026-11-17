@@ -161,19 +161,20 @@ impl<'a> Analysis<'a> {
         }
     }
 
-    fn restore(&mut self, name: &'a str, old: Option<Origins>) {
+    fn restore(&mut self, name: impl Into<BindingName>, old: Option<Origins>) {
+        let name = name.into();
         match old {
             Some(value) => {
                 self.bindings.insert(name.into(), value);
             }
             None => {
-                self.bindings.remove(&name.into());
+                self.bindings.remove(&name);
             }
         }
     }
-    fn scoped(&mut self, names: impl Iterator<Item = &'a String>, body: SpecNode<'a>) {
+    fn scoped(&mut self, names: impl Iterator<Item = &'a BindingName>, body: SpecNode<'a>) {
         let previous: Vec<_> = names
-            .map(|name| (name.as_str(), self.bindings.insert(name.into(), None)))
+            .map(|name| (name, self.bindings.insert(name.into(), None)))
             .collect();
         self.visit(body);
         for (name, old) in previous {
@@ -386,7 +387,6 @@ mod tests {
             result_type: ProgramType::Int32,
             pointer_result: None,
             result_object_class: None,
-            projection: None,
             arguments: vec![SpecPureFunctionArgument::ObjectPointer {
                 argument: Box::new(SpecPureFunctionArgument::Value(value)),
                 object_class: class(),
@@ -408,7 +408,7 @@ mod tests {
     #[test]
     fn declarations_select_only_used_formals_and_respect_lexical_aliases() {
         let spec = SpecProposition::Defined(SpecExpression::Let {
-            name: "p".to_string(),
+            name: "p".to_string().into(),
             value: Box::new(variable("q")),
             body: Box::new(typed(variable("p"))),
         });
@@ -420,7 +420,7 @@ mod tests {
     #[test]
     fn quantified_names_do_not_strengthen_same_named_program_inputs() {
         let spec = SpecProposition::ForAllPointer {
-            name: "p".to_string(),
+            name: "p".to_string().into(),
             variable: Variable(501),
             program_type: ProgramType::Int32Pointer,
             body: Box::new(SpecProposition::Defined(typed(variable("p")))),

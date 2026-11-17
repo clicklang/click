@@ -1936,7 +1936,7 @@ impl EqualityGraph {
                             };
                             pointers.push(address.as_ref().clone());
                         }
-                        N::MachineLiteral(_) => {}
+                        N::MachineLiteral(_) | N::ThreadHandle(_) => {}
                         // Native pointer discovery treats conditionals, Boolean
                         // casts and folds as opaque; do not inspect their children.
                         N::MachineIf { .. }
@@ -2006,6 +2006,18 @@ impl EqualityGraph {
             state.register_pointer_address(&pointer);
         }
         state.close(Vec::new());
+    }
+
+    /// Recover one typed handle witness from the selected word's equality
+    /// class. This is a value identity lookup; the thread ledger grants rights.
+    pub(in crate::kernel) fn thread_handle_for_word(
+        &self,
+        term: &MachineTerm,
+    ) -> Option<crate::kernel::ThreadHandleId> {
+        let term = exact_read_comparison_input(term);
+        let mut state = self.state.lock().expect("equality graph");
+        self.register_machine_operands(&mut state, &term, &term);
+        state.terms.thread_handle(&term)
     }
 
     pub(in crate::kernel) fn are_uint64_equal(
@@ -3363,13 +3375,21 @@ impl EqualityGraph {
 /// as its retained name. Preserve that exact state before applying the
 /// legacy comparison form to inputs that do not already have an identity.
 fn exact_read_comparison_input(term: &MachineTerm) -> MachineTerm {
-    if let MachineTerm::MemoryLoad(memory, pointer, kind) = term
-        && crate::kernel::eval::is_selected_scalar_read(memory.shared_memory(), pointer, *kind)
-    {
-        term.clone()
-    } else {
-        crate::kernel::canonical_term(term)
+    if let MachineTerm::MemoryLoad(memory, pointer, kind) = term {
+        if crate::kernel::eval::is_selected_scalar_read(memory.shared_memory(), pointer, *kind) {
+            return term.clone();
+        }
+        if kind.is_word32() || *kind == LoadKind::Bits64 {
+            // Select the read identity without recovering a cached value.
+            // Already-selected reads above retain their producer's identity.
+            return crate::kernel::canonical_form_of_load(
+                memory.shared_memory().clone(),
+                pointer.as_ref().clone(),
+                *kind,
+            );
+        }
     }
+    crate::kernel::canonical_term(term)
 }
 
 #[cfg(test)]

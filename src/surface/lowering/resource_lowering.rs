@@ -2791,6 +2791,10 @@ pub(in crate::surface) fn resource_argument_to_program_expression(
     argument: &ContractExpression,
 ) -> Result<ProgramExpression, ClickError> {
     match argument {
+        ContractExpression::IntegerContext(_) => Err(ClickError::new(
+            "an Integer context is not a C resource argument",
+        )),
+
         ContractExpression::Proposition(_) => {
             Err(ClickError::new("a Prop is not a C resource argument"))
         }

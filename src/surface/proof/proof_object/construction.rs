@@ -321,7 +321,11 @@ impl<'a> Proof<'a> {
                 claim_label,
                 theorem_context,
                 source_state,
-                source_names: theorem_context.diagnostic_names.iter().cloned().collect(),
+                source_names: theorem_context
+                    .diagnostic_names
+                    .iter()
+                    .map(|(var, name)| (*var, name.into()))
+                    .collect(),
                 spec_definitions,
                 theorem_environment,
                 induction_setup,
@@ -575,7 +579,7 @@ impl<'a> Proof<'a> {
         original_requirements: &'a [Requirement],
         indexed: Option<ProofFacts>,
     ) -> Self {
-        let facts = indexed.unwrap_or_else(|| ProofFacts::from_ordered(available.as_slice()));
+        let facts = indexed.unwrap_or_else(|| available.indexed_proof_facts());
         let lowering_context = resource_context_observable_facts_for_proof(
             fixed_state.state.resources(),
             facts.clone(),

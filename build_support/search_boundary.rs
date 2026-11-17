@@ -79,6 +79,24 @@ impl Boundary<'_> {
         {
             self.errors.push(format!("{}: legacy loop preparation belongs only to the explicit independent-input adapter", self.path));
         }
+        if (self.path == "src/kernel/functions/mixed_return_resources.rs"
+            && self.function == "build"
+            && name == "normalized")
+            || (self.path == "src/kernel/functions.rs"
+                && self.function == "recover_candidate_stable_view_resources"
+                && matches!(name, "permitted_descriptions" | "view_occurrences_for_fact"))
+            || (self.path == "src/kernel/functions/return_loan_backing.rs"
+                && self.function == "select"
+                && matches!(
+                    name,
+                    "permitted_descriptions"
+                        | "stable_views"
+                        | "exact_pointer_aliases"
+                        | "transferred_holds"
+                ))
+        {
+            self.errors.push(format!("{}: {} must consume selected return evidence without ownership rediscovery ({name})", self.path, self.function));
+        }
         if self.path == "src/kernel/functions/mixed_return_resources.rs"
             && self.function == "project_return_resource_cores"
             && matches!(name, "owned_occurrences_for_fact" | "occurrences_for_fact")

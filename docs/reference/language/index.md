@@ -294,22 +294,39 @@ int32 identity(int32 x) throws int32 {
 
 Ordinary `ensures` is owed only by normal returns and may use `result`;
 `exceptional ensures` is owed only by throws and may use `exception`. Neither
-payload name is available in the opposite family. Omitting `throws int32`
+payload name is available in the opposite family. Omitting `throws`
 declares a nonthrowing interface.
 
-Exceptional contracts are pure: the exceptional family cannot carry
-resources or mutable effects. A named contract or an `extern` declaration
-may say `throws int32` too, and a call through a pointer under a throwing
-contract, or to a throwing `extern`, has both outcomes, as a direct call
+A direct throwing contract may borrow memory with `owns` and `views`.
+Those permissions hold on both exits; `exceptional ensures` may describe
+changed memory and use `old(...)`. `consumes`, `produces`, `constructs`,
+conditional resource clauses and nonmemory resources remain refused with
+`throws`. Normal guarantees never become exceptional guarantees.
+
+The C++ `ios_failure` import profile also supports
+`throws std::ios_base::failure`: `exception` is an opaque value of exactly
+that type, with no addressable layout, message or `what()` accessor
+([import boundary](../cli/import.md)).
+
+For ordinary imported C++ aggregates, the `typed` profile permits
+`throws Error` or `throws errors::ParseError`. The name resolves to an
+imported class; two classes with the same fields remain distinct exception
+types. The payload is opaque, so `exception.code` is refused. Initializers in
+`throw Error{expression}` are checked normally; opaque payloads do not hide
+invalid reads or arithmetic overflow. Empty tag classes are supported too.
+
+Throwing named callback contracts remain pure and accept only `throws int32`.
+An `extern` declaration may carry the same direct throwing interface. A call
+through a pointer under a throwing contract, or to a throwing `extern`, has
+both outcomes, as a direct call
 does. Whether a function may throw is part of its contract, not of its
 pointer type: a function that never throws meets a contract that may, a
 function that may throw meets only a contract that may, and its
 `exceptional ensures` must give the contract's
 (`mdtests/exceptional_named_contract.md`,
 `mdtests/exceptional_external_contract.md`). An explicit refinement theorem
-for a source that may throw is not supported yet, and nor are handlers and
-unwinding. A separate, object-free C++ scalar-exception
-import profile accepts typed `throw int32`, one typed `try`/`catch (int name)`
+for a source that may throw is not supported yet. The separate C++
+scalar-exception import profile accepts typed `throw int32`, one typed `try`/`catch (int name)`
 with a fresh payload binding, and the narrow single-guard cleanup shape
 documented by the import reference. It still rejects nested handlers and other
 catch forms. A direct modular call whose normal
@@ -337,7 +354,7 @@ int32 caller(int32 x) throws int32 {
 
 The scalar C++ profile can turn a caught `int32` exception into a normal
 return without a `throws` declaration on the catching function. This does not
-model general object unwinding or exceptional resource transfer.
+model general object unwinding or consuming/producing exceptional resource transitions.
 
 ### Recursion
 
@@ -1196,15 +1213,12 @@ Arithmetic may treat an opaque result as an unknown Integer without unfolding.
 A smart tactic may emit a checked unfold step; expansion makes that step visible.
 See [the function example](https://github.com/clicklang/click/blob/master/mdtests/integer_function_successor.md).
 
-One kind of call is not opaque. A library function whose body is exactly
-`match s { V(.., x, ..) => x }` is a field of its argument, and applied to a
-value built with that constructor it is the field:
-`slice::len(Slice<uint8>::Slice(p, n))` is `n`. This holds wherever the
-constructed value arrives, including a theorem parameter that `apply` binds
-to one, so a theorem stated over a slice applies to a slice built from its
-pointer and length. On any other argument the call stays opaque, and a
-program's own function always does
-([example](https://github.com/clicklang/click/blob/master/mdtests/a_library_field_function_of_a_constructed_value_is_the_field.md)).
+A library function whose body is exactly `match s { V(.., x, ..) => x }`,
+such as `slice::len`, is opaque in the same way: `slice::len(Slice<uint8>::Slice(p,
+n))` lowers as that call, not as `n`, and `unfold` opens it to the field. The
+goal is the same term whether the constructed value is written at the call or
+arrives by `rewrite`
+([example](https://github.com/clicklang/click/blob/master/mdtests/a_library_field_function_of_a_constructed_value_stays_a_call.md)).
 
 Machine-integer `forall` and `exists` binders retain their declared width and
 signedness, including `int64` and `uint8`. `intro`, `obtain`, and `witness`

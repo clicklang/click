@@ -25,16 +25,13 @@ pub(super) fn requirements_with_structural_unfolds(
     requirement_pure_facts: &PureFactList,
 ) -> Result<PureFactList, String> {
     let unfolded_predicates = structural_unfold_tactic_names(function_block);
-    let unfolded = unfold_available_predicate_facts(
+    let unfolded = crate::surface::checking::unfold_available_predicate_fact_delta(
         spec_definitions,
         &unfolded_predicates,
         requirement_pure_facts,
     )?;
-    // Unfolding only appends, so the result extends the list and keeps the
-    // context it carried.
-    debug_assert!(unfolded.starts_with(requirement_pure_facts));
     let mut facts = requirement_pure_facts.clone();
-    facts.extend(unfolded.into_iter().skip(requirement_pure_facts.len()));
+    facts.extend(unfolded);
     Ok(facts)
 }
 

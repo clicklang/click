@@ -26,7 +26,7 @@ fn preserves_source_and_checks_obligations(fixture: &str) {
     assert!(!proof.contains("statement("));
     ProgramVerificationSession::new_program_prepared(&proof, &prepared).unwrap();
     for invalid in [
-        proof.replacen("views bytes[0..bytes.len()];", "", 1),
+        proof.replacen("views bytes[0..bytes.len()];", "views bytes[0..0];", 1),
         proof.replacen(
             "== old(prefix(bytes, bytes.len()));",
             "== old(prefix(bytes, bytes.len())) + 1;",

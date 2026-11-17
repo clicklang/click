@@ -2839,7 +2839,7 @@ fn the_execution_identity_counter_refuses_at_the_first_reserved_range() {
     // (`4_000_000`) are above it by the same reasoning.
     for name in ["index", "accumulator", "item"] {
         assert!(
-            crate::kernel::spec::spec_fold_bound_variable(name, 0).0
+            crate::kernel::spec::spec_fold_bound_variable(&name.into(), 0).0
                 >= ExecutionBudget::KERNEL_VARIABLE_CEILING,
             "a spec fold binder must lie above everything an execution can issue"
         );
@@ -3117,7 +3117,7 @@ fn the_spec_fold_binder_range_is_disjoint_from_every_other_producer() {
     );
     for name in ["accumulator", "item", "index", "sum", "nested"] {
         for salt in [0, 1] {
-            let variable = crate::kernel::spec::spec_fold_bound_variable(name, salt);
+            let variable = crate::kernel::spec::spec_fold_bound_variable(&name.into(), salt);
             assert!(
                 fold_binders.contains(&variable.0),
                 "{name} salt {salt}: {variable:?}"
@@ -3471,7 +3471,6 @@ fn statement_reservations_cover_integer_arguments_of_machine_applications() {
         result_type: ProgramType::Int32,
         pointer_result: None,
         result_object_class: None,
-        projection: None,
     };
     assert_statement_reserves_application_integer_argument(
         SpecProposition::Comparison {

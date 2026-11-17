@@ -1773,7 +1773,9 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
                     source_path.display().to_string(),
                 ])?;
                 let expanded = fs::read_to_string(expanded_path).unwrap();
-                assert!(expanded.contains("integer_product_bounds bounds [0, 1, 2, 3]"));
+                // The product bound is an ordinary arithmetic proof, not a
+                // certificate naming its bounds.
+                assert!(!expanded.contains("bounds ["), "{expanded}");
                 assert!(
                     !expanded.contains("step_until(function.exit);"),
                     "the selected execution must expand"

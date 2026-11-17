@@ -69,7 +69,7 @@ pub(super) fn raise(
     value: V<'_>,
     parameters: ParameterBinding<'_>,
     state: &ExecutionState,
-    names: &BTreeMap<Variable, String>,
+    names: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SurfaceTerm> {
     match value {
         V::Shared(root) => raise_kernel_term(root, parameters, state, names),
@@ -111,6 +111,7 @@ pub(super) fn load_free(root: V<'_>) -> bool {
                 _ => return false,
             },
             V::Legacy(term) => match term {
+                MachineTerm::ThreadHandle(_) => {}
                 MachineTerm::MemoryLoad(..) => return false,
                 MachineTerm::PointerAddress(pointer, _) => pending.extend(
                     pointer

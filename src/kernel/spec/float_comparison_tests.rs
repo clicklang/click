@@ -96,7 +96,6 @@ fn float_call_results_retain_nested_arguments_and_match_native_production() {
             result_type: format.program_type(),
             pointer_result: None,
             result_object_class: None,
-            projection: None,
         };
         let expression = call(call(SpecExpression::Value(
             format.value(MachineTerm::Variable(Variable(1008203))),
