@@ -137,6 +137,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
+        if matches!(node, UnsignedSumBound { .. }) {
+            return Self::try_widened_unsigned_sum_using(proof, &premises);
+        }
         if matches!(node, IntegerQuotientShift { .. }) {
             return Self::try_quotient_shift_using(proof, &premises);
         }

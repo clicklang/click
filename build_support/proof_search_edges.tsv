@@ -781,3 +781,8 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_signed_interv
 src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_restricted_signed_definedness_closure	driver	3
 src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_restricted_signed_definedness_closure	try_restricted_signed_definedness_closure	1
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_restricted_signed_definedness_closure	try_restricted_signed_definedness_closure	1
+src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_widened_unsigned_sum_using	prove_operation_identities	1
+src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_widened_unsigned_sum_using	try_integer_composition_using	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_normalization_closure	try_widened_unsigned_sum_using	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_widened_unsigned_sum_using	1
+src/surface/proof/smart_closures/specialized.rs	search	ProofSearch::apply_specialized_composition	try_widened_unsigned_sum_using	1

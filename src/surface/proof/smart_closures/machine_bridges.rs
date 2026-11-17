@@ -166,6 +166,87 @@ fn written_operands_inner(
 }
 
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
+    /// Replace the widened uint32-sum shortcut with its ordinary observation
+    /// identity and selected Integer proof. Native widening is value preserving;
+    /// the sum's int64 range follows from its operands' uint32 type ranges.
+    pub(in crate::surface::proof) fn try_widened_unsigned_sum_using(
+        input: &Proof<'a>,
+        premises: &[ClickProposition],
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_widened_unsigned_sum_using");
+        let (Some(goal), Some(surface)) = (input.goal(), input.surface_goal()) else {
+            return Ok(None);
+        };
+        let Proposition::ConditionIs(condition, _) = goal else {
+            return Ok(None);
+        };
+        if crate::kernel::PureFactContext::new()
+            .widened_unsigned_sum_bound_premises(condition)
+            .is_none()
+            || signed_intervals::has_retained_read_source(surface)
+            || premises
+                .iter()
+                .any(signed_intervals::has_retained_read_source)
+        {
+            return Ok(None);
+        }
+        for source in premises {
+            let kernel = input.lower_cited_surface_proposition(source, "widened sum premise")?;
+            if !input.facts().listed_premise_available(&kernel, &[], false) {
+                return Ok(None);
+            }
+        }
+        // Only the goal's operations need identities; unrelated cited
+        // expressions must not introduce extra overflow obligations.
+        let identities = operation_identities(machine_observations(goal, &[]));
+        let observed = observed_native_surface_comparison(goal, surface);
+        let mut written =
+            written_integer_observations(premises.iter().chain(std::iter::once(&observed)));
+        // A returned scalar can name the entire sum without writing either
+        // widening. Raise its two operands from the retained program state.
+        // No read identities, program points, or version points are changed.
+        if let Some(view) = input.premise_fixed_state_view() {
+            let _recorded = super::super::surface_synthesis::SynthesisRecordedPointsScope::enter(
+                view.fixed_state.recorded_states,
+            );
+            let query =
+                crate::kernel::machine_integer::comparison::comparison_view(condition, true)
+                    .expect("recognized widened sum comparison");
+            let (_, _, operands) = query.operands[0]
+                .operand_view()
+                .binary()
+                .expect("recognized widened sum operation");
+            for operand in operands {
+                let operand = operand.retain(MachineIntegerType::Int64);
+                let root = operand.shared_operand().ok_or_else(|| {
+                    input.step_error("widened unsigned sum operand has no shared term")
+                })?;
+                let source = super::super::surface_synthesis::raise_kernel_term(
+                    root,
+                    view.parameter_binding,
+                    view.fixed_state.state,
+                    &BTreeMap::new(),
+                )
+                .ok_or_else(|| {
+                    input.step_error(
+                        "cannot raise a widened unsigned sum operand from its retained source",
+                    )
+                })?;
+                written.push(observe(source));
+            }
+        }
+        let identities = identities.iter().collect::<Vec<_>>();
+        let Ok((proof, established)) =
+            Self::prove_operation_identities(input, &identities, &written, Some(premises))?
+        else {
+            return Ok(None);
+        };
+        let mut sources = premises.to_vec();
+        sources.extend(established.into_iter().map(|(_, source)| source));
+        Self::try_integer_composition_using(&proof, &sources)
+    }
+
     /// Prove one explicitly bounded shift or mask through local observation
     /// facts. The arithmetic in this route uses only the ordinary emitter.
     pub(in crate::surface::proof) fn try_machine_bridge_using(
@@ -627,5 +708,109 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
         }
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod widened_sum_tests {
+    use crate::surface::{
+        expand_c_claim_source_by_label, verify_c_sources, without_implicit_solve,
+    };
+
+    fn replay(source: &str, c: &[(&str, &str)], label: &str) {
+        let expanded = expand_c_claim_source_by_label(source, c, label)
+            .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
+        assert!(!expanded.contains("normalize("), "{expanded}");
+        assert!(!expanded.contains("solve("), "{expanded}");
+        without_implicit_solve(|| verify_c_sources(&expanded, c))
+            .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+    }
+
+    #[test]
+    #[ignore = "nightly: widened unsigned sums with strict expansion replay"]
+    fn widened_unsigned_sums_expand_without_normalize() {
+        for (parameters, bounds, goal) in [
+            (
+                "a: uint32, b: uint32",
+                "a <= 10u32; b <= 20u32;",
+                "a as int64 + b as int64 <= 30i64",
+            ),
+            (
+                "a: uint32, b: uint32",
+                "",
+                "a as int64 + b as int64 <= 8589934590i64",
+            ),
+            (
+                "a: uint32, b: uint8",
+                "a <= 4294967040u32;",
+                "a as int64 + b as int64 <= 4294967295i64",
+            ),
+            (
+                "a: uint8, b: uint8",
+                "",
+                "a as int64 + b as int64 <= 510i64",
+            ),
+            (
+                "a: uint16, b: uint16",
+                "",
+                "a as int64 + b as int64 <= 131070i64",
+            ),
+            ("a: uint32", "a <= 10u32;", "a as int64 + 7i64 <= 17i64"),
+            (
+                "a: uint32, b: uint32",
+                "a <= 10u32; b <= 20u32;",
+                "to_integer(a as int64 + b as int64) <= 30",
+            ),
+            (
+                "a: uint32, b: uint32",
+                "31u32 <= a;",
+                "not (a as int64 + b as int64 <= 30i64)",
+            ),
+        ] {
+            let requires = bounds
+                .split(';')
+                .filter(|p| !p.trim().is_empty())
+                .map(|p| format!("requires {p};"))
+                .collect::<String>();
+            for tactic in [format!("solve() using {{ {bounds} }};"), "solve();".into()] {
+                let source = format!(
+                    "theorem widened({parameters}) {{ {requires} ensures {goal} by {{ {tactic} }} }}"
+                );
+                replay(&source, &[], "widened.ensures_0");
+            }
+        }
+        let c = "long add_byte(unsigned sum, unsigned char byte) { unsigned word = (unsigned)byte; long wide = (long)sum + (long)word; return wide; }";
+        let source = r#"verifying "wide.c";
+            int64 add_byte(uint32 sum, uint8 byte) {
+                requires sum <= 4294967040u32;
+                ensures result <= 4294967295i64 by {
+                    step_until(function.exit);
+                    solve() using { (byte as uint32) <= 255u32; sum <= 4294967040u32; };
+                }
+            }"#;
+        replay(source, &[("wide.c", c)], "add_byte.ensures_0");
+    }
+
+    #[test]
+    #[ignore = "nightly: widened unsigned sum refusal controls"]
+    fn widened_unsigned_sums_require_the_selected_bounds() {
+        for (bounds, goal, selected) in [
+            (
+                "requires a <= 10u32; requires b <= 20u32;",
+                "a as int64 + b as int64 <= 30i64",
+                "a <= 10u32;",
+            ),
+            (
+                "requires a <= 10u32; requires b <= 20u32;",
+                "a as int64 + b as int64 <= 29i64",
+                "a <= 10u32; b <= 20u32;",
+            ),
+            ("", "a as int64 + b as int64 <= 8589934589i64", ""),
+        ] {
+            let source = format!(
+                "theorem bad(a: uint32,b: uint32) {{ {bounds} ensures {goal} by {{ solve() using {{ {selected} }}; }} }}"
+            );
+            assert!(verify_c_sources(&source, &[]).is_err(), "{source}");
+        }
     }
 }

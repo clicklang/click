@@ -2236,7 +2236,15 @@ to these leaves, explicit product bounds, and rounding laws. A root conditional
 with an available guard expands to a `known()` arm equation and a rewrite.
 Scalar signed interval claims, operation bounds, and narrowed casts expand
 through selected Integer and machine-observation proofs, without `normalize()`.
-Their intermediate facts replay with implicit solving disabled. Retained-read
+Their intermediate facts replay with implicit solving disabled. Widened unsigned
+sums such as `(a as int64) + (b as int64) <= 30i64`, from selected
+`a <= 10u32` and `b <= 20u32`, also expand through exact operation ranges,
+widening identities, and ordinary Integer arithmetic. Each operand is widened
+before addition. The route supports uint8/uint16 source ranges, uint32 values
+above `INT32_MAX`, and nonnegative int64 constants through `UINT32_MAX`.
+Missing selected bounds and bounds one below the attainable sum are refused.
+See [`widened_unsigned_sum_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/widened_unsigned_sum_bounds.md)
+and its adjacent refusal fixture. Retained-read
 and history adapters keep their compatibility normalizer while read/state
 transport is migrated separately; they do not select a different memory state
 or version point. Other specialized selected rules

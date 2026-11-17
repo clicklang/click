@@ -103,7 +103,10 @@ fn symbolic_shape(
                 }
                 result
             }
-            _ => BTreeMap::from([(vec![term.id()], BigInt::one())]),
+            _ => BTreeMap::from([(
+                vec![SharedIntegerTerm::from(term.value_read().clone()).id()],
+                BigInt::one(),
+            )]),
         }
     };
     shape.retain(|_, value| !value.is_zero());
@@ -760,8 +763,11 @@ impl<'p, 'a> Algebra<'p, 'a> {
             _ => {
                 // Use the ordinary argument capture at this proof state. A
                 // fresh quantifier would discard the operand's native domains.
-                let term =
-                    SharedIntegerTerm::from(self.proof.capture_instantiate_integer_argument(e)?);
+                let captured = self.proof.capture_instantiate_integer_argument(e)?;
+                // Value-preserving widenings share an arithmetic atom. The
+                // ordinary known equation below retains the explicit bridge
+                // between this source expression and the chosen atom spelling.
+                let term = SharedIntegerTerm::from(captured.value_read().clone());
                 let (key, c) = if let Some(c) = term.as_const() {
                     (vec![], c.clone())
                 } else {
@@ -810,14 +816,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return input.driver().apply_step(ProofStep::Known).map(Some);
         }
         // Only inspect the written mathematical arithmetic spine; opaque values
-        // keep their meaning and domain. Ordinary additive leaves need no planner.
+        // keep their meaning and domain. Exact additive leaves need no planner;
+        // value-preserving widenings first need their explicit known equations.
         let Proposition::ConditionIs(crate::kernel::integer_comparison_condition!(a, b), _) = goal
         else {
             return Ok(None);
         };
         let mut pending = vec![a.clone(), b.clone()];
         let mut seen = std::collections::HashSet::new();
-        let mut multiplication = false;
+        let mut requires_expansion = false;
         while let Some(term) = pending.pop() {
             if crate::instrumentation::deadline_exceeded_with_work(1) {
                 return Ok(None);
@@ -827,7 +834,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             match term.as_ref() {
                 crate::kernel::IntegerTerm::Multiply(..) => {
-                    multiplication = true;
+                    requires_expansion = true;
                     break;
                 }
                 crate::kernel::IntegerTerm::Add(a, b)
@@ -835,10 +842,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     pending.extend([a.clone(), b.clone()])
                 }
                 crate::kernel::IntegerTerm::Negate(a) => pending.push(a.clone()),
+                _ if term.value_read() != term.as_ref() => {
+                    requires_expansion = true;
+                    break;
+                }
                 _ => {}
             }
         }
-        if !multiplication {
+        if !requires_expansion {
             return Ok(None);
         }
         let mut shapes = std::collections::HashMap::new();

@@ -45,6 +45,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return search_input.driver().apply_step(ProofStep::Known);
         }
+        if let Some(closed) =
+            Self::try_widened_unsigned_sum_using(search_input, premises.as_deref().unwrap_or(&[]))?
+        {
+            return Ok(closed);
+        }
         if let Some(premises) = &premises
             && let Some(closed) = Self::try_address_words_using(search_input, premises)?
         {
@@ -10201,6 +10206,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Option<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_restricted_solve_closure_before_arithmetic");
+        if let Ok(Some(closed)) = Self::try_widened_unsigned_sum_using(search_input, surfaces) {
+            return Some(closed);
+        }
         if let Ok(Some(closed)) = Self::try_address_words_using(search_input, surfaces) {
             return Some(closed);
         }

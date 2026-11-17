@@ -252,3 +252,4 @@ try_quotient_shift_using
 try_address_words_using
 
 try_interval_fact_using
+try_widened_unsigned_sum_using
