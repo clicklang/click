@@ -410,6 +410,16 @@ impl EvaluatedReturnResources {
         let (state, _) = composition
             .body_return()
             .expect("executed body construction");
+        // A proof step can retain this same named authority in the captured
+        // frame. Record its actual occurrence before consumption; equal
+        // descriptions in independent contexts are not the same authority.
+        let shared_instance = matches!(fact.resource(), Resource::Instance(_))
+            .then(|| {
+                body.remaining
+                    .unique_owned_occurrence_for_fact(&fact)
+                    .map(|(source, _)| source)
+            })
+            .flatten();
         body.remaining = consume_returned_resource_unit(
             body.remaining.clone(),
             &fact,
@@ -423,6 +433,15 @@ impl EvaluatedReturnResources {
                 "function body does not yet establish its joint returned resource units".into(),
             )
         })?;
+        if let Some(source) = shared_instance
+            && body.frame.owned_fact_for_occurrence(source).is_some()
+        {
+            body.frame = body
+                .frame
+                .clone()
+                .without_exact_representation_for_occurrence(source)
+                .expect("captured shared instance occurrence");
+        }
         let (resources, mut inserted) = self.resources.unchecked_with_facts_and_occurrences([fact]);
         self.resources = resources;
         self.occurrences.push(EvaluatedReturnOccurrence {
