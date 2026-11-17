@@ -1217,30 +1217,8 @@ impl TermClasses {
                                 .address(pointer.block.clone(), pointer.offset.clone())
                                 .0;
                             let numeric = self.read_address(address);
-                            let read =
-                                self.intern_node(Node::UInt64Read(memory.read_identity(), numeric));
-                            let retained_state = memory.read_identity();
-                            let origin = super::load_origin(term, &memory);
-                            let source = WideReadSource {
-                                read,
-                                retained_state: memory.arena_id(),
-                                origin: origin.as_ref().map(|origin| origin.arena_id()),
-                                address,
-                            };
-                            crate::instrumentation::record_deterministic_work(1);
-                            if !self.registered_uint64_cell_reads.contains(&source) {
-                                self.registered_uint64_cell_reads =
-                                    self.registered_uint64_cell_reads.with_value(source);
-                                self.pending_cell_reads.push(super::PendingCellRead {
-                                    read,
-                                    memory,
-                                    origin,
-                                    pointer,
-                                    kind: super::CellRead::UInt64,
-                                    only: None,
-                                });
-                            }
-                            Node::UInt64Read(retained_state, numeric)
+                            // Values enter through explicit equations, never cell-cache lookups.
+                            Node::UInt64Read(memory.read_identity(), numeric)
                         } else if let Some(pointer) = term.address_pointer() {
                             values.push(self.numeric_address(pointer));
                             continue;
