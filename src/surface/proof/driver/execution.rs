@@ -973,6 +973,7 @@ fn deferred_post_execution_region(
             InternalProofNode::CallOutcomes {
                 index,
                 source_index,
+                payload_bindings,
                 returned_branch,
                 threw_branch,
                 continuation,
@@ -982,6 +983,7 @@ fn deferred_post_execution_region(
                     tactic_index: *index,
                     source_index: *source_index,
                     tactic: PostExecutionTactic::CallOutcomes {
+                        payload_bindings: payload_bindings.clone(),
                         returned_tactics: deferred_post_execution_region(returned_branch)?,
                         threw_tactics: deferred_post_execution_region(threw_branch)?,
                     },
@@ -1979,6 +1981,7 @@ fn try_check_structural_function_proof_inner<'a>(
             InternalProofNode::CallOutcomes {
                 index,
                 source_index,
+                payload_bindings,
                 returned_branch,
                 threw_branch,
                 continuation,
@@ -1986,7 +1989,9 @@ fn try_check_structural_function_proof_inner<'a>(
                 if !proof.is_at_function_exit() {
                     let owner = proof.clone();
                     let proof_at_call = proof.with_execution_tactic_index(*index)?;
-                    let Some((split, record)) = proof_at_call.split_focused_call_outcomes()? else {
+                    let Some((split, record)) =
+                        proof_at_call.split_focused_call_outcomes(payload_bindings.clone())?
+                    else {
                         return decline();
                     };
                     let mut advanced = split;
@@ -1994,7 +1999,8 @@ fn try_check_structural_function_proof_inner<'a>(
                         (true, returned_branch.as_ref()),
                         (false, threw_branch.as_ref()),
                     ] {
-                        let focused = advanced.focus_split_arm(&record, take_returned)?;
+                        let focused =
+                            advanced.focus_call_outcome_arm(&record, take_returned, &owner)?;
                         let next = driven!(advance_focused_execution_region(
                             focused,
                             Some(&record),
@@ -2004,7 +2010,7 @@ fn try_check_structural_function_proof_inner<'a>(
                             owning_source_index,
                             1,
                         ));
-                        advanced = next;
+                        advanced = next.leave_call_outcome_arm(&owner);
                     }
                     if !advanced.is_at_function_exit() {
                         return decline();
@@ -2026,6 +2032,7 @@ fn try_check_structural_function_proof_inner<'a>(
                     *index,
                     *source_index,
                     PostExecutionTactic::CallOutcomes {
+                        payload_bindings: payload_bindings.clone(),
                         returned_tactics,
                         threw_tactics,
                     },
@@ -4071,6 +4078,7 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
             InternalProofNode::CallOutcomes {
                 index,
                 source_index,
+                payload_bindings,
                 returned_branch,
                 threw_branch,
                 continuation,
@@ -4078,7 +4086,9 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                 if !proof.is_at_function_exit() {
                     let owner = proof.clone();
                     let at_outcomes = proof.with_execution_tactic_index(*index)?;
-                    let Some((split, record)) = at_outcomes.split_focused_call_outcomes()? else {
+                    let Some((split, record)) =
+                        at_outcomes.split_focused_call_outcomes(payload_bindings.clone())?
+                    else {
                         return decline();
                     };
                     let mut advanced = split;
@@ -4086,7 +4096,8 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                         (true, returned_branch.as_ref()),
                         (false, threw_branch.as_ref()),
                     ] {
-                        let focused = advanced.focus_split_arm(&record, take_returned)?;
+                        let focused =
+                            advanced.focus_call_outcome_arm(&record, take_returned, &owner)?;
                         let next = driven!(advance_focused_execution_region(
                             focused,
                             Some(&record),
@@ -4096,7 +4107,7 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                             owning_source_index,
                             depth + 1,
                         ));
-                        advanced = next;
+                        advanced = next.leave_call_outcome_arm(&owner);
                     }
                     let returned_exit = advanced.arm_at_function_exit(&record, true);
                     let threw_exit = advanced.arm_at_function_exit(&record, false);
@@ -4152,6 +4163,7 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                     *index,
                     *source_index,
                     PostExecutionTactic::CallOutcomes {
+                        payload_bindings: payload_bindings.clone(),
                         returned_tactics,
                         threw_tactics,
                     },

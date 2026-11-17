@@ -1216,7 +1216,7 @@ fn maybe_throwing_step_diagnostic_teaches_outcomes_syntax() {
     assert!(message.contains("returned => { }"), "{message}");
     assert!(message.contains("threw => { }"), "{message}");
     assert!(
-        message.contains("all\ncontract claims are closed"),
+        message.contains("successor and close its contract claims"),
         "{message}"
     );
 }

@@ -1282,7 +1282,7 @@ assumptions. The source container owns expansion of its nested proof.
 
 ### Execution outcomes
 
-**Form:** `outcomes { returned => { ... } threw => { ... } }`
+**Form:** `outcomes { returned[(value)] => { ... } threw[(error)] => { ... } }`
 
 **Specialized.** Write it at a C++ call that may throw, when the two outcomes
 need different proofs; the implicit tail splits them for you. At a maybe-throwing
@@ -1295,13 +1295,21 @@ call's own nested `outcomes`. The implicit tail splits every maybe-throwing call
 way, inside a C `if` arm as well as at top level, and expansion writes the split
 it took.
 
+Write `returned(value)` to name the checked value of a call whose result the
+program uses. Write `threw(error)` to name the thrown payload. Each name is a
+proof binding scoped to its arm. At function exit, the same syntax selects
+the call edge already recorded on the path and binds the same call payload.
+For example, a call's returned value still names that value after the caller
+transforms it, and a caught exception names the original thrown value even
+if the caller returns normally. An arm without a name can ignore its payload.
+
 **Failure, checking, and tools:**
 
 The checked execution must establish exactly one edge of each kind. Each arm has
 its own outcome goal and must close it; neither arm can use the other's facts or
 state. Expansion preserves both certificates.
 
-**Checked examples:** [`cpp_import.rs`](https://github.com/clicklang/click/blob/master/tests/cpp_import.rs), [`outcomes_routes_a_throw_that_leaves_the_function.md`](https://github.com/clicklang/click/blob/master/mdtests/outcomes_routes_a_throw_that_leaves_the_function.md)
+**Checked examples:** [`cpp_import.rs`](https://github.com/clicklang/click/blob/master/tests/cpp_import.rs), [`outcomes_routes_a_throw_that_leaves_the_function.md`](https://github.com/clicklang/click/blob/master/mdtests/outcomes_routes_a_throw_that_leaves_the_function.md), [`outcomes_payload_bindings.md`](https://github.com/clicklang/click/blob/master/mdtests/outcomes_payload_bindings.md)
 
 ### Simplification
 

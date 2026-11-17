@@ -212,7 +212,7 @@ fn next_checked_post_execution_tactic<'a>(
             );
             continue;
         }
-        let scope = deferred
+        let mut scope = deferred
             .lexical_bindings
             .clone()
             .or_else(|| arm_scope.clone());
@@ -258,18 +258,26 @@ fn next_checked_post_execution_tactic<'a>(
                 )
             }
             PostExecutionTactic::CallOutcomes {
+                payload_bindings,
                 returned_tactics,
                 threw_tactics,
             } => {
                 let proof = proof.ok_or_else(|| {
                     ClickError::new("post-execution `outcomes` has no focused outcome Proof")
                 })?;
-                let returned = proof
-                    .clone()
-                    .at_source_tactic(deferred.source_index)
-                    .checked_call_returned(call_depth)?;
+                let focused = proof.clone().at_source_tactic(deferred.source_index);
+                let edge = focused.checked_call_outcome(call_depth)?;
+                let returned = edge.returned;
+                if let Some(name) = &payload_bindings[usize::from(!returned)] {
+                    let payload = edge.payload.clone().ok_or_else(|| {
+                        focused.step_error(format!(
+                            "`outcomes` cannot bind `{name}`: this call edge has no bindable payload"
+                        ))
+                    })?;
+                    scope = Some(focused.scope_call_payload(scope.as_ref(), name, payload));
+                }
                 (
-                    SurfacePathSelector::CallOutcome,
+                    SurfacePathSelector::CallOutcome(payload_bindings.clone()),
                     returned,
                     if returned {
                         returned_tactics

@@ -18473,6 +18473,50 @@ fn throwing_call_forks_expand_and_reverify_in_every_position() {
 }
 
 #[test]
+#[ignore = "nightly: live and exit-time call payload expansion and replay"]
+fn call_outcome_payload_bindings_expand_and_replay() {
+    let (source, owned_sources) = mdtest_sources("mdtests/outcomes_payload_bindings.md");
+    let sources = crate::cli::source_refs(&owned_sources);
+    for label in ["live.contract", "deferred.contract"] {
+        let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+            .unwrap_or_else(|error| panic!("{label}: {error}"));
+        assert_eq!(
+            expanded.matches("returned(value) =>").count(),
+            2,
+            "{expanded}"
+        );
+        assert_eq!(expanded.matches("threw(error) =>").count(), 2, "{expanded}");
+        crate::surface::without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
+        })
+        .unwrap_or_else(|error| panic!("{label}: {error}\n{expanded}"));
+    }
+    for offset in source
+        .match_indices("have value == 5")
+        .map(|(offset, _)| offset)
+    {
+        let mut changed = source.clone();
+        changed.replace_range(offset..offset + "have value == 5".len(), "have value == 6");
+        assert!(verify_c_sources(&changed, &sources).is_err());
+    }
+    let discarded = owned_sources[0]
+        .1
+        .replacen("return helper(5) + 1;", "helper(5); return 6;", 1);
+    let bad_sources = [(owned_sources[0].0.as_str(), discarded.as_str())];
+    let error = verify_c_sources(&source, &bad_sources).expect_err("the call discards its result");
+    assert!(error.message().contains("no bindable payload"), "{error}");
+    let (nested, nested_sources) =
+        mdtest_sources("mdtests/outcomes_routes_a_throw_that_leaves_the_function.md");
+    let nested_sources = crate::cli::source_refs(&nested_sources);
+    let expanded = expand_c_claim_source_by_label(&nested, &nested_sources, "caller.contract")
+        .unwrap_or_else(|error| panic!("{error}"));
+    crate::surface::without_implicit_solve_for_claim("caller.contract", || {
+        verify_c_sources(&expanded, &nested_sources).map_err(|error| error.to_string())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn selected_deferred_closer_freezes_computed_guards_before_parameter_mutation() {
     for (c_source, expected) in [
