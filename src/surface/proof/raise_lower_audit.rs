@@ -6,7 +6,7 @@
 //! goal it leaves focused, with the canonical raiser goal presentation uses
 //! (`Proof::structural_proposition_candidate`: the step's fixed state, its
 //! entry state and the path's recorded points). It lowers
-//! that spelling again in the same proof and appends one line saying how the
+//! that Surface form again in the same proof and appends one line saying how the
 //! round trip ended. `scripts/raise-lower.sh` runs the corpus under it.
 //!
 //! This checks the canonical Surface form. The raise-lower census separately
@@ -61,7 +61,7 @@ pub(super) fn enabled() -> bool {
 /// How one round trip ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum RoundTrip {
-    /// The spelling lowered back to the same term, up to bound names.
+    /// The raised form lowered back to the same term, up to bound names.
     Same,
     /// It lowered to the same comparison stated with the other polarity,
     /// such as `a < b` held false for `a >= b`: a normalization, not the
@@ -69,9 +69,9 @@ pub(super) enum RoundTrip {
     Polarity,
     /// It lowered to a different term.
     Differs,
-    /// The spelling did not lower.
+    /// The raised form did not lower.
     Unlowered,
-    /// The raiser produced no spelling.
+    /// The raiser produced no Surface form.
     Unraised,
     /// The proof state has no fixed state to raise at (a pure theorem).
     NoState,
@@ -90,7 +90,7 @@ impl RoundTrip {
     }
 }
 
-/// Classifies the lowering of a raised spelling against the original term.
+/// Classifies the lowering of a raised form against the original term.
 pub(super) fn classify(
     original: &crate::kernel::Proposition,
     lowered: &crate::kernel::Proposition,
@@ -106,7 +106,7 @@ pub(super) fn classify(
 
 /// Appends one audit line: the outcome, the role (`fact` or `goal`), the
 /// census kind, the claim, the tactic, the origin (`written` or `smart`),
-/// the original term's diagnostic rendering, the spelling, and for
+/// the original term's diagnostic rendering, the raised form, and for
 /// `differs` the lowered term's rendering.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn record(
@@ -116,7 +116,7 @@ pub(super) fn record(
     claim: &str,
     tactic: &str,
     original: &str,
-    spelling: &str,
+    raised: &str,
     lowered: &str,
 ) {
     if !enabled() {
@@ -137,7 +137,7 @@ pub(super) fn record(
         "{}\t{role}\t{kind}\t{claim}\t{tactic}\t{origin}\t{}\t{}\t{}\n",
         outcome.tag(),
         field(original),
-        field(spelling),
+        field(raised),
         field(lowered),
     );
     #[cfg(test)]

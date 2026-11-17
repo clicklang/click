@@ -6,7 +6,7 @@
 //! same up to the names of bound variables (`docs/internals/raise-lower-principle.md`).
 //! A lowering that rewrites through a fact, such as `f(a)` to `g(b)` because
 //! `f(a) == g(b)` is known, yields a term no other context lowers to, so the
-//! fact holding it cannot be spelled.
+//! fact holding it has no Surface form.
 //!
 //! Setting `CLICK_FACT_STABILITY=<path>` lowers every checked proof
 //! proposition a second time with the same policy and no facts, and appends
