@@ -46,4 +46,4 @@ cargo nextest run --lib --test rust_import -E 'test(external_array_) | test(char
 
 Compact external writes require a whole-footprint decision for existing possibly
 aliasing runs. If separation cannot be checked compactly, they refuse promptly
-rather than traversing the logical array extent.
+rather than traversing the logical array length.

@@ -355,20 +355,6 @@ allocation on the retaining arm and not on the freeing arm. A conditional
 but is not published as an unconditional free effect for the joined state.
 An unrelated resource cannot hide the lifetime difference.
 
-The independent execution-artifact API reuses a checked execution at the
-contract entry. It authorizes each artifact premise from the reconstructed
-contract context, from the registered predicate unfoldings (an identity whose
-instantiated body the context proves), and from containment and separation
-facts derived on demand from the composite definitions at the entry state;
-an artifact whose entry the kernel tied to the contract caller state through
-its `CheckedFunctionEntry` is rebased without a second equivalence search.
-Certification never executes the function body: it judges the checked
-artifacts it is given, and when none can be reused it produces no paths and
-names the premise kind or entry-state component that blocked reuse, which
-the surface reports as the contract failure. Rejections are counted under
-`instrumentation::ArtifactReuseRejection` and pinned by the
-[artifact reuse rejection ratchet](testing.md#artifact-reuse-rejection-ratchet).
-
 Every proposition claim closer records the kernel completion of its
 clause-specific obligation. The checked path's specification carries its own
 entry premises, and contract registration consumes the retained clause and
@@ -717,7 +703,7 @@ is established before opening goals; a failed registered contract goal never
 falls back to a local lowering.
 
 There is one lowering. A claim goal is the contract's elaborated ensure
-lowered by the kernel at the path's outcome (`program_function_ensure_goals`); a
+lowered by the kernel at the path's outcome (`FunctionEnsureGoalContext::goals`); a
 registered predicate ensure is the predicate identity, which the proof
 unfolds on the goal, and an explicit closer also tries the unfolded body
 when the proof unfolded that predicate. Every proposition a proof states,

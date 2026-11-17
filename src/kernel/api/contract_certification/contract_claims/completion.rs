@@ -549,7 +549,7 @@ mod tests {
         claim_count: usize,
         modular: bool,
     ) -> (WholeContractProof, ContractProofProgress, Vec<Goal>) {
-        let (base, _) = contract_closing_tests::fixture(path_count);
+        let base = contract_closing_tests::fixture();
         let ensure = base.contract_ensures()[0].clone();
         let function = base.with_contract(
             vec![],

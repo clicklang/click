@@ -4,7 +4,7 @@
 a pure theorem, and `docs/concepts/viewability.md` promises the same narrowing
 "in a pure theorem as well as in a C proof". The C half was refused, and for a
 reason about term spelling rather than about the rule: a C contract almost
-always states its range from `0`, and `viewable(a[0..n])` lowers its extent to
+always states its range from `0`, and `viewable(a[0..n])` lowers its span to
 `n * 4`, whose element count is `n` with the `- 0` already folded away. The
 narrowing rule read a count's endpoints off a subtraction, so a count with no
 subtraction left in it looked like no range at all, and the one shape C
@@ -12,12 +12,12 @@ contracts write was the one shape the rule could not narrow. A range written
 from `1` narrowed all along.
 
 The endpoints of a count with nothing subtracted are `0` and the count, which is
-the reading the extent's own validity check already gives such a count. With
+the reading the span's own validity check already gives such a count. With
 both counts read that way, this proof asks the kernel exactly the question the
-pure theorem asks, against the order facts the contract states, and the extent
+pure theorem asks, against the order facts the contract states, and the span
 requirement is untouched: the `requires` states the range, and a stated range
 carries both halves of what it says, its bytes and its validity as a 32-bit
-byte extent.
+byte span.
 
 ```c filename=have_loadable_prefix_of_a_range_in_a_c_proof.c
 int32 probe(int32 a[], int32 n, int32 k) {

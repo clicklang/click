@@ -136,3 +136,104 @@ fn newly_closed_word32_arithmetic_keeps_undefined_values_opaque() {
         }
     }
 }
+
+#[test]
+fn selected_literal_comparison_operands_keep_their_native_encoding() {
+    use crate::kernel::proof::term_rewrite::TermRewrite;
+    use MachineIntegerType as T;
+    for format in [T::Int32, T::UInt32, T::Int64, T::UInt64] {
+        for relation in [
+            CompareRelation::Equal,
+            CompareRelation::LessThan,
+            CompareRelation::LessEqual,
+            CompareRelation::GreaterThan,
+            CompareRelation::GreaterEqual,
+        ] {
+            for bits in [0, 3, u32::MAX] {
+                let _session = VerificationSession::enter();
+                let value = if format == T::Int32 {
+                    i64::from(bits as i32)
+                } else {
+                    i64::from(bits)
+                };
+                let literal =
+                    crate::kernel::machine_integer::range::constant_word(format, &value.into())
+                        .unwrap();
+                let flag = ConditionTerm::Variable(Variable(992597));
+                let choice = MachineTerm::If {
+                    condition: Box::new(flag.clone()),
+                    then_term: Box::new(MachineTerm::Variable(Variable(992598))),
+                    else_term: Box::new(literal.clone()),
+                };
+                for reverse in [false, true] {
+                    let [left, right] = if reverse {
+                        [literal.clone(), choice.clone()]
+                    } else {
+                        [choice.clone(), literal.clone()]
+                    };
+                    let input = ConditionTerm::Compare {
+                        format,
+                        relation,
+                        left: Box::new(left),
+                        right: Box::new(right),
+                    };
+                    let result =
+                        TermRewrite::for_condition_exact(&flag, &ConditionTerm::Constant(false))
+                            .condition(&input);
+                    let expected = if format.format().bits() == 32 {
+                        literal.clone().into_word32()
+                    } else {
+                        literal.clone()
+                    };
+                    assert_eq!(
+                        result,
+                        ConditionTerm::Compare {
+                            format,
+                            relation,
+                            left: Box::new(expected.clone()),
+                            right: Box::new(expected)
+                        },
+                        "{format:?}, {relation:?}, bits={bits}, reverse={reverse}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn selected_word32_literal_goal(format: MachineIntegerType, literal: u32) -> Proposition {
+    let variable = MachineTerm::Variable(Variable(992599));
+    let word = |n: u32| {
+        crate::kernel::machine_integer::range::constant_word(format, &i64::from(n).into()).unwrap()
+    };
+    Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format,
+            relation: CompareRelation::LessEqual,
+            left: Box::new(MachineTerm::If {
+                condition: Box::new(ConditionTerm::machine_compare(
+                    format,
+                    CompareRelation::Equal,
+                    variable.clone(),
+                    word(10),
+                )),
+                then_term: Box::new(variable),
+                else_term: Box::new(word(literal)),
+            }),
+            right: Box::new(MachineTerm::constant(100)),
+        },
+        true,
+    )
+}
+
+fn selected_word32_literal_equality(format: MachineIntegerType) -> Proposition {
+    Proposition::ConditionIs(
+        ConditionTerm::machine_compare(
+            format,
+            CompareRelation::Equal,
+            MachineTerm::Variable(Variable(992599)),
+            MachineTerm::constant(9),
+        ),
+        true,
+    )
+}

@@ -362,7 +362,7 @@ fn compact_scalar_array_initialization_cannot_bypass_an_active_view_loan() {
 }
 
 #[test]
-fn compact_array_regions_check_source_type_extent_alignment_and_initialization() {
+fn compact_array_regions_check_source_type_size_alignment_and_initialization() {
     let context = PureFactContext::new();
     let source = pointer("local:source", 4);
     let target = pointer("local:target", 4);

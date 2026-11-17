@@ -1,8 +1,8 @@
 # An index keeps its type until it is an offset
 
 This record preserves the typed-index decisions implemented in October 2026.
-The staged migration is complete; heap-block extents followed in
-[Heap extents](heap-extents.md). Current public behavior is specified in the
+The staged migration is complete; heap-block sizes followed in
+[Allocation sizes](heap-allocation-sizes.md). Current public behavior is specified in the
 [C reference](../docs/reference/language/c.md) and
 [Rust reference](../docs/reference/rust.md).
 
@@ -20,7 +20,7 @@ bound selects the wide kind, including a constant or nonzero start. Signed
 values. A range's kind must not depend on facts established by its contract.
 
 Wide membership requires the selected index to lie between the range's bounds
-and the complete byte extent to fit the modeled object limit,
+and the complete byte span to fit the modeled object limit,
 `end <= i64::MAX / element_width`. Wide scaled offsets are exact products;
 constant folding must not turn them into wrapping offsets. Calls must prove
 range guards, including `start <= end`, before transferring a range.

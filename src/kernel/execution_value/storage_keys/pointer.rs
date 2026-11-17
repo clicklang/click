@@ -17,9 +17,9 @@ struct PointerIdentity {
     provenance: AddressKey,
     program_type: ProgramType,
     volatile: bool,
-    extent_known: bool,
-    opaque_extent: Option<AddressKey>,
-    extent: Option<(AddressKey, MachineTerm)>,
+    bounds_known: bool,
+    bounds_owner: Option<AddressKey>,
+    bounds: Option<(AddressKey, MachineTerm)>,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 struct AddressKey {
@@ -56,31 +56,31 @@ impl PointerStorageKey {
             provenance: AddressKey::native(value.provenance()),
             program_type: value.program_type(),
             volatile: value.pointee_volatile(),
-            extent_known: value.extent_is_known(),
-            opaque_extent: (!value.extent_is_known())
-                .then(|| value.opaque_extent().map(AddressKey::native))
+            bounds_known: value.bounds_are_known(),
+            bounds_owner: (!value.bounds_are_known())
+                .then(|| value.bounds_owner().map(AddressKey::native))
                 .flatten(),
-            extent: value
-                .extent()
+            bounds: value
+                .bounds()
                 .map(|e| (AddressKey::native(&e.start), e.width.clone())),
         })
     }
     fn shared(value: &SharedPointerValue) -> Self {
         let value = value.node();
         let q = value.qualifiers.as_deref();
-        let extent_known = q.is_some_and(|q| q.extent_known);
+        let bounds_known = q.is_some_and(|q| q.bounds_known);
         Self::new(PointerIdentity {
             address: AddressKey::shared(&value.address),
             provenance: AddressKey::shared(&value.provenance),
             program_type: value.program_type,
             volatile: q.is_some_and(|q| q.volatile),
-            extent_known,
-            opaque_extent: (!extent_known)
-                .then(|| value.opaque_extent.as_ref().map(AddressKey::shared))
+            bounds_known,
+            bounds_owner: (!bounds_known)
+                .then(|| value.bounds_owner.as_ref().map(AddressKey::shared))
                 .flatten(),
             // Widths have native MachineTerm structural identity, unlike offset
             // index handles. Keep this selected scalar adapter explicit.
-            extent: q.and_then(|q| q.extent.as_ref()).map(|e| {
+            bounds: q.and_then(|q| q.bounds.as_ref()).map(|e| {
                 (
                     AddressKey::shared(&e.start),
                     KernelTermExport::machine(&e.width).expect("selected subobject width"),

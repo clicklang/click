@@ -660,7 +660,7 @@ impl MemoryDagHopJustification {
                         if !block.is_local_block() || pointer.block == *block {
                             return false;
                         }
-                        let Some(extent) = base.block_size(block).and_then(|size| size.as_const())
+                        let Some(size) = base.block_size(block).and_then(|size| size.as_const())
                         else {
                             return false;
                         };
@@ -668,7 +668,7 @@ impl MemoryDagHopJustification {
                             block: block.clone(),
                             offset: PointerOffsetTerm::Constant(0),
                         };
-                        (&retired, extent)
+                        (&retired, size)
                     }
                     _ => return false,
                 };
@@ -1589,9 +1589,9 @@ fn range_structurally_covers_allocation(
     if &covered == bytes {
         return true;
     }
-    // Both extents constant: the range covers the allocation when it spans at
+    // Both sizes constant: the range covers the allocation when it spans at
     // least as many bytes. A count that does not fit a non-negative `i32` is
-    // not read as an extent.
+    // not read as a size.
     match (
         signed_bitvector_constant(&covered),
         signed_bitvector_constant(bytes),

@@ -34,7 +34,7 @@ symmetric `hi - 1 != j` from `j < hi - 1` needs a disequality symmetry Click
 does not have. Split at `j`, each instantiation gets the orientation it can
 prove, and the boundary case hands `unmarked_frame` its premise verbatim.
 
-The ranges are `views` clauses. A stated range carries its extent half beside
+The ranges are `views` clauses. A stated range carries its span half beside
 its viewability half, so the proof never derives `0 <= n - lo`, and listing
 the range in an `apply … using` cites both halves: every `apply` owes them,
 and none restates them.

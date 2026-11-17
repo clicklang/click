@@ -1279,7 +1279,7 @@ fn charon_adler2_short_tail_compute_rejects_missing_length_and_view() {
 
 #[test]
 #[ignore = "nightly: 6s in the parallel gate"]
-fn charon_adler2_short_tail_compute_rejects_wrong_extent_and_constructor() {
+fn charon_adler2_short_tail_compute_rejects_wrong_length_and_constructor() {
     for (bytes, contract) in [(2, TWO_BYTE_COMPUTE), (3, THREE_BYTE_COMPUTE)] {
         reject_compute(
             contract,
@@ -1375,7 +1375,7 @@ fn charon_adler2_four_byte_compute_rejects_false_stored_iterator_observations() 
 
 #[test]
 #[ignore = "nightly: 3s in the parallel gate"]
-fn charon_adler2_four_byte_compute_rejects_missing_extent_view_and_constructor() {
+fn charon_adler2_four_byte_compute_rejects_missing_length_view_and_constructor() {
     for (before, after) in [
         ("requires bytes.len() == 4u64;", ""),
         ("views bytes[0..4];", "views bytes[0..3];"),
@@ -1980,7 +1980,7 @@ fn check_isolated_theorem(
     // These fixtures place each theorem's outer closing brace at column one.
     // Confirm every other declaration/proof is byte-for-byte unchanged before
     // reusing the original module's full positive check.
-    let extent = |text: &str| {
+    let text_span = |text: &str| {
         let start = text
             .find(&format!("theorem {owner}("))
             .expect("the selected theorem exists");
@@ -1991,8 +1991,8 @@ fn check_isolated_theorem(
             + "\n}".len();
         (start, end)
     };
-    let (before_start, before_end) = extent(original);
-    let (after_start, after_end) = extent(source);
+    let (before_start, before_end) = text_span(original);
+    let (after_start, after_end) = text_span(source);
     assert_eq!(
         &original[..before_start],
         &source[..after_start],

@@ -1323,7 +1323,7 @@ theorem cell_of_a_viewed_range(v: int32[], lo: int32, hi: int32, k: int32) {
 ```
 
 Nothing is lent by writing it and nothing is returned. Like every stated range
-it carries its valid-extent facts, which the theorem's proof assumes and an
+it carries its valid-span facts, which the theorem's proof assumes and an
 application owes; see [Viewable ranges](../../concepts/viewability.md). An
 `apply ... using` list holds propositions, so the premise is named there as
 `viewable(v[lo..hi])`.
@@ -1891,7 +1891,7 @@ chunk without placing it in the whole range
 A stored cursor can name the same window when a checked equality relates it
 to the input's native index. Address normalization and the cursor's indexed
 alias are checked separately; the alias supplies no access authority and the
-complete extent still needs its unsigned bounds. The cursor and short-extent
+complete span still needs its unsigned bounds. The cursor and short-span
 regressions are in
 `mdtests/a_callee_takes_a_wide_window_through_a_checked_cursor.md`.
 
@@ -3421,7 +3421,7 @@ and [`authority_count_defined_at_max_rejected.md`](https://github.com/clicklang/
 **Declaration:** `abstract resource allocation(base: int32*, bytes: int32);`
 
 **Meaning:** Owns the lifetime authority for the live heap block whose base
-pointer is `base` and whose extent is `bytes` bytes. A successful `malloc`,
+pointer is `base` and whose size is `bytes` bytes. A successful `malloc`,
 `calloc` or `realloc` produces it beside ownership of the block's cells, and a
 nonnull `free(p)` consumes it with complete ownership of the block, and is
 refused when it is not held. The kernel names it
@@ -3436,7 +3436,7 @@ writes `produces allocation(result, bytes);`
 The declared byte count is an `int32`, and argument 1 also accepts a
 `uint64` (`size_t`) count, as argument 0 accepts any data pointer. `malloc`,
 `calloc` or `realloc` of a symbolic `size_t` size proved to fit `PTRDIFF_MAX`
-makes a block with a 64-bit extent, whose token holds a `uint64` byte count: a sidecar states it
+makes a block with a 64-bit size, whose token holds a `uint64` byte count: a sidecar states it
 as `allocation(p, n * 4u64)` or `allocation(p, bytes)`, and returns it, passes
 it to a callee, or frees it like any other. A `uint64` count is admitted
 under `malloc`'s no-wrap decision (`1 <= bytes <= PTRDIFF_MAX`, or
@@ -3448,7 +3448,7 @@ refusal names both formats ([C allocation](c.md#heap-allocation)). A signed
 **Verified use:** [`mdtests/heap_malloc_struct_null_check_free.md`](https://github.com/clicklang/click/blob/master/mdtests/heap_malloc_struct_null_check_free.md),
 [`mdtests/external_allocator_contract.md`](https://github.com/clicklang/click/blob/master/mdtests/external_allocator_contract.md),
 [`mdtests/a_bounded_size_t_element_count_allocates_a_64_bit_block.md`](https://github.com/clicklang/click/blob/master/mdtests/a_bounded_size_t_element_count_allocates_a_64_bit_block.md),
-[`mdtests/an_extern_allocator_states_a_size_t_extent.md`](https://github.com/clicklang/click/blob/master/mdtests/an_extern_allocator_states_a_size_t_extent.md),
+[`mdtests/an_extern_allocator_states_a_size_t_allocation_size.md`](https://github.com/clicklang/click/blob/master/mdtests/an_extern_allocator_states_a_size_t_allocation_size.md),
 and [`mdtests/a_callee_frees_a_64_bit_block_it_consumes.md`](https://github.com/clicklang/click/blob/master/mdtests/a_callee_frees_a_64_bit_block_it_consumes.md).
 
 ### `__builtin_constant_p`
@@ -4363,7 +4363,7 @@ footprint; explicit byte fragments must cover padding too. See the
 [byte-field regression](https://github.com/clicklang/click/blob/master/mdtests/whole_struct_reassembles_from_byte_fields.md)
 and [tail-padding regression](https://github.com/clicklang/click/blob/master/mdtests/whole_struct_reassembles_from_padded_byte_field.md).
 A file-scope struct named in `owns g` or `views g` covers that complete
-object, with the same extent and declared field types as `*p` when `p == &g`.
+object, with the same size and declared field types as `*p` when `p == &g`.
 The same rule applies to a qualified name such as `unit::g`; a pointer-valued
 global named alone still denotes its pointer slot.
 

@@ -42,7 +42,7 @@ pub(crate) fn prove_uint32_from_le_bytes(pointer: PointerValue) -> Result<Theore
         &assumptions,
     )?;
     premises.push(defined.clone());
-    for guard in super::stated_loadable_extent_guards(&premises[1]) {
+    for guard in super::stated_loadable_span_guards(&premises[1]) {
         if !premises.contains(&guard) {
             premises.push(guard);
         }

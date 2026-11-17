@@ -12,7 +12,7 @@ The parent is a *payload*, not a resource parameter: `rb_at`'s `Node` arm owns
 the packed parent word and states both its numeric value (the payload's address
 plus the color bit) and its full decoded pointer relationship. The explicit
 `((word & ~3) as (struct rb_node *)) == parent` fact preserves provenance and
-selected extent; numeric address equality alone does not grant those bounds.
+selected bounds; numeric address equality alone does not grant those bounds.
 `ctx_at`'s `Left` frame owns the cells of the node its own
 `identity` payload carries. Nothing in the C program is written through
 `identity`. The loop's own C local `parent` is the pointer the statements read,

@@ -119,9 +119,9 @@ pub(crate) struct MemoryErasedPointerValueKey {
     program_type: ProgramType,
     address: MemoryErasedPointerKey,
     provenance: MemoryErasedPointerKey,
-    opaque_extent: Option<MemoryErasedPointerKey>,
-    extent: Option<(MemoryErasedPointerKey, MemoryErasedBitvectorKey)>,
-    extent_known: bool,
+    bounds_owner: Option<MemoryErasedPointerKey>,
+    bounds: Option<(MemoryErasedPointerKey, MemoryErasedBitvectorKey)>,
+    bounds_known: bool,
 }
 
 impl MemoryErasedPointerValueKey {
@@ -129,10 +129,10 @@ impl MemoryErasedPointerValueKey {
         self.address.requires_checked_match()
             || self.provenance.requires_checked_match()
             || self
-                .opaque_extent
+                .bounds_owner
                 .as_ref()
                 .is_some_and(MemoryErasedPointerKey::requires_checked_match)
-            || self.extent.as_ref().is_some_and(|(start, width)| {
+            || self.bounds.as_ref().is_some_and(|(start, width)| {
                 start.requires_checked_match() || width.requires_checked_match()
             })
     }
@@ -143,18 +143,18 @@ fn memory_erased_pointer_value_key(pointer: &PointerValue) -> MemoryErasedPointe
         program_type: pointer.program_type(),
         address: memory_erased_pointer_key(pointer.pointer()),
         provenance: memory_erased_pointer_key(pointer.provenance()),
-        opaque_extent: if pointer.extent_is_known() {
+        bounds_owner: if pointer.bounds_are_known() {
             None
         } else {
-            pointer.opaque_extent().map(memory_erased_pointer_key)
+            pointer.bounds_owner().map(memory_erased_pointer_key)
         },
-        extent: pointer.extent().map(|extent| {
+        bounds: pointer.bounds().map(|bounds| {
             (
-                memory_erased_pointer_key(&extent.start),
-                memory_erased_bitvector_key(&extent.width),
+                memory_erased_pointer_key(&bounds.start),
+                memory_erased_bitvector_key(&bounds.width),
             )
         }),
-        extent_known: pointer.extent_is_known(),
+        bounds_known: pointer.bounds_are_known(),
     }
 }
 
@@ -923,10 +923,10 @@ enum AlphaProgramValueKey {
         pointee_constant: bool,
         pointer: AlphaPointerKey,
         provenance: AlphaPointerKey,
-        extent_known: bool,
-        opaque_extent: Option<AlphaPointerKey>,
-        /// The subobject extent's start key and byte width.
-        extent: Option<(AlphaPointerKey, AlphaMachineKey)>,
+        bounds_known: bool,
+        bounds_owner: Option<AlphaPointerKey>,
+        /// The subobject bounds' start key and byte width.
+        bounds: Option<(AlphaPointerKey, AlphaMachineKey)>,
     },
 }
 
@@ -2284,11 +2284,11 @@ fn alpha_program_value_key_with_bindings<const ALLOW_LOADS: bool>(
                 bindings,
                 next_binder,
             )?,
-            extent_known: pointer.extent_is_known(),
-            opaque_extent: if pointer.extent_is_known() {
+            bounds_known: pointer.bounds_are_known(),
+            bounds_owner: if pointer.bounds_are_known() {
                 None
             } else {
-                match pointer.opaque_extent() {
+                match pointer.bounds_owner() {
                     Some(origin) => Some(alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
                         origin,
                         bindings,
@@ -2297,15 +2297,15 @@ fn alpha_program_value_key_with_bindings<const ALLOW_LOADS: bool>(
                     None => None,
                 }
             },
-            extent: match pointer.extent() {
-                Some(extent) => Some((
+            bounds: match pointer.bounds() {
+                Some(bounds) => Some((
                     alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
-                        &extent.start,
+                        &bounds.start,
                         bindings,
                         next_binder,
                     )?,
                     alpha_machine_key::<ALLOW_LOADS>(
-                        crate::kernel::MachineOperandView::Legacy(&extent.width),
+                        crate::kernel::MachineOperandView::Legacy(&bounds.width),
                         bindings,
                         next_binder,
                     )?,
@@ -3746,7 +3746,7 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                 return None;
             }
             bindings.raw_state_load_seen = true;
-            // A wide (64-bit extent) range keys like a narrow one, with its
+            // A wide (64-bit span) range keys like a narrow one, with its
             // width kind kept in the key so the two never alpha-match.
             // Loadability is an explicit checked premise, so its memory
             // state is part of the alpha identity.  Raw MemoryLoad terms
@@ -5272,7 +5272,7 @@ mod raw_pointer_condition_tests {
 #[cfg(test)]
 mod complete_pointer_condition_tests {
     use super::*;
-    use crate::kernel::SubobjectExtent;
+    use crate::kernel::SubobjectBounds;
     #[test]
     fn complete_pointer_conditions_keep_state_domain_keys() {
         let _session = crate::kernel::VerificationSession::enter();
@@ -5283,8 +5283,8 @@ mod complete_pointer_condition_tests {
         let mut keys = Vec::new();
         for value in [
             a.clone(),
-            a.clone().with_root_extent(),
-            a.clone().with_extent(Some(SubobjectExtent {
+            a.clone().with_root_bounds(),
+            a.clone().with_bounds(Some(SubobjectBounds {
                 start: Pointer::null(),
                 width: MachineTerm::constant(4),
             })),

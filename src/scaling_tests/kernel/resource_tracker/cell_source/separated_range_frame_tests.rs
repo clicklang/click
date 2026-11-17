@@ -59,7 +59,7 @@ fn model_start_membership_ignores_unrelated_order_bounds() {
 }
 
 #[test]
-fn separated_range_frame_retains_full_access_and_range_extents() {
+fn separated_range_frame_retains_full_access_and_range_spans() {
     let mut samples = Vec::new();
     for size in [16u64, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();

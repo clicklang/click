@@ -98,9 +98,9 @@ kinds:
 | `BlockDeclared` | A new non-havoc block entered the memory model. |
 | `ObjectInitializationRecorded` | Initialized-byte metadata was extended after writes already recorded in the DAG. Stored values are unchanged. |
 | `CellsForgotten` | Standalone cache projection used by bulk producers and symbolic-read reduction. Ordinary scalar program stores perform invalidation internally and record only `Store`. |
-| `HeapAllocationPending` | An allocation request has an unresolved base and extent but no successful storage yet. |
-| `HeapAllocated` | A fresh allocation identity and extent became live. |
-| `HeapFreed` | An allocation identity and extent stopped being live. |
+| `HeapAllocationPending` | An allocation request has an unresolved base and size but no successful storage yet. |
+| `HeapAllocated` | A fresh allocation identity and size became live. |
+| `HeapFreed` | An allocation identity and size stopped being live. |
 
 Entry states have no parent edge. Failed allocation returns to the existing
 pre-allocation identity instead of recording a backward edge.
@@ -443,10 +443,10 @@ bound substitution requires a full-width equality.
 
 `pointer_access_in_memory_range` selects the existing access rule for the
 range's domain. Native access still requires one whole element, proved
-membership and a nonwrapping byte extent. Cross-width or signed-only reasoning
+membership and a nonwrapping byte span. Cross-width or signed-only reasoning
 that cannot establish these conditions returns unknown or refuses the proof.
 It grants no permission by truncating a bound or weakening the kernel assertion.
-Loop effect frames and resource-body readable-memory facts keep native extents. Signed
+Loop effect frames and resource-body readable-memory facts keep native spans. Signed
 fold framing, iterated-element selection, allocation coverage and indexed
 certificates explicitly decline unsupported native inputs.
 

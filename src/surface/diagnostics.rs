@@ -2835,7 +2835,7 @@ pub(super) fn describe_parameter_relative_range(
         && low.checked_add(1) == Some(high)
     {
         // A whole element behind a reference parameter is its referent.
-        // An explicit byte slice keeps its exact extent and cast spelling.
+        // An explicit byte slice keeps its exact span and cast spelling.
         if low == 0
             && name
                 == crate::surface::surface_parameter_binding(parameter.binding_name()).to_string()

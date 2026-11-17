@@ -195,10 +195,10 @@ excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 13 | 27 |
-| `examples/` | 17 | 108 |
+| `mdtests/` | 12 | 26 |
+| `examples/` | 16 | 105 |
 | `library/` | 0 | 0 |
-| Total | 30 | 135 |
+| Total | 28 | 131 |
 
 The 8 mdtests with failure expectations still require migration while retaining
 their semantic refusals. Positive fixtures also supply exact input text
@@ -465,7 +465,7 @@ The pointee-store route generates a separation obligation without alias
 search. The source write regression is flat at 179 charged units with one loan
 and 4/16/64 aliases (110 without a loan); these measurements cover this route,
 not the remaining callers below. Explicit source proofs retain typed subobject
-extent and provenance. The `contains_element` law supports signed 32-bit and
+bounds and provenance. The `contains_element` law supports signed 32-bit and
 unsigned 64-bit interval bounds without wrapping the selected upper endpoint.
 Exact pointer argument spellings use an entry-built index; enclosing recorded
 requirement clauses use the existing conjunct index. Keep the position-drift,

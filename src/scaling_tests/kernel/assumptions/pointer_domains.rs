@@ -13,7 +13,7 @@ fn pointer_domain_queries_read_cached_classes_without_alias_discovery() {
         for related in [4u64, 16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
             let root = opaque(998_000);
-            let selected = root.clone().with_extent(Some(SubobjectExtent {
+            let selected = root.clone().with_bounds(Some(SubobjectBounds {
                 start: root.pointer().clone(),
                 width: 4u32.into(),
             }));
@@ -46,7 +46,7 @@ fn pointer_domain_queries_read_cached_classes_without_alias_discovery() {
             });
             assert_eq!(
                 domain,
-                PointerDomain::Selected(selected.extent().unwrap().clone())
+                PointerDomain::Selected(selected.bounds().unwrap().clone())
             );
             let logarithm = (related + unrelated + 1).ilog2() as usize + 1;
             assert!(

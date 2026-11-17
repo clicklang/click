@@ -348,7 +348,7 @@ fn a_loop_without_a_write_set_needs_no_separation_check() {
 
 /// A bare declaration writes nothing, so one rule carries both resources
 /// across it: the declared object has its own `blocks` key, and a block
-/// proven distinct from it keeps its extent, cells, overlays, liveness and
+/// proven distinct from it keeps its size, cells, overlays, liveness and
 /// heap status. `mdtests/array_fact_survives_a_declaration.md` is the user's
 /// view of the same step.
 #[test]
@@ -437,7 +437,7 @@ fn a_release_of_another_object_keeps_one_version() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let live = entry_memory()
-        .with_heap_allocation_claim(fresh.clone(), HeapExtent::int32(16))
+        .with_heap_allocation_claim(fresh.clone(), AllocationSize::int32(16))
         .expect("a fresh allocation claim");
     let freed = live
         .clone()
@@ -473,7 +473,7 @@ fn a_release_is_based_on_the_memory_it_started_from() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let live = entry_memory()
-        .with_heap_allocation_claim(fresh.clone(), HeapExtent::int32(16))
+        .with_heap_allocation_claim(fresh.clone(), AllocationSize::int32(16))
         .expect("a fresh allocation claim");
     let before = intern_memory(live.clone());
     let freed = intern_memory(
@@ -501,7 +501,7 @@ fn a_release_inside_the_argument_object_stops_a_block_fact() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let live = entry_memory()
-        .with_heap_allocation_claim(inside.clone(), HeapExtent::int32(16))
+        .with_heap_allocation_claim(inside.clone(), AllocationSize::int32(16))
         .expect("a fresh allocation claim");
     let freed = live
         .free_heap_block(&inside, &PureFactContext::new())
@@ -557,7 +557,7 @@ fn a_lifetime_end_of_another_local_keeps_one_version() {
 
 /// An allocation request with no address yet records only that request, and
 /// nothing that decides what a read of a block sees consults it. The pin is
-/// that the step changes no extent, no cell, no overlay, no liveness and no
+/// that the step changes no size, no cell, no overlay, no liveness and no
 /// heap status other than the pending maps.
 #[test]
 fn a_pending_allocation_records_nothing_a_block_can_observe() {
@@ -567,7 +567,7 @@ fn a_pending_allocation_records_nothing_a_block_can_observe() {
             block: PointerBlock::Symbolic(Variable(1_000)),
             offset: PointerOffsetTerm::Constant(0),
         },
-        HeapExtent::int32(16),
+        AllocationSize::int32(16),
         false,
     );
     assert_eq!(entry.blocks, requested.blocks);

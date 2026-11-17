@@ -60,13 +60,13 @@ fn inline_array_element_addresses_are_logical_without_granting_access() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_00")]
 fn historical_wide_view_bound_reads_the_marked_counter() {
     let c = "unsigned long f(const unsigned char *p, unsigned n) { n = n - 1; return 0; }";
-    for extent in [16, 32] {
+    for span in [16, 32] {
         let proof = format!(
             r#"
             verifying "retained_state.c";
             uint64 f(const uint8* p, uint32 n) {{
                 requires n == 2u32;
-                views p[0u64..{extent}u64];
+                views p[0u64..{span}u64];
                 ensures result == 0u64;
             }} by {{
                 mark before;
@@ -78,7 +78,7 @@ fn historical_wide_view_bound_reads_the_marked_counter() {
         "#
         );
         let result = verify_c_sources(&proof, &[("retained_state.c", c)]);
-        if extent == 16 {
+        if span == 16 {
             assert!(result.is_err(), "the saved counter needs 32 bytes, not 16");
         } else {
             result.unwrap();

@@ -61,7 +61,7 @@ fn complete_pointer_import_retains_persistent_evidence_without_traversal() {
 }
 
 #[test]
-fn complete_pointer_construction_retains_shared_extent_width_dags() {
+fn complete_pointer_construction_retains_shared_bounds_width_dags() {
     for size in [16, 64, 256] {
         let source = SharedPointerValue::import(&complete_source());
         let mut value = source.node().clone();
@@ -75,7 +75,7 @@ fn complete_pointer_construction_retains_shared_extent_width_dags() {
             );
         }
         Arc::make_mut(value.qualifiers.as_mut().unwrap())
-            .extent
+            .bounds
             .as_mut()
             .unwrap()
             .width = width.clone();
@@ -89,7 +89,7 @@ fn complete_pointer_construction_retains_shared_extent_width_dags() {
                 .qualifiers
                 .as_ref()
                 .unwrap()
-                .extent
+                .bounds
                 .as_ref()
                 .unwrap()
                 .width,

@@ -1,7 +1,7 @@
 # An out-of-bounds representation copy is refused
 
 The `memcpy` contract requires `owns destination[0..bytes]` for the complete
-copied extent. Copying 8 bytes into a 4-byte destination cannot satisfy that
+copied span. Copying 8 bytes into a 4-byte destination cannot satisfy that
 requirement, so the call is refused at the access check before any byte moves.
 Owning a smaller range does not stretch to cover a larger copy.
 

@@ -2,8 +2,8 @@
 
 A `calloc` block of 16 bytes grows with `realloc` to a bounded `size_t`
 count. The zeroed prefix stays the constant 16: the facts decide the new
-extent `n * 4u64` is at least 16 bytes (`4 <= n`), so all of the old block
-reads as zero in the new one (`design/heap-extents.md`, stage 4).
+size `n * 4u64` is at least 16 bytes (`4 <= n`), so all of the old block
+reads as zero in the new one (`design/heap-allocation-sizes.md`, stage 4).
 
 ```c filename=a_zeroed_block_reallocated_to_a_size_t_size_keeps_its_zeroed_prefix.c
 #include <stdlib.h>

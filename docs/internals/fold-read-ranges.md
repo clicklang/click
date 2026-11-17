@@ -90,7 +90,7 @@ summary from the definition.
 
 Pointer offsets are exact sums of sign-extended scaled `int32` terms, so the
 interval occupies the contiguous bytes `[p + 4*start, p + 4*end)` with no
-wraparound, and the rule needs no representable-extent bound. A write misses
+wraparound, and the rule needs no representable-span bound. A write misses
 the interval when one exact order fact places it wholly below or above
 (`end <= j` or `j < start`), or when a stated separation with exact
 membership facts excludes it. Emptiness is used only when a fact or the
@@ -124,7 +124,7 @@ cache. It needs reusable range versions, or equivalent persistent effect
 summaries, alongside the current whole-block array naming, validated by the
 repeated-store scaling test before it is accepted; an automatic path that
 rescans the memory history per application is not acceptable. Do not add a
-smaller extent to a freely reusable array reference: support belongs to the
+smaller span to a freely reusable array reference: support belongs to the
 application and the checked definition that warrants it. A user-written
 `reads` annotation, helper-summary composition, multiple arrays, offsets,
 nested folds, and recursion each need separate evidence from real proofs.

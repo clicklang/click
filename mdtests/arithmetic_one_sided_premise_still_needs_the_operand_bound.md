@@ -3,7 +3,7 @@
 The negative of
 [`arithmetic_keeps_an_operand_bound_beside_a_one_sided_premise.md`](arithmetic_keeps_an_operand_bound_beside_a_one_sided_premise.md).
 Here `n` may be one past the largest four-byte element count, so `i < n`
-bounds `i + 1` only by `1073741824`, and for `i == 1073741823` the extent
+bounds `i + 1` only by `1073741824`, and for `i == 1073741823` the span
 bound `((i + 1) as uint32) <= 1073741823u32` is false. Intersecting
 the direct `0 <= i + 1` with the operands' bound does not reach below the
 limit, so the certificate is still refused.

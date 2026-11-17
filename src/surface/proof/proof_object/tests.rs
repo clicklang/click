@@ -13036,8 +13036,7 @@ fn nested_end_of_arm_interface_derives_its_enclosing_continuation() {
 fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
     use crate::kernel::{
         bool_value, program_call, program_parameter, program_return, program_skip,
-        program_try_catch_int32, prove_checked_program_function_execution_with_environment,
-        prove_program_function_contract_execution_paths_with_checked_artifacts,
+        program_try_catch_int32,
     };
 
     let click_file = crate::surface::parse(
@@ -13073,30 +13072,7 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
         vec![FunctionContractClaim::body_safety()],
         true,
     );
-    let helper_arguments = vec![ProgramExpression::Value(bool_value(MachineTerm::Variable(
-        Variable(80_010),
-    )))];
-    let artifacts = prove_checked_program_function_execution_with_environment(
-        ExecutionState::new().with_population_creation_tracking(),
-        helper.clone(),
-        helper_arguments.clone(),
-        PureFactContext::new(),
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-    );
-    let certified = prove_program_function_contract_execution_paths_with_checked_artifacts(
-        ExecutionState::new().with_population_creation_tracking(),
-        helper.clone(),
-        helper_arguments,
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-        &[artifacts],
-    );
-    let claims = crate::kernel::program_verified_function_contract_claims(&helper, &certified)
-        .expect("helper body safety should certify");
-    let helper_rule = program_verified_function_rule(helper.clone(), &claims)
+    let helper_rule = crate::kernel::program_recursive_function_contract_hypothesis(helper.clone())
         .expect("the checked helper should have a modular rule");
     let function_environment = ExecutionEnvironment::new()
         .with_function(helper)

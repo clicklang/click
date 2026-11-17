@@ -159,7 +159,7 @@ impl MutexInitialization {
 
     fn fresh(storage_bytes: u32) -> Result<Self, &'static str> {
         if storage_bytes == 0 {
-            return Err("mutex storage extent must be nonzero");
+            return Err("mutex storage size must be nonzero");
         }
         Ok(Self(MutexInitializationId::fresh()?, storage_bytes))
     }
@@ -2095,13 +2095,13 @@ impl MutexLedger {
                 if allocation.element_width() != 1 || allocation.constant_start() != Some(0) {
                     return None;
                 }
-                let extent = i64::from(allocation.constant_end()?);
+                let size = i64::from(allocation.constant_end()?);
                 let delta = mutex.exact_element_delta_from_base(allocation.base(), 1, None)?;
                 if !delta.is_constant() {
                     return None;
                 }
                 let end = delta.constant.checked_add(i64::from(*bytes))?;
-                Some(end <= 0 || delta.constant >= extent)
+                Some(end <= 0 || delta.constant >= size)
             })();
             let stated_separation =
                 assumptions.proves_exact(&super::Proposition::ResourceSeparate {
@@ -2109,10 +2109,10 @@ impl MutexLedger {
                     right: Box::new(storage.clone()),
                 }) || (allocation.element_width() == 1
                     && allocation.constant_start() == Some(0)
-                    && allocation.constant_end().is_some_and(|extent| {
+                    && allocation.constant_end().is_some_and(|size| {
                         assumptions.proves_stated_byte_separation(
                             allocation.base(),
-                            extent,
+                            size,
                             mutex,
                             *bytes,
                         )
@@ -4095,9 +4095,9 @@ mod tests {
     }
 
     #[test]
-    fn storage_retirement_uses_unsigned_heap_extents_and_wide_offsets() {
+    fn storage_retirement_uses_unsigned_allocation_sizes_and_wide_offsets() {
         let assumptions = PureFactContext::new();
-        for (extent, offset) in [(u32::MAX, 8), (i32::MAX as u32, i32::MAX as u32 - 8)] {
+        for (size, offset) in [(u32::MAX, 8), (i32::MAX as u32, i32::MAX as u32 - 8)] {
             let base = mutex(0);
             let state = MutexContext::new(ExecutionState::new())
                 .initialize_empty(base.offset_by_bytes(offset), 40)
@@ -4105,7 +4105,7 @@ mod tests {
             assert!(
                 storage_retirement_refusal(
                     state.state(),
-                    &allocation_range(base, extent),
+                    &allocation_range(base, size),
                     &assumptions
                 )
                 .is_some()

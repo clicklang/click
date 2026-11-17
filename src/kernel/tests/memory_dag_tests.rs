@@ -2981,7 +2981,7 @@ fn a_retirement_inside_its_calls_havoc_names_cells_at_the_call() {
     // the state and records the edge.
     let havoc = |variable| {
         Memory::new()
-            .with_heap_allocation_claim(data.clone(), HeapExtent::int32(4))
+            .with_heap_allocation_claim(data.clone(), AllocationSize::int32(4))
             .expect("a fresh claim")
             .with_call_memory_havoc(Variable(variable), &ranges, &assumptions, None)
     };
@@ -4216,7 +4216,7 @@ fn full_pointer_read_survives_a_join_of_stores_to_its_sibling() {
             &facts
         )
     );
-    assert!(!crate::kernel::memory_history::pointer_read_extents_equal(
+    assert!(!crate::kernel::memory_history::pointer_read_bounds_equal(
         &earlier,
         &overwritten,
         &facts

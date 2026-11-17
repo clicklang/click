@@ -50,9 +50,10 @@ checked. Each one costs completeness, expansion, or a readable report.
   for a Surface form and fall back to a placeholder, to another renderer, to
   `None`, or to dropping the fact.
 - **Name a value where it is introduced.** A step that introduces a fresh
-  value or memory state (a call result, a havoc, an allocation, a state
-  between recorded points) gives it a name from its origin at that
-  point. Do not recover a name later from whatever locals happen to hold the
+  value or memory state (a call result, a havoc, an allocation) gives it a
+  name from its origin at that point. A fact names only memories a recorded
+  point holds; a memory between recorded points has no name and is a defect
+  to fix where it is made, not one to name. Do not recover a name later from whatever locals happen to hold the
   value. A non-void call's result is `<region>.result`, including calls whose
   source discards the return value. The checked call transition retains the
   exact returned value, and its exit records it by region in
@@ -110,9 +111,12 @@ checked. Each one costs completeness, expansion, or a readable report.
   each integer a memory cell came to hold by the point that recorded it there
   (`cell_points`, filled from the cells each memory changed). The structural
   raiser writes `at(point, ...)` from these indexes for a value no nearer
-  state names. A load or field read made in a memory no point
-  records, inside a call or after the last point, is read at the nearest
-  recorded memory that reads the same bytes.
+  state names. A read names the canonical projection of the memory it
+  reads (`reasoning::memory_resolution`); the kernel records the memory each
+  projection was built from when it builds it (`load_projection_source`), so
+  the read is raised at the point recording that source, in one lookup.
+  The raiser never tries recorded states, nearby memories or candidate
+  forms in turn.
   A local that keeps one value in memory, a borrowed Rust enum or
   type-parameter local (`AggregateLayout::holding_value`), is named by its
   own name: `o` lowers to the read of its object at the point it was last
@@ -446,14 +450,22 @@ guards, or same-variable 32/64-bit comparison guards retain their `if` node and
 guard during logical lowering. Their arm domains remain guarded, including
 unselected reads and invalid shifts. Checking selects the arm when needed.
 The comparison boundary recognizes conditionals guarded by a Boolean variable
-or a 32/64-bit comparison over literal/variable operands, with literal/variable
+or a 32/64-bit comparison over literal/variable operands or one bitwise
+operation over those leaves, with literal/variable
 arms or one bitwise operation (`&`, `|`, `^`) over literal/variable arm operands,
-as fixed-size native atoms. Bitwise recognition reads only the operation and
+as fixed-size native atoms. Standalone comparisons use the same bounded
+bitwise operands. Even intrinsically decided bitwise guards retain their
+conditional; checking selects the arm. Bitwise recognition reads only the operation and
 its immediate leaves. Negated Boolean variables use the same guard
 with swapped arms. It retains the comparison family without exporting arithmetic
 DAGs or selecting an arm from ambient facts. Other result families retain their existing
 selected-arm behavior; literal Boolean and closed 32-bit equality guards keep
 their normal forms.
+
+Checked rewriting reconstructs native 32-bit comparisons with word-form literal
+operands, matching logical lowering even when selecting a conditional's unsigned
+literal arm. This touches only operand roots, preserves nested arithmetic and the
+comparison node, and leaves truth evaluation to checking.
 
 Generated comparison operands that are negative `int64` literals keep an explicit
 `as int64` cast, including under `old` and `at`. Their printed unary minus would

@@ -1874,14 +1874,14 @@ fn loop_state_components_match_at_back_edge_inner(
     // The head keeps a pointer local's subobject only if every back edge
     // returns the local to that same subobject.
     if top_state.locals().object_values().any(|(name, value)| {
-        program_value_subobject_extent(value).is_some()
+        program_value_subobject_bounds(value).is_some()
             && next_state
                 .locals()
                 .get(name)
-                .map(program_value_subobject_extent)
-                != Some(program_value_subobject_extent(value))
+                .map(program_value_subobject_bounds)
+                != Some(program_value_subobject_bounds(value))
     }) {
-        changed.push("pointer subobject extents");
+        changed.push("pointer subobject bounds");
     }
     // Likewise the class of the object a pointer local designates
     // (`design/effective-types.md`). A proved-null back edge designates no
@@ -3198,7 +3198,7 @@ fn loop_exit_local_arguments(
             }
             // A numeric address is a pure projection of the declared local.
             // It must follow the local's joined value just as a direct index
-            // does; it never transfers the pointer's provenance or extent.
+            // does; it never transfers the pointer's provenance or bounds.
             let (name, address_only) = match expression {
                 ProgramExpression::Variable(name) => (name, false),
                 ProgramExpression::Cast {
@@ -3570,11 +3570,15 @@ fn abstract_loop_exit_locals(
         // Exits that agree on the subobject a pointer designates keep it.
         let fresh = match held
             .iter()
-            .map(program_value_subobject_extent)
+            .map(program_value_subobject_bounds)
             .collect::<Vec<_>>()
         {
-            extents if extents[1..].iter().all(|extent| *extent == extents[0]) => {
-                with_retained_extent(fresh, held.first())
+            all_bounds
+                if all_bounds[1..]
+                    .iter()
+                    .all(|bounds| *bounds == all_bounds[0]) =>
+            {
+                with_retained_bounds(fresh, held.first())
             }
             _ => fresh,
         };
@@ -4637,19 +4641,19 @@ pub(super) fn invariant_context(check: &LoopInvariantCheck, phase: InvariantPhas
     }
 }
 
-/// Why a stated range was pruned as a byte extent, in the terms the reader
+/// Why a stated range was pruned as a byte span, in the terms the reader
 /// wrote it in: an element count and a width.
-fn dropped_range_extent_reason(extent: &crate::kernel::DroppedRangeExtent) -> String {
-    if extent.element_count < 0 {
-        let count = -extent.element_count;
+fn dropped_range_span_reason(span: &crate::kernel::DroppedRangeSpan) -> String {
+    if span.element_count < 0 {
+        let count = -span.element_count;
         let elements = if count == 1 { "element" } else { "elements" };
         format!(
-            "a memory range it states runs backwards, so it is not a byte extent: its end is {count} {elements} before its start"
+            "a memory range it states runs backwards, so it is not a byte span: its end is {count} {elements} before its start"
         )
     } else {
         format!(
-            "a memory range it states is too wide to be a 32-bit byte extent: {} elements of {} bytes is past the {}-byte limit",
-            extent.element_count, extent.element_width, extent.byte_limit
+            "a memory range it states is too wide to be a 32-bit byte span: {} elements of {} bytes is past the {}-byte limit",
+            span.element_count, span.element_width, span.byte_limit
         )
     }
 }
@@ -4779,7 +4783,7 @@ fn collect_invariant_check_obligations_with_mode(
                 "loop invariant bundle",
                 "invariant obligations: lower declaration",
             );
-            let dropped_extent_before = budget.dropped_range_extent().is_some();
+            let dropped_span_before = budget.dropped_range_span().is_some();
             let paths = lower_spec_proposition_at_state_with_loop_entry(
                 state,
                 check.proposition(),
@@ -4791,17 +4795,17 @@ fn collect_invariant_check_obligations_with_mode(
             // A declaration with no reading at this state owes the
             // impossible goal, never nothing. Lowering prunes a path whose
             // obligation it already decides false — a stated range whose
-            // extent is reversed or too wide, for one — so an empty result
+            // span is reversed or too wide, for one — so an empty result
             // means the invariant does not hold here. Owing nothing would
             // let the head assume a hypothesis nobody proved: the head
-            // assumes a stated range's extent half as content.
+            // assumes a stated range's span half as content.
             if paths.is_empty() {
-                let reason =
-                    if !dropped_extent_before && let Some(extent) = budget.dropped_range_extent() {
-                        dropped_range_extent_reason(extent)
-                    } else {
-                        "a condition it owes is already decided false at this state".to_string()
-                    };
+                let reason = if !dropped_span_before && let Some(span) = budget.dropped_range_span()
+                {
+                    dropped_range_span_reason(span)
+                } else {
+                    "a condition it owes is already decided false at this state".to_string()
+                };
                 let context = invariant_context(check, phase).unwrap_or("loop invariant");
                 let goal = ProofObligation::verification_condition(false_equals_true_proposition())
                     .with_context(format!(
@@ -5566,8 +5570,8 @@ pub(super) fn collect_loop_preservation_summary(
 pub(super) struct EvaluatedMemorySegment {
     pub(super) base: Pointer,
     pub(super) provenance: std::sync::Arc<Pointer>,
-    pub(super) opaque_extent: Option<std::sync::Arc<Pointer>>,
-    pub(super) extent_known: bool,
+    pub(super) bounds_owner: Option<std::sync::Arc<Pointer>>,
+    pub(super) bounds_known: bool,
     pub(super) start: MachineTerm,
     pub(super) end: MachineTerm,
     pub(super) element_width: u32,
@@ -5594,7 +5598,7 @@ impl EvaluatedMemorySegment {
         range.formation_coverage = self.formation_coverage;
         range
             .with_provenance(provenance)
-            .with_opaque_extent(self.opaque_extent, self.extent_known)
+            .with_bounds_owner(self.bounds_owner, self.bounds_known)
             .with_typed_carrier()
     }
 }
@@ -5614,7 +5618,6 @@ fn evaluate_whole_loop_effect_ranges(
         }
 
         let ranges = match check.effect() {
-            LoopEffect::Immutable => Vec::new(),
             // A mutable clause is an upper bound. Without a memory-writing
             // body, it is not evidence of mutation and should not block an
             // enclosing immutable claim.
@@ -7556,15 +7559,14 @@ pub(super) fn collect_loop_effect_check_obligations(
     for check in effect_checks {
         let mut segment_evaluation_failed = false;
         let segments = match check.effect() {
-            LoopEffect::Immutable => Vec::new(),
             LoopEffect::Mutable(segments) => {
                 if let Some(validated) = check.validated_ranges() {
                     validated
                         .iter()
                         .map(|range| EvaluatedMemorySegment {
                             provenance: range.provenance.clone(),
-                            opaque_extent: range.opaque_extent.clone(),
-                            extent_known: range.carrier_extent_known,
+                            bounds_owner: range.bounds_owner.clone(),
+                            bounds_known: range.carrier_bounds_known,
                             base: range.base.clone(),
                             start: range.bound_terms().0.clone(),
                             end: range.bound_terms().1.clone(),
@@ -7742,8 +7744,8 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     {
         let evaluated = EvaluatedMemorySegment {
             provenance: std::sync::Arc::new(base_value.provenance().clone()),
-            opaque_extent: base_value.opaque_extent().cloned().map(std::sync::Arc::new),
-            extent_known: base_value.extent_is_known(),
+            bounds_owner: base_value.bounds_owner().cloned().map(std::sync::Arc::new),
+            bounds_known: base_value.bounds_are_known(),
             base,
             start,
             end,
@@ -7752,7 +7754,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
             formation_coverage: Default::default(),
         };
         let context = assumptions_with_path_context(assumptions, &facts, &[]);
-        if let Some(refusal) = segment_extent_refusal(&base_value, &evaluated, &context) {
+        if let Some(refusal) = segment_bounds_refusal(&base_value, &evaluated, &context) {
             return Ok(Err(refusal.into()));
         }
         return Ok(Ok((evaluated, facts.into())));
@@ -7786,8 +7788,8 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     let element_width = segment.element_width;
     let evaluated = EvaluatedMemorySegment {
         provenance: std::sync::Arc::new(base_value.provenance().clone()),
-        opaque_extent: base_value.opaque_extent().cloned().map(std::sync::Arc::new),
-        extent_known: base_value.extent_is_known(),
+        bounds_owner: base_value.bounds_owner().cloned().map(std::sync::Arc::new),
+        bounds_known: base_value.bounds_are_known(),
         base,
         start,
         end,
@@ -7796,7 +7798,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
         formation_coverage: Default::default(),
     };
     let context = assumptions_with_path_context(assumptions, &facts, &[]);
-    if let Some(refusal) = segment_extent_refusal(&base_value, &evaluated, &context) {
+    if let Some(refusal) = segment_bounds_refusal(&base_value, &evaluated, &context) {
         return Ok(Err(refusal.into()));
     }
     Ok(Ok((evaluated, facts.into())))
@@ -8215,7 +8217,7 @@ fn assume_invariant_checks_explained(
     for (declaration, check) in invariant_checks.iter().enumerate() {
         let mut next_contexts = Vec::new();
         let mut lowered_any = false;
-        let dropped_extent_before = budget.dropped_range_extent().is_some();
+        let dropped_span_before = budget.dropped_range_span().is_some();
         for (facts, obligations, invariant_propositions) in contexts {
             let effective_assumptions =
                 assumptions_with_path_context(assumptions, &facts, &obligations);
@@ -8228,7 +8230,7 @@ fn assume_invariant_checks_explained(
             )? {
                 lowered_any = true;
                 // Every side condition the lowering emits — a stated range's
-                // extent half, an int32 conversion's bounds, a count that
+                // span half, an int32 conversion's bounds, a count that
                 // must not overflow, a checked read's definedness — is
                 // invariant content: `collect_invariant_check_obligations`
                 // owes every obligation this lowering emits at entry and at
@@ -8293,10 +8295,10 @@ fn assume_invariant_checks_explained(
                 "assuming it contradicts the invariants before it and the facts the loop \
                  keeps"
                     .to_string()
-            } else if !dropped_extent_before && let Some(extent) = budget.dropped_range_extent() {
+            } else if !dropped_span_before && let Some(span) = budget.dropped_range_span() {
                 format!(
                     "it has no reading at the loop head: {}",
-                    dropped_range_extent_reason(extent)
+                    dropped_range_span_reason(span)
                 )
             } else {
                 "it has no reading at the loop head".to_string()
@@ -9383,8 +9385,8 @@ mod wide_range_reader_tests;
 #[cfg(test)]
 mod resource_argument_diagnostic_tests;
 
-fn program_value_subobject_extent(value: &StoredExecutionValue) -> Option<&SubobjectExtent> {
-    value.pointer()?.extent()
+fn program_value_subobject_bounds(value: &StoredExecutionValue) -> Option<&SubobjectBounds> {
+    value.pointer()?.bounds()
 }
 
 fn program_value_object_class(
@@ -9401,7 +9403,7 @@ fn with_retained_object_class(
 }
 
 /// Legacy fresh-pointer construction is the output boundary for this loop abstraction.
-fn with_retained_extent(
+fn with_retained_bounds(
     fresh: ProgramValue,
     previous: Option<&StoredExecutionValue>,
 ) -> ProgramValue {
@@ -9411,13 +9413,13 @@ fn with_retained_extent(
     let previous = previous.native();
     match (fresh, previous.as_ref()) {
         (ProgramValue::Pointer(pointer), ProgramValue::Pointer(previous))
-            if previous.extent().is_some() =>
+            if previous.bounds().is_some() =>
         {
             ProgramValue::Pointer(
                 pointer
-                    .with_extent(previous.extent().cloned())
+                    .with_bounds(previous.bounds().cloned())
                     .with_provenance(std::sync::Arc::new(previous.provenance().clone()))
-                    .with_opaque_extent(previous.opaque_extent().cloned().map(std::sync::Arc::new)),
+                    .with_bounds_owner(previous.bounds_owner().cloned().map(std::sync::Arc::new)),
             )
         }
         (fresh, _) => fresh,
@@ -9425,18 +9427,18 @@ fn with_retained_extent(
 }
 
 /// A memory clause names its range through a pointer, and so claims that the
-/// pointer designates that range (`design/pointer-subobject-extents.md`, D1).
+/// pointer designates that range (`design/pointer-subobject-bounds.md`, D1).
 /// Through a pointer narrowed to a member, the range must lie inside the
 /// member: passing `&pair.first` where a callee views `p[0..2]` would
 /// otherwise let the callee read `pair.second` through it. An empty range
-/// claims nothing. A pointer without an extent is bounded by its complete
+/// claims nothing. A pointer without bounds is bounded by its complete
 /// object, as before.
-fn segment_extent_refusal(
+fn segment_bounds_refusal(
     base: &PointerValue,
     segment: &EvaluatedMemorySegment,
     assumptions: &PureFactContext,
 ) -> Option<String> {
-    range_extent_refusal(
+    range_bounds_refusal(
         base,
         &segment.start,
         &segment.end,
@@ -9446,9 +9448,9 @@ fn segment_extent_refusal(
     )
 }
 
-/// [`segment_extent_refusal`] for a lowered range: a proof step's clause
+/// [`segment_bounds_refusal`] for a lowered range: a proof step's clause
 /// names its range through the same pointer value.
-pub(crate) fn memory_range_extent_refusal(
+pub(crate) fn memory_range_bounds_refusal(
     base: &PointerValue,
     range: &MemoryRange,
     assumptions: &PureFactContext,
@@ -9457,7 +9459,7 @@ pub(crate) fn memory_range_extent_refusal(
         Some(bounds) => bounds,
         None => (range.start(), range.end()),
     };
-    range_extent_refusal(
+    range_bounds_refusal(
         base,
         start,
         end,
@@ -9467,7 +9469,7 @@ pub(crate) fn memory_range_extent_refusal(
     )
 }
 
-fn range_extent_refusal(
+fn range_bounds_refusal(
     base: &PointerValue,
     start: &MachineTerm,
     end: &MachineTerm,
@@ -9475,9 +9477,9 @@ fn range_extent_refusal(
     kind: RangeIndexKind,
     assumptions: &PureFactContext,
 ) -> Option<String> {
-    let extent = base.extent()?;
+    let bounds = base.bounds()?;
     let refusal = || {
-        Some(match extent.constant_width() {
+        Some(match bounds.constant_width() {
             Some(width) => format!(
                 "the clause's range of {element_width}-byte elements reaches outside the {width}-byte subobject its pointer designates"
             ),
@@ -9486,13 +9488,13 @@ fn range_extent_refusal(
             ),
         })
     };
-    // A pointer can carry an extent it adopted through a proven pointer
+    // A pointer can carry bounds it adopted through a proven pointer
     // equality, whose start is spelled through the other pointer: another
     // block, or another parameter of the same one. Respell the pointer at
     // that start before measuring its offset, as an access through it is
     // decided; the spellings' own difference names two unrelated variables.
     let respelled = assumptions
-        .pointer_at_known_base(base.pointer(), &extent.start)
+        .pointer_at_known_base(base.pointer(), &bounds.start)
         .filter(|respelled| {
             respelled != base.pointer()
                 && assumptions.pointers_known_equal(base.pointer(), respelled)
@@ -9500,18 +9502,18 @@ fn range_extent_refusal(
     let Some(offset) = respelled
         .as_ref()
         .and_then(|respelled| {
-            crate::kernel::reasoning::shared_pointer_byte_offset_from_base(respelled, &extent.start)
+            crate::kernel::reasoning::shared_pointer_byte_offset_from_base(respelled, &bounds.start)
         })
         .or_else(|| {
             crate::kernel::reasoning::shared_pointer_byte_offset_from_base(
                 base.pointer(),
-                &extent.start,
+                &bounds.start,
             )
         })
     else {
         return refusal();
     };
-    let Some(width) = extent.constant_width().map(i64::from) else {
+    let Some(width) = bounds.constant_width().map(i64::from) else {
         return refusal();
     };
     let element_width = i64::from(element_width);

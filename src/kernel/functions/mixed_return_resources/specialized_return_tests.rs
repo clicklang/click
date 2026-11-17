@@ -216,7 +216,7 @@ fn named_instances_carry_exact_fields_occurrences_and_projection_without_definit
         .unwrap();
     let state = ExecutionState::new();
     let bodies = ConstructedReturnBodies::construct(&outputs, &[definition], &state, &facts);
-    assert!(bodies.1.is_empty());
+    assert!(!bodies.0.is_empty());
     let mut children = BTreeSet::new();
     for occurrence in &outputs.occurrences {
         let body = bodies.get(occurrence.source).unwrap();
@@ -248,8 +248,6 @@ fn named_instances_carry_exact_fields_occurrences_and_projection_without_definit
         &outputs.resources,
         &transfers,
         &bodies,
-        &[],
-        &state,
         &facts,
         &destination,
     )
@@ -265,8 +263,6 @@ fn named_instances_carry_exact_fields_occurrences_and_projection_without_definit
     let error = produced_composite_frontier_conflict(
         &frame,
         std::iter::once((&head, bodies.get(outputs.occurrences[0].source))),
-        &[],
-        state.memory(),
         &facts,
     );
     let Some(RuntimeError::ProducedCompositeOverlapsHeldResource { held: selected, .. }) = error
@@ -532,19 +528,12 @@ fn matched_returns_carry_one_selected_constructor_and_keep_unknown_models_opaque
         &outputs.resources,
         &transfers,
         &bodies,
-        &[],
-        &ExecutionState::new(),
         &branch,
         &destination,
     )
     .unwrap();
     assert_eq!(projected[0].expansion, body.expansion);
-    assert!(
-        projected[0]
-            .constructed_borrowing_pieces()
-            .unwrap()
-            .is_empty()
-    );
+    assert!(projected[0].constructed_borrowing_pieces().is_empty());
     let parent_bodies = ConstructedReturnBodies::construct(
         &outputs,
         &[definition],

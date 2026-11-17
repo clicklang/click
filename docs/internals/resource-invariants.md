@@ -151,7 +151,7 @@ renamed through concrete pointer substitution. Missing ownership reports
 `Requires owns mutex_live(...)`.
 
 Heap retirement checks an index of initialized mutex footprints with the
-complete ABI storage extent, retained through lock/unlock and removed on
+complete ABI storage size, retained through lock/unlock and removed on
 destruction. Direct `free`/`realloc` and allocation retirement at verified calls
 use the same check. Lookup visits the affected block and indexed provenance
 classes that might alias it; absence from the same-block index is not

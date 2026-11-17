@@ -2,7 +2,7 @@
 
 A `uint32` byte count bounded by `INT32_MAX`, or a `uint32` element
 count bounded by `INT32_MAX` divided by the element size, fits the checked
-signed 32-bit heap extent (`design/heap-extents.md`). The block is usable
+signed 32-bit allocation size (`design/heap-allocation-sizes.md`). The block is usable
 up to its last element and is freed. Sizes past those bounds are refused at
 the allocation
 (`a_uint32_malloc_size_above_int32_max_is_refused_at_the_malloc.md`).

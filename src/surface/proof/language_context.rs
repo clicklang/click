@@ -160,7 +160,7 @@ pub(in crate::surface::proof) struct InvariantBodyContext {
     /// The written names of the `int32` quantifier binders the declared
     /// invariants introduce, by the kernel variable each lowers its binder
     /// to. A bundle member synthesized from such an invariant, such as the
-    /// extent guard a quantified `viewable` invariant owes, spells its binder
+    /// span guard a quantified `viewable` invariant owes, spells its binder
     /// with the written name, so a proof focused on it can name it.
     pub(in crate::surface::proof) binder_names:
         Arc<BTreeMap<crate::kernel::Variable, SurfaceBinder>>,

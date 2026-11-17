@@ -1,7 +1,7 @@
 # A member pointer parameter fills a clause of its member
 
 The control for `a_member_pointer_parameter_keeps_its_subobject_beside_a_sibling_view.md`:
-the callee's `q` adopts `&p->first`'s extent from its precondition, spelled
+the callee's `q` adopts `&p->first`'s bounds from its precondition, spelled
 through another parameter, and its own one-element clause lies inside it.
 
 ```c filename=parameter_member_control.c

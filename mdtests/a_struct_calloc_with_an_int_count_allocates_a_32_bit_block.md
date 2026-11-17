@@ -1,7 +1,7 @@
 # A struct `calloc` with an `int` count allocates a 32-bit block
 
 `calloc(n, sizeof(struct pair))` evaluates only its count, never the
-product (`design/heap-extents.md`, stage 4). An `int` count makes a 32-bit
+product (`design/heap-allocation-sizes.md`, stage 4). An `int` count makes a 32-bit
 block of `n * 8` bytes once the facts prove `1 <= n <= INT32_MAX / 8`, and
 its fields read as zero.
 

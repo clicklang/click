@@ -1932,7 +1932,7 @@ impl<'a> Proof<'a> {
             if view.negated || view.relation != crate::kernel::CompareRelation::LessEqual {
                 return None;
             }
-            // An implicit resource extent has no written comparison. Its two
+            // An implicit resource span has no written comparison. Its two
             // operands are still explicit source terms of this plan.
             let native = |operand| ContractExpression::CUnary {
                 operand: Box::new(operand),
@@ -3146,7 +3146,7 @@ impl<'a> Proof<'a> {
     pub(super) fn solve_failure(&self) -> ClickError {
         // A range-loadability goal has a reason a reader can act on, in the
         // spelling they wrote it with. The lowered rendering below would show
-        // them a byte extent over an internal pointer name instead.
+        // them a byte span over an internal pointer name instead.
         if let Some(reason) = self.unproved_loadable_range_goal_reason() {
             return self.step_error(format!(
                 "`solve` failed for `{}`: {reason}",
@@ -4796,97 +4796,6 @@ fn caller_parameter_through_identity_cast(
         }
         _ => Some(slot),
     }
-}
-
-/// Candidate spellings of one kernel fact from recorded program-point
-/// states, nearest first: the fact synthesized from a state where its cells are
-/// readable and re-read there (`at(statement(n).entry, ...)`), then, for an
-/// equality whose operands were read from different states, one anchor per
-/// operand. Callers must re-lower each candidate and accept it only when it
-/// denotes exactly `kernel`.
-///
-/// Seek lazily through the persistent state tree, nearest point first.
-/// Both tree traversal and candidate synthesis check the verifier budget;
-/// a successful near-anchor candidate costs logarithmic work in history size.
-/// Exhaustion is sticky and stops this iterator before any further synthesis.
-/// The cross-state equality fallback sees only the already visited points.
-pub(super) fn synthesize_surface_at_recorded_states<'a>(
-    kernel: &'a Proposition,
-    parameter_binding: ParameterBinding<'a>,
-    recorded_states: &'a RecordedStates,
-    anchor: &ProgramPointRef,
-) -> impl Iterator<Item = ClickProposition> + 'a {
-    let anchor_index = match &anchor.region {
-        CodeRegionRef::Region(index) => *index,
-        _ => usize::MAX,
-    };
-    // This is speculative premise presentation, not an explicit request to
-    // visit the execution history. A missing spelling must not scan every
-    // retained state for each equality candidate. Probe a small neighborhood;
-    // callers can name an older state explicitly when this search misses.
-    const MAX_STATE_CANDIDATES: usize = 256;
-    let mut entries = recorded_states
-        .statement_entries_nearest(anchor_index)
-        .take(MAX_STATE_CANDIDATES);
-    let mut points = Vec::new();
-    let mut finished = false;
-    std::iter::from_fn(move || {
-        if finished || crate::instrumentation::deadline_exceeded() {
-            finished = true;
-            return None;
-        }
-        for (point, state) in entries.by_ref() {
-            if crate::instrumentation::deadline_exceeded() {
-                finished = true;
-                return None;
-            }
-            points.push((point.clone(), state));
-            if let Some(surface) = synthesize_surface_proposition(kernel, parameter_binding, state)
-                && let Ok(surface) = surface_at_program_point(&surface, point)
-            {
-                return Some(surface);
-            }
-        }
-        finished = true;
-        if crate::instrumentation::deadline_exceeded() {
-            return None;
-        }
-        synthesize_surface_equality_across_points(kernel, parameter_binding, &points)
-    })
-}
-
-/// [`synthesize_surface_at_recorded_states`] for a fact that mixes states:
-/// spelled at `current`, with each recorded statement entry nearest `anchor`
-/// in turn as the one further state for a value only that entry state
-/// reads, such as `link.link == ParentLink::Linked(at(region(3).entry,
-/// p->kid))`. The same bounded neighborhood as the whole-fact probe.
-fn synthesize_surface_with_recorded_state<'a>(
-    kernel: &'a Proposition,
-    parameter_binding: ParameterBinding<'a>,
-    entry: &'a ExecutionState,
-    current: &'a ExecutionState,
-    recorded_states: &'a RecordedStates,
-    anchor: &ProgramPointRef,
-) -> impl Iterator<Item = ClickProposition> + 'a {
-    let anchor_index = match &anchor.region {
-        CodeRegionRef::Region(index) => *index,
-        _ => usize::MAX,
-    };
-    const MAX_STATE_CANDIDATES: usize = 256;
-    recorded_states
-        .statement_entries_nearest(anchor_index)
-        .take(MAX_STATE_CANDIDATES)
-        .take_while(|_| !crate::instrumentation::deadline_exceeded())
-        .filter_map(move |(point, state)| {
-            let selector = ProgramPointSelector::ProgramPoint(point.clone());
-            super::surface_synthesis::synthesize_surface_proposition_at_entry_post_and_state(
-                kernel,
-                parameter_binding,
-                entry,
-                current,
-                Some((state, &selector)),
-            )
-        })
 }
 
 /// Whether a fact the last step checked is the focused goal under another

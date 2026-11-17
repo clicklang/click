@@ -789,7 +789,7 @@ impl EqualityGraph {
     }
 
     /// Whole pointer reads linked by the selected memory producer share
-    /// their origin and opaque extent, independently of the eventual type.
+    /// their origin and opaque bounds, independently of the eventual type.
     pub(in crate::kernel) fn add_checked_pointer_read_equality(
         &self,
         left: &Pointer,
@@ -818,16 +818,16 @@ impl EqualityGraph {
             .opaque_pointer_domain(origin)
     }
 
-    pub(in crate::kernel) fn opaque_extent_is_root(&self, origin: &Pointer) -> bool {
+    pub(in crate::kernel) fn bounds_owner_is_root(&self, origin: &Pointer) -> bool {
         let mut state = self.state.lock().expect("equality graph");
         self.register_logical_read_values(&mut state, [origin]);
-        state.terms.opaque_extent_is_root(origin)
+        state.terms.bounds_owner_is_root(origin)
     }
 
-    pub(in crate::kernel) fn opaque_extents_equal(&self, left: &Pointer, right: &Pointer) -> bool {
+    pub(in crate::kernel) fn bounds_owners_equal(&self, left: &Pointer, right: &Pointer) -> bool {
         let mut state = self.state.lock().expect("equality graph");
         self.register_logical_read_values(&mut state, [left, right]);
-        state.terms.opaque_extents_equal(left, right)
+        state.terms.bounds_owners_equal(left, right)
     }
 
     fn register_logical_read_values<'a>(
@@ -972,7 +972,7 @@ impl EqualityGraph {
             state.terms.add_address_equality(value, application);
         }
         // Projection and selected-width naming preserve the complete pointer
-        // read, including its object and extent, not only its address.
+        // read, including its object and bounds, not only its address.
         for (read, source) in read_domains {
             state.terms.merge_pointer_read_domains(&read, &source);
         }
@@ -3421,7 +3421,7 @@ mod tests {
             crate::kernel::ProgramType::Int32Pointer,
         );
         let origin = domain
-            .opaque_extent()
+            .bounds_owner()
             .expect("an unseen pointer has an opaque domain")
             .clone();
         let mut sources = (1..=4)

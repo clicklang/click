@@ -716,7 +716,7 @@ pub(in crate::kernel) fn bitvector_variable(term: &MachineTerm) -> Option<Variab
 /// **The** reader for the signed value of a constant `int32` term.
 ///
 /// `MachineTerm::as_const` answers `u32`, and every `int32` quantity the
-/// kernel orders — an element index, a range endpoint, a block extent, an
+/// kernel orders — an element index, a range endpoint, a block size, an
 /// owned quantity — is a signed number held in those bits. Reading one
 /// through `as_const` and then comparing it makes `-1` the largest number
 /// there is, which is how `e219bbc8`, `a98a05e4` and the commits beside them

@@ -6,7 +6,7 @@ use super::*;
 
 #[test]
 #[ignore = "nightly: 0.5s in the parallel gate"]
-fn charon_slice_into_iter_work_does_not_depend_on_slice_extent() {
+fn charon_slice_into_iter_work_does_not_depend_on_slice_length() {
     let export = decode(ARTIFACT, "iteration.rs", SOURCE).unwrap();
     let prepared = super::super::super::import::prepared_for_test(export).unwrap();
     let mut previous = None;
@@ -21,7 +21,7 @@ fn charon_slice_into_iter_work_does_not_depend_on_slice_extent() {
         if let Some(previous) = previous {
             assert!(
                 work <= previous + 1000,
-                "extent {length}: {work}, previous {previous}"
+                "length {length}: {work}, previous {previous}"
             );
         }
         previous = Some(work);

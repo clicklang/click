@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn write_extent_must_fit_inside_owned_byte_footprint() {
+fn write_span_must_fit_inside_owned_byte_footprint() {
     let base = Pointer {
         block: "global:owned".into(),
         offset: PointerOffsetTerm::Constant(0),

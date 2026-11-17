@@ -226,7 +226,7 @@ This limit does not restrict an explicit `using` list. A refused written view
 premise count when it exceeds this limit, in the ordinary error and trace.
 The native kernel view query and source-certificate construction are distinct:
 a positive kernel query can still lack a printable checked proof. Do not infer
-a missing extent premise from that construction failure.
+a missing span premise from that construction failure.
 
 The result distinguishes three important cases:
 
