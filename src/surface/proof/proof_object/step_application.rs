@@ -790,25 +790,15 @@ impl<'a> Proof<'a> {
         &self,
         surface_premises: &[ClickProposition],
     ) -> Result<KernelProofHandle, ClickError> {
+        use crate::kernel::proof::fact_reasoning::ConditionalNormalizationError;
         let premises = surface_premises
             .iter()
             .map(|premise| {
                 self.lower_cited_surface_proposition(premise, "`normalize using` premise")
             })
             .collect::<Result<Vec<_>, _>>()?;
-        self.normalize_using_facts(&premises)
-    }
-
-    /// `normalize using` over premises given as the kernel facts they are.
-    /// The kernel step checks each one's exact availability itself, so a
-    /// caller holding kernel facts needs no Surface form to apply it.
-    pub(in crate::surface::proof) fn normalize_using_facts(
-        &self,
-        premises: &[Proposition],
-    ) -> Result<KernelProofHandle, ClickError> {
-        use crate::kernel::proof::fact_reasoning::ConditionalNormalizationError;
         let (result, read_resolutions) =
-            crate::kernel::capture_read_resolutions(|| self.state.apply_normalize_using(premises));
+            crate::kernel::capture_read_resolutions(|| self.state.apply_normalize_using(&premises));
         result.map_err(|error| match error {
             PropositionCloseError::NotProposition => {
                 self.step_error("`normalize` requires a proposition goal")

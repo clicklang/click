@@ -4557,47 +4557,50 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .collect::<Vec<_>>(),
             _ => Vec::new(),
         };
-        // The guard facts the goal's conditionals test, as the kernel facts
-        // they are. They are raised to Surface forms only once a step citing
-        // them has closed (see the kernel attempt below).
-        let mut facts = Vec::new();
-        let mut held = BTreeSet::new();
-        for condition in &guards {
+        let mut premises = Vec::new();
+        let mut selected = BTreeSet::new();
+        for condition in guards {
             for value in [true, false] {
                 let fact = Proposition::ConditionIs(condition.clone(), value);
-                if search_input.facts().contains(&fact) && held.insert(fact.clone()) {
-                    facts.push(fact);
+                if !search_input.facts().contains(&fact)
+                    && !condition_polarity_forms(&fact)
+                        .iter()
+                        .any(|form| search_input.facts().contains(form))
+                {
+                    continue;
+                }
+                let surface = written_guards
+                    .iter()
+                    .find(|(lowered, _)| {
+                        *lowered == fact || condition_polarity_equivalent(lowered, &fact)
+                    })
+                    .map(|(_, surface)| surface.clone())
+                    .or_else(|| {
+                        crate::kernel::search::ProofSearch::available_surface_fact(
+                            search_input,
+                            surfaces,
+                            anchor,
+                            &fact,
+                        )
+                    })
+                    .or_else(|| {
+                        condition_polarity_forms(&fact).iter().find_map(|form| {
+                            crate::kernel::search::ProofSearch::available_surface_fact(
+                                search_input,
+                                surfaces,
+                                anchor,
+                                form,
+                            )
+                        })
+                    });
+                if let Some(surface) = surface
+                    && selected.insert(fact)
+                {
+                    premises.push(surface);
                 }
             }
         }
-        let raise_guard = |fact: &Proposition| {
-            written_guards
-                .iter()
-                .find(|(lowered, _)| {
-                    *lowered == *fact || condition_polarity_equivalent(lowered, fact)
-                })
-                .map(|(_, surface)| surface.clone())
-                .or_else(|| {
-                    crate::kernel::search::ProofSearch::available_surface_fact(
-                        search_input,
-                        surfaces,
-                        anchor,
-                        fact,
-                    )
-                })
-        };
-        // A guard the context holds in either polarity is needed to select an
-        // arm or to normalize; with none, neither route applies.
-        let any_guard_held = guards.iter().any(|condition| {
-            [true, false].into_iter().any(|value| {
-                let fact = Proposition::ConditionIs(condition.clone(), value);
-                search_input.facts().contains(&fact)
-                    || condition_polarity_forms(&fact)
-                        .iter()
-                        .any(|form| search_input.facts().contains(form))
-            })
-        });
-        if !any_guard_held {
+        if premises.is_empty() {
             return None;
         }
         // Selecting an arm and proving arithmetic in it are separate simple
@@ -4656,48 +4659,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     return Some(closed);
                 }
             }
-        }
-        // Normalize with the guard facts as the kernel facts they are; their
-        // Surface forms are raised only once that step has closed the goal.
-        if !facts.is_empty()
-            && let Some(closed) = search_input
-                .driver()
-                .apply_normalize_using_facts(&facts, || facts.iter().map(raise_guard).collect())
-            && closed.focused_discharged()
-        {
-            return Some(closed);
-        }
-        let mut premises = Vec::new();
-        let mut selected = BTreeSet::new();
-        for condition in guards {
-            for value in [true, false] {
-                let fact = Proposition::ConditionIs(condition.clone(), value);
-                if !search_input.facts().contains(&fact)
-                    && !condition_polarity_forms(&fact)
-                        .iter()
-                        .any(|form| search_input.facts().contains(form))
-                {
-                    continue;
-                }
-                let surface = raise_guard(&fact).or_else(|| {
-                    condition_polarity_forms(&fact).iter().find_map(|form| {
-                        crate::kernel::search::ProofSearch::available_surface_fact(
-                            search_input,
-                            surfaces,
-                            anchor,
-                            form,
-                        )
-                    })
-                });
-                if let Some(surface) = surface
-                    && selected.insert(fact)
-                {
-                    premises.push(surface);
-                }
-            }
-        }
-        if premises.is_empty() {
-            return None;
         }
         Self::apply_normalization_closure(search_input, Some(premises)).ok()
     }

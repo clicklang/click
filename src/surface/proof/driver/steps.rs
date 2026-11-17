@@ -389,36 +389,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         self.apply_have_step(target, &certificate)
     }
 
-    /// `normalize using` over kernel premises, raised to their Surface
-    /// forms only once the kernel step has closed: `raise` runs after the
-    /// check, and its forms become the recorded step `click expand` prints.
-    /// `None` when the step does not apply or a premise does not raise.
-    pub(in crate::surface::proof) fn apply_normalize_using_facts(
-        &self,
-        premises: &[Proposition],
-        raise: impl FnOnce() -> Option<Vec<ClickProposition>>,
-    ) -> Option<Proof<'a>> {
-        let driver_proof = self.proof;
-        if driver_proof.focused_discharged() {
-            return None;
-        }
-        let successor = driver_proof.normalize_using_facts(premises).ok()?;
-        let step = ProofStep::NormalizeUsing(raise()?);
-        self.observe_step(step, |step| {
-            Ok(Proof {
-                site: driver_proof.site.clone(),
-                context: driver_proof.context.clone(),
-                state: successor,
-                node: ProofNode::step_child(
-                    &driver_proof.node,
-                    driver_proof.focused_branch_id(),
-                    Arc::new(step),
-                ),
-            })
-        })
-        .ok()
-    }
-
     pub(in crate::surface::proof) fn apply_step_without_outcome_wrapping(
         &self,
         step: ProofStep,
