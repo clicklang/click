@@ -123,3 +123,61 @@ fn narrow_cast_chains_fold_a_late_constant_in_linear_work() {
     }
     assert_constant_step("narrow cast chain", &samples);
 }
+
+#[test]
+fn narrow_store_equation_queries_do_not_walk_alias_classes_or_unrelated_cells() {
+    for format in [Ty::Int8, Ty::UInt8, Ty::Int16, Ty::UInt16] {
+        for related in [false, true] {
+            let mut samples = Vec::new();
+            for size in [16_u64, 64, 256, 1024] {
+                let _session = crate::kernel::VerificationSession::enter();
+                let cell = |i| Pointer {
+                    block: "narrow".into(),
+                    offset: PointerOffsetTerm::Constant(i * 4),
+                };
+                let stored = narrow_stored_value(format, 7);
+                let mut memory = Memory::new().with_block("narrow", (size as u32 + 1) * 4);
+                let mut facts = PureFactContext::new();
+                for i in 1..=size {
+                    memory = memory.store(cell(i as i64), narrow_stored_value(format, 3));
+                    facts = facts.assume_condition(
+                        ConditionTerm::pointer_equal(
+                            Pointer::symbolic(Variable(995000 + i)),
+                            if related { cell(0) } else { cell(i as i64) },
+                        ),
+                        true,
+                    );
+                }
+                memory = memory.store(cell(0), stored.clone());
+                let query = Pointer::symbolic(Variable(999999));
+                facts = facts
+                    .assume_condition(ConditionTerm::pointer_equal(query.clone(), cell(0)), true);
+                facts = facts.assume_proposition(
+                    crate::kernel::memory_provenance::store_value_equation(
+                        &memory,
+                        &cell(0),
+                        &stored,
+                    )
+                    .unwrap(),
+                );
+                let memory = intern_memory(memory);
+                let kind = LoadKind::of_value(&stored).unwrap();
+                let read = crate::kernel::eval::scalar_read_for_exact_cell(
+                    &memory,
+                    &query,
+                    kind,
+                    kind.byte_width(),
+                );
+                let (ok, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    narrow_equal(&facts.equality_graph, format, &read, &constant(format, 7))
+                });
+                assert!(ok, "{format:?}, related={related}, size={size}");
+                samples.push(work);
+            }
+            assert!(
+                samples.windows(2).all(|p| p[0] == p[1]),
+                "{format:?}, related={related}: {samples:?}"
+            );
+        }
+    }
+}

@@ -2859,7 +2859,7 @@ impl EqualityGraphState {
                     offset: PointerOffsetTerm::Constant(0),
                 });
                 // A function pointer read can meet a function pointer cell
-                // (`CellRead::FunctionPointer`). A data pointer read, which
+                // (the function-pointer cell route). A data pointer read, which
                 // every pointer comparison registers, does not look.
                 let cell = matches!(block, PointerBlock::FunctionSymbolic(_))
                     .then(|| (memory.clone(), address.clone()));
@@ -3367,7 +3367,12 @@ fn exact_read_comparison_input(term: &MachineTerm) -> MachineTerm {
         if crate::kernel::eval::is_selected_scalar_read(memory.shared_memory(), pointer, *kind) {
             return term.clone();
         }
-        if kind.is_word32() || *kind == LoadKind::Bits64 {
+        if matches!(
+            kind,
+            LoadKind::Int8 | LoadKind::UInt8 | LoadKind::Int16 | LoadKind::UInt16
+        ) || kind.is_word32()
+            || *kind == LoadKind::Bits64
+        {
             // Select the read identity without recovering a cached value.
             // Already-selected reads above retain their producer's identity.
             return crate::kernel::canonical_form_of_load(
