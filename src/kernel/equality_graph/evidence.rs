@@ -115,12 +115,13 @@ impl EqualityGraph {
             }
         }
         let mut variables = BTreeSet::new();
-        if crate::kernel::reasoning::variable_collection::collect_condition_coordinate_index_variables(
+        // Read identities depend on their selected state/address, not the
+        // values cached in that state. Record the written coordinates only;
+        // an unrelated read must not disable every parameter-store partition.
+        crate::kernel::reasoning::variable_collection::collect_condition_coordinate_index_variables(
             condition,
             &mut variables,
-        ) {
-            self.admitted.scalar_deferred_inputs = true;
-        }
+        );
         for variable in variables {
             self.admitted.scalar_dependencies =
                 self.admitted.scalar_dependencies.with_value(variable);
@@ -398,15 +399,13 @@ impl EqualityGraph {
 
 impl EqualityGraph {
     /// A selected pointer may use the flat parameter shortcut only when no
-    /// admitted scalar/offset source can change its coordinate. Complex load
-    /// dependencies conservatively stay on the ordinary store ladder.
+    /// admitted scalar/offset source mentions its coordinate. A read inside
+    /// the selected offset still stays on the ordinary store ladder; a read
+    /// in an unrelated source does not disable this shortcut.
     pub(in crate::kernel) fn offset_has_source_dependencies(
         &self,
         offset: &PointerOffsetTerm,
     ) -> bool {
-        if self.admitted.scalar_deferred_inputs {
-            return true;
-        }
         let root = crate::kernel::primitives::offset_root_atom(offset);
         if self
             .admitted
