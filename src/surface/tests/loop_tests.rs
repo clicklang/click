@@ -2,6 +2,40 @@ use super::*;
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_00")]
+fn separately_declared_guarded_invariants_close_at_the_back_edge() {
+    // Keep separately declared guarded members in the gate without the
+    // arithmetic search of the large counter-loop scaling audit.
+    let c_source = "void guarded_bundle(int x, int y) { int i = 1; while (i > 0) { i = 0; } }";
+    let click_source = r#"
+        verifying "guarded_bundle.c";
+        void guarded_bundle(int32 x, int32 y) {
+            requires x == 0;
+            requires y == 0;
+            ensures x == 0 or x == 1;
+            ensures y == 0 or y == 1;
+        } by {
+            step();
+            step();
+            loop {
+                decreases i;
+                invariant x == 0 or x == 1;
+                invariant y == 0 or y == 1;
+                initialize by solve();
+                preserve by {
+                    step();
+                    have x == 0 or x == 1 by { known(); }
+                    have y == 0 or y == 1 by { known(); }
+                }
+            }
+            step();
+        }
+    "#;
+    verify_c_sources(click_source, &[("guarded_bundle.c", c_source)])
+        .expect("separately declared guarded invariants should close at the back edge");
+}
+
+#[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_00")]
 fn loop_metadata_sees_address_escape_after_the_loop() {
     let c_source = r#"void bounded(int32 n) {
         int32 i = 0;
@@ -2791,6 +2825,7 @@ test_batches! {
         nested_conjunction_extraction_precedes_explicit_arithmetic_certificate,
         lexicographic_ranking_bundle_prints_its_pivot_arm,
         smart_ranking_closure_expands_its_pivot_arm,
+        separately_declared_guarded_invariants_close_at_the_back_edge,
     ],
     loop_batch_01: [
         smart_ranking_closure_reads_an_inequality_in_scope,

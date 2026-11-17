@@ -2760,6 +2760,7 @@ fn separately_declared_member_bundle(declarations: usize) -> (String, String) {
 /// each time, and 28 declarations of a real proof exhausted the smart budget
 /// with every member already an available fact.
 #[test]
+#[ignore = "nightly: 22s focused, separately declared invariant scaling audit"]
 fn back_edge_closure_over_separately_declared_invariants_is_bounded_by_the_bundle() {
     let closer = [8, 16, 32]
         .into_iter()
@@ -10332,11 +10333,13 @@ fn conjunction_transport_replay_scales_with_explicit_links() {
 }
 
 #[test]
+#[ignore = "nightly: full skewed conjunction expansion and cold replay scaling audit"]
 fn nested_conjunction_transport_scales_with_written_leaves() {
     nested_conjunction_transport_scaling(false);
 }
 
 #[test]
+#[ignore = "nightly: 13s focused, balanced conjunction expansion and cold replay scaling audit"]
 fn balanced_nested_conjunction_transport_scales_with_written_leaves() {
     nested_conjunction_transport_scaling(true);
 }
@@ -10419,6 +10422,7 @@ fn nested_conjunction_transport_scaling(balanced: bool) {
 }
 
 #[test]
+#[ignore = "nightly: full conjunction projection expansion and cold replay scaling audit"]
 fn conjunction_projection_transport_scales_with_written_source() {
     fn balanced(leaves: &[String]) -> String {
         if leaves.len() == 1 {
