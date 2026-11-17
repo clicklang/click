@@ -7009,3 +7009,64 @@ fn symbolic_order_guard_conditionals_round_trip_after_rewrite() {
         check_order_guard_conditional_round_trips(format, spelling, &[("y", 8)]);
     }
 }
+
+#[test]
+fn closed_machine_equality_lowering_retains_its_comparison() {
+    use crate::kernel::MachineIntegerType as T;
+    let state = ExecutionState::new();
+    // A wide equality is filed at `int64`, as the folding constructor files
+    // a symbolic one.
+    for (spelling, filed) in [
+        ("int8", T::Int8),
+        ("uint8", T::UInt8),
+        ("int16", T::Int16),
+        ("uint16", T::UInt16),
+        ("int32", T::Int32),
+        ("uint32", T::UInt32),
+        ("int64", T::Int64),
+        ("uint64", T::Int64),
+    ] {
+        for (right, operator, held, truth) in [
+            (5, "==", true, false),
+            (9, "==", true, true),
+            (5, "!=", false, true),
+            (9, "!=", false, false),
+        ] {
+            let source = format!(
+                "theorem probe() {{ requires (9 as {spelling}) {operator} ({right} as {spelling}); ensures true; }}"
+            );
+            let file = parser::parse(&source).unwrap();
+            let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0]
+            else {
+                panic!("requirement")
+            };
+            let lowered = relower_written_proposition(written, &state).unwrap();
+            let Proposition::ConditionIs(
+                condition @ ConditionTerm::Compare {
+                    format: actual,
+                    relation: CompareRelation::Equal,
+                    ..
+                },
+                actual_held,
+            ) = &lowered
+            else {
+                panic!("{source}: {lowered:?}")
+            };
+            assert_eq!((*actual, *actual_held), (filed, held), "{source}");
+            assert_eq!(
+                PureFactContext::new().decide(condition) == Some(held),
+                truth,
+                "{source}"
+            );
+            let raised =
+                synthesize_surface_proposition(&lowered, ParameterBinding::default(), &state)
+                    .unwrap();
+            assert_eq!(
+                relower_written_proposition(&raised, &state).unwrap(),
+                lowered,
+                "{source}: {}",
+                crate::surface::printing::source_click_proposition(&raised)
+            );
+        }
+    }
+}
