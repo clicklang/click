@@ -1,6 +1,42 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: viewability diagnostic and saved-premise replay"]
+fn earlier_viewable_premise_keeps_its_point_without_transport() {
+    let (source, sources) =
+        mdtest_sources("mdtests/a_viewable_premise_from_an_earlier_point_prints_that_point.md");
+    let (name, c) = &sources[0];
+    assert!(!source.contains("transport("));
+    let error = verify_c_sources(&source, &[(name.as_str(), c.as_str())]).unwrap_err();
+    let report = error.report();
+    assert!(report.contains("goal: viewable(q[0..4])"), "{report}");
+    assert!(
+        report.contains("at(function.entry, viewable(q[0..k + 4u64 - k]))"),
+        "{report}"
+    );
+
+    let control = source.replace(
+        "    have viewable(q[0..4]) by {\n        rewrite(q, p + k);\n        known();\n    }",
+        "    have at(function.entry, viewable(p[k..k + 4u64])) by { known(); }",
+    );
+    assert_ne!(control, source);
+    // Read via the original pointer so the control isolates the saved view
+    // without requiring another proof of the aliases' return-value equality.
+    let control_c = c.replace("return q[3];", "return p[k + 3];");
+    assert_ne!(&control_c, c);
+    let sources = [(name.as_str(), control_c.as_str())];
+    verify_c_sources(&control, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let label = "last.contract";
+    let expanded = expand_c_claim_source_by_label(&control, &sources, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 #[ignore = "nightly: wide element bounds, initializedness, and cold replay"]
 fn wide_viewable_element_needs_containment_and_initializedness() {
     let (source, sources) =
