@@ -5402,6 +5402,9 @@ pub enum SpecProposition {
         expression: SpecExpression,
         classification: FloatClassification,
     },
+    /// A written `true` or `false`: lowers to that constant condition
+    /// directly, not through a comparison.
+    Truth(bool),
     And(Box<SpecProposition>, Box<SpecProposition>),
     Or(Box<SpecProposition>, Box<SpecProposition>),
     Not(Box<SpecProposition>),

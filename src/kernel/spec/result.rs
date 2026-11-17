@@ -193,8 +193,7 @@ impl SpecValue {
                     | MachineIntegerType::UInt8
                     | MachineIntegerType::Int16
                     | MachineIntegerType::UInt16
-            ) && !matches!(op, ComparisonOperator::Equal | ComparisonOperator::NotEqual)
-                && left.literal().is_some()
+            ) && left.literal().is_some()
                 && right.literal().is_some()))
         {
             let relation = match op {

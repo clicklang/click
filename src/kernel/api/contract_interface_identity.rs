@@ -621,6 +621,7 @@ impl Names {
         use SpecProposition::*;
         match proposition {
             ResourceViewable { resource, .. } => self.resource(resource),
+            Truth(_) => {}
 
             IntegerComparison { left, right, .. } => {
                 self.integer(left);

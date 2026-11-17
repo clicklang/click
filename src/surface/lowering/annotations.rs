@@ -4595,6 +4595,11 @@ impl AnnotationLowerer<'_> {
         if let Some(reduced) = lambdas::reduce_head(expression)? {
             return self.lower_proposition_value(&reduced, environment);
         }
+        // A written `true` or `false` is that truth value, not `literal ==
+        // true`.
+        if let Some(value) = crate::surface::bool_literal_value(expression) {
+            return Ok(SpecProposition::Truth(value));
+        }
         match expression {
             ContractExpression::Call { name, arguments }
                 if self
