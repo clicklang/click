@@ -149,8 +149,7 @@ fn equal_return_descriptions_keep_distinct_transfers_and_projection_lifetimes() 
                 &ConstructedReturnBodies::default(),
                 &facts,
                 &destination,
-            )
-            .unwrap();
+            );
             assert_eq!(projected.len(), 2);
             let mut views = Vec::new();
             for (projection, transfer) in projected.into_iter().zip(&transfers) {
@@ -1236,8 +1235,7 @@ fn flat_composite_return_carries_its_body_through_frontier_and_projection() {
         &bodies,
         &facts,
         &destination,
-    )
-    .unwrap();
+    );
     let mut views = Vec::new();
     for projection in projected {
         assert_eq!(projection.frontier.len(), 3);
@@ -1386,8 +1384,7 @@ fn sealed_return_dispatch_retains_opaque_identity_and_projection_needs_no_defini
         &bodies,
         &facts,
         &destination,
-    )
-    .unwrap();
+    );
     assert_eq!(projected[0].expansion, vec![head]);
     assert!(projected[0].frontier.is_empty());
     assert!(projected[0].viewed_children.as_slice().is_empty());
@@ -1566,13 +1563,14 @@ fn flat_body_admission_keeps_selected_alias_diagnostics_and_branch_isolation() {
         .unchecked_with_facts([owner(alias.clone(), 4, 5), owner(alias.clone(), 6, 7)]);
     parent.synchronize_memory_equalities(&facts);
     assert!(matches!(
-        parent.admit_returned_flat_body(body, &facts),
+        parent.admit_returned_frontier(body.boundary(), &facts),
         FlatBodyAdmission::Admitted
     ));
     let overlapping = owner(alias, 2, 3);
     let branch = parent.clone().unchecked_with_fact(overlapping.clone());
     branch.synchronize_memory_equalities(&facts);
-    let FlatBodyAdmission::Conflict { piece, held } = branch.admit_returned_flat_body(body, &facts)
+    let FlatBodyAdmission::Conflict { piece, held } =
+        branch.admit_returned_frontier(body.boundary(), &facts)
     else {
         panic!("an aliased body leaf must conflict");
     };
@@ -1581,7 +1579,7 @@ fn flat_body_admission_keeps_selected_alias_diagnostics_and_branch_isolation() {
     assert_eq!(branch.facts().len(), 3);
     assert_eq!(parent.facts().len(), 2);
     assert!(matches!(
-        parent.admit_returned_flat_body(body, &facts),
+        parent.admit_returned_frontier(body.boundary(), &facts),
         FlatBodyAdmission::Admitted
     ));
 }
@@ -1594,7 +1592,7 @@ fn flat_body_admission_uses_cold_coordinates_but_refuses_general_geometry() {
     let body = bodies.get(evaluated.occurrences[0].source).unwrap();
     let cold = ResourceContext::new().unchecked_with_fact(owner(pointer.clone(), 0, 1));
     assert!(matches!(
-        cold.admit_returned_flat_body(body, &facts),
+        cold.admit_returned_frontier(body.boundary(), &facts),
         FlatBodyAdmission::Conflict { .. }
     ));
     // A cold lookup now reports the conflict without discovery.
@@ -1620,7 +1618,7 @@ fn flat_body_admission_uses_cold_coordinates_but_refuses_general_geometry() {
     let general = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(symbolic);
     general.synchronize_memory_equalities(&facts);
     assert!(matches!(
-        general.admit_returned_flat_body(body, &facts),
+        general.admit_returned_frontier(body.boundary(), &facts),
         FlatBodyAdmission::Unsupported
     ));
 }
@@ -1730,7 +1728,7 @@ fn composite_children_carry_consumed_sources_selected_before_return_lowering() {
             assert_eq!(pair[1].parent, pair[0].source);
         }
         assert!(matches!(
-            ResourceContext::new().admit_returned_flat_body(body, &facts),
+            ResourceContext::new().admit_returned_frontier(body.boundary(), &facts),
             FlatBodyAdmission::Admitted
         ));
         // The raw-description route cannot exercise the selected transfer.
@@ -1830,8 +1828,7 @@ fn decided_conditional_bodies_and_opaque_guards_are_constructed_once() {
             &bodies,
             &facts,
             &destination,
-        )
-        .unwrap();
+        );
         assert_eq!(projected[0].expansion, body.expansion);
     }
 }
@@ -1873,7 +1870,7 @@ fn nested_body_normalization_keeps_distinct_child_identities_and_checks_internal
         ResourceContext::new_with_equalities(&facts).unchecked_with_fact(owner(pointer, 0, 1));
     frame.synchronize_memory_equalities(&facts);
     assert!(matches!(
-        frame.admit_returned_flat_body(body, &facts),
+        frame.admit_returned_frontier(body.boundary(), &facts),
         FlatBodyAdmission::Conflict { .. }
     ));
     let mut definitions = function
@@ -2034,7 +2031,7 @@ fn viewed_children_keep_ownership_incremental_without_acquiring_ownership_origin
             ));
             frame.synchronize_memory_equalities(&facts);
             assert!(matches!(
-                frame.admit_returned_flat_body(body, &facts),
+                frame.admit_returned_frontier(body.boundary(), &facts),
                 FlatBodyAdmission::Admitted
             ));
             let (destination, transfers) = evaluated
@@ -2048,8 +2045,7 @@ fn viewed_children_keep_ownership_incremental_without_acquiring_ownership_origin
                 &bodies,
                 &facts,
                 &destination,
-            )
-            .unwrap();
+            );
             assert_eq!(
                 projected[0].viewed_children.as_slice(),
                 &body.viewed_children
@@ -2330,8 +2326,7 @@ fn packaged_views_keep_normalized_descriptions_and_the_raw_source_group() {
         &bodies,
         &facts,
         &destination,
-    )
-    .unwrap();
+    );
     let pieces = projected[0].constructed_borrowing_pieces();
     assert_eq!(pieces.len(), 1);
     assert_eq!(

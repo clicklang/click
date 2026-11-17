@@ -250,8 +250,7 @@ fn named_instances_carry_exact_fields_occurrences_and_projection_without_definit
         &bodies,
         &facts,
         &destination,
-    )
-    .unwrap();
+    );
     assert_eq!(projected.len(), 2);
     assert_eq!(
         projected[0].expansion,
@@ -424,7 +423,7 @@ fn authority_returns_retain_ledger_counts_and_refuse_a_duplicate_held_authority(
     let held = authority(pointer, "member");
     let frame = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(held.clone());
     let FlatBodyAdmission::Conflict { held: selected, .. } =
-        frame.admit_returned_flat_body(body, &facts)
+        frame.admit_returned_frontier(body.boundary(), &facts)
     else {
         panic!("authority must not duplicate across the boundary");
     };
@@ -530,8 +529,7 @@ fn matched_returns_carry_one_selected_constructor_and_keep_unknown_models_opaque
         &bodies,
         &branch,
         &destination,
-    )
-    .unwrap();
+    );
     assert_eq!(projected[0].expansion, body.expansion);
     assert!(projected[0].constructed_borrowing_pieces().is_empty());
     let parent_bodies = ConstructedReturnBodies::construct(

@@ -877,7 +877,7 @@ struct CompositeChildTransfer {
 #[cfg_attr(test, derive(Default))]
 pub(super) struct ConstructedReturnBodies(BTreeMap<ResourceOccurrenceId, ConstructedReturnBody>);
 
-pub(in crate::kernel) struct ConstructedReturnBody {
+pub(super) struct ConstructedReturnBody {
     // Each binding belongs to the actual occurrence opened by the producer.
     // Projection and admission consume its expansion without rebinding it.
     #[allow(dead_code)]
@@ -934,7 +934,7 @@ impl ConstructedReturnBody {
             .collect()
     }
 
-    pub(in crate::kernel) fn boundary(&self) -> &[ResourceFact] {
+    pub(super) fn boundary(&self) -> &[ResourceFact] {
         &self.boundary
     }
 }
@@ -1584,14 +1584,13 @@ impl ProjectedReturnResource {
 
 /// Read each owned output by its selected source identity. Equal descriptions
 /// have independent transfers and never require an occurrence census or rank.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn project_return_resource_cores(
     source: &ResourceContext,
     transfers: &[ReturnResourceTransfer],
     bodies: &ConstructedReturnBodies,
     assumptions: &PureFactContext,
     destination: &ResourceContext,
-) -> Option<Vec<ProjectedReturnResource>> {
+) -> Vec<ProjectedReturnResource> {
     let _assumptions_id_scope = crate::kernel::PureFactContextIdScope::enter(assumptions);
     transfers
         .iter()
@@ -1617,7 +1616,7 @@ pub(super) fn project_return_resource_cores(
                 .collect::<BTreeSet<_>>()
                 .into_iter()
                 .collect::<Vec<_>>();
-            Some(ProjectedReturnResource {
+            ProjectedReturnResource {
                 source: source_occurrence,
                 support: support.clone(),
                 destination: destination_occurrence,
@@ -1627,7 +1626,7 @@ pub(super) fn project_return_resource_cores(
                     .map(|body| body.viewed_children.clone())
                     .unwrap_or_default(),
                 frontier,
-            })
+            }
         })
         .collect()
 }

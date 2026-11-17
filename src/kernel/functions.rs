@@ -26,8 +26,8 @@ mod produced_argument_supply;
 mod return_loan_backing;
 mod summary_transfer;
 pub(in crate::kernel) use mixed_return_resources::{
-    ConstructedBodyReturn, ConstructedReturnBody, EscrowRecoveryBoundary, ReturnResourceTransfer,
-    ReturnedConsumedCell, ReturnedFreshAllocation, ReturnedOwnershipPartition,
+    ConstructedBodyReturn, EscrowRecoveryBoundary, ReturnResourceTransfer, ReturnedConsumedCell,
+    ReturnedFreshAllocation, ReturnedOwnershipPartition,
 };
 use mixed_return_resources::{
     ConstructedReturnBodies, ConsumedCellReturns, EvaluatedReturnResources, FreshAllocationReturn,
@@ -13393,7 +13393,7 @@ fn evaluate_contract_return_resources(
             Ok(resources) => resources,
             Err(error) => return Ok(Err(resource_context_runtime_error(error))),
         };
-    let Some(projected_cores_by_support) = crate::instrumentation::measure_operation(
+    let projected_cores_by_support = crate::instrumentation::measure_operation(
         interface_name,
         "contract resource transition",
         "ensured resource core projection",
@@ -13406,12 +13406,7 @@ fn evaluate_contract_return_resources(
                 &return_resources,
             )
         },
-    ) else {
-        return Ok(Err(RuntimeError::FunctionContract(format!(
-            "could not expand ensured composite resources after call ({})",
-            bounded_contract_resource_frontier(ensured_resources)
-        ))));
-    };
+    );
     // The callee has already certified every ensured composite and its
     // instantiated body. Its duplicable cores are therefore observations of
     // certified ownership, not independent persistent caller capabilities.
