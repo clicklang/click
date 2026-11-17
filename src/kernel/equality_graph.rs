@@ -2870,18 +2870,12 @@ impl EqualityGraphState {
                     block: block.clone(),
                     offset: PointerOffsetTerm::Constant(0),
                 });
-                // A function pointer read can meet a function pointer cell
-                // (the function-pointer cell route). A data pointer read, which
-                // every pointer comparison registers, does not look.
-                let cell = matches!(block, PointerBlock::FunctionSymbolic(_))
-                    .then(|| (memory.clone(), address.clone()));
                 self.terms.pointer_read(
                     memory.read_identity(),
                     address_term,
                     kind,
                     value_term,
                     block.clone(),
-                    cell,
                 );
                 if is_application(&address.block) {
                     pending.push(address.block);
@@ -3162,7 +3156,6 @@ impl EqualityGraphState {
             .insert(kept.clone(), self.weight(&moved) + self.weight(&kept));
         self.weights.remove(&moved);
         let mut affected = Vec::new();
-        let moved_deltas = deltas.clone();
         for (member, delta) in deltas {
             if let Some(users) = self.uses.get(&member) {
                 affected.extend(users.iter().cloned());
@@ -3174,7 +3167,6 @@ impl EqualityGraphState {
         self.members.remove(&moved);
         self.members.insert(kept.clone(), kept_members);
         self.terms.shift_addresses(&moved, &kept, &moved_from_kept);
-        self.terms.join_block_classes(&moved, &kept, &moved_deltas);
         self.merge_history = Some(std::sync::Arc::new(PointerMergeHistory {
             depth: self.merge_history.as_ref().map_or(1, |node| node.depth + 1),
             merge: PointerClassMerge {
@@ -4535,3 +4527,6 @@ mod boolean_cast_dependency_tests {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }
+
+#[cfg(test)]
+mod function_read_tests;

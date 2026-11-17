@@ -747,8 +747,10 @@ propagates it through address aliases and enclosing expressions. The equation
 remains scoped to its fact context. Signed-byte reinterpretation and exact
 projection links still relate read identities without fetching cached values.
 Scalar registration no longer retains an observation-origin memory for a
-cached-cell lookup. The remaining pending cached-cell lookup queue is only
-for function pointers. Separate memory-resolution APIs and compound-term
+cached-cell lookup. Function-pointer stores also retain an explicit typed
+read equation. Read registration has no pending cached-cell lookup queue,
+unresolved-cell retry index, or mirrored alias-class maps. Separate checked
+pointer-read authorities, memory-resolution APIs, and compound-term
 canonicalization remain outside this registration boundary.
 
 Cold scalar queries use address congruence and explicit equations instead of
@@ -941,16 +943,16 @@ respell the address through the equality (lowering is fact-stable,
 and alias-before-equation admission orders work, without enumerating aliases
 or reading the memory's cached values.
 
-Function pointers retain a separate cached-cell route in
-`TermClasses::equate_function_pointer_with_aliased_cell`. It spells the read's
-address in each member of its block class and looks up a function-pointer
-cell in the read's naming state. An unresolved read waits under its class
-root; a later block union retries the new members. This route is not used by
-integer or data-pointer reads. A stored data pointer reaches its read through
-checked read evidence, and its registration does not visit alias classes.
-Regressions include `a_wide_read_requires_an_explicit_store_equation_even_through_aliases`,
-the four `*_read_requires_store_equation` narrow tests, their scaling tests,
-and `mdtests/load_through_a_pointer_alias_after_a_store.md`.
+Function-pointer stores retain the complete typed equality between the read at
+that store's state and its supplied function value. A function read registers
+its state/address application; ordinary congruence propagates the explicit
+fact through aliases, including aliases admitted later. It does not enumerate
+an address class, consult cached cells, or retry cached lookup after a union.
+The separate data-pointer checked-read/provenance machinery is unchanged.
+Regressions include `function_pointer_read_requires_explicit_store_equation`,
+`function_pointer_read_query_does_not_scan_aliases_or_cells`,
+`a_wide_read_requires_an_explicit_store_equation_even_through_aliases`, the four
+narrow `*_read_requires_store_equation` tests, and their scaling tests.
 
 A word that a recorded true 64-bit equality equates with an expression
 naming a pointer address is also filed by class

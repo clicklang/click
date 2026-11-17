@@ -28,16 +28,6 @@ mod machine_relations;
 mod shared_machine;
 pub(super) use congruence::has_machine_operands;
 
-/// A function-pointer read to look up in its whole address class, or only
-/// the members a union just brought to it.
-#[derive(Clone)]
-pub(super) struct PendingFunctionPointerRead {
-    pub(super) read: u64,
-    pub(super) memory: crate::kernel::SharedMemory,
-    pub(super) pointer: Pointer,
-    pub(super) only: Option<Arc<[(PointerBlock, AffineOffset)]>>,
-}
-
 /// The producer distinguishes affine definitions from assumed equalities.
 /// Keep that distinction on each edge through iterative congruence closure.
 #[derive(Default)]
@@ -629,12 +619,6 @@ pub(super) struct TermClasses {
     // detects divergent query registrations without scanning that prefix.
     markers: PersistentMap<u64, Arc<()>>,
     address_uses: PersistentMap<PointerBlock, PersistentMap<u64, Arc<PointerOffsetTerm>>>,
-    // The pointer block classes, mirrored from the graph's block union-find
-    // as `relabel` reports each union: every member's base relative to its
-    // class root, as in `EqualityGraphState::members`. A read looks for a
-    // stored cell at its address spelled in each member.
-    block_roots: PersistentMap<PointerBlock, (PointerBlock, AffineOffset)>,
-    block_members: PersistentMap<PointerBlock, PersistentMap<PointerBlock, AffineOffset>>,
     address_nodes: PersistentSet<u64>,
     // A displacement definition is permanent for one raw address spelling.
     // Repeated queries reuse it without re-registering its base or closure.
@@ -713,20 +697,11 @@ pub(super) struct TermClasses {
         crate::kernel::Pointer,
         crate::kernel::LoadKind,
     )>,
-    // Function-pointer reads whose stored cell under another address spelling
-    // is still to be looked up; drained with the other registration work.
-    pending_function_pointer_reads: Vec<PendingFunctionPointerRead>,
     // The endpoints of recorded true 64-bit equality facts, by class. A
     // consumer that needs a recorded fact about a word (a pointer recovered
     // from `word == address(p)`) finds the facts of every word equal to it.
     // A merge moves the smaller set.
     wide_equation_endpoints: PersistentMap<u64, PersistentSet<crate::kernel::MachineTerm>>,
-    // Reads that found no stored cell, by the root of their block class. A
-    // later union of that class looks again, so the answer does not depend
-    // on whether the read or the pointer equality came first. A read leaves
-    // once found.
-    unresolved_function_pointer_reads:
-        PersistentMap<PointerBlock, PersistentMap<u64, Arc<PendingFunctionPointerRead>>>,
     pending_pointer_calls: Vec<(u64, crate::kernel::SharedPureApplication)>,
     pending_pointer_identities: Vec<(u64, crate::kernel::SharedPureApplication)>,
     registering_dependencies: bool,
@@ -949,22 +924,11 @@ impl TermClasses {
         kind: crate::kernel::LoadKind,
         value: u64,
         block: PointerBlock,
-        cell: Option<(crate::kernel::SharedMemory, Pointer)>,
     ) {
         let address = self.read_address(address);
         let read = self.intern_node(Node::PointerRead(retained_state, address, kind));
         self.close_with_affine_definition(vec![(value, read)], true);
         self.retain_pointer_value_witness(self.root(value), block);
-        if let Some((memory, pointer)) = cell {
-            self.pending_function_pointer_reads
-                .push(PendingFunctionPointerRead {
-                    read: value,
-                    memory,
-                    pointer,
-                    only: None,
-                });
-            self.register_pending_loads();
-        }
     }
 
     /// The operand of a read: the numeric address of `address`, not the
@@ -2041,143 +2005,7 @@ impl TermClasses {
             // Registering a read only establishes its address/state application;
             // it must not import additional equalities from cached memory.
         }
-        while let Some(pending) = self.pending_function_pointer_reads.pop() {
-            self.equate_function_pointer_with_aliased_cell(pending);
-        }
         self.registering_dependencies = false;
-    }
-
-    /// A function-pointer read of a state at an address equals the value the state
-    /// stores at an equal address under another spelling: a store through
-    /// `p` read through `id` once `p == id`. The read keeps its own term,
-    /// fact-free; the equality of the two addresses is this context's, so
-    /// the union is too (`docs/internals/raise-lower-principle.md`). The spellings
-    /// are the read's address in each member of its block class, one cell
-    /// lookup each, as `EqualityGraph::pointer_spellings` spells them.
-    fn equate_function_pointer_with_aliased_cell(&mut self, pending: PendingFunctionPointerRead) {
-        let PendingFunctionPointerRead {
-            read,
-            ref memory,
-            ref pointer,
-            ref only,
-        } = pending;
-        let (root, own) = self
-            .block_roots
-            .get(&pointer.block)
-            .cloned()
-            .unwrap_or_else(|| (pointer.block.clone(), AffineOffset::default()));
-        let members: Arc<[(PointerBlock, AffineOffset)]> = only.clone().unwrap_or_else(|| {
-            std::iter::once((root.clone(), AffineOffset::default()))
-                .chain(
-                    self.block_members
-                        .get(&root)
-                        .into_iter()
-                        .flat_map(|members| members.iter())
-                        .map(|(member, delta)| (member.clone(), delta.clone())),
-                )
-                .collect()
-        });
-        let offset = AffineOffset::of(&pointer.offset);
-        let mut found = None;
-        for (member, delta) in members.iter() {
-            crate::instrumentation::record_deterministic_work(1);
-            let spelling = if *member == pointer.block {
-                Some(pointer.offset.clone())
-            } else {
-                offset
-                    .as_ref()
-                    .and_then(|offset| offset.checked_add(&own.checked_sub(delta)?))
-                    .and_then(|offset| offset.to_offset_term())
-            };
-            let Some(spelling) = spelling else {
-                continue;
-            };
-            let cell = Pointer {
-                block: member.clone(),
-                offset: spelling,
-            };
-            found = match memory.known_value(&cell) {
-                Some(crate::kernel::ProgramValue::Pointer(value))
-                    if matches!(
-                        value.program_type(),
-                        crate::kernel::ProgramType::FunctionPointer(_)
-                    ) =>
-                {
-                    Some(value.pointer().clone())
-                }
-                _ => continue,
-            };
-            break;
-        }
-        let value = match found {
-            Some(stored) => self.address(stored.block, stored.offset).0,
-            None => {
-                let mut reads = self
-                    .unresolved_function_pointer_reads
-                    .get(&root)
-                    .cloned()
-                    .unwrap_or_default();
-                if !reads.contains_key(&read) {
-                    reads.insert(
-                        read,
-                        Arc::new(PendingFunctionPointerRead {
-                            only: None,
-                            ..pending
-                        }),
-                    );
-                    self.unresolved_function_pointer_reads.insert(root, reads);
-                }
-                return;
-            }
-        };
-        self.close(vec![(read, value)]);
-    }
-
-    /// Mirrors one block union of the graph: `moved` (its class's root) and
-    /// its members, each with its new base relative to `kept`, join `kept`'s
-    /// class. Each side's unresolved reads then look in the members the
-    /// other side brings. Work is in the moved members and those reads.
-    pub(super) fn join_block_classes(
-        &mut self,
-        moved: &PointerBlock,
-        kept: &PointerBlock,
-        moved_members: &[(PointerBlock, AffineOffset)],
-    ) {
-        let kept_members: Arc<[(PointerBlock, AffineOffset)]> =
-            std::iter::once((kept.clone(), AffineOffset::default()))
-                .chain(
-                    self.block_members
-                        .get(kept)
-                        .into_iter()
-                        .flat_map(|members| members.iter())
-                        .map(|(member, delta)| (member.clone(), delta.clone())),
-                )
-                .collect();
-        let moved_members: Arc<[(PointerBlock, AffineOffset)]> = moved_members.into();
-        let mut members = self.block_members.get(kept).cloned().unwrap_or_default();
-        for (member, delta) in moved_members.iter() {
-            crate::instrumentation::record_deterministic_work(1);
-            self.block_roots
-                .insert(member.clone(), (kept.clone(), delta.clone()));
-            members.insert(member.clone(), delta.clone());
-        }
-        self.block_members.remove(moved);
-        self.block_members.insert(kept.clone(), members);
-        let moved_reads = self.unresolved_function_pointer_reads.get(moved).cloned();
-        let kept_reads = self.unresolved_function_pointer_reads.get(kept).cloned();
-        self.unresolved_function_pointer_reads.remove(moved);
-        self.unresolved_function_pointer_reads.remove(kept);
-        for (reads, other) in [(moved_reads, kept_members), (kept_reads, moved_members)] {
-            for entry in reads.iter().flat_map(|reads| reads.values()) {
-                crate::instrumentation::record_deterministic_work(1);
-                self.pending_function_pointer_reads
-                    .push(PendingFunctionPointerRead {
-                        only: Some(other.clone()),
-                        ..(**entry).clone()
-                    });
-            }
-        }
-        self.register_pending_loads();
     }
 
     pub(super) fn record_wide_equation_endpoint(&mut self, term: &crate::kernel::MachineTerm) {
