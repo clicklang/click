@@ -54,7 +54,7 @@ int32 loop_sorted_range_invariant(int32 p[3]) {
             unfold(sorted(old(p), 3));
             unfold(sorted_range(p, 0, 3));
             have i >= 0 and i <= 3 by {
-                both { normalize(); } and { normalize(); }
+                both { left => { normalize(); } right => { normalize(); } }
             }
             have sorted(old(p), 3) by {
                 unfold(sorted(old(p), 3));

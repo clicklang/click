@@ -232,7 +232,7 @@ pub(super) fn substitute_literals(
     locals: &mut Vec<Place>,
     blocks: &mut [MirBlock],
     temporaries: &BTreeSet<String>,
-    parameters: &BTreeSet<String>,
+    parameters: &BTreeMap<String, super::super::schema::Type>,
 ) {
     let mut reads = BTreeMap::<String, usize>::new();
     let mut named = BTreeSet::<String>::new();
@@ -256,16 +256,11 @@ pub(super) fn substitute_literals(
             named.insert(destination.clone());
         }
     }
-    let unchanged = unchanged_parameters(blocks, parameters, &named);
-    let references: BTreeSet<&String> = locals
+    let unchanged = unchanged_parameters(blocks, parameters);
+    let types: BTreeMap<&String, &super::super::schema::Type> = locals
         .iter()
-        .filter(|local| {
-            matches!(
-                local.value_type,
-                super::super::schema::Type::Reference { .. }
-            )
-        })
-        .map(|local| &local.name)
+        .map(|local| (&local.name, &local.value_type))
+        .chain(parameters.iter())
         .collect();
     // Each temporary assigned once, by its one value.
     let candidates: BTreeMap<String, E> = assignments
@@ -285,7 +280,7 @@ pub(super) fn substitute_literals(
             name,
             &candidates,
             &unchanged,
-            &references,
+            &types,
             &mut resolved,
             &mut BTreeSet::new(),
         );
@@ -343,6 +338,21 @@ fn put_back(expression: &mut E, values: &BTreeMap<String, E>) {
     {
         *expression = std::mem::replace(place.as_mut(), E::NoneBox);
     }
+    // A shared reborrow of a shared slice borrow is that borrow.
+    if let E::Borrow {
+        place,
+        value_type: super::super::schema::Type::ByteSlice { mutable: false },
+    } = expression
+        && matches!(
+            place.as_ref(),
+            E::Borrow {
+                value_type: super::super::schema::Type::ByteSlice { mutable: false },
+                ..
+            }
+        )
+    {
+        *expression = std::mem::replace(place.as_mut(), E::NoneBox);
+    }
 }
 
 /// The unchanging value of candidate `name`, memoized in `resolved`: its one
@@ -355,7 +365,7 @@ fn resolve(
     name: &str,
     candidates: &BTreeMap<String, E>,
     unchanged: &BTreeSet<String>,
-    references: &BTreeSet<&String>,
+    types: &BTreeMap<&String, &super::super::schema::Type>,
     resolved: &mut BTreeMap<String, Option<E>>,
     visiting: &mut BTreeSet<String>,
 ) -> Option<E> {
@@ -366,14 +376,20 @@ fn resolve(
     if !visiting.insert(name.to_string()) {
         return None;
     }
-    let mut reads = BTreeMap::new();
-    let mut named = BTreeSet::new();
-    expression_uses(value, &mut reads, &mut named);
+    // Every local the value reads, including a slice a length takes apart.
+    fn locals_in(expression: &E, out: &mut BTreeSet<String>) {
+        if let E::Local { name } = expression {
+            out.insert(name.clone());
+        }
+        for child in children(expression) {
+            locals_in(child, out);
+        }
+    }
+    let mut reads = BTreeSet::new();
+    locals_in(value, &mut reads);
     let mut inner = BTreeMap::new();
-    for read in reads.keys() {
-        if let Some(read_value) =
-            resolve(read, candidates, unchanged, references, resolved, visiting)
-        {
+    for read in &reads {
+        if let Some(read_value) = resolve(read, candidates, unchanged, types, resolved, visiting) {
             inner.insert(read.clone(), read_value);
         }
     }
@@ -381,6 +397,32 @@ fn resolve(
     put_back(&mut value, &inner);
     visiting.remove(name);
     let unchanging = match &value {
+        E::Borrow { place, value_type } => match types.get(&name.to_string()) {
+            Some(super::super::schema::Type::Reference { .. }) => place_root(place).is_some(),
+            // A shared slice borrow of a shared slice local: its pointer
+            // and length never change while the borrow lives.
+            Some(super::super::schema::Type::ByteSlice { mutable: false }) => {
+                matches!(
+                    value_type,
+                    super::super::schema::Type::ByteSlice { mutable: false }
+                ) && matches!(place.as_ref(), E::Local { name } if matches!(
+                    types.get(name),
+                    Some(super::super::schema::Type::ByteSlice { mutable: false })
+                ))
+            }
+            _ => false,
+        },
+        value => unchanging_scalar(value, unchanged),
+    };
+    let result = unchanging.then_some(value);
+    resolved.insert(name.to_string(), result.clone());
+    result
+}
+
+/// Whether `value` is the same wherever it is read: a literal, an
+/// `unchanged` parameter, or the length or a conversion of one.
+fn unchanging_scalar(value: &E, unchanged: &BTreeSet<String>) -> bool {
+    match value {
         E::Integer { .. }
         | E::UnsignedInteger { .. }
         | E::SignedInteger { .. }
@@ -388,24 +430,22 @@ fn resolve(
         | E::Boolean { .. }
         | E::NoneBox => true,
         E::Local { name } => unchanged.contains(name),
-        E::Borrow { place, .. } => {
-            place_root(place).is_some() && references.iter().any(|reference| *reference == name)
-        }
+        E::SliceLength { slice } => match slice.as_ref() {
+            E::Borrow { place, .. } => unchanging_scalar(place, unchanged),
+            slice => unchanging_scalar(slice, unchanged),
+        },
+        E::Cast { value, .. } | E::IntegerFrom { value, .. } => unchanging_scalar(value, unchanged),
         _ => false,
-    };
-    let result = unchanging.then_some(value);
-    resolved.insert(name.to_string(), result.clone());
-    result
+    }
 }
 
 /// The parameters the body never changes: none is assigned (other than
 /// through a reference it holds), named by a statement or terminator field
-/// (`named`, which covers moves, drops and partial writes), a call's
-/// destination, or borrowed.
+/// (a move, a drop, an initialization), a call's destination, or borrowed,
+/// apart from a shared borrow of a reference or slice.
 fn unchanged_parameters(
     blocks: &[MirBlock],
-    parameters: &BTreeSet<String>,
-    named: &BTreeSet<String>,
+    parameters: &BTreeMap<String, super::super::schema::Type>,
 ) -> BTreeSet<String> {
     // The local a target writes, unless it writes through a reference.
     fn written(target: &E) -> Option<&String> {
@@ -416,17 +456,44 @@ fn unchanged_parameters(
             _ => None,
         }
     }
-    fn borrowed(expression: &E, out: &mut BTreeSet<String>) {
-        if let E::Borrow { place, .. } = expression
+    // A shared borrow of a reference or a slice cannot change it: the
+    // variable holds an address and a length, with no interior mutability.
+    let pointer_like = |name: &String| {
+        matches!(
+            parameters.get(name),
+            Some(
+                super::super::schema::Type::Reference { .. }
+                    | super::super::schema::Type::ByteSlice { .. }
+                    | super::super::schema::Type::ScalarSlice { .. }
+            )
+        )
+    };
+    fn borrowed(
+        expression: &E,
+        out: &mut BTreeSet<String>,
+        pointer_like: &dyn Fn(&String) -> bool,
+    ) {
+        if let E::Borrow { place, value_type } = expression
             && let Some(root) = written(place)
         {
-            out.insert(root.clone());
+            let shared = matches!(
+                value_type,
+                super::super::schema::Type::Reference { mutable: false, .. }
+                    | super::super::schema::Type::ByteSlice { mutable: false }
+                    | super::super::schema::Type::ScalarSlice { mutable: false, .. }
+            );
+            if !(shared && pointer_like(root)) {
+                out.insert(root.clone());
+            }
         }
         for child in children(expression) {
-            borrowed(child, out);
+            borrowed(child, out, pointer_like);
         }
     }
-    let mut changed = named.clone();
+    // What a statement or terminator names by a field (a move, an
+    // initialization, a drop), the locals a target writes, and the locals
+    // the body borrows other than by a shared borrow of a pointer.
+    let mut changed = BTreeSet::new();
     for block in blocks {
         for statement in &block.statements {
             if let S::Assign { target, .. } = statement
@@ -434,21 +501,27 @@ fn unchanged_parameters(
             {
                 changed.insert(root.clone());
             }
+            changed.extend(statement_named_locals(statement).into_iter().cloned());
             let mut statement = statement.clone();
             for expression in statement_expressions_mut(&mut statement) {
-                borrowed(expression, &mut changed);
+                borrowed(expression, &mut changed, &pointer_like);
             }
         }
+        changed.extend(
+            terminator_named_locals(&block.terminator)
+                .into_iter()
+                .cloned(),
+        );
         let mut terminator = block.terminator.clone();
         for expression in terminator_expressions_mut(&mut terminator) {
-            borrowed(expression, &mut changed);
+            borrowed(expression, &mut changed, &pointer_like);
         }
         if let T::Call { destination, .. } | T::BoxNew { destination, .. } = &block.terminator {
             changed.insert(destination.clone());
         }
     }
     parameters
-        .iter()
+        .keys()
         .filter(|name| !changed.contains(*name))
         .cloned()
         .collect()
@@ -1756,7 +1829,7 @@ mod tests {
         Expression as E, MirBlock, MirStatement as S, MirTerminator as T, Place, Span, SwitchCase,
         SwitchLabel, Type,
     };
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
 
     fn local(name: &str) -> E {
         E::Local { name: name.into() }
@@ -2269,7 +2342,7 @@ mod tests {
         let mut locals = ["x", "t1", "t2"].map(place).to_vec();
         let mut blocks = blocks;
         let temporaries = BTreeSet::from(["t1".into(), "t2".into()]);
-        let parameters = BTreeSet::from(["p".into()]);
+        let parameters = BTreeMap::from([("p".into(), Type::U32)]);
         super::substitute_literals(&mut locals, &mut blocks, &temporaries, &parameters);
         (locals.into_iter().map(|local| local.name).collect(), blocks)
     }
@@ -2368,7 +2441,7 @@ mod tests {
             block(vec![], T::Return),
         ];
         let temporaries = BTreeSet::from(["t1".into(), "t2".into()]);
-        super::substitute_literals(&mut locals, &mut blocks, &temporaries, &BTreeSet::new());
+        super::substitute_literals(&mut locals, &mut blocks, &temporaries, &BTreeMap::new());
         let names: Vec<_> = locals.iter().map(|local| local.name.as_str()).collect();
         assert_eq!(names, ["x"]);
         for block in &blocks[..2] {
@@ -2407,5 +2480,53 @@ mod tests {
         super::remove_unused(&mut locals, &mut blocks, &BTreeSet::from(["t1".into()]));
         assert_eq!(locals.len(), 1);
         assert!(blocks[0].statements.is_empty());
+    }
+
+    #[test]
+    fn a_shared_slice_borrow_and_its_length_are_read_in_place() {
+        // `t1 = &bytes; t2 = len(t1); x = t2`, with `bytes: &[u8]` a
+        // parameter only borrowed shared, is `x = len(&bytes)`.
+        let slice = Type::ByteSlice { mutable: false };
+        let mut locals = vec![
+            place("x"),
+            Place {
+                value_type: slice.clone(),
+                ..place("t1")
+            },
+            Place {
+                value_type: Type::Usize,
+                ..place("t2")
+            },
+        ];
+        let mut blocks = vec![block(
+            vec![
+                assign(
+                    "t1",
+                    E::Borrow {
+                        place: Box::new(local("bytes")),
+                        value_type: slice.clone(),
+                    },
+                ),
+                assign(
+                    "t2",
+                    E::SliceLength {
+                        slice: Box::new(local("t1")),
+                    },
+                ),
+                assign("x", local("t2")),
+            ],
+            T::Return,
+        )];
+        let temporaries = BTreeSet::from(["t1".into(), "t2".into()]);
+        let parameters = BTreeMap::from([("bytes".into(), slice)]);
+        super::substitute_literals(&mut locals, &mut blocks, &temporaries, &parameters);
+        let names: Vec<_> = locals.iter().map(|local| local.name.as_str()).collect();
+        assert_eq!(names, ["x"]);
+        assert!(matches!(
+            blocks[0].statements.as_slice(),
+            [S::Assign { value: E::SliceLength { slice }, .. }]
+                if matches!(slice.as_ref(), E::Borrow { place, .. }
+                    if matches!(place.as_ref(), E::Local { name } if name == "bytes"))
+        ));
     }
 }
