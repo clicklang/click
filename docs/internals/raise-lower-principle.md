@@ -401,16 +401,20 @@ Closed native order comparisons at 8, 16, 32, and 64 bits retain their compariso
 node, format, and literal operands during logical lowering. Their truth is
 established by checking, including when exact rewriting removed the last
 variable before the comparison was printed. This does not change literal
-arithmetic evaluation or the existing equality normal forms.
+arithmetic evaluation or the existing 32-bit equality normal forms. Closed
+64-bit equalities retain their comparison node at the native `Int64` word
+equality format, with their literal operand payloads.
 
-Machine conditionals with closed 32/64-bit order guards retain their `if` node
-and guard during logical lowering. Their arm domains remain guarded, including
+Machine conditionals with closed 32/64-bit order guards or closed 64-bit
+equality guards retain their `if` node and guard during logical lowering. Their arm domains remain guarded, including
 unselected reads and invalid shifts. Checking selects the arm when needed.
-The comparison boundary recognizes a conditional whose 32/64-bit order guard
-and arms have only literal or variable operands as a fixed-size native atom.
-It retains the comparison family even with a symbolic guard, without exporting
-arithmetic DAGs or selecting an arm from ambient facts. Other result families retain their existing
-selected-arm behavior; literal Boolean and equality guards keep their normal forms.
+The comparison boundary recognizes conditionals guarded by a Boolean variable
+or a 32/64-bit comparison over literal/variable operands, with literal/variable
+arms, as fixed-size native atoms. Negated Boolean variables use the same guard
+with swapped arms. It retains the comparison family without exporting arithmetic
+DAGs or selecting an arm from ambient facts. Other result families retain their existing
+selected-arm behavior; literal Boolean and closed 32-bit equality guards keep
+their normal forms.
 
 Generated comparison operands that are negative `int64` literals keep an explicit
 `as int64` cast, including under `old` and `at`. Their printed unary minus would

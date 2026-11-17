@@ -7141,6 +7141,10 @@ fn check_conditional_round_trip(
         .with_local(
             "z",
             format.value_from_term(MachineTerm::Variable(Variable(999710))),
+        )
+        .with_local(
+            "flag",
+            ProgramValue::of_bool(ConditionTerm::Variable(Variable(999711))),
         );
     let parse = |text: &str| {
         let file = parser::parse(&format!(
@@ -7176,6 +7180,11 @@ fn check_conditional_round_trip(
         let produced = Proposition::ConditionIs(condition.clone(), truth);
         let raised =
             synthesize_surface_proposition(&produced, ParameterBinding::default(), &state).unwrap();
+        assert_eq!(
+            relower_written_proposition(&raised, &state).unwrap(),
+            produced,
+            "Surface AST: {spelling}, guard={guard}, reverse={reverse}, truth={truth}"
+        );
         let text = crate::surface::printing::source_click_proposition(&raised);
         let restored = relower_written_proposition(&parse(&text), &state).unwrap();
         assert_eq!(
@@ -7298,6 +7307,23 @@ fn symbolic_unsigned_equality_guards_keep_high_bit_literals() {
                     reverse,
                     9,
                 );
+            }
+        }
+    }
+}
+
+#[test]
+fn boolean_variable_guard_conditionals_round_trip_after_rewrite() {
+    use crate::kernel::MachineIntegerType as T;
+    for (format, spelling) in [
+        (T::Int32, "int32"),
+        (T::UInt32, "uint32"),
+        (T::Int64, "int64"),
+        (T::UInt64, "uint64"),
+    ] {
+        for guard in ["flag", "not flag"] {
+            for reverse in [false, true] {
+                check_conditional_round_trip(format, spelling, guard, reverse, 9);
             }
         }
     }
