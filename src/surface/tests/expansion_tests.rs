@@ -1,6 +1,66 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: wide element bounds, initializedness, and cold replay"]
+fn wide_viewable_element_needs_containment_and_initializedness() {
+    let (source, sources) =
+        mdtest_sources("mdtests/transport_wide_viewable_range_outside_element_is_refused.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    assert!(!source.contains("transport("));
+    let report = verify_c_sources(&source, &sources).unwrap_err().report();
+    assert!(
+        report.contains("goal:") && report.contains("k < to_integer(n + 1u64)"),
+        "{report}"
+    );
+
+    // An inside index gets through containment, but viewability alone cannot
+    // establish that the byte has been initialized.
+    let inside = source.replace(
+        "k < n + 2u64 implies",
+        "to_integer(k) < to_integer(n + 1u64) implies",
+    );
+    assert_ne!(inside, source);
+    let report = verify_c_sources(&inside, &sources).unwrap_err().report();
+    assert!(report.contains("goal: defined"), "{report}");
+
+    let initialized = inside
+        .replace(
+            "    ensures result",
+            concat!(
+                "    requires forall (j: uint64) {\n",
+                "        to_integer(j) < to_integer(n + 1u64) implies defined(bytes[j])\n",
+                "    };\n    ensures result",
+            ),
+        )
+        .replace(
+            "            known();\n        }",
+            concat!(
+                "            instantiate(forall (j: uint64) {\n",
+                "                to_integer(j) < to_integer(n + 1u64) implies defined(old(bytes[j]))\n",
+                "            }, k);\n",
+                "            have defined(old(bytes[k])) by { known(); }\n",
+                "            have separate(memory(x), memory(bytes[k])) by { normalize(); }\n",
+                "            have separate(statement(0).footprint, memory(bytes[k])) by {\n",
+                "                normalize() using { separate(memory(x), memory(bytes[k])); };\n",
+                "            }\n",
+                "            preserve(memory(bytes[k]), statement(0));\n        }",
+            ),
+        );
+    verify_c_sources(&initialized, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let label = "f.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&initialized, &sources, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 #[ignore = "nightly: C string viewability and call authority"]
 fn cstr_viewability_without_transport_does_not_supply_call_authority() {
     let (source, sources) = mdtest_sources("mdtests/cstr_dynamic_invalidated_transport.md");
