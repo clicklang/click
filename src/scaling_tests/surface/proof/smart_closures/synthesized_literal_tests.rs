@@ -66,7 +66,7 @@ fn reflexive_pointer_metadata_does_not_search_state_history() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
-    let pointer = Pointer::symbolic(Variable(8_179_830));
+    let pointer = Address::symbolic(Variable(8_179_830));
     let state = ExecutionState::new().with_local("p", ProgramValue::pointer(pointer.clone()));
     let reflexive = Proposition::ConditionIs(
         ConditionTerm::PointerEqual(Box::new(pointer.clone()), Box::new(pointer)),

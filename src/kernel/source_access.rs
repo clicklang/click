@@ -85,7 +85,7 @@ impl PartialOrd for StatementAssignSource {
 #[derive(Debug)]
 struct ReferenceBorrowObservation {
     source: Arc<ReferenceBorrowSourceId>,
-    pointer: Pointer,
+    pointer: Address,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub(crate) enum ReferenceAccessKind {
@@ -141,14 +141,14 @@ impl PartialOrd for StatementStoreSource {
 #[derive(Debug)]
 pub(crate) struct ExecutedReferenceAccess<'a> {
     source: &'a ReferenceAccessSourceId,
-    pointer: &'a Pointer,
+    pointer: &'a Address,
 }
 
 #[derive(Debug)]
 pub(crate) enum ExecutedReferenceBoundary<'a> {
     Borrow {
         source: &'a ReferenceBorrowSourceId,
-        pointer: &'a Pointer,
+        pointer: &'a Address,
     },
     Store(ExecutedReferenceAccess<'a>),
 }
@@ -162,7 +162,7 @@ pub(crate) struct ReferenceObservationSource(Option<Arc<ReferenceObservation>>);
 enum ReferenceObservation {
     Read {
         source: Arc<ReferenceAccessSourceId>,
-        pointer: Pointer,
+        pointer: Address,
         retained_state: MemoryStateIdentity,
         value_type: ProgramType,
     },
@@ -171,7 +171,7 @@ enum ReferenceObservation {
 impl ReferenceObservationSource {
     pub(super) fn new(
         source: Arc<ReferenceAccessSourceId>,
-        pointer: Pointer,
+        pointer: Address,
         memory: &Memory,
         value_type: ProgramType,
     ) -> Self {
@@ -223,7 +223,7 @@ impl ExecutedReferenceAccess<'_> {
     pub(crate) fn source(&self) -> &ReferenceAccessSourceId {
         self.source
     }
-    pub(crate) fn pointer(&self) -> &Pointer {
+    pub(crate) fn pointer(&self) -> &Address {
         self.pointer
     }
 }
@@ -309,9 +309,9 @@ impl SymbolicExecution {
 mod tests {
     use super::*;
     fn borrow_fact() -> ExecutionPureFact {
-        let pointer = Pointer {
-            block: "birth".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "birth".into(),
+            offset: AddressOffset::Constant(0),
         };
         let before = ExecutionState::new().with_local(
             "parent",
@@ -358,9 +358,9 @@ mod tests {
     }
     #[test]
     fn source_reference_birth_requires_the_completed_parent_pointer_and_type() {
-        let pointer = Pointer {
-            block: "birth".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "birth".into(),
+            offset: AddressOffset::Constant(0),
         };
         let before = ExecutionState::new().with_local(
             "parent",
@@ -408,12 +408,12 @@ mod tests {
         );
     }
     fn read_fact() -> ExecutionPureFact {
-        let pointer = Pointer {
-            block: "source-read".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "source-read".into(),
+            offset: AddressOffset::Constant(0),
         };
         let memory = Memory::new()
-            .with_block(pointer.block.clone(), 4)
+            .with_block(pointer.base.clone(), 4)
             .store(pointer.clone(), int32(7));
         let source = Arc::new(ReferenceAccessSourceId {
             import_identity: "locked".into(),

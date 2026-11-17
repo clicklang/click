@@ -7,7 +7,7 @@ theorem independent_integer_choice() {
         exists (found: Integer) { found == 0 and arbitrary == arbitrary }
     } by {
         intro();
-        obtain (chosen: Integer) { chosen == 0 }
+        let chosen = obtain(exists (chosen: Integer) { chosen == 0 });
         have arbitrary == arbitrary by { normalize(); }
         witness(chosen);
         known();

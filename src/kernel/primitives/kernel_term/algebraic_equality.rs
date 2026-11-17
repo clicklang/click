@@ -199,7 +199,7 @@ mod tests {
     fn common_algebraic_equality_preserves_native_identity_and_exact_payloads() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(999670)),
+            Address::symbolic(Variable(999670)),
             ProgramType::Int32Pointer,
         );
         let a = constructor(pointer.clone());
@@ -283,7 +283,7 @@ mod tests {
     fn common_algebraic_equality_observation_matches_native_guard_keys() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(999672)),
+            Address::symbolic(Variable(999672)),
             ProgramType::Int32Pointer,
         );
         let native = ConditionTerm::AlgebraicEqual(

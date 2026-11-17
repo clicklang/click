@@ -37,13 +37,13 @@ fn contract_exit_marker_join_work_is_linear_in_exits_and_skips_ambient_cells() {
 #[test]
 fn optional_exit_cache_reconciliation_does_not_walk_unrelated_store_history() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = Pointer {
-        block: "shared".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "shared".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let other = Pointer {
-        block: "other".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let other = Address {
+        base: "other".into(),
+        offset: AddressOffset::Constant(0),
     };
     let mut samples = Vec::new();
     for count in [4usize, 64, 1024] {
@@ -83,9 +83,9 @@ fn optional_exit_cache_reconciliation_does_not_walk_unrelated_store_history() {
 #[test]
 fn exit_cache_reconciliation_reuses_the_joins_exit_contexts() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = Pointer {
-        block: PointerBlock::Concrete("shared".into()),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::Concrete("shared".into()),
+        offset: AddressOffset::Constant(0),
     };
     let memory = Memory::new().with_block("shared", 4);
     // Name the cell's load, as the exit's own read did.

@@ -60,7 +60,7 @@ pub(in crate::kernel) enum Separation {
 /// narrowest of the three: the answer is spent invalidating resource
 /// projections, which no premise records, so it consults no fact context and
 /// no ownership. Every variant that names another object is
-/// [`PointerBlock::proven_distinct`] plus, where both sides are constant,
+/// [`AddressBase::proven_distinct`] plus, where both sides are constant,
 /// interval arithmetic inside one object.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::kernel) enum FootprintSeparation {
@@ -83,7 +83,7 @@ pub(in crate::kernel) enum FootprintSeparation {
 /// through a pointer into one block.
 ///
 /// Every variant that names another object is a claim about *objects*, decided
-/// by [`PointerBlock::proven_distinct`], never about spellings: a file-scope
+/// by [`AddressBase::proven_distinct`], never about spellings: a file-scope
 /// `global:g` and a parameter's `ExternalArgument` memory are two known,
 /// differing spellings that the caller is free to make one object, and every
 /// array parameter of one function shares `ExternalArgument`. The one variant
@@ -135,7 +135,7 @@ pub(in crate::kernel) struct Evidence<'a> {
 ///
 /// | Recorded step | A cell | A block, as an array argument |
 /// | --- | --- | --- |
-/// | `Store` | separate on proven-distinct blocks, a common-base offset inequality, checked full-byte separation through a base alias, typed `separate(..)` evidence, an explicit range, general distinctness, or two owned members of one composition; affected when the written address is provably the loaded one | separate **only** on `PointerBlock::proven_distinct` |
+/// | `Store` | separate on proven-distinct blocks, a common-base offset inequality, checked full-byte separation through a base alias, typed `separate(..)` evidence, an explicit range, general distinctness, or two owned members of one composition; affected when the written address is provably the loaded one | separate **only** on `AddressBase::proven_distinct` |
 /// | `BlockDeclared` | separate: it writes nothing | separate when the declared object is proven distinct; affected for this block's own declaration |
 /// | `HeapAllocated` | separate when the block differs | separate when the fresh object is proven distinct; affected for this one |
 /// | `HeapAllocationPending` / `HeapAllocationFailed` | separate: it writes nothing | separate: no read of any block consults a pending request |
@@ -157,7 +157,7 @@ pub(in crate::kernel) struct Evidence<'a> {
 /// spend*: a block may use only the kernel's structural separation, because its
 /// answer is shared across proof paths. Where the cell column reads a stated
 /// `separate(..)`, an offset inequality or a resource composition, the block
-/// column reads only `PointerBlock::proven_distinct` and the write set the edge
+/// column reads only `AddressBase::proven_distinct` and the write set the edge
 /// itself carries.
 pub(in crate::kernel) fn affects(
     step: &MemoryDerivation,
@@ -295,7 +295,7 @@ pub(in crate::kernel) fn separation_check(
 /// verdict from the same premises.
 fn cell_effect(
     step: &MemoryDerivation,
-    pointer: &Pointer,
+    pointer: &Address,
     bytes: u32,
     evidence: &Evidence<'_>,
 ) -> StepEffect {
@@ -365,9 +365,9 @@ fn cell_effect(
             }
         }
         MemoryDerivation::HeapAllocated { block, .. } => {
-            if pointer.block != *block && extended_dag_bridging_active() {
+            if pointer.base != *block && extended_dag_bridging_active() {
                 hop(MemoryDagHopJustification::AllocationOfOtherBlock)
-            } else if pointer.block == *block {
+            } else if pointer.base == *block {
                 StepEffect::Affected
             } else {
                 unknown()
@@ -381,13 +381,13 @@ fn cell_effect(
             // its others, as for `HeapFreed` below. Only distinct *blocks*
             // decide without the size.
             if extended_dag_bridging_active()
-                && pointer.blocks_proven_distinct(&Pointer {
-                    block: block.clone(),
-                    offset: PointerOffsetTerm::Constant(0),
+                && pointer.blocks_proven_distinct(&Address {
+                    base: block.clone(),
+                    offset: AddressOffset::Constant(0),
                 })
             {
                 hop(MemoryDagHopJustification::LocalLifetimeEndedOfOtherBlock)
-            } else if pointer.block == *block {
+            } else if pointer.base == *block {
                 StepEffect::Affected
             } else if extended_dag_bridging_active()
                 && block.is_local_block()
@@ -403,9 +403,9 @@ fn cell_effect(
                     write_membership,
                     load_membership,
                 }) = typed_store_separated_ranges_evidence(
-                    &Pointer {
-                        block: block.clone(),
-                        offset: PointerOffsetTerm::Constant(0),
+                    &Address {
+                        base: block.clone(),
+                        offset: AddressOffset::Constant(0),
                     },
                     size,
                     pointer,
@@ -414,9 +414,9 @@ fn cell_effect(
                 )
                 .or_else(|| {
                     owned_composition_store_separated_evidence(
-                        &Pointer {
-                            block: block.clone(),
-                            offset: PointerOffsetTerm::Constant(0),
+                        &Address {
+                            base: block.clone(),
+                            offset: AddressOffset::Constant(0),
                         },
                         size,
                         pointer,
@@ -453,7 +453,7 @@ fn cell_effect(
                 // Outside the scope that may read these edges at all, the
                 // answer still has to say whether this very cell died with
                 // the allocation.
-                return if allocation_base.block == pointer.block {
+                return if allocation_base.base == pointer.base {
                     StepEffect::Affected
                 } else {
                     unknown()
@@ -488,7 +488,7 @@ fn cell_effect(
                 hop(MemoryDagHopJustification::AssumptionDependent(
                     MemoryDagAssumptionKind::HeapFreeResourceSeparation,
                 ))
-            } else if allocation_base.block == pointer.block {
+            } else if allocation_base.base == pointer.base {
                 StepEffect::Affected
             } else {
                 unknown()
@@ -566,7 +566,7 @@ fn cell_effect(
             // alone too, on every walk, so the two answers cannot disagree.
             if mutable_ranges
                 .iter()
-                .all(|range| range.base().block.proven_distinct(&pointer.block))
+                .all(|range| range.base().base.proven_distinct(&pointer.base))
             {
                 return hop(MemoryDagHopJustification::LoopHavocWriteSetInDistinctObjects);
             }
@@ -627,9 +627,9 @@ fn cell_effect(
 /// the same question asked of each store it stands for.
 fn store_cell_effect(
     step: &MemoryDerivation,
-    write: &Pointer,
+    write: &Address,
     value: &ProgramValue,
-    pointer: &Pointer,
+    pointer: &Address,
     bytes: u32,
     evidence: &Evidence<'_>,
 ) -> StepEffect {
@@ -793,8 +793,8 @@ fn store_cell_effect(
 /// different, weaker fact — a store can reach a read without starting where
 /// it starts.
 pub(in crate::kernel) fn write_is_at_read_address(
-    write: &Pointer,
-    pointer: &Pointer,
+    write: &Address,
+    pointer: &Address,
     assumptions: &PureFactContext,
 ) -> bool {
     write == pointer
@@ -802,13 +802,13 @@ pub(in crate::kernel) fn write_is_at_read_address(
         // A base alias need not have been restated as an exact field equality.
         || assumptions.pointers_known_equal(write, pointer)
         || explicit_dag_check_active()
-            && write.block == pointer.block
+            && write.base == pointer.base
             && pointer_offsets_match_from_memory_derivations(
                 &write.offset,
                 &pointer.offset,
                 assumptions,
             )
-        || write.block == pointer.block
+        || write.base == pointer.base
             && assumptions.exact_condition_value(&ConditionTerm::pointer_offset_equal(
                 write.offset.clone(),
                 pointer.offset.clone(),
@@ -820,7 +820,7 @@ pub(in crate::kernel) fn write_is_at_read_address(
 pub(in crate::kernel) enum SeededCellEffect {
     /// One of its stores writes the cell: the store's pointer, and the value
     /// the walk reads.
-    Written(Pointer, ProgramValue),
+    Written(Address, ProgramValue),
     /// Every store it stands for is separate from the cell, in the order a
     /// walk meets them.
     Separate(Vec<MemoryDagHopJustification>),
@@ -833,7 +833,7 @@ pub(in crate::kernel) enum SeededCellEffect {
 /// separate.
 pub(in crate::kernel) fn seeded_cell_effect(
     step: &MemoryDerivation,
-    pointer: &Pointer,
+    pointer: &Address,
     bytes: u32,
     evidence: &Evidence<'_>,
 ) -> SeededCellEffect {
@@ -904,7 +904,7 @@ pub(in crate::kernel) fn seeded_loads_preserve_base(step: &MemoryDerivation) -> 
 fn seeded_cell_effect_store_by_store(
     step: &MemoryDerivation,
     run: &crate::kernel::primitives::CellRun,
-    pointer: &Pointer,
+    pointer: &Address,
     bytes: u32,
     evidence: &Evidence<'_>,
 ) -> SeededCellEffect {
@@ -1029,12 +1029,12 @@ fn seeded_cell_effect_store_by_store(
 /// No arm consults a fact, a stated `separate(..)` or ownership, because this
 /// answer is memoized per `(retained_state, block)` and an interned edge is shared
 /// by paths with different assumptions.
-fn block_effect(step: &MemoryDerivation, block: &PointerBlock) -> StepEffect {
+fn block_effect(step: &MemoryDerivation, block: &AddressBase) -> StepEffect {
     let unknown =
         || StepEffect::NotShownSeparate(separation_check(step, TrackedResource::Block(block)));
     // An arm that names one object answers in one order: proven distinct from
     // this block, else this very block, else the check that failed.
-    let one_object = |changed: &PointerBlock, separation| {
+    let one_object = |changed: &AddressBase, separation| {
         if changed.proven_distinct(block) {
             StepEffect::Separate(Separation::Block(separation))
         } else if changed == block {
@@ -1046,7 +1046,7 @@ fn block_effect(step: &MemoryDerivation, block: &PointerBlock) -> StepEffect {
     // A kind whose answer is still "stop", whatever it names. Naming this
     // block is still `Affected`, so a refusal keeps saying "changed" rather
     // than "may have changed" about the block's own declaration or release.
-    let stops = |named: Option<&PointerBlock>| {
+    let stops = |named: Option<&AddressBase>| {
         if named == Some(block) {
             StepEffect::Affected
         } else {
@@ -1055,11 +1055,11 @@ fn block_effect(step: &MemoryDerivation, block: &PointerBlock) -> StepEffect {
     };
     match step {
         MemoryDerivation::Store { pointer, .. } => {
-            one_object(&pointer.block, BlockSeparation::StoreInDistinctBlock)
+            one_object(&pointer.base, BlockSeparation::StoreInDistinctBlock)
         }
         // Every store of a run writes the run's own block.
         MemoryDerivation::CellsSeeded { run, .. } => {
-            one_object(&run.base().block, BlockSeparation::StoreInDistinctBlock)
+            one_object(&run.base().base, BlockSeparation::StoreInDistinctBlock)
         }
         MemoryDerivation::BlockDeclared {
             block: declared, ..
@@ -1077,7 +1077,7 @@ fn block_effect(step: &MemoryDerivation, block: &PointerBlock) -> StepEffect {
         | MemoryDerivation::ContractAllocationRetired {
             allocation_base, ..
         } => one_object(
-            &allocation_base.block,
+            &allocation_base.base,
             BlockSeparation::ReleaseOfDistinctBlock,
         ),
         MemoryDerivation::LocalLifetimeEnded { block: retired, .. } => {
@@ -1089,7 +1089,7 @@ fn block_effect(step: &MemoryDerivation, block: &PointerBlock) -> StepEffect {
         MemoryDerivation::ObjectInitializationRecorded { pointer, .. } => {
             // Initialization status changes only in this object's block.
             one_object(
-                &pointer.block,
+                &pointer.base,
                 BlockSeparation::InitializationOfDistinctBlock,
             )
         }
@@ -1106,7 +1106,7 @@ fn block_effect(step: &MemoryDerivation, block: &PointerBlock) -> StepEffect {
         } => {
             if mutable_ranges
                 .iter()
-                .all(|range| range.base().block.proven_distinct(block))
+                .all(|range| range.base().base.proven_distinct(block))
             {
                 StepEffect::Separate(Separation::Block(
                     BlockSeparation::WriteSetInDistinctObjects,
@@ -1194,7 +1194,7 @@ fn footprint_effect(step: &MemoryDerivation, ranges: Option<&[MemoryRange]>) -> 
     match step {
         MemoryDerivation::BranchJoin { .. } => unknown(),
         MemoryDerivation::Store { pointer, value, .. } => {
-            if !memory_block_may_alias(&pointer.block)
+            if !memory_block_may_alias(&pointer.base)
                 && !ranges
                     .iter()
                     .any(|range| memory_range_overlaps_pointer(range, pointer, value.byte_width()))
@@ -1207,7 +1207,7 @@ fn footprint_effect(step: &MemoryDerivation, ranges: Option<&[MemoryRange]>) -> 
         MemoryDerivation::CellsSeeded { .. } => {
             let stores = step.seeded_stores().expect("a CellsSeeded edge");
             if stores.iter().all(|(pointer, value)| {
-                !memory_block_may_alias(&pointer.block)
+                !memory_block_may_alias(&pointer.base)
                     && !ranges.iter().any(|range| {
                         memory_range_overlaps_pointer(range, pointer, value.byte_width())
                     })
@@ -1224,7 +1224,7 @@ fn footprint_effect(step: &MemoryDerivation, ranges: Option<&[MemoryRange]>) -> 
         } => {
             if !mutable_ranges
                 .iter()
-                .any(|written| memory_block_may_alias(&written.base().block))
+                .any(|written| memory_block_may_alias(&written.base().base))
                 && !ranges.iter().any(|footprint| {
                     mutable_ranges
                         .iter()
@@ -1246,7 +1246,7 @@ fn footprint_effect(step: &MemoryDerivation, ranges: Option<&[MemoryRange]>) -> 
             bytes,
             ..
         } => {
-            if !memory_block_may_alias(&allocation_base.block)
+            if !memory_block_may_alias(&allocation_base.base)
                 && !ranges.iter().any(|range| {
                     memory_range_overlaps_pointer(
                         range,
@@ -1261,9 +1261,9 @@ fn footprint_effect(step: &MemoryDerivation, ranges: Option<&[MemoryRange]>) -> 
             }
         }
         MemoryDerivation::LocalLifetimeEnded { block, .. } => {
-            let retired = Pointer {
-                block: block.clone(),
-                offset: PointerOffsetTerm::Constant(0),
+            let retired = Address {
+                base: block.clone(),
+                offset: AddressOffset::Constant(0),
             };
             if ranges
                 .iter()

@@ -57,7 +57,7 @@ int32 find_zero(int32 p[], int32 n) {
 ```
 
 If a proof needs the body of `has_zero`, unfold it and then use the resulting
-facts. An available existential body can be opened with `obtain (...)`.
+facts. An available existential body can be opened with `let ... = obtain(...)`.
 
 ## Bodies read only their parameters
 

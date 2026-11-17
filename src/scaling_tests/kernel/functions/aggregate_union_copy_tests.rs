@@ -10,9 +10,9 @@ use super::*;
 fn aggregate_argument_reads_require_authority_and_initialization_and_scale() {
     for count in [4u32, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let source = Pointer {
-            block: "aggregate-argument-source".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let source = Address {
+            base: "aggregate-argument-source".into(),
+            offset: AddressOffset::Constant(0),
         };
         let layout = AggregateLayout::new(
             count * 4,
@@ -26,7 +26,7 @@ fn aggregate_argument_reads_require_authority_and_initialization_and_scale() {
                 .with_aggregate_layout(layout)];
         let values = [ProgramValue::pointer(source.clone())];
         let assumptions = PureFactContext::new();
-        let empty = Memory::new().with_uninitialized_block(source.block.clone(), count * 4);
+        let empty = Memory::new().with_uninitialized_block(source.base.clone(), count * 4);
         let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
             MemoryRange::new_with_element_width(source.clone(), 0.into(), (count * 4).into(), 1),
         ));
@@ -73,13 +73,13 @@ fn unsigned_aggregate_array_copies_preserve_values_and_scale() {
     let mut samples = Vec::new();
     for count in [4u32, 1024, 1_000_000] {
         let _session = crate::kernel::VerificationSession::enter();
-        let source = Pointer {
-            block: "local:aggregate-array-source".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let source = Address {
+            base: "local:aggregate-array-source".into(),
+            offset: AddressOffset::Constant(0),
         };
-        let destination = Pointer {
-            block: "local:aggregate-array-target".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let destination = Address {
+            base: "local:aggregate-array-target".into(),
+            offset: AddressOffset::Constant(0),
         };
         let layout = AggregateLayout::new(
             count * 4,
@@ -91,8 +91,8 @@ fn unsigned_aggregate_array_copies_preserve_values_and_scale() {
             )],
         );
         let memory = Memory::new()
-            .with_block(source.block.clone(), count * 4)
-            .with_block(destination.block.clone(), count * 4)
+            .with_block(source.base.clone(), count * 4)
+            .with_block(destination.base.clone(), count * 4)
             .write_scalar_array_region(
                 &source,
                 ProgramType::UInt32,
@@ -145,8 +145,8 @@ fn unsigned_aggregate_array_copies_preserve_values_and_scale() {
         assert!(unknown.has_initialized_bytes_at(&destination, count * 4));
         samples.push(work);
         let uninitialized = Memory::new()
-            .with_block(source.block.clone(), count * 4)
-            .with_block(destination.block.clone(), count * 4);
+            .with_block(source.base.clone(), count * 4)
+            .with_block(destination.base.clone(), count * 4);
         assert_eq!(
             copy_aggregate_fields_checked(uninitialized, &source, &destination, &layout).err(),
             Some(UndefinedBehavior::UninitializedRead)

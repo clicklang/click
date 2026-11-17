@@ -11,7 +11,7 @@ fn mutex_automatic_frame_retirement_requires_destruction() {
     for name in ["holder", "frame:holder", "lifetime:holder"] {
         let state = ExecutionState::new().with_local(name, int32(0));
         let address = state.locals.slot(name).unwrap().clone();
-        let memory = Memory::new().with_block(address.block.clone(), 40);
+        let memory = Memory::new().with_block(address.base.clone(), 40);
         let initialized =
             crate::kernel::mutexes::MutexContext::new(state.with_memory(memory.clone()))
                 .initialize_empty(address.clone(), 40)
@@ -47,13 +47,13 @@ fn mutex_automatic_frame_retirement_requires_destruction() {
                 None
             )
             .unwrap()
-            .has_block(&address.block)
+            .has_block(&address.base)
         );
         if name != "holder" {
             assert!(
                 !end_inline_frame_automatic_lifetimes(destroyed.state())
                     .unwrap()
-                    .has_block(&address.block)
+                    .has_block(&address.base)
             );
         }
     }

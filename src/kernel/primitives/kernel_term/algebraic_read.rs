@@ -6,7 +6,7 @@ impl KernelTerm {
     pub(crate) fn algebraic_read(
         ty: AlgebraicType,
         memory: SharedMemory,
-        address: SharedPointerAddress,
+        address: SharedAddress,
     ) -> Self {
         Self::intern(
             KernelType::Algebraic(ty),
@@ -44,12 +44,9 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let second = intern_memory(Memory::new());
         let ty = TypeParameterName::intern("RetainedReadT").algebraic_type();
-        let pointer = Pointer {
-            block: PointerBlock::Symbolic(Variable(999744)),
-            offset: PointerOffsetTerm::scaled_int32_node(
-                MachineTerm::Variable(Variable(999745)),
-                4,
-            ),
+        let pointer = Address {
+            base: AddressBase::Symbolic(Variable(999744)),
+            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(999745)), 4),
         };
         let sources = [first, second].map(|memory| AlgebraicTerm {
             algebraic_type: ty.clone(),
@@ -66,19 +63,19 @@ mod tests {
         let other_type = KernelTerm::algebraic_read(
             TypeParameterName::intern("OtherReadT").algebraic_type(),
             intern_memory(Memory::new()),
-            SharedPointerAddress::import(&pointer),
+            SharedAddress::import(&pointer),
         );
         assert!(!roots[0].algebraic_syntax_equal(&other_type));
         let changed_memory = KernelTerm::algebraic_read(
             ty.clone(),
             intern_memory(Memory::new().with_block("changed-read-retained_state", 8)),
-            SharedPointerAddress::import(&pointer),
+            SharedAddress::import(&pointer),
         );
         assert!(!roots[0].algebraic_syntax_equal(&changed_memory));
         let changed_address = KernelTerm::algebraic_read(
             ty.clone(),
             intern_memory(Memory::new()),
-            SharedPointerAddress::import(&Pointer::symbolic(Variable(999750))),
+            SharedAddress::import(&Address::symbolic(Variable(999750))),
         );
         assert!(!roots[0].algebraic_syntax_equal(&changed_address));
         let format = MachineIntegerType::Int32;

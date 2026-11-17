@@ -302,7 +302,7 @@ fn dynamic_body_fact_dependency(
     temporary_views: &DynamicViewDependencyIndex,
 ) -> Result<Option<crate::kernel::LoanViewBinding>, String> {
     fn check_load(
-        pointer: Pointer,
+        pointer: Address,
         width: u32,
         state: &ExecutionState,
         assumptions: &PureFactContext,
@@ -5915,9 +5915,9 @@ void child_release(struct child* obj) {
     /// admits, not on the one symbolic cell `p[k]`, which no view contains.
     #[test]
     fn dynamic_quantified_definedness_depends_on_the_guarded_range() {
-        let base = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(0),
+        let base = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
         };
         let memory = Memory::new();
         let index = Variable(2_000_000);
@@ -5950,9 +5950,9 @@ void child_release(struct child* obj) {
                 Box::new(guard),
                 Box::new(Proposition::MemoryReadDefined {
                     memory: memory.clone(),
-                    pointer: Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: PointerOffsetTerm::Int32Scaled {
+                    pointer: Address {
+                        base: AddressBase::ExternalArgument,
+                        offset: AddressOffset::Int32Scaled {
                             value: crate::kernel::SharedMachineIntegerTerm::index(
                                 crate::kernel::MachineIntegerType::Int32,
                                 *index_term(),
@@ -6023,9 +6023,9 @@ void child_release(struct child* obj) {
     }
 
     fn check_dynamic_current_fact_dependencies(definedness: bool, symbolic_range: bool) {
-        let pointer = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
         };
         let memory = Memory::new().store(
             pointer.clone(),
@@ -6240,7 +6240,7 @@ mod wide_range_reader_tests {
     // A wide composite span must not be enumerated as signed constant cells.
     #[test]
     fn wide_composite_materialization_keeps_the_state_without_enumerating_cells() {
-        let base = Pointer::symbolic(Variable(985_600));
+        let base = Address::symbolic(Variable(985_600));
         let wide = MemoryRange::new_wide(
             base.clone(),
             MachineTerm::uint64_constant(0),
@@ -6322,15 +6322,15 @@ resource cell(p: int32*) {
         )])
         .unwrap();
         for (pointer, active) in [
-            (crate::kernel::Pointer::null(), false),
+            (crate::kernel::Address::null(), false),
             (
-                crate::kernel::Pointer::symbolic(crate::kernel::Variable(88_001)),
+                crate::kernel::Address::symbolic(crate::kernel::Variable(88_001)),
                 false,
             ),
             (
-                crate::kernel::Pointer {
-                    block: "object".into(),
-                    offset: crate::kernel::PointerOffsetTerm::Constant(0),
+                crate::kernel::Address {
+                    base: "object".into(),
+                    offset: crate::kernel::AddressOffset::Constant(0),
                 },
                 true,
             ),
@@ -6466,7 +6466,7 @@ mod declared_scalar_field_observation_tests {
 
     #[test]
     fn scalar_field_observations_do_not_initialize_owned_padding() {
-        let base = Pointer::symbolic(Variable(985_801));
+        let base = Address::symbolic(Variable(985_801));
         for viewed in [false, true] {
             let mut samples = Vec::new();
             for padding in [0u32, 16, 64, 256] {
@@ -6519,7 +6519,7 @@ mod declared_scalar_field_observation_tests {
     #[test]
     fn pointer_field_observation_is_one_complete_typed_read() {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Pointer::symbolic(Variable(985_803));
+        let base = Address::symbolic(Variable(985_803));
         let memory = Memory::new();
         let segment = field(
             ProgramExpression::Value(ProgramValue::pointer(base.clone())),
@@ -6539,7 +6539,7 @@ mod declared_scalar_field_observation_tests {
             matches!(value, ProgramValue::Pointer(_)),
             "a pointer field must not be cached as an integer prefix"
         );
-        let expected = Pointer::loaded(&MachineTerm::MemoryLoad(
+        let expected = Address::loaded(&MachineTerm::MemoryLoad(
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
             Box::new(base.clone()),
             crate::kernel::LoadKind::Int32,
@@ -6558,7 +6558,7 @@ mod declared_scalar_field_observation_tests {
 
     #[test]
     fn declared_array_elements_exclude_trailing_padding() {
-        let base = Pointer::symbolic(Variable(985_802));
+        let base = Address::symbolic(Variable(985_802));
         for count in [0, 16, 64, 256] {
             let segment = field(
                 crate::kernel::program_expression::typed_load(

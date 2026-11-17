@@ -212,10 +212,9 @@ expansion output.
 - `observe(resource);`: project one view step from a held composite resource
   fact. This exposes immediate pure facts and viewed immediate contained
   resource facts without exposing owned contained resource facts.
-- `obtain (k: int32) { P(k) }`: open the exact available existential
-  `exists (k: int32) { P(k) }`, introducing `k` and its body as proof facts.
-  Multiple typed bindings are allowed. The existential must already be
-  established; use `have` first when it is not.
+- `let k = obtain(exists (x: int32) { P(x) });` names a witness from the
+  exact available existential and adds `P(k)` as a fact. Use a tuple of
+  names for multiple witnesses. Use `have` first if the existential needs a proof.
 - `witness(expression);`: prove the current existential goal by substituting
   the given int32 expression for binder `k`.
 - `known();`: close a goal already present as the same semantic fact; it
@@ -398,14 +397,14 @@ ensures found_zero: (0..n).any(|k| { k == result }) by {
 ```
 
 `obtain` eliminates an already available existential. It names the
-bound values and states the body of the existential; it does not select a
-contract clause by name or position, and it does not prove the existential.
+bound values on the left of the `let` and states the available existential
+on the right.
 
 <!-- verified-example: mdtests/integer_exists_choose.md -->
 ```click
 requires exists (x: Integer, y: Integer) { x == y };
 ensures exists (a: Integer, b: Integer) { a == b } by {
-    obtain (left: Integer, right: Integer) { left == right }
+    let (left, right) = obtain(exists (x: Integer, y: Integer) { x == y });
     witness(left);
     witness(right);
     known();
@@ -421,9 +420,9 @@ requires bytes::contains(p, 0, n as uint64, 'x');
 ensures opened_contains: bytes::contains(p, 0, n as uint64, 'x') by {
     step_until(function.exit);
     unfold(bytes::contains(p, 0, n as uint64, 'x'));
-    obtain (found: uint64) {
+    let found = obtain(exists (found: uint64) {
         0u64 <= found and found < n as uint64 and p[found] == 'x'
-    }
+    });
     witness(found);
     solve();
 }

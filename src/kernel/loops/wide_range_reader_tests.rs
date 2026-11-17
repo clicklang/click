@@ -3,7 +3,7 @@ use super::*;
 // signed run optimization must fall back when it sees one.
 #[test]
 fn wide_loop_frames_cover_native_accesses_and_refuse_cross_width_ranges() {
-    let base = Pointer::symbolic(Variable(984_500));
+    let base = Address::symbolic(Variable(984_500));
     let wide = MemoryRange::new_wide(
         base.clone(),
         MachineTerm::uint64_constant(0),

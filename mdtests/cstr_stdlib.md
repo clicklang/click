@@ -60,9 +60,7 @@ int32 plain_cstr(uint8 p[]) {
     } by {
         step_until(function.exit);
         unfold(cstr::cstr(p));
-        obtain (found_len: uint64) {
-            at(function.entry, cstr::len(p, found_len))
-        }
+        let found_len = obtain(at(function.entry, exists (found_len: uint64) { cstr::len(p, found_len) }));
         witness(found_len);
         solve();
     }

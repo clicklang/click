@@ -40,7 +40,7 @@ mod tests {
     fn boolean_cast_observation_preserves_native_argument_identity() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(999450)),
+            Address::symbolic(Variable(999450)),
             ProgramType::Int32Pointer,
         );
         let roots = [pointer.clone(), pointer.with_pointee_constant(true)].map(|pointer| {

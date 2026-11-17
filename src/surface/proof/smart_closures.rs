@@ -3794,7 +3794,7 @@ fn quantified_external_range_goal(goal: &Proposition) -> bool {
         }
         match current {
             Proposition::MemoryLoadable { base, .. }
-                if matches!(base.block, crate::kernel::PointerBlock::ExternalArgument) =>
+                if matches!(base.base, crate::kernel::AddressBase::ExternalArgument) =>
             {
                 saw_range = true;
             }
@@ -4988,9 +4988,9 @@ mod synthesized_literal_tests {
 
     #[test]
     fn signed_certificate_spelling_matches_exact_read_atoms() {
-        use crate::kernel::{LoadKind, Memory, Pointer, intern_memory};
+        use crate::kernel::{Address, LoadKind, Memory, intern_memory};
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer::symbolic(Variable(71_230));
+        let pointer = Address::symbolic(Variable(71_230));
         let before = intern_memory(Memory::new());
         let after = intern_memory(before.memory().clone().store(
             pointer.clone(),
@@ -5032,14 +5032,14 @@ mod synthesized_literal_tests {
     #[test]
     fn retained_requirements_match_mirrored_orders_and_stored_read_sources() {
         use crate::kernel::{
-            CompareRelation as R, KernelTerm, LoadKind, MachineBinaryOp as Op,
-            MachineOperandView as V, Memory, Pointer, intern_memory,
+            Address, CompareRelation as R, KernelTerm, LoadKind, MachineBinaryOp as Op,
+            MachineOperandView as V, Memory, intern_memory,
         };
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
         let x = MachineTerm::Variable(Variable(71231));
         let sum = MachineTerm::logical_machine_binary(ty, Op::Add, x, 1u32.into());
-        let pointer = Pointer::symbolic(Variable(71232));
+        let pointer = Address::symbolic(Variable(71232));
         let before = intern_memory(Memory::new());
         let after = intern_memory(
             before

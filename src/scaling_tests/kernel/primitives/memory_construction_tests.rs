@@ -12,9 +12,9 @@ fn construction_recording_cost_is_independent_of_state_size() {
         let mut memory = Memory::new();
         for i in 0..size {
             memory = memory.store(
-                Pointer {
-                    block: "local:scale".into(),
-                    offset: PointerOffsetTerm::Constant(i * 4),
+                Address {
+                    base: "local:scale".into(),
+                    offset: AddressOffset::Constant(i * 4),
                 },
                 ProgramValue::Int32((i as u32).into()),
             );

@@ -5625,7 +5625,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 crate::kernel::proposition_mentions_load_variable(goal)
                     || crate::kernel::proof::term_rewrite::proposition_pointer_terms(goal)
                         .iter()
-                        .any(|pointer| matches!(pointer.block, PointerBlock::LoadedPointer(_)))
+                        .any(|pointer| matches!(pointer.base, AddressBase::LoadedPointer(_)))
             });
             if calls.is_empty() && !reads_memory {
                 return Ok(None);
@@ -8197,26 +8197,26 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // none mentions an offset operand of this comparison.
         let equality_candidates = match &goal {
             Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), value)
-                if left.block == right.block =>
+                if left.base == right.base =>
             {
                 // External arguments share a block and carry the
                 // actual base as an offset prefix: `(base + i) == base`
                 // needs facts about `i`, not old reads through `base`.
-                let zero = crate::kernel::PointerOffsetTerm::Constant(0);
+                let zero = crate::kernel::AddressOffset::Constant(0);
                 let (left, right) = match (&left.offset, &right.offset) {
-                    (crate::kernel::PointerOffsetTerm::Add(base, index), right)
+                    (crate::kernel::AddressOffset::Add(base, index), right)
                         if base.as_ref() == right =>
                     {
                         (index.as_ref(), &zero)
                     }
-                    (left, crate::kernel::PointerOffsetTerm::Add(base, index))
+                    (left, crate::kernel::AddressOffset::Add(base, index))
                         if left == base.as_ref() =>
                     {
                         (&zero, index.as_ref())
                     }
                     (
-                        crate::kernel::PointerOffsetTerm::Add(left_base, left_index),
-                        crate::kernel::PointerOffsetTerm::Add(right_base, right_index),
+                        crate::kernel::AddressOffset::Add(left_base, left_index),
+                        crate::kernel::AddressOffset::Add(right_base, right_index),
                     ) if left_base == right_base => (left_index.as_ref(), right_index.as_ref()),
                     (left, right) => (left, right),
                 };

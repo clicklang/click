@@ -4,7 +4,7 @@ use super::*;
 impl KernelTerm {
     pub(crate) fn shared_pointer_address_observation(
         format: MachineIntegerType,
-        address: SharedPointerAddress,
+        address: SharedAddress,
         object_class: AddressObjectClass,
     ) -> Self {
         Self::intern(
@@ -24,7 +24,7 @@ mod tests {
     fn address_observation_identity_keeps_exact_object_annotations() {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
         let _session = crate::kernel::VerificationSession::enter();
-        let address = Pointer::symbolic(Variable(1024001));
+        let address = Address::symbolic(Variable(1024001));
         let mut roots = Vec::new();
         for class in [CScalarClass::Int, CScalarClass::Char] {
             let expected = Some(CAccessClass::Scalar(class));

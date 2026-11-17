@@ -197,9 +197,9 @@ fn direct_call_map_is_checked_in_kernel_like_named_proof_arguments() {
 
 #[test]
 fn resource_transition_retains_borrow_role_for_owned_entry_fact() {
-    let pointer = Pointer {
-        block: PointerBlock::Concrete("local:borrow-role:data".to_string()),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::Concrete("local:borrow-role:data".to_string()),
+        offset: AddressOffset::Constant(0),
     };
     let range = MemoryRange::new(
         pointer.clone(),
@@ -224,7 +224,7 @@ fn resource_transition_retains_borrow_role_for_owned_entry_fact() {
     let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(range));
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(pointer.clone()))
-        .with_memory(Memory::new().with_block(pointer.block.clone(), 4))
+        .with_memory(Memory::new().with_block(pointer.base.clone(), 4))
         .with_resource_context(resources);
     let transfer = prepare_contract_resource_transfer(
         &state,
@@ -252,12 +252,12 @@ fn resource_transition_retains_borrow_role_for_owned_entry_fact() {
 
 #[test]
 fn call_site_and_function_boundary_transitions_agree_on_the_callee_entry() {
-    let block = |name: &str| Pointer {
-        block: PointerBlock::Concrete(format!("local:purpose:{name}")),
-        offset: PointerOffsetTerm::Constant(0),
+    let block = |name: &str| Address {
+        base: AddressBase::Concrete(format!("local:purpose:{name}")),
+        offset: AddressOffset::Constant(0),
     };
     let (owned, viewed) = (block("owned"), block("viewed"));
-    let range = |pointer: &Pointer| {
+    let range = |pointer: &Address| {
         MemoryRange::new(
             pointer.clone(),
             MachineTerm::constant(0),
@@ -301,8 +301,8 @@ fn call_site_and_function_boundary_transitions_agree_on_the_callee_entry() {
         .with_local("q", ProgramValue::pointer(viewed.clone()))
         .with_memory(
             Memory::new()
-                .with_block(owned.block.clone(), 4)
-                .with_block(viewed.block.clone(), 4),
+                .with_block(owned.base.clone(), 4)
+                .with_block(viewed.base.clone(), 4),
         )
         .with_resource_context(resources);
     let assumptions = PureFactContext::new();
@@ -389,9 +389,9 @@ fn call_site_and_function_boundary_transitions_agree_on_the_callee_entry() {
 
 #[test]
 fn stable_view_refinement_uses_checked_variance_for_subranges() {
-    let base = Pointer {
-        block: PointerBlock::Concrete("refinement:stable-view".to_string()),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: AddressBase::Concrete("refinement:stable-view".to_string()),
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_local(
@@ -458,9 +458,9 @@ fn stable_view_refinement_uses_checked_variance_for_subranges() {
 
 #[test]
 fn stable_view_refinement_does_not_confuse_disjoint_same_mode_inputs() {
-    let base = Pointer {
-        block: PointerBlock::Concrete("refinement:mixed".to_string()),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: AddressBase::Concrete("refinement:mixed".to_string()),
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_local(
@@ -560,9 +560,9 @@ fn named_contract_application_discards_template_body_and_storage() {
     );
 
     let argument = ProgramExpression::Value(ProgramValue::typed_pointer(
-        Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
         },
         ProgramType::UInt8Pointer,
     ));
@@ -698,9 +698,9 @@ fn direct_and_callback_resource_transition(
 
 #[test]
 fn direct_and_named_callback_resource_interfaces_agree_across_families() {
-    let memory_pointer = Pointer {
-        block: "parity-memory".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let memory_pointer = Address {
+        base: "parity-memory".into(),
+        offset: AddressOffset::Constant(0),
     };
     let memory_spec = ResourceSpec::owned_memory(MemorySegment::new(
         crate::kernel::program_expression::pointer_value(memory_pointer.clone()),
@@ -716,7 +716,7 @@ fn direct_and_named_callback_resource_interfaces_agree_across_families() {
     .with_resource_summary(vec![memory_spec.clone()], vec![memory_spec]);
     let memory_state = ExecutionState::new()
         .with_population_creation_tracking()
-        .with_memory(Memory::new().with_block(memory_pointer.block.clone(), 4))
+        .with_memory(Memory::new().with_block(memory_pointer.base.clone(), 4))
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
             ResourceFact::own_memory(MemoryRange::new(
                 memory_pointer,
@@ -917,9 +917,9 @@ fn check_executed_refinement_shape(return_type: ProgramType, alter_result: bool)
         arguments: vec![
             Term::ExecutionState(Box::new(ExecutionState::new())),
             Term::ProgramValue(ProgramValue::Pointer(PointerValue::new(
-                Pointer {
-                    block: PointerBlock::FunctionSymbolic(Variable(0)),
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: AddressBase::FunctionSymbolic(Variable(0)),
+                    offset: AddressOffset::Constant(0),
                 },
                 pointer_type,
             ))),
@@ -1064,13 +1064,13 @@ fn pure_callback_preparation_does_not_enumerate_the_resource_frame() {
 
 #[test]
 fn resource_derived_refinement_compares_checked_ranges() {
-    let pointer = Pointer {
-        block: PointerBlock::Concrete("local:resource-refinement:data".to_string()),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::Concrete("local:resource-refinement:data".to_string()),
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(pointer.clone()))
-        .with_memory(Memory::new().with_block(pointer.block.clone(), 8));
+        .with_memory(Memory::new().with_block(pointer.base.clone(), 8));
     let resource = |start| {
         ResourceSpec::owned_memory(MemorySegment::new(
             ProgramExpression::Variable("p".into()),
@@ -1111,13 +1111,13 @@ fn resource_derived_refinement_compares_checked_ranges() {
 
 #[test]
 fn resource_derived_frame_rejects_mixed_explicit_effect_metadata() {
-    let pointer = Pointer {
-        block: PointerBlock::Concrete("local:mixed-resource-frame:data".to_string()),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::Concrete("local:mixed-resource-frame:data".to_string()),
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(pointer.clone()))
-        .with_memory(Memory::new().with_block(pointer.block.clone(), 4));
+        .with_memory(Memory::new().with_block(pointer.base.clone(), 4));
     let function = program_function(
         ProgramType::Void,
         "mixed_resource_frame",
@@ -1164,9 +1164,9 @@ fn resource_derived_frame_rejects_mixed_explicit_effect_metadata() {
 
 #[test]
 fn declared_loop_frame_is_installed_from_the_loop_specs_not_from_segments() {
-    let pointer = Pointer {
-        block: PointerBlock::Concrete("local:loop-declared:data".to_string()),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::Concrete("local:loop-declared:data".to_string()),
+        offset: AddressOffset::Constant(0),
     };
     let definition = CompositeResourceDefinition::new(
         "LoopWrapper",
@@ -1188,7 +1188,7 @@ fn declared_loop_frame_is_installed_from_the_loop_specs_not_from_segments() {
     );
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(pointer.clone()))
-        .with_memory(Memory::new().with_block(pointer.block.clone(), 4))
+        .with_memory(Memory::new().with_block(pointer.base.clone(), 4))
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
             ResourceFact::own_composite(
                 "LoopWrapper".into(),
@@ -1262,9 +1262,9 @@ fn declared_loop_frame_is_installed_from_the_loop_specs_not_from_segments() {
 
 #[test]
 fn resource_derived_loop_setup_does_not_fallback_to_surface_metadata() {
-    let pointer = Pointer {
-        block: PointerBlock::Concrete("local:loop-fallback:data".to_string()),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::Concrete("local:loop-fallback:data".to_string()),
+        offset: AddressOffset::Constant(0),
     };
     let source_segment = MemorySegment::new(
         ProgramExpression::Variable("p".into()),
@@ -1320,7 +1320,7 @@ fn resource_derived_loop_setup_does_not_fallback_to_surface_metadata() {
     .with_resource_derived_mutable_frame();
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(pointer.clone()))
-        .with_memory(Memory::new().with_block(pointer.block, 4));
+        .with_memory(Memory::new().with_block(pointer.base, 4));
     let result = establish_resource_derived_loop_frames(
         function,
         &state,
@@ -1531,7 +1531,7 @@ fn requirement_capability_describes_the_complete_source_tree() {
         &[&contract],
         &[
             crate::kernel::program_expression::typed_pointer_value(
-                Pointer::symbolic(Variable(901)),
+                Address::symbolic(Variable(901)),
                 ProgramType::Int32Pointer,
             ),
             crate::kernel::program_expression::int32_literal(7),

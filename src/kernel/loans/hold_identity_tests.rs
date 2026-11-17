@@ -1,12 +1,12 @@
 use super::*;
-use crate::kernel::{Pointer, PointerBlock, PointerOffsetTerm};
+use crate::kernel::{Address, AddressBase, AddressOffset};
 
 /// A hold must not compare equal to the state it restricts.
 #[test]
 fn holding_a_scope_mints_a_distinct_ledger_identity() {
-    let base = Pointer {
-        block: PointerBlock::Concrete("global:g".to_string()),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: AddressBase::Concrete("global:g".to_string()),
+        offset: AddressOffset::Constant(0),
     };
     let fact = ResourceFact::own_memory(MemoryRange::new(
         base,

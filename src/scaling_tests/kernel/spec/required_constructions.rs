@@ -32,7 +32,7 @@ fn subslice(length: u64) -> AlgebraicTerm {
             variant: "Slice".to_string(),
             fields: vec![
                 AlgebraicValue::Program(ProgramValue::typed_pointer(
-                    Pointer::null(),
+                    Address::null(),
                     ProgramType::UInt8Pointer,
                 )),
                 AlgebraicValue::Program(ProgramValue::UInt64(MachineTerm::uint64_constant(length))),

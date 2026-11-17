@@ -862,9 +862,9 @@ fn comparison_binary_uncached(
 fn comparison_read_fixture(value: MachineTerm) -> (Variable, Variable) {
     let ty = MachineIntegerType::Int32;
     let index = MachineTerm::Variable(Variable(992201));
-    let pointer = |value| Pointer {
-        block: PointerBlock::Concrete("opaque-comparison".into()),
-        offset: PointerOffsetTerm::scaled_int32_node(value, 4),
+    let pointer = |value| Address {
+        base: AddressBase::Concrete("opaque-comparison".into()),
+        offset: AddressOffset::scaled_int32_node(value, 4),
     };
     let memory = crate::kernel::intern_memory(
         Memory::new()

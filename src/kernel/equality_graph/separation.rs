@@ -5,10 +5,10 @@ use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use std::sync::Arc;
 
-fn anchor(range: &MemoryRange) -> Option<Pointer> {
+fn anchor(range: &MemoryRange) -> Option<Address> {
     let offset = crate::kernel::assumptions::memory_range_anchor(range)?;
-    Some(Pointer {
-        block: range.base().block.clone(),
+    Some(Address {
+        base: range.base().base.clone(),
         offset,
     })
 }

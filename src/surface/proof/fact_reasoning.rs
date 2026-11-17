@@ -180,7 +180,7 @@ fn describe_access_bound_prerequisite(
     };
     let (parameters, arguments) = crate::surface::diagnostics::local_naming_tables(state);
     let object = crate::surface::diagnostics::describe_memory_block(
-        &pointer.block,
+        &pointer.base,
         ParameterBinding::new(&parameters, &arguments),
     )?;
     let bound = crate::kernel::memory_access_element_bound(memory, pointer, byte_width)?;

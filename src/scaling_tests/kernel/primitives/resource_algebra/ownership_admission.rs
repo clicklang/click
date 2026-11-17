@@ -5,7 +5,7 @@ fn unsupported_admission_never_discovers_related_owners_or_aliases() {
     for aliases in [false, true] {
         let mut samples = Vec::new();
         for count in [4_u32, 16, 64, 256] {
-            let pointer = |id| Pointer::symbolic(Variable(8_780_000 + u64::from(id)));
+            let pointer = |id| Address::symbolic(Variable(8_780_000 + u64::from(id)));
             let mut facts = PureFactContext::new();
             let mut resources = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(
                 ResourceFact::own_memory(MemoryRange::new_with_element_width(
@@ -64,9 +64,9 @@ fn first_ownership_queries_use_produced_indexes_and_direct_symbolic_bounds() {
             let mut samples = Vec::new();
             for count in [4_u32, 16, 64] {
                 let _session = crate::kernel::VerificationSession::enter();
-                let p = Pointer {
-                    block: PointerBlock::ExternalArgument,
-                    offset: PointerOffsetTerm::Variable(Variable(8_795_000)),
+                let p = Address {
+                    base: AddressBase::ExternalArgument,
+                    offset: AddressOffset::Variable(Variable(8_795_000)),
                 };
                 let endpoint = MachineTerm::Variable(Variable(8_795_001));
                 let mut facts = PureFactContext::new();
@@ -136,7 +136,7 @@ fn certified_group_and_loop_exchange_keep_fixed_memory_boundaries_as_aliases_gro
         let mut loop_samples = Vec::new();
         for count in [4_u32, 16, 64] {
             let _session = crate::kernel::VerificationSession::enter();
-            let base = Pointer::symbolic(Variable(8_797_000));
+            let base = Address::symbolic(Variable(8_797_000));
             let owner = |start: u32, end: u32| {
                 ResourceFact::own_memory(MemoryRange::new_with_element_width(
                     base.clone(),
@@ -154,7 +154,7 @@ fn certified_group_and_loop_exchange_keep_fixed_memory_boundaries_as_aliases_gro
                     assumptions = assumptions.assume_condition(
                         ConditionTerm::pointer_equal(
                             base.clone(),
-                            Pointer::symbolic(Variable(8_798_000 + u64::from(index))),
+                            Address::symbolic(Variable(8_798_000 + u64::from(index))),
                         ),
                         true,
                     );
@@ -232,13 +232,13 @@ fn symbolic_endpoint_refusal_does_not_follow_a_growing_order_chain() {
             );
         }
         let held = ResourceFact::own_memory(MemoryRange::new_with_element_width(
-            Pointer::symbolic(Variable(8_919_100)),
+            Address::symbolic(Variable(8_919_100)),
             0u32.into(),
             variable(0),
             1,
         ));
         let query = ResourceFact::own_memory(MemoryRange::new_with_element_width(
-            Pointer::symbolic(Variable(8_919_100)),
+            Address::symbolic(Variable(8_919_100)),
             variable(count),
             100u32.into(),
             1,
@@ -266,9 +266,9 @@ fn cold_automatic_return_boundaries_do_not_visit_other_allocations() {
         let mut samples = Vec::new();
         for count in [4u32, 16, 64] {
             let _session = crate::kernel::VerificationSession::enter();
-            let local = |index| Pointer {
-                block: PointerBlock::Concrete(format!("local:bounded_return_{index}")),
-                offset: PointerOffsetTerm::Constant(0),
+            let local = |index| Address {
+                base: AddressBase::Concrete(format!("local:bounded_return_{index}")),
+                offset: AddressOffset::Constant(0),
             };
             let owner = |base, start: u32, end: u32| {
                 ResourceFact::own_memory(MemoryRange::new_with_element_width(
@@ -283,7 +283,7 @@ fn cold_automatic_return_boundaries_do_not_visit_other_allocations() {
                 facts = facts.assume_condition(
                     ConditionTerm::pointer_equal(
                         local(0),
-                        Pointer::symbolic(Variable(8_920_000 + u64::from(index))),
+                        Address::symbolic(Variable(8_920_000 + u64::from(index))),
                     ),
                     true,
                 );

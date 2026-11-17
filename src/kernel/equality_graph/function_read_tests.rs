@@ -1,7 +1,7 @@
 use super::*;
 
-fn function_read(memory: &SharedMemory, address: &Pointer) -> Pointer {
-    Pointer::symbolic_function(crate::kernel::eval::load_variable_for_exact_cell(
+fn function_read(memory: &SharedMemory, address: &Address) -> Address {
+    Address::symbolic_function(crate::kernel::eval::load_variable_for_exact_cell(
         memory,
         address,
         LoadKind::Int32,
@@ -11,7 +11,7 @@ fn function_read(memory: &SharedMemory, address: &Pointer) -> Pointer {
 
 fn callback_value(name: &str) -> ProgramValue {
     ProgramValue::typed_pointer(
-        Pointer::function(name),
+        Address::function(name),
         ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
     )
 }
@@ -19,16 +19,16 @@ fn callback_value(name: &str) -> ProgramValue {
 #[test]
 fn function_pointer_read_requires_explicit_store_equation() {
     let _session = crate::kernel::VerificationSession::enter();
-    let slot = Pointer {
-        block: "callback-slot".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let slot = Address {
+        base: "callback-slot".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let target = Pointer::function("callback");
+    let target = Address::function("callback");
     let stored = callback_value("callback");
     let memory = intern_memory(Memory::new().store(slot.clone(), stored.clone()));
     for aliased in [false, true] {
         let query = if aliased {
-            Pointer::symbolic(Variable(992001))
+            Address::symbolic(Variable(992001))
         } else {
             slot.clone()
         };
@@ -64,7 +64,7 @@ fn function_pointer_read_requires_explicit_store_equation() {
                 .store(slot.clone(), replacement.clone()),
         );
         let new_read = function_read(&after, &query);
-        assert!(!facts.pointers_known_equal(&new_read, &Pointer::function("replacement")));
+        assert!(!facts.pointers_known_equal(&new_read, &Address::function("replacement")));
         let updated = facts.assume_proposition(
             crate::kernel::memory_history::store_value_equation(
                 after.memory(),
@@ -73,7 +73,7 @@ fn function_pointer_read_requires_explicit_store_equation() {
             )
             .unwrap(),
         );
-        assert!(updated.pointers_known_equal(&new_read, &Pointer::function("replacement")));
+        assert!(updated.pointers_known_equal(&new_read, &Address::function("replacement")));
         assert!(!updated.pointers_known_equal(&new_read, &target));
         assert!(updated.pointers_known_equal(&read, &target));
     }

@@ -8,7 +8,7 @@ use super::*;
 /// with a `bytes`-wide read at `pointer`, which the edge must not write.
 fn seeded_edge_justification(
     edge: &SharedMemory,
-    pointer: &Pointer,
+    pointer: &Address,
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> MemoryDagHopJustification {
@@ -252,9 +252,9 @@ fn memory_dag_walks_follow_chains_of_any_length() {
 #[test]
 fn seeded_pointer_read_evidence_does_not_enumerate_large_runs_or_alias_classes() {
     for size in [16u32, 64, 256, 1024] {
-        let base = Pointer::symbolic(Variable(98_320));
+        let base = Address::symbolic(Variable(98_320));
         let address = base.offset_by_bytes((size - 2) * 4);
-        let alias = Pointer::symbolic(Variable(98_321));
+        let alias = Address::symbolic(Variable(98_321));
         let old = intern_memory(Memory::new());
         let current = intern_memory(
             old.memory()
@@ -268,7 +268,7 @@ fn seeded_pointer_read_evidence_does_not_enumerate_large_runs_or_alias_classes()
             context = context.assume_condition(
                 ConditionTerm::pointer_equal(
                     address.clone(),
-                    Pointer::symbolic(Variable(99_000 + u64::from(i))),
+                    Address::symbolic(Variable(99_000 + u64::from(i))),
                 ),
                 true,
             );
@@ -284,7 +284,7 @@ fn seeded_pointer_read_evidence_does_not_enumerate_large_runs_or_alias_classes()
 #[test]
 fn pointer_read_source_registration_does_not_walk_growing_store_histories() {
     for size in [8u32, 32, 128, 512] {
-        let address = Pointer::symbolic(Variable(98_340));
+        let address = Address::symbolic(Variable(98_340));
         let old = intern_memory(Memory::new());
         let mut memory = old.memory().clone().with_seeded_cells(
             address.clone(),
@@ -299,8 +299,8 @@ fn pointer_read_source_registration_does_not_walk_growing_store_histories() {
             memory = memory.store(address.offset_by_bytes(16), int32(i));
         }
         let current = intern_memory(memory);
-        let left = Pointer::loaded_value(&old, &address);
-        let right = Pointer::loaded_value(&current, &address);
+        let left = Address::loaded_value(&old, &address);
+        let right = Address::loaded_value(&current, &address);
         context.register_pointer_read(&left, &old, &address);
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             context.register_pointer_read(&right, &current, &address);
@@ -314,10 +314,10 @@ fn pointer_read_source_registration_does_not_walk_growing_store_histories() {
 fn pointer_read_single_store_edges_compose_with_near_linear_work() {
     let mut previous_work = None;
     for size in [2u32, 8, 32, 128] {
-        let address = Pointer::symbolic(Variable(98_390));
+        let address = Address::symbolic(Variable(98_390));
         let mut memory = intern_memory(Memory::new());
         let context = PureFactContext::new();
-        let original = Pointer::loaded_value(&memory, &address);
+        let original = Address::loaded_value(&memory, &address);
         context.register_pointer_read(&original, &memory, &address);
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for i in 0..size {
@@ -327,7 +327,7 @@ fn pointer_read_single_store_edges_compose_with_near_linear_work() {
                         .clone()
                         .store(address.offset_by_bytes(16), int32(i)),
                 );
-                let value = Pointer::loaded_value(&memory, &address);
+                let value = Address::loaded_value(&memory, &address);
                 context.register_pointer_read(&value, &memory, &address);
                 assert!(context.pointers_known_equal(&original, &value));
             }
@@ -362,9 +362,9 @@ fn pointer_read_cache_forgetting_registration_does_not_search_older_history() {
             1,
             &context,
         ));
-        let old_read = Pointer::loaded_value(&original, &address);
-        let before_read = Pointer::loaded_value(&before, &address);
-        let after_read = Pointer::loaded_value(&forgotten, &address);
+        let old_read = Address::loaded_value(&original, &address);
+        let before_read = Address::loaded_value(&before, &address);
+        let after_read = Address::loaded_value(&forgotten, &address);
         context.register_pointer_read(&old_read, &original, &address);
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             context.register_pointer_read(&after_read, &forgotten, &address);
@@ -379,8 +379,8 @@ fn pointer_read_cache_forgetting_registration_does_not_search_older_history() {
 fn read_identity_production_is_linear_and_endpoint_queries_do_not_walk_history() {
     let mut previous_work = None;
     for size in [8u32, 32, 128, 512] {
-        let address = Pointer::symbolic(Variable(98_440));
-        let unknown = Pointer::symbolic(Variable(98_441));
+        let address = Address::symbolic(Variable(98_440));
+        let unknown = Address::symbolic(Variable(98_441));
         let original = intern_memory(Memory::new());
         let mut memory = original.memory().clone();
         let context = PureFactContext::new();
@@ -405,8 +405,8 @@ fn read_identity_production_is_linear_and_endpoint_queries_do_not_walk_history()
         assert_eq!(current.read_identity(), original.read_identity());
         let (_, query_work) = crate::instrumentation::measure_deterministic_work(|| {
             assert!(context.pointers_known_equal(
-                &Pointer::loaded_value(&original, &address),
-                &Pointer::loaded_value(&current, &address),
+                &Address::loaded_value(&original, &address),
+                &Address::loaded_value(&current, &address),
             ));
         });
         assert!(query_work < 100, "size={size}, query_work={query_work}");
@@ -426,9 +426,9 @@ fn named_state_alias_equality_does_not_depend_on_sibling_observation_origins() {
     let mut samples = Vec::new();
     for unrelated in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let left = Pointer::symbolic(Variable(977_110));
-        let middle = Pointer::symbolic(Variable(977_111));
-        let right = Pointer::symbolic(Variable(977_112));
+        let left = Address::symbolic(Variable(977_110));
+        let middle = Address::symbolic(Variable(977_111));
+        let right = Address::symbolic(Variable(977_112));
         let first = ConditionTerm::pointer_equal(left.clone(), middle.clone());
         let second = ConditionTerm::pointer_equal(middle, right.clone());
         let mut assumptions = PureFactContext::new()
@@ -527,14 +527,14 @@ fn named_state_alias_equality_does_not_depend_on_sibling_observation_origins() {
 
 #[test]
 fn kept_range_lookup_follows_exact_aliases_without_scanning_unrelated_members() {
-    let input = |name| Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(name)), 4),
+    let input = |name| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(name)), 4),
     };
     let base = input(979_000);
-    let model_base = Pointer {
-        block: PointerBlock::Symbolic(Variable(979_001)),
-        offset: PointerOffsetTerm::Constant(0),
+    let model_base = Address {
+        base: AddressBase::Symbolic(Variable(979_001)),
+        offset: AddressOffset::Constant(0),
     };
     let alias = ConditionTerm::pointer_equal(base.clone(), model_base.clone());
     let assumptions = PureFactContext::new().assume_condition(alias.clone(), true);
@@ -586,8 +586,8 @@ fn kept_range_lookup_follows_exact_aliases_without_scanning_unrelated_members() 
 /// address across it must not enumerate the run or require a disjointness fact.
 #[test]
 fn seeded_scalar_loads_frame_unknown_cells_with_constant_work() {
-    let anchor = Pointer::symbolic(Variable(98_470));
-    let other = Pointer::symbolic(Variable(98_471));
+    let anchor = Address::symbolic(Variable(98_470));
+    let other = Address::symbolic(Variable(98_471));
     let assumptions = PureFactContext::new();
     for (element_type, width) in [
         (ProgramType::Int32, 4),
@@ -651,7 +651,7 @@ fn seeded_scalar_loads_frame_unknown_cells_with_constant_work() {
 /// partial slot as a write. The witness stays constant-size as the run grows.
 #[test]
 fn seeded_scalar_slots_preserve_overlapping_wide_reads() {
-    let pointer = Pointer::symbolic(Variable(98_490));
+    let pointer = Address::symbolic(Variable(98_490));
     let assumptions = PureFactContext::new();
     let mut previous_work = None;
     for (count, stride) in [2, 16, 256, 4096]
@@ -725,18 +725,18 @@ fn stored_field_value_uses_indexed_base_aliases() {
     use crate::kernel::resource_tracker::cell_source::write_supplies_read;
     use crate::kernel::resource_tracker::step_effect::write_is_at_read_address;
     let _session = crate::kernel::VerificationSession::enter();
-    let left = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(105_001)), 4),
+    let left = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(105_001)), 4),
     };
-    let right = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(105_002)), 4),
+    let right = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(105_002)), 4),
     };
     let write = left.offset_by_bytes(16);
     let read = right.offset_by_bytes(16);
     let stored = ProgramValue::typed_pointer(
-        Pointer::symbolic(Variable(105_003)),
+        Address::symbolic(Variable(105_003)),
         ProgramType::Int32Pointer,
     );
     let bare = PureFactContext::new();
@@ -747,8 +747,8 @@ fn stored_field_value_uses_indexed_base_aliases() {
         for index in 0..count {
             context = context.assume_condition(
                 ConditionTerm::pointer_equal(
-                    Pointer::symbolic(Variable(110_000 + index * 2)),
-                    Pointer::symbolic(Variable(110_001 + index * 2)),
+                    Address::symbolic(Variable(110_000 + index * 2)),
+                    Address::symbolic(Variable(110_001 + index * 2)),
                 ),
                 true,
             );
@@ -789,20 +789,20 @@ fn aliased_store_byte_frame_checks_width_context_and_scales() {
     use crate::kernel::resource_tracker::cell_source::MemoryDagHopJustification;
     use crate::kernel::resource_tracker::step_effect::{Evidence, Separation, StepEffect, affects};
     let _session = crate::kernel::VerificationSession::enter();
-    let base = |id| Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(id)), 4),
+    let base = |id| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(id)), 4),
     };
     let left = base(106_001);
     let right = base(106_002);
-    let bridge = Pointer::symbolic(Variable(106_003));
+    let bridge = Address::symbolic(Variable(106_003));
     let read = right.offset_by_bytes(16);
     let value = ProgramValue::typed_pointer(
-        Pointer::symbolic(Variable(106_004)),
+        Address::symbolic(Variable(106_004)),
         ProgramType::Int32Pointer,
     );
     let memory = intern_memory(Memory::new());
-    let classify = |write: Pointer, bytes, context: &PureFactContext| {
+    let classify = |write: Address, bytes, context: &PureFactContext| {
         let step = MemoryDerivation::Store {
             base: memory.clone(),
             pointer: write,
@@ -828,8 +828,8 @@ fn aliased_store_byte_frame_checks_width_context_and_scales() {
         for index in 0..count {
             context = context.assume_condition(
                 ConditionTerm::pointer_equal(
-                    Pointer::symbolic(Variable(120_000 + index * 2)),
-                    Pointer::symbolic(Variable(120_001 + index * 2)),
+                    Address::symbolic(Variable(120_000 + index * 2)),
+                    Address::symbolic(Variable(120_001 + index * 2)),
                 ),
                 true,
             );
@@ -899,19 +899,19 @@ fn graph_aliased_range_membership_checks_complete_access_and_scales() {
     // complete access without enumerating unrelated aliases.
     use crate::kernel::memory_history::typed_store_separated_ranges_evidence;
     let _session = crate::kernel::VerificationSession::enter();
-    let base = |id| Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(id)), 4),
+    let base = |id| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(id)), 4),
     };
     let write_base = base(160_001);
     let write_model = base(160_002);
     let read_base = base(160_003);
     let read_model = base(160_004);
-    let write_bridge = Pointer::symbolic(Variable(160_005));
-    let read_bridge = Pointer::symbolic(Variable(160_006));
+    let write_bridge = Address::symbolic(Variable(160_005));
+    let read_bridge = Address::symbolic(Variable(160_006));
     let write = write_base.offset_by_bytes(8);
     let read = read_base.offset_by_bytes(8);
-    let range = |base: &Pointer, end| {
+    let range = |base: &Address, end| {
         MemoryRange::new_with_element_width(
             base.clone(),
             MachineTerm::constant(8),
@@ -933,7 +933,7 @@ fn graph_aliased_range_membership_checks_complete_access_and_scales() {
         base: intern_memory(Memory::new()),
         pointer: write.clone(),
         value: ProgramValue::typed_pointer(
-            Pointer::symbolic(Variable(160_007)),
+            Address::symbolic(Variable(160_007)),
             ProgramType::Int32Pointer,
         )
         .into(),
@@ -1000,19 +1000,19 @@ fn local_lifetime_end_retains_complete_separated_range_evidence_and_scales() {
     for count in [16u32, 64, 256] {
         crate::kernel::eval::clear_load_variable_registry();
         let retired = Memory::frame_local_pointer(u64::from(count), "span");
-        let read = Pointer::symbolic(Variable(140_000 + u64::from(count)));
+        let read = Address::symbolic(Variable(140_000 + u64::from(count)));
         let bytes = |base, end| MemoryRange::new_with_element_width(base, 0u32.into(), end, 1);
         let retired_range = bytes(retired.clone(), 16u32.into());
         let read_range = bytes(read.clone(), 8u32.into());
         let mut memory = Memory::new()
-            .with_block(retired.block.clone(), 16)
-            .with_block(read.block.clone(), 16);
+            .with_block(retired.base.clone(), 16)
+            .with_block(read.base.clone(), 16);
         let mut resources = ResourceContext::new()
             .unchecked_with_fact(ResourceFact::own_memory(retired_range.clone()))
             .unchecked_with_fact(ResourceFact::own_memory(read_range.clone()));
         for index in 0..count {
             let other = Memory::frame_local_pointer(u64::from(count + index + 1), "unrelated");
-            memory = memory.with_block(other.block.clone(), 16);
+            memory = memory.with_block(other.base.clone(), 16);
             resources =
                 resources.unchecked_with_fact(ResourceFact::own_memory(bytes(other, 16u32.into())));
         }
@@ -1020,7 +1020,7 @@ fn local_lifetime_end_retains_complete_separated_range_evidence_and_scales() {
             PureFactContext::new().assume_proposition(Proposition::ResourceComposition(resources));
         crate::kernel::eval::declare_load_access_width(&read, 8);
         let before = crate::kernel::intern_memory_ref(&memory);
-        let after = crate::kernel::intern_memory_ref(&memory.without_local_block(&retired.block));
+        let after = crate::kernel::intern_memory_ref(&memory.without_local_block(&retired.base));
         let load = |memory| {
             MachineTerm::MemoryLoad(
                 memory,
@@ -1103,9 +1103,9 @@ fn local_lifetime_end_retains_complete_separated_range_evidence_and_scales() {
             !hop.justification
                 .checks(hop.derivation.as_ref(), &retired, 8, &assumptions)
         );
-        let larger = Memory::new().with_block(retired.block.clone(), 32);
+        let larger = Memory::new().with_block(retired.base.clone(), 32);
         let larger_end =
-            crate::kernel::intern_memory_ref(&larger.without_local_block(&retired.block));
+            crate::kernel::intern_memory_ref(&larger.without_local_block(&retired.base));
         assert!(!hop.justification.checks(
             larger_end.derivation().unwrap().as_ref(),
             &read,
@@ -1150,9 +1150,9 @@ fn preliminary_byte_gap_uses_only_stated_endpoint_order() {
     let index = |slot: i64| {
         MachineTerm::MemoryLoad(
             ProgramPoint::at(&memory),
-            Box::new(Pointer {
-                block: "byte-gap-index".into(),
-                offset: PointerOffsetTerm::Constant(slot * 4),
+            Box::new(Address {
+                base: "byte-gap-index".into(),
+                offset: AddressOffset::Constant(slot * 4),
             }),
             crate::kernel::LoadKind::Int32,
         )
@@ -1160,9 +1160,9 @@ fn preliminary_byte_gap_uses_only_stated_endpoint_order() {
     let middle = index(2);
     let left_index = index(0);
     let right_index = index(1);
-    let at = |index: &MachineTerm| Pointer {
-        block: "byte-gap-data".into(),
-        offset: PointerOffsetTerm::scale_int32(index.clone(), 4),
+    let at = |index: &MachineTerm| Address {
+        base: "byte-gap-data".into(),
+        offset: AddressOffset::scale_int32(index.clone(), 4),
     };
     let left = at(&left_index);
     let right = at(&right_index);
@@ -1236,9 +1236,9 @@ fn preliminary_byte_gap_uses_only_stated_endpoint_order() {
 
 #[test]
 fn indexed_byte_separation_ignores_unrelated_external_ranges() {
-    let pointer = |id| Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Variable(Variable(id)),
+    let pointer = |id| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Variable(Variable(id)),
     };
     let separate = |p, q| Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(memory_range(p, 0, 2))),
@@ -1271,11 +1271,11 @@ fn indexed_byte_separation_ignores_unrelated_external_ranges() {
 #[test]
 fn numeric_byte_geometry_ignores_unrelated_address_classes() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = |id| Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Variable(Variable(id)),
+    let pointer = |id| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Variable(Variable(id)),
     };
-    let numeric_alias = |p: Pointer, q: Pointer| {
+    let numeric_alias = |p: Address, q: Address| {
         Proposition::ConditionIs(
             ConditionTerm::uint64_equal(
                 MachineTerm::pointer_address(p),
@@ -1318,11 +1318,11 @@ fn an_unrelated_view_does_not_walk_pointer_read_history() {
     for size in [4u32, 8, 16, 32] {
         let _session = crate::kernel::VerificationSession::enter();
         let context = PureFactContext::new();
-        let field = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(0),
+        let field = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
         };
-        let target = Pointer::symbolic(Variable(995_600));
+        let target = Address::symbolic(Variable(995_600));
         let mut memory = Memory::new().store(
             field.clone(),
             ProgramValue::typed_pointer(target, ProgramType::Int32Pointer),
@@ -1341,7 +1341,7 @@ fn an_unrelated_view_does_not_walk_pointer_read_history() {
             C_POINTER_BYTE_WIDTH,
             &retained_state,
         );
-        let pointer = Pointer::loaded(&MachineTerm::Variable(variable)).unwrap();
+        let pointer = Address::loaded(&MachineTerm::Variable(variable)).unwrap();
         context.register_pointer_read(&pointer, &retained_state, &field);
         let ranges = ResourceContext::new_with_equalities(&context)
             .unchecked_with_fact(ResourceFact::view_memory(memory_range(field, 0, 2)));
@@ -1363,13 +1363,13 @@ fn mixed_width_seeded_runs_ignore_other_address_stems() {
         let mut baseline = None;
         for length in [32, 1_024, 65_536, 2_147_483_647] {
             let _session = crate::kernel::VerificationSession::enter();
-            let address = |variable| Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Variable(Variable(variable)),
+            let address = |variable| Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Variable(Variable(variable)),
             };
             let word = address(98_750);
             let bytes = address(98_751);
-            assert_eq!(word.block, bytes.block);
+            assert_eq!(word.base, bytes.base);
             let source = intern_memory(Memory::new());
             let (memory, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let seed_word = |memory: Memory| {
@@ -1416,8 +1416,8 @@ fn direct_pointer_projection_dependencies_scale_with_the_selected_chain() {
         let _session = crate::kernel::VerificationSession::enter();
         let source =
             intern_memory(Memory::new().with_block_without_derivation("local:projection-chain", 4));
-        let mut left = Pointer::symbolic(Variable(98_370));
-        let mut right = Pointer::symbolic(Variable(98_371));
+        let mut left = Address::symbolic(Variable(98_370));
+        let mut right = Address::symbolic(Variable(98_371));
         let context = PureFactContext::new().assume_condition(
             ConditionTerm::pointer_equal(left.clone(), right.clone()),
             true,
@@ -1428,8 +1428,8 @@ fn direct_pointer_projection_dependencies_scale_with_the_selected_chain() {
                 &left,
                 crate::kernel::C_POINTER_BYTE_WIDTH,
             );
-            left = Pointer::loaded_value(&projected, &left);
-            right = Pointer::loaded_value(&source, &right);
+            left = Address::loaded_value(&projected, &left);
+            right = Address::loaded_value(&source, &right);
         }
         let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
             context.pointers_known_equal(&left, &right)
@@ -1449,22 +1449,22 @@ fn direct_pointer_projection_dependencies_scale_with_the_selected_chain() {
         let source =
             intern_memory(Memory::new().with_block_without_derivation("local:projection-frame", 4));
         for i in 0..size {
-            let address = Pointer::symbolic(Variable(99_000 + i));
+            let address = Address::symbolic(Variable(99_000 + i));
             let projected = crate::kernel::memory_history::canonical_value_load_memory(
                 &source,
                 &address,
                 crate::kernel::C_POINTER_BYTE_WIDTH,
             );
-            Pointer::loaded_value(&projected, &address);
+            Address::loaded_value(&projected, &address);
         }
-        let address = Pointer::symbolic(Variable(98_380));
+        let address = Address::symbolic(Variable(98_380));
         let projected = crate::kernel::memory_history::canonical_value_load_memory(
             &source,
             &address,
             crate::kernel::C_POINTER_BYTE_WIDTH,
         );
-        let left = Pointer::loaded_value(&projected, &address);
-        let right = Pointer::loaded_value(&source, &address);
+        let left = Address::loaded_value(&projected, &address);
+        let right = Address::loaded_value(&source, &address);
         let context = PureFactContext::new();
         let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
             context.pointers_known_equal(&left, &right)
@@ -1484,7 +1484,7 @@ fn direct_pointer_projection_dependencies_scale_with_the_selected_chain() {
 fn abstract_read_congruence_scales_with_selected_reads() {
     let parameter = TypeParameterName::intern("ScaledReadT");
     let memory = intern_memory(Memory::new());
-    let read = |pointer: Pointer| AlgebraicTerm {
+    let read = |pointer: Address| AlgebraicTerm {
         algebraic_type: parameter.algebraic_type(),
         node: AlgebraicTermNode::MemoryLoad {
             memory: memory.clone(),
@@ -1496,17 +1496,17 @@ fn abstract_read_congruence_scales_with_selected_reads() {
         for i in 0..ambient {
             context = context.assume_condition(
                 ConditionTerm::pointer_equal(
-                    Pointer::symbolic(Variable(995_000 + 2 * i)),
-                    Pointer::symbolic(Variable(995_001 + 2 * i)),
+                    Address::symbolic(Variable(995_000 + 2 * i)),
+                    Address::symbolic(Variable(995_001 + 2 * i)),
                 ),
                 true,
             );
         }
-        let anchor = Pointer::symbolic(Variable(994_000));
+        let anchor = Address::symbolic(Variable(994_000));
         let first = read(anchor.clone());
         crate::instrumentation::measure_deterministic_work(|| {
             for i in 1..=size {
-                let alias = Pointer::symbolic(Variable(994_000 + i));
+                let alias = Address::symbolic(Variable(994_000 + i));
                 let next = read(alias.clone());
                 assert!(!context.equality_graph.are_algebraic_equal(&first, &next));
                 context = context
@@ -1548,11 +1548,11 @@ fn abstract_read_origin_lookup_ignores_unrelated_definitions() {
         for i in 0..size {
             AlgebraicTermNode::parameter_load(
                 source.clone(),
-                Pointer::symbolic(Variable(993_000 + i)),
+                Address::symbolic(Variable(993_000 + i)),
                 parameter,
             );
         }
-        let address = Pointer::symbolic(Variable(992_000));
+        let address = Address::symbolic(Variable(992_000));
         let ProgramValue::Parameter(named) =
             AlgebraicTermNode::parameter_load(source.clone(), address.clone(), parameter)
         else {

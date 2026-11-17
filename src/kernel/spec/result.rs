@@ -411,7 +411,7 @@ mod pointer_observation_tests {
     fn numeric_pointer_projection_retains_the_address_without_changing_complete_values() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(1024900)),
+            Address::symbolic(Variable(1024900)),
             ProgramType::Int32Pointer,
         )
         .with_pointee_constant(true)
