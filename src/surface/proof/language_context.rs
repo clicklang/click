@@ -129,6 +129,8 @@ pub(in crate::surface::proof) struct InvariantBodyContext {
     /// `iterations`; the back edge owes the invariants at `K + 1`.
     pub(in crate::surface::proof) iterations: Option<crate::kernel::IntegerTerm>,
     pub(in crate::surface::proof) checks: Vec<LoopInvariantCheck>,
+    /// A preselected pure test read again at the preservation boundary.
+    pub(in crate::surface::proof) entry_guard: Option<Arc<ProgramExpression>>,
     pub(in crate::surface::proof) ranking_measures: Vec<crate::kernel::RankingComponent>,
     /// The declared `decreases` components as the loop head writes them, in
     /// the order of `ranking_measures`. The back edge's descent member is

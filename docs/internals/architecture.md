@@ -47,7 +47,10 @@ written preservation proofs consume this same result. Compatible exits use
 the invariant-head summary. An established false-guard exit with a distinct
 resource partition retains its own state; a feasible continuing edge with
 different ownership is an error, never an exit signal. Bundle closure adds
-proof facts without repeating the rebound or ownership comparison.
+proof facts without repeating the rebound or ownership comparison. The
+Surface bundle and the direct kernel summary select numeric ranking members
+from the same guard feasibility rule. A false next test leaves those members
+out of the bundle.
 Preselecting a pure guard is a premise rather than a source transition, so it
 records the selected body's entry, not fabricated test-entry/exit states.
 
