@@ -348,6 +348,39 @@ fn direct_loop_guard_keeps_negated_conditions_as_boolean_terms() {
     );
 }
 
+#[test]
+fn direct_loop_guard_transfer_rejects_an_existing_guard_atom() {
+    let locked = MutexContext::new(entry())
+        .acquire_current(&address(0), &PureFactContext::new())
+        .unwrap();
+    let top = head(&locked.state().clone().with_local("flag", int32(1)), 716);
+    let mut duplicate = top.clone();
+    duplicate.resources =
+        duplicate
+            .resources
+            .unchecked_with_fact(ResourceFact::own(Resource::MutexGuard(
+                carrier(&top).guard.clone(),
+            )));
+    assert!(
+        MutexContext::new(duplicate)
+            .open_direct_loop_guard(&address(0), &PureFactContext::new())
+            .is_err()
+    );
+}
+
+#[test]
+fn direct_loop_guard_transfer_rejects_an_existing_conditional_identity() {
+    let top = head(&entry(), 717);
+    let mut changed = (*carrier(&top)).clone();
+    changed.held = ConditionTerm::Constant(true);
+    assert!(
+        top.resources
+            .clone()
+            .insert_transferred_conditional_guard(Arc::new(changed))
+            .is_err()
+    );
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/mutexes/direct_loop_guard_tests.rs");

@@ -337,12 +337,7 @@ impl MutexContext {
         if active {
             state.resources = state
                 .resources
-                .try_compose_into_valid_context_delaying_normalization(
-                    [ResourceFact::own(Resource::MutexGuard(
-                        carrier.head.guard.clone(),
-                    ))],
-                    assumptions,
-                )
+                .insert_transferred_mutex_guard(carrier.head.guard.clone())
                 .map_err(|_| MutexTransitionError::MissingGuard(mutex.clone()))?;
         }
         let ledger = state.mutex_ledger.as_ref().unwrap();
@@ -445,7 +440,7 @@ pub(in crate::kernel) fn normalize_direct_loop_guards(
         }
         state.resources = state
             .resources
-            .try_compose_into_valid_context_delaying_normalization([fact(carrier)], assumptions)
+            .insert_transferred_conditional_guard(carrier.head.clone())
             .map_err(|error| format!("conditional loop resource ownership overlaps: {error}"))?;
         checked.push(mutex.clone());
     }
