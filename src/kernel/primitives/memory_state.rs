@@ -9430,7 +9430,7 @@ impl ExecutionState {
                 &singleton,
                 selected,
                 std::slice::from_ref(definition),
-                &self.memory,
+                &self.program_point(),
                 assumptions,
             )
             .ok_or("cannot instantiate the member's private body")?;
@@ -9819,6 +9819,16 @@ impl ExecutionState {
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn program_point(&self) -> super::ProgramPoint {
         super::ProgramPoint::of_state(&self.memory, &self.point)
+    }
+
+    /// A fresh state standing at `point`: its memory and its place on the
+    /// path. A state that evaluates something at a point (a resource body,
+    /// a callee frame) starts here, so its reads stay on the point's path.
+    pub(crate) fn at_point(point: &super::ProgramPoint) -> Self {
+        let mut state = Self::new();
+        state.memory = point.memory().clone();
+        state.point = point.path_link().clone();
+        state
     }
 
     /// Where on its path this state stands.

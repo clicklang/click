@@ -6,7 +6,6 @@ fn choose(x: i32) -> i32 {
 }
 
 fn set_seven(value: &mut i32) {
-    owns *value;
     ensures *value == 8;
 }
 

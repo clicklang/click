@@ -9436,25 +9436,22 @@ one viewed or owned range can be both operands.
 
 ```click
 extern uint8* memset(uint8 destination[], int32 value, uint64 bytes) {
-    requires 0 <= value;
-    requires value <= 255;
     owns uninitialized(destination[0..bytes]);
     ensures result == destination;
     ensures (0u64..bytes).all(|k| {
-        defined(destination[k]) and destination[k] == value
+        defined(destination[k]) and destination[k] == (value as uint8)
     });
 }
 ```
 
 **Meaning:** Fills `bytes` bytes (a `size_t` count, as in C) of an owned
-destination with a value Click can represent as `unsigned char`, and returns the
-destination pointer. C converts any `int` fill value to `unsigned char`; Click
-models that narrowing only for a representable value, so the contract requires
-one.
+destination with `value` converted to `unsigned char`, and returns the
+destination pointer. Every `int32` fill value is accepted. Conversion reduces
+it modulo 256: `-1` fills with 255 and `300` fills with 44.
 
 **Kind:** external C contract. The declaration is an explicit verification assumption.
 
-**Verified use:** [`mdtests/c_builtin_memset_header_checks_its_contract.md`](https://github.com/clicklang/click/blob/master/mdtests/c_builtin_memset_header_checks_its_contract.md) refuses a call whose fill value is outside its precondition's range.
+**Verified use:** [`mdtests/memset_converts_fill_value_to_unsigned_char.md`](https://github.com/clicklang/click/blob/master/mdtests/memset_converts_fill_value_to_unsigned_char.md) checks negative, large and symbolic fill values over a symbolic length. [`mdtests/c_builtin_memset_header_checks_its_contract.md`](https://github.com/clicklang/click/blob/master/mdtests/c_builtin_memset_header_checks_its_contract.md) checks the built-in header's binding to this contract.
 
 ### `strlen`
 

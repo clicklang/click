@@ -846,17 +846,22 @@ pub(in crate::surface::proof) fn capture_resource_field_initializer(
                 BTreeSet::new(),
                 BTreeMap::new(),
             )?;
-            let (value, obligations) =
-                crate::kernel::program_evaluate_speprogram_expression_with_checked_obligations(
-                    &states.lowering_state,
-                    &spec,
-                    Some(&states.entry_state),
-                    assumptions,
-                )?;
+            let path = crate::kernel::program_evaluate_retained_spec_expression(
+                &states.lowering_state,
+                &spec,
+                Some(&states.entry_state),
+                assumptions,
+            )?;
+            let value = crate::kernel::ExecutionValue::Shared(path.value);
             if value.program_type() != *expected {
                 return Err("fold initializer has the wrong type".into());
             }
-            Ok((crate::kernel::AlgebraicValue::Program(value), obligations))
+            // Resource fields still store a native ProgramValue; convert only
+            // after checking the common root's type at this storage boundary.
+            Ok((
+                crate::kernel::AlgebraicValue::Program(value.into_native()),
+                path.obligations,
+            ))
         }
         crate::kernel::ResourceFieldType::Integer => {
             let spec = crate::surface::lowering::elaborate_fixed_state_integer_expression(

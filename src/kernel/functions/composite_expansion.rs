@@ -71,7 +71,7 @@ pub(super) fn expand_composite_resource_tree(
         context,
         composite,
         definitions,
-        memory,
+        &crate::kernel::ProgramPoint::of_memory(memory),
         assumptions,
     )?;
     if expanded.facts().contains(composite) {
@@ -657,8 +657,13 @@ pub(crate) fn instantiate_private_member_body_facts(
     let memory = state.memory();
     let definitions = std::slice::from_ref(definition);
     let singleton = ResourceContext::new().unchecked_with_fact(composite.clone());
-    let body =
-        expand_composite_resource_fact(&singleton, composite, definitions, memory, assumptions)?;
+    let body = expand_composite_resource_fact(
+        &singleton,
+        composite,
+        definitions,
+        &crate::kernel::ProgramPoint::of_memory(memory),
+        assumptions,
+    )?;
     // Keep the current verification model and population state, but bind only
     // this definition's parameters. Mutating a cloned caller-local map would
     // copy the whole frame for every member fact instantiation.

@@ -3455,6 +3455,7 @@ fn expand_declared_resource_expression_children(
     let recurse =
         |expression| expand_declared_resource_expression(expression, resource_definitions);
     Ok(match expression {
+        ContractExpression::Negate(inner) => ContractExpression::Negate(Box::new(recurse(*inner)?)),
         ContractExpression::Proposition(proposition) => ContractExpression::Proposition(Box::new(
             expand_declared_resource_proposition(*proposition, resource_definitions)?,
         )),

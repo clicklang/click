@@ -5194,7 +5194,7 @@ fn v11_unbound_owner_observation_composite_still_expands() {
         &resources,
         &parent,
         &[definition],
-        &Memory::new(),
+        &crate::kernel::ProgramPoint::of_memory(&Memory::new()),
         &PureFactContext::new(),
     )
     .expect("an unbound owner-supported observation remains expandable");
@@ -5256,7 +5256,7 @@ fn v11_composite_expansion_refuses_equal_ambient_child_without_destination() {
             &resources,
             &ResourceFact::view_composite("v11_box".into(), Vec::new()),
             &[definition],
-            &Memory::new(),
+            &crate::kernel::ProgramPoint::of_memory(&Memory::new()),
             &PureFactContext::new(),
         )
         .is_none()

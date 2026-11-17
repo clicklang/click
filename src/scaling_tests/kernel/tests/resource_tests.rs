@@ -2846,7 +2846,7 @@ fn frame_queries_ignore_folded_compositions_until_explicitly_opened() {
                     &opened,
                     &head(index),
                     &definitions,
-                    &memory,
+                    &crate::kernel::ProgramPoint::of_memory(&memory),
                     &facts,
                 )
                 .expect("the selected cell body opens");

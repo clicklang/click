@@ -10533,6 +10533,8 @@ impl ExecutionPureFact {
         value: ProgramValue,
         authorized_range: Option<MemoryRange>,
     ) -> Self {
+        let value_equation =
+            super::memory_provenance::store_value_equation(&after, &pointer, &value);
         Self {
             proposition: Proposition::MemoryMutatesOnly {
                 before: before.clone(),
@@ -10545,6 +10547,7 @@ impl ExecutionPureFact {
             join_summary: false,
             resource_effect_bound: None,
             certified_store: Some(Box::new(CertifiedMemoryStore {
+                value_equation,
                 before,
                 after,
                 pointer,

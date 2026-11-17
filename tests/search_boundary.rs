@@ -1038,7 +1038,15 @@ fn frozen_proof_search_inventory_rejects_deleted_or_duplicated_references() {
             false,
         ),
     ] {
-        let file = syn::parse_file(source).unwrap();
+        // Keep the file's independently frozen ownership callers present so
+        // this mutation isolates the release_store discovery edge.
+        let source = format!(
+            "fn acquire_load(c:C) {{ c.try_compose_with_facts_delaying_normalization(); }}
+             fn initialize(c:C) {{ c.try_compose_with_facts_delaying_normalization(); }}
+             fn resolve_observed_publications(c:C) {{ c.try_compose_with_facts_delaying_normalization(); }}
+             {source}"
+        );
+        let file = syn::parse_file(&source).unwrap();
         assert_eq!(
             proof_search_boundary::check(path, &file).is_ok(),
             accepted,
@@ -1578,4 +1586,86 @@ fn ordinary_contracts_cannot_call_independent_termination_adapters() {
         )
         .is_ok()
     );
+}
+
+#[test]
+fn constructed_returns_and_selected_backings_cannot_restore_discovery() {
+    for (path, source) in [
+        (
+            "src/kernel/functions/mixed_return_resources.rs",
+            "fn build(c:C) { c.normalized(facts); }",
+        ),
+        (
+            "src/kernel/functions.rs",
+            "fn recover_candidate_stable_view_resources(c:C) { c.permitted_descriptions(loan); }",
+        ),
+        (
+            "src/kernel/functions/return_loan_backing.rs",
+            "fn select(c:C) { c.stable_views(); }",
+        ),
+        (
+            "src/kernel/functions/return_loan_backing.rs",
+            "fn select(c:C) { c.exact_pointer_aliases(p); }",
+        ),
+        (
+            "src/kernel/functions.rs",
+            "fn recover_candidate_stable_view_resources(c:C) { c.view_occurrences_for_fact(required, facts); }",
+        ),
+    ] {
+        assert!(
+            boundary::check_source(path, source).is_err(),
+            "accepted {source}"
+        );
+    }
+    assert!(
+        boundary::check_source(
+            "src/kernel/functions/mixed_return_resources.rs",
+            "fn build(c:C) { c.normalized_without_discovery(facts); }"
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn ownership_fallback_inventory_rejects_new_routes_and_hidden_references() {
+    for target in proof_search_boundary::OWNERSHIP_FALLBACK_TARGETS.lines() {
+        for source in [
+            format!("fn step(c: C) {{ c.{target}(); }}"),
+            format!("fn step(c: C) {{ let f = C::{target}; f(c); }}"),
+            format!("fn step(c: C) {{ hidden!(c.{target}()); }}"),
+            format!("use crate::C::{target} as hidden;"),
+        ] {
+            let file = syn::parse_file(&source).unwrap();
+            assert!(
+                proof_search_boundary::check("src/kernel/new_operation.rs", &file).is_err(),
+                "{source}"
+            );
+        }
+    }
+}
+
+#[test]
+fn ownership_fallback_inventory_pins_callers_and_reference_counts() {
+    let path = "src/kernel/functions/mixed_return_resources.rs";
+    let target = "try_compose_with_legacy_discovery_and_occurrences";
+    for (owner, name) in [
+        ("EvaluatedReturnResources", "admit_clause"),
+        ("PreparedReturnComposition", "finish"),
+    ] {
+        let source = format!("impl {owner} {{ fn {name}(c: C) {{ c.{target}(); }} }}");
+        let file = syn::parse_file(&source).unwrap();
+        let key = format!("{path}\tlegacy-caller\t{owner}::{name}\t{target}");
+        assert_eq!(proof_search_boundary::inventory(path, &file)[&key], 1);
+        assert_eq!(proof_search_boundary::expected()[&key], 1);
+        let doubled = syn::parse_file(&format!(
+            "impl {owner} {{ fn {name}(c: C) {{ c.{target}(); c.{target}(); }} }}"
+        ))
+        .unwrap();
+        assert!(
+            proof_search_boundary::check(path, &doubled)
+                .unwrap_err()
+                .iter()
+                .any(|error| error.contains(&key) && error.contains("2 references"))
+        );
+    }
 }
