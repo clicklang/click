@@ -50,6 +50,9 @@ int32* uaf_local(int32 fallback[], int32 j) {
             solve();
         }
     } else {
+        step();
+        have separate(memory((p as (uint8*))[0..4]), memory(fallback[0..1])) by { solve(); }
+        step();
         step_until(function.exit);
         solve();
     }

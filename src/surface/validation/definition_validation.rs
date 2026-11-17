@@ -1650,7 +1650,7 @@ fn validate_resource_fact_memory_read_authority(
             composite_body,
             &substitutions,
             ParameterBinding::new(&validation_parameters, &arguments),
-            Memory::new(),
+            SymbolicMemory::new(),
             &PureFactContext::new(),
         )
     });
@@ -1682,7 +1682,7 @@ fn validate_resource_fact_memory_read_authority(
             definition.name(),
         )?;
     }
-    let empty_memory = Memory::new();
+    let empty_memory = SymbolicMemory::new();
     let empty_array_refs = pure_theorem_array_refs(definition.parameters(), &values, &empty_memory);
     collect_resource_fact_scalar_assumptions_from_proposition(
         fact,
@@ -1724,7 +1724,7 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
     proposition: &ClickProposition,
     predicate_definitions: &BTreeMap<&str, &PredicateDefinition>,
     contract_environment: ContractEnvironment<'_>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     spec_definitions: SpecDefinitions<'_>,
     visited_predicates: &mut Vec<String>,
     assumptions: &mut Vec<ResourceFactScalarAssumption>,
@@ -2549,7 +2549,7 @@ fn collect_resource_fact_reads_from_contract_expression(
             collect_resource_fact_reads_from_program_expression(expression, reads);
             Ok(())
         }
-        ContractExpression::CBinding(_) => Ok(()),
+        ContractExpression::ProgramBinding(_) => Ok(()),
         ContractExpression::ResourceWildcard => Err(ClickError::new(format!(
             "`_` is only valid inside a `count(...)` resource pattern in resource `{resource_name}`"
         ))),
@@ -2966,7 +2966,7 @@ fn analyze_resource_fact_read_authority(
     contained: &[ResourceClause],
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> ResourceFactReadAuthorityAnalysis {
     let mut notes = Vec::new();
@@ -3099,7 +3099,7 @@ fn evaluated_segment_covers_resource_fact_read(
     read: &ResourceFactRead,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
 ) -> bool {
     let state = ExecutionState::new().with_memory(memory.clone());
     let evaluate = |expression: &ProgramExpression| {
@@ -3146,7 +3146,7 @@ fn symbolic_segment_covers_range(
     required_end: &ProgramExpression,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> bool {
     let state = ExecutionState::new().with_memory(memory.clone());
@@ -3194,7 +3194,7 @@ fn symbolic_segment_covers_index(
     index: &ProgramExpression,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> bool {
     let state = ExecutionState::new().with_memory(memory.clone());
@@ -3416,7 +3416,7 @@ mod read_authority_tests {
             contained,
             assumptions,
             ContractEnvironment::new(values, &BTreeMap::new()),
-            &Memory::new(),
+            &SymbolicMemory::new(),
             SpecDefinitions::new(
                 &PredicateEnvironment::new(&[]),
                 &ClickFunctionEnvironment::new(&[]),

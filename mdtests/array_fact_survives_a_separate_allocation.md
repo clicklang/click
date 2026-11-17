@@ -48,6 +48,8 @@ int32 scratch(int32 a[], int32 n) {
     } else {
     }
     have icount(a, 0, 0) == 0;
+    have separate(memory((fresh as (uint8*))[0..4]), memory(a[0..n])) by { solve(); }
+    step();
 }
 ```
 

@@ -76,7 +76,7 @@ fn unsigned_congruence_propagates_late_aliases_without_injectivity_or_signed_coe
 #[test]
 fn unsigned_congruence_keeps_load_states_and_widths_distinct() {
     let _session = VerificationSession::enter();
-    let before = intern_memory(Memory::new().with_block("unsigned", 4));
+    let before = intern_memory(SymbolicMemory::new().with_block("unsigned", 4));
     let pointer = Address {
         base: "unsigned".into(),
         offset: AddressOffset::Constant(0),
@@ -171,7 +171,7 @@ fn fact_transport_uses_graph_int32_congruence_without_the_legacy_index() {
 #[test]
 fn fact_transport_uses_registered_load_congruence_only_in_one_state() {
     let _session = VerificationSession::enter();
-    let before = intern_memory(Memory::new().with_block("int32", 16));
+    let before = intern_memory(SymbolicMemory::new().with_block("int32", 16));
     let pointer = |index| Address {
         base: "int32".into(),
         offset: AddressOffset::scale_int32(index, 4),
@@ -219,7 +219,7 @@ fn resolved_four_byte_load_uses_graph_value_equality_but_keeps_state_scope() {
         )
     };
     let before = intern_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_block("resolved-int32", 4)
             .store(pointer.clone(), ProgramValue::Int32(sum(a.clone()))),
     );
@@ -228,7 +228,7 @@ fn resolved_four_byte_load_uses_graph_value_equality_but_keeps_state_scope() {
         ProgramValue::Int32(MachineTerm::constant(9)),
     ));
     let byte_memory = intern_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_block("resolved-int32", 1)
             .store(pointer.clone(), ProgramValue::UInt8(byte(sum(a.clone())))),
     );
@@ -292,7 +292,7 @@ fn two_resolved_four_byte_loads_compare_values_with_state_scope() {
     let left_pointer = pointer(0);
     let right_pointer = pointer(4);
     let before = intern_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_block("two-resolved-int32", 8)
             .store(left_pointer.clone(), ProgramValue::Int32(sum(a.clone())))
             .store(right_pointer.clone(), ProgramValue::Int32(sum(b.clone()))),
@@ -301,10 +301,14 @@ fn two_resolved_four_byte_loads_compare_values_with_state_scope() {
         right_pointer.clone(),
         ProgramValue::Int32(MachineTerm::constant(9)),
     ));
-    let byte_memory = intern_memory(Memory::new().with_block("two-resolved-int32", 8).store(
-        right_pointer.clone(),
-        ProgramValue::UInt8(byte(sum(b.clone()))),
-    ));
+    let byte_memory = intern_memory(
+        SymbolicMemory::new()
+            .with_block("two-resolved-int32", 8)
+            .store(
+                right_pointer.clone(),
+                ProgramValue::UInt8(byte(sum(b.clone()))),
+            ),
+    );
     let load = |memory: &SharedMemory, pointer: &Address, width| {
         let kind = if width == 1 {
             crate::kernel::LoadKind::UInt8
@@ -338,7 +342,7 @@ fn two_resolved_four_byte_loads_compare_values_with_state_scope() {
 #[test]
 fn direct_composite_int32_argument_uses_graph_with_state_scope() {
     let _session = VerificationSession::enter();
-    let before = intern_memory(Memory::new().with_block("resource-value", 8));
+    let before = intern_memory(SymbolicMemory::new().with_block("resource-value", 8));
     let pointer = |index| Address {
         base: "resource-value".into(),
         offset: AddressOffset::scale_int32(index, 4),
@@ -384,7 +388,7 @@ fn direct_composite_int32_argument_uses_graph_with_state_scope() {
 #[test]
 fn resource_instance_int32_field_uses_graph_with_state_scope() {
     let _session = VerificationSession::enter();
-    let before = intern_memory(Memory::new().with_block("instance-value", 8));
+    let before = intern_memory(SymbolicMemory::new().with_block("instance-value", 8));
     let pointer = |index| Address {
         base: "instance-value".into(),
         offset: AddressOffset::scale_int32(index, 4),
@@ -443,7 +447,7 @@ fn resource_instance_int32_field_uses_graph_with_state_scope() {
 #[test]
 fn certification_uses_graph_int32_equality_with_state_scope() {
     let _session = VerificationSession::enter();
-    let before = intern_memory(Memory::new().with_block("certified-int32", 8));
+    let before = intern_memory(SymbolicMemory::new().with_block("certified-int32", 8));
     let pointer = |index| Address {
         base: "certified-int32".into(),
         offset: AddressOffset::scale_int32(index, 4),
@@ -484,7 +488,7 @@ fn certification_uses_graph_int32_equality_with_state_scope() {
 #[test]
 fn reordered_sum_matches_graph_equal_load_addends_in_one_state() {
     let _session = VerificationSession::enter();
-    let before = intern_memory(Memory::new().with_block("int32", 16));
+    let before = intern_memory(SymbolicMemory::new().with_block("int32", 16));
     let pointer = |index| Address {
         base: "int32".into(),
         offset: AddressOffset::scale_int32(index, 4),
@@ -591,7 +595,7 @@ fn int32_restriction_and_contradiction_preserve_support() {
 #[test]
 fn int32_load_identity_keeps_states_separate() {
     let _session = VerificationSession::enter();
-    let before = intern_memory(Memory::new().with_block("int32", 8));
+    let before = intern_memory(SymbolicMemory::new().with_block("int32", 8));
     let pointer = Address::symbolic(Variable(40));
     let after = intern_memory(before.memory().clone().store(
         pointer.clone(),

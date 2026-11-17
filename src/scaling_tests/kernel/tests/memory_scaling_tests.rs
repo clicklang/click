@@ -22,7 +22,7 @@ fn symbolic_stores_into_compact_arrays_scale_with_represented_cells() {
             let after = source.offset_by_bytes(count * 4);
             let separate = scaling_cell("local:compact-symbolic-separate", 0);
             let value = ProgramValue::UInt32(7u32.into());
-            let memory = Memory::new()
+            let memory = SymbolicMemory::new()
                 .with_block(source.base.clone(), (count + 2) * 4)
                 .with_block(separate.base.clone(), 4)
                 .write_scalar_array_region(
@@ -113,7 +113,7 @@ fn whole_and_partial_stores_into_compact_arrays_visit_live_intervals() {
         for count in [4u32, 1024, 1_000_000] {
             let _session = crate::kernel::VerificationSession::enter();
             let source = scaling_cell("local:compact-whole-store", 0);
-            let memory = Memory::new()
+            let memory = SymbolicMemory::new()
                 .with_block(source.base.clone(), count * 4)
                 .write_scalar_array_region(
                     &source,
@@ -157,8 +157,8 @@ fn scaling_value(index: usize) -> ProgramValue {
 }
 
 /// A memory holding one cell in each of `count` unrelated blocks.
-fn memory_with_unrelated_cells(count: usize) -> Memory {
-    (0..count).fold(Memory::new(), |memory, index| {
+fn memory_with_unrelated_cells(count: usize) -> SymbolicMemory {
+    (0..count).fold(SymbolicMemory::new(), |memory, index| {
         memory.store(
             scaling_cell(&format!("unrelated-{index}"), 0),
             scaling_value(index),
@@ -176,7 +176,7 @@ fn sequential_stores_scale_as_n_log_n() {
     for size in SIZES {
         let _session = crate::kernel::VerificationSession::enter();
         let (memory, work) = crate::instrumentation::measure_deterministic_work(|| {
-            (0..size).fold(Memory::new(), |memory, index| {
+            (0..size).fold(SymbolicMemory::new(), |memory, index| {
                 memory.store(scaling_cell("scaling-heap", index), scaling_value(index))
             })
         });
@@ -429,7 +429,11 @@ fn heap_cell(identity: u64, offset: i64) -> Address {
 }
 
 /// A successful 16-byte `malloc` at `identity` whose first word is written.
-fn with_initialized_allocation(memory: Memory, identity: u64, value: u32) -> Memory {
+fn with_initialized_allocation(
+    memory: SymbolicMemory,
+    identity: u64,
+    value: u32,
+) -> SymbolicMemory {
     let pending = Address {
         base: AddressBase::Symbolic(Variable(identity)),
         offset: AddressOffset::Constant(0),
@@ -444,8 +448,8 @@ fn with_initialized_allocation(memory: Memory, identity: u64, value: u32) -> Mem
 
 /// `unrelated` live allocations, each holding one initialized cell, and the
 /// target allocation with its first word written.
-fn memory_with_unrelated_allocations(unrelated: usize) -> Memory {
-    let memory = (0..unrelated).fold(Memory::new(), |memory, index| {
+fn memory_with_unrelated_allocations(unrelated: usize) -> SymbolicMemory {
+    let memory = (0..unrelated).fold(SymbolicMemory::new(), |memory, index| {
         with_initialized_allocation(memory, index as u64 + 1, index as u32)
     });
     with_initialized_allocation(memory, TARGET_HEAP, 7)
@@ -558,7 +562,7 @@ fn one_store_into_a_64_bit_heap_block_is_logarithmic_in_unrelated_64_bit_allocat
                 ConditionTerm::uint64_less_than(index.clone(), count(TARGET_HEAP)),
                 true,
             );
-        let allocate = |(memory, resources): (Memory, ResourceContext), identity: u64| {
+        let allocate = |(memory, resources): (SymbolicMemory, ResourceContext), identity: u64| {
             let pending = Address {
                 base: AddressBase::Symbolic(Variable(identity)),
                 offset: AddressOffset::Constant(0),
@@ -579,7 +583,7 @@ fn one_store_into_a_64_bit_heap_block_is_logarithmic_in_unrelated_64_bit_allocat
         };
         let (memory, resources) = (1..=size as u64).chain([TARGET_HEAP]).fold(
             (
-                Memory::new(),
+                SymbolicMemory::new(),
                 ResourceContext::new_with_equalities(&assumptions),
             ),
             allocate,
@@ -652,7 +656,7 @@ fn one_field_store_into_a_64_bit_struct_array_block_is_logarithmic_in_unrelated_
                 ConditionTerm::uint64_less_than(index.clone(), count(TARGET_HEAP)),
                 true,
             );
-        let allocate = |(memory, resources): (Memory, ResourceContext), identity: u64| {
+        let allocate = |(memory, resources): (SymbolicMemory, ResourceContext), identity: u64| {
             let pending = Address {
                 base: AddressBase::Symbolic(Variable(identity)),
                 offset: AddressOffset::Constant(0),
@@ -677,7 +681,7 @@ fn one_field_store_into_a_64_bit_struct_array_block_is_logarithmic_in_unrelated_
         };
         let (memory, resources) = (1..=size as u64).chain([TARGET_HEAP]).fold(
             (
-                Memory::new(),
+                SymbolicMemory::new(),
                 ResourceContext::new_with_equalities(&assumptions),
             ),
             allocate,
@@ -894,7 +898,7 @@ fn one_heap_load_is_logarithmic_in_unrelated_allocations() {
         let memory = {
             let _build = crate::kernel::VerificationSession::enter();
             (0..size)
-                .fold(Memory::new(), |memory, index| {
+                .fold(SymbolicMemory::new(), |memory, index| {
                     with_initialized_allocation(memory, index as u64 + 1, index as u32)
                 })
                 .with_heap_allocation_claim(heap_cell(TARGET_HEAP, 0), AllocationSize::int32(16))
@@ -951,7 +955,7 @@ fn one_heap_load_is_logarithmic_in_unrelated_allocations() {
 /// composition, like `examples/arena`'s `arena_write`).
 fn owned_parameter_objects_and_a_region_store(
     count: usize,
-) -> (Memory, PureFactContext, Address, Vec<Address>) {
+) -> (SymbolicMemory, PureFactContext, Address, Vec<Address>) {
     let parameter = |id: u64| Address {
         base: AddressBase::ExternalArgument,
         offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(id)), 4),
@@ -969,7 +973,7 @@ fn owned_parameter_objects_and_a_region_store(
     let memory = cells
         .iter()
         .enumerate()
-        .fold(Memory::new(), |memory, (value, cell)| {
+        .fold(SymbolicMemory::new(), |memory, (value, cell)| {
             memory.store(cell.clone(), scaling_value(value))
         });
     let object_range = |base: &Address, elements: u32| {
@@ -1065,7 +1069,7 @@ fn a_store_beside_fields_of_one_heap_object_is_linear_in_the_cached_cells() {
         let memory = cells
             .iter()
             .enumerate()
-            .fold(Memory::new(), |memory, (value, cell)| {
+            .fold(SymbolicMemory::new(), |memory, (value, cell)| {
                 memory.store(cell.clone(), scaling_value(value))
             });
         let write = heap_cell(3, 4 * count as i64);
@@ -1122,7 +1126,7 @@ fn consecutive_reallocating_calls_cost_the_same_each() {
         let data = |call: usize| external(variables + 2 + call as u64);
         let kept = ResourceContext::new()
             .unchecked_with_fact(ResourceFact::own_memory(int32_range(&other, 2)));
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         let mut total = 0;
         let mut last = 0;
         for call in 0..calls {
@@ -1437,7 +1441,7 @@ fn kept_call_havoc_work(residual: ResourceContext) -> (usize, usize) {
         CallKeptRanges::new(ResourceContext::new(), Vec::new(), None),
         &assumptions,
     );
-    let memory = Memory::new().store(
+    let memory = SymbolicMemory::new().store(
         external_field(KEPT_MEMBER, 8),
         ProgramValue::Int32(MachineTerm::constant(5)),
     );
@@ -1557,7 +1561,7 @@ fn a_call_rechecks_cached_members_after_ownership_withdrawal_or_width_change() {
     let pointer = external_object(KEPT_MEMBER);
     let owned = ResourceFact::own_memory(external_range(KEPT_MEMBER, 0, 1));
     let full = ResourceContext::new().unchecked_with_fact(owned.clone());
-    let memory = Memory::new().store(pointer.clone(), ProgramValue::Int32(5.into()));
+    let memory = SymbolicMemory::new().store(pointer.clone(), ProgramValue::Int32(5.into()));
     memory.prepare_parameter_store_partition(&full);
     // Re-admission must classify a formerly unowned cached cell too.
     memory.prepare_parameter_store_partition(&ResourceContext::new());
@@ -1949,7 +1953,7 @@ fn an_unplaced_store_records_a_local_array_as_one_run() {
         let _session = crate::kernel::VerificationSession::enter();
         let block = "local:scaling-array";
         let written = (0..size).fold(
-            Memory::new().with_block(block, u32::try_from(4 * size).unwrap()),
+            SymbolicMemory::new().with_block(block, u32::try_from(4 * size).unwrap()),
             |memory, element| memory.store(scaling_cell(block, element), scaling_value(element)),
         );
         let unplaced = Address {
@@ -2076,7 +2080,7 @@ fn wide_range_observer_transport_ignores_unrelated_equalities() {
         for size in [0, 64, 128, 512] {
             let _session = crate::kernel::VerificationSession::enter();
             let pointer = scaling_cell("global:wide-observer", 0);
-            let memory = Memory::new().store(
+            let memory = SymbolicMemory::new().store(
                 pointer.clone(),
                 ProgramValue::UInt64(MachineTerm::uint64_constant(3)),
             );
@@ -2169,7 +2173,7 @@ fn hashing_a_memory_fact_is_constant_in_the_memory_size() {
         let _session = crate::kernel::VerificationSession::enter();
         let after = memory_with_unrelated_allocations(size);
         let fact = Proposition::MemoryEffectSummary {
-            before: Memory::new(),
+            before: SymbolicMemory::new(),
             after,
             mutable_ranges: Vec::new(),
         };
@@ -2213,7 +2217,7 @@ fn sequential_owned_parameter_stores_ignore_earlier_cached_fields() {
                     )))
                 });
             let unrelated = MachineTerm::MemoryLoad(
-                ProgramPoint::at(&intern_memory(Memory::new())),
+                ProgramPoint::at(&intern_memory(SymbolicMemory::new())),
                 Box::new(Address::symbolic(Variable(970_000))),
                 LoadKind::Int32,
             );
@@ -2223,7 +2227,7 @@ fn sequential_owned_parameter_stores_ignore_earlier_cached_fields() {
                     ConditionTerm::equal(unrelated, MachineTerm::constant(7)),
                     true,
                 );
-            let mut memory = Memory::new();
+            let mut memory = SymbolicMemory::new();
             let mut largest = 0;
             for (index, object) in objects.iter().enumerate() {
                 let value = if pointer_values {
@@ -2272,7 +2276,7 @@ fn a_symbolic_store_skips_locals_whose_address_is_never_taken() {
                 .collect(),
         );
         let slot = |index: usize| scaling_cell(&format!("local:hidden{index}"), 0);
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for index in 0..size {
             memory = memory
                 .with_block(slot(index).base.clone(), 4)
@@ -2453,7 +2457,7 @@ fn store_preservation_ignores_unrelated_owned_members() {
             let write = object(0).offset_by_bytes(4);
             let read = object(1).offset_by_bytes(4);
             let kept = object(1001).offset_by_bytes(4);
-            let memory = Memory::new()
+            let memory = SymbolicMemory::new()
                 .store(read.clone(), scaling_value(9))
                 .store(kept.clone(), scaling_value(10))
                 .store(write.clone(), scaling_value(11));
@@ -2512,7 +2516,7 @@ fn store_distinctness_does_not_search_same_block_range_candidates() {
                 ))),
             });
         }
-        let memory = Memory::new().store(pointer(1), scaling_value(9));
+        let memory = SymbolicMemory::new().store(pointer(1), scaling_value(9));
         let mut measured = Vec::new();
         for _ in 0..2 {
             let ((after, events), work) =
@@ -2578,7 +2582,7 @@ fn wide_store_index_lookup_ignores_unrelated_facts_and_same_array_cells() {
         for size in [4u64, 16, 64] {
             let _session = crate::kernel::VerificationSession::enter();
             let mut facts = PureFactContext::new();
-            let mut memory = Memory::new();
+            let mut memory = SymbolicMemory::new();
             for k in 0..size {
                 // Unrelated index facts, and the written index against
                 // other cells of the same array.
@@ -2716,7 +2720,7 @@ fn store_ownership_selection_bounds_same_base_candidates() {
                     let write = object(0).offset_by_bytes(if crowded_read { 0 } else { offset });
                     let read = object(1).offset_by_bytes(if crowded_read { offset } else { 0 });
                     // Fixed cache and fixed delta: only the ownership bucket grows.
-                    let memory = Memory::new().store(read.clone(), scaling_value(9));
+                    let memory = SymbolicMemory::new().store(read.clone(), scaling_value(9));
                     let mut work = Vec::new();
                     for _ in 0..3 {
                         let (after, units) =
@@ -2765,7 +2769,7 @@ fn store_ownership_selection_bounds_same_base_compositions() {
             }
             let write = object(0);
             let read = object(if miss { 9 } else { 9 + size });
-            let memory = Memory::new().store(read, scaling_value(9));
+            let memory = SymbolicMemory::new().store(read, scaling_value(9));
             let mut work = Vec::new();
             for _ in 0..3 {
                 let (_, units) = crate::instrumentation::measure_deterministic_work(|| {
@@ -2802,7 +2806,7 @@ fn store_byte_gap_bounds_recorded_order_walks() {
                 );
             }
             let read = pointer(if hit { size } else { size + 1 });
-            let memory = Memory::new().store(read, scaling_value(9));
+            let memory = SymbolicMemory::new().store(read, scaling_value(9));
             let mut work = Vec::new();
             for _ in 0..3 {
                 let (_, units) = crate::instrumentation::measure_deterministic_work(|| {
@@ -2829,9 +2833,9 @@ fn pointer_frame_through_seeded_cells_ignores_run_length() {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::Constant(128),
         };
-        let source = crate::kernel::intern_memory(Memory::new());
+        let source = crate::kernel::intern_memory(SymbolicMemory::new());
         // The seed reads the original source, not its immediate parent.
-        let seeded = Memory::new()
+        let seeded = SymbolicMemory::new()
             .store(
                 field.offset_by_bytes(count * 8 + 16),
                 ProgramValue::Int32(7u32.into()),
@@ -2927,7 +2931,7 @@ fn repeated_pointer_frame_work(compare_to_entry: bool, compose: bool) -> Vec<(u3
         let _session = crate::kernel::VerificationSession::enter();
         let field = Address::symbolic(Variable(998_910));
         let write = Address::symbolic(Variable(998_911));
-        let initial = crate::kernel::intern_memory(Memory::new());
+        let initial = crate::kernel::intern_memory(SymbolicMemory::new());
         let original = PointerValue::new(
             Address::loaded_value(&initial, &field),
             ProgramType::Int32Pointer,
@@ -3049,7 +3053,7 @@ fn cold_pointer_frame_refusals_do_not_scan_history() {
             let _session = crate::kernel::VerificationSession::enter();
             let field = Address::symbolic(Variable(998_920));
             let write = Address::symbolic(Variable(998_921));
-            let initial = crate::kernel::intern_memory(Memory::new().store(
+            let initial = crate::kernel::intern_memory(SymbolicMemory::new().store(
                 field.clone(),
                 ProgramValue::typed_pointer(
                     Address::symbolic(Variable(998_922)),
@@ -3117,8 +3121,8 @@ fn repeated_read_initialization_work(adjacent: bool, exact: bool) -> Vec<(u32, u
             base: AddressBase::Heap(998_941),
             offset: AddressOffset::Constant(0),
         };
-        let initial = Memory::new();
-        let defined = |memory: &Memory| {
+        let initial = SymbolicMemory::new();
+        let defined = |memory: &SymbolicMemory| {
             PureFactContext::new().assume_proposition(Proposition::MemoryReadDefined {
                 memory: memory.clone(),
                 pointer: read.clone(),
@@ -3204,7 +3208,7 @@ fn pointer_read_naming_samples(with_history: bool, same_cell: bool) -> Vec<(u32,
             base: AddressBase::Heap(998_960),
             offset: AddressOffset::Constant(0),
         };
-        let initial = crate::kernel::intern_memory(Memory::new());
+        let initial = crate::kernel::intern_memory(SymbolicMemory::new());
         let mut memory = initial.memory().clone();
         if with_history {
             for index in 0..size {
@@ -3282,8 +3286,8 @@ fn symbolic_store_into_loaded_run_bounds_logical_slot_work() {
         for count in [4u32, 1024, 1_000_000] {
             let _session = crate::kernel::VerificationSession::enter();
             let base = scaling_cell("local:loaded-run", 0);
-            let source = crate::kernel::intern_memory(Memory::new());
-            let memory = Memory::new()
+            let source = crate::kernel::intern_memory(SymbolicMemory::new());
+            let memory = SymbolicMemory::new()
                 .with_block(base.base.clone(), count * 4)
                 .with_seeded_cells(base.clone(), 4, ProgramType::Int32, 0, count, source);
             assert_eq!(memory.cells.runs_in_block(&base.base).count(), 1);
@@ -3345,13 +3349,13 @@ fn compact_run_store_does_not_scan_separation_candidates() {
             offset: AddressOffset::Variable(Variable(999_950 + i)),
         };
         let base = pointer(0);
-        let memory = Memory::new().with_seeded_cells(
+        let memory = SymbolicMemory::new().with_seeded_cells(
             base.clone(),
             4,
             ProgramType::Int32,
             0,
             4,
-            crate::kernel::intern_memory(Memory::new()),
+            crate::kernel::intern_memory(SymbolicMemory::new()),
         );
         assert_eq!(memory.cells.runs_in_block(&base.base).count(), 1);
         let mut facts = PureFactContext::new();
@@ -3392,13 +3396,13 @@ fn compact_run_store_declines_crowded_anchor_buckets() {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Address::symbolic(Variable(999_930));
         let write = Address::symbolic(Variable(999_931));
-        let memory = Memory::new().with_seeded_cells(
+        let memory = SymbolicMemory::new().with_seeded_cells(
             base.clone(),
             4,
             ProgramType::Int32,
             0,
             4,
-            crate::kernel::intern_memory(Memory::new()),
+            crate::kernel::intern_memory(SymbolicMemory::new()),
         );
         let separate = |count| Proposition::ResourceSeparate {
             left: Box::new(Resource::Memory(MemoryRange::new(
@@ -3470,13 +3474,13 @@ fn compact_run_store_bounds_ownership_member_selection() {
             let _session = crate::kernel::VerificationSession::enter();
             let base = Address::symbolic(Variable(999_940));
             let write = Address::symbolic(Variable(999_941));
-            let memory = Memory::new().with_seeded_cells(
+            let memory = SymbolicMemory::new().with_seeded_cells(
                 base.clone(),
                 4,
                 ProgramType::Int32,
                 0,
                 4,
-                crate::kernel::intern_memory(Memory::new()),
+                crate::kernel::intern_memory(SymbolicMemory::new()),
             );
             let own = |base: Address, low: u32, high: u32| {
                 ResourceFact::own_memory(MemoryRange::new(base, low.into(), high.into()))
@@ -3540,7 +3544,7 @@ fn compact_run_live_footprint_bounds_prefix_and_hole_work() {
             4,
             ProgramType::Int32,
             4 * size,
-            crate::kernel::intern_memory(Memory::new()),
+            crate::kernel::intern_memory(SymbolicMemory::new()),
             holes,
         );
         let (footprint, work) =
@@ -3573,7 +3577,7 @@ fn compact_run_fixed_store_does_not_walk_holes() {
             4,
             ProgramType::Int32,
             2 * size,
-            crate::kernel::intern_memory(Memory::new()),
+            crate::kernel::intern_memory(SymbolicMemory::new()),
             holes,
         );
         let facts = PureFactContext::new();
@@ -3616,7 +3620,7 @@ fn compact_run_partial_store_checks_overlapping_value_widths() {
         1,
         ProgramType::Int32,
         8,
-        crate::kernel::intern_memory(Memory::new()),
+        crate::kernel::intern_memory(SymbolicMemory::new()),
         holes,
     );
     // Both boundary slots are holes, but the middle slot still loses bytes.

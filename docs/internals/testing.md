@@ -728,6 +728,48 @@ the 903 cases outside `diagnostic_tests.rs` took the unit/API suite from
 1,265 to 1,091 test-seconds and from 317s to 267s of wall clock; the slowest
 batch took 2.7s.
 
+### Keep stress sizes out of the gate
+
+Use one fixture generator for a small gate regression and its full nightly
+stress range. Keep deterministic cost assertions on the gate sizes when they
+still detect the regression; do not replace scaling checks with elapsed-time
+thresholds. Include the largest sizes nightly, with the original assertions.
+For full expansion/replay audits, keep the small positive and negative proof
+regressions in the gate and run the multi-size audit nightly.
+
+The gate still proves every standard-library theorem through
+`standard_library_theorems_are_proved_by_their_own_entry_point`. Ordinary
+verification trusts those dependency declarations, so moving this test to
+nightly would remove foundational coverage from pull requests.
+
+At `2ba6b3961`, a Linux x86-64 Intel Xeon Platinum 8573C host with a
+four-CPU quota and 16 GiB RAM ran all 8,574 unit/API tests in 601.318s with
+four workers (2,401.294 summed test-seconds). This excludes compilation and
+the Markdown/example-project corpus harnesses. Tool and frontend caches were
+warm; the ordinary unoptimized `fast-gate` test binary was reused through
+`nextest --binaries-metadata`.
+
+Single serial measurements before/after the test cleanup at that base:
+
+| Gate workload | Before | After | Full-size coverage |
+| --- | ---: | ---: | --- |
+| Surface depth consumption case | 15.597s | 0.033s | Original parser limits nightly |
+| Narrow-store constant-query scaling | 8.135s | 0.230s | Original 16/64/256/1,024 histories nightly |
+| Separately declared invariant closure | 9.377s audit | 0.089s smoke | Original 8/16/32-declaration counter loop nightly |
+| Balanced/skewed/projection transport scaling | 18.399s combined | Existing small regressions | Original expansion and strict cold replay audits nightly |
+
+The eight selected gate tests took 70.324s before; their four replacements
+and retained tests took 26.689s. These observations measure gate workload;
+the complete suite was not timed again after the cleanup. The unchanged
+library-proof test varied from 13.020s to 17.968s, so use CI measurements to
+judge the overall effect. Measurements precede rebasing onto later upstream
+changes.
+
+`CLICK_TIMINGS=1` on the library-proof test attributed 7.563s to integer
+proofs and 4.979s to formatting proofs across 206 theorem completions. Inspect
+those individual proof scripts before changing the library check's gate
+coverage; the remaining modules together took about half a second.
+
 ### Profiling markdown fixture phases
 
 Set `CLICK_MDTEST_PHASE_TIMINGS=1` to report Markdown reading, input preparation,

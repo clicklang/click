@@ -464,9 +464,6 @@ fn collect_applied_theorems(tactics: &[ProofTactic], names: &mut BTreeSet<String
             }
             ProofTactic::Open(proof_open) => {
                 collect_applied_theorems(&proof_open.tactics, names);
-                if let Some(close_proof) = &proof_open.close_proof {
-                    collect_applied_theorems(close_proof, names);
-                }
             }
             ProofTactic::If(proof_if) => {
                 collect_applied_theorems(&proof_if.then_tactics, names);
@@ -4312,7 +4309,7 @@ pub(in crate::surface) fn termination_measure_source(expression: &ContractExpres
     match expression {
         ContractExpression::IntegerLiteral(literal) => literal.clone(),
         ContractExpression::Binding(name)
-        | ContractExpression::CBinding(name)
+        | ContractExpression::ProgramBinding(name)
         | ContractExpression::QualifiedC { name, .. } => name.clone(),
         ContractExpression::ProgramExpression(expression) => {
             crate::kernel::ranking_measure_identity(
@@ -4386,7 +4383,7 @@ fn termination_measure_binder_name(measure: &TerminationMeasure) -> Option<&str>
     };
     match component {
         ContractExpression::Binding(name)
-        | ContractExpression::CBinding(name)
+        | ContractExpression::ProgramBinding(name)
         | ContractExpression::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) => Some(name),
@@ -7060,7 +7057,7 @@ pub(in crate::surface) fn substitute_contract_segment(
         surface => surface.clone(),
     };
     // Preserve resolved C spellings unless a component actually refers to
-    // the return name. Its surface form then distinguishes `c(result)`.
+    // the return name. Its surface form then distinguishes `program::result`.
     if substitutions.is_contract_result_binding()
         && let ContractSegmentSurface::Range { base, start, end }
         | ContractSegmentSurface::StructRange {

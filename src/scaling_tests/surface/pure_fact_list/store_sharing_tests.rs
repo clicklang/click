@@ -69,14 +69,14 @@ fn statement_store_views_only_index_their_delta() {
 #[test]
 fn statement_local_reservations_share_ambient_memory() {
     use crate::kernel::{
-        Address, AddressBase, AddressOffset, MachineTerm, Memory, ProgramValue, Variable,
+        Address, AddressBase, AddressOffset, MachineTerm, ProgramValue, SymbolicMemory, Variable,
     };
     for size in [32, 128, 512] {
         let pointer = |index| Address {
             base: AddressBase::ExternalObject(Variable(9_100_000 + index)),
             offset: AddressOffset::Constant(0),
         };
-        let memory = (0..size).fold(Memory::new(), |memory, index| {
+        let memory = (0..size).fold(SymbolicMemory::new(), |memory, index| {
             memory.store(
                 pointer(index),
                 ProgramValue::Int32(MachineTerm::Variable(Variable(9_200_000 + index))),

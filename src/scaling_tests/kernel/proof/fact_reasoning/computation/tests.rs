@@ -15,7 +15,7 @@ fn computation_refusal_is_independent_of_memory_history() {
             offset: AddressOffset::Constant(0),
         };
         let before = crate::kernel::intern_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block("computation-read", 4)
                 .with_block("computation-write", 4),
         );

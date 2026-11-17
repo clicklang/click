@@ -555,8 +555,29 @@ fn parser_bounds_non_parenthesized_surface_nesting_before_ast_construction() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_03")]
+fn representative_surface_depths_survive_consumption() {
+    // Exercise every consumer in the gate; the full supported limits are
+    // audited nightly. Parser rejection beyond those limits stays in this batch.
+    surface_depths_survive_consumption(8, 4, 4, 4);
+}
+
+#[test]
+#[ignore = "nightly: full supported-depth validation, verification, printing and destruction audit"]
 fn supported_surface_depth_boundaries_survive_consumption() {
-    let expression_chain_depth = parser::EXPRESSION_CHAIN_LIMIT;
+    surface_depths_survive_consumption(
+        parser::EXPRESSION_CHAIN_LIMIT,
+        parser::STRUCTURAL_NESTING_LIMIT,
+        parser::ALGEBRAIC_TYPE_NESTING_LIMIT,
+        parser::CONTRACT_IF_NESTING_LIMIT,
+    );
+}
+
+fn surface_depths_survive_consumption(
+    expression_chain_depth: usize,
+    structural_depth: usize,
+    algebraic_depth: usize,
+    conditional_depth: usize,
+) {
     let implications = (0..expression_chain_depth)
         .map(|_| "0 == 0")
         .collect::<Vec<_>>()
@@ -594,7 +615,7 @@ fn supported_surface_depth_boundaries_survive_consumption() {
     drop(expression_file);
 
     let mut quantifier_body = String::from("0 == 0");
-    for index in (0..parser::STRUCTURAL_NESTING_LIMIT - 1).rev() {
+    for index in (0..structural_depth - 1).rev() {
         quantifier_body = format!("forall (q{index}: Integer) {{ {quantifier_body} }}");
     }
     let quantifier_source = format!(
@@ -613,7 +634,7 @@ fn supported_surface_depth_boundaries_survive_consumption() {
     drop(quantifier_file);
 
     let mut nested_sequence = String::from("0");
-    for _ in 0..parser::STRUCTURAL_NESTING_LIMIT - 1 {
+    for _ in 0..structural_depth - 1 {
         nested_sequence = format!("[{nested_sequence}]");
     }
     let sequence_source = format!(
@@ -637,7 +658,7 @@ fn supported_surface_depth_boundaries_survive_consumption() {
 
     let mut proof_goal = String::from("0 == 0");
     let mut proof_body = String::from("normalize();");
-    for _ in 0..parser::STRUCTURAL_NESTING_LIMIT - 2 {
+    for _ in 0..structural_depth - 2 {
         proof_goal.push_str(" and 0 == 0");
         proof_body = format!("both {{ {proof_body} }} and {{ normalize(); }}");
     }
@@ -654,10 +675,9 @@ fn supported_surface_depth_boundaries_survive_consumption() {
     drop(printed_proof);
     drop(proof_file);
 
-    let nested_type = (0..parser::ALGEBRAIC_TYPE_NESTING_LIMIT)
-        .fold("Integer".to_string(), |type_name, _| {
-            format!("Box<{type_name}>")
-        });
+    let nested_type = (0..algebraic_depth).fold("Integer".to_string(), |type_name, _| {
+        format!("Box<{type_name}>")
+    });
     let type_source = format!(
         "spec enum Box<T> {{ Wrapped(T) }} theorem at_limit_type(value: {nested_type}) {{ ensures 0 == 0; }}"
     );
@@ -672,10 +692,9 @@ fn supported_surface_depth_boundaries_survive_consumption() {
     drop(type_name);
     drop(type_file);
 
-    let nested_conditionals = (0..parser::CONTRACT_IF_NESTING_LIMIT - 1)
-        .fold("0".to_string(), |body, _| {
-            format!("if 0 == 0 {{ {body} }} else {{ 0 }}")
-        });
+    let nested_conditionals = (0..conditional_depth - 1).fold("0".to_string(), |body, _| {
+        format!("if 0 == 0 {{ {body} }} else {{ 0 }}")
+    });
     let conditional_source = format!(
         "theorem at_limit_conditionals() {{ requires {nested_conditionals} == 0; ensures 0 == 0 by {{ normalize(); }} }}"
     );
@@ -1871,7 +1890,10 @@ fn surface_synthesis_qualifies_a_c_local_named_result() {
     let ClickProposition::Comparison { left, .. } = surface else {
         panic!("expected a comparison form");
     };
-    assert_eq!(left, ContractExpression::CBinding("result".to_string()));
+    assert_eq!(
+        left,
+        ContractExpression::ProgramBinding("result".to_string())
+    );
 }
 
 #[test]
@@ -1992,7 +2014,9 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(MachineTerm::MemoryLoad(
-                crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
+                crate::kernel::ProgramPoint::at(
+                    &(crate::kernel::intern_memory(SymbolicMemory::new())),
+                ),
                 Box::new(owner.clone()),
                 crate::kernel::LoadKind::Int32,
             )),
@@ -2021,7 +2045,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
     assert_eq!(describe_contract_expression(&left), "owner->len");
 
     let data_pointer = MachineTerm::MemoryLoad(
-        crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
+        crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
         Box::new(owner.offset_by_bytes(8)),
         crate::kernel::LoadKind::Int32,
     );
@@ -2034,7 +2058,9 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(MachineTerm::MemoryLoad(
-                crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
+                crate::kernel::ProgramPoint::at(
+                    &(crate::kernel::intern_memory(SymbolicMemory::new())),
+                ),
                 Box::new(first_data_cell),
                 crate::kernel::LoadKind::Int32,
             )),
@@ -2465,7 +2491,7 @@ fn surface_lowering_map_forks_and_local_updates_scale_logarithmically() {
     fn indexed_pair(index: u32) -> (ClickProposition, Proposition) {
         (
             ClickProposition::Comparison {
-                left: ContractExpression::CBinding(format!("x{index}")),
+                left: ContractExpression::ProgramBinding(format!("x{index}")),
                 operator: ComparisonOperator::Equal,
                 right: current_int(index),
             },
@@ -5249,7 +5275,7 @@ test_batches! {
         parser_accepts_bodyless_external_function_contracts,
         parser_rejects_excessive_parenthesis_depth_with_a_source_diagnostic,
         parser_bounds_non_parenthesized_surface_nesting_before_ast_construction,
-        supported_surface_depth_boundaries_survive_consumption,
+        representative_surface_depths_survive_consumption,
     ],
     surface_syntax_batch_04: [
         parser_preserves_mixed_grouped_proposition_and_contract_expression_syntax,

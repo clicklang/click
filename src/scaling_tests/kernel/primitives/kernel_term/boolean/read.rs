@@ -22,7 +22,7 @@ fn boolean_reads_keep_shared_indices_through_rewrites_and_observations() {
             .into_shared()
             .unwrap(),
         );
-        let memory = intern_memory(Memory::new());
+        let memory = intern_memory(SymbolicMemory::new());
         let root = KernelTerm::boolean_read(memory.clone(), address.clone());
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -61,7 +61,7 @@ fn boolean_reads_keep_shared_indices_through_rewrites_and_observations() {
 #[test]
 fn boolean_reads_admit_states_without_comparing_unrelated_contents() {
     for size in [16, 64, 256] {
-        let memory = (0..size).fold(Memory::new(), |memory, i| {
+        let memory = (0..size).fold(SymbolicMemory::new(), |memory, i| {
             memory.with_block(format!("bool-unrelated-{i}"), 4)
         });
         let first = {

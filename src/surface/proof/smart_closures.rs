@@ -237,7 +237,7 @@ fn collect_signed_surface_terms<'a>(
             | ContractExpression::AlgebraicVariable { .. }
             | ContractExpression::Binding(_)
             | ContractExpression::ProgramExpression(_)
-            | ContractExpression::CBinding(_)
+            | ContractExpression::ProgramBinding(_)
             | ContractExpression::RegionResult(_)
             | ContractExpression::RegionAllocation(_)
             | ContractExpression::RegionParameter { .. }
@@ -4150,7 +4150,7 @@ fn literal_requirement_matching_respects_both_truth_and_polarity() {
 
 fn source_backed_refusal(
     error: &ClickError,
-    current_memory: &crate::kernel::Memory,
+    current_memory: &crate::kernel::SymbolicMemory,
 ) -> Result<bool, ClickError> {
     let Some(requirement) = error.unresolved_requirement() else {
         return Ok(false);
@@ -4985,10 +4985,10 @@ mod synthesized_literal_tests {
 
     #[test]
     fn signed_certificate_spelling_matches_exact_read_atoms() {
-        use crate::kernel::{Address, LoadKind, Memory, intern_memory};
+        use crate::kernel::{Address, LoadKind, SymbolicMemory, intern_memory};
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Address::symbolic(Variable(71_230));
-        let before = intern_memory(Memory::new());
+        let before = intern_memory(SymbolicMemory::new());
         let after = intern_memory(before.memory().clone().store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(1)),
@@ -5030,14 +5030,14 @@ mod synthesized_literal_tests {
     fn retained_requirements_match_mirrored_orders_and_stored_read_sources() {
         use crate::kernel::{
             Address, CompareRelation as R, KernelTerm, LoadKind, MachineBinaryOp as Op,
-            MachineOperandView as V, Memory, intern_memory,
+            MachineOperandView as V, SymbolicMemory, intern_memory,
         };
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
         let x = MachineTerm::Variable(Variable(71231));
         let sum = MachineTerm::logical_machine_binary(ty, Op::Add, x, 1u32.into());
         let pointer = Address::symbolic(Variable(71232));
-        let before = intern_memory(Memory::new());
+        let before = intern_memory(SymbolicMemory::new());
         let after = intern_memory(
             before
                 .memory()

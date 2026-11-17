@@ -1443,7 +1443,7 @@ fn pointer_element_width_for_argument(
     known: &BTreeMap<String, u32>,
 ) -> Option<u32> {
     match argument {
-        ContractExpression::Binding(name) | ContractExpression::CBinding(name) => {
+        ContractExpression::Binding(name) | ContractExpression::ProgramBinding(name) => {
             known.get(name).copied()
         }
         ContractExpression::ProgramExpression(expression)
@@ -1925,7 +1925,7 @@ pub(in crate::surface::proof) fn observe_machine_parameters(
     // A side the comparison reads natively: a machine parameter or a literal.
     let parameter = |side: &ContractExpression| match side {
         ContractExpression::Binding(name)
-        | ContractExpression::CBinding(name)
+        | ContractExpression::ProgramBinding(name)
         | ContractExpression::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) if machine.contains(name.as_str()) => Some(name.clone()),

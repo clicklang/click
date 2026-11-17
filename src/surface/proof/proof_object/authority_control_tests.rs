@@ -120,7 +120,7 @@ fn opening_control_retains_loaded_pointer_facts() {
         .join()
         .unwrap();
     let opened = named
-        .begin_open(open.resource.clone(), 3, None)
+        .begin_open(open.resource.clone(), 3)
         .expect("recording open must retain its constructed pointer-identity facts");
     let introduced = opened
         .body()

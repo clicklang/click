@@ -1791,13 +1791,13 @@ impl CompositeLoanBacking {
 /// enforces the lifetime restriction; fields are private to this module.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct LocalViewBacking {
-    memory: super::Memory,
+    memory: super::SymbolicMemory,
     viewed: ResourceFact,
 }
 
 impl LocalViewBacking {
     fn check(
-        memory: &super::Memory,
+        memory: &super::SymbolicMemory,
         viewed: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
@@ -3987,7 +3987,7 @@ impl StableViewTransferPlan {
     #[cfg(test)]
     pub(crate) fn lend_local_views(
         &mut self,
-        memory: &super::Memory,
+        memory: &super::SymbolicMemory,
         requirements: &[CheckedResourceFact],
         assumptions: &PureFactContext,
     ) -> Result<(), StableViewPlanError> {
@@ -3996,7 +3996,7 @@ impl StableViewTransferPlan {
 
     pub(crate) fn lend_local_views_with_worker_shares(
         &mut self,
-        memory: &super::Memory,
+        memory: &super::SymbolicMemory,
         requirements: &[CheckedResourceFact],
         assumptions: &PureFactContext,
         existing: Option<&BTreeMap<ResourceFact, LoanViewBinding>>,

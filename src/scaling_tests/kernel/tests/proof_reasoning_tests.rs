@@ -646,7 +646,7 @@ fn forall_integer_instantiation_charges_shared_replacement_only_once() {
 
 #[test]
 fn loadability_same_base_span_graph_queries_scale_without_fact_index() {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let base = Address::symbolic(Variable(90_310));
     let var = |id| MachineTerm::Variable(Variable(id));
     let bytes = |value| MachineTerm::add(value, MachineTerm::constant(1));
@@ -831,7 +831,7 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
     let samples = [16, 32, 64, 128]
         .into_iter()
         .map(|size| {
-            let memory = Memory::new();
+            let memory = SymbolicMemory::new();
             let data = Address {
                 base: "quantified-data".into(),
                 offset: AddressOffset::Constant(0),
@@ -993,7 +993,7 @@ fn theory_capable_order_endpoints_scale_near_linearly() {
                     offset: AddressOffset::Constant(0),
                 };
                 let load = MachineTerm::MemoryLoad(
-                    ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
                     Box::new(cell),
                     crate::kernel::LoadKind::Int32,
                 );
@@ -1176,7 +1176,7 @@ fn guarded_implication_lookup_is_keyed_by_consequent_operands() {
 /// that state is a memo hit, whatever the replacement.
 #[test]
 fn state_substitution_of_an_absent_variable_is_memoized() {
-    let mut memory = Memory::new();
+    let mut memory = SymbolicMemory::new();
     for index in 0..64 {
         memory = memory.with_block(format!("retained_state-memo-{index}"), 4);
     }
@@ -1467,7 +1467,7 @@ fn uint64_pointer_association_selected_guard_work_ignores_other_facts() {
 
 #[test]
 fn native_loadability_window_query_work_ignores_unrelated_views() {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let root = Address {
         base: AddressBase::ExternalArgument,
         offset: AddressOffset::Constant(0),
@@ -1521,7 +1521,7 @@ fn native_loadability_window_query_work_ignores_unrelated_views() {
 
 #[test]
 fn native_loadability_prefix_coverage_ignores_unrelated_addresses() {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let base = Address {
         base: AddressBase::ExternalArgument,
         offset: AddressOffset::Constant(0),
@@ -1574,7 +1574,7 @@ fn native_loadability_prefix_coverage_ignores_unrelated_addresses() {
 
 #[test]
 fn native_loadability_queries_do_not_visit_unrelated_addresses() {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let base = Address {
         base: AddressBase::ExternalArgument,
         offset: AddressOffset::Constant(0),
@@ -1709,7 +1709,7 @@ fn restricting_model_support_ignores_unselected_scalar_graph_edges() {
 
 #[test]
 fn call_input_retention_does_not_derive_memory_or_scan_unrelated_facts() {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let base = Address {
         base: "retention_data".into(),
         offset: AddressOffset::Constant(0),
@@ -1847,7 +1847,7 @@ fn equality_aware_pointer_fact_queries_ignore_unrelated_facts_and_old_states() {
             context = context.assume_proposition(fact(
                 target.clone(),
                 ExecutionState::new()
-                    .with_memory(Memory::new().with_block(format!("epoch-{index}"), 4)),
+                    .with_memory(SymbolicMemory::new().with_block(format!("epoch-{index}"), 4)),
             ));
         }
         context = context.assume_condition(

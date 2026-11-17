@@ -1,8 +1,9 @@
-# A function cannot take the C binding form's name
+# A function cannot take the earlier program-binding form's name
 
-`c(name)` is the built-in form that names the verified C binding `name`, so a
-pure function named `c` could never be called: `c(n - 1)` reads as that form
-and fails to parse. The declaration is refused with that reason.
+`c(name)` was the form that named the verified program's binding `name`; it
+is now `program::name`, and `c(name)` is refused with that replacement. A pure
+function named `c` could never be called: `c(n - 1)` reads as the refused
+form. The declaration is refused with that reason.
 
 ```click
 function c(n: int32) -> int32
@@ -13,5 +14,5 @@ function c(n: int32) -> int32
 ```
 
 ```expect
-fail: `c(...)` is a built-in form, so a function named `c` could never be called
+fail: `c(...)` was the program-binding form, now `program::name`, and is refused with that replacement, so a function named `c` could never be called
 ```

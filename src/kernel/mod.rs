@@ -343,7 +343,7 @@ thread_local! {
 }
 
 /// The generation of this thread's current kernel tables: it advances each
-/// time an outermost `VerificationSession` starts fresh. Memory states and other
+/// time an outermost `VerificationSession` starts fresh. SymbolicMemory states and other
 /// arena ids minted under one generation are meaningless under another, so a
 /// caller that keeps kernel-derived state after its session ends compares
 /// this value before reusing that state.

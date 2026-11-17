@@ -3153,7 +3153,7 @@ fn renumbered_binders(proposition: &Proposition, depth: u64) -> Proposition {
 #[cfg(test)]
 mod proposition_identity_tests {
     use super::*;
-    use crate::kernel::{Memory, ProgramValue};
+    use crate::kernel::{ProgramValue, SymbolicMemory};
 
     fn equal(left: MachineTerm, right: MachineTerm) -> Proposition {
         Proposition::ConditionIs(
@@ -3176,7 +3176,7 @@ mod proposition_identity_tests {
         }
     }
 
-    fn local_definedness_fact(memory: &Memory, variable: u64) -> Proposition {
+    fn local_definedness_fact(memory: &SymbolicMemory, variable: u64) -> Proposition {
         forall(
             variable,
             Proposition::MemoryReadDefined {
@@ -3204,7 +3204,7 @@ mod proposition_identity_tests {
             base: "local:defined-other".into(),
             offset: AddressOffset::Constant(0),
         };
-        let before = Memory::new()
+        let before = SymbolicMemory::new()
             .with_uninitialized_block(array.base.clone(), 4)
             .with_uninitialized_block(other.base.clone(), 4)
             .store(array.clone(), crate::kernel::uint8(7u32));
@@ -3232,7 +3232,7 @@ mod proposition_identity_tests {
             );
         }
         // An independently constructed unwritten object is not the old one.
-        let uninitialized = Memory::new().with_uninitialized_block(array.base, 4);
+        let uninitialized = SymbolicMemory::new().with_uninitialized_block(array.base, 4);
         assert_ne!(
             Some(key),
             proposition_identity_key(&local_definedness_fact(&uninitialized, 81_001))
@@ -3270,12 +3270,12 @@ mod proposition_identity_tests {
             base: "alpha-array".into(),
             offset: AddressOffset::Constant(0),
         };
-        let before = Memory::new().with_block("alpha-array", 8);
+        let before = SymbolicMemory::new().with_block("alpha-array", 8);
         let after = before.clone().store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(1)),
         );
-        let make = |binder: u64, argument: u64, memory: Memory| Proposition::Exists {
+        let make = |binder: u64, argument: u64, memory: SymbolicMemory| Proposition::Exists {
             name: "fuel".into(),
             var: Variable(binder),
             sort: Sort::Algebraic(ty.clone()),
@@ -3318,7 +3318,7 @@ mod proposition_identity_tests {
             body: Box::new(equal(
                 MachineTerm::MemoryLoad(
                     crate::kernel::ProgramPoint::of_memory(
-                        &Memory::new().with_block("alpha-array", 8),
+                        &SymbolicMemory::new().with_block("alpha-array", 8),
                     ),
                     Box::new(pointer),
                     crate::kernel::LoadKind::Int32,
@@ -3493,7 +3493,7 @@ mod proposition_identity_tests {
             base: "identity-version".into(),
             offset: AddressOffset::Constant(0),
         };
-        let left_memory = Memory::new().with_block("identity-version", 8);
+        let left_memory = SymbolicMemory::new().with_block("identity-version", 8);
         let right_memory = left_memory.clone().store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(9)),
@@ -3526,7 +3526,7 @@ mod proposition_identity_tests {
             base: "identity-registered-load".into(),
             offset: AddressOffset::Constant(0),
         };
-        let memory = Memory::new().with_block("identity-registered-load", 8);
+        let memory = SymbolicMemory::new().with_block("identity-registered-load", 8);
         let shared_memory = crate::kernel::intern_memory_ref(&memory);
         // The spelled side is a raw `MemoryLoad` term, which records no
         // width, so the named side must stand in the same width the
@@ -4414,8 +4414,8 @@ mod integer_alpha_scaling_tests {
 mod memory_state_alpha_tests {
     use super::*;
     use crate::kernel::{
-        IntegerRangeFoldIndex, Memory, ProgramValue, SharedIntegerRangeEndpoint, SharedIntegerTerm,
-        SharedMachineIntegerTerm,
+        IntegerRangeFoldIndex, ProgramValue, SharedIntegerRangeEndpoint, SharedIntegerTerm,
+        SharedMachineIntegerTerm, SymbolicMemory,
     };
 
     fn int32_index() -> IntegerRangeFoldIndex {
@@ -4499,8 +4499,9 @@ mod memory_state_alpha_tests {
             base: "retained_state-alpha".into(),
             offset: AddressOffset::Constant(0),
         };
-        let before =
-            crate::kernel::intern_memory(Memory::new().with_block("retained_state-alpha", 8));
+        let before = crate::kernel::intern_memory(
+            SymbolicMemory::new().with_block("retained_state-alpha", 8),
+        );
         let after = crate::kernel::intern_memory(
             before
                 .as_ref()
@@ -4534,8 +4535,9 @@ mod memory_state_alpha_tests {
     #[test]
     fn state_alpha_rejects_unknown_registered_loads() {
         let unknown_load = Variable((1 << 40) + 313);
-        let memory =
-            crate::kernel::intern_memory(Memory::new().with_block("retained_state-alpha", 8));
+        let memory = crate::kernel::intern_memory(
+            SymbolicMemory::new().with_block("retained_state-alpha", 8),
+        );
         let term = IntegerTerm::range_fold(
             int32_index(),
             IntegerTerm::constant_i64(0),
@@ -4563,8 +4565,9 @@ mod memory_state_alpha_tests {
             base: "retained_state-alpha".into(),
             offset: AddressOffset::Constant(0),
         };
-        let before =
-            crate::kernel::intern_memory(Memory::new().with_block("retained_state-alpha", 8));
+        let before = crate::kernel::intern_memory(
+            SymbolicMemory::new().with_block("retained_state-alpha", 8),
+        );
         let after = crate::kernel::intern_memory(before.as_ref().clone().store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(11)),
@@ -4627,7 +4630,7 @@ mod memory_state_alpha_tests {
     #[test]
     fn state_alpha_renames_a_binder_under_a_loaded_address_base() {
         let block = "loaded-address-base-alpha";
-        let memory = crate::kernel::intern_memory(Memory::new().with_block(block, 16));
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block(block, 16));
         let field = |offset: i64| Address {
             base: block.into(),
             offset: AddressOffset::Constant(offset),
@@ -4688,7 +4691,7 @@ mod memory_state_alpha_tests {
     #[test]
     fn state_alpha_explicit_and_registered_loads_share_nested_identity() {
         let block = "retained_state-alpha-equivalent-loads";
-        let memory = crate::kernel::intern_memory(Memory::new().with_block(block, 64));
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block(block, 64));
         let first_pointer = Address {
             base: block.into(),
             offset: AddressOffset::Constant(0),
@@ -4804,8 +4807,9 @@ mod memory_state_alpha_tests {
             base: "retained_state-alpha".into(),
             offset: AddressOffset::Constant(0),
         };
-        let before =
-            crate::kernel::intern_memory(Memory::new().with_block("retained_state-alpha", 8));
+        let before = crate::kernel::intern_memory(
+            SymbolicMemory::new().with_block("retained_state-alpha", 8),
+        );
         let after = crate::kernel::intern_memory(
             before
                 .as_ref()
@@ -4845,8 +4849,9 @@ mod memory_state_alpha_tests {
             base: "retained_state-alpha".into(),
             offset: AddressOffset::Constant(0),
         };
-        let before =
-            crate::kernel::intern_memory(Memory::new().with_block("retained_state-alpha", 8));
+        let before = crate::kernel::intern_memory(
+            SymbolicMemory::new().with_block("retained_state-alpha", 8),
+        );
         let after = crate::kernel::intern_memory(before.as_ref().clone().store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(5)),
@@ -4886,7 +4891,8 @@ mod memory_state_alpha_tests {
 
     fn registered_load_chain(depth: usize) -> (SharedMemory, Variable) {
         let block = format!("retained_state-alpha-registry-{depth}");
-        let memory = crate::kernel::intern_memory(Memory::new().with_block(block.clone(), 4096));
+        let memory =
+            crate::kernel::intern_memory(SymbolicMemory::new().with_block(block.clone(), 4096));
         let mut pointer = Address {
             base: block.into(),
             offset: AddressOffset::Constant(0),
@@ -4916,7 +4922,8 @@ mod memory_state_alpha_tests {
 
     fn registered_load_branching_chain(depth: usize) -> (SharedMemory, Variable) {
         let block = format!("retained_state-alpha-registry-branch-{depth}");
-        let memory = crate::kernel::intern_memory(Memory::new().with_block(block.clone(), 4096));
+        let memory =
+            crate::kernel::intern_memory(SymbolicMemory::new().with_block(block.clone(), 4096));
         let mut pointer = Address {
             base: block.into(),
             offset: AddressOffset::Constant(0),
@@ -5001,8 +5008,9 @@ mod memory_state_alpha_tests {
 
     #[test]
     fn state_alpha_drops_unreachable_registered_load_states() {
-        let early_memory =
-            crate::kernel::intern_memory(Memory::new().with_block("retained_state-alpha-early", 8));
+        let early_memory = crate::kernel::intern_memory(
+            SymbolicMemory::new().with_block("retained_state-alpha-early", 8),
+        );
         let early_term: SharedIntegerTerm =
             fold(&early_memory, Variable(324_000), Variable(324_001)).into();
         let early_key = integer_fold_alpha_key(&early_term).expect("early fold key");
@@ -5010,7 +5018,8 @@ mod memory_state_alpha_tests {
 
         for index in 0..64u64 {
             let block = format!("retained_state-alpha-temporary-{index}");
-            let memory = crate::kernel::intern_memory(Memory::new().with_block(block.clone(), 8));
+            let memory =
+                crate::kernel::intern_memory(SymbolicMemory::new().with_block(block.clone(), 8));
             let term: SharedIntegerTerm = IntegerTerm::range_fold(
                 int32_index(),
                 IntegerTerm::constant_i64(0),
@@ -5044,7 +5053,8 @@ mod memory_state_alpha_tests {
         let mut trigger_key = None;
         for index in 0..16u64 {
             let block = format!("retained_state-alpha-cleanup-trigger-{index}");
-            let memory = crate::kernel::intern_memory(Memory::new().with_block(block.clone(), 8));
+            let memory =
+                crate::kernel::intern_memory(SymbolicMemory::new().with_block(block.clone(), 8));
             let term: SharedIntegerTerm = IntegerTerm::range_fold(
                 int32_index(),
                 IntegerTerm::constant_i64(0),

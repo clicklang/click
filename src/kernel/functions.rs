@@ -489,7 +489,7 @@ fn bounded_contract_resource_frontier(resources: &ResourceContext) -> String {
 fn population_transfer_frontier<'a>(
     facts: impl Iterator<Item = &'a ResourceFact>,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> Result<Vec<ResourceFact>, RuntimeError> {
     enum Work {
@@ -2802,11 +2802,11 @@ struct FunctionContractApplication<'a> {
 /// copy's `click::bytes::equal` guarantee already justified. An untyped source has no
 /// cells, so a raw byte copy still establishes nothing typed.
 pub(in crate::kernel) fn transfer_representation_copy_cells(
-    entry_memory: &Memory,
+    entry_memory: &SymbolicMemory,
     argument_values: &[ProgramValue],
-    memory: Memory,
+    memory: SymbolicMemory,
     effect: RepresentationCopyEffect,
-) -> Memory {
+) -> SymbolicMemory {
     representation_copy_cell_moves(entry_memory, argument_values, effect)
         .into_iter()
         .fold(memory, |memory, (pointer, value)| {
@@ -2820,7 +2820,7 @@ pub(in crate::kernel) fn transfer_representation_copy_cells(
 /// the copied span's cell count plus one, independent of every other cell
 /// in memory.
 pub(in crate::kernel) fn representation_copy_cell_moves(
-    entry_memory: &Memory,
+    entry_memory: &SymbolicMemory,
     argument_values: &[ProgramValue],
     effect: RepresentationCopyEffect,
 ) -> Vec<(Address, ProgramValue)> {
@@ -4978,7 +4978,7 @@ fn exceptional_direct_function_path(
     entry_state: &ExecutionState,
     entry_contract_state: &ExecutionState,
     transfer: &FunctionResourceTransfer,
-    memory: Memory,
+    memory: SymbolicMemory,
     mut facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     effective_assumptions: &PureFactContext,
@@ -5521,7 +5521,7 @@ fn prepare_verified_function_call<'a>(
             parameter.binding_name().clone(),
             value.clone(),
             parameter.program_type(),
-            Memory::value_parameter_pointer(parameter.binding_name()),
+            SymbolicMemory::value_parameter_pointer(parameter.binding_name()),
             false,
             false,
             false,
@@ -7585,7 +7585,7 @@ fn project_explicit_memory_segments(
 /// from its definitions at `state` ([`OwnedFootprintDerivation`]), each once.
 /// This is the one derivation of a resource-derived write footprint, for a
 /// function's frame and a loop's declared frame alike; nothing lowered from
-/// source is a second source of it. Memory it cannot name is
+/// source is a second source of it. SymbolicMemory it cannot name is
 /// [`MemoryRange::unnamed_footprint`]; `None` only when a family the fact
 /// reaches has no definition at all.
 pub(super) fn checked_owned_memory_ranges(
@@ -7693,7 +7693,7 @@ pub(in crate::kernel) fn argument_direct_composite_ranges(
     expand_composites_for_frame(
         &ResourceContext::new_with_equalities(&assumptions).unchecked_with_fact(fact.clone()),
         definitions,
-        &Memory::new(),
+        &SymbolicMemory::new(),
         &assumptions,
     )
     .map(|expanded| owned_memory_ranges_of(&expanded))
@@ -7706,7 +7706,7 @@ pub(in crate::kernel) fn argument_direct_composite_ranges(
 fn expand_composites_for_frame(
     context: &ResourceContext,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
     enum Visit {
@@ -7968,7 +7968,7 @@ fn open_unmatched_instance_body(
 /// cell's base are never visited.
 ///
 /// The caller assumes the result before framing the store and records it as
-/// a path fact, so the producer (`Memory::without_possible_aliasing_cells`,
+/// a path fact, so the producer (`SymbolicMemory::without_possible_aliasing_cells`,
 /// through its ownership-first rung and the composition rung of its ladder)
 /// and every route that later re-asks the store-versus-load question (the
 /// memory-DAG `Store` hop and both transport sites, through
@@ -9451,8 +9451,8 @@ fn lent_owned_memory_covers_allocation(
 }
 
 fn apply_verified_heap_allocation_delta(
-    mut memory: Memory,
-    entry_memory: &Memory,
+    mut memory: SymbolicMemory,
+    entry_memory: &SymbolicMemory,
     input_resources: &ResourceContext,
     preserved_caller_resources: &ResourceContext,
     output_resources: &ResourceContext,
@@ -9470,7 +9470,7 @@ fn apply_verified_heap_allocation_delta(
     // resources owned, so an allocation named through it at the post state
     // is not the allocation the caller handed over.
     let expand_allocations =
-        |resources: &ResourceContext, state: &ExecutionState, memory: &Memory| {
+        |resources: &ResourceContext, state: &ExecutionState, memory: &SymbolicMemory| {
             let projection_state = state
                 .clone()
                 .with_memory(memory.clone())
@@ -9792,7 +9792,7 @@ fn with_continued_allocation_tokens(
 /// (`result` proven equal to `p`), that returned token and the consumed
 /// token it continues.
 struct VerifiedAllocationDelta {
-    memory: Memory,
+    memory: SymbolicMemory,
     effects: ExecutionFacts,
     retired_creations: Vec<AddressBase>,
     continued_tokens: Vec<(ResourceFact, ResourceFact)>,
@@ -9825,9 +9825,9 @@ pub(crate) fn initialize_program_function_globals(
 /// already held, leave `memory` unchanged.
 pub(crate) fn with_static_pointer_read_cached(
     state: &ExecutionState,
-    memory: Memory,
+    memory: SymbolicMemory,
     name: impl Into<BindingName>,
-) -> Memory {
+) -> SymbolicMemory {
     let name = name.into();
     let locals = state.locals();
     let (Some(program_type), Some(slot)) = (locals.object_type(&name), locals.slot(&name)) else {
@@ -9879,7 +9879,7 @@ pub(crate) fn initialize_program_program_storage(
 /// block is one range of `count` struct-sized elements. Costs the block's
 /// runs and concrete cells, not its elements.
 fn periodic_struct_array_blocks(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     constant_offset: impl Fn(&Address) -> u32,
 ) -> BTreeMap<AddressBase, (u32, u32)> {
     // Each run and each concrete cell examined charges a unit. Nothing here
@@ -9944,7 +9944,7 @@ fn periodic_struct_array_blocks(
 /// Every visit charges one unit and is a checkpoint; `None` means a run
 /// limit stopped the partition.
 fn initial_static_resources(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     mut count_visit: impl FnMut(),
 ) -> Option<ResourceContext> {
     let mut visit = || {
@@ -10221,7 +10221,7 @@ fn candidate_planning_resources(
     caller_resources: &ResourceContext,
     requirements: &[CheckedResourceFact],
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> ResourceContext {
     let supported = |resources: &ResourceContext, requirement: &CheckedResourceFact| {
@@ -11125,7 +11125,7 @@ fn prepare_contract_resource_transfer(
         preserve_explicit_representation,
         purpose,
     )?;
-    // Memory a live mutex's initialization consumed is missing because the
+    // SymbolicMemory a live mutex's initialization consumed is missing because the
     // mutex holds it; name the mutex rather than the bytes.
     // An allocation the caller holds only in the other size format is
     // named with both formats (D5). A wide range held in another element
@@ -12490,11 +12490,11 @@ fn produced_memory_initialization(
     entry_state: &ExecutionState,
     post_state: &ExecutionState,
     interface: &FunctionContractInterface,
-    mut memory: Memory,
+    mut memory: SymbolicMemory,
     assumptions: &PureFactContext,
     facts: &mut ExecutionFacts,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<Memory, RuntimeError>> {
+) -> ExecutionResult<Result<SymbolicMemory, RuntimeError>> {
     for resource in interface.resource_ensures() {
         let Some(segment) = resource.term().memory_segment() else {
             continue;
@@ -12551,7 +12551,7 @@ fn produced_memory_initialization(
         if segment.is_uninitialized() {
             memory = memory.with_uninitialized_object(
                 start,
-                byte_span.unwrap_or(Memory::UNBOUNDED_UNWRITTEN_SPAN),
+                byte_span.unwrap_or(SymbolicMemory::UNBOUNDED_UNWRITTEN_SPAN),
             );
             continue;
         }
@@ -12923,7 +12923,7 @@ fn evaluate_contract_return_resource_context(
         if let Some(Some(prepared)) = prepared_outputs.get(clause_index) {
             return Ok(Ok(prepared.clone()));
         }
-        // Memory state selection is carried by the normalized specification.
+        // SymbolicMemory state selection is carried by the normalized specification.
         // A named instance uses post fields while retaining entry identity.
         let (state, cached) = match resource.state_source() {
             ResourceStateSource::Entry => (entry_state, &mut entry_supply),
@@ -13145,7 +13145,7 @@ fn evaluate_contract_return_resource_context(
 fn opened_composite_read_views(
     resources: &ResourceContext,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> Vec<ResourceFact> {
     if !resources
@@ -14203,7 +14203,7 @@ fn lower_selected_resource_body_clauses(
             }
             // An asserted resource clause includes the expression domains
             // recorded by arithmetic lowering, regardless of their logical
-            // shape. Memory/access prerequisites still require evidence.
+            // shape. SymbolicMemory/access prerequisites still require evidence.
             if goal.evaluation_domain {
                 retained_conditions.push(goal.proposition().clone());
                 continue;
@@ -14392,7 +14392,7 @@ fn body_fact_is_established_through_a_pointer_alias(
 }
 
 /// Exchange one exclusive instance for its immediate memory body, or back.
-/// Memory-only bodies need no open token, including guarded/matched bodies.
+/// SymbolicMemory-only bodies need no open token, including guarded/matched bodies.
 /// Recursive children require explicit independent child selections.
 #[cfg(test)]
 pub(crate) fn rewrite_resource_instance(
@@ -15615,7 +15615,7 @@ pub(super) fn expand_composite_resource_fact(
 pub(crate) fn checked_composite_projection_evidence(
     viewed: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> Option<CompositeProjectionEvidence> {
     // Projection checks the selected head alone. Checked construction attaches
@@ -16253,7 +16253,7 @@ pub(super) fn expose_composite_resource_fact(
     context: &ResourceContext,
     target: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
     // Exposure unfolds composites until the target is held. A memory target
@@ -16789,7 +16789,7 @@ pub(super) fn assembled_composite_body_facts_hold(
 /// True when every element of a constant-bounded memory range is concretely
 /// loadable, so a view of it is represented by the materialized cells rather
 /// than a resource fact.
-fn view_range_concretely_loadable(memory: &Memory, range: &MemoryRange) -> bool {
+fn view_range_concretely_loadable(memory: &SymbolicMemory, range: &MemoryRange) -> bool {
     let (Some(start), Some(end)) = (range.constant_start(), range.constant_end()) else {
         return false;
     };
@@ -16824,7 +16824,7 @@ fn consume_resource_fact_definitionally(
         available: &ResourceContext,
         required: &ResourceFact,
         definitions: &[CompositeResourceDefinition],
-        memory: &Memory,
+        memory: &SymbolicMemory,
         assumptions: &PureFactContext,
         seen: &mut BTreeSet<(ResourceContext, ResourceFact)>,
     ) -> Option<ResourceContext> {
@@ -16949,7 +16949,7 @@ pub(super) fn resource_context_definitionally_contains(
     available: &ResourceContext,
     required: &ResourceContext,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> bool {
     let mut remaining = available.clone();
@@ -16974,7 +16974,7 @@ pub(super) fn resource_contexts_definitionally_equivalent_by_consumption(
     left: &ResourceContext,
     right: &ResourceContext,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> bool {
     resource_context_definitionally_contains(left, right, definitions, memory, assumptions)
@@ -20249,7 +20249,7 @@ fn resource_fact_containing_allocation(
 /// Bounded by this frame's own bindings; it reads no caller state.
 fn retired_automatistorage_creation_blocks(
     state: &ExecutionState,
-    after: &Memory,
+    after: &SymbolicMemory,
 ) -> Vec<AddressBase> {
     state
         .locals
@@ -20263,9 +20263,9 @@ type AutomaticLifetimeInput = (usize, usize, usize, usize, usize);
 
 struct AutomaticLifetimeRetirement {
     // Pin the input roots so their addresses cannot be reused during a session.
-    input: Memory,
+    input: SymbolicMemory,
     blocks: Vec<AddressBase>,
-    after: Memory,
+    after: SymbolicMemory,
 }
 
 thread_local! {
@@ -20278,7 +20278,10 @@ pub(super) fn clear_automatic_lifetime_retirement() {
 
 /// Only the physical transition is reused. Callers check current loan,
 /// mutex, population and return-value restrictions before calling this.
-fn retire_automatic_lifetime_blocks(before: &Memory, blocks: &[AddressBase]) -> Memory {
+fn retire_automatic_lifetime_blocks(
+    before: &SymbolicMemory,
+    blocks: &[AddressBase],
+) -> SymbolicMemory {
     if blocks.is_empty() {
         return before.clone();
     }
@@ -20312,7 +20315,9 @@ fn retire_automatic_lifetime_blocks(before: &Memory, blocks: &[AddressBase]) -> 
     after
 }
 
-fn end_inline_frame_automatic_lifetimes(state: &ExecutionState) -> Result<Memory, RuntimeError> {
+fn end_inline_frame_automatic_lifetimes(
+    state: &ExecutionState,
+) -> Result<SymbolicMemory, RuntimeError> {
     let memory = &state.memory;
     let mut blocks = Vec::new();
     let mut selected = BTreeSet::new();
@@ -20353,9 +20358,9 @@ fn end_inline_frame_automatic_lifetimes(state: &ExecutionState) -> Result<Memory
 fn end_function_body_automatic_lifetimes(
     state: &ExecutionState,
     function: &ProgramFunction,
-    caller: &Memory,
+    caller: &SymbolicMemory,
     returned: Option<&ProgramValue>,
-) -> Result<Memory, RuntimeError> {
+) -> Result<SymbolicMemory, RuntimeError> {
     let memory = &state.memory;
     let mut blocks = Vec::new();
     let mut selected = BTreeSet::new();
@@ -20420,7 +20425,7 @@ pub(in crate::kernel) fn function_exit_memory(
     callee_state: &ExecutionState,
     value: &ExecutionValue,
     function: &ProgramFunction,
-) -> Memory {
+) -> SymbolicMemory {
     if function.return_aggregate_layout().is_some() {
         return callee_state.memory.clone();
     }

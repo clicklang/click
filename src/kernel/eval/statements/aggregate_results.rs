@@ -2,7 +2,7 @@ use super::*;
 use crate::kernel::VerificationSession;
 
 fn fixture(fields: u32) -> (ExecutionState, ProgramExpression, AggregateLayout) {
-    let source = Memory::local_pointer("source");
+    let source = SymbolicMemory::local_pointer("source");
     let layout = AggregateLayout::new(
         fields * 8,
         8,
@@ -11,7 +11,7 @@ fn fixture(fields: u32) -> (ExecutionState, ProgramExpression, AggregateLayout) 
             .collect(),
     );
     let mut memory =
-        Memory::new().with_uninitialized_block(source.base.clone(), layout.size_bytes());
+        SymbolicMemory::new().with_uninitialized_block(source.base.clone(), layout.size_bytes());
     for i in 0..fields {
         memory = memory.store(source.offset_by_bytes(i * 8), int32(i));
     }
@@ -98,8 +98,8 @@ fn aggregate_results_have_anonymous_storage_and_end_with_their_expression() {
 #[test]
 fn aggregate_result_copies_pointer_fields_without_copying_or_retiring_the_pointee() {
     let _session = VerificationSession::enter();
-    let backing = Memory::local_pointer("backing");
-    let source = Memory::local_pointer("source");
+    let backing = SymbolicMemory::local_pointer("backing");
+    let source = SymbolicMemory::local_pointer("source");
     let value = ProgramValue::typed_pointer(backing.clone(), ProgramType::Int32Pointer);
     let layout = AggregateLayout::new(
         8,
@@ -107,7 +107,7 @@ fn aggregate_result_copies_pointer_fields_without_copying_or_retiring_the_pointe
         vec![AggregateField::new("data", 0, ProgramType::Int32Pointer)],
     );
     let state = ExecutionState::new().with_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_block(backing.base.clone(), 4)
             .store(backing.clone(), int32(9))
             .with_block(source.base.clone(), 8)
@@ -134,9 +134,9 @@ fn aggregate_result_rejects_an_uninitialized_source_field() {
     let _session = VerificationSession::enter();
     let (mut state, source, layout) = fixture(2);
     state.set_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_uninitialized_block("local:source", 16)
-            .store(Memory::local_pointer("source"), int32(0)),
+            .store(SymbolicMemory::local_pointer("source"), int32(0)),
     );
     let paths = execute_program_aggregate_step_paths(
         &state,
@@ -159,9 +159,9 @@ fn aggregate_result_rejects_an_uninitialized_source_field() {
 #[test]
 fn aggregate_array_field_decay_keeps_the_element_pointer_type() {
     let _session = VerificationSession::enter();
-    let source = Memory::local_pointer("array");
+    let source = SymbolicMemory::local_pointer("array");
     let state = ExecutionState::new()
-        .with_memory(Memory::new().with_uninitialized_block(source.base.clone(), 16));
+        .with_memory(SymbolicMemory::new().with_uninitialized_block(source.base.clone(), 16));
     let pointer = ProgramValue::typed_pointer(source, ProgramType::UInt8Pointer)
         .with_pointer_pointee_constant(true);
     for (array_type, pointer_type) in [

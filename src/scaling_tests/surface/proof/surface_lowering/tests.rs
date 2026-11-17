@@ -3,7 +3,7 @@ fn retained_pure_citations_use_singletons_without_scanning_related_or_unrelated_
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let value = MachineTerm::Variable(Variable(987_123));
     let values = BTreeMap::from([("n".into(), ProgramValue::Int32(value))]);
     let source = ClickProposition::Comparison {

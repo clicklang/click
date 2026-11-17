@@ -304,9 +304,19 @@ fn comparison_leaf_operand(operand: crate::kernel::MachineOperandView<'_>) -> Op
         .or_else(|| operand.variable().copied().map(MachineTerm::Variable))
 }
 
-/// One bitwise operation over two leaves has bounded size, including on a
+/// One bitwise operation over literal or variable leaves has bounded size, including on a
 /// rejected nested arithmetic input. Keep its exact operator format/payloads.
 fn simple_bitwise_operand(operand: crate::kernel::MachineOperandView<'_>) -> Option<MachineTerm> {
+    if let Some((format, op @ crate::kernel::MachineUnaryOp::BitwiseNot, child)) = operand.unary()
+        && matches!(format.format().bits(), 32 | 64)
+    {
+        crate::instrumentation::record_deterministic_work(1);
+        return Some(MachineTerm::Unary {
+            format,
+            op,
+            operand: Box::new(comparison_leaf_operand(child)?),
+        });
+    }
     let (format, operator, arguments) = operand.binary()?;
     if !matches!(format.format().bits(), 32 | 64)
         || !matches!(

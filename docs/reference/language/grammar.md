@@ -98,7 +98,7 @@ documentation inventory keep the following accepted words synchronized.
 | `all`, `any`, `fold` | Range proposition and expression methods. |
 | `prop` | Proposition value: `prop { P }`. |
 | `defined`, `viewable`, `same_object`, `separate`, `aligned`, `little_endian` | Definedness, readable-memory, pointer-provenance, resource-separation, pointer-alignment, and target-byte-order propositions. |
-| `old`, `at`, `c`, `rust` | Point-reading and program-binding forms: `c(name)` names a C binding where a Click name has the same name, and `rust(name)` a Rust one. |
+| `old`, `at`, `program` | Point-reading and program-binding forms: `program::name` names a program binding where a Click name has the same name. |
 | `float32_from_bits`, `float64_from_bits` | Literal-only IEEE bit-pattern expressions; see [exact float bit literals](#exact-float-bit-literals). |
 | `sizeof`, `byte_offset`, `address` | Supported scalar, pointer, and struct-layout sizes, byte-granularity pointer-offset expressions, and the LP64 integer representation of an object pointer. |
 | `load_int32`, `load_uint8`, `load_uint16`, `load_uint32`, `load_int64`, `load_uint64`, `load_int32_pointer`, `load_uint8_pointer`, `load_uint16_pointer`, `load_int32_pointer_pointer`, `load_uint8_pointer_pointer`, `load_uint16_pointer_pointer` | Typed memory-load expressions used by checked expansion when no higher-level source form is available. |

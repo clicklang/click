@@ -2932,7 +2932,7 @@ mod tests {
         let address = MachineTerm::pointer_address(next.clone());
         let raw = MachineTerm::MemoryLoad(
             crate::kernel::ProgramPoint::at(
-                &(crate::kernel::intern_memory(crate::kernel::Memory::new())),
+                &(crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new())),
             ),
             Box::new(next.clone()),
             crate::kernel::LoadKind::Bits64,

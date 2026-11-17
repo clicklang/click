@@ -1116,7 +1116,7 @@ fn registered_static_memory_load_matches_state(
 /// this gate so neither route can silently derive the same source requirement.
 pub(in crate::surface) fn source_backed_requirement_should_intercept(
     obligation: &ProofObligation,
-    current_memory: &crate::kernel::Memory,
+    current_memory: &crate::kernel::SymbolicMemory,
 ) -> Result<bool, ClickError> {
     if obligation.is_assumable() {
         return Ok(false);
@@ -1255,7 +1255,7 @@ mod tests {
     #[test]
     fn static_load_capability_requires_registered_origin_epoch() {
         let memory = crate::kernel::intern_memory(
-            crate::kernel::Memory::new().with_block("static:test:values#static0", 16),
+            crate::kernel::SymbolicMemory::new().with_block("static:test:values#static0", 16),
         );
         let pointer = crate::kernel::Address {
             base: crate::kernel::AddressBase::Concrete("static:test:values#static0".into()),
@@ -1364,13 +1364,13 @@ mod tests {
 
     #[test]
     fn quantified_external_range_capability_is_frontier_exact() {
-        let memory = crate::kernel::Memory::new();
+        let memory = crate::kernel::SymbolicMemory::new();
         let pointer = crate::kernel::Address {
             base: crate::kernel::AddressBase::ExternalArgument,
             offset: crate::kernel::AddressOffset::Constant(0),
         };
         let range = Proposition::MemoryLoadable {
-            memory: crate::kernel::Memory::new(),
+            memory: crate::kernel::SymbolicMemory::new(),
             base: pointer,
             bytes: MachineTerm::constant(1),
             wide: false,

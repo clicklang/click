@@ -127,7 +127,7 @@ fn fixed_measure_state(expression: &ContractExpression) -> Option<FixedMeasureSt
         | ContractExpression::ResourceField(_)
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_)
-        | ContractExpression::CBinding(_)
+        | ContractExpression::ProgramBinding(_)
         | ContractExpression::ProgramExpression(_)
         | ContractExpression::CUnary { .. }
         | ContractExpression::ResourceWildcard => None,
@@ -5934,7 +5934,7 @@ impl AnnotationLowerer<'_> {
                         .and_then(spec_expression_click_type)
                 }
             }
-            ContractExpression::CBinding(name) => lexical_bindings
+            ContractExpression::ProgramBinding(name) => lexical_bindings
                 .iter()
                 .rev()
                 .find_map(|(binding, click_type)| (binding == name).then(|| click_type.clone()))
@@ -6843,7 +6843,7 @@ impl AnnotationLowerer<'_> {
                         let lowered = contract_expression_as_program_expression(&rebound)
                             .ok_or("address operand is not a C expression")?;
                         // Substitution has resolved the built-in result while
-                        // retaining explicit C bindings such as `c(result)`.
+                        // retaining explicit C bindings such as `program::result`.
                         let mut rebound_environment = environment.clone();
                         rebound_environment.contract_result_in_scope = false;
                         self.lower_program_expression_to_spec(&lowered, &rebound_environment)
@@ -7186,7 +7186,7 @@ impl AnnotationLowerer<'_> {
                     environment,
                 )
             }
-            ContractExpression::CBinding(name) => {
+            ContractExpression::ProgramBinding(name) => {
                 self.lower_program_binding_to_spec(name, environment)
             }
             ContractExpression::ResourceCount(resource) => {
@@ -7683,7 +7683,7 @@ impl AnnotationLowerer<'_> {
     ) -> Option<crate::kernel::TypeParameterName> {
         match expression {
             ContractExpression::Binding(name)
-            | ContractExpression::CBinding(name)
+            | ContractExpression::ProgramBinding(name)
             | ContractExpression::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => self.enum_program_name_type(name, environment),
@@ -9359,7 +9359,7 @@ impl AnnotationLowerer<'_> {
             let metadata = id
                 .metadata()
                 .ok_or_else(|| format!("unknown C static declaration `{id}`"))?;
-            let pointer = crate::kernel::Memory::global_pointer(&name);
+            let pointer = crate::kernel::SymbolicMemory::global_pointer(&name);
             if metadata.aggregate || metadata.array_shape.is_some() {
                 let pointer_type = if metadata.aggregate {
                     ProgramType::UInt8Pointer
@@ -9578,7 +9578,7 @@ impl AnnotationLowerer<'_> {
             };
             return Ok(SpecExpression::Value(
                 ProgramValue::typed_pointer_with_pointee_constant(
-                    crate::kernel::Memory::global_pointer(name),
+                    crate::kernel::SymbolicMemory::global_pointer(name),
                     pointer_type,
                     metadata.constant,
                 ),
@@ -10186,7 +10186,7 @@ impl AnnotationLowerer<'_> {
                     .and_then(|ty| ty.to_kernel_type().pointee_type())
                     .unwrap_or_else(|| self.contract_array_element_type(value, environment))
             }
-            ContractExpression::CBinding(name) => self
+            ContractExpression::ProgramBinding(name) => self
                 .declared_pointer_element_type(name)
                 .or_else(|| self.entry_state.global_array_element_type(name))
                 .or_else(|| {
@@ -10307,10 +10307,11 @@ impl AnnotationLowerer<'_> {
                 };
                 self.spec_definitions.pointer_element_width(&pointer).ok()
             }
-            ContractExpression::CBinding(name) => self.program_expression_array_element_width(
-                &ProgramExpression::Variable((name.clone()).into()),
-                environment,
-            ),
+            ContractExpression::ProgramBinding(name) => self
+                .program_expression_array_element_width(
+                    &ProgramExpression::Variable((name.clone()).into()),
+                    environment,
+                ),
             ContractExpression::CUnary { lowered, .. }
             | ContractExpression::QualifiedC { lowered, .. }
             | ContractExpression::ProgramExpression(lowered)
@@ -10349,7 +10350,7 @@ impl AnnotationLowerer<'_> {
                 }
                 _ => self.program_expression_array_element_type(lowered, environment),
             },
-            ContractExpression::CBinding(name) => environment
+            ContractExpression::ProgramBinding(name) => environment
                 .array_refs
                 .get(name)
                 .map(|array_ref| array_ref.element_type)
@@ -10880,8 +10881,8 @@ mod integer_source_quantifier_tests {
     #[test]
     fn captured_integer_freshness_ignores_unrelated_heap_state() {
         use crate::kernel::{
-            Address, AddressBase, AddressOffset, MachineTerm, Memory, ProgramType, ProgramValue,
-            SpecExpression, SpecPoint, SpecPureFunctionArgument,
+            Address, AddressBase, AddressOffset, MachineTerm, ProgramType, ProgramValue,
+            SpecExpression, SpecPoint, SpecPureFunctionArgument, SymbolicMemory,
         };
 
         let explicit = Variable(2_001);
@@ -10890,7 +10891,7 @@ mod integer_source_quantifier_tests {
             base: AddressBase::Heap(77),
             offset: AddressOffset::Constant(0),
         };
-        let memory = Memory::new()
+        let memory = SymbolicMemory::new()
             .with_block(heap_pointer.base.clone(), 4)
             .store(
                 heap_pointer,

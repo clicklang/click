@@ -7,7 +7,7 @@ fn outside(owned: Vec<MemoryRange>, required: MemoryRange) -> Vec<StorageWriteOu
         Vec::new(),
         program_return(crate::kernel::program_expression::int32_literal(0)),
     );
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let facts = [
         ExecutionPureFact::internal(Proposition::MemoryEffectSummary {
             before: memory.clone(),
@@ -36,8 +36,8 @@ fn outside(owned: Vec<MemoryRange>, required: MemoryRange) -> Vec<StorageWriteOu
 #[test]
 fn storage_summary_combines_adjacent_owned_fields() {
     for base in [
-        Memory::global_pointer("pair"),
-        Memory::static_pointer("caller", "pair"),
+        SymbolicMemory::global_pointer("pair"),
+        SymbolicMemory::static_pointer("caller", "pair"),
     ] {
         let left = MemoryRange::new_with_element_width(base.clone(), 0.into(), 1.into(), 8);
         let right =
@@ -53,14 +53,18 @@ fn storage_summary_combines_adjacent_owned_fields() {
 
 #[test]
 fn storage_summary_does_not_fill_gaps_or_cross_storage_blocks() {
-    let base = Memory::global_pointer("pair");
+    let base = SymbolicMemory::global_pointer("pair");
     let left = MemoryRange::new_with_element_width(base.clone(), 0.into(), 1.into(), 8);
     let right = MemoryRange::new_with_element_width(base.offset_by_bytes(8), 0.into(), 1.into(), 8);
     let required = MemoryRange::new_with_element_width(base.clone(), 0.into(), 4.into(), 4);
     let suffix =
         MemoryRange::new_with_element_width(base.offset_by_bytes(12), 0.into(), 1.into(), 4);
-    let other =
-        MemoryRange::new_with_element_width(Memory::global_pointer("other"), 0.into(), 1.into(), 8);
+    let other = MemoryRange::new_with_element_width(
+        SymbolicMemory::global_pointer("other"),
+        0.into(),
+        1.into(),
+        8,
+    );
     for owned in [
         vec![],
         vec![left.clone()],

@@ -17,7 +17,7 @@ fn range(index: usize, start: u32, end: u32) -> MemoryRange {
 }
 
 fn parent(size: usize) -> ExecutionState {
-    let mut memory = Memory::new();
+    let mut memory = SymbolicMemory::new();
     let mut resources = ResourceContext::new();
     for index in 0..size {
         memory = memory
@@ -35,7 +35,7 @@ fn byte_parent() -> ExecutionState {
     ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block(pointer(0).base, 4)
                 .store(pointer(0), crate::kernel::uint8(0)),
         )
@@ -735,13 +735,13 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
     assert_eq!(after_join.resources().facts().len(), 4);
     for fact in [
         ResourceFact::own_memory(MemoryRange::new_with_element_width(
-            Memory::local_pointer("thread"),
+            SymbolicMemory::local_pointer("thread"),
             0.into(),
             8.into(),
             1,
         )),
         ResourceFact::own_memory(MemoryRange::new_with_element_width(
-            Memory::local_pointer("rc"),
+            SymbolicMemory::local_pointer("rc"),
             0.into(),
             4.into(),
             1,
@@ -1241,7 +1241,7 @@ fn two_workers_share_one_implicit_local_root_until_both_join() {
     let state = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block(local.base.clone(), 4)
                 .store(local.clone(), int32(7)),
         );
@@ -1619,7 +1619,7 @@ fn thread_parent_c_access_requires_join_and_implicit_storage_transfers_refuse() 
         };
         let state = ExecutionState::new()
             .with_population_creation_tracking()
-            .with_memory(Memory::new().with_block(local.base.clone(), 8))
+            .with_memory(SymbolicMemory::new().with_block(local.base.clone(), 8))
             .with_resource_context(ResourceContext::new().unchecked_with_fact(
                 ResourceFact::own_memory(MemoryRange::new(local.clone(), 0.into(), 2.into())),
             ));
