@@ -544,6 +544,7 @@ pub fn program_function_outcomes_program_state_definitionally_equal(
 /// Compares the observable program state of two return paths by matching their
 /// certified execution histories. Resource representation remains the
 /// responsibility of the separate resource certificate.
+#[cfg(test)]
 pub fn program_function_outcomes_program_state_equal_by_derivation(
     left: &FunctionOutcome,
     left_facts: &(impl ExecutionFactSource + ?Sized),
@@ -577,6 +578,7 @@ pub fn program_function_outcomes_program_state_equal_by_derivation(
     )
 }
 
+#[cfg(test)]
 fn memories_equal_by_derivation(
     left_final: &Memory,
     left_facts: &(impl ExecutionFactSource + ?Sized),
@@ -634,6 +636,7 @@ fn memories_equal_by_derivation(
 /// edge down to a definitionally equal pair. Each step descends one side's
 /// `base`, whose id is strictly smaller, so the recursion is finite with
 /// no depth cut.
+#[cfg(test)]
 fn memories_equal_by_matching_derivations(
     left: &Memory,
     right: &Memory,

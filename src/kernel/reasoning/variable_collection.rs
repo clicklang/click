@@ -1865,6 +1865,7 @@ pub(in crate::kernel) fn collect_assumption_variables(
     }
 }
 
+#[cfg(test)]
 pub(in crate::kernel) fn collect_execution_environment_variables(
     environment: &ExecutionEnvironment,
     variables: &mut BTreeSet<Variable>,

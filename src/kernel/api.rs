@@ -110,6 +110,7 @@ fn record_checked_function_body_execution() {
 }
 
 #[cfg(not(test))]
+#[cfg(test)]
 fn record_checked_function_body_execution() {}
 
 #[cfg(test)]
@@ -122,9 +123,9 @@ pub use contract_certification::*;
 mod algebraic_cases;
 pub(in crate::kernel) use algebraic_cases::algebraic_constructor_case_equations;
 pub use algebraic_cases::algebraic_constructor_cases;
-use contract_certification::{
-    contract_resource_condition_cases, prove_symbolic_program_function_verification_paths,
-};
+use contract_certification::contract_resource_condition_cases;
+#[cfg(test)]
+use contract_certification::prove_symbolic_program_function_verification_paths;
 
 pub fn int32(bits: impl Into<MachineTerm>) -> ProgramValue {
     ProgramValue::Int32(bits.into())
@@ -1514,6 +1515,7 @@ pub fn loop_entry_goals(
     Ok(LoopEntryGoals { declarations })
 }
 
+#[cfg(test)]
 pub fn loop_invariant_obligations_at_entry(
     state: &ExecutionState,
     invariant_checks: &[LoopInvariantCheck],
@@ -2301,6 +2303,7 @@ pub fn program_call_value(
 }
 
 /// Two explicit operations: a call retaining its value, then a scalar assignment.
+#[cfg(test)]
 pub fn program_call_then_assign(
     call: u32,
     target: impl Into<BindingName>,
@@ -2312,6 +2315,7 @@ pub fn program_call_then_assign(
 }
 
 /// A reallocation result followed by its destination assignment.
+#[cfg(test)]
 pub fn program_reallocate_then_assign(
     call: u32,
     target: impl Into<BindingName>,
@@ -2352,6 +2356,7 @@ pub fn program_call(
     }
 }
 
+#[cfg(test)]
 pub fn program_heap_allocate(target: impl Into<BindingName>, bytes: u32) -> ProgramStatement {
     program_heap_allocate_sized(
         target,
@@ -2359,6 +2364,7 @@ pub fn program_heap_allocate(target: impl Into<BindingName>, bytes: u32) -> Prog
     )
 }
 
+#[cfg(test)]
 pub fn program_heap_allocate_sized(
     target: impl Into<BindingName>,
     bytes: ProgramExpression,
@@ -2366,6 +2372,7 @@ pub fn program_heap_allocate_sized(
     program_heap_allocate_sized_with_zeroed(target, bytes, false)
 }
 
+#[cfg(test)]
 pub fn program_heap_allocate_sized_with_zeroed(
     target: impl Into<BindingName>,
     bytes: ProgramExpression,
@@ -2752,6 +2759,7 @@ pub fn program_while(
     )
 }
 
+#[cfg(test)]
 pub fn program_while_with_invariant_checks(
     condition: ProgramExpression,
     invariant: Vec<Proposition>,
@@ -4501,6 +4509,7 @@ pub(crate) fn program_function_outcomes_from_statement_outcome_with_resource_cas
     }
 }
 
+#[cfg(test)]
 pub fn program_function_specification(
     state: ExecutionState,
     arguments: Vec<ProgramExpression>,
@@ -4653,6 +4662,7 @@ pub fn program_max_lt_condition(a: MachineTerm, b: MachineTerm) -> ConditionTerm
     ConditionTerm::signed_less_than(a, b)
 }
 
+#[cfg(test)]
 pub fn prove_program_expression_evaluation(
     state: ExecutionState,
     expression: ProgramExpression,
@@ -4738,6 +4748,7 @@ pub fn prove_symbolic_program_condition_evaluation(
     SymbolicConditionEvaluation { paths, limit: None }
 }
 
+#[cfg(test)]
 pub fn prove_execution_statement_execution(
     state: ExecutionState,
     statement: ProgramStatement,
@@ -4745,6 +4756,7 @@ pub fn prove_execution_statement_execution(
     prove_symbolic_program_execution(state, statement, PureFactContext::new())
 }
 
+#[cfg(test)]
 pub fn prove_symbolic_program_execution(
     state: ExecutionState,
     statement: ProgramStatement,
@@ -4754,6 +4766,7 @@ pub fn prove_symbolic_program_execution(
     prove_symbolic_program_execution_with_budget(state, statement, assumptions, budget)
 }
 
+#[cfg(test)]
 pub fn prove_symbolic_program_execution_with_budget(
     state: ExecutionState,
     statement: ProgramStatement,
@@ -4770,6 +4783,7 @@ pub fn prove_symbolic_program_execution_with_budget(
     )
 }
 
+#[cfg(test)]
 pub fn prove_symbolic_program_execution_with_environment(
     state: ExecutionState,
     statement: ProgramStatement,
@@ -4788,6 +4802,7 @@ pub fn prove_symbolic_program_execution_with_environment(
     )
 }
 
+#[cfg(test)]
 pub fn prove_symbolic_program_execution_with_environment_and_budget(
     state: ExecutionState,
     statement: ProgramStatement,
@@ -4815,6 +4830,7 @@ pub fn prove_symbolic_program_execution_with_environment_and_budget(
     Some(path.theorem)
 }
 
+#[cfg(test)]
 pub fn prove_symbolic_program_execution_paths(
     state: ExecutionState,
     statement: ProgramStatement,
@@ -4824,6 +4840,7 @@ pub fn prove_symbolic_program_execution_paths(
     prove_symbolic_program_execution_paths_with_budget(state, statement, assumptions, budget)
 }
 
+#[cfg(test)]
 pub fn prove_symbolic_program_execution_paths_with_budget(
     state: ExecutionState,
     statement: ProgramStatement,
@@ -4840,6 +4857,7 @@ pub fn prove_symbolic_program_execution_paths_with_budget(
     )
 }
 
+#[cfg(test)]
 pub fn prove_symbolic_program_execution_paths_with_environment(
     state: ExecutionState,
     statement: ProgramStatement,
@@ -4858,6 +4876,7 @@ pub fn prove_symbolic_program_execution_paths_with_environment(
     )
 }
 
+#[cfg(test)]
 pub fn prove_symbolic_program_execution_paths_with_environment_and_budget(
     state: ExecutionState,
     statement: ProgramStatement,
@@ -4927,6 +4946,7 @@ pub fn prove_symbolic_program_execution_paths_with_environment_and_budget(
     SymbolicExecution { paths, limit: None }
 }
 
+#[cfg(test)]
 pub fn prove_symbolic_execution_statement_verification_paths_with_environment(
     state: ExecutionState,
     statement: ProgramStatement,
@@ -4944,6 +4964,7 @@ pub fn prove_symbolic_execution_statement_verification_paths_with_environment(
     .0
 }
 
+#[cfg(test)]
 pub fn prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule(
     state: ExecutionState,
     statement: ProgramStatement,
@@ -5268,6 +5289,7 @@ pub fn prove_symbolic_program_function_execution_with_budget(
     )
 }
 
+#[cfg(test)]
 pub fn prove_symbolic_program_function_execution_with_environment(
     state: ExecutionState,
     function: ProgramFunction,
@@ -5318,6 +5340,7 @@ pub fn prove_symbolic_program_function_execution_with_environment_and_budget(
     Some(path.theorem)
 }
 
+#[cfg(test)]
 pub fn prove_symbolic_program_function_execution_paths(
     state: ExecutionState,
     function: ProgramFunction,
@@ -5335,6 +5358,7 @@ pub fn prove_symbolic_program_function_execution_paths(
     )
 }
 
+#[cfg(test)]
 pub fn prove_symbolic_program_function_execution_paths_with_budget(
     state: ExecutionState,
     function: ProgramFunction,
@@ -5353,6 +5377,7 @@ pub fn prove_symbolic_program_function_execution_paths_with_budget(
     )
 }
 
+#[cfg(test)]
 pub fn prove_symbolic_program_function_execution_paths_with_environment(
     state: ExecutionState,
     function: ProgramFunction,
@@ -5470,6 +5495,7 @@ fn prove_symbolic_program_function_execution_paths_with_contract_resources(
     SymbolicExecution { paths, limit: None }
 }
 
+#[cfg(test)]
 pub fn prove_symbolic_program_function_verification_paths_with_environment(
     state: ExecutionState,
     function: ProgramFunction,
@@ -5491,6 +5517,7 @@ pub fn prove_symbolic_program_function_verification_paths_with_environment(
     )
 }
 
+#[cfg(test)]
 pub fn prove_symbolic_program_function_verification_paths_with_environment_and_budget(
     state: ExecutionState,
     function: ProgramFunction,
@@ -5515,6 +5542,7 @@ pub fn prove_symbolic_program_function_verification_paths_with_environment_and_b
 
 /// Executes one whole-function judgment and retains its exact authority inputs
 /// together with the resulting frontier for later contract certification.
+#[cfg(test)]
 pub fn prove_checked_program_function_execution_with_environment(
     state: ExecutionState,
     function: ProgramFunction,
@@ -8405,6 +8433,7 @@ fn implication<const N: usize>(premises: [Proposition; N], conclusion: Propositi
     )
 }
 
+#[cfg(test)]
 fn uint32_implication(premise: ConditionTerm, conclusion: ConditionTerm) -> Theorem {
     implication(
         [Proposition::ConditionIs(premise, true)],
@@ -8412,6 +8441,7 @@ fn uint32_implication(premise: ConditionTerm, conclusion: ConditionTerm) -> Theo
     )
 }
 
+#[cfg(test)]
 fn uint32_transitivity(
     first: ConditionTerm,
     second: ConditionTerm,
@@ -8427,6 +8457,7 @@ fn uint32_transitivity(
 }
 
 /// Unsigned non-strict order followed by strict order is strict order.
+#[cfg(test)]
 pub fn prove_uint32_le_lt_transitive(
     first: MachineTerm,
     middle: MachineTerm,
@@ -8440,6 +8471,7 @@ pub fn prove_uint32_le_lt_transitive(
 }
 
 /// `lower < greater` and `greater > lower` are one uint32 order.
+#[cfg(test)]
 pub fn prove_uint32_lt_implies_reversed_gt(lower: MachineTerm, greater: MachineTerm) -> Theorem {
     uint32_implication(
         ConditionTerm::unsigned_less_than(lower.clone(), greater.clone()),
@@ -8448,6 +8480,7 @@ pub fn prove_uint32_lt_implies_reversed_gt(lower: MachineTerm, greater: MachineT
 }
 
 /// `greater >= lower` and `lower <= greater` are one uint32 order.
+#[cfg(test)]
 pub fn prove_uint32_ge_implies_reversed_le(greater: MachineTerm, lower: MachineTerm) -> Theorem {
     uint32_implication(
         ConditionTerm::unsigned_greater_equal(greater.clone(), lower.clone()),
@@ -8455,6 +8488,7 @@ pub fn prove_uint32_ge_implies_reversed_le(greater: MachineTerm, lower: MachineT
     )
 }
 
+#[cfg(test)]
 pub fn prove_memory_load(memory: Memory, pointer: Pointer) -> Theorem {
     let outcome = memory.load(&pointer);
     Theorem::new(Proposition::MemoryLoads {
@@ -8464,6 +8498,7 @@ pub fn prove_memory_load(memory: Memory, pointer: Pointer) -> Theorem {
     })
 }
 
+#[cfg(test)]
 pub fn prove_memory_load_after_store_same(
     memory: Memory,
     pointer: Pointer,
@@ -8477,6 +8512,7 @@ pub fn prove_memory_load_after_store_same(
     })
 }
 
+#[cfg(test)]
 pub fn prove_memory_load_after_store_other(
     memory: Memory,
     stored_pointer: Pointer,

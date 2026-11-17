@@ -345,6 +345,7 @@ impl ReservedVariableSets {
     }
 
     /// Every reserved variable; this collects every lazy part.
+    #[cfg(test)]
     pub(crate) fn iter(&self) -> impl Iterator<Item = &Variable> {
         self.sets
             .iter()

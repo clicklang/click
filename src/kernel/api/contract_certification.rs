@@ -2312,6 +2312,7 @@ pub(super) fn instantiate_contract_predicate_unfolding_with_obligations(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 pub(super) fn prove_symbolic_program_function_verification_paths(
     state: ExecutionState,
     function: ProgramFunction,
@@ -2409,6 +2410,7 @@ pub(super) fn prove_symbolic_program_function_verification_paths(
     SymbolicExecution { paths, limit: None }
 }
 
+#[cfg(test)]
 pub fn program_function_execution_candidates_from_outcomes(
     state: ExecutionState,
     function: ProgramFunction,
@@ -2437,6 +2439,7 @@ pub fn program_function_execution_candidates_from_outcomes(
     )
 }
 
+#[cfg(test)]
 pub(crate) fn program_function_execution_candidates_from_outcomes_with_loan_evidence(
     state: ExecutionState,
     function: ProgramFunction,
@@ -2597,6 +2600,7 @@ pub(crate) fn program_function_execution_candidate_with_additional_facts(
     }
 }
 
+#[cfg(test)]
 pub fn prove_program_function_satisfies_specification_from_symbolic_path(
     function: ProgramFunction,
     specification: FunctionSpecification,

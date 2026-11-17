@@ -1681,6 +1681,7 @@ impl ExecutionBudget {
     }
 
     /// Adds the evaluator work inherent in one selected C statement tree.
+    #[cfg(test)]
     pub(crate) fn with_execution_statement_cost(self, statement: &ProgramStatement) -> Self {
         self.with_program_source_cost(execution_statement_source_cost(statement))
     }

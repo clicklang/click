@@ -1653,6 +1653,7 @@ fn refresh_returned_local_bindings_from_stores(
 }
 
 /// `ProgramFunctionVerifies` for `function` applied to `arguments`.
+#[cfg(test)]
 pub(super) fn execute_program_function_verification_paths(
     state: &ExecutionState,
     function: &ProgramFunction,
