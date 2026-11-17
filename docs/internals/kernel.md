@@ -73,6 +73,10 @@ Kernel files:
   deferred evaluator bindings and evaluated fold endpoints also retain common
   roots. Compound native specification inputs still use the selected typed
   substitution boundary; native fold descriptors remain checking/input DTOs.
+  Algebraic result/field origins likewise retain common roots; their origin tag
+  preserves checking versus producer equality and handoffs. Integer match-arm
+  bodies stay common through symbolic result construction. Constructor/iota
+  and pointer metadata checks have explicit native readings.
 - `eval.rs`: program expression/statement evaluation and memory operations.
 - `loops.rs`: loop verification, loop effects, loop havoc, and invariant
   helpers.
