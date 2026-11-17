@@ -6211,22 +6211,82 @@ pub(crate) struct EvidenceTryFrame {
     pub(crate) cleanup_unwind: bool,
 }
 
+/// The complete evidence successors issued while entering a source loop.
+/// Unlike the driver's local remainder, these retain every enclosing source
+/// continuation. Only checked source navigation constructs them.
+#[derive(Clone)]
+pub(crate) struct LoopControlSources {
+    repeat: Arc<ProgramStatement>,
+    exit: Option<Arc<ProgramStatement>>,
+    continuation: Option<Arc<ProgramStatement>>,
+    try_depth: usize,
+}
+
+#[derive(Clone)]
+struct LoopControlDestination {
+    remaining: Option<Arc<ProgramStatement>>,
+    statement_index: usize,
+    evidence_source: Option<Arc<ProgramStatement>>,
+}
+
+#[derive(Clone)]
+pub(crate) struct LoopControlDestinations {
+    continuing: LoopControlDestination,
+    exiting: LoopControlDestination,
+    continue_keeps_loop: bool,
+    try_depth: usize,
+}
+
 #[derive(Clone)]
 pub(crate) struct ProofExecutionContinuation {
-    pub(crate) continue_region: Option<(Arc<ProgramStatement>, usize)>,
+    pub(crate) loop_control: Option<LoopControlDestinations>,
     pub(crate) remaining: Option<Arc<ProgramStatement>>,
     pub(crate) next_statement_index: usize,
-    /// The source statement index immediately after the loop. A `break`
-    /// consumes the loop continuation and resumes here; `continue` first
-    /// enters `continue_region`, if present, then resumes at the loop head's
-    /// `next_statement_index`.
-    pub(crate) loop_exit_statement_index: usize,
-    /// The exceptional successor of an entered `try` body. On a `Throw`
-    /// outcome while this continuation is on top, the path abandons its
-    /// remaining statements and resumes at the handler entry with the
-    /// payload bound. Normal completion pops this continuation like any
-    /// other, discarding the handler without running it.
+    /// The exceptional successor of an entered `try` body. A throw abandons
+    /// its remaining statements and resumes at this handler entry.
     pub(crate) exceptional: Option<ExceptionalContinuation>,
+}
+
+impl ProofExecutionContinuation {
+    pub(crate) fn loop_body(
+        repeat: Arc<ProgramStatement>,
+        repeat_index: usize,
+        after_loop: Option<Arc<ProgramStatement>>,
+        after_loop_index: usize,
+        update_index: Option<usize>,
+        sources: LoopControlSources,
+    ) -> Result<Self, EvidenceRefusal> {
+        let continue_keeps_loop = sources.continuation.is_some();
+        let continuing = match sources.continuation {
+            Some(update) => LoopControlDestination {
+                remaining: Some(update.clone()),
+                statement_index: update_index.ok_or_else(|| {
+                    EvidenceRefusal::from("loop continuation has no source entry")
+                })?,
+                evidence_source: Some(prepend_shared_source(update, Some(sources.repeat))),
+            },
+            None => LoopControlDestination {
+                remaining: Some(repeat.clone()),
+                statement_index: repeat_index,
+                evidence_source: Some(sources.repeat),
+            },
+        };
+        Ok(Self {
+            loop_control: Some(LoopControlDestinations {
+                continuing,
+                exiting: LoopControlDestination {
+                    remaining: after_loop,
+                    statement_index: after_loop_index,
+                    evidence_source: sources.exit,
+                },
+                continue_keeps_loop,
+                try_depth: sources.try_depth,
+            }),
+            remaining: Some(repeat),
+            next_statement_index: repeat_index,
+            exceptional: None,
+        })
+    }
 }
 
 /// The handler a `Throw` inside an entered `try` body resumes at. Only the
@@ -6769,6 +6829,7 @@ fn split_shared_source(
     std::borrow::Cow<'_, ProgramStatement>,
     Option<Arc<ProgramStatement>>,
 ) {
+    crate::instrumentation::record_deterministic_work(1);
     match source {
         ProgramStatement::Seq(statements) => {
             let (head, first_tail) = split_shared_source(statements.first());
@@ -6802,24 +6863,6 @@ fn prepend_checked_evidence_statement(
         Some(tail) => ProgramStatement::seq(Arc::new(statement), Arc::new(tail)),
         None => statement,
     }
-}
-
-/// Finds the current loop head in the validated source tail after a control
-/// statement. The tail may contain the rest of the current body first; a
-/// nested loop also needs the enclosing loop's continuation after its own
-/// head, so returning the suffix at the matching head preserves both.
-fn loop_head_source(
-    mut source: Option<Arc<ProgramStatement>>,
-    loop_head: &ProgramStatement,
-) -> Option<Arc<ProgramStatement>> {
-    while let Some(current) = source {
-        let (head, tail) = split_shared_source(&current);
-        if statements_have_same_source(&head, loop_head) {
-            return Some(current);
-        }
-        source = tail;
-    }
-    None
 }
 
 /// Whether two statements are the same C source. A proof binds loop
@@ -8544,6 +8587,12 @@ impl ExecutionProofCore {
         self.evidence_source = matches!(&outcome, StatementOutcome::Normal(_))
             .then_some(source_after.clone())
             .flatten();
+        if matches!(
+            &outcome,
+            StatementOutcome::Break(_) | StatementOutcome::Continue(_)
+        ) {
+            self.leave_loop_control_scopes();
+        }
         // A `break` or `continue` this frontier's own region owns, rather
         // than one belonging to a concretely executed loop it contains.
         let region_loop_control = if self.frontier.continuations.is_empty()
@@ -8627,6 +8676,7 @@ impl ExecutionProofCore {
             StatementOutcome::Continue(state)
                 if region_loop_control.is_some() && self.frontier.loop_update.is_some() =>
             {
+                self.evidence_try_stack.clear();
                 let (update, index) = self.frontier.loop_update.take().expect("checked update");
                 self.frontier.position = FrontierPosition::StatementEntry {
                     remaining: update.clone(),
@@ -8647,6 +8697,7 @@ impl ExecutionProofCore {
                 // and a `continue` as the back edge. A continuation on this
                 // frontier means the innermost loop is a concretely executed
                 // one this region contains, which is resumed below instead.
+                self.evidence_try_stack.clear();
                 self.frontier.loop_control =
                     region_loop_control.expect("the guard matched a loop control");
                 self.frontier.position = FrontierPosition::RegionBoundary;
@@ -8654,13 +8705,13 @@ impl ExecutionProofCore {
                 self.evidence_completed = true;
             }
             StatementOutcome::Break(state) => {
-                let source_after = self.advance_loop_control(false, source_after)?;
+                let source_after = self.advance_loop_control(false)?;
                 self.evidence_source = source_after;
                 self.evidence_state = Some(*state);
                 self.evidence_completed = false;
             }
             StatementOutcome::Continue(state) => {
-                let source_after = self.advance_loop_control(true, source_after)?;
+                let source_after = self.advance_loop_control(true)?;
                 self.evidence_source = source_after;
                 self.evidence_state = Some(*state);
                 self.evidence_completed = false;
@@ -8703,77 +8754,55 @@ impl ExecutionProofCore {
         Ok(())
     }
 
-    /// Consumes the innermost concrete-loop continuation for a checked
-    /// `break`/`continue`. The ordinary statement theorem proves only the
-    /// control statement itself; this frontier movement supplies the exact
-    /// source that the next condition or statement theorem must consume.
-    ///
-    /// The continuation holds the source the driver's frontier saw when it
-    /// entered the loop: the loop head followed by the rest of the region
-    /// that contains the loop. For a loop nested in another concretely
-    /// executed loop that region is the enclosing body alone; the enclosing
-    /// loop head and everything after it live in the next continuation
-    /// down. The frontier resumes from that body tail, as it does when the
-    /// loop exits at its head. The evidence source is the kernel's own:
-    /// `validated_source_after`, the source left after the control
-    /// statement's theorem, still holds the rest of this body, this loop
-    /// head and whatever follows the head, so the source the next theorem
-    /// must consume is read from it at the head, never from the
-    /// continuation's shorter view.
+    /// Abandon only the lexical continuations this transfer leaves. The
+    /// nearest loop stays on top; unrelated enclosing frames are untouched.
+    fn leave_loop_control_scopes(&mut self) {
+        while self
+            .frontier
+            .continuations
+            .last()
+            .is_some_and(|frame| frame.loop_control.is_none())
+        {
+            crate::instrumentation::record_deterministic_work(1);
+            self.frontier.continuations.pop();
+        }
+    }
+
+    /// Follow a destination captured by checked loop entry. Its evidence
+    /// cursor already includes enclosing loops, even when the driver's local
+    /// remainder ends at the current body's boundary.
     fn advance_loop_control(
         &mut self,
         continue_statement: bool,
-        validated_source_after: Option<Arc<ProgramStatement>>,
     ) -> Result<Option<Arc<ProgramStatement>>, EvidenceRefusal> {
+        crate::instrumentation::record_deterministic_work(1);
         let continuation = self
             .frontier
             .continuations
             .pop()
             .ok_or_else(|| EvidenceRefusal::from("loop control has no enclosing loop"))?;
-        let Some(loop_source) = continuation.remaining.clone() else {
-            return Err(EvidenceRefusal::from(
-                "loop control has an empty enclosing-loop continuation",
-            ));
-        };
-        let (loop_head, frontier_tail) = split_shared_source(&loop_source);
-        let (next_statement_index, source_after) = if continue_statement {
-            // The validated tail still contains the rest of the source body
-            // before the loop head. Preserve the exact loop head (and any
-            // enclosing-loop suffix after it) rather than treating that body
-            // tail as the next frontier statement.
-            let source_after =
-                loop_head_source(validated_source_after, &loop_head).or(Some(loop_source.clone()));
-            if let Some((update, index)) = continuation.continue_region.clone() {
-                let source_after = prepend_shared_source(update.clone(), source_after);
-                // Finishing the update resumes the existing loop head with
-                // its own index, rather than the update's lexical successor.
-                self.frontier.continuations.push(continuation);
-                self.frontier.position = FrontierPosition::StatementEntry { remaining: update };
-                (index, Some(source_after))
-            } else {
-                self.frontier.position = FrontierPosition::StatementEntry {
-                    remaining: loop_source.clone(),
-                };
-                (continuation.next_statement_index, source_after)
-            }
+        let control = continuation
+            .loop_control
+            .as_ref()
+            .ok_or_else(|| EvidenceRefusal::from("loop control has no enclosing loop"))?;
+        let destination = if continue_statement {
+            &control.continuing
         } else {
-            // A `break` leaves the loop: the source after it is what follows
-            // this loop head in the validated tail. The continuation's own
-            // tail is the fallback when the head is not found there, and is
-            // what the driver's frontier resumes from either way.
-            let source_after = loop_head_source(validated_source_after, &loop_head)
-                .map(|from_head| split_shared_source(&from_head).1)
-                .unwrap_or_else(|| frontier_tail.clone());
-            self.frontier.position = match &frontier_tail {
-                Some(remaining) => FrontierPosition::StatementEntry {
-                    remaining: remaining.clone(),
-                },
-                None => FrontierPosition::RegionBoundary,
-            };
-            (continuation.loop_exit_statement_index, source_after)
+            &control.exiting
         };
-        self.frontier.next_statement_index = next_statement_index;
-        Ok(source_after)
+        self.evidence_try_stack.truncate(control.try_depth);
+        self.frontier.position = match &destination.remaining {
+            Some(remaining) => FrontierPosition::StatementEntry {
+                remaining: remaining.clone(),
+            },
+            None => FrontierPosition::RegionBoundary,
+        };
+        self.frontier.next_statement_index = destination.statement_index;
+        let source = destination.evidence_source.clone();
+        if continue_statement && control.continue_keeps_loop {
+            self.frontier.continuations.push(continuation);
+        }
+        Ok(source)
     }
 
     /// Forks the single open trace into one trace per outcome theorem, each
@@ -9252,6 +9281,64 @@ impl ExecutionProofCore {
         Ok(())
     }
 
+    /// Enter the first body of a direct post-test loop. This is source
+    /// navigation, not another statement theorem: the same language rule is
+    /// used by evidence replay when its first body theorem is consumed.
+    pub(crate) fn enter_post_test_loop_body(
+        &mut self,
+        function: &ProgramFunction,
+    ) -> Result<LoopControlSources, EvidenceRefusal> {
+        let Some((next, tail)) = self.next_source_statement_and_tail(function) else {
+            return Err("loop body entry has no source loop".into());
+        };
+        let ProgramStatement::Loop {
+            test,
+            update,
+            invariant,
+            invariant_checks,
+            effect_checks,
+            resource_specs,
+            ranking_measures,
+            structural_measure,
+            body,
+            backedge_target: None,
+            natural_exit_target: None,
+        } = next.as_ref()
+        else {
+            return Err("loop body entry does not name a structured source loop".into());
+        };
+        let (_, post_test, prepared) = test.execution_parts();
+        if !post_test {
+            return Err("loop body entry requires a direct post-test".into());
+        }
+        let repeat_head = Arc::new(ProgramStatement::Loop {
+            test: test.for_repeated_iteration(),
+            update: update.clone(),
+            invariant: invariant.clone(),
+            invariant_checks: invariant_checks.clone(),
+            effect_checks: effect_checks.clone(),
+            resource_specs: resource_specs.clone(),
+            ranking_measures: ranking_measures.clone(),
+            structural_measure: structural_measure.clone(),
+            backedge_target: None,
+            natural_exit_target: None,
+            body: body.clone(),
+        });
+        let repeat = prepend_shared_source(repeat_head, tail.clone());
+        let (pass, continuation) =
+            crate::kernel::program_loop_pass_and_continuation(body, update.as_deref(), prepared);
+        let pass = Arc::new(pass);
+        let entered = prepend_shared_source(pass, Some(repeat.clone()));
+        let sources = LoopControlSources {
+            repeat,
+            exit: tail,
+            continuation,
+            try_depth: self.evidence_try_stack.len(),
+        };
+        self.evidence_source = Some(entered);
+        Ok(sources)
+    }
+
     /// Advances evidence tracking across an entered `try` where linear
     /// matching fails. Each rule fires only where the linear rules below
     /// would refuse, so existing green behavior is unchanged:
@@ -9612,7 +9699,15 @@ impl ExecutionProofCore {
         context: &PureFactContext,
         path_facts: &[Proposition],
         obligations: &[crate::kernel::ProofObligation],
-    ) -> Result<(ExecutionState, Option<Arc<ProgramStatement>>), EvidenceRefusal> {
+        entering_loop: bool,
+    ) -> Result<
+        (
+            ExecutionState,
+            Option<Arc<ProgramStatement>>,
+            Option<LoopControlSources>,
+        ),
+        EvidenceRefusal,
+    > {
         let running_state = self.running_state(function, arguments)?;
         let (proved_state, proved_condition, value) =
             match crate::kernel::api::proof_evidence_conclusion(theorem) {
@@ -9628,6 +9723,14 @@ impl ExecutionProofCore {
                 "condition evidence was recorded with no source statement remaining".into(),
             );
         };
+        if entering_loop
+            && matches!(next.as_ref(), ProgramStatement::Loop { test, .. } if test.execution_parts().1)
+        {
+            return Err("post-test loop entry must enter its body first".into());
+        }
+        if entering_loop && !matches!(next.as_ref(), ProgramStatement::Loop { .. }) {
+            return Err("loop entry evidence does not decide a source loop".into());
+        }
         // A `do`-`while` runs its body before its condition is read, so a
         // condition decided at its head belongs to the body's first
         // statement, never to the loop: the source is the body followed by
@@ -9711,6 +9814,7 @@ impl ExecutionProofCore {
         }
         // The source left after the decision: the selected arm, or the loop
         // body followed by the loop head again, before the tail.
+        let mut loop_sources = None;
         let source_after = match &*next {
             ProgramStatement::If {
                 then_branch,
@@ -9751,9 +9855,21 @@ impl ExecutionProofCore {
                         natural_exit_target: None,
                         body: body.clone(),
                     };
-                    let pass = crate::kernel::program_loop_pass(body, update.as_deref(), test);
-                    let body_then_head =
-                        Arc::new(ProgramStatement::seq(Arc::new(pass), Arc::new(loop_head)));
+                    let (pass, continuation) = crate::kernel::program_loop_pass_and_continuation(
+                        body,
+                        update.as_deref(),
+                        test,
+                    );
+                    let loop_head = Arc::new(loop_head);
+                    if entering_loop {
+                        loop_sources = Some(LoopControlSources {
+                            repeat: prepend_shared_source(loop_head.clone(), tail.clone()),
+                            exit: tail.clone(),
+                            continuation,
+                            try_depth: self.evidence_try_stack.len(),
+                        });
+                    }
+                    let body_then_head = Arc::new(ProgramStatement::seq(Arc::new(pass), loop_head));
                     Some(prepend_shared_source(body_then_head, tail))
                 } else {
                     tail
@@ -9824,7 +9940,7 @@ impl ExecutionProofCore {
         }
         // The condition's call results end with it.
         let reached = crate::kernel::eval::without_read_step_results(*reached, decided);
-        Ok((reached, source_after))
+        Ok((reached, source_after, loop_sources))
     }
 
     /// The part of the evidence judgment shared by statement and condition
@@ -9904,14 +10020,57 @@ impl ExecutionProofCore {
         path_facts: &[Proposition],
         obligations: &[crate::kernel::ProofObligation],
     ) -> Result<(), EvidenceRefusal> {
+        self.record_condition_transition_with_loop_sources(
+            function,
+            arguments,
+            theorem,
+            context,
+            path_facts,
+            obligations,
+            false,
+        )
+        .map(|_| ())
+    }
+
+    pub(crate) fn record_loop_condition_transition(
+        &mut self,
+        function: &ProgramFunction,
+        arguments: &[ProgramExpression],
+        theorem: Theorem,
+        context: PureFactContext,
+        path_facts: &[Proposition],
+        obligations: &[crate::kernel::ProofObligation],
+    ) -> Result<Option<LoopControlSources>, EvidenceRefusal> {
+        self.record_condition_transition_with_loop_sources(
+            function,
+            arguments,
+            theorem,
+            context,
+            path_facts,
+            obligations,
+            true,
+        )
+    }
+
+    fn record_condition_transition_with_loop_sources(
+        &mut self,
+        function: &ProgramFunction,
+        arguments: &[ProgramExpression],
+        theorem: Theorem,
+        context: PureFactContext,
+        path_facts: &[Proposition],
+        obligations: &[crate::kernel::ProofObligation],
+        entering_loop: bool,
+    ) -> Result<Option<LoopControlSources>, EvidenceRefusal> {
         debug_assert_eq!(self.execution_evidence.len(), 1);
-        let (reached, source_after) = self.check_condition_evidence(
+        let (reached, source_after, loop_sources) = self.check_condition_evidence(
             function,
             arguments,
             &theorem,
             &context,
             path_facts,
             obligations,
+            entering_loop,
         )?;
         for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::Condition(theorem.clone()));
@@ -9927,7 +10086,7 @@ impl ExecutionProofCore {
         self.advance_path_context(&context);
         self.evidence_state = Some(reached);
         self.evidence_source = source_after;
-        Ok(())
+        Ok(loop_sources)
     }
 
     pub(crate) fn record_proof_case_arm(
@@ -12368,3 +12527,6 @@ mod wide_range_reader_tests;
 
 #[cfg(test)]
 mod checked_callee_dependency_tests;
+
+#[cfg(test)]
+mod loop_destination_tests;

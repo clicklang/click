@@ -259,7 +259,7 @@ and malformed declaration graphs.
 Destructor coverage additionally checks cleanup on every return, reverse order
 for two top-level objects, and one direct nested block whose object is destroyed
 both on early return and before an outer continuation. A sibling-block fixture
-reuses one local spelling across two distinct non-overlapping lifetimes and
+reuses one local name across two distinct non-overlapping lifetimes and
 checks each block's early-return and fallthrough edges. An overlapping-lifetime
 fixture checks one outer object plus one inner block object, including
 inner-before-outer cleanup on early return, inner-only cleanup on block
@@ -993,7 +993,7 @@ uncharged premise surface synthesis. The probe now asks the direct logical
 closer, and the synthesis is lazy and charged, so the heaviest arena `have`
 (`click profile`, after this calibration) is 488,691 units with every unit
 counted, and the heaviest smart tactic is the failing mdtest `solve`
-(1,040,194, then spelled `solve`). The smart tactics near it are named
+(1,040,194, then written `solve`). The smart tactics near it are named
 in `TacticWorkLimits::default` (an mdtest `solve` and the arena proofs' heavy
 `have`s); they are slow steps to reduce, not headroom. The same run's `run`
 rows calibrate the whole-run budget: the largest whole verification is
@@ -1113,7 +1113,7 @@ a thread-local cache would repeat setup for every fixture.
 An optimization that changes a hot-path representation or algorithm should
 include a generated deterministic-work regression at four or more input sizes.
 Test independent dimensions rather than one realistic example: functions,
-straight-line statements, facts, surface spellings, resources, theorems, and
+straight-line statements, facts, surface forms, resources, theorems, and
 claims. Exclude fixed parsing/startup work where practical and assert the
 growth ratio, not an elapsed-time threshold.
 

@@ -4802,3 +4802,50 @@ fn a_failed_selected_return_permission_does_not_retry_a_wider_description() {
         Some(preferred)
     );
 }
+
+#[test]
+fn returned_view_recovery_preserves_output_support_and_refuses_escrow_overlap() {
+    let assumptions = PureFactContext::new();
+    let owner = memory(0, 8, true);
+    let caller_resources = ResourceContext::new().unchecked_with_fact(owner.clone());
+    let (ledger, caller, callee) = participants();
+    let plan = plan_stable_view_transfer(
+        &caller_resources,
+        &[checked(memory(0, 8, false))],
+        &assumptions,
+        &ledger,
+        caller,
+        callee,
+    )
+    .unwrap();
+    let output = memory(8, 12, true);
+    let observation = memory(8, 12, false);
+    let (outputs, inserted) = ResourceContext::new_with_equalities(&assumptions)
+        .unchecked_with_facts_and_occurrences([output.clone()]);
+    let source = inserted[0].1;
+    let outputs = outputs.unchecked_with_supported_facts(&output, [observation.clone()]);
+    let recovery = plan
+        .clone()
+        .recover_returned_views(outputs, &assumptions, &BTreeMap::new(), &[])
+        .unwrap();
+    assert_eq!(
+        recovery.resources.owned_fact_for_occurrence(source),
+        Some(&output)
+    );
+    assert!(recovery.resources.contains_exact_representation(&owner));
+    let consumed = recovery
+        .resources
+        .without_exact_representation_for_occurrence(source)
+        .unwrap();
+    assert!(!consumed.contains_exact_representation(&observation));
+    assert!(
+        plan.recover_returned_views(
+            ResourceContext::new_with_equalities(&assumptions)
+                .unchecked_with_fact(memory(4, 12, true)),
+            &assumptions,
+            &BTreeMap::new(),
+            &[],
+        )
+        .is_err()
+    );
+}

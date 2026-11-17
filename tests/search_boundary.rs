@@ -1646,11 +1646,25 @@ fn ownership_fallback_inventory_rejects_new_routes_and_hidden_references() {
 
 #[test]
 fn ownership_fallback_inventory_pins_callers_and_reference_counts() {
-    let path = "src/kernel/functions/mixed_return_resources.rs";
-    let target = "try_compose_with_legacy_discovery_and_occurrences";
-    for (owner, name) in [
-        ("EvaluatedReturnResources", "admit_clause"),
-        ("PreparedReturnComposition", "finish"),
+    for (path, owner, name, target) in [
+        (
+            "src/kernel/functions/mixed_return_resources.rs",
+            "EvaluatedReturnResources",
+            "admit_clause",
+            "try_compose_with_legacy_discovery_and_occurrences",
+        ),
+        (
+            "src/kernel/primitives/resource_algebra.rs",
+            "ResourceContext",
+            "admit_certified_memory_boundary",
+            "legacy_memory_boundary_conflict",
+        ),
+        (
+            "src/kernel/primitives/resource_algebra/legacy_search.rs",
+            "ResourceContext",
+            "compose_selected_occurrences",
+            "resume_legacy_discovery",
+        ),
     ] {
         let source = format!("impl {owner} {{ fn {name}(c: C) {{ c.{target}(); }} }}");
         let file = syn::parse_file(&source).unwrap();
@@ -1668,4 +1682,18 @@ fn ownership_fallback_inventory_pins_callers_and_reference_counts() {
                 .any(|error| error.contains(&key) && error.contains("2 references"))
         );
     }
+    let path = "src/kernel/functions/mixed_return_resources.rs";
+    let target = "try_compose_with_legacy_discovery_and_occurrences";
+    let key = format!("{path}\tlegacy-caller\tPreparedReturnComposition::finish\t{target}");
+    assert!(!proof_search_boundary::expected().contains_key(&key));
+    let file = syn::parse_file(&format!(
+        "impl PreparedReturnComposition {{ fn finish(c: C) {{ c.{target}(); }} }}"
+    ))
+    .unwrap();
+    assert!(
+        proof_search_boundary::check(path, &file)
+            .unwrap_err()
+            .iter()
+            .any(|error| error.contains(&key) && error.contains("unreviewed"))
+    );
 }

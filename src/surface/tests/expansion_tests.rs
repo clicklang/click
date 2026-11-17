@@ -1,6 +1,37 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: unrelated equality refusal and related-premise replay"]
+fn unrelated_equality_is_refused_without_transport() {
+    let (source, sources) =
+        mdtest_sources("mdtests/transport_using_names_its_source_and_target.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    assert!(!source.contains("transport("), "{source}");
+    let error = verify_c_sources(&source, &sources).unwrap_err();
+    let report = error.report();
+    assert!(
+        error
+            .message()
+            .contains("`known` requires the current goal as an available semantic fact"),
+        "{report}"
+    );
+    assert!(report.contains("a == 1"), "{report}");
+    assert!(report.contains("goal: b == 1"), "{report}");
+    let control = source.replace("requires a == 1;", "requires a == 1;\n    requires b == a;");
+    assert_ne!(control, source);
+    verify_c_sources(&control, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_c_claim_source_by_label(&control, &sources, "t.ensures_0").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("t.ensures_0", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 #[ignore = "nightly: guarded child ownership release and preservation replay"]
 fn guarded_child_preservation_keeps_the_consumed_read_refusal() {
     let (source, sources) =
@@ -2540,11 +2571,11 @@ fn post_execution_closer_continues_the_proof_intros_opened() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_13")]
 fn post_execution_closer_continues_the_proof_a_witness_opened() {
-    let anchor = "witness { len: found_len };\n        solve();";
+    let anchor = "witness(found_len);\n        solve();";
     let expanded = expand_mdtest_site_and_reverify(
         "mdtests/cstr_stdlib.md",
         anchor,
-        "witness { len: found_len };\n        ".len(),
+        "witness(found_len);\n        ".len(),
     );
     assert!(!expanded.contains("have exists (len: int32)"), "{expanded}");
 }
@@ -2667,7 +2698,7 @@ theorem integer_forall_solve() {
 }
 theorem integer_exists_solve(x: Integer) {
     ensures witnessed: exists (z: Integer) { z == x } by {
-        witness { z: x };
+        witness(x);
         solve();
     }
 }
@@ -2678,7 +2709,7 @@ theorem integer_exists_choose() {
     requires exists (z: Integer) { z == z };
     ensures chosen: exists (k: Integer) { k == k } by {
         obtain (candidate: Integer) { candidate == candidate };
-        witness { k: candidate };
+        witness(candidate);
         known();
     }
 }
@@ -2707,7 +2738,7 @@ theorem integer_exists_choose() {
                 "{label}: {expanded}"
             );
             assert!(
-                expanded.contains("witness { k: candidate }"),
+                expanded.contains("witness(candidate)"),
                 "{label}: {expanded}"
             );
         }
@@ -2732,7 +2763,7 @@ theorem guarded_integer_exists(value: int32) {
         obtain (candidate: Integer) {
             candidate == to_integer(if value > 0 { value } else { value + 1 })
         };
-        witness { k: candidate };
+        witness(candidate);
         known();
     }
 }
@@ -2748,7 +2779,7 @@ theorem fixed_integer_witness(value: int32) {
     ensures witness_fixed: exists (z: Integer) {
         z == 0 and to_integer(value + 1) == to_integer(value + 1)
     } by {
-        witness { z: 0 };
+        witness(0);
         both {
             both {
                 known();
@@ -2778,7 +2809,7 @@ theorem missing_integer_definedness(value: int32) {
     ensures exists (z: Integer) {
         z == 0 and to_integer(value + 1) == to_integer(value + 1)
     } by {
-        witness { z: 0 };
+        witness(0);
         solve();
     }
 }
@@ -2872,7 +2903,7 @@ theorem indexed_integer_exists(values: int32[]) {
     ensures exists (z: Integer) {
         z == to_integer(values[to_int32(z)])
     } by {
-        witness { z: 0 };
+        witness(0);
         solve();
     }
 }
@@ -3889,7 +3920,7 @@ fn whole_claim_expansion_closes_a_claim_opened_after_execution() {
         (
             "grouped_top_level_existentials",
             "identity.contract",
-            "witness { j: k }",
+            "witness(k)",
         ),
         (
             "intro_as_in_a_function_proof",
@@ -5706,7 +5737,7 @@ fn post_execution_existential_solve_retains_its_checked_scope() {
         int32 identity(int32 x) {
             ensures exists (j: int32) { j == result } by {
                 step_until(function.exit);
-                witness { j: result };
+                witness(result);
                 solve();
             }
         }
@@ -5729,7 +5760,7 @@ fn post_execution_existential_solve_retains_its_checked_scope() {
         position.column,
     )
     .expect("the checked existential obligation should expand");
-    assert!(expanded.contains("witness { j: result };"), "{expanded}");
+    assert!(expanded.contains("witness(result);"), "{expanded}");
     assert!(expanded.contains("known();"), "{expanded}");
     verify_c_sources(&expanded, &[("identity.c", c_source)])
         .expect("the retained witness/known scope should verify independently");
@@ -5747,7 +5778,7 @@ fn post_execution_choose_and_witness_share_the_retained_outcome_proof() {
             ensures exists (j: int32) { j == result } by {
                 step_until(function.exit);
                 obtain (k: int32) { k == x };
-                witness { j: k };
+                witness(k);
                 solve();
             }
         }
@@ -5772,17 +5803,17 @@ fn post_execution_choose_and_witness_share_the_retained_outcome_proof() {
         expanded.contains("obtain (k: int32) { k == x };"),
         "{expanded}"
     );
-    assert!(expanded.contains("witness { j: k };"), "{expanded}");
+    assert!(expanded.contains("witness(k);"), "{expanded}");
     verify_c_sources(&expanded, &[("identity.c", c_source)])
         .expect("the serialized choose/witness proof should independently verify");
 
     let witness_offset = expanded
-        .rfind("witness { j: k };")
+        .rfind("witness(k);")
         .expect("the extracted nested proof should retain its witness");
     let mut corrupted = expanded.clone();
     corrupted.replace_range(
-        witness_offset..witness_offset + "witness { j: k };".len(),
-        "witness { j: k + 1 };",
+        witness_offset..witness_offset + "witness(k);".len(),
+        "witness(k + 1);",
     );
     assert_ne!(
         corrupted, expanded,
@@ -5807,7 +5838,7 @@ fn bounded_range_witness_closes_on_the_checked_outcome_scope() {
             requires 0 < n;
             ensures found_zero: (0..n).any(|k| { k == result }) by {
                 step_until(function.exit);
-                witness { k: 0 };
+                witness(0);
                 solve();
             }
         }
@@ -5824,7 +5855,7 @@ fn bounded_range_witness_closes_on_the_checked_outcome_scope() {
         ContractProofClaim::Ensure(0),
     )
     .expect("the retained bounded witness should expand");
-    assert!(expanded.contains("witness { k: 0 }"), "{expanded}");
+    assert!(expanded.contains("witness(0)"), "{expanded}");
     verify_c_sources(&expanded, &sources)
         .expect("the retained bounded witness should check independently");
 }
@@ -16188,7 +16219,7 @@ theorem mixed_integer_atoms(x: int32, n: Nat) {
     ensures machine_atom: forall (z: Integer) { z + to_integer(x) == to_integer(x) + z } by { solve(); }
     ensures mixed_clause: forall (z: Integer) { x == x and combine(n, z) == combine(n, z) } by { solve(); }
     ensures witnessed: exists (z: Integer) { z == to_integer(x) } by {
-        witness { z: to_integer(x) };
+        witness(to_integer(x));
         normalize();
     }
 }
@@ -16203,7 +16234,7 @@ theorem mixed_integer_atoms(x: int32, n: Nat) {
     }
     for invalid in [
         "function f(z: Integer) -> Integer { z } theorem bad() { ensures forall(z: Integer) { f(z) == 0 } by { solve(); } }",
-        "theorem bad(x: int32) { ensures exists(z: Integer) { z == to_integer(x + 1) } by { witness { z: to_integer(x + 1) }; solve(); } }",
+        "theorem bad(x: int32) { ensures exists(z: Integer) { z == to_integer(x + 1) } by { witness(to_integer(x + 1)); solve(); } }",
         "theorem bad(x: int32) { ensures forall(z: Integer) { to_integer(x + 1) == to_integer(x + 1) } by { solve(); } }",
     ] {
         assert!(
@@ -21346,7 +21377,7 @@ fn explicit_and_implicit_existential_requirements_expand_without_search() {
         let expanded =
             crate::surface::expand_c_claim_source_by_label(click, &sources, "caller.ensures_0")
                 .expect("both forms expand the shared zero-witness strategy");
-        assert!(expanded.contains("witness {"), "{mode}: {expanded}");
+        assert!(expanded.contains("witness("), "{mode}: {expanded}");
         crate::surface::without_implicit_solve(|| verify_c_sources(&expanded, &sources))
             .expect("the expanded obligation uses explicit operations only");
     }
@@ -21367,7 +21398,7 @@ fn explicit_and_implicit_entry_witnesses_expand_without_search() {
             let source = format!("{} by {{ step(); {step} }}", source.trim_end());
             let expanded = expand_c_claim_source_by_label(&source, &sources, "outer.ensures_0")
                 .unwrap_or_else(|error| panic!("{fixture}, {step}: {error}"));
-            assert!(expanded.contains("witness {"), "{expanded}");
+            assert!(expanded.contains("witness("), "{expanded}");
             assert!(!expanded.contains("extract("), "{expanded}");
             without_implicit_solve_for_claim("outer.contract", || {
                 verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())

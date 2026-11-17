@@ -1175,7 +1175,7 @@ int32 child(int32 *a, int32 *visited, int32 x) {
     requires separate(memory(a[0..2]), memory(visited[0..1]));
     ensures result == 1;
     ensures result != 0 implies exists (z: int32) { z == x } by {
-        step_until(function.exit); intro(); witness { z: x }; normalize();
+        step_until(function.exit); intro(); witness(x); normalize();
     }
 }
 int32 parent(int32 *a, int32 *visited, int32 cur) {

@@ -229,7 +229,7 @@ Opaque function rules have a narrower boundary:
   builds the contract entry (`program_function_contract_entry`): its lowering of
   each `requires` clause, the parameters' ranges, and what the entry
   resources state, each fact tagged with its origin. A proof starts from
-  that entry, seen through the source spelling the proof side recorded, with
+  that entry, seen through the source text the proof side recorded, with
   facts nested inside a resource or a predicate body out of view until the
   proof observes or unfolds them. A caller applying the rule discharges the
   same lowering, so the body is proved from what its callers establish.
@@ -350,7 +350,7 @@ anchor — which raised no descent obligation at its self-calls — is not reuse
 to certify a contract whose function declares a measure. `checked_function_execution`
 refuses such an execution outright as well. What is left for the termination
 judgment is that the obligations were reachable and complete: the certified
-`ProgramFunction` must carry the measure (the plan names only a spelling, and
+`ProgramFunction` must carry the measure (the plan names only the measure's source text, and
 `program_verified_function_rule` binds every claim to the same `ProgramFunction`), the
 component's only recursive edge must be the self-call, and the function must
 not have an inline body. Both are refusals by name; `decreases <int32
@@ -468,7 +468,7 @@ coerced. An Integer component's address-escape check collects its C locals
 from the `FromMachine` and pure-argument positions that can name one, since a
 kernel `IntegerTerm` carries no source-level C name.
 
-The plan names a pure component by its declared spelling
+The plan names a pure component by its source text as declared
 (`RankingMeasureKey::Pure`), which is a weaker match than the structural
 equality a C component gets, because the whole-function plan is built before
 specification lowering has an environment. The weaker match is not soundness
@@ -489,9 +489,9 @@ mismatch, so weakening it can cost a diagnostic and not a theorem. A
 component that names a proof binder, such as a `let { field: name } =
 unfold(...)` name or a proof `match` payload, resolves at the loop head to the
 value the binder stands for, so the loop head carries it as a pure component
-under its written spelling while the plan, built from the same written clause
-before any proof runs, reads that spelling as a C expression; the check
-accepts a pure key whose spelling is the planned C expression's display. The
+under its source text while the plan, built from the same written clause
+before any proof runs, reads that source text as a C expression; the check
+accepts a pure key whose source text is the planned C expression's display. The
 address-escape refusal, the one place the plan's measure is read for more than
 identification, runs on the certified side for a pure component, where the
 lowered expression is available; a lowered form whose C variables cannot be
@@ -546,19 +546,19 @@ In `src/kernel/`:
   nodes by discriminant also takes a constant's format. A conversion is one
   node, `Cast { spelling, value, from, to }`, whose `MachineCastSpelling`
   (shared with the kernel term's `MachineCast` encoding) is `Generic` or
-  one of the six legacy per-pair spellings (`Int64From32`, `UInt64From32`,
+  one of the six legacy per-pair kinds (`Int64From32`, `UInt64From32`,
   `UInt32From64`, `Int64FromUInt32`, `UInt64FromInt32`, `UInt64FromInt64`).
-  The spelling is part of the identity, so a legacy-spelled conversion and
+  The kind is part of the identity, so a legacy-kind conversion and
   the generic one of the same formats are different terms. A legacy
-  spelling fixes its formats (`MachineCastSpelling::legacy_formats`); the
+  kind fixes its formats (`MachineCastSpelling::legacy_formats`); the
   low word reads its operand as `uint64` bits whatever the operand's
   signedness. Build one with the smart constructors
   (`machine_integer_cast`, `int64_from_32`, `uint32_from_64`, ...),
-  `MachineTerm::legacy_cast` or `cast_node`; match a legacy spelling
+  `MachineTerm::legacy_cast` or `cast_node`; match a legacy kind
   with `cast_term!(Int64From32, value)` (`cast_op!` for its
   `BitvectorUnaryOp`) and the generic one with
   `Cast { spelling: Generic, .. }`. `Debug` prints the former variant names,
-  and `machine_operator()` returns the spelling for discriminant-based
+  and `machine_operator()` returns the kind for discriminant-based
   comparisons and hashes. Every operator of a
   `uint32` value is built at `uint32` over operands and constants in that
   format, through
@@ -572,7 +572,7 @@ In `src/kernel/`:
   constant is read as the `int32` constant of its bits inside an `int32`
   operator, comparison or overflow test (`into_word32`). Code that compares
   nodes by variant also compares
-  `machine_operator()`, since one variant spells every operator. This word
+  `machine_operator()`, since one variant represents every operator. This word
   identity is being removed (`design/machine-integers.md`, "Every format
   its own nodes"); a debug build with `CLICK_FORMAT_AUDIT=<path>` records
   each remaining use of it by kind and site (`scripts/format-audit.sh`,
@@ -604,7 +604,7 @@ In `src/kernel/`:
   floating comparisons/classifications. An equality is filed at the signed
   format of its width (it reads no sign), and a narrow comparison at
   `int32`, whose order its canonical words compare exactly, so a fact has
-  one spelling. Every other order is filed at its own format: a `uint32`
+  one representation. Every other order is filed at its own format: a `uint32`
   order is `Compare { format: UInt32, .. }` of the operands' words.
 - `ProgramValue`, `ProgramType`, `Pointer`, `Memory`, `ExecutionState`: C semantic state,
   including the non-object `Void` return value, scalar `int8`, `int16`, `int32`,
@@ -691,7 +691,7 @@ widenings has one Integer reading, the comparison of its sides' values
 (`machine_integer::comparison::integer_readings_with_promotions`):
 `0 <= widen(x)` is `0 <= to_integer(x)`. The Integer engines
 (`integer_affine_claims`), the certificate's premise check and the smart
-planner's spelling read it like a native comparison's reading. The
+planner's raising read it like a native comparison's reading. The
 certificate checker reads an 8- or 16-bit comparison as the `int32`
 comparison of the widenings (`narrow_comparison_as_int32`).
 
@@ -792,13 +792,13 @@ the widths a rule supports; it asks the module
 | Sign cast σ (K1 deleted) | `MachineTerm::sign_cast32`, `sign_cast32_operand`; the e-graph's `intern_conversion` and `convert_like` (σ an `Int32Unary::Cast` node); the difference graph's `link_parts` and `structural_interval`; `into_index_word32` (G1) | σ(x) between `int32` and `uint32` is a node of its own wherever a term is built: no constructor, observation, e-graph or difference-graph reader peels it. The e-graph relates it to `x` by R0 and R-dist (σ of a sign-free operator is the operator at the other format over σ of its operands; σ of a low word is that low word), the difference graph links either 32-bit reading of σ(x) to the same reading of `x` with offset 0, and an element index alone reads σ's operand in `int32` index coordinates. The constructor folds a constant and keeps σ of σ as written; R0 puts σ(σ(x)) in `x`'s class. Two smart-search readers see through one σ at a side's root: `σ(x) == x` is a vacuous rewrite and no rewrite candidate (`is_sign_cast32_of`, `equality_is_vacuous`, `connected_equalities`), and `σ(y) <=u c` below the sign bit is the signed range of `y` (`unsigned_upper_bound_below_sign_bit`) |
 | R-mem at 32 bits (K5's naming deleted) | `ProgramType::read_cell`, `LoadKind::read_cell`, `LoadKind::reads_value`; the checked stored-value evidence (`CheckedLoadEqualityEvidence::OriginStoredValue`), `is_store_fact` | the `uint32` read of a cell is σ of its `int32` read; a read of a cell stored at the other 32-bit signedness, wherever a load term is answered from a cell or a store, is σ of the stored word, and only a read of the stored kind is the stored term itself. A range's `fits` guard is `σ(end - start) <=u limit` (`memory_range_byte_count_extent`), σ of the `int32` element count as written |
 | Observation of σ (K2 deleted) | rule W: `machine_value_reading` | `to_integer` of σ(x) at `int32` or `uint32` keeps σ as written and reads as `x` at that format, through every σ of a written chain: `to_integer((a as uint32) as int32)` reads as `to_integer(a)` (`machine_view::shared_value_reading` takes one cached step per σ node) |
-| 32-to-64-bit extension, one spelling | `conversion::extension_encoding`, `conversion::reads_as_operand`; `MachineTerm::machine_integer_cast`, `SharedMachineIntegerTerm::cast_operand`, `KernelTerm::checking_machine_cast`; rule W: `machine_value_reading`, `machine_view::shared_value_reading` | a conversion from `int32` or `uint32` to `int64` or `uint64` is the legacy-spelled `Cast` C lowering builds (`Int64From32`, `Int64FromUInt32`, `UInt64From32`, `UInt64FromInt32`) wherever it is built, never the generic spelling; `to_integer` of the three value-preserving ones at their destination reads as their operand, one match on the root. A cast-identity certificate checks an extension's bounds at its destination format |
-| 32-bit equality one fact (K6, lookup-level) | `comparison_identity` (`ConditionTerm::comparison_fact`, `as_fact_comparison`, `fact_format`), `MachineTerm::sign_cast32_bits`; `condition_match_key` | a 32-bit equality is a term of the format it is written at, `u == v` at `uint32` over `uint32` operands; identity, hashing, order and every structural fact key read it at `int32`, each side through one σ and a constant of either spelling as its bits, so `u == v` at `uint32` and `u as int32 == v as int32` are one fact. One match per side, no clone; no term is re-filed |
+| 32-to-64-bit extension, one representation | `conversion::extension_encoding`, `conversion::reads_as_operand`; `MachineTerm::machine_integer_cast`, `SharedMachineIntegerTerm::cast_operand`, `KernelTerm::checking_machine_cast`; rule W: `machine_value_reading`, `machine_view::shared_value_reading` | a conversion from `int32` or `uint32` to `int64` or `uint64` is the legacy-kind `Cast` C lowering builds (`Int64From32`, `Int64FromUInt32`, `UInt64From32`, `UInt64FromInt32`) wherever it is built, never the generic kind; `to_integer` of the three value-preserving ones at their destination reads as their operand, one match on the root. A cast-identity certificate checks an extension's bounds at its destination format |
+| 32-bit equality one fact (K6, lookup-level) | `comparison_identity` (`ConditionTerm::comparison_fact`, `as_fact_comparison`, `fact_format`), `MachineTerm::sign_cast32_bits`; `condition_match_key` | a 32-bit equality is a term of the format it is written at, `u == v` at `uint32` over `uint32` operands; identity, hashing, order and every structural fact key read it at `int32`, each side through one σ and a constant of either format as its bits, so `u == v` at `uint32` and `u as int32 == v as int32` are one fact. One match per side, no clone; no term is re-filed |
 | Sign test of σ (sign bit at 32 bits) | `condition_reasoning/sign_bit.rs`: `sign_bit_equivalents`, `names_sign_cast32` | `u as int32 < 0` is `u > 2^31 - 1`, and `x as uint32 > 2^31 - 1` is `x < 0`, the equivalent built through σ, reading σ of a σ as that σ's operand (the constructor keeps σ of σ); a decision or known-condition lookup of either reads the other, and assuming a test of σ also files its equivalent |
 | Sign cast of a quotient (C) | `condition_reasoning/sign_cast_division.rs`: `decide_by_sign_cast_division`, `sign_cast_division_equivalent`, `names_sign_cast_division`; `MachineTerm::sign_cast_division_operands`; `ConditionTerm::nonnegative_division_bound_guards` | `(a / b) as int32 == (a as int32) / (b as int32)` for `uint32` `a`, `b` with `0 <= a as int32` and `0 < b as int32`, and `(x / y) as uint32 == (x as uint32) / (y as uint32)` for `int32` `x`, `y` with `0 <= x` and `0 < y`, and the same for `%`. Read at decision time on a comparison naming σ of a quotient, and filed beside such a fact when it is assumed: one match on each side's root and two sign decisions per side; the quotient bound guards read it too. A quotient by zero is not related |
 | Cross-format relations (R0, R-dist, R-comp) | the e-graph's `terms/machine_relations.rs`: `relate_machine_application`, `merge_machine_relations` | a conversion to a format no wider than its source distributes over `+ - * & \| ^ ~` and a constant `<<` below the destination's width (σ, which keeps the width, over a `<<` by any count); a conversion of a value-preserving conversion it reads exactly, or one keeping no more bits than either, is one conversion; a same-width conversion of at least 32 bits has its inverse in its operand's class; where both 32-bit widenings of one narrow class exist, the later is σ of the earlier (`relate_siblings`) |
 | Native narrow arithmetic (G2, G4) | `SpecExpression::NarrowArithmetic`, `SpecExpression::at_machine_type`; `IntegerCastMode::NarrowArithmetic`, `program_expression::narrow_arithmetic`; `IntegerCastMode::ResultConversion`; `eval::native_narrow_binary`, `native_narrow_not` | specification arithmetic `+ - * & \| ^ ~` at an 8- or 16-bit position (a typed `let`, a pure function's argument at its parameter's type, a pure function's body at its result type) over operands of that type, and Rust `+ - * & \| ^ !` and `<<` by a 32-bit count on `u8`, `i8`, `u16`, `i16`, are the native node of the type, `(a op b) mod 2^N`, with no promotion and no domain obligation; an `int32` literal the type holds takes it. Rust's checked overflow stays its own panic assertion. An operand of another machine type at a specification position is refused by the parser or type checker, which names the conversion to write; inside the kernel, operands of another type keep the promoted reading. C keeps promote, operate, convert |
-| Promoted spelling of a native narrow operator (N) | the e-graph's `terms/machine_relations.rs`: `promote` (`Relation::Promote`) | a native 8- or 16-bit operator `a op b` (and `~a`, and `a << c` for a 32-bit count `c`) is in the class of `Cast(int32 -> F, widen(a) op widen(b))`, interned with its K7' word, so its widening meets the masked word operator. It fires on demand: when the operator's class is widened to 32 bits, and for a shift (whose symbolic count R-dist cannot move); C's spelling meets the native node through R-dist and R-comp without it. Once per operator, at most seven nodes and two unions; an operator R-dist built is skipped, and R-dist of the rule's own narrowing over its word is marked fired |
+| Promoted form of a native narrow operator (N) | the e-graph's `terms/machine_relations.rs`: `promote` (`Relation::Promote`) | a native 8- or 16-bit operator `a op b` (and `~a`, and `a << c` for a 32-bit count `c`) is in the class of `Cast(int32 -> F, widen(a) op widen(b))`, interned with its K7' word, so its widening meets the masked word operator. It fires on demand: when the operator's class is widened to 32 bits, and for a shift (whose symbolic count R-dist cannot move); C's promoted form meets the native node through R-dist and R-comp without it. Once per operator, at most seven nodes and two unions; an operator R-dist built is skipped, and R-dist of the rule's own narrowing over its word is marked fired |
 | `Bool` conditional (L-If) | `ConditionTerm::open_bool_if`; `PureFactContext::decide_bool_value` | `if c { a } else { b }` holds exactly when `(c and a) or (not c and b)`; opened only when the conditional itself is decided or split |
 | `Bool` equality (L-Eq) | the e-graph's `bool_node`, `admit_bool_condition`, `knows_bool_condition` | a true `a == b` merges the classes of `a` and `b`, which share their truth; a false one contradicts the merge; applications of one function to equal arguments are one class |
 | `Bool` unfolding (L-Unfold) | `ConditionTerm::bool_unfold_equation`; `unfold` lowers `f(args) == body` to `BoolEqual` | unfolding a `-> Bool` function's application files `application == body` |
@@ -846,7 +846,7 @@ cast takes exactly the values 1 and 0, which lie in every format.
 Rule K7 (decision of 2026-10-26, `design/machine-integers.md`). For `F` of
 `b` = 8 or 16 bits, `m = 2^b - 1`, `s = 2^(b-1)`, and `S` of at most 64
 bits, with `w = x` up to 32 bits and `w` the low word of `x` (the
-`UInt32From64` spelling of `Cast`) at 64: the cast
+`UInt32From64` kind of `Cast`) at 64: the cast
 denotes `n mod 2^b` read in `F` (`n` the operand's value), whose word is the
 zero or sign extension of those bits (the narrow-value invariant above). `w`
 holds `n mod 2^32`, so its low `b` bits are `n mod 2^b`; `w & m` is their
@@ -883,7 +883,7 @@ the 64-bit reinterpretation per operation, whose inverse is the word itself
 (`sign_cast32_distribution_is_linear_in_the_operation_chain`).
 
 Rule N (decision of 2026-11-02, `design/machine-integers.md`) relates a
-native 8- or 16-bit operator to C's promoted spelling of it. Soundness: a
+native 8- or 16-bit operator to C's promoted form of it. Soundness: a
 widening keeps its operand's value, so `widen(a) op widen(b)` computed
 modulo `2^32` is congruent to `a op b` modulo `2^N`, and the narrowing reads
 exactly those low bits (R-dist read in reverse, with R-comp); a left shift
@@ -895,14 +895,14 @@ meeting a masked word), and for a shift. C's promoted arithmetic meets a
 native operator through R-dist and R-comp alone. An operator R-dist built
 is already a narrowing and is skipped, and R-dist of the rule's own
 narrowing over its word is marked fired, since it would only rebuild the
-operator: without these, each firing respelled the word over fresh
+operator: without these, each firing re-expressed the word over fresh
 narrowings without end, and fired eagerly a bare chain of native sums cost
 about 30 times the work of interning it
 (`equality_graph/machine_relations_tests.rs` and its scaling tests;
 `narrow_tests.rs` bounds a bare chain's work per node).
 
 Conditions carry their format (`Compare`, `Overflows`), but the term arena
-still spells each width with its own operator nodes, so one file,
+still represents each width with its own operator nodes, so one file,
 `machine_integer/representation.rs`, maps a format and an operation,
 comparison or overflow test to its node, and a node back to its format and
 operation. It is the only place a rule's width dispatch lives. Where a
@@ -910,7 +910,7 @@ format has no node the rule is unavailable there: no 128-bit operators and
 no narrow quotient (C computes it on promoted `int` words). Those are
 representation gaps that Stage 3 of the design removes.
 
-Three choices keep each fact's spelling where the kernel's reasoning reads
+Three choices keep each fact's representation where the kernel's reasoning reads
 it:
 
 - **A `uint32` order is native.** The difference graph gives a 32-bit word
@@ -921,7 +921,7 @@ it:
   in the format-indexed order walk (`WIDE_ORDER_FORMATS`), as it files
   `uint64` ones. The condition checker's `uint32` rules
   (`decide_unsigned32_order`) read only those indexes and the graph.
-- **128-bit comparisons are spelled as Integers.** `Compare` at `int128`
+- **128-bit comparisons are represented as Integers.** `Compare` at `int128`
   and `uint128` folds on constants and reads back as the Integer
   comparison (`integer_observations_of_native_comparison`), but
   `native_comparison_of_integer_observation` leaves an Integer comparison
@@ -1001,7 +1001,7 @@ and stores using the same address-backed layout; the kernel still never
 represents a struct as a runtime `ProgramValue`. Resource clauses may name embedded
 aggregates directly and expand into typed leaf ranges while preserving their
 field metadata. Memory coverage, splitting, and joining are decided bytewise: a
-pair is re-spelled into one element width, or compared as byte footprints when
+pair is re-expressed in one element width, or compared as byte footprints when
 the bounds do not divide. An enclosing owned object can therefore be lent to
 satisfy a leaf-width view, and two owners of the same bytes at different widths
 are refused as overlapping. Typed loads and stores keep their own widths. Fixed
@@ -1034,7 +1034,7 @@ field loads and stores. Union-containing layouts retain a separate typed
 overlay for each overlapping member, so aggregate copies preserve all member
 views without pretending the members occupy disjoint cells. Adding a union view
 forgets raw cells and other-address views that may overlap its bytes, including
-those reached through another pointer spelling; a later scalar store similarly
+those reached through another pointer representation; a later scalar store similarly
 forgets possibly overlapping union views. Views at the union's exact address
 remain together when another member is materialized. Direct whole-union
 values and member writes remain outside this by-value slice; other unsupported
@@ -1050,8 +1050,8 @@ postcondition such as `result.inner.flag == source.inner.flag` compares the
 fresh result cell with the source state without turning the returned
 aggregate into an alias or weakening ordinary pointer-return type checks.
 The frame counter gives successive copies distinct identities, independent of
-source local names. Exact storage addresses spell `result.storage(frame, N)`;
-o string is decoded into a return-storage identity.
+source local names. Exact storage addresses raise to `result.storage(frame, N)`;
+no string is decoded into a return-storage identity.
 
 Positional initializers for copyable struct-valued locals use the same
 address-backed boundary. The C parser walks fields in declaration order,
@@ -1277,7 +1277,7 @@ in four parts, on each path it opens:
 
 1. **Terms for its values.** Each operand becomes a term at the current state:
    a variable's current value, a read `load(retained_state, address)` at the
-   state it reads (a proof spells it `at(point, e)`), or arithmetic,
+   state it reads (a proof writes it `at(point, e)`), or arithmetic,
    comparison and pure-function application over other terms.
 2. **Facts.** Equalities and other facts join the path's fact context: the
    assignment `x = e` adds `x == <term of e>` to the e-graph, and operations
@@ -1332,13 +1332,13 @@ them at its own state.
 An expression's effects are steps of their own, run just before the
 statement that holds the expression:
 
-- A call is `ProgramStatement::CallResult`. The surface spells its result by
+- A call is `ProgramStatement::CallResult`. The surface names its result by
   its call, `statement(i).call(f, j).result`. The result has the callee's
   declared type.
 - An assignment inside an expression, or a `++x` or `--x`, is a
   `ProgramStatement::Assign`. The expression then reads the local.
 - A postfix `x++` or `x--` is a `ProgramStatement::Assign` with `prior_result`,
-  which keeps the value it replaces. The surface spells that value
+  which keeps the value it replaces. The surface names that value
   `at(<the assignment's region>.entry, x)`.
 - A `&&`, `||` or ternary operator whose operands make steps is a
   `ProgramStatement::If` that decides which operand runs, and each arm ends in
@@ -1431,6 +1431,21 @@ then makes the test read the result without ending it,
 `CallResult { keeps: true }`, which lowers to `StepResult { ends: false }`;
 the `Some` arm's payload read ends it. The loop's header holds the call, so
 it lowers as `while (1) { next; if (!is_some) break; body }`.
+
+MIR writes a function's return value to its return place `_0` and then
+returns `_0`. `temporaries::return_values` returns the written value itself
+when `_0` holds a scalar or an enum, is written once, and that write reaches
+`Return` past only source sites and storage markers, through blocks entered
+from nowhere else, as C's `return value` does:
+
+- `_0 = value` ends its block in `MirTerminator::ReturnValue { value }`;
+- a tail call writing `_0` becomes a call step, and its successor ends in
+  `ReturnValue` of `CallResult` for that step.
+
+`_0` is then not a local. It stays one when it is written on several paths
+that join before the return, when cleanup such as a drop runs between the
+write and the return, or when it holds a struct, a generic value or a heap
+value.
 
 These still stay a temporary:
 
@@ -1586,7 +1601,7 @@ facts' unused identities
 exhausts it refuses rather than reusing an identity.
 
 Freshening a binder is a renaming, so it must not change what the proposition
-says *or how it is spelled*: a proof state matches a goal against a fact
+says *or its form*: a proof state matches a goal against a fact
 syntactically, and a goal that quietly moves to another canonical form stops
 matching the surface's re-lowering of the same written range. That is why a
 range's byte extent has exactly one constructor — `memory_range_byte_count`
@@ -1601,12 +1616,12 @@ same answer from every distinctness rule. Each execution of a declaration must
 therefore get a block no other automatic object in that memory has, live or
 ended.
 
-Three spellings reach a `local:` block. `local:<name>` is the plain one;
+Three name forms reach a `local:` block. `local:<name>` is the plain one;
 `local:lifetime:<n>:<name>` is a generation, taken from the `next_local_lifetime`
 counter the state threads through calls and returns; `local:frame:<n>:<name>` is
 a call frame's slot for an addressable or aggregate parameter. All three keep
 the `local:` prefix, so every rule that asks whether a block is a local still
-gets the same answer, and the diagnostic renderer spells all three by the last
+gets the same answer, and the diagnostic renderer prints all three by the last
 segment — the name the reader wrote.
 
 `local_declaration_pointer` is the only place an automatic object's identity is
@@ -1616,13 +1631,13 @@ takes a generation when any of three things is true:
 - this frame is re-entering the declaration — a loop, or an inner scope
   shadowing the name — which the locals map sees, and whose old object's
   lifetime ends first;
-- the memory already holds or has retired a block of that spelling; or
+- the memory already holds or has retired a block of that name; or
 - a frame this one was called from holds bindings at all. A called frame
   executes on the caller's memory with its own locals map, so it cannot see the
   caller's objects, and an object the caller holds only as a value — a parameter
   whose address it never takes — has no block in memory to find. A frame called
   from one that has bound nothing is the outermost frame and keeps the plain
-  spelling.
+  name.
 
 The mint then checks its candidate against the memory the declaration lands in.
 The counter is monotone and every generation it hands out is declared, so the
@@ -1634,7 +1649,7 @@ returns, because it declared them into the caller's memory and nothing else
 would: otherwise its cells stay readable under a later declaration of that name,
 and a pointer to one of its locals stays dereferenceable at the call site. A
 value-only parameter is deliberately left alone — its pseudo-slot borrows the
-plain `local:<name>` spelling while owning no block, so retiring it would
+plain `local:<name>` form while owning no block, so retiring it would
 tombstone whatever object of that name the caller has.
 
 ### When an automatic lifetime ends
@@ -1714,7 +1729,7 @@ A contract's return value is `BindingName::ContractResult`, with Surface spellin
 `result`. It is distinct from all `Named`, automatic, and static bindings,
 including source C variables named `result`. Fixed-state elaboration carries its
 value in a dedicated context field rather than a string-keyed lexical map. Its
-value-only bookkeeping slot is `PointerBlock::ContractResult`, spelled
+value-only bookkeeping slot is `PointerBlock::ContractResult`, raised as
 `result.storage()` when an exact slot address is needed; this does not declare
 C storage or grant memory ownership. Aggregate results still bind their actual
 returned object address. No string is decoded into a contract-result identity.
@@ -1722,8 +1737,8 @@ returned object address. No string is decoded into a contract-result identity.
 The thrown `int32` payload likewise uses `BindingName::ContractException` and
 its own `PointerBlock::ContractException` bookkeeping slot. Exceptional
 postconditions bind `exception` to that typed payload. The exact slot address
-spells `exception.storage()` and grants no storage or ownership. Neither `exception` nor the former internal
-spelling `__click_exception` is decoded into a kernel identity, so a source
+raises to `exception.storage()` and grants no storage or ownership. Neither `exception` nor the former internal
+name `__click_exception` is decoded into a kernel identity, so a source
 variable of either name cannot replace the payload or alias its slot.
 
 Bare `result` lowers to that typed binding, while `c(result)` resolves the
@@ -1859,7 +1874,7 @@ memory derivation DAG edges preserve these transitions for later checking; an al
 resource that crosses a verified call also determines the allocation delta,
 not an untrusted ordinary token. When that delta leaves continuity undecided,
 the input allocation's cached values and zeroed status are forgotten under
-proven-equal pointer spellings. A `ContractAllocationRetired` edge records the
+proven-equal pointer representations. A `ContractAllocationRetired` edge records the
 possible release without claiming that a C `free` occurred. Exact execution
 records every successful
 free as `HeapAllocationFreed(before, after, base, bytes)`. Effect
@@ -2064,13 +2079,18 @@ among the requirements and must rewrite the goal in the listed order.
 observation. Other families keep native value equality and ordering, including
 raw Boolean words, float bits, and native call-argument carrier distinctions.
 Its hash need only agree across equal stored keys; it is not a serialized ID.
-Boolean, float and algebraic local/outcome keys project common children rather
+Boolean, float, algebraic and pointer local/outcome keys project common children rather
 than materializing an enclosing native value tree. Algebraic projections retain
 constructor field positions, match binding/body order and original call-argument
 carriers. Scalar algebraic fields and read addresses keep selected compatibility
 descriptors; memory keys and exact refresh remain separate consumers.
 Projection memos belong to one verification, with iterative construction,
 comparison and disposal for shared or deep algebraic structure.
+Pointer keys preserve the native address/designation/type/volatility/extent
+identity tuple. Offset DAGs use shared child keys and the existing native offset
+index handles, with iterative construction/comparison/disposal and per-session
+memos. Subobject widths retain their selected native structural descriptor;
+key operations do not request the enclosing native pointer value.
 
 `StoredMemoryValue` preserves native `ProgramValue` structural equality, order,
 and hash stream. Replacing it with a local observation key would change the

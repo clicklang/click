@@ -41,7 +41,7 @@ int32 has_in_first_three(int32 p[], int32 x) {
     requires p[1] == x;
     ensures (0..3).any(|k| { p[k] == x }) by {
         step_until(function.exit);
-        witness { k: 1 };
+        witness(1);
         solve();
     }
 }
@@ -51,7 +51,7 @@ int32 first_in_range(int32 p[], int32 lo, int32 hi) {
     views p[lo..hi];
     ensures found: (lo..hi).any(|k| { p[k] == result }) by {
         step_until(function.exit);
-        witness { k: lo };
+        witness(lo);
         solve();
     }
 }

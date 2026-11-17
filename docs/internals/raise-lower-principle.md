@@ -347,8 +347,11 @@ are where the facts, not an obligation, decide definedness. The target
 form removes them.
 
 `scripts/raise-lower.sh` raises each fact a checked step adds, and the goal
-it leaves focused, with `synthesize_surface_proposition` at the step's
-fixed state, lowers that spelling again, and records `same`, `polarity`
+it leaves focused, as goal presentation does
+(`Proof::structural_proposition_candidate`: the step's fixed state, its
+entry state and the path's recorded points, so `at(point, ..)`, `old(..)`
+and `<call>.result` spellings are available), lowers that spelling again,
+and records `same`, `polarity`
 (the same comparison at the other polarity), `differs`, `unlowered`,
 `unraised`, or `no-state`. It measures the raiser alone, not the premise
 speller, which searches recorded spellings first and keeps only one that
@@ -360,10 +363,18 @@ Baseline (2026-11-16, ordinary mdtest corpus, both runs passing):
 - Fact stability: 0 `differs`, 0 `paths:N`, 371 `refused` lines in 19
   fixtures; 338 of them come from
   `mutex_resource_quantity_requires_conservation` (`uint32` comparisons).
-- Round trip: 54,642 records. Of the 11,058 spellings the raiser produced,
-  9,343 were `same`, 658 `polarity`, 814 `differs` and 243 `unlowered`;
-  9,478 terms were `unraised` and 34,106 had `no-state` (mostly termination predicates). Recurring `differs`
-  shapes: an entry read raised through a current name (`old(*result) ==
+- Round trip (2026-11-17, after the audit raised with recorded points and
+  the entry state, and pointer call results were indexed): 55,023 records.
+  Of the 15,732 spellings the raiser produced, 13,469 were `same`, 696
+  `polarity`, 1,212 `differs` and 355 `unlowered`; 4,321 terms were
+  `unraised` and 34,970 had `no-state` (mostly termination predicates).
+  Integer and other comparisons round-trip about 77% of the time, pointer
+  comparisons about 31%: pointer reads named by the memory they were read in
+  rather than their version point, and pointer values with no recorded
+  provenance, account for most of the rest. Before the audit used recorded
+  points (2026-11-16) it reported 9,343 `same` of 54,642 records, because no
+  `at(point, ..)` or `old(..)` spelling was available to it. Recurring
+  `differs` shapes: an entry read raised through a current name (`old(*result) ==
   7` spelled `result->value == 7`, lowering to `old(*next) == 7`); a
   closed literal comparison lowering folds to a constant
   (`-2147483648i64 == 2147483648i64` to `false`); casts spelled

@@ -9909,6 +9909,50 @@ fn post_return_function_equations_scale_with_explicit_unfolds() {
     );
 }
 
+/// A pointer a call returned is spelled `<region>.result` from one index
+/// lookup, however many calls the path recorded; replacing or removing the
+/// call's exit removes the spelling.
+#[test]
+fn recorded_pointer_call_results_scale_and_follow_replacement() {
+    use crate::kernel::{Pointer, ProgramType, Variable};
+    for size in [16usize, 64, 256, 1024] {
+        let mut retained_states = RecordedStates::new();
+        let value = |index: u64| {
+            ProgramValue::typed_pointer(
+                Pointer::symbolic(Variable(710_000 + index)),
+                ProgramType::Int32Pointer,
+            )
+        };
+        for index in 0..size {
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                retained_states.record_call_result(index, Some(value(index as u64)));
+            });
+            assert!(work <= 2, "{size}: insertion {work}");
+        }
+        let first = Pointer::symbolic(Variable(710_000));
+        let (region, work) = crate::instrumentation::measure_deterministic_work(|| {
+            retained_states.call_result_naming_pointer(&first)
+        });
+        assert_eq!(region, Some(CodeRegionRef::Region(0)));
+        assert!(work <= 2, "{size}: lookup {work}");
+        // A later call returning the same pointer does not take the name.
+        retained_states.record_call_result(size, Some(value(0)));
+        assert_eq!(
+            retained_states.call_result_naming_pointer(&first),
+            Some(CodeRegionRef::Region(0))
+        );
+        let branch = retained_states.clone();
+        retained_states.record_call_result(0, Some(value(20_000)));
+        assert!(retained_states.call_result_naming_pointer(&first).is_none());
+        assert_eq!(
+            branch.call_result_naming_pointer(&first),
+            Some(CodeRegionRef::Region(0))
+        );
+        retained_states.record_call_result(0, None);
+        assert!(retained_states.call_result_naming_pointer(&first).is_none());
+    }
+}
+
 #[test]
 fn recorded_call_results_scale_and_replace_execution_occurrences() {
     use crate::kernel::{ConditionTerm, MachineIntegerType, MachineTerm, Variable};
@@ -10373,6 +10417,15 @@ fn conjunction_transport_replay_scales_with_explicit_links() {
 
 #[test]
 fn nested_conjunction_transport_scales_with_written_leaves() {
+    nested_conjunction_transport_scaling(false);
+}
+
+#[test]
+fn balanced_nested_conjunction_transport_scales_with_written_leaves() {
+    nested_conjunction_transport_scaling(true);
+}
+
+fn nested_conjunction_transport_scaling(balanced: bool) {
     fn conjunction(leaves: &[String], balanced: bool) -> String {
         if leaves.len() == 1 {
             return leaves[0].clone();
@@ -10384,38 +10437,37 @@ fn nested_conjunction_transport_scales_with_written_leaves() {
             conjunction(&leaves[split..], balanced)
         )
     }
-    for balanced in [false, true] {
-        let mut planning = Vec::new();
-        let mut replay = Vec::new();
-        // Skewed syntax must stay within the existing parenthesis/proof depth
-        // limits. Balanced trees exercise larger leaf and premise counts.
-        let sizes = if balanced {
-            [4, 8, 16, 32]
-        } else {
-            [2, 4, 8, 12]
-        };
-        for size in sizes {
-            let mut c_args = String::new();
-            let mut args = String::new();
-            let mut requirements = String::new();
-            let mut setup = String::new();
-            let mut premises = String::new();
-            for i in 0..size {
-                c_args.push_str(&format!(", int *q{i}"));
-                args.push_str(&format!(", int32* q{i}"));
-                requirements.push_str(&format!(
-                    "views *q{i}; requires separate(memory(*p), memory(*q{i}));"
-                ));
-                setup.push_str(&format!("have separate(statement(0).footprint, memory(*q{i})) by {{ normalize() using {{ separate(memory(*p), memory(*q{i})); }}; }}"));
-                premises.push_str(&format!("separate(statement(0).footprint, memory(*q{i}));"));
-            }
-            let leaves = (0..size)
-                .map(|i| format!("*q{i} == {i}"))
-                .collect::<Vec<_>>();
-            let fact = conjunction(&leaves, balanced);
-            let c = format!("void keep(int *p{c_args}) {{ *p = 0; }}");
-            let source = format!(
-                r#"
+    let mut planning = Vec::new();
+    let mut replay = Vec::new();
+    // Skewed syntax must stay within the existing parenthesis/proof depth
+    // limits. Balanced trees exercise larger leaf and premise counts.
+    let sizes = if balanced {
+        [4, 8, 16, 32]
+    } else {
+        [2, 4, 8, 12]
+    };
+    for size in sizes {
+        let mut c_args = String::new();
+        let mut args = String::new();
+        let mut requirements = String::new();
+        let mut setup = String::new();
+        let mut premises = String::new();
+        for i in 0..size {
+            c_args.push_str(&format!(", int *q{i}"));
+            args.push_str(&format!(", int32* q{i}"));
+            requirements.push_str(&format!(
+                "views *q{i}; requires separate(memory(*p), memory(*q{i}));"
+            ));
+            setup.push_str(&format!("have separate(statement(0).footprint, memory(*q{i})) by {{ normalize() using {{ separate(memory(*p), memory(*q{i})); }}; }}"));
+            premises.push_str(&format!("separate(statement(0).footprint, memory(*q{i}));"));
+        }
+        let leaves = (0..size)
+            .map(|i| format!("*q{i} == {i}"))
+            .collect::<Vec<_>>();
+        let fact = conjunction(&leaves, balanced);
+        let c = format!("void keep(int *p{c_args}) {{ *p = 0; }}");
+        let source = format!(
+            r#"
                 verifying "nested.c";
                 void keep(int32* p{args}) {{ owns *p; {requirements} requires {fact}; }} by {{
                     step(); {setup}
@@ -10423,35 +10475,30 @@ fn nested_conjunction_transport_scales_with_written_leaves() {
                     step();
                 }}
             "#
-            );
-            let files = [("nested.c", c.as_str())];
-            let (expanded, work) = crate::instrumentation::measure_deterministic_work(|| {
-                expand_c_claim_source_by_label(&source, &files, "keep.contract")
-            });
-            let expanded = expanded.unwrap();
-            planning.push(work);
-            assert_eq!(expanded.matches("both {").count(), size - 1);
-            assert_eq!(expanded.matches("preserve(").count(), size);
-            assert!(!expanded.contains("transport("));
-            assert!(!expanded.contains("transport_certificate"));
-            let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
-                crate::surface::proof::without_implicit_solve(|| {
-                    verify_c_sources(&expanded, &files)
-                })
-            });
-            verified.unwrap();
-            replay.push(work);
-        }
-        eprintln!(
-            "nested conjunction balanced={balanced}: expansion {planning:?}, replay {replay:?}"
         );
-        for costs in [planning, replay] {
-            assert!(costs.iter().all(|cost| *cost > 0));
-            assert!(
-                costs.windows(2).all(|pair| pair[1] <= 3 * pair[0]),
-                "{costs:?}"
-            );
-        }
+        let files = [("nested.c", c.as_str())];
+        let (expanded, work) = crate::instrumentation::measure_deterministic_work(|| {
+            expand_c_claim_source_by_label(&source, &files, "keep.contract")
+        });
+        let expanded = expanded.unwrap();
+        planning.push(work);
+        assert_eq!(expanded.matches("both {").count(), size - 1);
+        assert_eq!(expanded.matches("preserve(").count(), size);
+        assert!(!expanded.contains("transport("));
+        assert!(!expanded.contains("transport_certificate"));
+        let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &files))
+        });
+        verified.unwrap();
+        replay.push(work);
+    }
+    eprintln!("nested conjunction balanced={balanced}: expansion {planning:?}, replay {replay:?}");
+    for costs in [planning, replay] {
+        assert!(costs.iter().all(|cost| *cost > 0));
+        assert!(
+            costs.windows(2).all(|pair| pair[1] <= 3 * pair[0]),
+            "{costs:?}"
+        );
     }
 }
 

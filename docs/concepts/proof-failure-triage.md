@@ -28,7 +28,7 @@ semantics, do not rewrite otherwise-correct implementation code merely to make
 a proof easier. Keep the original source pattern in the regression and put the
 adaptation or fix in the contract, proof, language, verifier, or kernel.
 
-Ordinary errors spell every fact, goal, rejected requirement, and evaluated
+Ordinary errors print every fact, goal, rejected requirement, and evaluated
 side in Click or C syntax, with Click's precedence and minimal parentheses.
 A refused claim reads, for example:
 
@@ -48,7 +48,7 @@ its negation.
 Float prerequisites retain source names and print exact IEEE bit literals,
 such as `d >= float64_from_bits(0xc1e0000000000000u64)` and
 `d < float64_from_bits(0x41e0000000000000u64)` for the int32 cast bounds.
-These spellings preserve the float type and can be reused as contract
+These printed forms preserve the float type and can be reused as contract
 prerequisites; see [exact float bit literals](../reference/language/grammar.md#exact-float-bit-literals).
 
 A read names the memory it reads. A read of the state being reported is the
@@ -66,14 +66,14 @@ A `viewable` fact names its memory too, since an object's lifetime can end
 between two points. In a report about a program state, a fact from an earlier
 recorded point is `at(point, viewable(p[0..n]))`, including
 `at(function.entry, ...)` for entry, because `old` takes a value, not a fact.
-Written back, that spelling is the premise the checker holds; carry it forward
-with `transport`. A fact of the reported state, or in a report with no program
-state such as a contract check, is bare (`viewable(p[0..n])`).
+Written back, that printed form is the premise the checker holds; carry it
+forward with `transport`. A fact of the reported state, or in a report with no
+program state such as a contract check, is bare (`viewable(p[0..n])`).
 
 A value no current local holds but a local held at a point this path
 recorded reads at that point: inside a loop body, after `i = i + 1`, the
 value `i` had when the iteration began is `at(region(N).entry, i)`, where
-`N` is the loop's statement index, the same spelling a proof cites.
+`N` is the loop's statement index, the same form a proof cites.
 
 Rust reports use source-visible locals, slice parameters, and slice lengths
 such as `bytes.len()`. Compiler-generated `__rust_` temporaries do not supply
@@ -90,7 +90,7 @@ and here>`.
 
 A quantifier's binder and a `match` arm's fields print under the names the
 proposition was written with (`forall (b: int32) { a == b }`, `Up(u) => 1 +
-d(u)`). Where that name already spells another variable in the report, such as
+d(u)`). Where that name already names another variable in the report, such as
 a parameter, the binder prints as `k`, `k1`, ... instead, so the printed
 proposition never captures. A binder Click introduced itself has no written
 name and always prints that way.
@@ -109,7 +109,7 @@ Repair a failed proof by the [tracing procedure](tracing.md): record the goal
 that failed, write the argument for it as a chain of `have` goals, and refine
 the first link that does not close by identifying its primitive rule and
 writing that rule's premises. Each
-attempt must change that chain; a new spelling, position, or tactic for the
+attempt must change that chain; a new written form, position, or tactic for the
 same link is not progress. The procedure ends at one of seven named outcomes.
 `missing-rule` identifies a justified inference with no supported primitive
 for design discussion; it is not inferred merely from a failed search.
@@ -154,7 +154,7 @@ names that view and explains that it permits reading only. Range-bound misses
 keep their compared endpoints and the exact false or unestablished inequality.
 Include the C and contract/proof locations when known;
 do not invent missing locations or provenance. A refusal of a C step follows
-its `C operation` line, which spells the operation as Click checked it, with
+its `C operation` line, which prints the operation as Click checked it, with
 a `C statement at file:line:column` line quoting the statement as written.
 The C frontend records each statement's site beside its source execution
 layout, keyed by statement index, and a step names the site of the statement
@@ -215,10 +215,10 @@ named fact with `have` first, or write the `using` form.
 
 When `solve()` needs to reconstruct a premise at an earlier point, its
 automatic fallback probes at most 256 statement-entry points nearest the
-current anchor. A missing spelling therefore cannot trigger a scan of the
-whole execution history. Name a relevant older point with `at(...)`, or
-provide a small `using { ... }` list, when this bounded search misses. Each
-candidate still has to lower to the exact retained kernel fact.
+current anchor. A premise that does not raise at the anchor therefore cannot
+trigger a scan of the whole execution history. Name a relevant older point with
+`at(...)`, or provide a small `using { ... }` list, when this bounded search
+misses. Each candidate still has to lower to the exact retained kernel fact.
 The automatic atomic fallback also declines components with more than 64
 premises before rendering them; it first tries the derivation's recorded path.
 This limit does not restrict an explicit `using` list. A refused written view
@@ -291,7 +291,7 @@ A refused resource fold reports the instantiated body fact it could not
 establish on the standard `goal:` line, and its summary quotes that fact as
 the declaration writes it, after its ordinal in the declaration. If
 evaluation of the fact needs an unproved prerequisite, the `goal:` line
-is that specific prerequisite instead. Ordinary errors use source spelling
+is that specific prerequisite instead. Ordinary errors print source forms
 where available. `--trace-proof` also prints the exact checked proposition with typed reads
 and the report's shared memory labels. This is the rejected requirement,
 not a guessed comparison with a nearby premise. Reading it alongside accepted

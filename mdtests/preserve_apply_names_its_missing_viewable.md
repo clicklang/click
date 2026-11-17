@@ -128,7 +128,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
     step();
     step();
     have exists (fuel: Nat) { walk(next, from, fuel) == cur } by {
-        witness { fuel: Nat::Zero };
+        witness(Nat::Zero);
         unfold(walk(next, from, Nat::Zero));
         solve();
     }
@@ -296,7 +296,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
                 known();
             }
             have exists (fuel: Nat) { walk(next, from, fuel) == cur } by {
-                witness { fuel: Nat::Succ(previous) };
+                witness(Nat::Succ(previous));
                 known();
             }
         }

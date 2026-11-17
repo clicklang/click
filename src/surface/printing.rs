@@ -1108,10 +1108,10 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             output,
             &prefix,
             &format!(
-                "witness {{ {} }};",
+                "witness({});",
                 witness
-                    .bindings()
-                    .map(|(name, value)| format!("{name}: {}", describe_contract_expression(value)))
+                    .values()
+                    .map(describe_contract_expression)
                     .collect::<Vec<_>>()
                     .join(", ")
             ),

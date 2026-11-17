@@ -452,6 +452,9 @@ impl Printer<'_> {
         }
         let depth = depth + 1;
         match proposition {
+            // Completed access evidence is kernel bookkeeping. Its observed
+            // value has the public source-region spelling read_event(i).result.
+            Proposition::VolatileAccess(_) => None,
             Proposition::ConditionIs(condition, polarity) => {
                 self.condition(condition, *polarity, depth)
             }

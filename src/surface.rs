@@ -3605,6 +3605,10 @@ struct RecordedStates {
     /// The call that produced each algebraic value a call returned, a Rust
     /// enum's: the value is spelled `<region>.result`.
     algebraic_call_results: crate::persistent::PersistentMap<crate::kernel::AlgebraicTerm, usize>,
+    /// The call that produced each pointer a call returned, by the
+    /// pointer's address: the value is spelled `<region>.result`, which
+    /// lowers to the exact returned value.
+    pointer_call_results: crate::persistent::PersistentMap<crate::kernel::Pointer, usize>,
     /// Each exited loop's pass count, the head's `iterations`, which the
     /// facts past the loop state over: spelled `loop(i).iterations`.
     loop_iterations: crate::persistent::PersistentMap<usize, crate::kernel::IntegerTerm>,
@@ -3677,6 +3681,7 @@ impl Default for RecordedStates {
             read_event_scalar_names: Default::default(),
             read_event_pointer_names: Default::default(),
             algebraic_call_results: crate::persistent::PersistentMap::default(),
+            pointer_call_results: crate::persistent::PersistentMap::default(),
             loop_iterations: crate::persistent::PersistentMap::default(),
             loop_iteration_variables: crate::persistent::PersistentMap::default(),
             field_points: crate::persistent::PersistentMap::default(),
@@ -4309,6 +4314,11 @@ impl RecordedStates {
         {
             self.algebraic_call_results.remove(term.as_ref());
         }
+        if let Some(ProgramValue::Pointer(pointer)) = self.call_results.get(&index)
+            && self.pointer_call_results.get(pointer.pointer()) == Some(&index)
+        {
+            self.pointer_call_results.remove(pointer.pointer());
+        }
         self.call_results.remove(&index);
         if let Some(value) = value.filter(|value| *value != ProgramValue::Void) {
             if let ProgramValue::Bool(term) | crate::kernel::integer_c_value!(term) =
@@ -4323,6 +4333,13 @@ impl RecordedStates {
             {
                 self.algebraic_call_results
                     .insert(term.as_ref().clone(), index);
+            }
+            // So does the first call to return a pointer.
+            if let ProgramValue::Pointer(pointer) = &value
+                && self.pointer_call_results.get(pointer.pointer()).is_none()
+            {
+                self.pointer_call_results
+                    .insert(pointer.pointer().clone(), index);
             }
             self.call_results.insert(index, value);
         }
@@ -4394,6 +4411,18 @@ impl RecordedStates {
         crate::instrumentation::record_deterministic_work(1);
         let index = *self.algebraic_call_results.get(term)?;
         matches!(self.call_results.get(&index), Some(ProgramValue::Parameter(held)) if held.as_ref() == term)
+            .then_some(CodeRegionRef::Region(index))
+    }
+
+    /// The call that returned the pointer at `pointer`'s address: one index
+    /// lookup, checked against the recorded value.
+    fn call_result_naming_pointer(
+        &self,
+        pointer: &crate::kernel::Pointer,
+    ) -> Option<CodeRegionRef> {
+        crate::instrumentation::record_deterministic_work(1);
+        let index = *self.pointer_call_results.get(pointer)?;
+        matches!(self.call_results.get(&index), Some(ProgramValue::Pointer(held)) if held.pointer() == pointer)
             .then_some(CodeRegionRef::Region(index))
     }
 
@@ -6247,7 +6276,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "witness",
-        syntax: "witness {",
+        syntax: "witness(",
         class: "simple",
     },
     PublicTacticForm {
@@ -7350,86 +7379,51 @@ pub enum ProgramPointKind {
     Parameters,
 }
 
-/// `witness { k: value, ... }`: a value for each named binder of the
-/// existential goal, instantiated in the order written.
+/// `witness(value, ...)`: instantiate the outermost existential binders
+/// with the supplied values, in order.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofWitness {
-    bindings: Vec<WitnessBinding>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct WitnessBinding {
-    name: String,
-    value: ContractExpression,
+    values: Vec<ContractExpression>,
 }
 
 impl ProofWitness {
-    pub(crate) fn single(name: String, value: ContractExpression) -> Self {
+    pub(crate) fn single(value: ContractExpression) -> Self {
         Self {
-            bindings: vec![WitnessBinding { name, value }],
+            values: vec![value],
         }
     }
 
-    pub(crate) fn new(bindings: Vec<(String, ContractExpression)>) -> Self {
-        Self {
-            bindings: bindings
-                .into_iter()
-                .map(|(name, value)| WitnessBinding { name, value })
-                .collect(),
-        }
+    pub(crate) fn new(values: Vec<ContractExpression>) -> Self {
+        Self { values }
     }
 
-    pub(crate) fn bindings(&self) -> impl Iterator<Item = (&str, &ContractExpression)> {
-        self.bindings
-            .iter()
-            .map(|binding| (binding.name.as_str(), &binding.value))
+    pub(crate) fn values(&self) -> impl Iterator<Item = &ContractExpression> {
+        self.values.iter()
     }
 
-    /// One single-binder witness per binding, in order; a step with several
-    /// bindings is applied as these.
+    /// One single-binder witness per value, in order.
     pub(crate) fn singles(&self) -> impl Iterator<Item = Self> + '_ {
-        self.bindings.iter().map(|binding| Self {
-            bindings: vec![binding.clone()],
-        })
+        self.values.iter().cloned().map(Self::single)
     }
 
     pub(crate) fn is_single(&self) -> bool {
-        self.bindings.len() == 1
+        self.values.len() == 1
     }
 
-    /// The binder of a single-binder witness.
-    pub(crate) fn name(&self) -> &str {
-        debug_assert!(
-            self.is_single(),
-            "a multi-binder witness is applied binding by binding"
-        );
-        &self.bindings[0].name
-    }
-
-    /// The value of a single-binder witness.
     pub(crate) fn value(&self) -> &ContractExpression {
         debug_assert!(
             self.is_single(),
-            "a multi-binder witness is applied binding by binding"
+            "a multi-binder witness is applied value by value"
         );
-        &self.bindings[0].value
+        &self.values[0]
     }
 
     pub(crate) fn try_map_values<E>(
         &self,
-        mut map: impl FnMut(&ContractExpression) -> Result<ContractExpression, E>,
+        map: impl FnMut(&ContractExpression) -> Result<ContractExpression, E>,
     ) -> Result<Self, E> {
         Ok(Self {
-            bindings: self
-                .bindings
-                .iter()
-                .map(|binding| {
-                    Ok(WitnessBinding {
-                        name: binding.name.clone(),
-                        value: map(&binding.value)?,
-                    })
-                })
-                .collect::<Result<_, E>>()?,
+            values: self.values.iter().map(map).collect::<Result<_, E>>()?,
         })
     }
 }
@@ -10701,12 +10695,12 @@ impl ClickError {
                 }
             }
             if self.failed_tactic == Some("known()")
-                && let Some(Proposition::Exists { name, .. }) = state.kernel_goal()
+                && let Some(Proposition::Exists { .. }) = state.kernel_goal()
             {
-                let binder = if name.is_empty() { "name" } else { name };
-                context.push(format!(
-                    "help: choose a witness with `witness {{ {binder}: <value> }};`, then prove its body"
-                ));
+                context.push(
+                    "help: choose a witness with `witness(<value>);`, then prove its body"
+                        .to_string(),
+                );
             }
         }
         // A refused step's goal is the requirement it could not establish,

@@ -44,7 +44,7 @@ let k: int32 where k == x;
 
 ensures result_matches_witness: result == k by {
     step_until(function.exit);
-    witness { k: x };
+    witness(x);
 }
 ```
 

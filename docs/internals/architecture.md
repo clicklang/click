@@ -27,6 +27,15 @@ The evaluator and execution frontier follow the same regions; invariant and rank
 obligations close only after the continuation reaches the backedge. A false
 post-test instead supplies a loop exit with its own state and facts.
 
+Checked concrete loop entry records explicit `continue` and `break`
+destinations. Each keeps the driver's local source position separately from
+the kernel's full evidence cursor, which includes enclosing loop and function
+tails. The continuation code comes from that checked source construction.
+Transfers discard only the inner lexical continuations they leave, restore the
+recorded try-stack depth, and follow the chosen destination; they do not search
+remaining statements for a structurally matching loop. Continuing through an
+update retains the loop frame until that continuation finishes.
+
 Source layout indexes each update/test once and records the continuation entry
 directly. Persistent lexical-scope exit lists distinguish leaving the body on
 `continue` from leaving the function on `return`, including transfers emitted
@@ -66,11 +75,11 @@ propositions so diagnostics and expansion can return to source language.
 Those records are presentation hints, not evidence that a fact is available.
 Loop-head lowering returns one selected proposition per declared invariant,
 including duplicates, separately from the new-fact delta. A preservation
-proof records generated iteration-entry spellings against those selected
-propositions in its local scope; an unqualified source spelling continues to
+proof records generated iteration-entry forms against those selected
+propositions in its local scope; an unqualified source form continues to
 lower against the current execution state. Certificate generation checks a candidate
-spelling at its output location and validates the selected kernel premise,
-never whichever available fact happens to share that spelling.
+raised term at its output location and validates the selected kernel premise,
+never whichever available fact happens to raise to that same text.
 
 The kernel's persistent `ProofObject` owns typed obligations, facts, symbolic
 program execution, resources, focus, and checked successor authority. A
@@ -145,8 +154,8 @@ havoc opens an owned composite one level, the boundary a composite lend and
 
 Instance binders reach one kernel map whether a proof writes a call map or a
 named contract's proof arguments; an execution theorem's `as` map only renames
-spellings before binding through one of those. The loan ledger, its laws, and
-the call boundary's lending and recovery are in
+written names before binding through one of those. The loan ledger, its laws,
+and the call boundary's lending and recovery are in
 [stable views](stable-views.md).
 
 ## Selected control-flow and C++ cleanup model

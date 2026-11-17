@@ -375,6 +375,17 @@ fn charon_array_lowering_and_verification_work_do_not_expand_with_length() {
                 _ => {}
             }
         }
+        // The read the function returns, `copy[999_999]`.
+        for block in &mut mir.blocks {
+            if let T::ReturnValue {
+                value: E::Index { index, .. },
+            } = &mut block.terminator
+                && let E::UsizeInteger { value } = index.as_mut()
+                && *value == 999_999
+            {
+                *value = length - 1;
+            }
+        }
         let (functions, _) = super::super::super::lowering::lower(&export).unwrap();
         let function = functions
             .iter()

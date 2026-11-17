@@ -10897,10 +10897,10 @@ pointer and its length. `==` on slices is identity, the same pointer and the
 same length. A slice value grants no access: reading `s[i]` reads memory
 through its pointer under the caller's `views` or `owns`. A sidecar names
 these operations after `import click::rust::slice;`. A Rust sidecar writes a
-slice with Rust's spellings, and each slice is one argument of a pure-function
+slice with Rust's syntax, and each slice is one argument of a pure-function
 call, so a pointer and a length are passed as `slice::from_raw_parts(p, n)`
 ([pure functions](../rust.md)). A slice parameter is lowered as its pointer
-and its length; both spellings are the same slice.
+and its length; both forms are the same slice.
 
 ### `Slice`
 
