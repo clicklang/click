@@ -1529,6 +1529,9 @@ impl ProgramFunction {
         super::super::thread_confinement::propagate_thread_confinement(&mut definitions);
         super::super::owned_footprint_reach::propagate_owned_footprint_reach(&mut definitions);
         Arc::make_mut(&mut self.contract_interface).composite_resource_definitions = definitions;
+        let rule =
+            super::super::functions::SummaryResourceTransferRule::compile(&self.contract_interface);
+        Arc::make_mut(&mut self.contract_interface).resource_transfer_rule = Arc::new(rule);
         self
     }
 

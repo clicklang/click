@@ -49,7 +49,7 @@ fn authority_named_memory_rewrite_preserves_population_ledger() {
     let folded = ExecutionState::new()
         .with_population_creation_tracking()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));
-    let facts = ProofFacts::default();
+    let facts = PureFactStore::default();
     let (open, introduced) = crate::kernel::rewrite_resource_instance(
         &folded,
         &instance,

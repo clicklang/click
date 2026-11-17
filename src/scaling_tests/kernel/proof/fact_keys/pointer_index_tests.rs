@@ -88,7 +88,7 @@ fn pointer_index_fact_lookup_ignores_unrelated_facts() {
         let unrelated: Vec<_> = (0..size)
             .map(|i| Proposition::ConditionIs(ConditionTerm::Variable(Variable(1019100 + i)), true))
             .collect();
-        let parent = crate::kernel::proof::ProofFacts::from_ordered(&unrelated);
+        let parent = crate::kernel::proof::PureFactStore::from_ordered(&unrelated);
         let child = parent.with_fact(source.clone());
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {

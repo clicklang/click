@@ -50,7 +50,7 @@ fn checked_loop_exit_copies_share_their_fact_storage() {
 
 #[test]
 fn checked_loop_exit_retains_the_store_and_publishes_shared_propositions() {
-    use crate::kernel::proof::{ProofFacts, PropositionSource};
+    use crate::kernel::proof::{PropositionSource, PureFactStore};
     for size in [32, 128, 512] {
         let source = (0..size)
             .map(|index| Proposition::Predicate {
@@ -58,16 +58,16 @@ fn checked_loop_exit_retains_the_store_and_publishes_shared_propositions() {
                 arguments: Vec::new(),
             })
             .collect::<Vec<_>>();
-        let root = ProofFacts::from_ordered(&source);
+        let root = PureFactStore::from_ordered(&source);
         let _ = crate::kernel::proof::take_fact_entry_counts();
         let (exit, work) = crate::instrumentation::measure_deterministic_work(|| {
-            LoopBreakExit::from_proof_facts(ExecutionState::new(), &root)
+            LoopBreakExit::from_store(ExecutionState::new(), &root)
         });
         assert!(work <= 32, "size {size}: {work}");
         assert_eq!(crate::kernel::proof::take_fact_entry_counts(), (0, 0));
         assert!(
             exit.pure_facts()
-                .indexed_proof_facts()
+                .fact_store()
                 .shares_exact_index_with(&root)
         );
         let published = exit.pure_facts().certified_facts();

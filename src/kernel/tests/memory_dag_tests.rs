@@ -58,7 +58,7 @@ fn rewritten_load_store_witness_binds_value_address_and_state() {
 
 #[test]
 fn rewritten_integer_word_observations_retain_checked_store_evidence() {
-    use crate::kernel::proof::ProofFacts;
+    use crate::kernel::proof::PureFactStore;
     let pointer = arc_pointer(4);
     crate::kernel::eval::declare_load_access_width(&pointer, 4);
     let value = MachineTerm::Variable(Variable(989_001));
@@ -92,7 +92,7 @@ fn rewritten_integer_word_observations_retain_checked_store_evidence() {
                 true,
             )
         };
-        let facts = ProofFacts::default();
+        let facts = PureFactStore::default();
         for ty in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
             let original = goal(ty, load(&memory, pointer.clone()));
             let presented = goal(ty, read.clone());
@@ -154,7 +154,7 @@ fn rewritten_goal_does_not_reuse_an_ambient_equality_for_a_bound_variable() {
     let term = MachineTerm::Variable(variable);
     let one = MachineTerm::constant(1);
     let premise = Proposition::ConditionIs(ConditionTerm::equal(term.clone(), one.clone()), true);
-    let facts = crate::kernel::proof::ProofFacts::from_ordered(&[premise]);
+    let facts = crate::kernel::proof::PureFactStore::from_ordered(&[premise]);
     let goal = |value| Proposition::ForAll {
         name: Default::default(),
         var: variable,
@@ -1873,7 +1873,7 @@ fn conditions_equal_modulo_proven_states_needs_frame_evidence() {
     .expect("the selected call footprint is separate");
     let source = Proposition::ConditionIs(condition(&before), true);
     let premises = vec![source, equality];
-    let facts = crate::kernel::proof::ProofFacts::from_ordered(&premises);
+    let facts = crate::kernel::proof::PureFactStore::from_ordered(&premises);
     assert!(
         crate::kernel::proof::fact_reasoning::normalize_using_conditions(
             &Proposition::ConditionIs(condition(&after), true),
@@ -4767,7 +4767,7 @@ fn an_abstract_value_fact_carries_across_states_only_with_frame_evidence() {
     )
     .expect("the explicit footprint preserves the abstract typed read");
     let premises = vec![Proposition::ConditionIs(read(&before), true), equality];
-    let facts = crate::kernel::proof::ProofFacts::from_ordered(&premises);
+    let facts = crate::kernel::proof::PureFactStore::from_ordered(&premises);
     for expected in [true, false] {
         let result = crate::kernel::proof::fact_reasoning::normalize_using_conditions(
             &Proposition::ConditionIs(read(&after), expected),

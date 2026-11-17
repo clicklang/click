@@ -50,7 +50,7 @@ fn drop_spec_proposition_iteratively(proposition: SpecProposition) {
 
 /// Lowers one proposition against `available`'s fact context. A path's
 /// fact list keeps that context and extends it as the path grows
-/// (`PureFactList`, `ProofFacts`), so lowering at a loop does not rebuild it
+/// (`PureFactList`, `PureFactStore`), so lowering at a loop does not rebuild it
 /// from every fact the path holds; a plain vector still folds its facts.
 pub(in crate::surface::proof) fn lower_fixed_state_proposition(
     proposition: &ClickProposition,

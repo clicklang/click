@@ -5315,7 +5315,7 @@ fn advance_checked_open_scope<'a>(
 pub(in crate::surface::proof) fn introduce_proof_case_assumption(
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
-    available: &ProofFacts,
+    available: &PureFactStore,
     structured_branch_history: bool,
     condition: &ClickProposition,
     lowering_condition: &ClickProposition,
@@ -5455,7 +5455,7 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
 /// Whether `available` holds a fact that `propositions_are_exact_negations`
 /// pairs with `fact`, read from the exact index by the spellings that relation
 /// accepts rather than by comparing every fact.
-fn holds_exact_negation(available: &ProofFacts, fact: &Proposition) -> bool {
+fn holds_exact_negation(available: &PureFactStore, fact: &Proposition) -> bool {
     let negated = Proposition::Not(Box::new(fact.clone()));
     let mut spellings = vec![negated];
     match fact {

@@ -94,12 +94,12 @@ fn exit_argument_checks_reuse_the_checked_path_context() {
     let ambient_only = fact(930_001, 9);
     let mut costs = Vec::new();
     for count in [4u64, 8, 16, 32] {
-        let mut root = crate::kernel::proof::ProofFacts::default();
+        let mut root = crate::kernel::proof::PureFactStore::default();
         for index in 0..count {
             root = root.with_fact(fact(931_000 + index, index as u32));
         }
         let path = root.with_fact(selected.clone());
-        let exit = LoopBreakExit::from_proof_facts(ExecutionState::new(), &path);
+        let exit = LoopBreakExit::from_store(ExecutionState::new(), &path);
         let facts = exit
             .pure_facts()
             .iter()

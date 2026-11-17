@@ -17,7 +17,7 @@
 //! - equal propositions hold;
 //! - `forall (k: T)` on both sides, for a C integer `T` (`int32`, `int64`,
 //!   or a machine integer such as `uint64`): both bodies are renamed to one binder
-//!   identity no fact mentions ([`ProofFacts::freshen_int32_forall_body`], the
+//!   identity no fact mentions ([`PureFactStore::freshen_int32_forall_body`], the
 //!   identity `intro` chooses), so no fact about another `k` can decide a
 //!   read of this one, and the bodies are proved for that arbitrary `k`;
 //! - `from_a -> from_c` to `to_a -> to_c`: under `to_a`, prove
@@ -54,7 +54,7 @@
 
 use super::assumptions::{conditions_equal_with_load_atoms, pointers_equal_with_load_atoms};
 use super::primitives::*;
-use super::proof::ProofFacts;
+use super::proof::PureFactStore;
 #[cfg(test)]
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use std::cell::Cell;
@@ -127,7 +127,7 @@ impl std::fmt::Display for QuantifiedFrameRefusal {
 pub(crate) fn frame_quantified_transport(
     source: &Proposition,
     target: &Proposition,
-    facts: &ProofFacts,
+    facts: &PureFactStore,
     assumptions: &PureFactContext,
     leaf_assumptions: &PureFactContext,
     leaf: FrameLeafCheck<'_>,
@@ -164,7 +164,7 @@ struct Contexts {
 }
 
 struct Framer<'a> {
-    facts: &'a ProofFacts,
+    facts: &'a PureFactStore,
     leaf: FrameLeafCheck<'a>,
     refine: FrameContextRefinement<'a>,
     context_variables: &'a BTreeSet<Variable>,
@@ -460,7 +460,7 @@ mod conjunct_elimination_tests {
         let carries = |from: &Proposition, to: &Proposition, _: &PureFactContext| {
             *from == leaf(1) && *to == leaf(2)
         };
-        let facts = ProofFacts::default();
+        let facts = PureFactStore::default();
         let assumptions = PureFactContext::new();
         let same = |context: PureFactContext| context;
         let variables = BTreeSet::new();

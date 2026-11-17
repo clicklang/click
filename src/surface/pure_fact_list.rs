@@ -1,13 +1,13 @@
 //! Ordered views of the kernel's pure fact store. This type owns no fact
 //! collection, syntax index, reasoning context, or prefix synchronization.
-use crate::kernel::proof::{ProofFacts, PropositionSource, PureFactStore};
+use crate::kernel::proof::{PropositionSource, PureFactStore};
 #[cfg(test)]
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{Proposition, PureFactContext};
 
 #[derive(Clone, Default)]
 pub(crate) struct PureFactList {
-    facts: ProofFacts,
+    facts: PureFactStore,
 }
 
 impl std::fmt::Debug for PureFactList {
@@ -44,14 +44,14 @@ impl<'a> IntoIterator for &'a PureFactList {
 impl PureFactList {
     pub(crate) fn from_source(source: &(impl PropositionSource + ?Sized)) -> Self {
         Self {
-            facts: source.ordered_proof_facts(),
+            facts: source.ordered_fact_store(),
         }
     }
-    pub(crate) fn from_proof_facts(source: &ProofFacts) -> Self {
+    pub(crate) fn from_store(source: &PureFactStore) -> Self {
         Self::from_source(source)
     }
-    pub(crate) fn proof_facts(&self) -> ProofFacts {
-        self.facts.clone()
+    pub(crate) fn store(&self) -> &PureFactStore {
+        &self.facts
     }
     pub(crate) fn for_statement(
         facts: Vec<Proposition>,
@@ -65,15 +65,13 @@ impl PureFactList {
         ))
     }
     fn from_statement_store(store: PureFactStore) -> Self {
-        Self {
-            facts: ProofFacts::from_store(store),
-        }
+        Self { facts: store }
     }
     pub(crate) fn context(&self) -> PureFactContext {
         self.facts.assumptions().clone()
     }
     pub(crate) fn len(&self) -> usize {
-        self.facts.store().len()
+        self.facts.len()
     }
     pub(crate) fn get(&self, index: usize) -> Option<&Proposition> {
         self.facts.occurrence(index)
@@ -123,8 +121,6 @@ impl PureFactList {
         }
         false
     }
-    /// All order/syntax indexes are maintained by the store at admission.
-    pub(crate) fn prepare_indexes(&self) {}
     pub(crate) fn push(&mut self, fact: Proposition) {
         self.extend(std::iter::once(fact));
     }
@@ -147,10 +143,10 @@ impl PropositionSource for PureFactList {
     fn exact_available(&self, required: &Proposition) -> bool {
         self.has_exact_conjunct(required)
     }
-    fn indexed_proof_facts(&self) -> ProofFacts {
-        self.facts.clone()
+    fn fact_store(&self) -> PureFactStore {
+        self.store().clone()
     }
-    fn ordered_proof_facts(&self) -> ProofFacts {
+    fn ordered_fact_store(&self) -> PureFactStore {
         self.facts.clone()
     }
 }
@@ -194,15 +190,11 @@ mod tests {
         let left = Proposition::ConditionIs(condition(401), true);
         let right = Proposition::ConditionIs(condition(402), true);
         let pair = Proposition::And(Box::new(left.clone()), Box::new(right.clone()));
-        let root = ProofFacts::from_store(PureFactStore::from_statement_facts(
-            std::slice::from_ref(&original),
-            None,
-            None,
-        ));
+        let root = PureFactStore::from_statement_facts(std::slice::from_ref(&original), None, None);
         let branch = root.with_kernel_checked_fact(pair.clone());
-        let view = PureFactList::from_statement_store(branch.store().clone());
+        let view = PureFactList::from_statement_store(branch.clone());
         assert!(view.facts.shares_exact_index_with(&branch));
-        assert!(view.proof_facts().shares_exact_index_with(&branch));
+        assert!(view.fact_store().shares_exact_index_with(&branch));
         assert!(
             view.context()
                 .shares_fact_storage_with(branch.assumptions())
@@ -211,7 +203,7 @@ mod tests {
         assert!(!view.contains(&left));
         assert!(view.has_exact_conjunct(&left));
         assert!(view.has_exact_conjunct(&pair));
-        assert!(!PureFactList::from_proof_facts(&root).has_exact_conjunct(&left));
+        assert!(!PureFactList::from_store(&root).has_exact_conjunct(&left));
         assert_eq!(
             view.iter().cloned().collect::<Vec<_>>(),
             vec![original.clone(), pair.clone()]
@@ -235,7 +227,7 @@ mod tests {
         );
         assert!(view.context().shares_fact_storage_with(&context));
         view.push(added.clone());
-        assert!(view.facts.store().contains_presented(&added));
+        assert!(view.facts.contains_presented(&added));
         assert_eq!(
             view.iter().cloned().collect::<Vec<_>>(),
             vec![original, added.clone()]
@@ -250,11 +242,11 @@ mod tests {
         let added = Proposition::ConditionIs(condition(11), true);
         let mut list = PureFactList::from(vec![original.clone()]);
         let cached = list.context();
-        let indexed = list.proof_facts();
+        let indexed = list.fact_store();
         assert!(indexed.assumptions().shares_fact_storage_with(&cached));
         list.push(added.clone());
         let extended = list.context();
-        let indexed_extended = list.proof_facts();
+        let indexed_extended = list.fact_store();
         assert!(
             indexed_extended
                 .assumptions()

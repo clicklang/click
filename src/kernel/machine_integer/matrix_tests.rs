@@ -348,7 +348,7 @@ fn in_range_identity_holds_at_every_format() {
                 crate::kernel::proof::fact_reasoning::normalize_using_conditions(
                     &goal,
                     &bounds(min.clone(), max.clone()),
-                    &crate::kernel::proof::ProofFacts::from_ordered(&bounds(
+                    &crate::kernel::proof::PureFactStore::from_ordered(&bounds(
                         min.clone(),
                         max.clone()
                     ))
@@ -360,7 +360,10 @@ fn in_range_identity_holds_at_every_format() {
                 crate::kernel::proof::fact_reasoning::normalize_using_conditions(
                     &goal,
                     &bounds(min.clone(), &max + 1),
-                    &crate::kernel::proof::ProofFacts::from_ordered(&bounds(min.clone(), &max + 1))
+                    &crate::kernel::proof::PureFactStore::from_ordered(&bounds(
+                        min.clone(),
+                        &max + 1
+                    ))
                 )
                 .is_err(),
                 "{ty:?} {operation:?}"
