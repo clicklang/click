@@ -119,7 +119,10 @@ fn bind(
         return None;
     }
     for (parameter, argument) in definition.parameters().iter().zip(arguments) {
-        let value = coerce_program_function_argument_without_obligations(argument.as_program_value()?, parameter)?;
+        let value = coerce_program_function_argument_without_obligations(
+            argument.as_program_value()?,
+            parameter,
+        )?;
         evaluation.locals.bind_logical_typed(
             parameter.binding_name().clone(),
             value,
@@ -263,16 +266,19 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn viewed_matched_instances_do_not_acquire_envelope_ownership() {
+    fn viewed_instances_are_refused_before_envelope_construction() {
         let facts = PureFactContext::new();
-        let (head, definitions) = case(Pointer::symbolic(Variable(8_930_800)), 1, 8_930_900);
+        let (head, _) = case(Pointer::symbolic(Variable(8_930_800)), 1, 8_930_900);
         let view = ResourceFact::View(head.resource().clone());
-        let outputs = EvaluatedReturnResources::new(&facts).admit(view.clone(), ReturnOwnershipOrigin::Description, &facts).unwrap();
         let _fast = crate::kernel::search::FastOperationScope::enter("viewed opaque envelope");
-        let bodies = ConstructedReturnBodies::construct(&outputs, &definitions, &ExecutionState::new(), &facts);
-        let body = bodies.get(outputs.occurrences[0].source).unwrap();
-        assert_eq!(body.expansion, vec![view]);
-        assert!(body.boundary.is_empty() && body.escrow_boundary().is_empty());
+        assert!(matches!(
+            EvaluatedReturnResources::new(&facts).admit(
+                view,
+                ReturnOwnershipOrigin::Description,
+                &facts
+            ),
+            Err(ResourceContextValidityError::InvalidExclusiveAccess(_))
+        ));
     }
 
     #[test]
