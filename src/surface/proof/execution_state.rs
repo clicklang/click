@@ -95,7 +95,7 @@ pub(super) struct SurfaceRecord {
     /// execution path. This separate persistent index lets a strict statement
     /// retry recognize an explicitly retained prerequisite leaf without
     /// scanning the ambient proof context.
-    pub(super) retained_have_facts: ProofFacts,
+    pub(super) retained_have_facts: PureFactStore,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -1485,7 +1485,7 @@ impl PostExecutionTactic {
 #[derive(Clone)]
 pub(super) struct PlannedLoopReturns {
     pub(super) paths: Arc<Vec<Arc<LoopReturnProof>>>,
-    pub(super) entry_facts: ProofFacts,
+    pub(super) entry_facts: PureFactStore,
 }
 
 /// Surface ownership of one returned loop path. It grants no proof authority:
@@ -1776,7 +1776,7 @@ mod proof_fact_store_tests {
 
     #[test]
     fn shared_vec_suffix_since_reports_the_appended_entries() {
-        let mut history = SharedVec::from(vec![1u32, 2]);
+        let mut history = crate::kernel::proof::SharedVec::from(vec![1u32, 2]);
         let ancestor = history.clone();
         history.push(3);
         history.push(4);
@@ -1795,7 +1795,7 @@ pub(super) fn post_execution_tactic_timing(
         PostExecutionTactic::Apply(_) => ("apply", "smart"),
         PostExecutionTactic::Have(have) => (
             "have",
-            if smart_solve_unfold_prefix(&have.proof).is_some() {
+            if super::surface_construction::have_proof_is_smart_solve(&have.proof) {
                 "smart"
             } else {
                 "control"

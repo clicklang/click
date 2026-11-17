@@ -23,6 +23,7 @@ int32 id(int32 x) {
     step_until(function.exit);
     have sq(to_integer(result)) >= 0 by {
         instantiate(forall (z: Integer) { sq(z) >= 0 }, to_integer(result));
+        known();
     }
 }
 
@@ -33,6 +34,7 @@ int32* keep(int32* p) {
     step_until(function.exit);
     have same(result, result) by {
         instantiate(forall (q: int32*) { same(q, q) }, result);
+        known();
     }
 }
 ```

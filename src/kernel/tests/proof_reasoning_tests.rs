@@ -34,13 +34,14 @@ fn refuted_disjunction_requires_the_source_and_every_exact_negation() {
     for case in &cases {
         context = context.assume_proposition(Proposition::Not(Box::new(case.clone())));
     }
-    // Inserting an opposite condition ordinarily replaces its polarity.
-    // This witness checks the contradiction without rebuilding case contexts.
+    // Propagation may add intermediate disjunctions, their remaining arm,
+    // and checked falsehood. The certificate must still reject every context
+    // missing one of the original supports.
     let goal = Proposition::Equal(Term::ProgramValue(int32(0)), Term::ProgramValue(int32(1)));
     let derivation = crate::kernel::search::ProofSearch::derive_proposition(&(context), &goal)
         .expect("all arms are refuted");
     assert!(derivation.check(&context));
-    assert_eq!(derivation.context_premises().len(), 4);
+    assert!(derivation.context_premises().contains(&disjunction));
     let negations = cases
         .iter()
         .fold(PureFactContext::new(), |negations, case| {
@@ -231,7 +232,7 @@ fn algebraic_equality_lookup_for_constructor_disequality_is_goal_local() {
             .expect("a known constructor proves disequality from every other constructor");
     assert!(derivation.has_typed_atomic_evidence());
     assert!(derivation.check(&assumptions));
-    let facts = crate::kernel::proof::ProofFacts::from_ordered(&[source.clone(), unrelated]);
+    let facts = crate::kernel::proof::PureFactStore::from_ordered(&[source.clone(), unrelated]);
     assert_eq!(facts.algebraic_equalities_mentioning(&goal), vec![source]);
     let unmatched = Proposition::Not(Box::new(Proposition::Equal(
         Term::Algebraic(AlgebraicTerm {
@@ -312,7 +313,7 @@ fn algebraic_equality_lookup_descends_constructor_fields() {
             node: AlgebraicTermNode::Variable(Variable(89_033)),
         }),
     );
-    let facts = crate::kernel::proof::ProofFacts::from_ordered(&[source.clone(), unrelated]);
+    let facts = crate::kernel::proof::PureFactStore::from_ordered(&[source.clone(), unrelated]);
     assert_eq!(facts.algebraic_equalities_mentioning(&goal), vec![source]);
 }
 
@@ -824,13 +825,15 @@ fn contradicts_recognizes_a_comparison_and_its_arithmetic_negation() {
         true,
     );
 
-    let opposite = crate::kernel::proof::ProofFacts::from_ordered(&[negative.clone(), nonnegative]);
+    let opposite =
+        crate::kernel::proof::PureFactStore::from_ordered(&[negative.clone(), nonnegative]);
     assert!(
         opposite.contradicts(&negative),
         "`x < 0` held beside `x >= 0` contradicts"
     );
 
-    let tighter = crate::kernel::proof::ProofFacts::from_ordered(&[negative.clone(), at_least_one]);
+    let tighter =
+        crate::kernel::proof::PureFactStore::from_ordered(&[negative.clone(), at_least_one]);
     assert!(
         !tighter.contradicts(&negative),
         "`x >= 1` is not the arithmetic negation of `x < 0`"
@@ -971,15 +974,14 @@ fn checked_pure_completion(
     conclusion: &Proposition,
 ) -> crate::kernel::proof::CheckedProposition {
     use crate::kernel::proof::{
-        OutcomeProofState, PersistentOrderedSet, ProofBranch, ProofBranchState, ProofFacts,
-        ProofObject, ProofObligation, PropositionKnownContext, PropositionObligation,
+        OutcomeProofState, ProofBranch, ProofBranchState, ProofObject, ProofObligation,
+        PropositionKnownContext, PropositionObligation, PureFactStore,
     };
 
     let branch = ProofBranch::new(
         ProofObligation::Proposition(PropositionObligation::new(conclusion.clone(), ())),
         ProofBranchState {
-            facts: ProofFacts::from_ordered(requirements),
-            unfolded_predicates: PersistentOrderedSet::default(),
+            facts: PureFactStore::from_ordered(requirements),
             execution: None,
         },
     );
@@ -2057,7 +2059,7 @@ fn signed_less_equal_and_inequality_derive_strict_order() {
 }
 
 #[test]
-fn condition_search_skips_irrelevant_implication_antecedents() {
+fn propagated_implications_need_no_antecedent_search() {
     let target_condition = ConditionTerm::signed_less_than(
         MachineTerm::Variable(Variable(9_001)),
         MachineTerm::Variable(Variable(9_002)),
@@ -2084,8 +2086,8 @@ fn condition_search_skips_irrelevant_implication_antecedents() {
     ));
     assert_eq!(
         PureFactContext::condition_implication_antecedent_checks(),
-        1,
-        "only an implication whose conclusion can establish the target should inspect its antecedent"
+        0,
+        "exact propagation already admitted the target before the query"
     );
 }
 
@@ -3997,15 +3999,13 @@ fn finite_forall_order_fact_needs_an_explicit_instantiation() {
     ));
 }
 
-/// A bound available only under a guarded implication needs the explicit
-/// step that introduces it.
+/// A guarded bound becomes an ordinary order fact when its exact guard holds.
 ///
-/// The guard is exactly available, so the old collection discharged it with
-/// the general prover and harvested the conclusion as an order fact. The
-/// theory now sees only `condition_facts`, and the conclusion joins the
-/// transitive path once an explicit `intro`/`extract` step has added it.
+/// The guard is exactly available, so unit propagation admits its conclusion
+/// as an ordinary condition fact. The order theory can use that fact without
+/// searching implication antecedents during its query.
 #[test]
-fn guarded_implication_bound_needs_an_explicit_extraction() {
+fn guarded_implication_bound_propagates_to_order_facts() {
     let a = MachineTerm::Variable(Variable(97_001));
     let b = MachineTerm::Variable(Variable(97_002));
     let c = MachineTerm::Variable(Variable(97_003));
@@ -4025,8 +4025,8 @@ fn guarded_implication_bound_needs_an_explicit_extraction() {
 
     let goal = Proposition::ConditionIs(ConditionTerm::signed_less_equal(a, c), true);
     assert!(
-        !crate::kernel::search::ProofSearch::proves(&(assumptions), &goal),
-        "a guarded bound is not an order fact until the proof extracts it"
+        crate::kernel::search::ProofSearch::proves(&(assumptions), &goal),
+        "an exactly satisfied guard publishes the bound to the order theory"
     );
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions.assume_proposition(a_le_b)),
@@ -4120,7 +4120,7 @@ fn a_binder_name_never_distinguishes_two_universals() {
     assert_eq!(written.cmp(&other), std::cmp::Ordering::Equal);
     assert_eq!(hash(&written), hash(&other));
     assert_eq!(hash(&written), hash(&unnamed));
-    let facts = crate::kernel::proof::ProofFacts::from_ordered(&[written]);
+    let facts = crate::kernel::proof::PureFactStore::from_ordered(&[written]);
     assert!(facts.contains(&other));
 }
 
@@ -5360,7 +5360,7 @@ fn builtin_obligation_solver_discharges_concrete_invariant() {
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::ProgramStatementExecutes {
+        &Proposition::ProgramStatementVerifies {
             state: Box::new(state.clone()),
             statement: Box::new(statement),
             outcome: StatementOutcome::Normal(Box::new(state)),
@@ -5415,7 +5415,7 @@ fn symbolic_max_lt_branch_is_native_theorem() {
                 b,
                 Proposition::Implies(
                     Box::new(Proposition::ConditionIs(condition, true)),
-                    Box::new(Proposition::ProgramStatementExecutes {
+                    Box::new(Proposition::ProgramStatementVerifies {
                         state: Box::new(state.clone()),
                         statement: Box::new(program_max_body()),
                         outcome: StatementOutcome::Return {
@@ -5453,7 +5453,7 @@ fn symbolic_max_not_lt_branch_is_native_theorem() {
                 b,
                 Proposition::Implies(
                     Box::new(Proposition::ConditionIs(condition, false)),
-                    Box::new(Proposition::ProgramStatementExecutes {
+                    Box::new(Proposition::ProgramStatementVerifies {
                         state: Box::new(state.clone()),
                         statement: Box::new(program_max_body()),
                         outcome: StatementOutcome::Return {
@@ -7232,7 +7232,7 @@ fn bounded_byte_pointer_association_uses_checked_signed_addition() {
         crate::kernel::proof::fact_reasoning::normalize_using_conditions(
             &goal,
             std::slice::from_ref(&defined),
-            &crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&defined)),
+            &crate::kernel::proof::PureFactStore::from_ordered(std::slice::from_ref(&defined)),
         )
         .is_ok()
     );
@@ -8573,4 +8573,39 @@ fn offset_and_existential_matches_ignore_unrelated_facts() {
         work.windows(2).all(|pair| pair[0] == pair[1]),
         "unrelated facts changed the offset and existential matches' work: {work:?}"
     );
+}
+
+#[test]
+fn complete_pointer_read_source_retains_the_domain_version() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let cell = Pointer::symbolic(Variable(995_031));
+    let unrelated = Pointer::symbolic(Variable(995_032));
+    let before = crate::kernel::intern_memory(Memory::new().store(
+        cell.clone(),
+        ProgramValue::typed_pointer(
+            Pointer::symbolic(Variable(995_033)),
+            ProgramType::Int32Pointer,
+        ),
+    ));
+    let address = Pointer::loaded_value(&before, &cell);
+    let after = crate::kernel::intern_memory(
+        before
+            .memory()
+            .clone()
+            .store(unrelated, ProgramValue::Int32(MachineTerm::constant(1))),
+    );
+    let old_value =
+        PointerValue::from_read(address.clone(), ProgramType::Int32Pointer, &before, &cell);
+    let value = PointerValue::from_read(address, ProgramType::Int32Pointer, &after, &cell);
+    assert_eq!(old_value.pointer(), value.pointer());
+    assert_ne!(
+        old_value, value,
+        "an address alone does not identify a complete pointer"
+    );
+    assert!(old_value.complete_read_source().is_none());
+    let (source, source_cell) = value
+        .complete_read_source()
+        .expect("the domain's introducing read");
+    assert_eq!(source, after.unchanged_bytes_source());
+    assert_eq!(source_cell, cell);
 }

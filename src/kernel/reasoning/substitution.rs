@@ -579,10 +579,14 @@ fn walk_program_function<S: VariableSubstitution + ?Sized>(
         .predicate_unfoldings()
         .iter()
         .map(|unfolding| PredicateUnfolding {
+            requirement_source: unfolding.requirement_source.clone(),
             predicate: s.spec_proposition(&unfolding.predicate),
             body: s.spec_proposition(&unfolding.body),
         })
         .collect();
+    interface.resource_transfer_rule = std::sync::Arc::new(
+        crate::kernel::functions::SummaryResourceTransferRule::compile(&interface),
+    );
     ProgramFunction {
         program_entry: function.program_entry,
         name: function.name.clone(),
@@ -945,8 +949,6 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
     match statement {
         ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -1317,44 +1319,16 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
             condition: s.program_expression(condition),
             outcome: outcome.clone(),
         },
-        Proposition::ProgramStatementExecutes {
+        Proposition::ProgramStatementVerifies {
             state,
             statement,
             outcome,
-        }
-        | Proposition::ProgramStatementVerifies {
-            state,
-            statement,
-            outcome,
-        } => {
-            let state = walk_execution_state(state, s);
-            let statement = walk_execution_statement(statement, s);
-            let outcome = walk_execution_statement_outcome(outcome, s);
-            match proposition {
-                Proposition::ProgramStatementExecutes { .. } => {
-                    Proposition::ProgramStatementExecutes {
-                        state: Box::new(state),
-                        statement: Box::new(statement),
-                        outcome,
-                    }
-                }
-                Proposition::ProgramStatementVerifies { .. } => {
-                    Proposition::ProgramStatementVerifies {
-                        state: Box::new(state),
-                        statement: Box::new(statement),
-                        outcome,
-                    }
-                }
-                _ => unreachable!("the combined statement proposition arm is exhaustive"),
-            }
-        }
-        Proposition::ProgramFunctionExecutes {
-            state,
-            function,
-            arguments,
-            outcome,
-        }
-        | Proposition::ProgramFunctionVerifies {
+        } => Proposition::ProgramStatementVerifies {
+            state: Box::new(walk_execution_state(state, s)),
+            statement: Box::new(walk_execution_statement(statement, s)),
+            outcome: walk_execution_statement_outcome(outcome, s),
+        },
+        Proposition::ProgramFunctionVerifies {
             state,
             function,
             arguments,
@@ -1366,34 +1340,13 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
                 .iter()
                 .map(|argument| s.program_expression(argument))
                 .collect();
-            let outcome = walk_program_function_outcome(outcome, s);
-            match proposition {
-                Proposition::ProgramFunctionExecutes { .. } => {
-                    Proposition::ProgramFunctionExecutes {
-                        state: Box::new(state),
-                        function: Box::new(function),
-                        arguments,
-                        outcome,
-                    }
-                }
-                Proposition::ProgramFunctionVerifies { .. } => {
-                    Proposition::ProgramFunctionVerifies {
-                        state: Box::new(state),
-                        function: Box::new(function),
-                        arguments,
-                        outcome,
-                    }
-                }
-                _ => unreachable!("the combined function proposition arm is exhaustive"),
+            Proposition::ProgramFunctionVerifies {
+                state: Box::new(state),
+                function: Box::new(function),
+                arguments,
+                outcome: walk_program_function_outcome(outcome, s),
             }
         }
-        Proposition::ProgramFunctionSatisfiesSpecification {
-            function,
-            specification,
-        } => Proposition::ProgramFunctionSatisfiesSpecification {
-            function: Box::new(walk_program_function(function, s)),
-            specification: Box::new(walk_program_function_specification(specification, s)),
-        },
         Proposition::ProgramFunctionPartiallySatisfiesSpecification {
             function,
             specification,
@@ -2456,12 +2409,7 @@ fn collect_proposition_bound_variables_one(
             collect_execution_state_bound_variables(state, variables);
             collect_program_expression_bound_variables(condition, variables);
         }
-        Proposition::ProgramStatementExecutes {
-            state,
-            statement,
-            outcome,
-        }
-        | Proposition::ProgramStatementVerifies {
+        Proposition::ProgramStatementVerifies {
             state,
             statement,
             outcome,
@@ -2470,13 +2418,7 @@ fn collect_proposition_bound_variables_one(
             collect_execution_statement_bound_variables(statement, variables);
             collect_statement_outcome_bound_variables(outcome, variables);
         }
-        Proposition::ProgramFunctionExecutes {
-            state,
-            function,
-            arguments,
-            outcome,
-        }
-        | Proposition::ProgramFunctionVerifies {
+        Proposition::ProgramFunctionVerifies {
             state,
             function,
             arguments,
@@ -2489,11 +2431,7 @@ fn collect_proposition_bound_variables_one(
             }
             collect_function_outcome_bound_variables(outcome, variables);
         }
-        Proposition::ProgramFunctionSatisfiesSpecification {
-            function,
-            specification,
-        }
-        | Proposition::ProgramFunctionPartiallySatisfiesSpecification {
+        Proposition::ProgramFunctionPartiallySatisfiesSpecification {
             function,
             specification,
         } => {
@@ -2751,8 +2689,6 @@ pub(in crate::kernel) fn collect_execution_statement_bound_variables(
     match statement {
         ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -8145,6 +8081,9 @@ fn substitute_pointer_variable_in_spec_proposition(
             end: substitute_pointer_variable_in_spec_expression(end, from, to),
             element_width: *element_width,
         },
+        SpecProposition::MutexHeld(expression) => SpecProposition::MutexHeld(Box::new(
+            substitute_pointer_variable_in_spec_expression(expression, from, to),
+        )),
         SpecProposition::Defined(expression) => SpecProposition::Defined(
             substitute_pointer_variable_in_spec_expression(expression, from, to),
         ),
@@ -9439,9 +9378,6 @@ mod integer_range_fold_substitution_tests {
             &pointer,
             crate::kernel::LoadKind::Int32,
         );
-        let (source_memory_state, _) =
-            crate::kernel::eval::registered_load_for_variable(&load_variable)
-                .expect("the source load must be registered");
         let body = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
             MachineTerm::Variable(load_variable),
@@ -9467,7 +9403,9 @@ mod integer_range_fold_substitution_tests {
                 .unwrap()
                 .1
         );
-        assert_eq!(retained_state, &source_memory_state);
+        // A new address retains the producer's live memory, rather than
+        // reusing the original address's empty version point.
+        assert_eq!(retained_state, &memory);
         assert_eq!(pointer.offset, PointerOffsetTerm::Constant(0));
     }
 
@@ -9490,9 +9428,6 @@ mod integer_range_fold_substitution_tests {
             &pointer,
             crate::kernel::LoadKind::Int32,
         );
-        let (source_memory_state, _) =
-            crate::kernel::eval::registered_load_for_variable(&load_variable)
-                .expect("the source load must be registered");
         let body = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
             MachineTerm::Variable(load_variable),
@@ -9518,7 +9453,9 @@ mod integer_range_fold_substitution_tests {
                 .unwrap()
                 .1
         );
-        assert_eq!(retained_state, &source_memory_state);
+        // A new address retains the producer's live memory, rather than
+        // reusing the original address's empty version point.
+        assert_eq!(retained_state, &memory);
         assert_eq!(pointer.offset, PointerOffsetTerm::Constant(4));
     }
 

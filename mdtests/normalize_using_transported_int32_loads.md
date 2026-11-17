@@ -39,7 +39,7 @@ void write_other(int32 p[], int32 n, int32 i, int32 j, int32 k) {
         have separate(statement(0).footprint, memory(p[i])) by {
             normalize() using { separate(memory(p[k]), memory(p[i])); };
         }
-        preserve(separate(statement(0).footprint, memory(p[i])));
+        preserve(memory(p[i]), statement(0));
     }
     have p[j] == at(entry, p[i]) by {
         normalize() using { };

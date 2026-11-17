@@ -64,7 +64,7 @@ theorem lambda_fold_append(lo: int32, hi: int32, offset: Integer) {
     requires lo <= hi;
     requires hi < 2147483647;
     ensures lambda_total(lo, hi + 1, offset) == lambda_total(lo, hi, offset) + to_integer(hi) + offset by {
-        peel(lambda_total(lo, hi + 1, offset)) using { lo <= hi; hi < 2147483647; };
+        unfold(lambda_total(lo, hi + 1, offset));
         solve();
     }
 }

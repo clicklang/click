@@ -20,7 +20,7 @@ theorem nonnegative_body(x: int32) {
     requires nonnegative(x);
 
     ensures x >= 0 by {
-        unfold(nonnegative);
+        unfold(nonnegative(x));
         solve();
     }
 }

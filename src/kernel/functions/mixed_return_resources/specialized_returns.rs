@@ -285,7 +285,11 @@ pub(super) fn construct(
         };
         let origin = if fact.is_view() {
             ReturnOwnershipOrigin::Description
-        } else if borrowed && fixed_memory_shape(spec, &parameters).is_some() {
+        } else if borrowed
+            && (fixed_memory_shape(spec, &parameters).is_some()
+                || definition.condition.is_none()
+                    && summary_transfer::invariant_memory_shape(spec, &parameters))
+        {
             ReturnOwnershipOrigin::EntryBorrow
         } else if definition.matched.is_none()
             && fact.memory_own_range().is_some()
@@ -294,8 +298,10 @@ pub(super) fn construct(
             && let Some(transfer) = consumed.children.get(&vec![clause, index])
         {
             ReturnOwnershipOrigin::ConsumedCell(*transfer)
-        } else if let Some(fresh) = composition.fresh_allocation(&fact) {
-            ReturnOwnershipOrigin::FreshAllocation(fresh)
+        } else if let Some((creator, events)) = composition.allocation_events() {
+            FreshAllocationReturn::from_created_owner(&fact, creator, events)
+                .map(ReturnOwnershipOrigin::FreshAllocation)
+                .unwrap_or(ReturnOwnershipOrigin::Description)
         } else {
             ReturnOwnershipOrigin::Description
         };

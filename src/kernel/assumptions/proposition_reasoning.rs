@@ -3307,7 +3307,7 @@ impl PureFactContext {
         let strict = view.relation == crate::kernel::machine_integer::Relation::Less;
         // Order facts come from `condition_facts` only. A bound that lives
         // inside a guarded implication or a finite universal reaches this
-        // theory through an explicit `intro`, `extract`, or `enumerate` step,
+        // theory through an explicit `intro`, `have`, or `enumerate` step,
         // or through the exact conjunction split `assume_proposition`
         // performs; deriving it here meant discharging antecedents with the
         // general prover and instantiating quantifiers inside a theory query.
@@ -5952,7 +5952,7 @@ mod shared_wide_order_evidence_tests {
     }
     #[test]
     fn induction_bound_queries_refuse_shared_nonliteral_bounds_without_export() {
-        use crate::kernel::proof::ProofFacts;
+        use crate::kernel::proof::PureFactStore;
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
         let variable =
@@ -5969,11 +5969,11 @@ mod shared_wide_order_evidence_tests {
             ConditionTerm::integer_greater_equal(observe(variable(987120)), observe(bound)),
             true,
         );
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&source));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&source));
         let exports = KernelTermExport::machine_export_count();
         assert!(!facts.has_nonnegative_induction_domain(&measure));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
-        let facts = ProofFacts::from_ordered(&[
+        let facts = PureFactStore::from_ordered(&[
             source,
             Proposition::ConditionIs(
                 ConditionTerm::signed_greater_equal(measure.clone(), 0u32.into()),

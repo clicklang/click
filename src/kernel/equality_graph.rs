@@ -116,7 +116,7 @@ pub(in crate::kernel) struct MachineAtom(crate::kernel::SharedMachineIntegerTerm
 ///
 /// Both offsets sign-extend before scaling, so they differ only where the
 /// `int32` product wraps. `(char *)p + i * 4` keeps that byte offset when it
-/// is formed (`docs/internals/spellability.md#lowering-is-fact-stable`); this
+/// is formed (`docs/internals/raise-lower-principle.md#lowering-is-fact-stable`); this
 /// is the relation that names it as element `i`. The terms are imported as
 /// shared terms, so naming them attaches no spelling to an operand another
 /// check holds in shared form. A constant-size match on the condition;
@@ -2870,18 +2870,12 @@ impl EqualityGraphState {
                     block: block.clone(),
                     offset: PointerOffsetTerm::Constant(0),
                 });
-                // A function pointer read can meet a function pointer cell
-                // (`CellRead::FunctionPointer`). A data pointer read, which
-                // every pointer comparison registers, does not look.
-                let cell = matches!(block, PointerBlock::FunctionSymbolic(_))
-                    .then(|| (memory.clone(), address.clone()));
                 self.terms.pointer_read(
                     memory.read_identity(),
                     address_term,
                     kind,
                     value_term,
                     block.clone(),
-                    cell,
                 );
                 if is_application(&address.block) {
                     pending.push(address.block);
@@ -3162,7 +3156,6 @@ impl EqualityGraphState {
             .insert(kept.clone(), self.weight(&moved) + self.weight(&kept));
         self.weights.remove(&moved);
         let mut affected = Vec::new();
-        let moved_deltas = deltas.clone();
         for (member, delta) in deltas {
             if let Some(users) = self.uses.get(&member) {
                 affected.extend(users.iter().cloned());
@@ -3174,7 +3167,6 @@ impl EqualityGraphState {
         self.members.remove(&moved);
         self.members.insert(kept.clone(), kept_members);
         self.terms.shift_addresses(&moved, &kept, &moved_from_kept);
-        self.terms.join_block_classes(&moved, &kept, &moved_deltas);
         self.merge_history = Some(std::sync::Arc::new(PointerMergeHistory {
             depth: self.merge_history.as_ref().map_or(1, |node| node.depth + 1),
             merge: PointerClassMerge {
@@ -3379,7 +3371,12 @@ fn exact_read_comparison_input(term: &MachineTerm) -> MachineTerm {
         if crate::kernel::eval::is_selected_scalar_read(memory.shared_memory(), pointer, *kind) {
             return term.clone();
         }
-        if kind.is_word32() || *kind == LoadKind::Bits64 {
+        if matches!(
+            kind,
+            LoadKind::Int8 | LoadKind::UInt8 | LoadKind::Int16 | LoadKind::UInt16
+        ) || kind.is_word32()
+            || *kind == LoadKind::Bits64
+        {
             // Select the read identity without recovering a cached value.
             // Already-selected reads above retain their producer's identity.
             return crate::kernel::canonical_form_of_load(
@@ -3754,9 +3751,9 @@ mod tests {
         assert!(other_spelling.are_equal(&left, &right));
         assert!(other_spelling.are_equal(&right, &left));
 
-        let mut unspellable = EqualityGraph::default();
-        unspellable.add_equality(&at(a, 0), &at(b, i64::MIN));
-        unspellable.add_offset_equality(
+        let mut unraisable = EqualityGraph::default();
+        unraisable.add_equality(&at(a, 0), &at(b, i64::MIN));
+        unraisable.add_offset_equality(
             &PointerOffsetTerm::Add(
                 Box::new(x.clone()),
                 Box::new(PointerOffsetTerm::Constant(i64::MIN)),
@@ -3765,9 +3762,9 @@ mod tests {
         );
         // The raw address applications can use the stated MIN translation
         // directly, without constructing its unrepresentable opposite sign.
-        assert!(unspellable.are_equal(&left, &right));
-        assert!(unspellable.are_equal(&right, &left));
-        assert!(!unspellable.are_equal(&left, &right.offset_by_bytes(1)));
+        assert!(unraisable.are_equal(&left, &right));
+        assert!(unraisable.are_equal(&right, &left));
+        assert!(!unraisable.are_equal(&left, &right.offset_by_bytes(1)));
     }
 
     #[test]
@@ -4530,3 +4527,6 @@ mod boolean_cast_dependency_tests {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }
+
+#[cfg(test)]
+mod function_read_tests;

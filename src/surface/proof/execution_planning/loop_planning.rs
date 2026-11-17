@@ -215,7 +215,7 @@ fn initialize_script_layout<'a>(
     let helper_end = tactics
         .iter()
         .position(|tactic| match tactic {
-            ProofTactic::UnfoldPredicate(_) => false,
+            ProofTactic::UnfoldProposition(_) | ProofTactic::UnfoldFunction(_) => false,
             ProofTactic::Have(_) => names_an_invariant(tactic),
             _ => true,
         })
@@ -435,7 +435,6 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
         environment.spec_definitions,
         environment.theorem_environment,
         &[],
-        &[],
     )
     .with_surface_local_scope(&phase_proof_scope(environment))
     // The entry checks the invariants before the first pass.
@@ -452,9 +451,12 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
         phase = phase.at_source_tactic(*source_index);
         let checkpoint = phase.checkpoint();
         phase = match helper {
-            ProofTactic::UnfoldPredicate(name) => phase
+            ProofTactic::UnfoldProposition(target) => phase
                 .driver()
-                .apply_step(ProofStep::UnfoldPredicate(name.clone()))?,
+                .apply_step(ProofStep::UnfoldProposition(target.clone()))?,
+            ProofTactic::UnfoldFunction(application) => phase
+                .driver()
+                .apply_step(ProofStep::UnfoldFunction(application.clone()))?,
             ProofTactic::Have(have) => {
                 let scope = phase.driver().open_have(have.proposition.clone())?;
                 check_initialization_body(&scope, &have.checking_proof(), None)?.join()?
@@ -1462,12 +1464,8 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 return Err(ClickError::new("nested loop return has no returned value"));
             };
             return_exits.push(
-                LoopReturnExit::from_proof_facts(
-                    value.clone(),
-                    (**state).clone(),
-                    &pending.pure_facts,
-                )
-                .with_loan_evidence(pending.loan_evidence.clone()),
+                LoopReturnExit::from_store(value.clone(), (**state).clone(), &pending.pure_facts)
+                    .with_loan_evidence(pending.loan_evidence.clone()),
             );
             let mut nested = (**nested).clone();
             nested.owners.push((
@@ -1498,7 +1496,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 checked.facts(),
                 &assumptions_from_propositions(checked.facts()),
             );
-            let exit = LoopReturnExit::from_proof_facts(value, state, &exit_facts)
+            let exit = LoopReturnExit::from_store(value, state, &exit_facts)
                 .with_loan_evidence(checked_execution.core.loan_evidence().clone());
             // Equal semantic exits may carry different written proofs. Keep
             // each arm so no source proof disappears through deduplication.
@@ -1556,7 +1554,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 checked.facts(),
                 &assumptions_from_propositions(checked.facts()),
             );
-            let exit = LoopFinalExitCandidate::from_proof_facts(state, &exit_facts)
+            let exit = LoopFinalExitCandidate::from_store(state, &exit_facts)
                 .with_jump_target(match context_frontier.loop_control {
                     crate::kernel::proof::LoopControlExit::NaturalExit(target) => target,
                     _ => unreachable!("the checked frontier is a natural exit jump"),
@@ -1585,7 +1583,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 &checked_execution.core.state,
                 &assumptions_from_propositions(checked.facts()),
             );
-            let exit = LoopBreakExit::from_proof_facts(state, checked.facts())
+            let exit = LoopBreakExit::from_store(state, checked.facts())
                 .with_loan_evidence(checked_execution.core.loan_evidence().clone());
             if seen_break_exits.is_new(exit.state(), exit.pure_facts(), &break_exits, &exit) {
                 break_exits.push(exit);
@@ -1627,7 +1625,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                     checked.facts(),
                     &join_assumptions,
                 );
-                let candidate = LoopFinalExitCandidate::from_proof_facts(state, &exit_facts)
+                let candidate = LoopFinalExitCandidate::from_store(state, &exit_facts)
                     .with_loan_evidence(checked_execution.core.loan_evidence().clone());
                 if seen_final_exits.is_new(
                     candidate.state(),

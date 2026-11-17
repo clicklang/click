@@ -35,7 +35,6 @@ fn speculative_solve_premise_spelling_declines_large_components_without_renderin
         SpecDefinitions::new(&predicates, &functions),
         &theorems,
         &[],
-        &[],
     );
     for size in [128, 512, 2048, 8192] {
         let premises = (0..size)
@@ -107,7 +106,6 @@ fn reflexive_pointer_metadata_does_not_search_state_history() {
             &surfaces,
             SpecDefinitions::new(&predicates, &functions),
             &theorems,
-            &[],
             &[],
             &[],
         );

@@ -7,24 +7,31 @@ use std::{
     sync::Arc,
 };
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub(in crate::kernel) enum BooleanStorageKey {
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub(in crate::kernel) struct BooleanStorageKey(BooleanKeyKind);
+
+// Keep the word/cast split private: all BoolCast inputs are projected by the
+// constructor, so a raw Word can never alias a projected Cast.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+enum BooleanKeyKind {
     Word(MachineTerm),
     Cast(MachineIntegerType, ConditionStorageKey),
 }
 impl BooleanStorageKey {
     pub(super) fn native(word: &MachineTerm) -> Self {
-        match word {
+        Self(match word {
             MachineTerm::BoolCast { to, value } => {
-                Self::Cast(*to, ConditionStorageKey::native(value))
+                BooleanKeyKind::Cast(*to, ConditionStorageKey::native(value))
             }
-            _ => Self::Word(word.clone()),
-        }
+            _ => BooleanKeyKind::Word(word.clone()),
+        })
     }
     pub(super) fn shared(root: &KernelTerm) -> Self {
         if root.ty() == &KernelType::Program(ProgramType::Bool) {
             return match root.node() {
-                KernelTermNode::Variable(v) => Self::Word(MachineTerm::Variable(*v)),
+                KernelTermNode::Variable(v) => {
+                    Self(BooleanKeyKind::Word(MachineTerm::Variable(*v)))
+                }
                 KernelTermNode::Legacy(value) => {
                     let PureFunctionArgument::Value(ProgramValue::Bool(word)) = value.value()
                     else {
@@ -35,14 +42,70 @@ impl BooleanStorageKey {
                 _ => unreachable!("raw Boolean carrier"),
             };
         }
-        if let Some(value) = BooleanOperandView::Shared(root).constant() {
-            Self::Word(MachineTerm::bool_cast(
-                MachineIntegerType::UInt8,
-                ConditionTerm::Constant(value),
-            ))
-        } else {
-            Self::Cast(MachineIntegerType::UInt8, root.condition_storage_key())
+        Self(
+            if let Some(value) = BooleanOperandView::Shared(root).constant() {
+                BooleanKeyKind::Word(MachineTerm::bool_cast(
+                    MachineIntegerType::UInt8,
+                    ConditionTerm::Constant(value),
+                ))
+            } else {
+                BooleanKeyKind::Cast(MachineIntegerType::UInt8, root.condition_storage_key())
+            },
+        )
+    }
+}
+impl PartialOrd for BooleanStorageKey {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for BooleanStorageKey {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (&self.0, &other.0) {
+            (BooleanKeyKind::Word(a), BooleanKeyKind::Word(b)) => a.cmp(b),
+            (BooleanKeyKind::Cast(at, a), BooleanKeyKind::Cast(bt, b)) => {
+                at.cmp(bt).then_with(|| a.cmp(b))
+            }
+            (BooleanKeyKind::Word(a), BooleanKeyKind::Cast(..)) => {
+                native_machine_rank(a).cmp(&BOOL_CAST_RANK)
+            }
+            (BooleanKeyKind::Cast(..), BooleanKeyKind::Word(b)) => {
+                BOOL_CAST_RANK.cmp(&native_machine_rank(b))
+            }
         }
+    }
+}
+
+// Native MachineTerm variant order, shared by both family projections. The
+// exhaustive match forces a review when a new opaque word variant is added.
+const PURE_APPLICATION_RANK: u8 = 6;
+const CLICK_APPLICATION_RANK: u8 = 7;
+const FLOAT32_NEGATE_RANK: u8 = 13;
+const FLOAT32_BINARY_RANK: u8 = 14;
+const FLOAT64_NEGATE_RANK: u8 = 15;
+const FLOAT64_BINARY_RANK: u8 = 16;
+const BOOL_CAST_RANK: u8 = 17;
+fn native_machine_rank(value: &MachineTerm) -> u8 {
+    match value {
+        MachineTerm::Constant { .. } => 0,
+        MachineTerm::Variable(_) => 1,
+        MachineTerm::Binary { .. } => 2,
+        MachineTerm::Unary { .. } => 3,
+        MachineTerm::If { .. } => 4,
+        MachineTerm::RangeFold { .. } => 5,
+        MachineTerm::PureFunctionApplication { .. } => PURE_APPLICATION_RANK,
+        MachineTerm::ClickFunctionApplication { .. } => CLICK_APPLICATION_RANK,
+        MachineTerm::AlgebraicMatch { .. } => 8,
+        MachineTerm::MemoryLoad(..) => 9,
+        MachineTerm::PointerAddress(..) => 10,
+        MachineTerm::IntegerToMachine { .. } => 11,
+        MachineTerm::Cast { .. } => 12,
+        MachineTerm::Float32Negate(_) => FLOAT32_NEGATE_RANK,
+        MachineTerm::Float32Binary { .. } => FLOAT32_BINARY_RANK,
+        MachineTerm::Float64Negate(_) => FLOAT64_NEGATE_RANK,
+        MachineTerm::Float64Binary { .. } => FLOAT64_BINARY_RANK,
+        MachineTerm::BoolCast { .. } => BOOL_CAST_RANK,
+        MachineTerm::ThreadHandle(_) => 18,
     }
 }
 
@@ -228,12 +291,18 @@ fn native_rank(value: &ProgramValue) -> u8 {
 #[derive(Eq, PartialEq)]
 pub(super) enum NativeStorageIdentity<'a> {
     Boolean(&'a BooleanStorageKey),
+    Float32(&'a FloatStorageKey),
+    Float64(&'a FloatStorageKey),
+    Algebraic(&'a AlgebraicStorageKey),
     Value(&'a ProgramValue),
 }
 impl NativeStorageIdentity<'_> {
     fn rank(&self) -> u8 {
         match self {
             Self::Boolean(_) => 2,
+            Self::Float32(_) => 13,
+            Self::Float64(_) => 14,
+            Self::Algebraic(_) => 16,
             Self::Value(v) => native_rank(v),
         }
     }
@@ -243,6 +312,8 @@ impl Hash for NativeStorageIdentity<'_> {
         self.rank().hash(state);
         match self {
             Self::Boolean(v) => v.hash(state),
+            Self::Float32(v) | Self::Float64(v) => v.hash(state),
+            Self::Algebraic(v) => v.hash(state),
             Self::Value(v) => v.hash(state),
         }
     }
@@ -258,8 +329,12 @@ impl Ord for NativeStorageIdentity<'_> {
             .cmp(&other.rank())
             .then_with(|| match (self, other) {
                 (Self::Boolean(a), Self::Boolean(b)) => a.cmp(b),
+                (Self::Float32(a), Self::Float32(b)) | (Self::Float64(a), Self::Float64(b)) => {
+                    a.cmp(b)
+                }
+                (Self::Algebraic(a), Self::Algebraic(b)) => a.cmp(b),
                 (Self::Value(a), Self::Value(b)) => a.cmp(b),
-                _ => unreachable!("all Boolean storage keys use the projection"),
+                _ => unreachable!("each migrated family uses its projection"),
             })
     }
 }
@@ -286,6 +361,13 @@ impl Drop for ConditionStorageKey {
     }
 }
 
+mod algebraic;
+pub(in crate::kernel) use algebraic::AlgebraicStorageKey;
+pub(in crate::kernel) use algebraic::for_root as algebraic_for_root;
+
+mod float;
+pub(in crate::kernel) use float::FloatStorageKey;
+
 thread_local! {
     // Syntax is immutable across state restores, but a fresh verification must
     // pay for its own selected key construction regardless of earlier runs.
@@ -293,6 +375,8 @@ thread_local! {
 }
 pub(in crate::kernel) fn clear_session_key_memos() {
     CONDITION_KEYS.with(|keys| keys.borrow_mut().clear());
+    float::clear_session_key_memos();
+    algebraic::clear_session_key_memos();
 }
 pub(in crate::kernel) fn condition_for_root(source: &KernelTerm) -> ConditionStorageKey {
     CONDITION_KEYS.with(|keys| {
@@ -324,4 +408,8 @@ pub(in crate::kernel) fn condition_for_root(source: &KernelTerm) -> ConditionSto
             .expect("condition storage key")
             .clone()
     })
+}
+
+pub(in crate::kernel) fn float_for_root(root: &KernelTerm) -> FloatStorageKey {
+    float::for_root(root)
 }

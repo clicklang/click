@@ -38,12 +38,12 @@ impl SourceContext {
         match self {
             Self::PureGoal => matches!(
                 tactic,
-                ProofTactic::ApplyTheoremUsing { .. }
+                ProofTactic::ApplyFactUsing { .. }
+                    | ProofTactic::ApplyTheoremUsing { .. }
                     | ProofTactic::Induct { .. }
                     | ProofTactic::ApplyInductionUsing { .. }
-                    | ProofTactic::UnfoldPredicate(_)
+                    | ProofTactic::UnfoldProposition(_)
                     | ProofTactic::UnfoldFunction(_)
-                    | ProofTactic::PeelFunction { .. }
                     | ProofTactic::Witness(_)
                     | ProofTactic::LetSatisfy(_)
                     | ProofTactic::Choose(_)
@@ -51,7 +51,6 @@ impl SourceContext {
                     | ProofTactic::CheckTerminationComponent { .. }
                     | ProofTactic::CheckTerminationCallbacks
                     | ProofTactic::Known
-                    | ProofTactic::Extract(_)
                     | ProofTactic::Normalize
                     | ProofTactic::ArithmeticUsing(_)
                     | ProofTactic::Preserve(_)
@@ -63,7 +62,7 @@ impl SourceContext {
                     | ProofTactic::Contradiction(_)
                     | ProofTactic::Rewrite(_)
                     | ProofTactic::TransportUsing { .. }
-                    | ProofTactic::InstantiateUsing { .. }
+                    | ProofTactic::Instantiate { .. }
             ),
             Self::ExecutionFrontier => matches!(
                 tactic,
@@ -74,14 +73,14 @@ impl SourceContext {
                     | ProofTactic::StepCall(_)
                     | ProofTactic::UserTactic(_)
                     | ProofTactic::TransportUsing { .. }
-                    | ProofTactic::UnfoldPredicate(_)
+                    | ProofTactic::UnfoldProposition(_)
                     | ProofTactic::UnfoldFunction(_)
-                    | ProofTactic::PeelFunction { .. }
                     | ProofTactic::UnfoldResource(_)
                     | ProofTactic::UnfoldWitnesses { .. }
                     | ProofTactic::FoldResource(_)
                     | ProofTactic::ObserveResource(_)
                     | ProofTactic::Iterated(_)
+                    | ProofTactic::ApplyFactUsing { .. }
                     | ProofTactic::ApplyTheoremUsing { .. }
             ),
             Self::PostExecution => matches!(
@@ -89,9 +88,9 @@ impl SourceContext {
                 ProofTactic::FoldResource(_)
                     | ProofTactic::UnfoldResource(_)
                     | ProofTactic::ConstructResource(_)
-                    | ProofTactic::UnfoldPredicate(_)
+                    | ProofTactic::UnfoldProposition(_)
                     | ProofTactic::UnfoldFunction(_)
-                    | ProofTactic::PeelFunction { .. }
+                    | ProofTactic::ApplyFactUsing { .. }
                     | ProofTactic::ApplyTheoremUsing { .. }
                     | ProofTactic::Choose(_)
                     | ProofTactic::LetSatisfy(_)
@@ -138,10 +137,10 @@ impl SourceContext {
                         | ProofTactic::Choose(_)
                         | ProofTactic::LetSatisfy(_)
                         | ProofTactic::StepProved { .. }
+                        | ProofTactic::ApplyFact(_)
                         | ProofTactic::ApplyTheorem(_)
                         | ProofTactic::Transport { .. }
                         | ProofTactic::Have(_)
-                        | ProofTactic::Extract(_)
                         | ProofTactic::ExecuteUntil(_)
                         | ProofTactic::SmartExecute
                         | ProofTactic::Loop(_)

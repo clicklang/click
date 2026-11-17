@@ -125,6 +125,24 @@ pub(super) fn record_pointee(value: &CppType) -> Option<(&str, &str)> {
     }
 }
 
+/// Nominal record behind an object address or reference, retaining const.
+/// Source admission separately selects which pointer/reference forms it accepts.
+pub(super) fn record_referent(value: &CppType) -> Option<(&str, &str, bool)> {
+    match value {
+        CppType::Pointer { pointee } | CppType::LvalueReference { pointee } => {
+            match pointee.as_ref() {
+                CppType::Record {
+                    declaration_id,
+                    name,
+                    is_const,
+                } => Some((declaration_id, name, *is_const)),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
 /// Nominal candidate only: the importer separately authenticates the declaration
 /// span against the pinned standard header before any lowering can use it.
 pub(super) fn is_standard_byte(value: &CppType) -> bool {
@@ -269,6 +287,21 @@ pub(super) fn scalar_value_type(value: &CppType) -> CppType {
 /// A native reference binds an object of its own type, possibly adding const
 /// but never removing it.
 pub(super) fn reference_binds(object: &CppType, referent: &CppType) -> bool {
+    if let (
+        CppType::Record {
+            declaration_id: source,
+            name: source_name,
+            is_const: source_const,
+        },
+        CppType::Record {
+            declaration_id: target,
+            name: target_name,
+            is_const: target_const,
+        },
+    ) = (object, referent)
+    {
+        return source == target && source_name == target_name && (!source_const || *target_const);
+    }
     same_scalar_type(&scalar_value_type(object), &scalar_value_type(referent))
         && (Scalar::of(referent).is_some_and(|scalar| scalar.is_const)
             || !Scalar::of(object).is_some_and(|scalar| scalar.is_const))

@@ -33,7 +33,7 @@ void wrap_zero(int32* cell) {
     consumes cell[0..1];
     produces zero_cell(cell);
 } by {
-    unfold(is_zero);
+    unfold(is_zero(cell));
     fold(zero_cell(cell));
 }
 ```

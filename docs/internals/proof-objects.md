@@ -31,7 +31,7 @@ fact store's structural keys live in `src/kernel/proof/fact_keys.rs`. The fact s
 transport, conflict, and state-equivalence rules live beside those keys in
 `src/kernel/proof/fact_reasoning.rs`; Surface Click fact selection, diagnostic
 rendering, and budgeted smart premise search remain in the language layer.
-The persistent `ProofFacts` store and all of its semantic indexes live in
+`PureFactStore` and all of its persistent semantic indexes live in
 `src/kernel/proof/facts.rs`; language code receives an opaque store and uses
 named queries and persistent successor operations rather than its fields.
 Kernel `ProofObject`, `ProofState`, `ProofBranch`, and `ProofBranchState` own
@@ -51,9 +51,9 @@ availability and logical shape, refine or close the obligation, and return an
 opaque successor directly. `intro` accepts a callback only to derive new
 opaque presentation from the checked introduction kind; the callback cannot
 choose the kernel proposition, introduced fact, or successor state.
-Conjunction extraction and explicit universal instantiation likewise accept
-lowered inputs, then let the kernel validate availability, guards, and the
-resulting fact before it publishes a successor.
+Explicit implication application and universal instantiation likewise accept
+lowered inputs, then let the kernel establish availability and guards before
+it constructs and publishes the resulting fact.
 The raw persistent fact insertion and focused-state replacement operations are
 scoped to `src/kernel`; their `with_kernel_checked_fact` and
 `publish_checked_result` language adapters are carry-only seams for results

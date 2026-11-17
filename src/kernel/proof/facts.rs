@@ -49,7 +49,7 @@ mod constant_truth_tests {
     fn equivalent_false_polarities_are_available_only_in_their_scope() {
         let positive_false = Proposition::ConditionIs(ConditionTerm::Constant(false), true);
         let negative_true = Proposition::ConditionIs(ConditionTerm::Constant(true), false);
-        let root = ProofFacts::from_ordered(&[]);
+        let root = PureFactStore::from_ordered(&[]);
         let true_branch = root.with_fact(Proposition::ConditionIs(
             ConditionTerm::Constant(true),
             true,
@@ -69,7 +69,7 @@ mod constant_truth_tests {
     fn either_false_polarity_is_a_contradiction() {
         let positive_false = Proposition::ConditionIs(ConditionTerm::Constant(false), true);
         let negative_true = Proposition::ConditionIs(ConditionTerm::Constant(true), false);
-        let root = ProofFacts::from_ordered(&[]);
+        let root = PureFactStore::from_ordered(&[]);
         for held in [&positive_false, &negative_true] {
             let branch = root.with_fact(held.clone());
             for cited in [&positive_false, &negative_true] {
@@ -88,7 +88,7 @@ mod constant_truth_tests {
             crate::kernel::IntegerTerm::Variable(Variable(901_002)).into();
         let equality =
             Proposition::ConditionIs(ConditionTerm::IntegerEqual(a.clone(), b.clone()), true);
-        let root = ProofFacts::from_ordered(std::slice::from_ref(&equality));
+        let root = PureFactStore::from_ordered(std::slice::from_ref(&equality));
         assert!(!root.contradicts(&equality));
         for (left, right) in [(a.clone(), b.clone()), (b, a)] {
             let disequality =
@@ -98,113 +98,6 @@ mod constant_truth_tests {
             assert!(branch.contradicts(&disequality));
             assert!(!root.contradicts(&equality));
         }
-    }
-}
-
-#[cfg(test)]
-mod disjunction_projection_tests {
-    use super::*;
-
-    fn value(id: u64, constant: u32) -> Proposition {
-        Proposition::ConditionIs(
-            ConditionTerm::equal(
-                MachineTerm::Variable(Variable(id)),
-                MachineTerm::constant(constant),
-            ),
-            true,
-        )
-    }
-    fn and(left: Proposition, right: Proposition) -> Proposition {
-        Proposition::And(Box::new(left), Box::new(right))
-    }
-    fn or(left: Proposition, right: Proposition) -> Proposition {
-        Proposition::Or(Box::new(left), Box::new(right))
-    }
-
-    #[test]
-    fn projection_checks_every_arm_and_every_conjunct_of_the_goal() {
-        let source = or(and(value(1, 1), value(3, 3)), and(value(2, 2), value(3, 3)));
-        let facts = ProofFacts::from_ordered(&[source]);
-        let goal = or(value(1, 1), value(2, 2));
-        assert!(facts.contains_disjunction_projection(&goal));
-        assert!(facts.contains_disjunction_projection(&and(goal.clone(), value(3, 3))));
-        assert!(facts.contains_disjunction_projection(&value(3, 3)));
-        assert!(!facts.contains_disjunction_projection(&or(value(1, 1), value(2, 9))));
-        assert!(!facts.contains_disjunction_projection(&and(goal, value(1, 1))));
-    }
-
-    #[test]
-    fn projection_uses_scoped_equalities() {
-        let alias = Proposition::ConditionIs(
-            ConditionTerm::equal(
-                MachineTerm::Variable(Variable(1)),
-                MachineTerm::Variable(Variable(4)),
-            ),
-            true,
-        );
-        let source = or(value(1, 1), value(2, 2));
-        let goal = or(value(4, 1), value(2, 2));
-        let root = ProofFacts::from_ordered(&[alias]);
-        let child = root.with_fact(source.clone());
-        assert!(child.contains_disjunction_projection(&goal));
-        assert!(!root.contains_disjunction_projection(&goal));
-        let wide = Proposition::ConditionIs(
-            ConditionTerm::uint64_equal(
-                MachineTerm::Variable(Variable(1)),
-                MachineTerm::uint64_constant(1),
-            ),
-            true,
-        );
-        assert!(!child.contains_disjunction_projection(&or(wide, value(2, 2))));
-    }
-
-    #[test]
-    fn an_impossible_arm_does_not_contaminate_the_other_arm_or_parent() {
-        let facts = ProofFacts::from_ordered(&[value(7, 1), or(value(7, 0), value(8, 1))]);
-        assert!(!facts.assumptions().is_inconsistent());
-        assert!(!facts.contains_disjunction_projection(&or(value(7, 0), value(8, 2))));
-        assert!(facts.contains_disjunction_projection(&value(8, 1)));
-        assert!(!facts.assumptions().is_inconsistent());
-        assert!(!facts.assumptions().contains_known(&value(7, 0)));
-        assert!(!facts.assumptions().contains_known(&value(8, 1)));
-    }
-
-    #[test]
-    fn projection_respects_changed_read_states() {
-        let pointer = Pointer {
-            block: "projection-cell".into(),
-            offset: PointerOffsetTerm::Constant(0),
-        };
-        let before = Memory::new().with_block("projection-cell", 4).store(
-            pointer.clone(),
-            ProgramValue::Int32(MachineTerm::Variable(Variable(10))),
-        );
-        let after = before.clone().store(
-            pointer.clone(),
-            ProgramValue::Int32(MachineTerm::Variable(Variable(11))),
-        );
-        let read = |memory| {
-            Proposition::ConditionIs(
-                ConditionTerm::equal(
-                    MachineTerm::MemoryLoad(
-                        ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
-                        Box::new(pointer.clone()),
-                        LoadKind::Int32,
-                    ),
-                    MachineTerm::constant(0),
-                ),
-                true,
-            )
-        };
-        let source = or(read(before.clone()), value(2, 2));
-        let facts = ProofFacts::from_ordered(&[source]);
-        assert!(facts.contains_disjunction_projection(&or(read(before), value(2, 2))));
-        assert!(!facts.contains_disjunction_projection(&or(read(after), value(2, 2))));
-    }
-
-    #[cfg(test)]
-    mod scaling_tests {
-        include!("../../scaling_tests/kernel/proof/facts/disjunction_projection_tests.rs");
     }
 }
 
@@ -325,7 +218,7 @@ pub(crate) struct PureFactStore {
     /// carrier choice; they retain state, argument order and type keys.
     call_payloads: PersistentSet<CallPayloadKey>,
     /// Every strict subtree of an available top-level conjunction. This is
-    /// the exact structural authority for `extract`; top-level facts are not
+    /// used for selected conjunction sources; top-level facts are not
     /// included merely because they are independently available.
     proper_conjuncts: PersistentSet<PropositionKey>,
     /// The quantified atomic conjuncts of available conjunctions, keyed by
@@ -370,6 +263,10 @@ pub(crate) struct PureFactStore {
         PersistentMap<AlgebraicTerm, PersistentSequence<Arc<Proposition>>>,
     by_quantified_equivalence:
         PersistentMap<QuantifiedEquivalenceKey, PersistentSequence<Arc<Proposition>>>,
+    /// Full snapshot-aware alpha identities for explicit quantified inputs.
+    /// Built with each fact, so a simple lookup never forces a deferred
+    /// assumptions index or visits a related-fact bucket.
+    by_quantified_identity: PersistentMap<super::PropositionIdentityKey, Arc<Proposition>>,
     /// Guarded universals whose conclusion is a conjunction, keyed by the
     /// alpha form of each proper sub-conjunction restated under the same
     /// binder and guards: `forall k { G implies A and B }` is found under
@@ -388,132 +285,7 @@ pub(crate) struct PureFactStore {
     by_predicate: PersistentMap<String, PersistentSequence<Arc<Proposition>>>,
 }
 
-/// Proof-local evidence paired with the scope's persistent pure fact store.
-/// Fact storage and reasoning indexes live only in `PureFactStore`.
-#[derive(Clone, Default)]
-pub(crate) struct ProofFacts {
-    store: PureFactStore,
-    rewritten_load_evidence: PersistentSequence<CheckedLoadEquality>,
-}
-
-// Read-only fact queries delegate to the store. Successor operations below
-// explicitly retain proof-local evidence rather than copying it into the store.
-impl std::ops::Deref for ProofFacts {
-    type Target = PureFactStore;
-    fn deref(&self) -> &Self::Target {
-        &self.store
-    }
-}
-
-impl PropositionSource for ProofFacts {
-    fn propositions(&self) -> impl Iterator<Item = &Proposition> {
-        self.store.propositions()
-    }
-    fn ordered_proof_facts(&self) -> ProofFacts {
-        self.with_store(self.store.unique_presentation())
-    }
-    fn pure_context(&self) -> PureFactContext {
-        self.store.pure_context()
-    }
-    fn exact_available(&self, required: &Proposition) -> bool {
-        self.store.exact_available(required)
-    }
-    fn indexed_proof_facts(&self) -> ProofFacts {
-        self.clone()
-    }
-}
-
-impl ProofFacts {
-    pub(crate) fn with_list_fact(&self, fact: Proposition) -> Self {
-        self.with_store(self.store.with_list_fact(fact))
-    }
-    pub(crate) fn retaining(&self, keep: impl FnMut(&Proposition) -> bool) -> Self {
-        let store = self.store.retaining(keep);
-        if store.shares_premises_with(&self.store) {
-            self.clone()
-        } else {
-            Self::from_store(store)
-        }
-    }
-    pub(crate) fn store(&self) -> &PureFactStore {
-        &self.store
-    }
-    pub(crate) fn from_store(store: PureFactStore) -> Self {
-        Self {
-            store,
-            rewritten_load_evidence: PersistentSequence::default(),
-        }
-    }
-    pub(crate) fn from_ordered(facts: &[Proposition]) -> Self {
-        Self::from_store(PureFactStore::from_ordered(facts))
-    }
-    pub(crate) fn from_source(facts: &(impl PropositionSource + ?Sized)) -> Self {
-        facts.indexed_proof_facts()
-    }
-    fn with_store(&self, store: PureFactStore) -> Self {
-        Self {
-            store,
-            rewritten_load_evidence: self.rewritten_load_evidence.clone(),
-        }
-    }
-    pub(crate) fn with_reserved_variables(
-        self,
-        variables: impl IntoIterator<Item = Variable>,
-    ) -> Self {
-        Self {
-            store: self.store.with_reserved_variables(variables),
-            ..self
-        }
-    }
-    pub(crate) fn with_kernel_checked_fact(&self, fact: Proposition) -> Self {
-        self.with_store(self.store.with_kernel_checked_fact(fact))
-    }
-    pub(in crate::kernel) fn with_fact(&self, fact: Proposition) -> Self {
-        self.with_store(self.store.with_fact(fact))
-    }
-    pub(crate) fn retain_checked_read_fact(&mut self, fact: &ExecutionPureFact) {
-        self.store.retain_checked_read_fact(fact);
-    }
-    pub(super) fn prepare_entry_resources(&mut self, resources: &ResourceContext) {
-        self.store.prepare_entry_resources(resources);
-    }
-    pub(crate) fn with_selected_resource_separation(&self, goal: &Proposition) -> Self {
-        self.with_store(self.store.with_selected_resource_separation(goal))
-    }
-    pub(crate) fn with_exact_partition_separation(
-        &self,
-        goal: &Proposition,
-        resources: &ResourceContext,
-    ) -> Self {
-        self.with_store(self.store.with_exact_partition_separation(goal, resources))
-    }
-    pub(crate) fn with_selected_held_resource_separation(
-        &self,
-        goal: &Proposition,
-        state: &ExecutionState,
-    ) -> Self {
-        self.with_store(
-            self.store
-                .with_selected_held_resource_separation(goal, state),
-        )
-    }
-    pub(crate) fn with_selected_load_equality_bridge(&self, goal: &Proposition) -> Self {
-        self.with_store(self.store.with_selected_load_equality_bridge(goal))
-    }
-    #[cfg(test)]
-    pub(crate) fn with_statement_facts(&self, facts: Vec<Proposition>) -> Self {
-        self.with_store(self.store.with_statement_facts(facts))
-    }
-    pub(crate) fn with_statement_facts_retaining_prefix(
-        &self,
-        facts: Vec<Proposition>,
-        prefix: &ExecutionFacts,
-    ) -> Self {
-        self.with_store(
-            self.store
-                .with_statement_facts_retaining_prefix(facts, prefix),
-        )
-    }
+impl PureFactStore {
     /// Check only corresponding leaves of two presentations of one goal.
     /// No ambient fact search or pairwise load census is performed.
     pub(crate) fn with_checked_rewritten_loads(
@@ -887,9 +659,8 @@ impl ProofFacts {
         for equality in equalities {
             facts = facts.with_fact(equality);
         }
-        for witness in evidence {
-            facts.rewritten_load_evidence.push(witness);
-        }
+        // The operation has consumed the witnesses above. Successors retain
+        // the established equalities; execution certificates own their evidence.
         Some(facts)
     }
     // Arithmetic remains shared until the authority check. Native evidence
@@ -1092,15 +863,13 @@ pub(crate) trait PropositionSource {
         self.propositions()
             .any(|fact| exact_fact_contains_conjunct(fact, required))
     }
-    fn ordered_proof_facts(&self) -> ProofFacts {
-        self.indexed_proof_facts()
+    fn ordered_fact_store(&self) -> PureFactStore {
+        self.fact_store()
     }
-    /// Fresh proof facts indexing these propositions in order. A source
-    /// that keeps indexed facts for them extends those instead.
-    fn indexed_proof_facts(&self) -> ProofFacts {
-        ProofFacts::from_store(PureFactStore::from_source_retaining_reservations(
-            self, None,
-        ))
+    /// Retain a source's available facts and reasoning state directly.
+    /// Explicit input sequences construct a scope; retained sources share one.
+    fn fact_store(&self) -> PureFactStore {
+        PureFactStore::from_source_retaining_reservations(self, None)
     }
 }
 impl<T: PropositionSource + ?Sized> PropositionSource for &T {
@@ -1113,11 +882,11 @@ impl<T: PropositionSource + ?Sized> PropositionSource for &T {
     fn exact_available(&self, required: &Proposition) -> bool {
         (**self).exact_available(required)
     }
-    fn indexed_proof_facts(&self) -> ProofFacts {
-        (**self).indexed_proof_facts()
+    fn fact_store(&self) -> PureFactStore {
+        (**self).fact_store()
     }
-    fn ordered_proof_facts(&self) -> ProofFacts {
-        (**self).ordered_proof_facts()
+    fn ordered_fact_store(&self) -> PureFactStore {
+        (**self).ordered_fact_store()
     }
 }
 impl<T: PropositionSource + ?Sized> PropositionSource for Arc<T> {
@@ -1130,11 +899,11 @@ impl<T: PropositionSource + ?Sized> PropositionSource for Arc<T> {
     fn exact_available(&self, required: &Proposition) -> bool {
         (**self).exact_available(required)
     }
-    fn indexed_proof_facts(&self) -> ProofFacts {
-        (**self).indexed_proof_facts()
+    fn fact_store(&self) -> PureFactStore {
+        (**self).fact_store()
     }
-    fn ordered_proof_facts(&self) -> ProofFacts {
-        (**self).ordered_proof_facts()
+    fn ordered_fact_store(&self) -> PureFactStore {
+        (**self).ordered_fact_store()
     }
 }
 impl PropositionSource for [Proposition] {
@@ -1156,8 +925,8 @@ impl PropositionSource for PureFactStore {
     fn propositions(&self) -> impl Iterator<Item = &Proposition> {
         self.presentation.unique_iter()
     }
-    fn ordered_proof_facts(&self) -> ProofFacts {
-        ProofFacts::from_store(self.unique_presentation())
+    fn ordered_fact_store(&self) -> PureFactStore {
+        self.unique_presentation()
     }
     fn pure_context(&self) -> PureFactContext {
         self.assumptions().clone()
@@ -1165,8 +934,8 @@ impl PropositionSource for PureFactStore {
     fn exact_available(&self, required: &Proposition) -> bool {
         self.contains(required) || self.matching_quantified_fact(required).is_some()
     }
-    fn indexed_proof_facts(&self) -> ProofFacts {
-        ProofFacts::from_store(self.clone())
+    fn fact_store(&self) -> PureFactStore {
+        self.clone()
     }
 }
 
@@ -1346,7 +1115,7 @@ impl PureFactStore {
     /// with entry resources; rebuilding it would disconnect that publication.
     /// Uncached sources build their context once through PropositionSource.
     pub(crate) fn from_source(facts: &(impl PropositionSource + ?Sized)) -> Self {
-        facts.indexed_proof_facts().store().clone()
+        facts.fact_store()
     }
 
     fn from_source_retaining_reservations(
@@ -1377,6 +1146,7 @@ impl PureFactStore {
         let mut finite_classifications_by_key = PersistentMap::default();
         let mut algebraic_equalities_by_term = PersistentMap::default();
         let mut by_quantified_equivalence = PersistentMap::default();
+        let mut by_quantified_identity = PersistentMap::default();
         let mut quantified_conjunct_projections = PersistentMap::default();
         let mut implications_by_consequent = PersistentMap::default();
         let mut implications_by_quantified_consequent = PersistentMap::default();
@@ -1407,6 +1177,7 @@ impl PureFactStore {
             ordered.push(Arc::clone(fact));
             top_level_exact = top_level_exact.with_value(Arc::clone(fact));
             by_quantified_equivalence = index_quantified_fact(by_quantified_equivalence, fact);
+            by_quantified_identity = index_quantified_identity(by_quantified_identity, fact);
             quantified_conjunct_projections =
                 index_quantified_conjunct_projections(quantified_conjunct_projections, fact);
             (
@@ -1426,6 +1197,8 @@ impl PureFactStore {
                     let conjunct = Arc::new(conjunct);
                     quantified_proper_conjuncts =
                         index_quantified_fact(quantified_proper_conjuncts, &conjunct);
+                    by_quantified_identity =
+                        index_quantified_identity(by_quantified_identity, &conjunct);
                     quantified_conjunct_projections = index_quantified_conjunct_projections(
                         quantified_conjunct_projections,
                         &conjunct,
@@ -1466,7 +1239,7 @@ impl PureFactStore {
                 index_implicit_transport_context(implicit_transport_assumptions, fact.as_ref());
         }
         let reserved_variables = commit_reserved_variables(reserved_variables, pending_variables);
-        Self {
+        let mut result = Self {
             ordered,
             reserved_variables,
             reserved_states,
@@ -1484,13 +1257,22 @@ impl PureFactStore {
             finite_classifications_by_key,
             algebraic_equalities_by_term,
             by_quantified_equivalence,
+            by_quantified_identity,
             quantified_conjunct_projections,
             implications_by_consequent,
             implications_by_quantified_consequent,
             assumptions,
             implicit_transport_assumptions,
             by_predicate,
+        };
+        let consequences = result
+            .assumptions
+            .propagation_consequences_since(&PureFactContext::new());
+        for consequence in consequences {
+            let assumptions = result.assumptions.clone();
+            result = result.with_indexed_fact(consequence.clone(), assumptions);
         }
+        result
     }
 
     pub(crate) fn with_reserved_variables(
@@ -1512,6 +1294,24 @@ impl PureFactStore {
             || call_payload_identity_key(fact).is_some_and(|key| self.call_payloads.contains(&key))
             || crate::kernel::comparison_form(fact)
                 .is_some_and(|comparison| self.exact.contains(&comparison))
+    }
+
+    /// Exact alpha membership of one explicitly selected quantified fact.
+    /// Conjunctions consist of the selected leaves, each an indexed query.
+    pub(crate) fn contains_quantified_identity(&self, fact: &Proposition) -> bool {
+        if self.contains(fact) {
+            return true;
+        }
+        if let Proposition::And(left, right) = fact {
+            return self.contains_quantified_identity(left)
+                && self.contains_quantified_identity(right);
+        }
+        if !quantified_identity_shape(fact) {
+            return false;
+        }
+        super::proposition_identity_key(fact)
+            .and_then(|key| self.by_quantified_identity.get(&key))
+            .is_some_and(|candidate| super::propositions_are_alpha_equal(candidate, fact))
     }
 
     /// Semantic availability for checking a requested premise or goal, as
@@ -1572,10 +1372,29 @@ impl PureFactStore {
         if self.top_level_exact.contains(&fact) {
             return self.clone();
         }
+        let fact = Arc::new(fact);
+        let assumptions = self
+            .assumptions
+            .clone()
+            .assume_shared_proposition(fact.clone());
+        let consequences = assumptions.propagation_consequences_since(&self.assumptions);
+        let mut result = self.with_indexed_fact(fact, assumptions);
+        for consequence in consequences {
+            let assumptions = result.assumptions.clone();
+            result = result.with_indexed_fact(consequence.clone(), assumptions);
+        }
+        result
+    }
+
+    /// Publish a fact already constructed by admission, without asking the
+    /// fact store to derive or validate that same consequence again.
+    fn with_indexed_fact(&self, fact: Arc<Proposition>, assumptions: PureFactContext) -> Self {
+        if self.top_level_exact.contains(&fact) {
+            return self.clone();
+        }
         #[cfg(test)]
         INDEXED_FACT_ENTRIES.with(|count| count.set(count.get() + 1));
-        // The one copy of this fact. Every index below shares it.
-        let fact = Arc::new(fact);
+        // Every index shares the proposition already admitted to the context.
         let mut exact = self.exact.clone();
         let mut call_payloads = self.call_payloads.clone();
         let mut proper_conjuncts = self.proper_conjuncts.clone();
@@ -1587,6 +1406,8 @@ impl PureFactStore {
         let mut algebraic_equalities_by_term = self.algebraic_equalities_by_term.clone();
         let by_quantified_equivalence =
             index_quantified_fact(self.by_quantified_equivalence.clone(), &fact);
+        let mut by_quantified_identity =
+            index_quantified_identity(self.by_quantified_identity.clone(), &fact);
         let mut quantified_conjunct_projections = index_quantified_conjunct_projections(
             self.quantified_conjunct_projections.clone(),
             &fact,
@@ -1605,6 +1426,8 @@ impl PureFactStore {
                 let conjunct = Arc::new(conjunct);
                 quantified_proper_conjuncts =
                     index_quantified_fact(quantified_proper_conjuncts, &conjunct);
+                by_quantified_identity =
+                    index_quantified_identity(by_quantified_identity, &conjunct);
                 quantified_conjunct_projections = index_quantified_conjunct_projections(
                     quantified_conjunct_projections,
                     &conjunct,
@@ -1684,13 +1507,11 @@ impl PureFactStore {
             finite_classifications_by_key,
             algebraic_equalities_by_term,
             by_quantified_equivalence,
+            by_quantified_identity,
             quantified_conjunct_projections,
             implications_by_consequent,
             implications_by_quantified_consequent,
-            assumptions: self
-                .assumptions
-                .clone()
-                .assume_shared_proposition(fact.clone()),
+            assumptions,
             implicit_transport_assumptions,
             by_predicate: index_predicate_fact(self.by_predicate.clone(), &fact),
         }
@@ -2017,50 +1838,6 @@ impl PureFactStore {
                 .any(|form| self.proper_conjuncts.contains(&PropositionKey::new(form)))
     }
 
-    /// Project a known disjunction without naming its discarded conjuncts.
-    /// Select only operand-adjacent stated facts, then check every arm using
-    /// the existing direct logical rule and this scope's equality closure.
-    /// No unfolding, implication extraction, or recursive case search.
-    pub(crate) fn contains_disjunction_projection(&self, required: &Proposition) -> bool {
-        let keys =
-            crate::kernel::reasoning::variable_collection::collect_atomic_connection_keys(required);
-        let mut seen = std::collections::HashSet::new();
-        for key in keys {
-            for disjunction in self.assumptions.disjunctions_connected_to(&key) {
-                crate::instrumentation::record_deterministic_work(1);
-                if !seen.insert(disjunction as *const Proposition as usize) {
-                    continue;
-                }
-                let mut cases = vec![disjunction];
-                let mut complete = true;
-                while let Some(case) = cases.pop() {
-                    crate::instrumentation::record_deterministic_work(1);
-                    if let Proposition::Or(left, right) = case {
-                        cases.push(right);
-                        cases.push(left);
-                        continue;
-                    }
-                    let context = self
-                        .assumptions
-                        .clone()
-                        .assume_proposition(crate::kernel::clone_proposition_iteratively(case));
-                    if first_unavailable_connective_side(required, &|side| {
-                        context.contains_known(side)
-                    })
-                    .is_some()
-                    {
-                        complete = false;
-                        break;
-                    }
-                }
-                if complete {
-                    return true;
-                }
-            }
-        }
-        false
-    }
-
     /// The available proper conjunct that `required` names up to the
     /// renaming of its quantifier binders, selected by its alpha bucket.
     pub(crate) fn alpha_equivalent_proper_conjunct(
@@ -2218,7 +1995,7 @@ impl PureFactStore {
     /// also distinguishes local suffix work in the test instrumentation.
     pub(crate) fn with_statement_facts_retaining_prefix(
         &self,
-        facts: Vec<Proposition>,
+        mut facts: Vec<Proposition>,
         _prefix: &ExecutionFacts,
     ) -> Self {
         let ordered = self.ordered.clone();
@@ -2242,6 +2019,18 @@ impl PureFactStore {
             successor = successor.with_fact(instance.clone());
             if successor.fact_count() != before {
                 introduced.push(instance);
+            }
+        }
+        let additions = successor
+            .ordered
+            .suffix_since(&ordered)
+            .expect("statement facts extend the ordered prefix");
+        let mut listed = facts.iter().cloned().collect::<BTreeSet<_>>();
+        introduced.clear();
+        for fact in additions {
+            introduced.push(fact.as_ref().clone());
+            if listed.insert(fact.as_ref().clone()) {
+                facts.push(fact.as_ref().clone());
             }
         }
         successor.ordered = ordered;
@@ -2501,7 +2290,7 @@ impl PureFactStore {
 
     /// An implication whose antecedents are all available and whose
     /// consequent is a conjunction with `required` among its conjuncts: the
-    /// implication fact itself and that whole consequent. `extract` states
+    /// implication fact itself and that whole consequent. `apply(fact)` states
     /// the whole consequent from the fact, and `required` is then a proper
     /// conjunct of an available fact.
     pub(crate) fn discharged_implication_containing(
@@ -2531,6 +2320,43 @@ impl PureFactStore {
                     });
             Some((fact, whole.clone()))
         })
+    }
+
+    /// Sources for an expandable implication application. The capability
+    /// keeps candidate enumeration out of checked operations.
+    pub(crate) fn implication_sources_for_search(
+        &self,
+        required: &Proposition,
+        _permission: crate::SearchPermission,
+    ) -> Vec<Proposition> {
+        let ordinary = self
+            .implications_by_consequent
+            .get(&memory_erased_proposition_key(required));
+        let quantified = quantified_equivalence_index_key(required)
+            .and_then(|key| self.implications_by_quantified_consequent.get(&key));
+        ordinary
+            .into_iter()
+            .chain(quantified)
+            .flat_map(|bucket| bucket.iter())
+            .take(64)
+            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+            .filter(|candidate| {
+                candidate.consequent == *required
+                    || quantified_binder_equivalent(required, &candidate.consequent)
+            })
+            .map(|candidate| {
+                candidate.antecedents.iter().rev().fold(
+                    candidate
+                        .whole
+                        .as_ref()
+                        .unwrap_or(&candidate.consequent)
+                        .clone(),
+                    |rest, antecedent| {
+                        Proposition::Implies(Box::new(antecedent.clone()), Box::new(rest))
+                    },
+                )
+            })
+            .collect()
     }
 
     /// Availability of one premise a `using` list names.
@@ -3345,7 +3171,7 @@ fn index_guarded_implication_fact(
         return index;
     }
     // Only a definedness guard: applying an ambient implication under an
-    // ordinary condition stays an explicit `extract`
+    // ordinary condition stays an explicit `apply(fact)`
     // (`verified_call_ensure_premise_needs_its_discharge.md`), while a
     // no-overflow guard is a side condition of the arithmetic the
     // consequent states.
@@ -3844,6 +3670,33 @@ fn collect_pointer_offset_bitvector_atoms(
     offset.for_each_scaled_operand(|value| selected_atoms::collect(value, atoms));
 }
 
+fn quantified_identity_shape(mut fact: &Proposition) -> bool {
+    while let Proposition::Implies(_, body) = fact {
+        fact = body;
+    }
+    matches!(
+        fact,
+        Proposition::ForAll { .. } | Proposition::Exists { .. }
+    )
+}
+
+fn index_quantified_identity(
+    index: PersistentMap<super::PropositionIdentityKey, Arc<Proposition>>,
+    fact: &Arc<Proposition>,
+) -> PersistentMap<super::PropositionIdentityKey, Arc<Proposition>> {
+    if !quantified_identity_shape(fact) {
+        return index;
+    }
+    let Some(key) = super::proposition_identity_key(fact) else {
+        return index;
+    };
+    if index.get(&key).is_some() {
+        index
+    } else {
+        index.with_inserted(key, fact.clone())
+    }
+}
+
 fn index_quantified_fact(
     mut index: PersistentMap<QuantifiedEquivalenceKey, PersistentSequence<Arc<Proposition>>>,
     fact: &Arc<Proposition>,
@@ -4170,7 +4023,7 @@ mod integer_equality_fact_index_tests {
             true,
         );
         for size in [16_u32, 64, 256, 1024, 4096] {
-            let mut facts = ProofFacts::default();
+            let mut facts = PureFactStore::default();
             for index in 0..size {
                 facts = facts.with_kernel_checked_fact(Proposition::ConditionIs(
                     ConditionTerm::pointer_equal(
@@ -4349,8 +4202,8 @@ mod integer_equality_fact_index_tests {
         );
         let conjunction = Proposition::And(Box::new(separation.clone()), Box::new(bound.clone()));
         for facts in [
-            ProofFacts::from_ordered(std::slice::from_ref(&conjunction)),
-            ProofFacts::from_ordered(&[]).with_fact(conjunction),
+            PureFactStore::from_ordered(std::slice::from_ref(&conjunction)),
+            PureFactStore::from_ordered(&[]).with_fact(conjunction),
         ] {
             assert!(
                 facts
@@ -4364,7 +4217,7 @@ mod integer_equality_fact_index_tests {
             );
         }
         let conditional = Proposition::Implies(Box::new(bound), Box::new(separation.clone()));
-        let facts = ProofFacts::from_ordered(&[conditional]);
+        let facts = PureFactStore::from_ordered(&[conditional]);
         assert!(
             !facts
                 .implicit_transport_assumptions()
@@ -4389,7 +4242,7 @@ mod integer_equality_fact_index_tests {
                     )
                 })
                 .collect::<Vec<_>>();
-            let base = ProofFacts::from_ordered(&unrelated);
+            let base = PureFactStore::from_ordered(&unrelated);
             assert!(!base.has_nonnegative_induction_domain(&measure));
             for (bound, strict, expected) in [
                 (5i32, false, true),
@@ -4464,7 +4317,7 @@ mod integer_equality_fact_index_tests {
         );
         let source_fact = equality(IntegerTerm::constant_i64(9), source);
         let required_fact = equality(IntegerTerm::constant_i64(9), required);
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&source_fact));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&source_fact));
 
         assert_eq!(
             facts.matching_fact_across_effects(&required_fact, &[]),
@@ -4496,7 +4349,7 @@ mod integer_equality_fact_index_tests {
         );
         let source_fact = less_equal(source, IntegerTerm::constant_i64(9));
         let required_fact = less_equal(required, IntegerTerm::constant_i64(9));
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&source_fact));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&source_fact));
 
         assert_eq!(
             facts.matching_fact_across_effects(&required_fact, &[]),
@@ -4529,7 +4382,7 @@ mod integer_equality_fact_index_tests {
             IntegerTerm::constant_i64(9),
             explicit_load_fold(&changed, Variable(200_500), Variable(200_501)),
         );
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&source_fact));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&source_fact));
 
         assert_eq!(
             facts.matching_fact_across_effects(&renamed_fact, &[]),
@@ -4600,7 +4453,7 @@ mod integer_equality_fact_index_tests {
             Some(Variable(207_002)),
             4,
         );
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&source));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&source));
 
         assert_eq!(
             facts.matching_fact_across_effects(&renamed, &[]),
@@ -4638,7 +4491,7 @@ mod integer_equality_fact_index_tests {
             Some(Variable(207_501)),
             4,
         );
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&source));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&source));
 
         assert_eq!(
             facts.matching_quantified_fact(&renamed),
@@ -4691,7 +4544,7 @@ mod integer_equality_fact_index_tests {
         assert!(quantified_binder_equivalent(&available, &renamed));
         assert!(quantified_binder_equivalent(&empty, &independently_empty));
         assert!(!quantified_binder_equivalent(&available, &changed_state));
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&available));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&available));
         assert_eq!(facts.matching_quantified_fact(&renamed), Some(available));
         assert!(facts.matching_quantified_fact(&changed_state).is_none());
     }
@@ -4713,10 +4566,10 @@ mod integer_equality_fact_index_tests {
             loadable_exists(&changed_memory, "caller", Variable(207_800), block, None, 4);
         let antecedent = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
         let implication = Proposition::Implies(Box::new(antecedent.clone()), Box::new(consequent));
-        let without_antecedent = ProofFacts::from_ordered(std::slice::from_ref(&implication));
+        let without_antecedent = PureFactStore::from_ordered(std::slice::from_ref(&implication));
         assert!(!without_antecedent.contains_discharged_implication_consequent(&renamed));
 
-        let facts = ProofFacts::from_ordered(&[implication, antecedent]);
+        let facts = PureFactStore::from_ordered(&[implication, antecedent]);
         assert!(facts.contains_discharged_implication_consequent(&renamed));
         assert!(!facts.contains_discharged_implication_consequent(&changed_memory_state));
     }
@@ -4742,7 +4595,7 @@ mod integer_equality_fact_index_tests {
         let source = path_reaches("callee_path", Variable(207_750));
         let required = path_reaches("caller_path", Variable(207_751));
         let antecedent = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
-        let facts = ProofFacts::from_ordered(&[
+        let facts = PureFactStore::from_ordered(&[
             Proposition::Implies(Box::new(antecedent.clone()), Box::new(source)),
             antecedent,
         ]);
@@ -4788,7 +4641,7 @@ mod integer_equality_fact_index_tests {
                     )),
                 )
             }));
-            let facts = ProofFacts::from_ordered(&ordered);
+            let facts = PureFactStore::from_ordered(&ordered);
             crate::kernel::proof::reset_alpha_proposition_key_visits();
             assert!(facts.contains_discharged_implication_consequent(&required));
             visits.push(crate::kernel::proof::alpha_proposition_key_visits());
@@ -4828,7 +4681,7 @@ mod integer_equality_fact_index_tests {
                     4,
                 )
             }));
-            let facts = ProofFacts::from_ordered(&ordered);
+            let facts = PureFactStore::from_ordered(&ordered);
             crate::kernel::proof::reset_alpha_proposition_key_visits();
             assert!(facts.matching_fact_across_effects(&required, &[]).is_some());
             visits.push(crate::kernel::proof::alpha_proposition_key_visits());
@@ -4933,7 +4786,7 @@ mod integer_equality_fact_index_tests {
             ),
             IntegerTerm::constant_i64(9),
         );
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&source_fact));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&source_fact));
 
         for candidate in [wrong_kind, false_fact, free_binder] {
             assert!(
@@ -4989,7 +4842,7 @@ mod integer_equality_fact_index_tests {
             ),
         );
 
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&source_fact));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&source_fact));
         for candidate in [free_mismatch, bound_mismatch, carrier_mismatch] {
             let required = equality(IntegerTerm::constant_i64(9), candidate);
             assert!(facts.matching_fact_across_effects(&required, &[]).is_none());
@@ -5020,7 +4873,7 @@ mod integer_equality_fact_index_tests {
             IntegerTerm::constant_i64(9),
             explicit_load_fold(&changed, Variable(206_100), Variable(206_101)),
         );
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&source_fact));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&source_fact));
 
         assert_eq!(
             facts.matching_fact_across_effects(&renamed_fact, &[]),
@@ -5060,8 +4913,8 @@ mod integer_equality_fact_index_tests {
         small.extend((0..8).map(unrelated_fact));
         let mut large = vec![source_fact];
         large.extend((0..128).map(|value| unrelated_fact(value + 100)));
-        let small_facts = ProofFacts::from_ordered(&small);
-        let large_facts = ProofFacts::from_ordered(&large);
+        let small_facts = PureFactStore::from_ordered(&small);
+        let large_facts = PureFactStore::from_ordered(&large);
 
         crate::kernel::proof::reset_alpha_proposition_key_visits();
         assert!(
@@ -5104,9 +4957,9 @@ mod retained_root_context_tests {
                     )
                 })
                 .collect::<Vec<_>>();
-            let source = ProofFacts::from_ordered(&inputs);
+            let source = PureFactStore::from_ordered(&inputs);
             let before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
-            let retained = ProofFacts::from_source(&source);
+            let retained = PureFactStore::from_source(&source);
             let rebuilt = crate::kernel::reasoning::path_facts::context_rebuild_entries() - before;
             assert_eq!(rebuilt, 0, "cached root readmitted {size} input facts");
             assert!(
@@ -5182,7 +5035,7 @@ mod held_separation_tests {
                 held.clone(),
                 Proposition::And(Box::new(held.clone()), Box::new(held.clone())),
             ] {
-                let root = ProofFacts::default();
+                let root = PureFactStore::default();
                 let facts = root.with_fact(source);
                 assert!(facts.pure_known_available(goal));
                 assert!(!root.contains(goal));
@@ -5211,7 +5064,7 @@ mod held_separation_tests {
             parent: Box::new(part),
             child: Box::new(right.clone()),
         };
-        let facts = ProofFacts::default().with_fact(contains(left));
+        let facts = PureFactStore::default().with_fact(contains(left));
         assert!(!facts.contains(&contains(other_carrier)));
     }
 
@@ -5259,7 +5112,7 @@ mod held_separation_tests {
         };
         let first = link(0, 2);
         let second = link(2, 3);
-        let facts = ProofFacts::from_ordered(&[first.clone(), second]);
+        let facts = PureFactStore::from_ordered(&[first.clone(), second]);
         assert!(
             facts
                 .assumptions()
@@ -5277,7 +5130,7 @@ mod held_separation_tests {
                 .with_selected_held_resource_separation(&goal, &state)
                 .contains(&goal)
         );
-        let unseparated = ProofFacts::from_ordered(&[first]);
+        let unseparated = PureFactStore::from_ordered(&[first]);
         assert!(
             !unseparated
                 .with_selected_held_resource_separation(&goal, &state)
@@ -5311,7 +5164,7 @@ mod held_separation_tests {
         let (Resource::Memory(alias), Resource::Memory(owner)) = (cell(2), cell(0)) else {
             unreachable!()
         };
-        let facts = ProofFacts::from_ordered(&[Proposition::ConditionIs(
+        let facts = PureFactStore::from_ordered(&[Proposition::ConditionIs(
             ConditionTerm::PointerEqual(
                 Box::new(alias.base().clone()),
                 Box::new(owner.base().clone()),
@@ -5346,7 +5199,7 @@ mod held_separation_tests {
             separation(range(0, u32::MAX, 1, 8), cell(1)),
         ] {
             assert!(
-                !ProofFacts::default()
+                !PureFactStore::default()
                     .with_selected_held_resource_separation(&goal, &state)
                     .contains(&goal)
             );
@@ -5358,7 +5211,7 @@ mod held_separation_tests {
         let (Resource::Memory(left), Resource::Memory(right)) = (cell(0), cell(1)) else {
             unreachable!()
         };
-        let facts = ProofFacts::from_ordered(&[Proposition::ConditionIs(
+        let facts = PureFactStore::from_ordered(&[Proposition::ConditionIs(
             ConditionTerm::PointerEqual(
                 Box::new(left.base().clone()),
                 Box::new(right.base().clone()),
@@ -5395,7 +5248,7 @@ mod held_separation_tests {
             separation(cell(0), cell(2)),
         ] {
             assert!(
-                !ProofFacts::default()
+                !PureFactStore::default()
                     .with_selected_held_resource_separation(&goal, &state)
                     .contains(&goal)
             );
@@ -5425,7 +5278,7 @@ mod held_separation_tests {
             ]),
         );
         let goal = separation(left, right);
-        let facts = ProofFacts::from_ordered(&[alias]);
+        let facts = PureFactStore::from_ordered(&[alias]);
         assert!(
             !facts
                 .with_selected_held_resource_separation(&goal, &state)
@@ -5451,7 +5304,7 @@ mod statement_publication_delta_tests {
         };
         for size in [16, 64, 256, 1024] {
             let prefix = (0..size).map(fact).collect::<Vec<_>>();
-            let root = ProofFacts::from_ordered(&prefix);
+            let root = PureFactStore::from_ordered(&prefix);
             let fresh = fact(size);
             let successor =
                 root.with_statement_facts(vec![prefix[size - 1].clone(), fresh.clone()]);
@@ -5480,7 +5333,7 @@ mod statement_publication_delta_tests {
                 .cloned()
                 .map(ExecutionPureFact::new)
                 .collect();
-            let root = ProofFacts::from_ordered(&prefix_facts);
+            let root = PureFactStore::from_ordered(&prefix_facts);
             let fresh = fact(size);
             let mut selected = prefix_facts.clone();
             selected.push(fresh.clone());
@@ -5524,7 +5377,7 @@ mod integer_witness_freshness_tests {
                 true,
             )
         };
-        let facts = ProofFacts::from_ordered(&[
+        let facts = PureFactStore::from_ordered(&[
             Proposition::ConditionIs(
                 ConditionTerm::equal(MachineTerm::Variable(load), MachineTerm::constant(0)),
                 true,
@@ -5589,7 +5442,7 @@ mod quantified_conjunct_projection_tests {
     #[test]
     fn a_guarded_conjunction_supplies_each_conjunct_under_the_same_guard() {
         let source = guarded(1, 4, |k| and(at_most(k, 9), equals(k, 7)));
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&source));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&source));
         // A renamed binder is the same claim.
         for goal in [
             guarded(2, 4, |k| equals(k, 7)),
@@ -5607,7 +5460,7 @@ mod quantified_conjunct_projection_tests {
         let source = guarded(1, 4, |k| {
             and(and(equals(k, 7), at_most(k, 9)), at_most(k, 12))
         });
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&source));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&source));
         for goal in [
             guarded(2, 4, |k| and(equals(k, 7), at_most(k, 9))),
             guarded(2, 4, |k| at_most(k, 9)),
@@ -5623,7 +5476,7 @@ mod quantified_conjunct_projection_tests {
     #[test]
     fn a_projection_keeps_the_guard_and_the_conjuncts_exactly() {
         let source = guarded(1, 4, |k| and(at_most(k, 9), equals(k, 7)));
-        let facts = ProofFacts::from_ordered(&[source]);
+        let facts = PureFactStore::from_ordered(&[source]);
         for goal in [
             // A different guard is a different claim.
             guarded(2, 5, |k| equals(k, 7)),
@@ -5642,7 +5495,7 @@ mod quantified_conjunct_projection_tests {
     fn a_universal_without_a_conjunction_supplies_nothing() {
         let source = guarded(1, 4, |k| equals(k, 7));
         assert!(guarded_universal_conjunct_projections(&source).is_empty());
-        let facts = ProofFacts::from_ordered(&[source]);
+        let facts = PureFactStore::from_ordered(&[source]);
         assert_eq!(
             facts.quantified_conjunct_projection_source(&guarded(2, 4, |k| equals(k, 7))),
             None
@@ -5652,7 +5505,7 @@ mod quantified_conjunct_projection_tests {
     #[test]
     fn a_conjunct_of_a_conjunction_fact_is_indexed_too() {
         let source = guarded(1, 4, |k| and(at_most(k, 9), equals(k, 7)));
-        let facts = ProofFacts::from_ordered(&[]).with_fact(and(equals(60, 1), source.clone()));
+        let facts = PureFactStore::from_ordered(&[]).with_fact(and(equals(60, 1), source.clone()));
         assert_eq!(
             facts.quantified_conjunct_projection_source(&guarded(2, 4, |k| equals(k, 7))),
             Some(&source)
@@ -5720,6 +5573,47 @@ mod retained_match_root_tests {
 }
 
 #[cfg(test)]
+mod propagated_fact_publication_tests {
+    use super::*;
+    fn atom(name: &str) -> Proposition {
+        Proposition::Predicate {
+            name: name.into(),
+            arguments: vec![],
+        }
+    }
+    fn rule() -> Proposition {
+        Proposition::Implies(Box::new(atom("trigger")), Box::new(atom("result")))
+    }
+
+    #[test]
+    fn propagation_is_published_in_root_updates_and_statement_batches() {
+        let root = PureFactStore::from_ordered(&[rule()]);
+        assert!(!root.contains(&atom("result")));
+        for child in [
+            root.with_fact(atom("trigger")),
+            root.with_statement_facts(vec![atom("trigger")]),
+            PureFactStore::from_ordered(&[rule(), atom("trigger")]),
+        ] {
+            assert!(child.contains(&atom("result")));
+            assert!(child.propositions().any(|p| p == &atom("result")));
+            assert!(Arc::ptr_eq(
+                child.top_level_exact.get(&atom("result")).unwrap(),
+                &child
+                    .assumptions()
+                    .shared_assumed_proposition(&atom("result"))
+                    .unwrap(),
+            ));
+            assert!(!root.contains(&atom("result")));
+        }
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!("../../scaling_tests/kernel/proof/facts/propagated_publication.rs");
+    }
+}
+
+#[cfg(test)]
 mod unified_store_tests {
     use super::*;
     fn fact(name: &str) -> Proposition {
@@ -5731,7 +5625,7 @@ mod unified_store_tests {
     #[test]
     fn restriction_builds_a_new_scope_without_mutating_parent() {
         let (a, b) = (fact("scope_a"), fact("scope_b"));
-        let root = ProofFacts::from_ordered(&[a.clone(), b.clone(), a.clone()]);
+        let root = PureFactStore::from_ordered(&[a.clone(), b.clone(), a.clone()]);
         let unchanged = root.retaining(|_| true);
         assert!(unchanged.shares_assumptions_with(&root));
         let restricted = root.retaining(|prop| prop != &b);

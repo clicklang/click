@@ -19,7 +19,7 @@ int32 is_negative(char c) {
     requires negative_char(c);
     ensures result == 1;
 } by {
-    unfold(negative_char);
+    unfold(negative_char(c));
 }
 ```
 

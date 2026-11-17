@@ -30,7 +30,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             selected.push(kernel);
         }
-        let facts = crate::kernel::proof::ProofFacts::from_ordered(&selected);
+        let facts = crate::kernel::proof::PureFactStore::from_ordered(&selected);
         Ok(check(&|p| facts.pure_known_available(p)))
     }
 }
@@ -581,7 +581,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             selected.push(kernel);
         }
-        let facts = crate::kernel::proof::ProofFacts::from_ordered(&selected);
+        let facts = crate::kernel::proof::PureFactStore::from_ordered(&selected);
         for expression in [left, right] {
             let ContractExpression::If {
                 condition,

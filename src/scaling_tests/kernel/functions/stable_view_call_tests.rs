@@ -45,11 +45,12 @@ fn local_storage_classification_stops_at_a_fixed_ownership_gap() {
             }
             resources.synchronize_memory_equalities(&facts);
             let state = ExecutionState::new()
-                .with_memory(
-                    Memory::new()
-                        .with_block(pointer.block.clone(), 16384)
-                        .store(pointer.clone(), int32(7)),
-                )
+                .with_population_creation_tracking()
+                .with_memory(with_initialized_cells(
+                    Memory::new().with_block(pointer.block.clone(), 16384),
+                    &pointer,
+                    1024,
+                ))
                 .with_resource_context(resources);
             let function = reader_for_input("classify_local_storage", 1024);
             let environment = environment(&function);
@@ -65,7 +66,7 @@ fn local_storage_classification_stops_at_a_fixed_ownership_gap() {
                             &function,
                             &arguments,
                             &facts,
-                            ExecutionContext::execute_bodies(&environment),
+                            ExecutionContext::verify_loops(&environment),
                             &mut ExecutionBudget::new(),
                         )
                         .expect("classification produces a call outcome")
@@ -144,11 +145,12 @@ fn returning_one_borrowed_owner_does_not_rebuild_its_memory_block() {
         }
         resources.synchronize_memory_equalities(&facts);
         let state = ExecutionState::new()
-            .with_memory(
-                Memory::new()
-                    .with_block(pointer.block.clone(), 16384)
-                    .store(pointer.clone(), int32(7)),
-            )
+            .with_population_creation_tracking()
+            .with_memory(with_initialized_cells(
+                Memory::new().with_block(pointer.block.clone(), 16384),
+                &pointer,
+                1024,
+            ))
             .with_resource_context(resources);
         let function = reader_for_input("return_one_owner", 1024);
         let environment = environment(&function);
@@ -167,7 +169,7 @@ fn returning_one_borrowed_owner_does_not_rebuild_its_memory_block() {
                                 pointer.clone(),
                             )],
                             &facts,
-                            ExecutionContext::execute_bodies(&environment),
+                            ExecutionContext::verify_loops(&environment),
                             &mut ExecutionBudget::new(),
                         )
                         .unwrap()

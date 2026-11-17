@@ -14,7 +14,7 @@ int32 widened_range(uint8 p[], uint32 lo, uint32 hi) {
     requires bytes::contains(p, lo, hi, 'x');
     ensures bytes::contains(p, lo, hi, 'x') by {
         step_until(function.exit);
-        unfold(bytes::contains);
+        unfold(bytes::contains(p, lo, hi, 'x'));
         obtain (found: uint64) {
             lo as uint64 <= found and found < hi as uint64 and p[found] == 'x'
         }

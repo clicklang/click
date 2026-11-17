@@ -49,11 +49,11 @@ void consume_population(struct owner* owner, int32 amount) {
     ensures valid_capacity(owner);
 } by {
     open(accounting(owner)) {
-        unfold(valid_capacity);
+        unfold(valid_capacity(owner));
         step();
     }
     step_until(function.exit);
-    unfold(valid_capacity);
+    unfold(valid_capacity(owner));
     solve();
 }
 ```

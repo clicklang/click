@@ -82,8 +82,6 @@ fn children_all(
         } => visit(try_body) && visit(handler),
         ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -857,8 +855,7 @@ pub(super) mod tests {
             ProofBranch::new(
                 crate::kernel::proof::ProofObligation::FunctionOutcome(outcome),
                 ProofBranchState {
-                    facts: ProofFacts::default(),
-                    unfolded_predicates: Default::default(),
+                    facts: PureFactStore::default(),
                     execution: None,
                 },
             ),

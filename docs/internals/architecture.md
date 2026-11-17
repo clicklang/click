@@ -189,6 +189,16 @@ Class types use an elaborated `struct Name` identity distinct from generic
 type parameters. Construction has no trusted user-constructor contract;
 nontrivial copying, destruction and class handlers remain refused.
 
+C++ record-reference locals reuse the parameter carrier (`&name`) and retain
+the record layout in the imported function's local struct-pointer metadata.
+Surface therefore resolves `name.field` as a record place, without treating the
+alias as a new object or granting memory authority. Binding through a record
+pointer uses checked address formation on a byte-array lvalue of the complete
+record size, followed by the adapter's existing record-pointer representation.
+The address rule validates storage without reading the array or its fields.
+Automatic destructor cleanup emits the existing storage-lifetime-end operation
+after the destructor returns, so an alias cannot keep a scoped record alive.
+
 C++ `declared_noexcept` is retained in the shared imported declaration as
 `requires_nonthrowing_contract`, including dispatch aliases. Signature
 checking refuses `throws` on that interface; the existing nonthrowing body

@@ -108,11 +108,7 @@ pub(crate) fn program_checked_function_proposition_with_reason(
         proposition
     }
     match conclusion(theorem) {
-        Proposition::ProgramFunctionSatisfiesSpecification {
-            function: proved_function,
-            specification: proved_specification,
-        }
-        | Proposition::ProgramFunctionPartiallySatisfiesSpecification {
+        Proposition::ProgramFunctionPartiallySatisfiesSpecification {
             function: proved_function,
             specification: proved_specification,
         } if **proved_function == *function && proved_specification.as_ref() == specification => {}
@@ -307,10 +303,12 @@ mod cached_read_completion_tests {
             }),
             loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
         };
-        let theorem = Theorem::new(Proposition::ProgramFunctionSatisfiesSpecification {
-            function: Box::new(function.clone()),
-            specification: Box::new(specification.clone()),
-        });
+        let theorem = Theorem::new(
+            Proposition::ProgramFunctionPartiallySatisfiesSpecification {
+                function: Box::new(function.clone()),
+                specification: Box::new(specification.clone()),
+            },
+        );
         let proof: ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()> =
             ProofObject::root(
                 (),
@@ -332,8 +330,7 @@ mod cached_read_completion_tests {
                         )),
                     )),
                     ProofBranchState {
-                        facts: ProofFacts::from_ordered(&[proposition]),
-                        unfolded_predicates: PersistentOrderedSet::default(),
+                        facts: PureFactStore::from_ordered(&[proposition]),
                         execution: None,
                     },
                 ),
@@ -2060,7 +2057,7 @@ fn function_claim_holds_on_prepared_path(
                     exit_state.resources(),
                     fact,
                     function.composite_resource_definitions(),
-                    exit_state.memory(),
+                    &exit_state.program_point(),
                     assumptions,
                 )
             }) {
@@ -2588,11 +2585,7 @@ impl<'a> FunctionEnsureGoalContext<'a> {
         })
     }
 
-    pub(crate) fn goals(
-        &self,
-        contract_index: usize,
-        unfolded_predicates: &[String],
-    ) -> Result<Vec<ContractClaimGoal>, String> {
+    pub(crate) fn goals(&self, contract_index: usize) -> Result<Vec<ContractClaimGoal>, String> {
         let function = self.function;
         let entry_state = &self.entry_state;
         let post_state = &self.post_state;
@@ -2605,10 +2598,6 @@ impl<'a> FunctionEnsureGoalContext<'a> {
             .predicate_unfoldings()
             .iter()
             .find(|unfolding| unfolding.body() == ensure)
-            .filter(|unfolding| match unfolding.predicate() {
-                SpecProposition::Predicate { name, .. } => !unfolded_predicates.contains(name),
-                _ => false,
-            })
             .map_or(ensure, PredicateUnfolding::predicate);
         let lowering_assumptions = assumptions
             .clone()
@@ -2660,10 +2649,9 @@ pub fn program_function_ensure_goals(
     arguments: &[ProgramExpression],
     outcome: &FunctionOutcome,
     assumptions: &PureFactContext,
-    unfolded_predicates: &[String],
 ) -> Option<Vec<ContractClaimGoal>> {
     FunctionEnsureGoalContext::new(function, caller_state, arguments, outcome, assumptions)?
-        .goals(contract_index, unfolded_predicates)
+        .goals(contract_index)
         .ok()
 }
 
@@ -2687,7 +2675,7 @@ pub(crate) fn program_function_exceptional_ensure_goals(
     let expanded_entry_resources = expand_all_composite_resource_facts(
         entry_state.resources(),
         function.composite_resource_definitions(),
-        entry_state.memory(),
+        &entry_state.program_point(),
         assumptions,
     )?;
     entry_state = entry_state.with_resource_context(expanded_entry_resources);
@@ -3943,7 +3931,7 @@ mod checked_proposition_index_tests {
             true,
         );
         let state = ExecutionState::new();
-        let proposition = Proposition::ProgramFunctionExecutes {
+        let proposition = Proposition::ProgramFunctionVerifies {
             state: Box::new(state.clone()),
             function: Box::new(function.clone()),
             arguments: Vec::new(),
@@ -4197,12 +4185,12 @@ mod claim_requirement_tests {
 
     use crate::kernel::proof::{
         FunctionOutcomeObligation, OutcomeIdentity, OutcomeProofCore, OutcomeProofState,
-        PersistentOrderedSet, ProofBranch, ProofBranchState, ProofFacts, ProofObject,
-        ProofObligation as BranchObligation, PropositionKnownContext,
+        ProofBranch, ProofBranchState, ProofObject, ProofObligation as BranchObligation,
+        PropositionKnownContext, PureFactStore,
     };
 
     type ClaimProof = ProofObject<(), BranchObligation<(), Arc<OutcomeProofState<()>>>, ()>;
-    fn root(facts: ProofFacts, outcome: &Arc<OutcomeProofState<()>>) -> ClaimProof {
+    fn root(facts: PureFactStore, outcome: &Arc<OutcomeProofState<()>>) -> ClaimProof {
         ClaimProof::root(
             (),
             ProofBranch::new(
@@ -4212,7 +4200,6 @@ mod claim_requirement_tests {
                 )),
                 ProofBranchState {
                     facts,
-                    unfolded_predicates: PersistentOrderedSet::default(),
                     execution: None,
                 },
             ),
@@ -4229,7 +4216,7 @@ mod claim_requirement_tests {
             true,
         );
         let truth = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
-        let empty = ProofFacts::from_ordered(std::slice::from_ref(&truth));
+        let empty = PureFactStore::from_ordered(std::slice::from_ref(&truth));
         let established = empty.with_kernel_checked_fact(domain.clone());
         for (target, is_exceptional) in [
             (FunctionContractClaimTarget::EnsureProposition(0), false),
@@ -4298,7 +4285,7 @@ mod claim_requirement_tests {
 #[cfg(test)]
 mod claim_requirement_scaling_tests {
     use super::*;
-    use crate::kernel::proof::ProofFacts;
+    use crate::kernel::proof::PureFactStore;
     include!(
         "../../../scaling_tests/kernel/api/contract_certification/contract_claims/requirements_tests.rs"
     );

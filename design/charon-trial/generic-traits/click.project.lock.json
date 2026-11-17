@@ -6,7 +6,7 @@
       "lock": {
         "envelope": 1,
         "frontend": {
-          "identity": "7c2e994c506684f2bc8c86d9798bf9cb35c42693c51c3dd401139ef6618ae66c",
+          "identity": "df7480f0d0ff533c4239edccb00ca77727d5743387aaa485ac5aff933eabca9c",
           "name": "charon"
         },
         "rust": {
@@ -15,7 +15,7 @@
             "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
             "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
             "extractor_version": "0.1.279",
-            "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+            "profile": "cd1ca7859f005e20d5211850322a37059b3c50e734584f64d53d513b0210fe76"
           },
           "schema": 9,
           "source": "9c849802e8c29b61ef867aedc62e798416ab87a3accb9e9dd0908475037fc715"
@@ -27,7 +27,7 @@
               "path": ".click/generic_traits/shapes.rs.ullbc",
               "sha256": "8bb36a86aeeb14c7ee33b235eff174e6009eb043cd5dcf4787ef628a4bbbf631"
             },
-            "identity": "eeba8d5e6f492faa22001936b11b065c8b670ff7a62ff8efb295b111ae6f9cdc",
+            "identity": "e58ed810911658de91197c382770f24a2d4f7e1b0565e8346d9bd5d581e14bc4",
             "inputs": {
               "shapes.rs": "1b34b2ecf3b740a710dab2f4bca13f0cd794b84858bfd4dfe82e7157c7d624fd"
             }

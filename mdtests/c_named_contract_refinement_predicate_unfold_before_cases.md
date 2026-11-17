@@ -46,8 +46,8 @@ void clear_if_active(int32 active, int32* cell) {
 
 theorem clear_if_active_satisfies_contract() {
     ensures ClearsWhenActive(&clear_if_active) by {
-        unfold(ClearsWhenActive);
-        unfold(ActiveIsZero);
+        unfold(ClearsWhenActive(&clear_if_active));
+        unfold(ActiveIsZero(active, cell));
 
         if active != 0 {
             solve();

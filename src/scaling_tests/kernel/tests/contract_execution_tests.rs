@@ -59,7 +59,7 @@ fn conditional_universal_certification_ignores_unrelated_facts() {
             0,
         ));
         let mut proof_facts =
-            crate::kernel::proof::ProofFacts::from_ordered(&[conditional_path_universal(
+            crate::kernel::proof::PureFactStore::from_ordered(&[conditional_path_universal(
                 &ty,
                 100,
                 memory.clone(),
@@ -267,7 +267,7 @@ fn automatic_scalar_ownership_work_is_independent_of_unrelated_storage() {
                 &state,
                 &statement,
                 &PureFactContext::new(),
-                ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+                ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
                 &mut ExecutionBudget::new(),
             )
             .unwrap()

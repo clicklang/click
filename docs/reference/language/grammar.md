@@ -105,11 +105,10 @@ documentation inventory keep the following accepted words synchronized.
 | `by`, `using` | Proof introduction and exact-premise syntax. |
 | `mark`, `step`, `step_until` | Execution tactics. |
 | `unfold`, `fold`, `observe`, `construct`, `open` | Predicate and resource tactics. |
-| `peel` | Range-fold tactic: `peel(f(args)) using { ... }` opens the range-fold law of an `Integer`-valued pure function whose body is a range fold, selected by the listed guards. |
 | `take`, `give`, `gather`, `scatter` | Iterated guarded-ownership tactics: move one element out of or into an iterated fact, and form or dissolve the whole fact. `forall` inside a resource body starts the iterated clause itself. |
 | `apply`, `have`, `if`, `cases`, `both`, `branch`, `outcomes`, `loop` | Theorem application and structural proof tactics. |
 | `witness`, `obtain` | Existential introduction and elimination. `let` binds what an operation produces. |
-| `known`, `extract`, `normalize`, `intro`, `enumerate`, `contradiction` | Explicit proposition tactics. |
+| `known`, `normalize`, `intro`, `enumerate`, `contradiction` | Explicit proposition tactics. |
 | `sorry` | Dev-only proof hole `sorry()`. It parses only under `click verify --allow-sorry`; see [Dev-only proof hole](../cli/verify.md#dev-only-proof-hole). A user-defined tactic may not take the name. |
 | `assumption`, `auto`, `arithmetic`, `execute`, `execute_until` | Removed tactic spellings. The parser refuses each with a diagnostic that names its replacement: `known()` for `assumption()`; the omitted proof for `by auto();` and `solve();` for a written `auto();`; `solve() using { ... }` for `arithmetic() using { ... }` and `solve() using {}` for bare `arithmetic()`; the implicit tail, or `step_until(function.exit)` to work at function exit, for `execute()`; and `step_until` for `execute_until`. |
 | `close_invariants` | Retired loop tactic, still reserved. The parser rejects it with `` `close_invariants` is retired ``; a loop's back edge now closes each bundle member with `solve()`, helped by `have` facts proved before it. |
@@ -444,7 +443,7 @@ a contradiction. Equality of every corresponding field proves equality of
 two applications of one constructor (congruence), and an exact equality of
 such applications exposes equality only at the same field position
 (injectivity). `solve` can select these rules, expanding congruence to explicit
-`rewrite` steps and injectivity to checked `extract` steps.
+`rewrite` steps and injectivity to checked `have ... by known();` steps.
 
 Pattern arms must name every variant exactly once, use the declared field
 arity, and keep field bindings local to the arm. Generic arguments and fields

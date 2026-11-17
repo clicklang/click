@@ -70,7 +70,7 @@ fn statement_outcome_reconstruction_preserves_holder_identity() {
         &state,
         &program_assign("x", crate::kernel::program_expression::int32_literal(1)),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("assignment should execute");

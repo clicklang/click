@@ -159,15 +159,17 @@ output. Where existing code or docs follow produce-then-check, treat it as a
 defect to remove, not a pattern to extend. See
 [construction, not re-validation](docs/internals/verification-efficiency.md#construction-not-re-validation).
 
-## Spell every fact; never search for a spelling
+## Follow the raise-lower principle
 
-Every fact a proof state holds, and every goal it focuses, has a Click
-spelling that lowers back to it; expansion depends on this. Do not write code
-that searches for a spelling and falls back to a placeholder, another
-renderer, `None`, a skipped candidate, or a declining route. When a fact has
-no spelling, name the value where it is introduced or add its Surface form,
-and treat the gap as a tooling defect. A new kernel fact or term form ships
-with its Surface form. See [spellability](docs/internals/spellability.md).
+Every fact a proof state holds, and every goal it focuses, must raise to a
+Surface AST that lowers back to it in the same context; expansion depends on
+this. Raise from retained names and provenance, never by trying candidate
+forms or historical states. Do not fall back to a placeholder, another
+renderer, `None`, a skipped candidate, or a declining route. When raising a
+fact is impossible, name the value where it is introduced or add its Surface
+form, and treat the gap as a tooling defect. A new kernel fact or term form
+ships with its Surface form. See the
+[raise-lower principle](docs/internals/raise-lower-principle.md).
 
 Lowering is fact-stable: a term may depend on the program state and the
 resources held, but facts may only refuse it, discharge its obligations, or
@@ -175,4 +177,4 @@ add side facts; they must not change the term produced. Do not fold, resolve
 reads or aliases, pick comparison kinds, or prune disjuncts from facts during
 lowering; put equality reasoning in checking (the e-graph). Check with
 `scripts/fact-stability.sh`. See
-[fact-stable lowering](docs/internals/spellability.md#lowering-is-fact-stable).
+[fact-stable lowering](docs/internals/raise-lower-principle.md#lowering-is-fact-stable).

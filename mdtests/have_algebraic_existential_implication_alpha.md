@@ -1,0 +1,26 @@
+# Derive an alpha-renamed existential from a discharged implication
+
+This differs from `have_algebraic_existential_implication.md` only in the
+bound variable's name. Both propositions mean the same thing. The antecedent
+is also available exactly, and there is no C state or memory state.
+
+```click
+theorem have_algebraic_existential_alpha(flag: int32) {
+    requires flag != 0;
+    requires flag != 0 implies exists (callee_path: Nat) {
+        callee_path == Nat::Zero
+    };
+    ensures exists (caller_path: Nat) {
+        caller_path == Nat::Zero
+    } by {
+        have exists (caller_path: Nat) {
+            caller_path == Nat::Zero
+        };
+        known();
+    }
+}
+```
+
+```expect
+pass
+```

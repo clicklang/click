@@ -142,7 +142,7 @@ fn nested_conjunction_extraction_precedes_explicit_arithmetic_certificate() {
     let sources = borrowed_sources(&sources);
     let expanded = expand_function_proof_source(&click, &sources, "drain")
         .expect("nested conjunction provenance should expand");
-    assert!(expanded.contains("extract(n >= 0);"), "{expanded}");
+    assert!(expanded.contains("have n >= 0 by"), "{expanded}");
     // The extracted conjunct is the initialization's own fact; the
     // decrease and the exit equality are explicit arithmetic certificates.
     assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
@@ -914,7 +914,7 @@ fn loop_initialization_theorem_search_retains_checked_fixed_state_proof() {
             theorem nonnegative_is_acceptable(x: int32) {
                 requires x >= 0;
                 ensures acceptable(x) by {
-                    unfold(acceptable);
+                    unfold(acceptable(x));
                     solve();
                 }
             }
@@ -936,7 +936,7 @@ fn loop_initialization_theorem_search_retains_checked_fixed_state_proof() {
                     }
                 }
                 step();
-                unfold(acceptable);
+                unfold(acceptable(x));
                 solve();
             }
         "#;
@@ -1586,7 +1586,7 @@ fn loop_exit_solve_expands_invariant_conjuncts_explicitly() {
             .expect("loop-exit solve should expand through explicit invariant conjuncts");
 
     assert!(
-        expanded.contains("extract(at(loop(0).exit, i) <= at(loop(0).exit, n));"),
+        expanded.contains("have at(loop(0).exit, i) <= at(loop(0).exit, n) by"),
         "{expanded}"
     );
     assert!(

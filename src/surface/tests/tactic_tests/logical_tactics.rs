@@ -369,7 +369,7 @@ fn failed_fixed_state_normalize_does_not_dump_internal_memory() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_02")]
-fn known_computes_leaves_but_does_not_extract_implications() {
+fn known_computes_leaves_and_uses_exact_propagation() {
     let c_source = r#"
         int32 keep(int32 x, int32 y) {
             x = x;
@@ -386,7 +386,7 @@ fn known_computes_leaves_but_does_not_extract_implications() {
         } by {
             step();
             have y == 0 by {
-                extract(y == 0);
+                apply(x == 0 implies y == 0) using { x == 0; };
             }
             step();
             normalize();
@@ -396,9 +396,15 @@ fn known_computes_leaves_but_does_not_extract_implications() {
     verify_c_sources(click_source, &[("keep.c", c_source)])
         .expect("explicit extraction and normalization should verify");
 
-    let implicit_extract = click_source.replace("extract(y == 0);", "known();");
-    let error = verify_c_sources(&implicit_extract, &[("keep.c", c_source)])
-        .expect_err("known must not discharge an implication");
+    let implicit_extract = click_source.replace(
+        "apply(x == 0 implies y == 0) using { x == 0; };",
+        "known();",
+    );
+    verify_c_sources(&implicit_extract, &[("keep.c", c_source)])
+        .expect("known sees the exactly propagated consequence");
+    let missing_guard = implicit_extract.replace("requires x == 0;", "");
+    let error = verify_c_sources(&missing_guard, &[("keep.c", c_source)])
+        .expect_err("propagation must not invent a missing guard");
     assert!(
         error
             .message()
@@ -560,7 +566,7 @@ fn fixed_state_proof_intro_places_forall_binder_in_surface_scope() {
                 } by {
                     intro();
                     intro();
-                    extract(k == k);
+                    have k == k by known();
                     known();
                 }
                 known();
@@ -1131,7 +1137,7 @@ fn unfolds_predicate_requirement_to_prove_consequence() {
                 requires sorted_pair(p);
                 ensures consequence: p[0] <= p[1] by {
                     step_until(function.exit);
-                    unfold(sorted_pair);
+                    unfold(sorted_pair(p));
                     solve();
                 }
             }
@@ -1146,7 +1152,12 @@ fn unfolds_predicate_requirement_to_prove_consequence() {
         Some(
             [
                 ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit),
-                ProofTactic::UnfoldPredicate("sorted_pair".to_string()),
+                ProofTactic::UnfoldFunction(ClickFunctionApplication {
+                    name: "sorted_pair".into(),
+                    arguments: vec![ContractExpression::ProgramExpression(
+                        ProgramExpression::Variable("p".into())
+                    )]
+                }),
                 ProofTactic::Solve,
             ]
             .as_slice()
@@ -1180,7 +1191,7 @@ fn unfolds_predicate_goal_to_prove_compare_swap_sorted() {
             int32 compare_swap2(int32* p) {
                 consumes p[0..2];
                 ensures sorted: sorted_pair(p) by {
-                    unfold(sorted_pair);
+                    unfold(sorted_pair(p));
                 }
             }
         "#;
@@ -1219,7 +1230,7 @@ fn unfolds_general_sorted_predicate() {
                 requires sorted(p, n);
                 ensures still_sorted: sorted(p, n) by {
                     step_until(function.exit);
-                    unfold(sorted);
+                    unfold(sorted(p, n));
                     solve();
                 }
             }
@@ -1243,11 +1254,11 @@ fn unfolds_general_sorted_predicate() {
         ContractProofClaim::Ensure(0),
     )
     .expect("the retained predicate proof should expand");
-    assert!(expanded.contains("unfold(sorted);"), "{expanded}");
+    assert!(expanded.contains("unfold(sorted("), "{expanded}");
     verify_c_sources(&expanded, &[("keep_sorted.c", c_source)])
         .expect("the expanded predicate proof should independently reverify");
 
-    let corrupted = expanded.replacen("unfold(sorted);", "unfold(missing);", 1);
+    let corrupted = expanded.replacen("unfold(sorted(", "unfold(missing(", 1);
     assert_ne!(
         corrupted, expanded,
         "the expansion should expose its checked unfold"
@@ -1653,9 +1664,10 @@ fn outcome_instantiate_uses_the_checked_proof_path() {
         } by {
             step_until(function.exit);
             have 2 <= value by {
+                have 0 <= 2 and 2 < 3;
                 instantiate(forall (k: int32) {
                     0 <= k and k < 3 implies k <= value
-                }, 2) using {}
+                }, 2);
                 known();
             }
             known();
@@ -1686,21 +1698,23 @@ fn instantiate_does_not_discharge_guards_from_ambient_facts() {
         } by {
             step_until(function.exit);
             have 2 <= value by {
+                have 0 <= 2 and 2 < n;
                 instantiate(forall (k: int32) {
                     0 <= k and k < n implies k <= value
-                }, 2) using {}
+                }, 2);
                 known();
             }
             known();
         }
     "#;
 
-    let error = verify_c_sources(click_source, &[("pick.c", c_source)])
-        .expect_err("the symbolic upper-bound guard must name its evidence");
+    verify_c_sources(click_source, &[("pick.c", c_source)])
+        .expect("an ordinary have can prove the exact symbolic guard");
+    let without_guard = click_source.replace("                have 0 <= 2 and 2 < n;\n", "");
+    let error = verify_c_sources(&without_guard, &[("pick.c", c_source)])
+        .expect_err("instantiation must preserve the unproved symbolic guard");
     assert!(
-        error
-            .message()
-            .contains("does not follow from the listed evidence"),
+        error.message().contains("`known` requires"),
         "unexpected error: {}",
         error.message()
     );
@@ -1925,7 +1939,7 @@ fn pure_unfold_then_solve_retains_the_checked_proof_path() {
 
         theorem unfold_reflexive(x: int32) {
             ensures reflexive(x) by {
-                unfold(reflexive);
+                unfold(reflexive(x));
                 solve();
             }
         }
@@ -2077,10 +2091,10 @@ fn leading_logical_have_decomposition_stays_on_one_proof() {
             ensures result == x;
         } by {
             have x == 0 by {
-                extract(x == 0);
+                known();
             }
             have y == 0 by {
-                extract(y == 0);
+                known();
             }
             have x == 0 and y == 0 by {
                 known();
@@ -2121,7 +2135,7 @@ fn leading_logical_have_decomposition_stays_on_one_proof() {
         .expanded_proof_tactics()
         .expect("the checked logical scopes should expose retained provenance");
     let expanded_debug = format!("{expanded:#?}");
-    for operation in ["Extract", "Known", "Intro", "Cases", "If"] {
+    for operation in ["Have", "Known", "Intro", "Cases", "If"] {
         assert!(
             expanded_debug.contains(operation),
             "the expansion should retain {operation}: {expanded_debug}"
@@ -2158,9 +2172,10 @@ fn leading_universal_have_scopes_stay_on_one_proof() {
                 normalize();
             }
             have 1 <= x by {
+                have 0 <= 1 and 1 < 2;
                 instantiate(forall (k: int32) {
                     0 <= k and k < 2 implies k <= x
-                }, 1) using {}
+                }, 1);
                 known();
             }
             have forall (k: int32) {
@@ -2202,7 +2217,7 @@ fn leading_universal_have_scopes_stay_on_one_proof() {
         .expanded_proof_tactics()
         .expect("the checked universal scopes should expose retained provenance");
     let expanded_debug = format!("{expanded:#?}");
-    for operation in ["Intro", "InstantiateUsing", "Enumerate"] {
+    for operation in ["Intro", "Instantiate", "Enumerate"] {
         assert!(
             expanded_debug.contains(operation),
             "the expansion should retain {operation}: {expanded_debug}"
@@ -2219,7 +2234,7 @@ fn leading_universal_have_scopes_stay_on_one_proof() {
     verify_c_sources(&rewritten, &[("universal_haves.c", c_source)])
         .expect("the serialized universal scopes should independently reverify");
 
-    let corrupted = rewritten.replacen("}, 1) using {", "}, 0) using {", 1);
+    let corrupted = rewritten.replacen("}, 1);", "}, 0);", 1);
     assert_ne!(
         corrupted, rewritten,
         "the expansion should expose the checked instantiation argument"
@@ -2230,9 +2245,7 @@ fn leading_universal_have_scopes_stay_on_one_proof() {
     // The instantiation at the wrong argument adds a different fact, so it
     // no longer closes the `have` goal.
     assert!(
-        error
-            .message()
-            .contains("its body ran to the end with the goal still open"),
+        error.message().contains("`known` requires"),
         "the checked Proof operation should reject the tamper directly: {error:?}"
     );
 }
@@ -2923,7 +2936,7 @@ fn outcome_predecessor_upper_bound_writes_a_rewritten_nonnegative_leg() {
 
             ensures ordered_pair(pair);
         } by {
-            unfold(ordered_pair);
+            unfold(ordered_pair(pair));
             step_until(function.exit);
             solve();
         }
@@ -3450,7 +3463,7 @@ test_batches! {
     ],
     logical_tactics_batch_02: [
         failed_fixed_state_normalize_does_not_dump_internal_memory,
-        known_computes_leaves_but_does_not_extract_implications,
+        known_computes_leaves_and_uses_exact_propagation,
         parses_local_have_proof_tactic,
         contract_lets_do_not_capture_later_quantifier_binders,
     ],
@@ -3619,5 +3632,206 @@ fn solve_trivial_disjuncts_reject_false_goals() {
     ] {
         let source = format!("theorem invalid(n: uint64) {{ ensures {goal} by solve(); }}");
         verify_c_sources(&source, &[]).expect_err("neither disjunct holds for every n");
+    }
+}
+
+#[test]
+fn local_predicate_unfold_opens_only_the_selected_application() {
+    let source = r#"
+        predicate positive(x: int32) { x > 0 }
+        theorem selected() {
+            requires positive(1);
+            ensures 1 > 0 by { unfold(positive(1)); known(); }
+        }
+        theorem goal(x: int32) {
+            requires x > 0;
+            ensures positive(x) by { unfold(positive(x)); known(); }
+        }
+    "#;
+    without_implicit_solve(|| verify_click_theorems(source)).unwrap();
+    let not_a_mode = r#"
+        predicate positive(x: int32) { x > 0 }
+        theorem later() {
+            ensures true by {
+                unfold(positive(1));
+                have positive(2) by { known(); }
+                known();
+            }
+        }
+    "#;
+    assert!(without_implicit_solve(|| verify_click_theorems(not_a_mode)).is_err());
+}
+
+#[test]
+fn local_predicate_unfold_is_one_layer_and_keeps_other_applications_opaque() {
+    let source = r#"
+        predicate positive(x: int32) { x > 0 }
+        predicate wrapped(x: int32) { positive(x) }
+        theorem selected(x: int32) {
+            requires wrapped(x);
+            ensures x > 0 by {
+                unfold((wrapped(x)));
+                unfold(positive(x));
+                known();
+            }
+        }
+    "#;
+    verify_c_sources(source, &[]).expect("two local layers should expose the consequence");
+    let one_layer = source.replace("unfold(positive(x));", "");
+    assert!(verify_c_sources(&one_layer, &[]).is_err());
+    let other_application = source.replace("unfold((wrapped(x)))", "unfold(wrapped(1))");
+    assert!(verify_c_sources(&other_application, &[]).is_err());
+    assert!(parse(&source.replace("unfold((wrapped(x)))", "unfold(wrapped)")).is_err());
+}
+
+#[test]
+fn local_predicate_unfold_accepts_an_explicit_quantified_target() {
+    let source = r#"
+        predicate positive(x: int32) { x > 0 }
+        theorem selected() {
+            requires forall (x: int32) { x > 0 };
+            ensures forall (x: int32) { positive(x) } by {
+                unfold(forall (x: int32) { positive(x) });
+                known();
+            }
+        }
+    "#;
+    verify_c_sources(source, &[]).expect("the selected quantified goal should open locally");
+}
+
+#[test]
+fn local_predicate_unfold_selects_an_explicit_snapshot_and_expands() {
+    let source = r#"
+        verifying "identity.c";
+        predicate positive(x: int32) { x > 0 }
+        int32 identity(int32 x) {
+            requires positive(x);
+            ensures x > 0 by {
+                step_until(function.exit);
+                unfold(at(function.entry, positive(x)));
+                known();
+            }
+        }
+    "#;
+    let c = "int32 identity(int32 x) { return x; }";
+    verify_c_sources(source, &[("identity.c", c)]).expect("the selected entry fact should open");
+    let expanded = expand_c_claim_source(
+        source,
+        &[("identity.c", c)],
+        "identity",
+        ContractProofClaim::Ensure(0),
+    )
+    .expect("the local unfold should expand");
+    verify_c_sources(&expanded, &[("identity.c", c)])
+        .expect("explicit local expansion should reverify");
+}
+
+#[test]
+fn local_predicate_unfold_keeps_heap_snapshots_distinct() {
+    let source = r#"
+        verifying "overwrite.c";
+        predicate zero(p: int32[]) { p[0] == 0 }
+        void overwrite(int32* p) {
+            owns p[0..1];
+            requires zero(p);
+            ensures zero(p) by {
+                step_until(function.exit);
+                unfold(at(function.entry, zero(p)));
+                unfold(zero(p));
+                known();
+            }
+        }
+    "#;
+    let error = verify_c_sources(
+        source,
+        &[("overwrite.c", "void overwrite(int32* p) { p[0] = 1; }")],
+    )
+    .expect_err("an entry definition must not prove a predicate over changed memory");
+    assert!(error.message().contains("known"), "{error}");
+}
+
+#[test]
+fn local_predicate_unfold_preserves_proposition_values() {
+    let source = r#"
+        predicate positive(x: int32) { x > 0 }
+        theorem selected(x: int32) {
+            requires x > 0;
+            ensures prop { positive(x) and x == x } by {
+                unfold(positive(x));
+                known();
+            }
+            ensures prop { positive(x) and x == x } by {
+                unfold(prop { positive(x) and x == x });
+                known();
+            }
+            ensures prop { prop { positive(x) } and true } by {
+                unfold(positive(x));
+                known();
+            }
+        }
+    "#;
+    without_implicit_solve(|| verify_click_theorems(source))
+        .expect("a proposition value retains the selected definition operation");
+}
+
+#[test]
+fn apply_fact_checks_source_and_selected_evidence() {
+    let source = r#"
+        theorem demo(x: int32, y: int32) {
+            requires x > 0;
+            requires x > 0 implies y > 0;
+            ensures y > 0 by {
+                apply(x > 0 implies y > 0) using { x > 0; };
+            }
+        }
+    "#;
+    verify_click_theorems(source).expect("explicit modus ponens");
+    for (invalid, reason) in [
+        (
+            source.replace("requires x > 0 implies y > 0;", ""),
+            "source implication",
+        ),
+        (
+            source.replace("requires x > 0;", ""),
+            "premise that is not available",
+        ),
+        (
+            source.replace("using { x > 0; }", "using { }"),
+            "antecedent",
+        ),
+        (
+            source.replace("apply(x > 0 implies y > 0)", "apply(x > 0)"),
+            "requires an implication",
+        ),
+        (source.replace("ensures y > 0", "ensures y < 0"), ""),
+    ] {
+        let error = verify_click_theorems(&invalid).expect_err("invalid application must fail");
+        assert!(error.message().contains(reason), "{reason}: {error}");
+    }
+}
+
+#[test]
+fn apply_fact_is_available_at_execution_frontiers_and_outcomes() {
+    let c = "int32 identity(int32 x) { return x; }";
+    let template = r#"
+        verifying "identity.c";
+        int32 identity(int32 x) {
+            requires x > 1;
+            requires x > 0 implies x != 0;
+            ensures result != 0;
+        } by {
+            APPLICATION
+        }
+    "#;
+    for application in [
+        "apply(x > 0 implies x != 0); step();",
+        "have h: x > 0 implies x != 0 by known(); apply(h); step();",
+        "have x > 0; apply(x > 0 implies x != 0) using { x > 0; }; step();",
+        "step(); apply(x > 0 implies x != 0);",
+        "step(); have x > 0; apply(x > 0 implies x != 0) using { x > 0; };",
+    ] {
+        let source = template.replace("APPLICATION", application);
+        verify_c_sources(&source, &[("identity.c", c)])
+            .unwrap_or_else(|error| panic!("{application}: {error}"));
     }
 }

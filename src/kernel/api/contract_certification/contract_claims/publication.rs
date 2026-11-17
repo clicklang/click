@@ -218,8 +218,7 @@ mod tests {
             ProofBranch::new(
                 crate::kernel::proof::ProofObligation::FunctionOutcome(goal),
                 ProofBranchState {
-                    facts: ProofFacts::from_ordered(&[truth]),
-                    unfolded_predicates: PersistentOrderedSet::default(),
+                    facts: PureFactStore::from_ordered(&[truth]),
                     execution: None,
                 },
             ),

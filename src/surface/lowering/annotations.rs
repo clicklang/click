@@ -1561,8 +1561,6 @@ pub(in crate::surface) fn kernel_loop_by_index<'a>(
             .find_map(|case| kernel_loop_by_index(&case.body, target, next_loop_index)),
         ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }
@@ -2803,13 +2801,13 @@ pub(in crate::surface) fn function_contract_summary(
             },
             Requirement::Resource(_) => continue,
         };
-        let opaque_predicate = matches!(
-            &proposition,
-            ClickProposition::PredicateCall { name, .. }
-                if spec_definitions.predicates.get(name).is_some()
-        )
-        .then(|| lowerer.click_proposition_to_spec_proposition(&proposition, &context))
-        .transpose();
+        let mut called = BTreeSet::new();
+        crate::surface::validation::collect_called_predicates(&proposition, &mut called);
+        let opaque_predicate = called
+            .iter()
+            .any(|name| spec_definitions.predicates.get(name).is_some())
+            .then(|| lowerer.click_proposition_to_spec_proposition(&proposition, &context))
+            .transpose();
         let Ok(proposition) = unfold_contract_predicates(&proposition) else {
             opaque_contract_supported = false;
             continue;
@@ -2821,8 +2819,10 @@ pub(in crate::surface) fn function_contract_summary(
         match lowerer.click_proposition_to_spec_proposition(&proposition, &context) {
             Ok(proposition) => {
                 if let Ok(Some(predicate)) = opaque_predicate {
-                    predicate_unfoldings
-                        .push(PredicateUnfolding::new(predicate, proposition.clone()));
+                    predicate_unfoldings.push(
+                        PredicateUnfolding::new(predicate, proposition.clone())
+                            .with_requirement_source(source_index),
+                    );
                 }
                 requires.push(proposition);
                 contract_requirement_sources.push(Some(source_index));
@@ -2854,13 +2854,13 @@ pub(in crate::surface) fn function_contract_summary(
             Ensure::Resource(_) => None,
         })
     {
-        let opaque_predicate = matches!(
-            proposition,
-            ClickProposition::PredicateCall { name, .. }
-                if spec_definitions.predicates.get(name).is_some()
-        )
-        .then(|| lowerer.click_proposition_to_spec_proposition(proposition, &ensures_context))
-        .transpose();
+        let mut called = BTreeSet::new();
+        crate::surface::validation::collect_called_predicates(proposition, &mut called);
+        let opaque_predicate = called
+            .iter()
+            .any(|name| spec_definitions.predicates.get(name).is_some())
+            .then(|| lowerer.click_proposition_to_spec_proposition(proposition, &ensures_context))
+            .transpose();
         let Ok(proposition) = unfold_contract_predicates(proposition) else {
             opaque_contract_supported = false;
             continue;
@@ -4400,37 +4400,13 @@ impl AnnotationLowerer<'_> {
         &mut self,
         loop_index: usize,
     ) -> Result<Vec<LoopInvariantCheck>, ClickError> {
-        let unfolded_predicates = self
-            .structural_clauses
-            .for_loop(loop_index)
-            .into_iter()
-            .flat_map(|clause| {
-                clause
-                    .initialize_proof()
-                    .into_iter()
-                    .chain(clause.preserve_proof())
-            })
-            .flat_map(SourceProof::unfold_tactic_names)
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
         self.structural_clauses
             .for_loop(loop_index)
             .into_iter()
             .flat_map(StructuralClause::items)
             .enumerate()
             .map(|(item_index, item)| {
-                let proposition = unfold_structural_invariant_proposition(
-                    self.spec_definitions.predicates,
-                    item.proposition(),
-                    &unfolded_predicates,
-                )
-                .map_err(|message| {
-                    ClickError::new(format!(
-                        "loop {loop_index} {}: {message}",
-                        item.title(item_index)
-                    ))
-                })?;
+                let proposition = item.proposition().clone();
                 Ok(LoopInvariantCheck::new(
                     self.click_proposition_to_spec_proposition(
                         &proposition,
@@ -5179,13 +5155,9 @@ impl AnnotationLowerer<'_> {
                             arguments.len()
                         ));
                     };
-                    return Ok(SpecProposition::Predicate {
-                        resource_state_dependent: true,
-                        name: crate::kernel::MUTEX_HELD_PREDICATE_NAME.to_string(),
-                        arguments: vec![SpecPredicateArgument::Value(
-                            self.lower_contract_expression_to_spec(mutex, environment)?,
-                        )],
-                    });
+                    return Ok(SpecProposition::MutexHeld(Box::new(
+                        self.lower_contract_expression_to_spec(mutex, environment)?,
+                    )));
                 }
                 if name == "little_endian" {
                     if !arguments.is_empty() {
@@ -8640,12 +8612,47 @@ impl AnnotationLowerer<'_> {
         self.lower_program_expression_to_spec(expression, environment)
     }
 
+    #[inline(never)]
+    fn lower_at_resource_subject_to_spec(
+        &mut self,
+        selector: &ProgramPointSelector,
+        resource: &ResourceSubject,
+        environment: &SpecElaborationContext,
+    ) -> Result<SpecResource, String> {
+        // Naming a saved instance only needs the existing snapshot/identity
+        // lookup; do not construct a value environment for unrelated locals.
+        if let ResourceSubject::Instance { name, identity, .. } = resource
+            && let Some(state) = self.retained_states.and_then(|states| states.get(selector))
+        {
+            let instance = state
+                .resource_instance_at_path(*identity, &[])
+                .ok_or_else(|| format!("resource instance `{name}` is not owned at this state"))?;
+            return Ok(SpecResource::Value(Resource::Instance(instance.clone())));
+        }
+        if let Some(snapshot) = self.point_environment(selector, environment)? {
+            return self.lower_resource_subject_to_spec(resource, &snapshot);
+        }
+        match self.resolve_visit_selector(selector, environment)? {
+            ResolvedProgramPoint::Current => {
+                self.lower_resource_subject_to_spec(resource, environment)
+            }
+            ResolvedProgramPoint::FunctionEntry => {
+                let old = environment.old_state(&self.entry_values, self.entry_state.memory())?;
+                self.lower_resource_subject_to_spec(resource, &old)
+            }
+            _ => Err("`at(...)` resources require a recorded state".into()),
+        }
+    }
+
     fn lower_resource_subject_to_spec(
         &mut self,
         resource: &ResourceSubject,
         environment: &SpecElaborationContext,
     ) -> Result<SpecResource, String> {
         match resource {
+            ResourceSubject::At { selector, resource } => {
+                self.lower_at_resource_subject_to_spec(selector, resource, environment)
+            }
             ResourceSubject::Emp => Ok(SpecResource::Value(Resource::Emp)),
             ResourceSubject::Star(left, right) => Ok(SpecResource::Star(
                 Box::new(self.lower_resource_subject_to_spec(left, environment)?),

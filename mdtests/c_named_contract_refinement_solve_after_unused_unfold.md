@@ -33,8 +33,8 @@ void clear_cell(int32* cell) {
 
 theorem clear_cell_is_sets_zero() {
     ensures SetsZero(&clear_cell) by {
-        unfold(SetsZero);
-        unfold(Irrelevant);
+        unfold(SetsZero(&clear_cell));
+        unfold(Irrelevant(0));
         solve();
     }
 }

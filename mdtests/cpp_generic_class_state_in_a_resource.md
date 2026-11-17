@@ -272,11 +272,11 @@ template<class T> Stack<T>::~Stack() {
                     step();
                     have separate(region(1).footprint, memory(this->head)) by { normalize() using {}; }
                     have this->head == at(before_node, this->head) by {
-                        preserve(separate(region(1).footprint, memory(this->head)));
+                        preserve(memory(this->head), region(1));
                     }
                     have separate(region(1).footprint, memory(this->head->next)) by { normalize() using {}; }
                     have this->head->next == at(before_node, this->head->next) by {
-                        preserve(separate(region(1).footprint, memory(this->head->next)));
+                        preserve(memory(this->head->next), region(1));
                     }
                     have node == this->head by { known(); }
                     step();
@@ -289,7 +289,7 @@ template<class T> Stack<T>::~Stack() {
                         normalize() using { at(region(1).exit, separate(memory(*this->head), memory(this->head))); };
                     }
                     have this->head == at(before_delete, this->head) by {
-                        preserve(separate(region(3).footprint, memory(this->head)));
+                        preserve(memory(this->head), region(3));
                     }
                     have this->head == at(before_node, this->head->next) by { known(); }
                 },

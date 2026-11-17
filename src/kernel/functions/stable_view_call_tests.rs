@@ -56,6 +56,15 @@ fn reader_with_output(name: &str, output_start: u32, output_end: u32) -> Program
     )
 }
 
+/// `memory` with the first `cells` `int32` cells at `base` written, so a
+/// caller's automatic storage is initialized across a viewed range.
+fn with_initialized_cells(mut memory: Memory, base: &Pointer, cells: u32) -> Memory {
+    for cell in 0..cells {
+        memory = memory.store(base.offset_by_bytes(4 * cell), int32(7));
+    }
+    memory
+}
+
 fn reader_for_input(name: &str, input_end: u32) -> ProgramFunction {
     let input = MemorySegment::new(
         crate::kernel::program_expression::variable("p"),
@@ -242,7 +251,7 @@ fn independent_verification_uses_the_call_transfer_boundary() {
         &function,
         &[crate::kernel::program_expression::pointer_value(pointer)],
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&environment(&function)),
+        ExecutionContext::verify_loops(&environment(&function)),
         &mut budget,
         &mut variables,
         true,
@@ -909,6 +918,7 @@ fn candidate_composite_reader_can_be_called_twice() {
     let head =
         ResourceFact::own_composite("cell".into(), vec![ProgramValue::pointer(pointer.clone())]);
     let caller = ExecutionState::new()
+        .with_population_creation_tracking()
         .with_memory(
             Memory::new()
                 .with_block(pointer.block.clone(), 4)
@@ -923,7 +933,7 @@ fn candidate_composite_reader_can_be_called_twice() {
             pointer.clone(),
         ))],
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&environment(&function)),
+        ExecutionContext::verify_loops(&environment(&function)),
         &mut ExecutionBudget::new(),
     )
     .expect("first composite call should execute");
@@ -946,7 +956,7 @@ fn candidate_composite_reader_can_be_called_twice() {
             pointer.clone(),
         ))],
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&environment(&function)),
+        ExecutionContext::verify_loops(&environment(&function)),
         &mut ExecutionBudget::new(),
     )
     .expect("second composite call should execute");
@@ -1022,7 +1032,7 @@ fn candidate_direct_reader_recovers_owner_for_following_write() {
             pointer.clone(),
         ))],
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&environment(&function)),
+        ExecutionContext::verify_loops(&environment(&function)),
         &mut ExecutionBudget::new(),
     )
     .expect("candidate direct call should execute");
@@ -1091,77 +1101,25 @@ fn candidate_evidence_rejects_definitionally_equal_resources_with_new_identity()
     );
 }
 
-#[test]
-fn candidate_nested_body_call_retains_inner_and_outer_evidence() {
-    let pointer = pointer();
-    let inner = reader("candidate_nested_inner", false);
-    let segment = MemorySegment::new(
-        crate::kernel::program_expression::variable("p"),
-        crate::kernel::program_expression::int32_literal(0),
-        crate::kernel::program_expression::int32_literal(1),
-    );
-    let outer = program_function(
-        ProgramType::Int32,
-        "candidate_nested_outer",
-        vec![program_parameter("p", ProgramType::Int32Pointer)],
-        ProgramStatement::seq(
-            Arc::new(program_declare("result", ProgramType::Int32)),
-            Arc::new(ProgramStatement::seq(
-                Arc::new(program_call_then_assign(
-                    0,
-                    "result",
-                    inner.name(),
-                    vec![crate::kernel::program_expression::variable("p")],
-                )),
-                Arc::new(program_return(crate::kernel::program_expression::variable(
-                    "result",
-                ))),
-            )),
-        ),
-    )
-    .with_resource_summary(vec![ResourceSpec::viewed_memory(segment)], Vec::new());
-    let environment = environment(&outer).with_function(inner);
-    let ledger = LoanLedger::new();
-    let participant = ledger.fresh_participant().expect("caller participant");
-    let caller_state = caller(&pointer)
-        .with_loan_ledger(Some(ledger))
-        .with_loan_participant(Some(participant));
-    let paths = execute_program_function_call_paths(
-        &caller_state,
-        &outer,
-        &[ProgramExpression::Value(ProgramValue::pointer(pointer))],
-        &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&environment),
-        &mut ExecutionBudget::new(),
-    )
-    .expect("nested candidate call should execute");
-    assert_eq!(paths.len(), 1);
-    assert_eq!(paths[0].loan_evidence.len(), 2);
-    let evidence = paths[0].loan_evidence.to_vec();
-    assert_eq!(
-        evidence[0].entry.caller_ledger(),
-        &evidence[1].entry.ledger,
-        "inner evidence starts at the outer callee ledger"
-    );
-}
-
 /// Implicit local authority backs a checked loan without an owned escrow.
 /// A synchronous call closes it before returning to its caller.
 #[test]
 fn candidate_local_array_view_uses_a_checked_loan_and_recovers() {
     let pointer = pointer();
     let function = reader("candidate_local_reader", false);
-    let caller = ExecutionState::new().with_memory(
-        Memory::new()
-            .with_block(pointer.block.clone(), 4)
-            .store(pointer.clone(), int32(7)),
-    );
+    let caller = ExecutionState::new()
+        .with_population_creation_tracking()
+        .with_memory(
+            Memory::new()
+                .with_block(pointer.block.clone(), 4)
+                .store(pointer.clone(), int32(7)),
+        );
     let paths = execute_program_function_call_paths(
         &caller,
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(pointer))],
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&environment(&function)),
+        ExecutionContext::verify_loops(&environment(&function)),
         &mut ExecutionBudget::new(),
     )
     .expect("candidate local view call should execute");
@@ -1198,7 +1156,7 @@ fn candidate_local_array_view_out_of_bounds_is_refused() {
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(pointer))],
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&environment(&function)),
+        ExecutionContext::verify_loops(&environment(&function)),
         &mut ExecutionBudget::new(),
     )
     .expect("candidate out-of-bounds local view should execute to a diagnostic");
@@ -1224,13 +1182,13 @@ fn candidate_local_array_view_out_of_bounds_is_refused() {
 fn candidate_conditional_composite_with_a_false_guard_needs_no_owned_entry() {
     let (function, environment) = conditional_owner("candidate_guarded_free");
     let paths = execute_program_function_call_paths(
-        &ExecutionState::new(),
+        &ExecutionState::new().with_population_creation_tracking(),
         &function,
         &[crate::kernel::program_expression::pointer_value(
             Pointer::null(),
         )],
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&environment),
+        ExecutionContext::verify_loops(&environment),
         &mut ExecutionBudget::new(),
     )
     .expect("a false composite guard should execute");
@@ -1261,7 +1219,7 @@ fn candidate_conditional_composite_with_an_undecided_guard_still_needs_its_entry
         &function,
         &[crate::kernel::program_expression::pointer_value(symbolic)],
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&environment),
+        ExecutionContext::verify_loops(&environment),
         &mut ExecutionBudget::new(),
     )
     .expect("an undecided composite guard should execute to a diagnostic");
@@ -1321,7 +1279,7 @@ fn candidate_repeated_token_requirement_reports_the_demanded_quantity() {
             ProgramExpression::Value(token),
         ],
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&environment(&function)),
+        ExecutionContext::verify_loops(&environment(&function)),
         &mut ExecutionBudget::new(),
     )
     .expect("a doubled token requirement should execute to a diagnostic");
@@ -1348,7 +1306,7 @@ fn candidate_inline_reader_uses_the_callers_checked_resources() {
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(pointer))],
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&environment(&function)),
+        ExecutionContext::verify_loops(&environment(&function)),
         &mut ExecutionBudget::new(),
     )
     .expect("candidate inline call should execute");
@@ -1634,73 +1592,6 @@ fn candidate_nested_reader_reborrows_and_restores_outer_view_binding() {
     assert_eq!(bindings, outer_callee.loan_view_bindings().clone());
     assert!(resources.satisfies_fact(
         &ResourceFact::view_memory(MemoryRange::new(
-            pointer,
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
-        )),
-        &PureFactContext::new(),
-    ));
-}
-
-#[test]
-fn candidate_nested_reader_body_call_reborrows_and_recovers_owner() {
-    let pointer = pointer();
-    let inner = reader("candidate_nested_body_inner", false);
-    let segment = MemorySegment::new(
-        crate::kernel::program_expression::variable("p"),
-        crate::kernel::program_expression::int32_literal(0),
-        crate::kernel::program_expression::int32_literal(1),
-    );
-    let outer = program_function(
-        ProgramType::Int32,
-        "candidate_nested_body_outer",
-        vec![program_parameter("p", ProgramType::Int32Pointer)],
-        program_seq(
-            program_declare("result", ProgramType::Int32),
-            program_seq(
-                program_call_then_assign(
-                    1,
-                    "result",
-                    inner.name(),
-                    vec![crate::kernel::program_expression::variable("p")],
-                ),
-                program_return(crate::kernel::program_expression::variable("result")),
-            ),
-        ),
-    )
-    .with_resource_summary(vec![ResourceSpec::viewed_memory(segment)], Vec::new());
-    let environment = ExecutionEnvironment::new()
-        .with_function(inner.clone())
-        .with_verified_function_rule(VerifiedFunctionRule {
-            pointer_result: None,
-            function: inner,
-            descent_completion: None,
-            concrete_loop_exits: None,
-            loop_semantics: LoopSemantics::Verify,
-            checked_callees: None,
-            applied_tactics: Default::default(),
-        });
-
-    let paths = execute_program_function_paths(
-        &caller(&pointer),
-        &outer,
-        &[ProgramExpression::Value(ProgramValue::pointer(
-            pointer.clone(),
-        ))],
-        &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&environment),
-        &mut ExecutionBudget::new(),
-    )
-    .expect("nested candidate reader should execute through the real body call");
-    let FunctionOutcome::Return { value, state } = &paths[0].outcome else {
-        panic!(
-            "nested candidate reader should return: {:?}",
-            paths[0].outcome
-        );
-    };
-    assert_eq!(value.native().as_ref(), &int32(7));
-    assert!(state.resources().satisfies_fact(
-        &ResourceFact::own_memory(MemoryRange::new(
             pointer,
             MachineTerm::constant(0),
             MachineTerm::constant(1),
@@ -2627,7 +2518,7 @@ fn candidate_early_return_closes_call_scope() {
             pointer.clone(),
         ))],
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&environment(&function)),
+        ExecutionContext::verify_loops(&environment(&function)),
         &mut ExecutionBudget::new(),
     )
     .expect("candidate early return should execute");
@@ -3010,11 +2901,12 @@ fn local_storage_classification_does_not_restore_partial_or_aliased_authority() 
         }
         resources.synchronize_memory_equalities(&facts);
         let state = ExecutionState::new()
-            .with_memory(
-                Memory::new()
-                    .with_block(local.block.clone(), 16)
-                    .store(local.clone(), int32(7)),
-            )
+            .with_population_creation_tracking()
+            .with_memory(with_initialized_cells(
+                Memory::new().with_block(local.block.clone(), 16),
+                &local,
+                4,
+            ))
             .with_resource_context(resources);
         let function = reader_for_input("classify_local_storage_authority", 4);
         let paths = execute_program_function_call_paths(
@@ -3022,7 +2914,7 @@ fn local_storage_classification_does_not_restore_partial_or_aliased_authority() 
             &function,
             &[crate::kernel::program_expression::pointer_value(local)],
             &facts,
-            ExecutionContext::execute_bodies(&environment(&function)),
+            ExecutionContext::verify_loops(&environment(&function)),
             &mut ExecutionBudget::new(),
         )
         .unwrap();

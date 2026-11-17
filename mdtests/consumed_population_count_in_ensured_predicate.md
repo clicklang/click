@@ -68,7 +68,7 @@ void consume_population(struct owner* owner, int32 amount) {
     ensures valid_capacity(owner);
 } by {
     open(accounting(owner)) {
-        unfold(valid_capacity);
+        unfold(valid_capacity(owner));
         have defined(owner->used + count(slot(owner)));
         apply(subtract_from_sum(owner->capacity, owner->used, count(slot(owner)), amount)) using {
             0 <= owner->used;
@@ -83,7 +83,7 @@ void consume_population(struct owner* owner, int32 amount) {
         have owner->capacity == owner->used + count(slot(owner));
     }
     step_until(function.exit);
-    unfold(valid_capacity);
+    unfold(valid_capacity(owner));
     solve();
 }
 ```

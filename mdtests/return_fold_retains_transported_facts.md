@@ -1,9 +1,9 @@
-# Returned pointer-field transports keep their checked proofs
+# Returned pointer-field preservation survives resource folds
 
-Explicit transports establish unchanged descriptor fields. A selected separation
-proof consumes them before a resource fold. Retain those transport derivations
-and the scope's original assumptions, including when its checked premise
-selection derives the requested separation. The C is the original arena write.
+Explicit preservation steps establish unchanged descriptor fields across each
+statement. These equalities survive the return and are selected when proving
+separation before a resource fold. Retain the checked equalities and the scope's
+original assumptions. The C is the original arena write.
 
 The rewritten sum's domain is established before the `have` that observes it:
 that claim must lower before its proof body can rewrite the field to `s`.
@@ -112,6 +112,7 @@ void arena_write(struct region* region, int32 index, int32 value) {
     have to_integer(s + index + 1) <= to_integer(e);
     have region->start == s;
     have defined(s + index + 1);
+    have defined(region->start) by { solve(); }
     have defined(region->start + index + 1) by {
         rewrite(region->start, s);
         known();
@@ -130,23 +131,76 @@ void arena_write(struct region* region, int32 index, int32 value) {
     }
     have to_integer(region->start + index) < to_integer(region->arena->capacity);
     have separate(memory(*region), memory(region->arena->data[s..e]));
-    mark w;
-    step_until(function.exit);
-    transport(
-        old(region->arena) == old(region->arena),
-        region->arena == old(region->arena)
-    ) using {
-        at(w, separate(memory(*region), memory(region->arena->data[s..e])));
-        to_integer(s) <= to_integer(s + index);
-        to_integer(s + index + 1) <= to_integer(e);
-    };
+    step();
+    have separate(statement(0).footprint, memory(region->arena)) by { normalize() using {}; }
+    have region->arena == at(statement(0).entry, region->arena) by {
+        preserve(separate(statement(0).footprint, memory(region->arena)));
+    }
+    have separate(statement(0).footprint, memory(region->arena->data)) by { normalize() using {}; }
+    have region->arena->data == at(statement(0).entry, region->arena->data) by {
+        preserve(separate(statement(0).footprint, memory(region->arena->data)));
+    }
+    have separate(statement(0).footprint, memory(region->arena->occupied)) by { normalize() using {}; }
+    have region->arena->occupied == at(statement(0).entry, region->arena->occupied) by {
+        preserve(separate(statement(0).footprint, memory(region->arena->occupied)));
+    }
+    have separate(statement(0).footprint, memory(region->arena->capacity)) by { normalize() using {}; }
+    have region->arena->capacity == at(statement(0).entry, region->arena->capacity) by {
+        preserve(separate(statement(0).footprint, memory(region->arena->capacity)));
+    }
+    step();
+    have separate(statement(1).footprint, memory(region->arena)) by { normalize() using {}; }
+    have region->arena == at(statement(1).entry, region->arena) by {
+        preserve(separate(statement(1).footprint, memory(region->arena)));
+    }
+    have separate(statement(1).footprint, memory(region->arena->data)) by { normalize() using {}; }
+    have region->arena->data == at(statement(1).entry, region->arena->data) by {
+        preserve(separate(statement(1).footprint, memory(region->arena->data)));
+    }
+    have separate(statement(1).footprint, memory(region->arena->occupied)) by { normalize() using {}; }
+    have region->arena->occupied == at(statement(1).entry, region->arena->occupied) by {
+        preserve(separate(statement(1).footprint, memory(region->arena->occupied)));
+    }
+    have separate(statement(1).footprint, memory(region->arena->capacity)) by { normalize() using {}; }
+    have region->arena->capacity == at(statement(1).entry, region->arena->capacity) by {
+        preserve(separate(statement(1).footprint, memory(region->arena->capacity)));
+    }
+    mark before_access;
+    have at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena)));
+    have at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->data)));
+    have at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->occupied)));
+    have at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->capacity)));
+    step();
+    have separate(statement(2).footprint, memory(region->arena)) by {
+        normalize() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena))); };
+    }
+    have region->arena == at(before_access, region->arena) by {
+        preserve(separate(statement(2).footprint, memory(region->arena)));
+    }
+    have separate(statement(2).footprint, memory(region->arena->data)) by {
+        normalize() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->data))); };
+    }
+    have region->arena->data == at(before_access, region->arena->data) by {
+        preserve(separate(statement(2).footprint, memory(region->arena->data)));
+    }
+    have separate(statement(2).footprint, memory(region->arena->occupied)) by {
+        normalize() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->occupied))); };
+    }
+    have region->arena->occupied == at(before_access, region->arena->occupied) by {
+        preserve(separate(statement(2).footprint, memory(region->arena->occupied)));
+    }
+    have separate(statement(2).footprint, memory(region->arena->capacity)) by {
+        normalize() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->capacity))); };
+    }
+    have region->arena->capacity == at(before_access, region->arena->capacity) by {
+        preserve(separate(statement(2).footprint, memory(region->arena->capacity)));
+    }
+    step();
+    have region->arena == old(region->arena) by { known(); }
+    have region->arena->data == old(region->arena->data) by { known(); }
+    have region->arena->occupied == old(region->arena->occupied) by { known(); }
+    have region->arena->capacity == old(region->arena->capacity) by { known(); }
     let r = fold(arena_region(region), { start: s, end: e });
-    transport(old(region->arena->data) == old(region->arena->data),
-        region->arena->data == old(region->arena->data)) using { };
-    transport(old(region->arena->occupied) == old(region->arena->occupied),
-        region->arena->occupied == old(region->arena->occupied)) using { };
-    transport(old(region->arena->capacity) == old(region->arena->capacity),
-        region->arena->capacity == old(region->arena->capacity)) using { };
     have separate(memory(region->arena->occupied[0..region->arena->capacity]), memory(region->arena->data[0..region->arena->capacity])) by {
         rewrite(region->arena->data, old(region->arena->data));
         rewrite(region->arena->occupied, old(region->arena->occupied));

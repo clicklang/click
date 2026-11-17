@@ -36,7 +36,7 @@ void caller(struct node* child, struct node* other, int32* slot) {
         contains(memory(*slot), memory(*slot));
     };
     have *slot == at(before_call, *slot) by {
-        preserve(separate(statement(0).footprint, memory(*slot)));
+        preserve(memory(*slot), statement(0));
     }
 }
 ```

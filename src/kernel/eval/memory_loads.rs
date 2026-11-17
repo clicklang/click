@@ -298,7 +298,7 @@ fn evaluate_logical_memory_load_paths_unbridged(
     assumptions: &PureFactContext,
 ) -> Vec<ExpressionPath> {
     // The read keeps the address it was written with: lowering is
-    // fact-stable (`docs/internals/spellability.md`). A value stored under
+    // fact-stable (`docs/internals/raise-lower-principle.md`). A value stored under
     // another spelling of an equal address reaches the read through the
     // equality graph, which equates them.
     // Version-named reads already stay symbolic. Sending them through C
@@ -459,7 +459,7 @@ fn holds_its_own_read(stored: &ProgramValue, pointer: &Pointer) -> bool {
 
 /// Whether a logical read of a `value_type` cell lowers to the read at the
 /// cell's version rather than to a value the cell holds
-/// (`docs/internals/spellability.md`). Integer and pointer cells keep their
+/// (`docs/internals/raise-lower-principle.md`). Integer and pointer cells keep their
 /// read identities; abstract values still read their stored value.
 fn logical_read_names_its_version(value_type: ProgramType) -> bool {
     matches!(
@@ -2047,7 +2047,7 @@ fn canonicalized_retained_symbolic_load_value_with_identity(
     purpose: LoadPurpose,
 ) -> Option<ExecutionValue> {
     // A logical read keeps the address it was written with: lowering is
-    // fact-stable (`docs/internals/spellability.md`). The equality graph
+    // fact-stable (`docs/internals/raise-lower-principle.md`). The equality graph
     // relates it to a read of the same cell through another alias. A C read
     // still selects footprint coordinates through a checked opaque address
     // alias; only the symbolic value's coordinates change, and C access
@@ -2076,7 +2076,7 @@ fn canonicalized_retained_symbolic_load_value_with_identity(
         return Some((complete_loaded_word(value, memory, &address)).into());
     }
     // A logical pointer read names the cell's version, whatever pointer the
-    // cell holds (`docs/internals/spellability.md`).
+    // cell holds (`docs/internals/raise-lower-principle.md`).
     let names_version = purpose == LoadPurpose::Logical && value_type.is_pointer();
     // Canonical address selection can expose a materialized pointer cell that
     // the original spelling did not name. Reuse its complete stored value;
@@ -2614,11 +2614,11 @@ thread_local! {
 /// [`read_over_write_value`]), or `None` when it reads none.
 ///
 /// A read keeps its version name in every term a proof holds, so it can be
-/// spelled and written (`docs/internals/spellability.md`); two facts that
+/// spelled and written (`docs/internals/raise-lower-principle.md`); two facts that
 /// differ only by a read on one side and its stored value on the other are
 /// one fact. Exact matching therefore compares comparison forms: the fact
 /// stores file each fact under its comparison form as well as its own
-/// (`ProofFacts::with_fact`, `PureFactContext::assume_condition_once`), an
+/// (`PureFactStore::with_fact`, `PureFactContext::assume_condition_once`), an
 /// exact lookup also asks for the comparison form of what it looks up, and a
 /// kernel rule that compares a stated term with the one it derives compares
 /// their comparison forms. This is the one place the authority enters
@@ -3662,7 +3662,7 @@ pub(crate) fn check_canonical_at_creation(condition: &ConditionTerm, value: bool
         "assumptions_from_propositions",
         "assumptions_with_path_context",
         "assumptions_with_propositions",
-        "ProofFacts::",
+        "PureFactStore::",
         "atomic_derivation_premises",
         "derive_proposition",
         "::proves",
@@ -4459,7 +4459,7 @@ pub(crate) fn load_variable_for_cell_with_origin(
     mint_load_variable_identity(memory, pointer, kind, origin, bytes)
 }
 
-/// A test-only audit of one read, one name (`docs/internals/spellability.md`):
+/// A test-only audit of one read, one name (`docs/internals/raise-lower-principle.md`):
 /// while [`duplicate_read_names::capture`] runs, each load named at a new
 /// version of its cell is compared with the versions earlier loads of that
 /// cell were named at in the same verification, and a pair the kernel's
@@ -5533,7 +5533,7 @@ mod tests {
             };
             let known = assumptions_with_path_context(&context, &path.facts, &path.obligations);
             assert!(known.pointers_known_equal(read.pointer(), stored.pointer()));
-            // Check entailment, not exact premise spelling: the producer's
+            // Check entailment, not exact premise raising: the producer's
             // equation may name the endpoints in the opposite order.
             known.contains_known(&Proposition::ConditionIs(
                 ConditionTerm::pointer_value_equal(read.clone(), stored),
@@ -7424,7 +7424,7 @@ mod tests {
                 .is_empty()
         );
         let mut published =
-            crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&alias));
+            crate::kernel::proof::PureFactStore::from_ordered(std::slice::from_ref(&alias));
         for fact in &path.facts {
             published = published.with_kernel_checked_fact(fact.proposition().clone());
         }
@@ -8361,7 +8361,7 @@ mod tests {
     /// cited value relation; offsets alone and stale/partial stores do not suffice.
     #[test]
     fn normalize_recorded_pointer_values_checks_selected_facts_and_width() {
-        use crate::kernel::proof::ProofFacts;
+        use crate::kernel::proof::PureFactStore;
         use crate::kernel::proof::fact_reasoning::normalize_using_conditions;
         let _session = crate::kernel::VerificationSession::enter();
         let address = Pointer::symbolic(Variable(99_100));
@@ -8386,7 +8386,7 @@ mod tests {
         };
         let value = read(memory.clone(), &address, 99_103, 8);
         let premise = equality(&stored, &Pointer::null());
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&premise));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&premise));
         for goal in [
             equality(&value, &Pointer::null()),
             equality(&Pointer::null(), &value),
@@ -8395,7 +8395,7 @@ mod tests {
                 normalize_using_conditions(&goal, std::slice::from_ref(&premise), &facts).is_ok()
             );
             assert!(
-                normalize_using_conditions(&goal, &[], &ProofFacts::from_ordered(&[])).is_err()
+                normalize_using_conditions(&goal, &[], &PureFactStore::from_ordered(&[])).is_err()
             );
         }
         assert!(
@@ -8461,7 +8461,7 @@ mod tests {
             normalize_using_conditions(
                 &equality(&scalar, &Pointer::null()),
                 &[],
-                &ProofFacts::from_ordered(&[])
+                &PureFactStore::from_ordered(&[])
             )
             .is_err()
         );
@@ -8471,11 +8471,11 @@ mod tests {
     /// needs an exact typed read, including its stride and unambiguous origin.
     #[test]
     fn normalize_recorded_pointer_reads_checks_definition() {
-        use crate::kernel::proof::ProofFacts;
+        use crate::kernel::proof::PureFactStore;
         use crate::kernel::proof::fact_reasoning::normalize_using_conditions;
         let _session = crate::kernel::VerificationSession::enter();
         let context = PureFactContext::new();
-        let facts = ProofFacts::from_ordered(&[]);
+        let facts = PureFactStore::from_ordered(&[]);
         let address = Pointer::symbolic(Variable(103_001));
         let stored = Pointer {
             block: PointerBlock::ExternalArgument,
@@ -8519,7 +8519,7 @@ mod tests {
     /// execution source. The selected alias is still required to find its store.
     #[test]
     fn normalize_recorded_pointer_value_follows_exact_projection_source() {
-        use crate::kernel::proof::ProofFacts;
+        use crate::kernel::proof::PureFactStore;
         use crate::kernel::proof::fact_reasoning::normalize_using_conditions;
         let _session = crate::kernel::VerificationSession::enter();
         let context = PureFactContext::new();
@@ -8555,9 +8555,9 @@ mod tests {
         context.register_pointer_read(&read, projected.shared_memory(), &address);
         let alias = Proposition::ConditionIs(ConditionTerm::pointer_equal(address, written), true);
         let goal = Proposition::ConditionIs(ConditionTerm::pointer_equal(read, stored), true);
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&alias));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&alias));
         assert!(normalize_using_conditions(&goal, std::slice::from_ref(&alias), &facts).is_ok());
-        assert!(normalize_using_conditions(&goal, &[], &ProofFacts::from_ordered(&[])).is_err());
+        assert!(normalize_using_conditions(&goal, &[], &PureFactStore::from_ordered(&[])).is_err());
     }
     #[test]
     fn symbolic_storage_pointer_cells_share_logical_read_identity() {

@@ -1773,7 +1773,7 @@ fn forall_loadable_range_call_requirement_is_spellable() {
 /// `exists_loadable_range` calls `need_cells`, whose precondition wraps the
 /// same range in an existential over the length. The witness name and the
 /// binder identities a fresh lowering allocates are its own, so only
-/// spellability is asserted here; the range shape itself round-trips in the
+/// raise-lower principle is asserted here; the range shape itself round-trips in the
 /// universal test above.
 #[test]
 fn exists_loadable_range_call_requirement_is_spellable() {
@@ -6198,6 +6198,124 @@ fn shared_pointer_call_arguments_keep_exact_native_name_policy() {
     }
 }
 
+/// Reduced from the inclusive-range loop's signed `0 <= total` premise.
+/// There is one named word, no program execution, and no recorded snapshot.
+fn comparison_over_named_word_round_trip(
+    local_type: MachineIntegerType,
+    comparison_type: MachineIntegerType,
+) {
+    let word = MachineTerm::Variable(Variable(730_001));
+    let state = ExecutionState::new().with_local(
+        "x",
+        match local_type {
+            MachineIntegerType::Int32 => ProgramValue::Int32(word.clone()),
+            MachineIntegerType::UInt32 => ProgramValue::UInt32(word.clone()),
+            _ => unreachable!(),
+        },
+    );
+    let original = Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: comparison_type,
+            relation: CompareRelation::LessEqual,
+            left: Box::new(MachineTerm::constant(0)),
+            right: Box::new(word),
+        },
+        true,
+    );
+    let surface = synthesize_surface_proposition(&original, ParameterBinding::default(), &state)
+        .expect("one current local names the only variable");
+    let text = crate::surface::printing::source_click_proposition(&surface);
+    let lowered = relower_written_proposition(&surface, &state).unwrap();
+    assert_eq!(lowered, original, "raised source: {text}");
+}
+
+#[test]
+fn signed_comparison_over_a_signed_local_round_trips() {
+    comparison_over_named_word_round_trip(MachineIntegerType::Int32, MachineIntegerType::Int32);
+}
+
+#[test]
+fn unsigned_comparison_over_an_unsigned_local_round_trips() {
+    comparison_over_named_word_round_trip(MachineIntegerType::UInt32, MachineIntegerType::UInt32);
+}
+
+fn raw_signed_nonnegative(word: MachineTerm) -> Proposition {
+    Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left: Box::new(MachineTerm::constant(0)),
+            right: Box::new(word),
+        },
+        true,
+    )
+}
+
+#[test]
+fn unsigned_small_bound_produces_round_tripping_signed_facts() {
+    let word = MachineTerm::Variable(Variable(730_002));
+    let raw_signed_bound = raw_signed_nonnegative(word.clone());
+    let converted_signed_bound = raw_signed_nonnegative(MachineTerm::sign_cast32(
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int32,
+        word.clone(),
+    ));
+    let parent = PureFactContext::new();
+    assert!(!parent.contains_assumed_exact(&raw_signed_bound));
+    let small = parent.clone().assume_condition(
+        ConditionTerm::unsigned_less_equal(word.clone(), MachineTerm::constant(256)),
+        true,
+    );
+    assert!(!small.contains_assumed_exact(&raw_signed_bound));
+    let state = ExecutionState::new().with_local("x", ProgramValue::UInt32(word.clone()));
+    let signed_word = MachineTerm::sign_cast32(
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int32,
+        word.clone(),
+    );
+    let upper = Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left: Box::new(signed_word),
+            right: Box::new(MachineTerm::constant(256)),
+        },
+        true,
+    );
+    for fact in [&converted_signed_bound, &upper] {
+        assert!(small.contains_assumed_exact(fact));
+        let surface = synthesize_surface_proposition(fact, ParameterBinding::default(), &state)
+            .expect("the derived signed bound has a typed Surface form");
+        let text = crate::surface::printing::source_click_proposition(&surface);
+        assert_eq!(
+            relower_written_proposition(&surface, &state).unwrap(),
+            *fact,
+            "{text}"
+        );
+    }
+    let beyond_sign_bit = parent.assume_condition(
+        ConditionTerm::unsigned_less_equal(word, MachineTerm::constant(0x8000_0000)),
+        true,
+    );
+    assert!(!beyond_sign_bit.contains_assumed_exact(&raw_signed_bound));
+    assert!(!beyond_sign_bit.contains_assumed_exact(&converted_signed_bound));
+}
+
+#[test]
+fn unsigned_small_bound_recovers_an_already_converted_signed_source() {
+    let signed = MachineTerm::Variable(Variable(730_003));
+    let unsigned = MachineTerm::sign_cast32(
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        signed.clone(),
+    );
+    let facts = PureFactContext::new().assume_condition(
+        ConditionTerm::unsigned_less_equal(unsigned, MachineTerm::constant(256)),
+        true,
+    );
+    assert!(facts.contains_assumed_exact(&raw_signed_nonnegative(signed)));
+}
+
 #[test]
 fn shared_constructor_fields_preserve_native_spelling_and_refusals() {
     use crate::kernel::{
@@ -6393,7 +6511,7 @@ fn shared_pointer_comparisons_preserve_native_spelling() {
 
 #[test]
 fn closed_machine_orders_round_trip_after_checked_rewrite() {
-    use crate::kernel::proof::ProofFacts;
+    use crate::kernel::proof::PureFactStore;
     for (spelling, suffix, value) in [
         (
             "uint32",
@@ -6433,7 +6551,7 @@ fn closed_machine_orders_round_trip_after_checked_rewrite() {
                 panic!("ensure")
             };
             let equality = lower(equality);
-            let produced = ProofFacts::from_ordered(std::slice::from_ref(&equality))
+            let produced = PureFactStore::from_ordered(std::slice::from_ref(&equality))
                 .check_equality_rewrite(&lower(goal), &equality)
                 .unwrap()
                 .proposition()
@@ -6538,7 +6656,7 @@ fn closed_machine_order_lowering_preserves_relations_and_truth_checking() {
             assert_eq!(PureFactContext::new().decide(condition), Some(truth));
             assert_eq!(
                 crate::kernel::proof::checked_branch_fact_is_available(
-                    &crate::kernel::proof::ProofFacts::from_ordered(&[]),
+                    &crate::kernel::proof::PureFactStore::from_ordered(&[]),
                     &lowered,
                 ),
                 truth,
@@ -6552,7 +6670,7 @@ fn closed_machine_order_lowering_preserves_relations_and_truth_checking() {
 #[test]
 fn machine_arithmetic_round_trips_after_checked_rewrite() {
     use crate::kernel::MachineIntegerType as T;
-    use crate::kernel::proof::ProofFacts;
+    use crate::kernel::proof::PureFactStore;
     let mut failures = Vec::new();
     for (format, spelling, suffix) in [
         (T::Int32, "int32", ""),
@@ -6605,7 +6723,7 @@ fn machine_arithmetic_round_trips_after_checked_rewrite() {
                 };
                 let equality = lower(equality);
                 let original = lower(goal);
-                let facts = ProofFacts::from_ordered(std::slice::from_ref(&equality));
+                let facts = PureFactStore::from_ordered(std::slice::from_ref(&equality));
                 let produced = facts
                     .check_equality_rewrite(&original, &equality)
                     .unwrap()
@@ -6694,7 +6812,7 @@ fn assert_narrow_comparison_round_trip(
 #[test]
 fn narrow_comparisons_round_trip_after_checked_rewrite() {
     use crate::kernel::MachineIntegerType as T;
-    use crate::kernel::proof::ProofFacts;
+    use crate::kernel::proof::PureFactStore;
     for (source, source_spelling) in [
         (T::Int32, "int32"),
         (T::UInt32, "uint32"),
@@ -6731,7 +6849,7 @@ fn narrow_comparisons_round_trip_after_checked_rewrite() {
                         panic!()
                     };
                     let equality = lower(equality);
-                    let produced = ProofFacts::from_ordered(std::slice::from_ref(&equality))
+                    let produced = PureFactStore::from_ordered(std::slice::from_ref(&equality))
                         .check_equality_rewrite(&lower(goal), &equality)
                         .unwrap()
                         .proposition()
@@ -6868,7 +6986,7 @@ fn pthread_handle_words_use_c_names_and_retained_states() {
 }
 
 fn check_int64_literal_comparison_round_trips(values: &[i64]) {
-    use crate::kernel::proof::ProofFacts;
+    use crate::kernel::proof::PureFactStore;
     for value in values {
         for operator in ["<", "<=", ">", ">="] {
             for reverse in [false, true] {
@@ -6899,7 +7017,7 @@ fn check_int64_literal_comparison_round_trips(values: &[i64]) {
                     format!("x {operator} 100i64")
                 };
                 let original = relower_written_proposition(&parse(&expression), &state).unwrap();
-                let rewritten = ProofFacts::from_ordered(std::slice::from_ref(&equality))
+                let rewritten = PureFactStore::from_ordered(std::slice::from_ref(&equality))
                     .check_equality_rewrite(&original, &equality)
                     .unwrap()
                     .proposition()
@@ -6992,70 +7110,87 @@ fn check_comparison_guard_conditional_round_trips(
     operators: &[&str],
     replacement: u64,
 ) {
-    use crate::kernel::proof::ProofFacts;
     for operator in operators {
         for &(guard, bound) in guards {
+            let guard = format!("{guard} {operator} ({bound} as {spelling})");
             for reverse in [false, true] {
-                let _session = crate::kernel::VerificationSession::enter();
-                let state = ExecutionState::new()
-                    .with_local(
-                        "x",
-                        format.value_from_term(MachineTerm::Variable(Variable(999708))),
-                    )
-                    .with_local(
-                        "y",
-                        format.value_from_term(MachineTerm::Variable(Variable(999709))),
-                    );
-                let parse = |text: &str| {
-                    let file = parser::parse(&format!(
-                        "theorem probe() {{ requires {text}; ensures true; }}"
-                    ))
-                    .unwrap();
-                    let Requirement::Proposition(p) = &file.theorem_definitions()[0].requires()[0]
-                    else {
-                        panic!("expected a proposition")
-                    };
-                    p.clone()
-                };
-                let equality = relower_written_proposition(
-                    &parse(&format!("x == ({replacement} as {spelling})")),
-                    &state,
-                )
-                .unwrap();
-                let value = format!(
-                    "to_integer(if {guard} {operator} ({bound} as {spelling}) {{ x }} else {{ 3 as {spelling} }})"
-                );
-                let goal = if reverse {
-                    format!("100 <= {value}")
-                } else {
-                    format!("{value} <= 100")
-                };
-                let original = relower_written_proposition(&parse(&goal), &state).unwrap();
-                let rewritten = ProofFacts::from_ordered(std::slice::from_ref(&equality))
-                    .check_equality_rewrite(&original, &equality)
-                    .unwrap()
-                    .proposition()
-                    .clone();
-                let Proposition::ConditionIs(condition, true) = rewritten else {
-                    panic!("expected a comparison")
-                };
-                for truth in [true, false] {
-                    let produced = Proposition::ConditionIs(condition.clone(), truth);
-                    let raised = synthesize_surface_proposition(
-                        &produced,
-                        ParameterBinding::default(),
-                        &state,
-                    )
-                    .unwrap();
-                    let text = crate::surface::printing::source_click_proposition(&raised);
-                    let restored = relower_written_proposition(&parse(&text), &state).unwrap();
-                    assert_eq!(
-                        restored, produced,
-                        "{spelling}, {operator}, bound={bound}, reverse={reverse}, truth={truth}: {text}"
-                    );
-                }
+                check_conditional_round_trip(format, spelling, &guard, reverse, replacement);
             }
         }
+    }
+}
+
+fn check_conditional_round_trip(
+    format: crate::kernel::MachineIntegerType,
+    spelling: &str,
+    guard: &str,
+    reverse: bool,
+    replacement: u64,
+) {
+    use crate::kernel::proof::PureFactStore;
+    let _session = crate::kernel::VerificationSession::enter();
+    let state = ExecutionState::new()
+        .with_local(
+            "x",
+            format.value_from_term(MachineTerm::Variable(Variable(999708))),
+        )
+        .with_local(
+            "y",
+            format.value_from_term(MachineTerm::Variable(Variable(999709))),
+        )
+        .with_local(
+            "z",
+            format.value_from_term(MachineTerm::Variable(Variable(999710))),
+        )
+        .with_local(
+            "flag",
+            ProgramValue::of_bool(ConditionTerm::Variable(Variable(999711))),
+        );
+    let parse = |text: &str| {
+        let file = parser::parse(&format!(
+            "theorem probe() {{ requires {text}; ensures true; }}"
+        ))
+        .unwrap();
+        let Requirement::Proposition(p) = &file.theorem_definitions()[0].requires()[0] else {
+            panic!("expected a proposition")
+        };
+        p.clone()
+    };
+    let equality = relower_written_proposition(
+        &parse(&format!("x == ({replacement} as {spelling})")),
+        &state,
+    )
+    .unwrap();
+    let value = format!("to_integer(if {guard} {{ x }} else {{ 3 as {spelling} }})");
+    let goal = if reverse {
+        format!("100 <= {value}")
+    } else {
+        format!("{value} <= 100")
+    };
+    let original = relower_written_proposition(&parse(&goal), &state).unwrap();
+    let rewritten = PureFactStore::from_ordered(std::slice::from_ref(&equality))
+        .check_equality_rewrite(&original, &equality)
+        .unwrap()
+        .proposition()
+        .clone();
+    let Proposition::ConditionIs(condition, true) = rewritten else {
+        panic!("expected a comparison")
+    };
+    for truth in [true, false] {
+        let produced = Proposition::ConditionIs(condition.clone(), truth);
+        let raised =
+            synthesize_surface_proposition(&produced, ParameterBinding::default(), &state).unwrap();
+        assert_eq!(
+            relower_written_proposition(&raised, &state).unwrap(),
+            produced,
+            "Surface AST: {spelling}, guard={guard}, reverse={reverse}, truth={truth}"
+        );
+        let text = crate::surface::printing::source_click_proposition(&raised);
+        let restored = relower_written_proposition(&parse(&text), &state).unwrap();
+        assert_eq!(
+            restored, produced,
+            "{spelling}, guard={guard}, reverse={reverse}, truth={truth}: {text}"
+        );
     }
 }
 
@@ -7132,4 +7267,64 @@ fn closed_unsigned_equality_guards_keep_high_bit_literals() {
         &["==", "!="],
         u64::MAX,
     );
+}
+
+#[test]
+fn symbolic_equality_guard_conditionals_round_trip_after_rewrite() {
+    use crate::kernel::MachineIntegerType as T;
+    for (format, spelling) in [
+        (T::Int32, "int32"),
+        (T::UInt32, "uint32"),
+        (T::Int64, "int64"),
+        (T::UInt64, "uint64"),
+    ] {
+        for op in ["==", "!="] {
+            for guard in [
+                format!("y {op} (8 as {spelling})"),
+                format!("(8 as {spelling}) {op} y"),
+                format!("y {op} z"),
+            ] {
+                for reverse in [false, true] {
+                    check_conditional_round_trip(format, spelling, &guard, reverse, 9);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn symbolic_unsigned_equality_guards_keep_high_bit_literals() {
+    for op in ["==", "!="] {
+        for guard in [
+            format!("y {op} {}u64", u64::MAX),
+            format!("{}u64 {op} y", u64::MAX),
+        ] {
+            for reverse in [false, true] {
+                check_conditional_round_trip(
+                    crate::kernel::MachineIntegerType::UInt64,
+                    "uint64",
+                    &guard,
+                    reverse,
+                    9,
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn boolean_variable_guard_conditionals_round_trip_after_rewrite() {
+    use crate::kernel::MachineIntegerType as T;
+    for (format, spelling) in [
+        (T::Int32, "int32"),
+        (T::UInt32, "uint32"),
+        (T::Int64, "int64"),
+        (T::UInt64, "uint64"),
+    ] {
+        for guard in ["flag", "not flag"] {
+            for reverse in [false, true] {
+                check_conditional_round_trip(format, spelling, guard, reverse, 9);
+            }
+        }
+    }
 }

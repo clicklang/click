@@ -34,7 +34,7 @@ removed, so it has to stay small.
 | --- | --- | --- | --- |
 | Frontends | Parse, validate, and lower C, C++, Rust, and Surface Click | fast | `src/languages/`, `src/surface/{parser,names}.rs`, `src/surface/validation/`, `src/surface/lowering/` |
 | Symbolic execution | Run statements, calls, and loops on a symbolic state | fast | `src/kernel/eval*`, `src/kernel/functions.rs`, `src/kernel/loops.rs`, `src/kernel/proof/execution.rs` |
-| Fact store | Hold the path's facts in persistent indexes, with the equality closure and the difference graph | fast | `PureFactContext` in `src/kernel/assumptions.rs`, `src/kernel/equality_graph*`, `src/kernel/difference_graph.rs` |
+| Fact store | Hold the path's facts in persistent indexes, with the equality closure and the difference graph | fast | `PureFactStore` in `src/kernel/proof/facts.rs`, its `PureFactContext` component in `src/kernel/assumptions.rs`, `src/kernel/equality_graph*`, `src/kernel/difference_graph.rs` |
 | Condition decision | Decide one condition (order, overflow, equality, consistency) from the facts | fast | `PureFactContext::decide`, `src/kernel/assumptions/condition_reasoning/` |
 | Memory | Memory states, the memory derivation DAG, and load and store resolution | fast | `src/kernel/primitives/cell_store.rs`, `src/kernel/reasoning/memory_resolution.rs`, `src/kernel/memory_provenance.rs` |
 | Resources | Ownership, views, loans, folds, and separation | fast | `src/kernel/primitives/resource_algebra.rs`, `src/kernel/resource_tracker/`, `src/kernel/loans.rs` |
@@ -272,8 +272,9 @@ conditions:
 3. **It is checked.** It advances the proof only through fast-part
    operations, so the kernel checks everything it concludes.
 
-Writing a search out requires every fact it cites or proves to have a Click
-spelling; [Spellability](spellability.md) states that rule. A search that
+Writing a search out requires every fact it cites or proves to raise to a
+Surface AST that lowers back to it; the
+[raise-lower principle](raise-lower-principle.md) states that rule. A search that
 can't be written out as explicit tactics isn't allowed in the
 slow part either: then there's no way to remove its cost, which makes it fast
 part, and fast part may not search. [Smart and simple
@@ -301,7 +302,7 @@ Answer these before proposing a verifier change that adds work.
 5. **Is lowering still fact-stable?** A change to lowering or evaluation may
    let facts refuse a term, discharge its obligations, or add side facts, but
    never change the term it produces; equalities belong to the equality
-   graph ([fact-stable lowering](spellability.md#lowering-is-fact-stable)).
+   graph ([fact-stable lowering](raise-lower-principle.md#lowering-is-fact-stable)).
    Run `scripts/fact-stability.sh` before and after, add no new
    `differs` lines, and report any change in its `refused` and `paths:N`
    counts.

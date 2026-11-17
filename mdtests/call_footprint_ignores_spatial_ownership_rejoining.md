@@ -20,7 +20,7 @@ void caller(struct box *q) {
         normalize() using { separate(memory(q->tag), memory(q->data)); };
     }
     have q->data == at(before, q->data) by {
-        preserve(separate(statement(0).footprint, memory(q->data)));
+        preserve(memory(q->data), statement(0));
     }
     step();
     known();

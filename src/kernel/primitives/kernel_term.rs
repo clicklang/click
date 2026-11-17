@@ -722,6 +722,11 @@ pub(crate) fn clear_integer_bridge_memo() {
 }
 
 impl KernelTerm {
+    pub(in crate::kernel) fn float_storage_key(
+        &self,
+    ) -> crate::kernel::execution_value::storage_keys::FloatStorageKey {
+        crate::kernel::execution_value::storage_keys::float_for_root(self)
+    }
     pub(in crate::kernel) fn condition_storage_key(
         &self,
     ) -> crate::kernel::execution_value::storage_keys::ConditionStorageKey {

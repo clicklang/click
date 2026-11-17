@@ -133,7 +133,7 @@ pub(crate) fn register_model_field_variable(variable: Variable, origin: ModelFie
 
 /// The reader's own spelling of one field of one instance, `c.rank`, from the
 /// tracker's key rather than from a term.
-pub(crate) fn instance_field_spelling(identity: Variable, field_index: usize) -> Option<String> {
+pub(crate) fn instance_field_surface(identity: Variable, field_index: usize) -> Option<String> {
     let owner = registered_instance_spelling(identity)?;
     let field = INSTANCE_FIELD_NAMES
         .with(|registry| registry.borrow().get(&(identity, field_index)).cloned())?;
@@ -172,7 +172,7 @@ pub(crate) fn registered_instance_spelling(identity: Variable) -> Option<Arc<str
 /// `None` unless both halves are known: a half-spelled name would be worse
 /// than the kernel variable it replaced, because it would look like source the
 /// reader could search for.
-pub(crate) fn model_field_spelling(variable: Variable) -> Option<String> {
+pub(crate) fn model_field_surface(variable: Variable) -> Option<String> {
     let origin = registered_model_field_origin(variable)?;
     let owner = registered_instance_spelling(origin.identity)?;
     let field = format!("{owner}.{}", origin.field);

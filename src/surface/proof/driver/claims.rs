@@ -58,7 +58,7 @@ fn contract_closing_input(
     execution: &CheckedFunctionExecution,
     path_index: usize,
     has_return_resource_rewrite: bool,
-    post_return_facts: &[(usize, ProofFacts)],
+    post_return_facts: &[(usize, PureFactStore)],
 ) -> Result<ContractClosingInput, ClickError> {
     let returned = if has_return_resource_rewrite {
         let root =
@@ -112,7 +112,7 @@ fn prove_next_contract_closing_goal<'a>(
     execution: &CheckedFunctionExecution,
     path_index: usize,
     has_return_resource_rewrite: bool,
-    post_return_facts: &[(usize, ProofFacts)],
+    post_return_facts: &[(usize, PureFactStore)],
     mode: ClosingProofMode,
 ) -> Result<bool, ClickError> {
     let Some(root) = outcome_proof.as_ref() else {
@@ -543,7 +543,7 @@ fn prove_claims_by_checked_tactics(
         arguments,
         pure_facts,
         entry_fact_origins,
-        surface_propositions,
+        mut surface_propositions,
     } = function_source_registry
         .claim_entries()
         .get_or_build(source_path, function_block, || {
@@ -564,44 +564,35 @@ fn prove_claims_by_checked_tactics(
         state.memory(),
     );
     crate::surface::diagnostics::enter_ambient_object_fields(parsed_function);
-    let caller_requirement_index = CallerRequirementIndex::from_entry_facts_elaborated(
-        caller_source_owner.clone(),
-        function_block,
-        parsed_function.parameters(),
-        &pure_facts,
-        &entry_fact_origins,
-        crate::kernel::MemoryStateIdentity::of(state.memory()),
-        Some(spec_definitions.predicates),
-    );
-    let function = annotated_function_with_assumptions(
-        function_block,
-        parsed_function,
-        &state,
-        &arguments,
-        spec_definitions,
-        resource_environment,
-        Some(ResourceFrameEntry {
-            assumptions: &assumptions_from_propositions(&pure_facts),
-            checked_entry_state: None,
-        }),
-        None,
-    )?;
-    let state = canonical_claim_caller_state(
-        state,
-        function_block.structural_clauses().any_loop(),
-        &function,
-        &arguments,
-        &pure_facts,
-        proof_label,
-    )?;
-    let state = install_borrowed_contract_inputs(
-        state,
-        &function,
-        &pure_facts,
-        ParameterBinding::new(parsed_function.parameters(), &arguments),
-        proof_label,
-    )?;
     let opened_entry = shared_entry.get_or_open(|| {
+        let function = annotated_function_with_assumptions(
+            function_block,
+            parsed_function,
+            &state,
+            &arguments,
+            spec_definitions,
+            resource_environment,
+            Some(ResourceFrameEntry {
+                assumptions: &assumptions_from_propositions(&pure_facts),
+                checked_entry_state: None,
+            }),
+            None,
+        )?;
+        let state = canonical_claim_caller_state(
+            state,
+            function_block.structural_clauses().any_loop(),
+            &function,
+            &arguments,
+            &pure_facts,
+            proof_label,
+        )?;
+        let state = install_borrowed_contract_inputs(
+            state,
+            &function,
+            &pure_facts,
+            ParameterBinding::new(parsed_function.parameters(), &arguments),
+            proof_label,
+        )?;
         crate::kernel::proof::OpenedContractEntry::open(
             &state,
             &function,
@@ -620,18 +611,72 @@ fn prove_claims_by_checked_tactics(
             ))
         })
     })?;
+    // Every clause uses the function produced by this generative entry.
+    // Re-lowering a sibling clause can allocate different binder identities.
+    let function = opened_entry.function().clone();
     let state = opened_entry.caller_state().clone();
     let function_entry_state = opened_entry.entry_state().clone();
     let entry_fact_origins = opened_entry
         .source_origins()
         .iter()
-        .map(|origin| {
-            origin.map_or(EntryFactOrigin::Derived, |index| {
-                entry_fact_origins[index].clone()
-            })
+        .map(|origin| match origin {
+            Some(crate::kernel::proof::OpenedEntryFactSource::SourceFact(index)) => {
+                entry_fact_origins[*index].clone()
+            }
+            Some(crate::kernel::proof::OpenedEntryFactSource::Requirement(outer_ordinal)) => {
+                EntryFactOrigin::Requirement {
+                    source_id: RequirementSourceId {
+                        owner: caller_source_owner.clone(),
+                        outer_ordinal: *outer_ordinal,
+                    },
+                    role: RequirementFactRole::Principal {
+                        unfolding_path: Vec::new(),
+                    },
+                }
+            }
+            None => EntryFactOrigin::Derived,
         })
         .collect::<Vec<_>>();
-    let pure_facts = PureFactList::from_proof_facts(opened_entry.facts());
+    let pure_facts = PureFactList::from_store(opened_entry.facts());
+    let caller_requirement_index = CallerRequirementIndex::from_entry_facts_elaborated(
+        caller_source_owner.clone(),
+        function_block,
+        parsed_function.parameters(),
+        &pure_facts,
+        &entry_fact_origins,
+        crate::kernel::MemoryStateIdentity::of(state.memory()),
+        Some(spec_definitions.predicates),
+    );
+    // Entry opening owns the final resource-count lineage and source facts.
+    // Retain those products directly rather than their pre-opening identities.
+    for (fact, origin) in pure_facts.iter().zip(&entry_fact_origins) {
+        let EntryFactOrigin::Requirement {
+            source_id,
+            role: RequirementFactRole::Principal { unfolding_path },
+        } = origin
+        else {
+            continue;
+        };
+        if !unfolding_path.is_empty() {
+            continue;
+        }
+        let Some(Requirement::Proposition(surface)) =
+            function_block.requires().get(source_id.outer_ordinal)
+        else {
+            continue;
+        };
+        surface_propositions.record_lowering(surface, fact)?;
+        surface_propositions.record_lowering(
+            &ClickProposition::At {
+                selector: ProgramPointSelector::ProgramPoint(ProgramPointRef {
+                    region: CodeRegionRef::Function,
+                    kind: ProgramPointKind::Entry,
+                }),
+                proposition: Box::new(surface.clone()),
+            },
+            fact,
+        )?;
+    }
     let completion = opened_entry.contract_root().cloned();
     let root_attempt = completion.as_ref().map(|root| root.begin_attempt());
     let strategy_root = root_attempt.as_ref().map(|attempt| attempt.root().clone());
@@ -1147,7 +1192,6 @@ fn contract_closing_goal<'a>(
     arguments: &[ProgramExpression],
     outcome: &FunctionOutcome,
     assumptions: &PureFactContext,
-    unfolded_predicates: &[String],
     return_context: &mut Option<Option<crate::kernel::FunctionEnsureGoalContext<'a>>>,
 ) -> Result<Option<crate::kernel::ContractClaimGoal>, ClickError> {
     // None denotes a structural claim or a proof-local clause of a function
@@ -1197,7 +1241,7 @@ fn contract_closing_goal<'a>(
                     "contract closing could not construct the postcondition's entry and exit views",
                 )
             })?
-            .goals(*contract_index, unfolded_predicates)
+            .goals(*contract_index)
             .map_err(|reason| {
                 ClickError::new(format!(
                     "contract closing for `{}.ensures_{contract_index}`: {reason}",
@@ -1242,10 +1286,8 @@ fn contract_closing_goal<'a>(
     Ok(goals.pop())
 }
 
-/// The forms an explicit closer may find a claim's goal in: the identity of
-/// a registered predicate ensure first, then the body when the proof has
-/// unfolded that predicate. A closer step is exact, so the closer tries each
-/// form; two forms at most.
+/// The retained contract judgment for an explicit closer. Definition
+/// exposure happens through local proof steps inside that judgment.
 fn contract_closing_goal_forms<'a>(
     function: &'a ProgramFunction,
     retained_entry: Option<&crate::kernel::RetainedClosingEntry>,
@@ -1254,44 +1296,26 @@ fn contract_closing_goal_forms<'a>(
     arguments: &[ProgramExpression],
     outcome: &FunctionOutcome,
     assumptions: &PureFactContext,
-    unfolded_predicates: &[String],
     return_context: &mut Option<Option<crate::kernel::FunctionEnsureGoalContext<'a>>>,
 ) -> Result<Vec<Option<crate::kernel::ContractClaimGoal>>, ClickError> {
-    let mut forms = Vec::new();
-    let mut failure = None;
-    // With no unfolded predicates both configurations are identical. Both
-    // forms lower against the same lazily prepared entry and exit views.
-    let unfolded = (!unfolded_predicates.is_empty()).then_some(unfolded_predicates);
-    for unfolds in std::iter::once(&[][..]).chain(unfolded) {
-        let candidate = crate::instrumentation::measure_operation(
-            function.name(),
-            "explicit return closer",
-            "return claim goal lowering",
-            || {
-                contract_closing_goal(
-                    function,
-                    retained_entry,
-                    target,
-                    pre_state,
-                    arguments,
-                    outcome,
-                    assumptions,
-                    unfolds,
-                    return_context,
-                )
-            },
-        );
-        match candidate {
-            Ok(form) if !forms.contains(&form) => forms.push(form),
-            Ok(_) => {}
-            Err(error) => failure = Some(error),
-        }
-    }
-    if forms.is_empty() {
-        Err(failure.expect("at least one contract goal form was requested"))
-    } else {
-        Ok(forms)
-    }
+    crate::instrumentation::measure_operation(
+        function.name(),
+        "explicit return closer",
+        "return claim goal lowering",
+        || {
+            contract_closing_goal(
+                function,
+                retained_entry,
+                target,
+                pre_state,
+                arguments,
+                outcome,
+                assumptions,
+                return_context,
+            )
+        },
+    )
+    .map(|form| vec![form])
 }
 
 /// Requires the checked outcome from which contract closing opens its goals.
@@ -1400,12 +1424,11 @@ fn apply_claim_step<'a>(
     }))
 }
 
-/// Selects the one ungrouped proposition claim refined by top-level
-/// `choose`/`witness` operations and starts its result-aware judgment from the
-/// current outcome Proof. Rewrites and active unfolds are re-applied inside
-/// this independently serializable claim body exactly as expansion requires,
-/// but every operation advances this retained Proof directly.
-fn begin_outcome_existence_proof<'a>(
+/// Selects the one ungrouped proposition claim refined by a local tactic
+/// and starts its result-aware judgment from the
+/// current outcome Proof. Every explicit operation advances this retained
+/// Proof and is serialized inside the claim body.
+fn begin_outcome_claim_proof<'a>(
     outcome_root: &Proof<'a>,
     function: &ProgramFunction,
     pre_state: &ExecutionState,
@@ -1414,7 +1437,6 @@ fn begin_outcome_existence_proof<'a>(
     claims: &[FunctionClaimRef<'_>],
     closures: &[ClaimClosure],
     rewrite_claim_equalities: &[Vec<ClickProposition>],
-    unfolded_predicates: &[String],
 ) -> Result<(usize, ClickProposition, Proof<'a>), ClickError> {
     let mut open = claims
         .iter()
@@ -1455,7 +1477,6 @@ fn begin_outcome_existence_proof<'a>(
         arguments,
         outcome,
         root.facts().assumptions(),
-        &[],
         &mut None,
     )?;
     let mut proof = focus_claim_goal(
@@ -1469,24 +1490,12 @@ fn begin_outcome_existence_proof<'a>(
             .driver()
             .apply_step(ProofStep::Rewrite(equality.clone()))?;
     }
-    // These steps make the retained nested body independently surface
-    // checkable. An unfold already inherited by the outcome is harmlessly
-    // skipped, matching the former checked-scope behavior.
-    for name in unfolded_predicates {
-        match proof
-            .driver()
-            .apply_step(ProofStep::UnfoldPredicate(name.clone()))
-        {
-            Ok(next) => proof = next,
-            Err(_) => check_verification_deadline()?,
-        }
-    }
     Ok((claim_index, surface_goal, proof))
 }
 
 /// Closes one proposition claim from the outcome Proof by the direct logical
 /// closure: the implicit closer of a claim with no `by` block. Rewrites and
-/// active unfolds are applied as an explicit claim body would apply them. A
+/// applied as an explicit claim body would apply them. A
 /// goal the fixed-state lowering cannot express, or that the closure does not
 /// reach, is a miss; only a deadline is an error.
 /// The implicit closer of a proposition claim: the claim goal is the
@@ -1518,7 +1527,6 @@ fn close_claim_directly_from_outcome<'a>(
     outcome: &FunctionOutcome,
     surface_goal: &ClickProposition,
     rewrite_equalities: &[ClickProposition],
-    unfolded_predicates: &[String],
     claim_label: &str,
     path_index: usize,
     entry_facts: &(impl PropositionSource + ?Sized),
@@ -1554,7 +1562,6 @@ fn close_claim_directly_from_outcome<'a>(
                 parameter_binding.arguments,
                 outcome,
                 root.facts().assumptions(),
-                &[],
                 &mut None,
             )
         })
@@ -1603,15 +1610,6 @@ fn close_claim_directly_from_outcome<'a>(
                     ));
                 }
             };
-        }
-        for name in unfolded_predicates {
-            match proof
-                .driver()
-                .apply_step(ProofStep::UnfoldPredicate(name.clone()))
-            {
-                Ok(next) => proof = next,
-                Err(_) => check_verification_deadline()?,
-            }
         }
     }
     let mut search = super::attempt::search_scope("claim outcome closure");
@@ -2209,10 +2207,9 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
     completed_execution: &'e CheckedFunctionExecution,
     entry_pure_facts: &PureFactList,
     path_capture: Option<&DeferredTacticCapture>,
-    path_requirements: &ProofFacts,
+    path_requirements: &PureFactStore,
     rewrite_claim_equalities: &[Vec<ClickProposition>],
     rewritten_claim_proofs: &[Option<(Proof<'a>, ProofCheckpoint<'a>)>],
-    unfolded_predicates: &SharedVec<String>,
     outcome: &mut FunctionOutcome,
     outcome_proof: &mut Option<Proof<'a>>,
     opened_claim: &mut Option<OpenedClaimProof<'a>>,
@@ -2343,7 +2340,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                 None => {
                     let claim_label = function_claim_label(function_block, &claims[claim_index]);
                     return Err(ClickError::new(format!(
-                        "`{proof_label}` path {path_index}, tactic {tactic_index}: checked outcome `{closer_name}` did not complete the retained existential Proof for `{claim_label}`"
+                        "`{proof_label}` path {path_index}, tactic {tactic_index}: checked outcome `{closer_name}` did not complete the retained claim proof for `{claim_label}`"
                     )));
                 }
             }
@@ -2352,7 +2349,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
     if let Some((claim_index, before_solve, completed)) = opened_closure {
         if !completed.is_complete() {
             return Err(ClickError::new(format!(
-                "`{proof_label}` path {path_index}, tactic {tactic_index}: retained existential Proof remained incomplete after `solve`"
+                "`{proof_label}` path {path_index}, tactic {tactic_index}: retained claim proof remained incomplete after `solve`"
             )));
         }
         // The steps are checked inside the proof
@@ -2565,54 +2562,10 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
             // are recorded by their own tactics.
             let direct_base = direct_proof.checkpoint();
             let mut selected = true;
-            // A top-level predicate outcome is opaque until the
-            // corresponding checked `unfold` transition refines
-            // this evolving outcome Proof. Smart `solve` tries
-            // those named operations before opening its claim
-            // scopes; a rejected unfold is only a candidate miss
-            // and leaves the persistent root unchanged.
-            let mut tried_predicates = BTreeSet::new();
-            for (_, surface_goal, _) in direct_claims.iter().filter(|_| restricted_premises.is_none()) {
-                let ClickProposition::PredicateCall { name, .. } =
-                    surface_goal
-                else {
-                    continue;
-                };
-                if !tried_predicates.insert(name.clone()) {
-                    continue;
-                }
-                match direct_proof.driver().apply_step(
-                    ProofStep::UnfoldPredicate(name.clone()),
-                ) {
-                    Ok(unfolded) => direct_proof = unfolded,
-                    Err(_) => {
-                        check_verification_deadline()?;
-                    }
-                }
-            }
             for (claim_index, surface_goal, equalities) in &direct_claims {
-                // In a grouped set with resource
-                // claims, retained provenance
-                // already carries pre-execution
-                // predicate unfolds. Write the
-                // nested have at that structural
-                // level: a have identical to the
-                // current proposition claim would
-                // close it early and shift the
-                // trailing resource closers.
-                let scope_surface_goal = if proof_context.constants.grouped_contract
-                    && !direct_resource_claims.is_empty()
-                {
-                    direct_proof
-                        .unfold_goal_surface(
-                            spec_definitions.predicates,
-                            surface_goal,
-                            unfolded_predicates,
-                        )
-                        .map_err(ClickError::new)?
-                } else {
-                    surface_goal.clone()
-                };
+                // Each proposition gets its own scope. Any local unfolding
+                // belongs inside that scope, exactly where replay runs it.
+                let scope_surface_goal = surface_goal.clone();
                 let mut scope = match direct_proof.driver().open_have(scope_surface_goal) {
                     Ok(scope) => scope,
                     Err(error) => {
@@ -2637,7 +2590,6 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                                 outcome,
                                 surface_goal,
                                 equalities,
-                                unfolded_predicates,
                                 &claim_label,
                                 path_index,
                                 &*entry_pure_facts,
@@ -2717,7 +2669,6 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                             outcome,
                             surface_goal,
                             equalities,
-                            unfolded_predicates,
                             &claim_label,
                             path_index,
                             &*entry_pure_facts,
@@ -2753,21 +2704,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
             }
             let mut surface_goals = Vec::new();
             for (_, goal, _) in &direct_claims {
-                surface_goals.push(
-                    if proof_context.constants.grouped_contract
-                        && !direct_resource_claims.is_empty()
-                    {
-                        direct_proof
-                            .unfold_goal_surface(
-                                spec_definitions.predicates,
-                                goal,
-                                unfolded_predicates,
-                            )
-                            .map_err(ClickError::new)?
-                    } else {
-                        goal.clone()
-                    },
-                );
+                surface_goals.push(goal.clone());
             }
             let completed = if surface_goals.is_empty() {
                 (
@@ -2789,7 +2726,6 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                             &assumptions_from_propositions(
                                 path_requirements,
                             ),
-                            unfolded_predicates,
                             &mut claim_goal_context,
                         ).map(|forms| forms.into_iter().flatten().collect())
                     })
@@ -2942,7 +2878,6 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                 outcome,
                 surface_goal,
                 &rewrite_claim_equalities[claim_index],
-                unfolded_predicates,
                 &claim_label,
                 path_index,
                 &*entry_pure_facts,
@@ -3009,7 +2944,6 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
             outcome,
             surface_goal,
             &rewrite_claim_equalities[claim_index],
-            unfolded_predicates,
             &claim_label,
             path_index,
             &*entry_pure_facts,
@@ -3065,7 +2999,7 @@ fn take_opened_claim<'a>(
 /// means the caller reads the closer against the claims instead, because no
 /// proof was open or because the closer did not apply to one that falls back
 /// on a miss.
-fn continue_claim_existence_proof<'a>(
+fn continue_outcome_claim_proof<'a>(
     opened_claim: &mut Option<OpenedClaimProof<'a>>,
     closures: &mut [ClaimClosure],
     claims: &[FunctionClaimRef<'_>],
@@ -3165,7 +3099,7 @@ fn no_open_goal(closer: &str) -> String {
     format!("`{closer}` has no goal to close: every claim on this path is already closed")
 }
 
-fn opens_outcome_existence_proof(tactic: &ProofTactic) -> bool {
+fn opens_outcome_claim_scope(tactic: &ProofTactic) -> bool {
     matches!(
         tactic,
         ProofTactic::Choose(_)
@@ -3175,6 +3109,59 @@ fn opens_outcome_existence_proof(tactic: &ProofTactic) -> bool {
             | ProofTactic::IntroAs(_)
             | ProofTactic::IntroBinder(_)
     )
+}
+
+// A definition step focuses a claim only when it names an occurrence in that
+// claim's current goal. Opening a premise remains an ordinary fact operation.
+fn unfolds_outcome_goal(
+    tactic: &ProofTactic,
+    claims: &[FunctionClaimRef<'_>],
+    closures: &[ClaimClosure],
+    predicates: &PredicateEnvironment,
+) -> bool {
+    let target = match tactic {
+        ProofTactic::UnfoldProposition(target) => target.clone(),
+        ProofTactic::UnfoldFunction(application) if predicates.get(&application.name).is_some() => {
+            ClickProposition::PredicateCall {
+                name: application.name.clone(),
+                arguments: application.arguments.clone(),
+            }
+        }
+        _ => return false,
+    };
+    let mut goals = claims.iter().zip(closures).filter_map(|(claim, closure)| {
+        if closure.is_closed() {
+            return None;
+        }
+        match claim.clause().ensure() {
+            Ensure::Proposition(goal) => Some(goal),
+            _ => None,
+        }
+    });
+    let Some(goal) = goals.next() else {
+        return false;
+    };
+    if goals.next().is_some() {
+        return false;
+    }
+    fn contains(goal: &ClickProposition, target: &ClickProposition) -> bool {
+        if goal == target {
+            return true;
+        }
+        match goal {
+            ClickProposition::And(a, b)
+            | ClickProposition::Or(a, b)
+            | ClickProposition::Implies(a, b) => contains(a, target) || contains(b, target),
+            ClickProposition::Not(body)
+            | ClickProposition::At {
+                proposition: body, ..
+            }
+            | ClickProposition::ForAll { body, .. }
+            | ClickProposition::Exists { body, .. } => contains(body, target),
+            _ => false,
+        }
+    }
+    contains(goal, &target)
 }
 
 pub(super) fn finish_ordered_proof<'a>(
@@ -3693,18 +3680,8 @@ pub(super) fn finish_ordered_proof<'a>(
                     } else {
                         Some(Vec::new())
                     };
-                    let mut unfolded_predicates = direct_view.unfolded_predicates.clone();
-                    if let Some(mut root) = outcome_proof.take() {
-                        for name in &unfolded_predicates {
-                            if let Ok(unfolded) = root
-                                .driver()
-                                .apply_step(ProofStep::UnfoldPredicate(name.clone()))
-                            {
-                                root = unfolded;
-                            } else {
-                                check_verification_deadline()?;
-                            }
-                        }
+
+                    if let Some(root) = outcome_proof.take() {
                         outcome_proof = Some(root.project_outcome_resources()?);
                     }
                     if let Some(root) = outcome_proof.take() {
@@ -4103,7 +4080,19 @@ pub(super) fn finish_ordered_proof<'a>(
                                 unreachable!("a proved fold wraps its `StepProved` tactic")
                             }
                             PostExecutionTactic::Leaf(tactic)
-                                if opens_outcome_existence_proof(tactic) =>
+                                if opens_outcome_claim_scope(tactic)
+                                    || opened_claim.is_some()
+                                        && matches!(
+                                            tactic,
+                                            ProofTactic::UnfoldProposition(_)
+                                                | ProofTactic::UnfoldFunction(_)
+                                        )
+                                    || unfolds_outcome_goal(
+                                        tactic,
+                                        claims,
+                                        &closures,
+                                        spec_definitions.predicates,
+                                    ) =>
                             {
                                 // These leaves refine one claim's own goal, so
                                 // they run on that claim's existence proof,
@@ -4111,7 +4100,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 let opened = match opened_claim.take() {
                                     Some(active) => active,
                                     None => {
-                                        let (claim_index, surface_goal, proof) = begin_outcome_existence_proof(
+                                        let (claim_index, surface_goal, proof) = begin_outcome_claim_proof(
                                             outcome_proof.as_ref().ok_or_else(|| {
                                                 ClickError::new(format!(
                                                     "`{proof_label}` path {path_index}, tactic {tactic_index}: the typed outcome goal for `{}` is unavailable",
@@ -4125,7 +4114,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                             claims,
                                             &closures,
                                             &rewrite_claim_equalities,
-                                            &unfolded_predicates,
                                         )?;
                                         OpenedClaimProof {
                                             claim_index,
@@ -4324,14 +4312,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 // A `have` after `intro` belongs to the active
                                 // claim proof, which owns the introduced binder.
                                 // Earlier `have` steps extend the outcome proof.
-                                let active_claim = if opened_claim
-                                    .as_ref()
-                                    .is_some_and(|opened| opened.introduces_scope)
-                                {
-                                    opened_claim.take()
-                                } else {
-                                    None
-                                };
+                                let active_claim = opened_claim.take();
                                 let evolving_root = match &active_claim {
                                     Some(active) => active
                                         .proof
@@ -4563,7 +4544,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     PostExecutionTactic::Both(_) => ProofStep::Normalize,
                                     _ => unreachable!("matched a closer above"),
                                 };
-                                if let Some(certificate) = continue_claim_existence_proof(
+                                if let Some(certificate) = continue_outcome_claim_proof(
                                     &mut opened_claim,
                                     &mut closures,
                                     claims,
@@ -4748,7 +4729,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                         arguments,
                                         &outcome,
                                         &assumptions_from_propositions(&path_requirements),
-                                        &unfolded_predicates,
                                         &mut return_claim_context,
                                     )?;
                                     // Expansion can emit a checked `have` of
@@ -4962,7 +4942,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                         arguments,
                                         &outcome,
                                         &assumptions_from_propositions(&path_requirements),
-                                        &unfolded_predicates,
                                         &mut return_claim_context,
                                     )?;
                                     // Continue the retained claim judgment, or
@@ -5062,7 +5041,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                     &path_requirements,
                                     &rewrite_claim_equalities,
                                     &rewritten_claim_proofs,
-                                    &unfolded_predicates,
                                     &mut outcome,
                                     &mut outcome_proof,
                                     &mut opened_claim,
@@ -5103,7 +5081,9 @@ pub(super) fn finish_ordered_proof<'a>(
                                 // A predicate unfold and a theorem application
                                 // read the returned value.
                                 let return_operation = match tactic {
-                                    ProofTactic::UnfoldPredicate(_) => Some("predicate unfolding"),
+                                    ProofTactic::UnfoldProposition(_) => {
+                                        Some("predicate unfolding")
+                                    }
                                     ProofTactic::ApplyTheoremUsing { .. } => {
                                         Some("theorem application")
                                     }
@@ -5147,11 +5127,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 ) {
                                     outcome = applied.focused_outcome_state()?;
                                 }
-                                if let ProofTactic::UnfoldPredicate(name) = tactic
-                                    && !unfolded_predicates.contains(name)
-                                {
-                                    unfolded_predicates.push(name.clone());
-                                }
+
                                 // `apply using` keeps its written spelling in
                                 // the expansion; every other leaf records its
                                 // checked certificate.
@@ -5213,7 +5189,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 ))?;
                             }
                             _ => closures[claim_index].record_failure(ClickError::new(
-                                "the retained existential Proof did not close by the implicit exact check",
+                                "the retained claim proof did not close by the implicit exact check",
                             )),
                         }
                     }
@@ -5257,7 +5233,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                     &outcome,
                                     surface_goal,
                                     &rewrite_claim_equalities[claim_index],
-                                    &unfolded_predicates,
                                     &claim_label,
                                     path_index,
                                     &*entry_pure_facts,
@@ -6146,7 +6121,7 @@ mod evidence_tests {
             panic!("checked function path")
         };
         let key = FunctionContractClaimKey::Ensure(*index);
-        let facts = ProofFacts::from_ordered(&path.assumptions().pure_facts());
+        let facts = PureFactStore::from_ordered(&path.assumptions().pure_facts());
         let checked = prove_ensure_resource(
             execution,
             key.clone(),
@@ -6223,7 +6198,7 @@ mod evidence_tests {
 /// path already held when execution returned keeps the final tactic's site.
 fn unjustified_return_fact_error(
     proof: &Proof<'_>,
-    facts_before_tactic: &[(usize, ProofFacts)],
+    facts_before_tactic: &[(usize, PureFactStore)],
     fact: &Proposition,
     message: &str,
     path_index: usize,
@@ -6271,7 +6246,6 @@ mod contract_closing_tests {
             &[],
             &outcome,
             &PureFactContext::new(),
-            &[],
             &mut None,
         )
         .unwrap_err();

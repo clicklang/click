@@ -28,8 +28,8 @@ theorem same_zeros(p: int32[], q: int32[], lo: int32, n: int32, hi: int32) {
     ensures zeros(p, lo, hi) == zeros(q, lo, hi) by {
         induct(hi) as ih;
         if hi <= lo {
-            peel(zeros(p, lo, hi)) using { hi <= lo; };
-            peel(zeros(q, lo, hi)) using { hi <= lo; };
+            unfold(zeros(p, lo, hi));
+            unfold(zeros(q, lo, hi));
             known();
         } else {
             have lo < hi;
@@ -47,14 +47,12 @@ theorem same_zeros(p: int32[], q: int32[], lo: int32, n: int32, hi: int32) {
             };
             have to_integer(hi - 1) < to_integer(n) by { solve(); }
             have to_integer(lo) <= to_integer(hi - 1) by { solve(); }
-            instantiate(forall (k: int32) { lo <= k and k < n implies p[k] == q[k] }, hi - 1) using {
-                to_integer(lo) <= to_integer(hi - 1);
-                to_integer(hi - 1) < to_integer(n);
-            };
+            have lo <= (hi - 1) and (hi - 1) < n;
+            instantiate(forall (k: int32) { lo <= k and k < n implies p[k] == q[k] }, hi - 1);
             have to_integer(lo) <= to_integer(hi - 1) by { solve(); }
             have to_integer(hi - 1) < 2147483647 by { solve(); }
-            peel(zeros(p, lo, hi)) using { to_integer(lo) <= to_integer(hi - 1); to_integer(hi - 1) < 2147483647; };
-            peel(zeros(q, lo, hi)) using { to_integer(lo) <= to_integer(hi - 1); to_integer(hi - 1) < 2147483647; };
+            unfold(zeros(p, lo, hi));
+            unfold(zeros(q, lo, hi));
             rewrite(p[hi - 1], q[hi - 1]);
             known();
         }
@@ -86,7 +84,7 @@ void mark_below(int32 *v, int32 lo, int32 hi, int32 j, int32 n) {
             have separate(statement(0).footprint, memory(v[k])) by {
                 normalize() using { separate(memory(v[j]), memory(v[k])); };
             }
-            preserve(separate(statement(0).footprint, memory(v[k])));
+            preserve(memory(v[k]), statement(0));
         }
         have viewable(v[0..n]) by { observe(v[0..n]); known(); }
         apply(same_zeros(v, at(entry, v), lo, n, hi)) using {

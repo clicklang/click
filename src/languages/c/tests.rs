@@ -1407,7 +1407,7 @@ fn c_pointer_object_volatile_accesses_preserve_pointer_provenance() {
     while let crate::kernel::Proposition::Implies(_, body) = proposition {
         proposition = body;
     }
-    let crate::kernel::Proposition::ProgramFunctionExecutes {
+    let crate::kernel::Proposition::ProgramFunctionVerifies {
         outcome:
             crate::kernel::FunctionOutcome::Return {
                 value: retained_result,
@@ -5324,7 +5324,7 @@ fn kernel_skip_preserves_state_without_facts_or_obligations() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramStatementExecutes {
+        &crate::kernel::Proposition::ProgramStatementVerifies {
             state: Box::new(state.clone()),
             statement: Box::new(crate::kernel::program_skip()),
             outcome: crate::kernel::StatementOutcome::Normal(Box::new(state)),
@@ -5555,7 +5555,7 @@ fn c_unary_minus_preserves_signed_overflow_semantics() {
     }
     assert!(matches!(
         proposition,
-        crate::kernel::Proposition::ProgramStatementExecutes {
+        crate::kernel::Proposition::ProgramStatementVerifies {
             outcome: crate::kernel::StatementOutcome::UndefinedBehavior(
                 crate::kernel::UndefinedBehavior::SignedOverflow
             ),
@@ -5738,7 +5738,7 @@ fn c_embedded_struct_field_access_lowers_to_nested_scalar_offset() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -6122,7 +6122,7 @@ fn c_tagged_union_member_addresses_preserve_member_type_and_offset() {
         Default::default(),
     )
     .expect("pointer-valued union member address should execute");
-    let crate::kernel::Proposition::ProgramFunctionExecutes {
+    let crate::kernel::Proposition::ProgramFunctionVerifies {
         outcome: crate::kernel::FunctionOutcome::Return { value, .. },
         ..
     } = theorem.proposition()
@@ -6329,7 +6329,7 @@ fn c_enum_field_comparison_lowers_named_constant() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -6801,7 +6801,7 @@ fn c_chained_field_load_executes_through_typed_pointer_memory() {
     }
     assert!(matches!(
         proposition,
-        crate::kernel::Proposition::ProgramStatementExecutes {
+        crate::kernel::Proposition::ProgramStatementVerifies {
             outcome: crate::kernel::StatementOutcome::Return {
                 value,
                 ..
@@ -6934,7 +6934,7 @@ fn c_syntax_targets_kernel_max_body() {
         theorem.proposition(),
         &crate::kernel::Proposition::Implies(
             Box::new(crate::kernel::Proposition::ConditionIs(condition, true)),
-            Box::new(crate::kernel::Proposition::ProgramStatementExecutes {
+            Box::new(crate::kernel::Proposition::ProgramStatementVerifies {
                 state: Box::new(state.clone()),
                 statement: Box::new(statement),
                 outcome: crate::kernel::StatementOutcome::Return {
@@ -6985,7 +6985,7 @@ fn c_syntax_targets_kernel_max_function_call() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
@@ -7036,7 +7036,7 @@ fn c_syntax_targets_kernel_assignment_and_sequence() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramStatementExecutes {
+        &crate::kernel::Proposition::ProgramStatementVerifies {
             state: Box::new(initial),
             statement: Box::new(statement),
             outcome: crate::kernel::StatementOutcome::Return {
@@ -7071,7 +7071,7 @@ fn c_syntax_targets_kernel_assignment_function_call() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
@@ -7138,7 +7138,7 @@ fn c_syntax_targets_kernel_store_and_load() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramStatementExecutes {
+        &crate::kernel::Proposition::ProgramStatementVerifies {
             state: Box::new(initial),
             statement: Box::new(statement),
             outcome: crate::kernel::StatementOutcome::Return {
@@ -7199,7 +7199,7 @@ fn c_syntax_targets_kernel_struct_field_load() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramStatementExecutes {
+        &crate::kernel::Proposition::ProgramStatementVerifies {
             state: Box::new(initial.clone()),
             statement: Box::new(statement),
             outcome: crate::kernel::StatementOutcome::Return {
@@ -7257,7 +7257,7 @@ fn c_syntax_targets_kernel_float64_struct_field_load() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramStatementExecutes {
+        &crate::kernel::Proposition::ProgramStatementVerifies {
             state: Box::new(initial.clone()),
             statement: Box::new(statement),
             outcome: crate::kernel::StatementOutcome::Return {
@@ -7318,7 +7318,7 @@ fn c_syntax_targets_kernel_struct_field_store() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -7392,7 +7392,7 @@ fn c_syntax_targets_kernel_multifield_struct_offset_load() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
@@ -7461,7 +7461,7 @@ fn c_syntax_targets_kernel_struct_pointer_field_roundtrip() {
     )
     .expect("parsed struct pointer field roundtrip should execute");
 
-    let crate::kernel::Proposition::ProgramFunctionExecutes {
+    let crate::kernel::Proposition::ProgramFunctionVerifies {
         outcome:
             crate::kernel::FunctionOutcome::Return {
                 value,
@@ -7526,7 +7526,7 @@ fn c_syntax_targets_kernel_store_and_load_function_call() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -7576,7 +7576,7 @@ fn c_syntax_targets_kernel_pointer_addition_load() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
@@ -7626,7 +7626,7 @@ fn c_syntax_targets_kernel_array_index_load() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
@@ -7682,7 +7682,7 @@ fn c_syntax_targets_kernel_array_index_store() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -7757,7 +7757,7 @@ fn c_syntax_targets_kernel_address_of_array_index() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -7801,7 +7801,7 @@ fn c_syntax_targets_kernel_pointer_null_equality() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
@@ -7882,7 +7882,7 @@ fn c_syntax_targets_kernel_logical_short_circuiting() {
 
         assert_eq!(
             theorem.proposition(),
-            &crate::kernel::Proposition::ProgramFunctionExecutes {
+            &crate::kernel::Proposition::ProgramFunctionVerifies {
                 state: Box::new(state.clone()),
                 function: Box::new(function.clone()),
                 arguments,
@@ -7927,7 +7927,7 @@ fn c_syntax_targets_kernel_unary_not() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
@@ -7980,7 +7980,7 @@ fn c_syntax_targets_kernel_local_address_of() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state),
             function: Box::new(function),
             arguments: Vec::new(),
@@ -8039,7 +8039,7 @@ fn c_syntax_targets_kernel_local_array_storage() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state),
             function: Box::new(function),
             arguments: Vec::new(),
@@ -8101,7 +8101,7 @@ fn c_syntax_lowers_local_array_initializer_stores() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state),
             function: Box::new(function),
             arguments: Vec::new(),
@@ -8160,7 +8160,7 @@ fn c_syntax_flattens_multidimensional_local_array_indices() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state),
             function: Box::new(function),
             arguments: Vec::new(),
@@ -8249,7 +8249,7 @@ fn c_syntax_lowers_nested_multidimensional_array_initializers() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state),
             function: Box::new(function),
             arguments: Vec::new(),
@@ -8313,7 +8313,7 @@ fn c_syntax_lowers_local_struct_array_fields_with_abi_stride() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state),
             function: Box::new(function),
             arguments: Vec::new(),
@@ -8448,7 +8448,7 @@ fn c_syntax_lowers_local_struct_array_initializers() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state),
             function: Box::new(function),
             arguments: Vec::new(),
@@ -8554,7 +8554,8 @@ fn c_syntax_local_array_decays_to_pointer_argument() {
         block: local_result_block.clone(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
-    let environment = crate::kernel::ExecutionEnvironment::new().with_function(read_first);
+    let environment =
+        crate::kernel::ExecutionEnvironment::new().with_function((read_first).with_inline_body());
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
         crate::kernel::Memory::new()
@@ -8576,13 +8577,13 @@ fn c_syntax_local_array_decays_to_pointer_argument() {
         Vec::new(),
         Default::default(),
         environment,
-        crate::kernel::ExecutionSemantics::EXECUTE_BODIES,
+        crate::kernel::ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
     )
     .expect("local array should decay to pointer argument");
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state),
             function: Box::new(caller),
             arguments: Vec::new(),
@@ -8839,7 +8840,7 @@ fn c_wide_scalar_struct_fields_execute_at_declared_widths() {
     .expect("wide scalar struct fields should execute");
 
     let mut numeric_result = theorem.proposition().clone();
-    let crate::kernel::Proposition::ProgramFunctionExecutes {
+    let crate::kernel::Proposition::ProgramFunctionVerifies {
         outcome: crate::kernel::FunctionOutcome::Return { value, .. },
         ..
     } = &mut numeric_result
@@ -8849,7 +8850,7 @@ fn c_wide_scalar_struct_fields_execute_at_declared_widths() {
     *value = value.native().numeric_value().clone().into();
     assert_eq!(
         &numeric_result,
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -9367,7 +9368,7 @@ fn c_struct_value_pointer_parameter_and_return_copy_pointee_identity() {
     )
     .expect("pointer-bearing struct parameter and return should execute");
 
-    let crate::kernel::Proposition::ProgramFunctionExecutes {
+    let crate::kernel::Proposition::ProgramFunctionVerifies {
         outcome:
             crate::kernel::FunctionOutcome::Return {
                 value: retained_result,
@@ -9747,7 +9748,7 @@ fn c_struct_inline_scalar_array_field_supports_indexed_load_and_store() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -9816,7 +9817,7 @@ fn c_struct_multidimensional_scalar_array_field_flattens_row_major() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -9970,7 +9971,7 @@ fn c_struct_scalar_array_element_address_executes_at_element_width() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -10054,7 +10055,7 @@ fn c_struct_byte_array_element_address_executes_at_byte_width() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -10166,7 +10167,7 @@ fn c_embedded_struct_array_field_preserves_stride_and_accesses_leaf() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -10279,7 +10280,7 @@ fn c_multidimensional_embedded_struct_array_preserves_row_major_stride() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -10659,7 +10660,7 @@ fn c_address_of_int16_preserves_pointer_type() {
         Default::default(),
     )
     .expect("an int16 address should execute with its typed pointer result");
-    let crate::kernel::Proposition::ProgramFunctionExecutes {
+    let crate::kernel::Proposition::ProgramFunctionVerifies {
         outcome: crate::kernel::FunctionOutcome::Return { value, .. },
         ..
     } = theorem.proposition()
@@ -10702,7 +10703,7 @@ fn c_syntax_rejects_assignment_to_local_array_object() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -10745,7 +10746,7 @@ fn c_syntax_targets_kernel_int32_subtraction_and_comparisons() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
@@ -10785,7 +10786,7 @@ fn c_if_condition_uses_c_int32_truthiness() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state.clone()),
             function: Box::new(function.clone()),
             arguments,
@@ -10807,7 +10808,7 @@ fn c_if_condition_uses_c_int32_truthiness() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
@@ -10817,103 +10818,6 @@ fn c_if_condition_uses_c_int32_truthiness() {
             },
         }
     );
-}
-
-#[test]
-fn c_clamp_demo_proves_symbolic_branch_specifications() {
-    let function = syntax::parse_function(
-        r#"
-        int32 clamp(int32 x, int32 lo, int32 hi) {
-            if (x < lo) {
-                return lo;
-            } else {
-                if (x > hi) {
-                    return hi;
-                } else {
-                    return x;
-                }
-            }
-        }
-        "#,
-    )
-    .expect("clamp should parse")
-    .to_kernel_function();
-
-    let x = crate::kernel::Variable(40);
-    let lo = crate::kernel::Variable(41);
-    let hi = crate::kernel::Variable(42);
-    let x_bits = crate::kernel::MachineTerm::Variable(x);
-    let lo_bits = crate::kernel::MachineTerm::Variable(lo);
-    let hi_bits = crate::kernel::MachineTerm::Variable(hi);
-    let arguments = vec![
-        crate::kernel::ProgramExpression::Value(crate::kernel::int32(x_bits.clone())),
-        crate::kernel::ProgramExpression::Value(crate::kernel::int32(lo_bits.clone())),
-        crate::kernel::ProgramExpression::Value(crate::kernel::int32(hi_bits.clone())),
-    ];
-    let below_lo = crate::kernel::ConditionTerm::Compare {
-        format: crate::kernel::MachineIntegerType::Int32,
-        relation: crate::kernel::CompareRelation::LessThan,
-        left: Box::new(x_bits.clone()),
-        right: Box::new(lo_bits.clone()),
-    };
-    let above_hi = crate::kernel::ConditionTerm::Compare {
-        format: crate::kernel::MachineIntegerType::Int32,
-        relation: crate::kernel::CompareRelation::GreaterThan,
-        left: Box::new(x_bits.clone()),
-        right: Box::new(hi_bits.clone()),
-    };
-    let cases = vec![
-        (
-            vec![crate::kernel::Proposition::ConditionIs(
-                below_lo.clone(),
-                true,
-            )],
-            crate::kernel::int32(lo_bits),
-        ),
-        (
-            vec![
-                crate::kernel::Proposition::ConditionIs(below_lo.clone(), false),
-                crate::kernel::Proposition::ConditionIs(above_hi.clone(), true),
-            ],
-            crate::kernel::int32(hi_bits),
-        ),
-        (
-            vec![
-                crate::kernel::Proposition::ConditionIs(below_lo, false),
-                crate::kernel::Proposition::ConditionIs(above_hi, false),
-            ],
-            crate::kernel::int32(x_bits),
-        ),
-    ];
-
-    for (requires, value) in cases {
-        let specification = crate::kernel::program_function_specification(
-            crate::kernel::ExecutionState::new(),
-            arguments.clone(),
-            requires.clone(),
-            crate::kernel::FunctionOutcome::Return {
-                value: value.into(),
-                state: Box::new(crate::kernel::ExecutionState::new()),
-            },
-        );
-        let theorem = crate::kernel::prove_program_function_satisfies_specification(
-            function.clone(),
-            specification.clone(),
-            crate::kernel::PureFactContext::new(),
-        )
-        .expect("clamp branch specification should prove");
-        let expected = requires.iter().rev().fold(
-            crate::kernel::Proposition::ProgramFunctionSatisfiesSpecification {
-                function: Box::new(function.clone()),
-                specification: Box::new(specification.clone()),
-            },
-            |body, requirement| {
-                crate::kernel::Proposition::Implies(Box::new(requirement.clone()), Box::new(body))
-            },
-        );
-
-        assert_eq!(theorem.proposition(), &expected);
-    }
 }
 
 #[test]
@@ -11123,7 +11027,8 @@ fn c_syntax_targets_kernel_known_function_call_assignment() {
         block: local_result_block.clone(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
-    let environment = crate::kernel::ExecutionEnvironment::new().with_function(increment);
+    let environment =
+        crate::kernel::ExecutionEnvironment::new().with_function((increment).with_inline_body());
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
         crate::kernel::Memory::new()
@@ -11142,13 +11047,13 @@ fn c_syntax_targets_kernel_known_function_call_assignment() {
         Vec::new(),
         Default::default(),
         environment,
-        crate::kernel::ExecutionSemantics::EXECUTE_BODIES,
+        crate::kernel::ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
     )
     .expect("known C function call should execute");
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state),
             function: Box::new(caller),
             arguments: Vec::new(),
@@ -11188,11 +11093,11 @@ fn c_syntax_targets_kernel_float_argument_conversion() {
         caller,
         Vec::new(),
         Default::default(),
-        crate::kernel::ExecutionEnvironment::new().with_function(widen),
-        crate::kernel::ExecutionSemantics::EXECUTE_BODIES,
+        crate::kernel::ExecutionEnvironment::new().with_function((widen).with_inline_body()),
+        crate::kernel::ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
     )
     .expect("integer-to-double call argument should execute");
-    let crate::kernel::Proposition::ProgramFunctionExecutes {
+    let crate::kernel::Proposition::ProgramFunctionVerifies {
         outcome:
             crate::kernel::FunctionOutcome::Return {
                 value: retained_result,
@@ -11440,7 +11345,7 @@ fn c_assignment_expression_result_uses_the_target_type() {
         Default::default(),
     )
     .expect("the converted assignment result should execute");
-    let crate::kernel::Proposition::ProgramFunctionExecutes {
+    let crate::kernel::Proposition::ProgramFunctionVerifies {
         outcome: crate::kernel::FunctionOutcome::Return { value, .. },
         ..
     } = theorem.proposition()
@@ -11482,7 +11387,7 @@ fn c_assignment_expression_short_circuits_a_guard_read() {
         Default::default(),
     )
     .expect("a false assignment result must skip the field read");
-    let crate::kernel::Proposition::ProgramFunctionExecutes {
+    let crate::kernel::Proposition::ProgramFunctionVerifies {
         outcome: crate::kernel::FunctionOutcome::Return { value, .. },
         ..
     } = theorem.proposition()
@@ -11531,7 +11436,8 @@ fn c_assignment_expression_loop_guard_reexecutes_once_after_continue() {
     .find(|function| function.name() == "caller")
     .expect("caller definition")
     .to_kernel_function();
-    let environment = crate::kernel::ExecutionEnvironment::new().with_function(tick);
+    let environment =
+        crate::kernel::ExecutionEnvironment::new().with_function((tick).with_inline_body());
 
     let theorem = crate::kernel::prove_symbolic_program_function_execution_with_environment(
         crate::kernel::ExecutionState::new(),
@@ -11539,10 +11445,10 @@ fn c_assignment_expression_loop_guard_reexecutes_once_after_continue() {
         Vec::new(),
         Default::default(),
         environment,
-        crate::kernel::ExecutionSemantics::EXECUTE_BODIES,
+        crate::kernel::ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
     )
     .expect("the guard call should execute once on each of three condition checks");
-    let crate::kernel::Proposition::ProgramFunctionExecutes {
+    let crate::kernel::Proposition::ProgramFunctionVerifies {
         outcome: crate::kernel::FunctionOutcome::Return { state, value },
         ..
     } = theorem.proposition()
@@ -11709,7 +11615,7 @@ fn c_struct_union_fields_are_copyable_by_value_without_flattening_overlap() {
         Default::default(),
     )
     .expect("union-containing aggregate copy should preserve the active member view");
-    let crate::kernel::Proposition::ProgramFunctionExecutes {
+    let crate::kernel::Proposition::ProgramFunctionVerifies {
         outcome: crate::kernel::FunctionOutcome::Return { value, .. },
         ..
     } = theorem.proposition()
@@ -11906,9 +11812,9 @@ fn c_function_pointers_preserve_signature_and_dispatch_callback() {
         Vec::new(),
         Default::default(),
         crate::kernel::ExecutionEnvironment::new()
-            .with_function(callback)
-            .with_function(apply.clone()),
-        crate::kernel::ExecutionSemantics::EXECUTE_BODIES,
+            .with_function((callback).with_inline_body())
+            .with_function((apply.clone()).with_inline_body()),
+        crate::kernel::ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
     )
     .expect("compatible callback should execute");
     let local_result_block = automatic_test_block(caller.name(), 0);
@@ -11923,7 +11829,7 @@ fn c_function_pointers_preserve_signature_and_dispatch_callback() {
     };
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(crate::kernel::ExecutionState::new()),
             function: Box::new(caller),
             arguments: Vec::new(),
@@ -11985,12 +11891,12 @@ fn c_function_pointers_reject_incompatible_callback_targets() {
         Vec::new(),
         Default::default(),
         crate::kernel::ExecutionEnvironment::new()
-            .with_function(wrong)
-            .with_function(apply),
-        crate::kernel::ExecutionSemantics::EXECUTE_BODIES,
+            .with_function((wrong).with_inline_body())
+            .with_function((apply).with_inline_body()),
+        crate::kernel::ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
     )
     .expect("incompatible callback should produce a runtime-error theorem");
-    let crate::kernel::Proposition::ProgramFunctionExecutes {
+    let crate::kernel::Proposition::ProgramFunctionVerifies {
         outcome:
             crate::kernel::FunctionOutcome::RuntimeError(crate::kernel::RuntimeError::FunctionContract(
                 message,
@@ -12159,12 +12065,12 @@ fn c_struct_function_pointer_fields_load_and_dispatch_known_targets() {
         )],
         Default::default(),
         crate::kernel::ExecutionEnvironment::new()
-            .with_function(compare)
-            .with_function(apply_for_environment),
-        crate::kernel::ExecutionSemantics::EXECUTE_BODIES,
+            .with_function((compare).with_inline_body())
+            .with_function((apply_for_environment).with_inline_body()),
+        crate::kernel::ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
     )
     .expect("known callback field target should execute");
-    let crate::kernel::Proposition::ProgramFunctionExecutes {
+    let crate::kernel::Proposition::ProgramFunctionVerifies {
         outcome: crate::kernel::FunctionOutcome::Return { value, .. },
         ..
     } = theorem.proposition()
@@ -12233,11 +12139,11 @@ fn c_struct_function_pointer_fields_support_direct_calls() {
             crate::kernel::ProgramType::Int32Pointer,
         )],
         Default::default(),
-        crate::kernel::ExecutionEnvironment::new().with_function(compare),
-        crate::kernel::ExecutionSemantics::EXECUTE_BODIES,
+        crate::kernel::ExecutionEnvironment::new().with_function((compare).with_inline_body()),
+        crate::kernel::ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
     )
     .expect("direct callback field call should execute");
-    let crate::kernel::Proposition::ProgramFunctionExecutes {
+    let crate::kernel::Proposition::ProgramFunctionVerifies {
         outcome: crate::kernel::FunctionOutcome::Return { value, .. },
         ..
     } = theorem.proposition()
@@ -12433,7 +12339,7 @@ fn c_syntax_targets_kernel_while_countdown() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -12508,7 +12414,7 @@ fn c_memory_safety_demo_fill_three_ints() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -12928,7 +12834,7 @@ fn c_struct_pointer_indirection_updates_one_pointer_cell() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::ProgramFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionVerifies {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -13142,7 +13048,7 @@ fn c_bool_objects_normalize_values_and_keep_abi_metadata() {
         .expect("integer-to-bool conversion should execute");
         assert!(matches!(
             execution.proposition(),
-            crate::kernel::Proposition::ProgramFunctionExecutes {
+            crate::kernel::Proposition::ProgramFunctionVerifies {
                 outcome: crate::kernel::FunctionOutcome::Return {
                     value,
                     ..
@@ -13166,7 +13072,7 @@ fn c_bool_objects_normalize_values_and_keep_abi_metadata() {
     .expect("bool struct field should execute");
     assert!(matches!(
         execution.proposition(),
-        crate::kernel::Proposition::ProgramFunctionExecutes {
+        crate::kernel::Proposition::ProgramFunctionVerifies {
             outcome: crate::kernel::FunctionOutcome::Return {
                 value,
                 ..
@@ -13211,7 +13117,7 @@ fn c_bool_header_constants_pointer_conversion_and_callbacks_are_typed() {
     .expect("null pointer should convert to false");
     assert!(matches!(
         null.proposition(),
-        crate::kernel::Proposition::ProgramFunctionExecutes {
+        crate::kernel::Proposition::ProgramFunctionVerifies {
             outcome: crate::kernel::FunctionOutcome::Return {
                 value,
                 ..
@@ -13235,7 +13141,7 @@ fn c_bool_header_constants_pointer_conversion_and_callbacks_are_typed() {
     .expect("non-null pointer should convert to true");
     assert!(matches!(
         non_null.proposition(),
-        crate::kernel::Proposition::ProgramFunctionExecutes {
+        crate::kernel::Proposition::ProgramFunctionVerifies {
             outcome: crate::kernel::FunctionOutcome::Return {
                 value,
                 ..
@@ -13375,12 +13281,12 @@ fn c_body_call_updates_a_local_array_without_rebinding_it_as_a_scalar() {
         caller,
         Vec::new(),
         Default::default(),
-        crate::kernel::ExecutionEnvironment::new().with_function(callee),
-        crate::kernel::ExecutionSemantics::EXECUTE_BODIES,
+        crate::kernel::ExecutionEnvironment::new().with_function((callee).with_inline_body()),
+        crate::kernel::ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
     )
     .unwrap();
     assert!(
-        matches!(theorem.proposition(), crate::kernel::Proposition::ProgramFunctionExecutes {
+        matches!(theorem.proposition(), crate::kernel::Proposition::ProgramFunctionVerifies {
         outcome: crate::kernel::FunctionOutcome::Return { value, .. }, ..
     } if value.native().as_ref() == &crate::kernel::int32(9))
     );
@@ -14732,7 +14638,7 @@ fn c_scalar_updates_preserve_old_new_values_and_loop_exit_updates() {
         )
         .expect(source);
         assert!(
-            matches!(theorem.proposition(), Proposition::ProgramFunctionExecutes {
+            matches!(theorem.proposition(), Proposition::ProgramFunctionVerifies {
             outcome: FunctionOutcome::Return { value, .. }, ..
         } if value.native().as_ref() == &expected),
             "{source}: {:?}",
@@ -14760,7 +14666,7 @@ fn c_scalar_updates_keep_const_pointer_reads_and_nominal_stride() {
         )
         .expect(source);
         assert!(
-            matches!(theorem.proposition(), crate::kernel::Proposition::ProgramFunctionExecutes {
+            matches!(theorem.proposition(), crate::kernel::Proposition::ProgramFunctionVerifies {
             outcome: crate::kernel::FunctionOutcome::Return { value, .. }, ..
         } if value.native().as_ref() == &crate::kernel::int32(262)),
             "{source}: {:?}",
@@ -14805,7 +14711,7 @@ fn c_scalar_updates_preserve_signed_overflow_undefined_behavior() {
         assert!(
             matches!(
                 theorem.proposition(),
-                crate::kernel::Proposition::ProgramFunctionExecutes {
+                crate::kernel::Proposition::ProgramFunctionVerifies {
                     outcome: crate::kernel::FunctionOutcome::UndefinedBehavior(
                         crate::kernel::UndefinedBehavior::SignedOverflow
                     ),
@@ -15171,7 +15077,8 @@ fn aggregate_results_in_control_conditions_end_before_the_controlled_statement()
     "#;
     let functions = syntax::parse_functions(source).expect("aggregate result conditions");
     let factory = functions[0].to_kernel_function();
-    let environment = crate::kernel::ExecutionEnvironment::new().with_function(factory);
+    let environment =
+        crate::kernel::ExecutionEnvironment::new().with_function((factory).with_inline_body());
     for function in &functions[1..] {
         let theorem = crate::kernel::prove_symbolic_program_function_execution_with_environment(
             crate::kernel::ExecutionState::new(),
@@ -15179,10 +15086,10 @@ fn aggregate_results_in_control_conditions_end_before_the_controlled_statement()
             Vec::new(),
             Default::default(),
             environment.clone(),
-            crate::kernel::ExecutionSemantics::EXECUTE_BODIES,
+            crate::kernel::ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         )
         .unwrap_or_else(|| panic!("{} could not execute", function.name()));
-        let crate::kernel::Proposition::ProgramFunctionExecutes {
+        let crate::kernel::Proposition::ProgramFunctionVerifies {
             outcome: crate::kernel::FunctionOutcome::Return { state, value },
             ..
         } = theorem.proposition()
@@ -15346,7 +15253,7 @@ fn c_sizeof_string_literal_uses_the_array_extent_without_a_variable() {
     while let crate::kernel::Proposition::Implies(_, body) = proposition {
         proposition = body;
     }
-    let crate::kernel::Proposition::ProgramFunctionExecutes {
+    let crate::kernel::Proposition::ProgramFunctionVerifies {
         outcome: crate::kernel::FunctionOutcome::Return { value, .. },
         ..
     } = proposition

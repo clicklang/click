@@ -14,7 +14,7 @@ fn retained_rewritten_loads_share_syntax_but_recheck_authority() {
                 let variable =
                     crate::kernel::eval::load_variable_for_cell(&memory, &pointer, LoadKind::Int32);
                 let one = MachineTerm::constant(1);
-                let facts = ProofFacts::from_ordered(&[Proposition::ConditionIs(
+                let facts = PureFactStore::from_ordered(&[Proposition::ConditionIs(
                     ConditionTerm::equal(MachineTerm::Variable(variable), one.clone()),
                     true,
                 )]);
@@ -74,7 +74,7 @@ fn retained_rewritten_loads_share_syntax_but_recheck_authority() {
                 let (a, b) = (goal(left), goal(right));
                 // A warm syntax cache is no authority for another proof branch.
                 assert!(
-                    ProofFacts::default()
+                    PureFactStore::default()
                         .with_checked_rewritten_loads(&a, &b)
                         .is_none()
                 );
@@ -128,12 +128,12 @@ fn mixed_read_mismatch_keeps_large_shared_operands_unexported() {
         let before = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             assert!(
-                ProofFacts::default()
+                PureFactStore::default()
                     .with_checked_rewritten_loads(&a, &b)
                     .is_none()
             );
             assert!(
-                ProofFacts::default()
+                PureFactStore::default()
                     .with_checked_rewritten_loads(&b, &a)
                     .is_none()
             );

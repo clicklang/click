@@ -1,4 +1,8 @@
-# Guarded resource facts survive a disjoint store
+# A preserved child value grants no read after ownership is consumed
+
+The child value is preserved across the disjoint store to `root->value`.
+The proof then refolds and transfers the child resource to `consume_child`.
+Knowing its value before that call does not supply ownership for the final read.
 
 ```c filename=guarded.c
 struct base { struct base* left; struct base* right; uint64 padding; };
@@ -37,13 +41,27 @@ int32 f(struct cell* root) {
 } by {
     unfold(child);
     have separate(memory((root->base.left as (void *) as (struct cell *))->value), memory(root->value));
+    step(); step(); step(); step();
     mark before_store;
-    step(); step(); step(); step(); step();
-    have (root->base.left as (void *) as (struct cell *))->value == at(before_store, (root->base.left as (void *) as (struct cell *))->value) by {
-        transport(at(before_store, (root->base.left as (void *) as (struct cell *))->value) == at(before_store, (root->base.left as (void *) as (struct cell *))->value),
-                  (root->base.left as (void *) as (struct cell *))->value == at(before_store, (root->base.left as (void *) as (struct cell *))->value)) using {
+    step();
+    have contains(memory(root->value), memory((&root->value)[0..1])) by { normalize(); }
+    have contains(memory((root->base.left as (void *) as (struct cell *))->value), memory((&((root->base.left as (void *) as (struct cell *))->value))[0..1])) by { normalize(); }
+    have separate(memory((&((root->base.left as (void *) as (struct cell *))->value))[0..1]), memory((&root->value)[0..1])) by {
+        apply(click::separation::separate_restrict(
+            memory((root->base.left as (void *) as (struct cell *))->value), memory(root->value),
+            memory((&((root->base.left as (void *) as (struct cell *))->value))[0..1]), memory((&root->value)[0..1]))) using {
             separate(memory((root->base.left as (void *) as (struct cell *))->value), memory(root->value));
+            contains(memory((root->base.left as (void *) as (struct cell *))->value), memory((&((root->base.left as (void *) as (struct cell *))->value))[0..1]));
+            contains(memory(root->value), memory((&root->value)[0..1]));
         };
+    }
+    have separate(statement(2).footprint, memory((&((root->base.left as (void *) as (struct cell *))->value))[0..1])) by {
+        normalize() using {
+            separate(memory((&((root->base.left as (void *) as (struct cell *))->value))[0..1]), memory((&root->value)[0..1]));
+        };
+    }
+    have (root->base.left as (void *) as (struct cell *))->value == at(before_store, (root->base.left as (void *) as (struct cell *))->value) by {
+        preserve(memory((&((root->base.left as (void *) as (struct cell *))->value))[0..1]), statement(2));
     }
     let restored = fold(child_value(root->base.left), { number: old(child.number) });
     step(); step(); solve();

@@ -18,7 +18,7 @@ pub(in crate::surface::proof) fn plan_explicit_fact_transport(
     surface_source: &ClickProposition,
     source: &Proposition,
     target: &Proposition,
-    available_facts: &ProofFacts,
+    available_facts: &PureFactStore,
     effect_facts: &(impl ExecutionFactSource + ?Sized),
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
@@ -165,7 +165,7 @@ pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
     surface_premises: &[ClickProposition],
     claim_label: &str,
     tactic_index: usize,
-    available: &ProofFacts,
+    available: &PureFactStore,
     effect_facts: &(impl ExecutionFactSource + ?Sized),
     parameter_binding: ParameterBinding<'_>,
     fixed_state: FixedStateFrame<'_>,
@@ -223,7 +223,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
     surface_premises: &[ClickProposition],
     claim_label: &str,
     tactic_index: usize,
-    available: &ProofFacts,
+    available: &PureFactStore,
     effect_facts: &(impl ExecutionFactSource + ?Sized),
     parameter_binding: ParameterBinding<'_>,
     fixed_state: FixedStateFrame<'_>,
@@ -269,7 +269,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
         // A premise the context's equality graph proves is available too: a
         // read written through one alias of a cell whose fact was stated
         // through another is the same premise, and lowering does not rename
-        // it to match (lowering is fact-stable, `docs/internals/spellability.md`).
+        // it to match (lowering is fact-stable, `docs/internals/raise-lower-principle.md`).
         if !available.listed_premise_available(&premise, &[], true)
             && !holds_without_facts_under_binders(&premise)
             && !available.assumptions().contains_known(&premise)
@@ -928,17 +928,16 @@ fn surface_predicate_call_name(proposition: &ClickProposition) -> Option<&str> {
 pub(in crate::surface::proof) fn fact_transport_planning_failure(
     source: &ClickProposition,
     target: &ClickProposition,
-    unfolded_predicates: &[String],
     error: &ClickError,
     source_refusal: Option<&ClickError>,
 ) -> String {
     let opaque_name = [source, target]
         .into_iter()
         .filter_map(surface_predicate_call_name)
-        .find(|name| !unfolded_predicates.iter().any(|unfolded| unfolded == name));
+        .next();
     if let Some(name) = opaque_name {
         return format!(
-            "`transport` cannot frame opaque predicate `{name}` across C execution because its memory footprint is hidden; run `unfold({name});` before the execution steps and transport its unfolded definition"
+            "`transport` cannot frame opaque predicate `{name}` across C execution because its memory footprint is hidden; unfold the selected application, such as `unfold({name}(args));`, before execution and transport its unfolded definition"
         );
     }
     if let Some(frame_refusal) = source_refusal.and_then(|refusal| {

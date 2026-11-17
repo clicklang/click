@@ -1,7 +1,7 @@
 # a tactic cannot take the name of a built-in tactic
 
-`extract` is a built-in tactic, so a user-defined tactic of that name would make
-`extract(...)` mean two things in a proof. It is refused where it is declared.
+`rewrite` is a built-in tactic, so a user-defined tactic of that name would make
+`rewrite(...)` mean two things in a proof. It is refused where it is declared.
 
 ```c filename=user_tactic_cannot_shadow_a_builtin.c
 struct pr { int32 a; int32 b; };
@@ -29,7 +29,7 @@ resource second(p: struct pr*) {
     owns p->b;
 }
 
-tactic extract(p: struct pr*) {
+tactic rewrite(p: struct pr*) {
     consumes x: both(p);
     produces y: first(p);
     produces z: second(p);
@@ -51,5 +51,5 @@ void user(struct pr* p) {
 ```
 
 ```expect
-fail: tactic `extract` would shadow the built-in tactic of the same name
+fail: tactic `rewrite` would shadow the built-in tactic of the same name
 ```

@@ -49,13 +49,13 @@ pub(in crate::surface) mod program_termination;
 mod pure_theorems;
 pub(in crate::surface) use pure_theorems::kernel_law_index_types;
 mod raise_lower_audit;
+mod raise_lower_census;
 mod resources;
 mod selected_arithmetic;
 mod signed_definedness;
 mod smart_closures;
 mod smart_execution;
 mod source_context;
-mod spellability_census;
 mod structural;
 mod surface_certificates;
 mod surface_construction;
@@ -68,7 +68,7 @@ use crate::kernel::fresh_int32_variable_for_propositions;
 use crate::kernel::proof::{
     ExceptionalContinuation, ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind,
     FrontierPosition, LoopControlExit, PersistentOrderedSet, PersistentSequence,
-    ProofExecutionContinuation, ProofFacts, SharedVec, old_reference_state,
+    ProofExecutionContinuation, PureFactStore, old_reference_state,
 };
 
 pub(in crate::surface) use crate::kernel::proof::{
@@ -371,7 +371,7 @@ mod certificate_tests {
         );
         let state = ExecutionState::new().with_memory(Memory::new().with_block("current", 4));
 
-        let facts = ProofFacts::from_ordered(&[]);
+        let facts = PureFactStore::from_ordered(&[]);
         let error = checked_surface_comparison_fact_in_state_with_indexed_facts(
             ExecutionView::new(
                 &ExecutionFrontier::default(),
@@ -2101,7 +2101,27 @@ pub(super) fn initial_claim_context_with_caller_owner(
         )?;
     let mut requirement_pure_facts = Vec::with_capacity(lowered_requirement_facts.len());
     let mut entry_fact_origins = Vec::with_capacity(lowered_requirement_facts.len());
+    let mut surface_propositions = SurfacePropositionMap::default();
     for lowered in lowered_requirement_facts {
+        // Retain the producer's exact principal, including its captured count
+        // state. Re-lowering the source would allocate a different lineage.
+        if matches!(
+            lowered.role,
+            crate::surface::lowering::LoweredRequirementFactRole::Principal
+        ) {
+            let surface = match &function_block.requires()[lowered.source_ordinal] {
+                Requirement::Proposition(proposition) => Some(proposition.clone()),
+                Requirement::LoadableSegment { segment } => Some(ClickProposition::Loadable {
+                    segment: segment.clone(),
+                }),
+                Requirement::Resource(_) => None,
+            };
+            if let Some(surface) = surface
+                && !click_proposition_mentions_defined(&surface)
+            {
+                surface_propositions.record_lowering(&surface, &lowered.proposition)?;
+            }
+        }
         requirement_pure_facts.push(lowered.proposition);
         entry_fact_origins.push(match caller_owner {
             Some(owner) => EntryFactOrigin::Requirement {
@@ -2207,45 +2227,15 @@ pub(super) fn initial_claim_context_with_caller_owner(
         .into_iter()
         .flatten()
         .collect::<Vec<_>>();
-    let mut surface_propositions = SurfacePropositionMap::default();
     for (surface, kernel) in &bool_range_facts {
         surface_propositions.record_lowering(surface, kernel)?;
     }
-    for requirement in function_block.requires() {
-        let surface = match requirement {
-            Requirement::Proposition(proposition) => Some(proposition.clone()),
-            Requirement::LoadableSegment { segment } => Some(ClickProposition::Loadable {
-                segment: segment.clone(),
-            }),
-            Requirement::Resource(_) => None,
-        };
-        let Some(surface) = surface else {
-            continue;
-        };
-        // Recorded below at the definedness state instead.
-        if click_proposition_mentions_defined(&surface) {
-            continue;
-        }
-        let lowered = lower_one(requirement)?;
-        if let Some(kernel) = lowered.first() {
-            surface_propositions.record_lowering(&surface, kernel)?;
-        }
-    }
-    let unfolded_requirement_facts = requirements_with_structural_unfolds(
-        spec_definitions,
-        function_block,
-        &PureFactList::from(requirement_pure_facts),
-    )
-    .map_err(|message| ClickError::new(format!("`{claim_label}` setup failed: {message}")))?;
-    // Structural setup only appends checked unfoldings. They are useful entry
-    // facts, but Phase 1 keeps the written requirement's unique principal
-    // fact as the selection authority; an appended unfolding is derived.
-    entry_fact_origins.resize(unfolded_requirement_facts.len(), EntryFactOrigin::Derived);
+    let requirement_facts = PureFactList::from(requirement_pure_facts);
     state = project_initial_composite_resource_cores(
         resource_environment,
         parameter_binding,
         state,
-        &unfolded_requirement_facts,
+        &requirement_facts,
         claim_label,
         include_owned_composite_cores,
         spec_definitions,
@@ -2254,7 +2244,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         resource_environment,
         parameter_binding,
         &state,
-        &unfolded_requirement_facts,
+        &requirement_facts,
         spec_definitions,
         claim_label,
     )?
@@ -2403,7 +2393,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         spec_definitions,
         state,
         &arguments,
-        &entry_pure_facts,
+        entry_pure_facts.store(),
         include_owned_composite_cores,
         claim_label,
         &entry_authority_state.resources().clone(),
@@ -2437,7 +2427,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
             resource,
             parameter_binding,
             &state,
-            &requirement_pure_facts,
+            requirement_pure_facts.store(),
             &mut surface_propositions,
             spec_definitions,
             &mut BTreeSet::new(),
@@ -2721,7 +2711,7 @@ fn evaluate_entry_resource_context(
     spec_definitions: SpecDefinitions<'_>,
     state: ExecutionState,
     arguments: &[ProgramExpression],
-    pure_facts: &PureFactList,
+    pure_facts: &PureFactStore,
     include_owned_composite_cores: Option<resources::OwnedCores>,
     claim_label: &str,
     entry_resources: &ResourceContext,
@@ -2769,7 +2759,7 @@ fn evaluate_entry_resource_context(
     // authority.  Keep a read view for each concrete loadability atom,
     // matching the projection used by certification.
     let precondition_read_facts = pure_facts
-        .iter()
+        .occurrences()
         .filter_map(|fact| {
             let Proposition::MemoryLoadable { base, bytes, .. } = fact else {
                 return None;
@@ -2814,7 +2804,7 @@ fn evaluate_entry_resource_context(
             Some(ResourceFact::view_memory(range))
         })
         .collect::<Vec<_>>();
-    let assumptions = pure_facts.context();
+    let assumptions = pure_facts.assumptions().clone();
     let mut evaluation_state = state.clone().with_resource_context(
         ResourceContext::new_with_equalities(&assumptions)
             .unchecked_with_facts(explicit_entry_facts)

@@ -244,6 +244,7 @@ fn body_returns_use_actual_joint_custody_for_their_output_partition() {
             &[],
             &actual,
             &actual,
+            &actual,
             &function,
             None,
             &ConsumedCellReturns::default(),

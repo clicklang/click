@@ -24,15 +24,17 @@ mod literal_objects;
 mod mixed_return_resources;
 mod produced_argument_supply;
 mod return_loan_backing;
+mod summary_transfer;
+pub(in crate::kernel) use mixed_return_resources::{
+    ConstructedBodyReturn, ConstructedReturnBody, EscrowRecoveryBoundary, ReturnResourceTransfer,
+    ReturnedConsumedCell, ReturnedFreshAllocation, ReturnedOwnershipPartition,
+};
 use mixed_return_resources::{
     ConstructedReturnBodies, ConsumedCellReturns, EvaluatedReturnResources, FreshAllocationReturn,
     ProducedBorrowingPiece, ProjectedReturnResource, ReturnOwnershipOrigin,
     project_return_resource_cores,
 };
-pub(in crate::kernel) use mixed_return_resources::{
-    ConstructedReturnBody, EscrowRecoveryBoundary, ReturnResourceTransfer, ReturnedConsumedCell,
-    ReturnedFreshAllocation, ReturnedOwnershipPartition,
-};
+pub(in crate::kernel) use summary_transfer::SummaryResourceTransferRule;
 #[cfg(test)]
 mod produced_argument_supply_tests;
 use produced_argument_supply::prepare_produced_argument_supply;
@@ -209,19 +211,19 @@ enum ReturnResourceComposition<'a> {
     #[cfg(test)]
     RestoreEntryBorrows,
     ApplyTransfers(&'a ConsumedCellReturns),
+    #[cfg_attr(not(test), allow(dead_code))]
     BodyAllocations {
         creator: &'a CreationEvents,
         events: &'a CreationEvents,
         consumed: Option<&'a ConsumedCellReturns>,
     },
-    ValidateDescriptions,
-    /// Output descriptions stay private until the existing joint-custody
-    /// proof consumes their units from this live body state.
-    BodyReturns {
-        actual: &'a ExecutionState,
-        creator: Option<&'a CreationEvents>,
+    BodyReturn {
+        state: &'a ExecutionState,
+        frame: &'a ResourceContext,
+        allocations: Option<(&'a CreationEvents, &'a CreationEvents)>,
         consumed: &'a ConsumedCellReturns,
     },
+    ValidateDescriptions,
 }
 
 impl<'a> ReturnResourceComposition<'a> {
@@ -229,7 +231,28 @@ impl<'a> ReturnResourceComposition<'a> {
         match self {
             Self::ApplyTransfers(plan) => Some(plan),
             Self::BodyAllocations { consumed, .. } => consumed,
-            Self::BodyReturns { consumed, .. } => Some(consumed),
+            Self::BodyReturn {
+                consumed,
+                allocations: Some(_),
+                ..
+            } => Some(consumed),
+            _ => None,
+        }
+    }
+
+    fn body_return(self) -> Option<(&'a ExecutionState, &'a ResourceContext)> {
+        match self {
+            Self::BodyReturn { state, frame, .. } => Some((state, frame)),
+            _ => None,
+        }
+    }
+
+    fn allocation_events(self) -> Option<(&'a CreationEvents, &'a CreationEvents)> {
+        match self {
+            Self::BodyAllocations {
+                creator, events, ..
+            } => Some((creator, events)),
+            Self::BodyReturn { allocations, .. } => allocations,
             _ => None,
         }
     }
@@ -243,36 +266,14 @@ impl<'a> ReturnResourceComposition<'a> {
         }
     }
 
-    fn fresh_allocation(self, fact: &ResourceFact) -> Option<FreshAllocationReturn> {
-        match self {
-            Self::BodyAllocations {
-                creator, events, ..
-            } => FreshAllocationReturn::from_created_owner(fact, creator, events),
-            Self::BodyReturns {
-                actual,
-                creator: Some(creator),
-                ..
-            } => FreshAllocationReturn::from_created_owner(
-                fact,
-                creator,
-                actual.population_effects.creation.as_ref()?,
-            ),
-            _ => None,
-        }
-    }
-
     fn origin_for_return(
         self,
         clause: usize,
         entry_borrow: bool,
         fact: &ResourceFact,
     ) -> ReturnOwnershipOrigin {
-        if matches!(
-            self,
-            Self::BodyAllocations { .. } | Self::BodyReturns { .. }
-        ) {
-            return self
-                .fresh_allocation(fact)
+        if let Some((creator, events)) = self.allocation_events() {
+            return FreshAllocationReturn::from_created_owner(fact, creator, events)
                 .map(ReturnOwnershipOrigin::FreshAllocation)
                 .unwrap_or(ReturnOwnershipOrigin::Description);
         }
@@ -285,6 +286,13 @@ impl<'a> ReturnResourceComposition<'a> {
             return ReturnOwnershipOrigin::ConsumedCell(transfer);
         }
         ReturnOwnershipOrigin::Description
+    }
+
+    fn constructed_summary_output(self, clause: usize) -> Option<&'a ResourceFact> {
+        match self {
+            Self::ApplyTransfers(transfers) => transfers.constructed.get(&clause),
+            _ => None,
+        }
     }
 }
 
@@ -600,6 +608,11 @@ pub(super) fn transfer_population_call_facts<'a>(
         population_transfer_frontier(facts, definitions, validation_state.memory(), assumptions)?;
     for fact in &frontier {
         if let Some((base, _)) = fact.allocation() {
+            // A returned allocation can name the same storage through the
+            // call's result. Read its unique concrete storage coordinate from
+            // the checked equality index; this moves an existing anchor and
+            // grants neither allocation nor creation authority.
+            let base = assumptions.equality_graph.storage_address(base);
             if events.tracks_storage_anchor(&base.block)
                 && transferred_anchors.insert(base.block.clone())
             {
@@ -1580,6 +1593,7 @@ fn complete_void_fallthrough(
     }
 }
 
+#[cfg(test)]
 pub(super) fn execute_program_function_paths(
     state: &ExecutionState,
     function: &ProgramFunction,
@@ -1607,8 +1621,8 @@ pub(super) fn execute_program_function_paths(
 /// executes the body in that frame; the contract routes cross the resource
 /// boundary, so the views the contract declares become loans of this
 /// application and recovery returns them.
+/// The body runs under the concrete judgment, which unrolls loops.
 #[allow(clippy::too_many_arguments)]
-/// `ProgramFunctionExecutes` for `function` applied to `arguments`.
 pub(super) fn execute_program_function_paths_with_contract_resources(
     state: &ExecutionState,
     function: &ProgramFunction,
@@ -2025,16 +2039,6 @@ pub(super) fn execute_program_function_call_paths(
     execution_context: ExecutionContext<'_>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<FunctionPath>> {
-    if caller_state.has_local_scalar_references() || caller_state.has_local_reference_scope() {
-        return Ok(vec![FunctionPath::new(
-            FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(Box::new(
-                crate::kernel::loans::LoanRefusal::UnsupportedResource
-                    .diagnostic(crate::kernel::LoanRefusalOperation::Plan),
-            ))),
-            Vec::new().into(),
-            Vec::new(),
-        )]);
-    }
     if contract_reaches_population(function.contract_interface())
         && execution_context
             .environment
@@ -2149,36 +2153,33 @@ pub(super) fn execute_program_function_call_paths(
             "a binder map cannot select a contract for a `static inline` helper that has none: its body executes at the call site on the caller's resources; give the helper a Click contract, or step the call with `step()`",
         )]);
     }
+    // Every other callee is opaque: its verified rule is the call. Bodies
+    // are checked once, against their contracts, in their own proofs; a call
+    // never runs one.
     if !executes_inline_body {
-        match execution_context.semantics.calls {
-            CallSemantics::ExecuteBodies => {}
-            CallSemantics::ApplyVerifiedRules => {
-                let Some(rule) = execution_context
-                    .environment
-                    .get_verified_function_rule(function.name())
-                else {
-                    let error = if function.verified_direct_contract_supported() {
-                        RuntimeError::MissingVerifiedFunctionRule(function.name().to_string())
-                    } else {
-                        RuntimeError::UnsupportedOpaqueFunctionContract(function.name().to_string())
-                    };
-                    return Ok(vec![FunctionPath::new(
-                        FunctionOutcome::RuntimeError(error),
-                        Vec::new().into(),
-                        Vec::new(),
-                    )]);
-                };
-                let result = execute_verified_function_rule(
-                    caller_state,
-                    rule,
-                    arguments,
-                    assumptions,
-                    execution_context.environment,
-                    budget,
-                );
-                return result;
-            }
-        }
+        let Some(rule) = execution_context
+            .environment
+            .get_verified_function_rule(function.name())
+        else {
+            let error = if function.verified_direct_contract_supported() {
+                RuntimeError::MissingVerifiedFunctionRule(function.name().to_string())
+            } else {
+                RuntimeError::UnsupportedOpaqueFunctionContract(function.name().to_string())
+            };
+            return Ok(vec![FunctionPath::new(
+                FunctionOutcome::RuntimeError(error),
+                Vec::new().into(),
+                Vec::new(),
+            )]);
+        };
+        return execute_verified_function_rule(
+            caller_state,
+            rule,
+            arguments,
+            assumptions,
+            execution_context.environment,
+            budget,
+        );
     }
     budget.consume_function_call()?;
     if arguments.len() != function.parameters().len() {
@@ -2295,87 +2296,24 @@ pub(super) fn execute_program_function_call_paths(
             &arguments_path.facts,
             &argument_obligations,
         );
-        if function.has_inline_body() {
-            // An inline body is call-site code: it runs on the caller's own
-            // resources and leaves the caller whatever it did not consume.
-            // There is no contract boundary to transfer across. Under stable
-            // views that includes the caller's loan ledger: the body's stores
-            // are checked against the caller's active loans, its own view
-            // clauses lend nothing, and any call it makes plans from and
-            // recovers to the caller's ledger, whose evidence the path keeps.
-            let callee_state = callee_state.with_resource_context(caller_state.resources().clone());
-            let previous_inline_call = budget.inline_call_name.replace(function.name().to_string());
-            let body_paths = execute_program_function_body_paths(
-                &callee_state,
-                function,
-                &body_assumptions,
-                execution_context,
-                budget,
-            );
-            budget.inline_call_name = previous_inline_call;
-            for body_path in body_paths? {
-                let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
-                    &arguments_path.facts,
-                    &argument_obligations,
-                    &body_path.facts,
-                    &body_path.obligations,
-                    assumptions,
-                ) else {
-                    continue;
-                };
-                let return_assumptions =
-                    assumptions_with_path_context(assumptions, &facts, &obligations);
-                let (outcome, obligations) = function_outcome_from_body(
-                    caller_state,
-                    function,
-                    complete_void_fallthrough(function, body_path.outcome),
-                    obligations,
-                    &return_assumptions,
-                    None,
-                );
-                let mut outcome = outcome;
-                refresh_returned_local_bindings_from_stores(
-                    &mut outcome,
-                    &facts,
-                    &return_assumptions,
-                );
-                paths.push(FunctionPath {
-                    call_parameters: None,
-                    outcome,
-                    facts,
-                    obligations,
-                    loan_evidence: body_path.loan_evidence,
-                });
-            }
-            continue;
-        }
-        let resource_transfer = match prepare_function_resource_transfer(
-            caller_state,
-            &callee_state,
-            function,
-            &body_assumptions,
-            budget,
-            false,
-            ResourceTransitionPurpose::CallSite,
-        )? {
-            Ok(resource_transfer) => resource_transfer,
-            Err(error) => {
-                paths.push(FunctionPath::new(
-                    FunctionOutcome::RuntimeError(error),
-                    arguments_path.facts,
-                    argument_obligations,
-                ));
-                continue;
-            }
-        };
-        let callee_state = callee_state_with_resource_transfer(callee_state, &resource_transfer);
-        for body_path in execute_program_function_body_paths(
+        // An inline body is call-site code: it runs on the caller's own
+        // resources and leaves the caller whatever it did not consume.
+        // There is no contract boundary to transfer across. Under stable
+        // views that includes the caller's loan ledger: the body's stores
+        // are checked against the caller's active loans, its own view
+        // clauses lend nothing, and any call it makes plans from and
+        // recovers to the caller's ledger, whose evidence the path keeps.
+        let callee_state = callee_state.with_resource_context(caller_state.resources().clone());
+        let previous_inline_call = budget.inline_call_name.replace(function.name().to_string());
+        let body_paths = execute_program_function_body_paths(
             &callee_state,
             function,
             &body_assumptions,
             execution_context,
             budget,
-        )? {
+        );
+        budget.inline_call_name = previous_inline_call;
+        for body_path in body_paths? {
             let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                 &arguments_path.facts,
                 &argument_obligations,
@@ -2387,19 +2325,14 @@ pub(super) fn execute_program_function_call_paths(
             };
             let return_assumptions =
                 assumptions_with_path_context(assumptions, &facts, &obligations);
-            let (outcome, obligations, loan_evidence) =
-                function_outcome_from_body_with_resource_transfer(
-                    caller_state,
-                    function,
-                    body_path.outcome,
-                    obligations,
-                    &return_assumptions,
-                    &resource_transfer,
-                    &argument_values,
-                    true,
-                    budget,
-                )?;
-
+            let (outcome, obligations) = function_outcome_from_body(
+                caller_state,
+                function,
+                complete_void_fallthrough(function, body_path.outcome),
+                obligations,
+                &return_assumptions,
+                None,
+            );
             let mut outcome = outcome;
             refresh_returned_local_bindings_from_stores(&mut outcome, &facts, &return_assumptions);
             paths.push(FunctionPath {
@@ -2407,10 +2340,7 @@ pub(super) fn execute_program_function_call_paths(
                 outcome,
                 facts,
                 obligations,
-                loan_evidence: append_checked_loan_evidence(
-                    &body_path.loan_evidence,
-                    loan_evidence,
-                ),
+                loan_evidence: body_path.loan_evidence,
             });
         }
     }
@@ -2467,7 +2397,7 @@ pub(crate) fn apply_verified_tactic_rule(
     state: &ExecutionState,
     name: &str,
     arguments: &[ProgramValue],
-    facts: &crate::kernel::proof::ProofFacts,
+    facts: &crate::kernel::proof::PureFactStore,
     environment: &ExecutionEnvironment,
     next_kernel_variable: u64,
 ) -> Result<TacticRuleTransition, TacticApplicationRefusal> {
@@ -4714,6 +4644,7 @@ fn execute_verified_function_applications_with_suspension(
             continue;
         }
 
+        let return_assumptions = assumptions_with_path_context(&effective_assumptions, &facts, &[]);
         let (
             return_resources,
             return_ledger,
@@ -4727,7 +4658,7 @@ fn execute_verified_function_applications_with_suspension(
             return_resources,
             escrow_boundary,
             &effective_assumptions,
-            &assumptions_with_path_context(&effective_assumptions, &facts, &[]),
+            &return_assumptions,
             &obligations,
         ) {
             Ok(recovered) => recovered,
@@ -4850,7 +4781,7 @@ fn execute_verified_function_applications_with_suspension(
                 &post_state,
                 output_resources.facts().iter(),
                 interface.composite_resource_definitions(),
-                &effective_assumptions,
+                &return_assumptions,
             ) {
                 Ok(state) => state,
                 Err(error) => {
@@ -9270,13 +9201,13 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
             // The callee's ensure holds under its own leading premises. Where
             // one of those premises is exactly available at this call, the
             // consequent is available too, and publishing it saves every
-            // caller an `extract`. This is the kernel's modus ponens, so it
+            // caller an implication application. This is the kernel's modus ponens, so it
             // walks only the ensure's own implication chain and cites each
             // discharged premise exactly: an indexed hit in the call context,
             // or a premise already discharged above it in this chain. A
             // premise neither route settles ends the walk, and the ensure
             // stays available as the implication it was written as, for the
-            // proof to discharge with `extract`.
+            // proof to discharge with `apply(fact)`.
             let mut specialized = ensure_path.proposition.clone();
             let mut discharged_premises: Vec<Proposition> = Vec::new();
             while let Proposition::Implies(premise, body) = specialized {
@@ -11853,7 +11784,7 @@ fn prepare_contract_resource_transfer_unexplained(
                         &ResourceContext::new_with_equalities(assumptions)
                             .unchecked_with_fact(requirement.fact.clone()),
                         interface.composite_resource_definitions(),
-                        callee_state.memory(),
+                        &callee_state.program_point(),
                         assumptions,
                     )
                     .is_some_and(|expanded| expanded.facts().is_empty())
@@ -11917,7 +11848,7 @@ fn prepare_contract_resource_transfer_unexplained(
                         &ResourceContext::new_with_equalities(assumptions)
                             .unchecked_with_fact(requirement.fact.clone()),
                         interface.composite_resource_definitions(),
-                        callee_state.memory(),
+                        &callee_state.program_point(),
                         assumptions,
                     )
                     .is_some_and(|expanded| expanded.facts().is_empty())
@@ -12279,7 +12210,7 @@ fn prepare_contract_resource_transfer_unexplained(
             let body = expand_all_composite_resource_facts(
                 &body,
                 interface.composite_resource_definitions(),
-                callee_state.memory(),
+                &callee_state.program_point(),
                 assumptions,
             )
             .unwrap_or(body);
@@ -12374,7 +12305,7 @@ fn prepare_contract_resource_transfer_unexplained(
         let expanded = expand_all_composite_resource_facts(
             &singleton,
             interface.composite_resource_definitions(),
-            callee_state.memory(),
+            &callee_state.program_point(),
             assumptions,
         )
         .unwrap_or(singleton);
@@ -12505,7 +12436,7 @@ fn prepare_contract_resource_transfer_unexplained(
             &return_resources,
             resource,
             interface.composite_resource_definitions(),
-            caller_state.memory(),
+            &caller_state.program_point(),
             assumptions,
         ) else {
             return Ok(Err(RuntimeError::MissingResource {
@@ -12800,7 +12731,7 @@ fn evaluate_contract_return_resource_context(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<EvaluatedReturnResources, RuntimeError>> {
-    let mut evaluated = EvaluatedReturnResources::new(assumptions);
+    let mut evaluated = EvaluatedReturnResources::for_composition(composition, assumptions);
     // `owns` requirements that are returned as entry-state borrows carry
     // caller identity in the checked transition. Re-evaluating an address
     // such as `self->pointer` in the callee entry state can replace that
@@ -13194,45 +13125,39 @@ fn evaluate_contract_return_resource_context(
         .and_then(|key| entry_borrows.get_mut(&key))
         .and_then(VecDeque::pop_front);
         let return_entry_borrow = entry_borrow.is_some();
-        let resource = if let Some(entry_borrow) = entry_borrow {
-            entry_borrow
-        } else {
-            match evaluate_returned(
-                clause_index,
-                resource,
-                &returned,
-                &mut canonical_by_checked,
-                budget,
-            )? {
-                Ok(resource) => resource,
-                Err(error) if resource_clause_failure_awaits_supply(&error) => {
-                    deferred.push((clause_index, resource, error));
-                    continue;
+        let resource =
+            if let Some(constructed) = composition.constructed_summary_output(clause_index) {
+                constructed.clone()
+            } else if let Some(entry_borrow) = entry_borrow {
+                entry_borrow
+            } else {
+                match evaluate_returned(
+                    clause_index,
+                    resource,
+                    &returned,
+                    &mut canonical_by_checked,
+                    budget,
+                )? {
+                    Ok(resource) => resource,
+                    Err(error) if resource_clause_failure_awaits_supply(&error) => {
+                        deferred.push((clause_index, resource, error));
+                        continue;
+                    }
+                    Err(error) => return Ok(Err(error)),
                 }
-                Err(error) => return Ok(Err(error)),
-            }
-        };
-        // Admit each returned clause against the growing context, retaining
-        // its occurrence. Consumers compose the pieces of their requested
-        // footprint; constructing outputs must not discover optional merges
-        // by walking the ambient pointer/endpoint equality classes.
-        evaluated = match if matches!(composition, ReturnResourceComposition::BodyReturns { .. }) {
-            Ok(evaluated.stage_body_clause(
-                resource.clone(),
-                composition.origin_for_return(clause_index, return_entry_borrow, &resource),
-                clause_index,
-            ))
-        } else {
-            evaluated.admit_clause(
-                resource.clone(),
-                composition.origin_for_return(clause_index, return_entry_borrow, &resource),
-                Some(clause_index),
-                composition.consumed_children(),
-                assumptions,
-            )
-        } {
+            };
+        // Retain the occurrence constructed by transfer or custody; descriptions
+        // still need their missing relationship established by admission.
+        evaluated = match evaluated.construct_clause(
+            resource.clone(),
+            composition.origin_for_return(clause_index, return_entry_borrow, &resource),
+            Some(clause_index),
+            composition,
+            interface,
+            assumptions,
+        ) {
             Ok(evaluated) => evaluated,
-            Err(error) => return Ok(Err(resource_context_runtime_error(error))),
+            Err(error) => return Ok(Err(error)),
         };
         returned.push(resource);
     }
@@ -13250,26 +13175,16 @@ fn evaluate_contract_return_resource_context(
                 budget,
             )? {
                 Ok(fact) => {
-                    evaluated = match if matches!(
+                    evaluated = match evaluated.construct_clause(
+                        fact.clone(),
+                        composition.origin_for_return(clause_index, false, &fact),
+                        Some(clause_index),
                         composition,
-                        ReturnResourceComposition::BodyReturns { .. }
+                        interface,
+                        assumptions,
                     ) {
-                        Ok(evaluated.stage_body_clause(
-                            fact.clone(),
-                            composition.origin_for_return(clause_index, false, &fact),
-                            clause_index,
-                        ))
-                    } else {
-                        evaluated.admit_clause(
-                            fact.clone(),
-                            composition.origin_for_return(clause_index, false, &fact),
-                            Some(clause_index),
-                            composition.consumed_children(),
-                            assumptions,
-                        )
-                    } {
                         Ok(evaluated) => evaluated,
-                        Err(error) => return Ok(Err(resource_context_runtime_error(error))),
+                        Err(error) => return Ok(Err(error)),
                     };
                     returned.push(fact);
                 }
@@ -13307,9 +13222,12 @@ fn opened_composite_read_views(
     {
         return Vec::new();
     }
-    let Some(opened) =
-        expand_all_composite_resource_facts(resources, definitions, memory, assumptions)
-    else {
+    let Some(opened) = expand_all_composite_resource_facts(
+        resources,
+        definitions,
+        &crate::kernel::ProgramPoint::of_memory(memory),
+        assumptions,
+    ) else {
         return Vec::new();
     };
     opened
@@ -13355,6 +13273,7 @@ fn evaluate_function_return_resources(
     entry_clauses: &[CheckedResourceFact],
     entry_state: &ExecutionState,
     post_state: &ExecutionState,
+    body_state: &ExecutionState,
     function: &ProgramFunction,
     allocation_creator: Option<&CreationEvents>,
     consumed_returns: &ConsumedCellReturns,
@@ -13372,9 +13291,10 @@ fn evaluate_function_return_resources(
         function.name(),
         function.contract_interface(),
         &[],
-        ReturnResourceComposition::BodyReturns {
-            actual: post_state,
-            creator: allocation_creator,
+        ReturnResourceComposition::BodyReturn {
+            state: body_state,
+            frame: caller_resources_after_requirements,
+            allocations: allocation_creator.zip(post_state.population_effects.creation.as_ref()),
             consumed: consumed_returns,
         },
         assumptions,
@@ -13421,21 +13341,6 @@ fn evaluate_contract_return_resources(
         Ok(resources) => resources,
         Err(error) => return Ok(Err(error)),
     };
-    // Establish the output partition from actual joint custody, once. Raw
-    // descriptions are private candidates until this proof succeeds.
-    if let ReturnResourceComposition::BodyReturns { actual, .. } = composition
-        && !jointly_consume_returned_resource_units(
-            actual.resources(),
-            &evaluated.resources,
-            actual,
-            interface,
-            assumptions,
-        )
-    {
-        return Ok(Err(RuntimeError::FunctionContract(
-            "function body does not yet establish its joint returned resource units".into(),
-        )));
-    }
     let ensured_resources = &evaluated.resources;
     let Some(return_bodies) = ConstructedReturnBodies::try_construct(
         &evaluated,
@@ -15891,7 +15796,6 @@ fn construct_composite_resource_body(
     assumptions: &PureFactContext,
     selected: Option<ResourceOccurrenceId>,
 ) -> Option<CompositeBodyConstruction> {
-    let memory = at.memory();
     let Resource::Composite { name, arguments } = composite.resource() else {
         return None;
     };
@@ -16329,10 +16233,10 @@ fn evaluate_composite_resource_body_condition(
 pub(super) fn expand_all_composite_resource_facts(
     context: &ResourceContext,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
-    expand_all_composite_resource_facts_with_composites(context, definitions, memory, assumptions)
+    expand_all_composite_resource_facts_with_composites(context, definitions, at, assumptions)
         .map(|(resources, _)| resources)
 }
 
@@ -16341,7 +16245,7 @@ pub(super) fn expand_all_composite_resource_facts(
 pub(super) fn expand_all_composite_resource_facts_with_composites(
     context: &ResourceContext,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Option<(ResourceContext, Vec<ResourceFact>)> {
     let mut opened = Vec::new();
@@ -16379,7 +16283,7 @@ pub(super) fn expand_all_composite_resource_facts_with_composites(
             .ok()?;
     }
     let (resources, composites) =
-        expand_composite_resource_context(&cached, definitions, memory, assumptions)?;
+        expand_composite_resource_context(&cached, definitions, at, assumptions)?;
     opened.extend(composites);
     Some((resources, opened))
 }
@@ -16438,7 +16342,7 @@ pub(super) fn expand_all_composite_resource_facts_at_state(
 ) -> Option<ResourceContext> {
     let (expanded, _) =
         expand_checked_authority_controls(context, definitions, state, assumptions)?;
-    expand_all_composite_resource_facts(&expanded, definitions, state.memory(), assumptions)
+    expand_all_composite_resource_facts(&expanded, definitions, &state.program_point(), assumptions)
 }
 
 /// Expands only the folded branches needed to expose `target`, leaving
@@ -16663,7 +16567,7 @@ pub(super) fn function_return_resources_definitionally_established(
             claim_return_state.resources(),
             fact,
             definitions,
-            claim_return_state.memory(),
+            &claim_return_state.program_point(),
             &assumptions,
         )
     }) {
@@ -16686,6 +16590,92 @@ pub(super) fn function_return_resources_definitionally_established(
 /// Definitional fact validation does not make exclusive units duplicable.
 /// Consume the explicit output frontier jointly. Expansion is limited to a
 /// required unit's own body and never searches unrelated available heads.
+fn consume_returned_resource_unit(
+    available: ResourceContext,
+    required: &ResourceFact,
+    state: &ExecutionState,
+    interface: &FunctionContractInterface,
+    assumptions: &PureFactContext,
+    active: &mut BTreeSet<ResourceFact>,
+) -> Option<ResourceContext> {
+    // Views are duplicable; the caller already checked their complete
+    // definitional validity before entering this quantity check.
+    if required.is_view() {
+        return Some(available);
+    }
+    if let Some(remaining) = available
+        .clone()
+        .without_fact_delaying_normalization(required, assumptions)
+    {
+        return Some(remaining);
+    }
+    // Only memory ranges need adjacent supplier fragments to rejoin.
+    // Preserve the checked representation of composite/population exchanges.
+    if required.memory_range().is_some()
+        && let Some(remaining) = available
+            .clone()
+            .without_fact_incrementally(required, assumptions)
+    {
+        return Some(remaining);
+    }
+    let ResourceFact::Own(Resource::Composite { name, .. }, quantity) = required else {
+        return None;
+    };
+    // Authority populations hold ledger fragments and stay linear: a
+    // unit the exit state does not hold exactly is consumed through its
+    // definition's body.
+    interface.composite_resource_definition(name)?;
+
+    let unit = quantity_condition_holds(
+        assumptions,
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: quantity.clone(),
+            right: Box::new(MachineTerm::constant(1)),
+        },
+    );
+    if !active.insert(required.clone()) {
+        return None;
+    }
+    let result = (|| {
+        let singleton =
+            ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(required.clone());
+        let expanded = expand_composite_resource_fact(
+            &singleton,
+            required,
+            interface.composite_resource_definitions(),
+            &state.program_point(),
+            assumptions,
+        )?;
+        if !unit && expanded.facts().iter().any(ResourceFact::is_own) {
+            return None;
+        }
+        // An empty expansion cannot manufacture a missing unit. A
+        // protected empty member needs an actually held ledger fragment,
+        // and a declaration with no body at all is a token that only a
+        // held copy supplies: two `Permit(x)` cannot come from one. A
+        // conditional body whose guard is false is refused the same way.
+        if expanded.facts().is_empty() {
+            return None;
+        }
+        let mut remaining = available.clone();
+        for child in expanded.facts() {
+            remaining = consume_returned_resource_unit(
+                remaining,
+                child,
+                state,
+                interface,
+                assumptions,
+                active,
+            )?;
+        }
+        Some(remaining)
+    })();
+    active.remove(required);
+    result
+}
+
 pub(super) fn jointly_consume_returned_resource_units(
     available: &ResourceContext,
     required: &ResourceContext,
@@ -16693,89 +16683,17 @@ pub(super) fn jointly_consume_returned_resource_units(
     interface: &FunctionContractInterface,
     assumptions: &PureFactContext,
 ) -> bool {
-    fn consume(
-        available: ResourceContext,
-        required: &ResourceFact,
-        state: &ExecutionState,
-        interface: &FunctionContractInterface,
-        assumptions: &PureFactContext,
-        active: &mut BTreeSet<ResourceFact>,
-    ) -> Option<ResourceContext> {
-        // Views are duplicable; the caller already checked their complete
-        // definitional validity before entering this quantity check.
-        if required.is_view() {
-            return Some(available);
-        }
-        if let Some(remaining) = available
-            .clone()
-            .without_fact_delaying_normalization(required, assumptions)
-        {
-            return Some(remaining);
-        }
-        // Only memory ranges need adjacent supplier fragments to rejoin.
-        // Preserve the checked representation of composite/population exchanges.
-        if required.memory_range().is_some()
-            && let Some(remaining) = available
-                .clone()
-                .without_fact_incrementally(required, assumptions)
-        {
-            return Some(remaining);
-        }
-        let ResourceFact::Own(Resource::Composite { name, .. }, quantity) = required else {
-            return None;
-        };
-        // Authority populations hold ledger fragments and stay linear: a
-        // unit the exit state does not hold exactly is consumed through its
-        // definition's body.
-        interface.composite_resource_definition(name)?;
-
-        let unit = quantity_condition_holds(
-            assumptions,
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::Equal,
-                left: quantity.clone(),
-                right: Box::new(MachineTerm::constant(1)),
-            },
-        );
-        if !active.insert(required.clone()) {
-            return None;
-        }
-        let result = (|| {
-            let singleton = ResourceContext::new_with_equalities(assumptions)
-                .unchecked_with_fact(required.clone());
-            let expanded = expand_composite_resource_fact(
-                &singleton,
-                required,
-                interface.composite_resource_definitions(),
-                &state.program_point(),
-                assumptions,
-            )?;
-            if !unit && expanded.facts().iter().any(ResourceFact::is_own) {
-                return None;
-            }
-            // An empty expansion cannot manufacture a missing unit. A
-            // protected empty member needs an actually held ledger fragment,
-            // and a declaration with no body at all is a token that only a
-            // held copy supplies: two `Permit(x)` cannot come from one. A
-            // conditional body whose guard is false is refused the same way.
-            if expanded.facts().is_empty() {
-                return None;
-            }
-            let mut remaining = available.clone();
-            for child in expanded.facts() {
-                remaining = consume(remaining, child, state, interface, assumptions, active)?;
-            }
-            Some(remaining)
-        })();
-        active.remove(required);
-        result
-    }
     let mut remaining = available.clone();
     let mut active = BTreeSet::new();
     for fact in required.facts() {
-        let Some(next) = consume(remaining, fact, state, interface, assumptions, &mut active)
-        else {
+        let Some(next) = consume_returned_resource_unit(
+            remaining,
+            fact,
+            state,
+            interface,
+            assumptions,
+            &mut active,
+        ) else {
             return false;
         };
         remaining = next;
@@ -16855,21 +16773,22 @@ pub(super) fn resource_context_satisfies_definitional_fact(
     available: &ResourceContext,
     required: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> bool {
+    let memory = at.memory();
     if available.satisfies_fact(required, assumptions) {
         return true;
     }
     let Some(expanded_available) =
-        expand_all_composite_resource_facts(available, definitions, memory, assumptions)
+        expand_all_composite_resource_facts(available, definitions, at, assumptions)
     else {
         return false;
     };
     let required_context =
         ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(required.clone());
     let Some((required, assembled)) =
-        expand_composite_resource_context(&required_context, definitions, memory, assumptions)
+        expand_composite_resource_context(&required_context, definitions, at, assumptions)
     else {
         return false;
     };
@@ -17000,9 +16919,10 @@ fn consume_resource_fact_definitionally(
     available: &ResourceContext,
     required: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
+    let memory = at.memory();
     fn consume(
         available: &ResourceContext,
         required: &ResourceFact,
@@ -17143,7 +17063,7 @@ pub(super) fn resource_context_definitionally_contains(
             &remaining,
             fact,
             definitions,
-            memory,
+            &crate::kernel::ProgramPoint::of_memory(memory),
             assumptions,
         ) else {
             return false;
@@ -17845,9 +17765,12 @@ pub(in crate::kernel) fn resource_clause_section_supply(
             assumptions,
         ));
     }
-    let Some(expanded) =
-        expand_all_composite_resource_facts(&base, definitions, state.memory(), assumptions)
-    else {
+    let Some(expanded) = expand_all_composite_resource_facts(
+        &base,
+        definitions,
+        &state.program_point(),
+        assumptions,
+    ) else {
         return base.unchecked_with_facts(views);
     };
     views.extend(
@@ -18148,7 +18071,7 @@ fn resource_clause_memory_views(
         expand_all_composite_resource_facts(
             &body_resources,
             definitions,
-            evaluation.memory(),
+            &evaluation.program_point(),
             &evaluation_assumptions,
         )
     } else {
@@ -21081,6 +21004,7 @@ fn function_outcome_from_body_with_resource_transfer(
                 &transfer_entry_clauses(&transfer),
                 &entry_resource_state,
                 &output_resource_state,
+                &state,
                 function,
                 transfer.allocation_creator.as_ref(),
                 &transfer.consumed_cell_returns,
@@ -21102,6 +21026,8 @@ fn function_outcome_from_body_with_resource_transfer(
         }
         Err(error) => return Ok((FunctionOutcome::RuntimeError(error), obligations, None)),
     };
+    // Return construction consumed each output from one persistent body
+    // context and installed that constructed group. Do not consume it again.
     transfer.candidate_output_views = returned_views;
     transfer.produced_borrowing_pieces = produced_borrowing_pieces;
     let (return_resources, return_ledger, return_participant, return_view_bindings, loan_evidence) =

@@ -12,7 +12,6 @@ mod owned_parameter_regressions;
 mod ranges;
 #[cfg(test)]
 mod record_pointer_fields_tests;
-mod scalar_leases;
 mod shared_arrays;
 use crate::kernel::*;
 use crate::languages::c::syntax::LongRank;
@@ -192,6 +191,37 @@ fn nested_enum_field_type(
         return Ok(None);
     };
     Ok(Some(InterfaceType::Parameter(EnumTypes::get(field)?)))
+}
+
+/// Whether `value` is a local or a literal, possibly converted: a read with
+/// no work of its own that names itself.
+fn direct_operand(value: &ProgramExpression) -> bool {
+    match value {
+        ProgramExpression::Variable(_) | ProgramExpression::Value(_) => true,
+        ProgramExpression::Cast { expression, .. } => direct_operand(expression),
+        _ => false,
+    }
+}
+
+/// Whether `value` is a local's address or a reference a local holds.
+fn borrowed_local(value: &ProgramExpression) -> bool {
+    match value {
+        ProgramExpression::Variable(_) => true,
+        ProgramExpression::AddressOf(target) => {
+            matches!(target.as_ref(), ProgramExpression::Variable(_))
+        }
+        ProgramExpression::Cast { expression, .. } => borrowed_local(expression),
+        _ => false,
+    }
+}
+
+/// Whether running `statement` changes nothing: it is empty.
+fn no_effect(statement: &ProgramStatement) -> bool {
+    match statement {
+        ProgramStatement::Skip => true,
+        ProgramStatement::Seq(statements) => statements.iter().all(|s| no_effect(s)),
+        _ => false,
+    }
 }
 
 fn scalar_type(t: &Type) -> Result<InterfaceType, String> {
@@ -1507,9 +1537,16 @@ impl Context<'_> {
         if types.len() != args.len() {
             return Err("Rust call argument count disagrees with callee".into());
         }
-        let mut checks = program_skip();
-        let mut values = Vec::new();
+        // Each argument's own work, and the values it passes, or the scalar
+        // value it still has to pass once every argument's work is known.
+        let mut pieces: Vec<(
+            ProgramStatement,
+            Vec<ProgramExpression>,
+            Option<(ProgramExpression, Type)>,
+        )> = Vec::new();
         for (argument, value_type) in args.iter().zip(types) {
+            let mut checks = program_skip();
+            let mut values = Vec::new();
             if matches!(value_type, Type::Record { .. }) {
                 let E::Local { name } = argument else {
                     return Err("owned call operand must be a MIR local".into());
@@ -1518,6 +1555,7 @@ impl Context<'_> {
                     return Err("owned call operand has no local storage".into());
                 }
                 values.push(crate::kernel::program_expression::variable(name));
+                pieces.push((checks, values, None));
                 continue;
             }
             if let Type::ByteSlice { mutable } = value_type {
@@ -1535,6 +1573,7 @@ impl Context<'_> {
                     crate::kernel::program_expression::variable(pointer_name),
                     crate::kernel::program_expression::variable(length_name),
                 ]);
+                pieces.push((checks, values, None));
                 continue;
             }
             if let Type::ScalarSlice { element, mutable } = &value_type {
@@ -1555,12 +1594,49 @@ impl Context<'_> {
                     crate::kernel::program_expression::variable(pointer_name),
                     crate::kernel::program_expression::variable(length_name),
                 ]);
+                pieces.push((checks, values, None));
                 continue;
             }
             let (prefix, value) = self.prepared_expr(argument)?;
-            let (capture, name) = self.capture_operand(value, &value_type)?;
-            checks = program_seq(checks, program_seq(prefix, capture));
-            values.push(crate::kernel::program_expression::variable(name));
+            pieces.push((prefix, values, Some((value, value_type))));
+        }
+        // The call reads its arguments after all of their work, so a local or
+        // a literal is passed as itself only when no later work could change
+        // it; any other value is captured where its own work ends.
+        let mut stable_after = vec![true; pieces.len() + 1];
+        for index in (0..pieces.len()).rev() {
+            stable_after[index] = stable_after[index + 1] && no_effect(&pieces[index].0);
+        }
+        let mut checks = program_skip();
+        let mut values = Vec::new();
+        for (index, (prefix, passed, scalar)) in pieces.into_iter().enumerate() {
+            let stable = stable_after[index];
+            checks = program_seq(checks, prefix);
+            values.extend(passed);
+            if let Some((value, value_type)) = scalar {
+                let reference = matches!(value_type, Type::Reference { .. });
+                let (capture, value) = if stable && !reference && direct_operand(&value) {
+                    let interface_type = scalar_type(&value_type)?.to_kernel_type();
+                    (
+                        program_skip(),
+                        crate::kernel::program_expression::cast(value, interface_type),
+                    )
+                } else if stable && reference && borrowed_local(&value) {
+                    // A borrow of a local, or a reference a local holds, is
+                    // read once, by the call, so its view is formed there.
+                    let interface_type = scalar_type(&value_type)?.to_kernel_type();
+                    let constant = matches!(value_type, Type::Reference { mutable: false, .. });
+                    (
+                        program_skip(),
+                        reference_view(value, interface_type, false, constant),
+                    )
+                } else {
+                    let (capture, name) = self.capture_operand(value, &value_type)?;
+                    (capture, crate::kernel::program_expression::variable(name))
+                };
+                checks = program_seq(checks, capture);
+                values.push(value);
+            }
         }
         Ok((checks, values))
     }
@@ -1578,6 +1654,36 @@ impl Context<'_> {
             }
         }
     }
+    /// The operand `source`, prepared as `value` at `value_type`, read once:
+    /// the statement that captures it, the value its guards read, and the
+    /// operand its operator reads. A local or a literal is its own short
+    /// name, so where nothing between its read and its use can change it
+    /// (`stable`) it is used where it is read. Any other value is captured
+    /// in a fresh local first, so its guards and its use name it rather than
+    /// repeat it.
+    fn read_operand(
+        &mut self,
+        source: &E,
+        value: ProgramExpression,
+        value_type: &Type,
+        stable: bool,
+    ) -> Result<(ProgramStatement, ProgramExpression, E), String> {
+        if stable && !matches!(value_type, Type::Reference { .. }) && direct_operand(&value) {
+            let interface_type = scalar_type(value_type)?.to_kernel_type();
+            return Ok((
+                program_skip(),
+                crate::kernel::program_expression::cast(value, interface_type),
+                source.clone(),
+            ));
+        }
+        let (capture, name) = self.capture_operand(value, value_type)?;
+        Ok((
+            capture,
+            crate::kernel::program_expression::variable(&name),
+            E::Local { name },
+        ))
+    }
+
     fn capture_operand(
         &mut self,
         value: ProgramExpression,
@@ -1607,9 +1713,11 @@ impl Context<'_> {
         ))
     }
 
-    // Capture each operand once, in source order. Guards reference those
-    // small names rather than duplicating arbitrarily large expression trees.
-    // The generated asserts are checked execution obligations, not assumptions.
+    // Read each operand once, in source order. A local or a literal is read
+    // where it is used; any other operand is captured in a local first, so
+    // guards name it rather than duplicate an arbitrarily large expression
+    // tree. The generated asserts are checked execution obligations, not
+    // assumptions.
     fn prepared_expr(&mut self, e: &E) -> Result<(ProgramStatement, ProgramExpression), String> {
         match e {
             E::EnumerateOptionIndex { option } => self.enumerate_option_index(option),
@@ -1691,9 +1799,9 @@ impl Context<'_> {
                 right,
             } => {
                 let (left_prefix, left_value) = self.prepared_expr(left)?;
-                let (left_capture, left_name) = self.capture_operand(left_value, left_type)?;
-                let prefix = program_seq(left_prefix, left_capture);
                 if operator == "and" || operator == "or" {
+                    let (left_capture, left_name) = self.capture_operand(left_value, left_type)?;
+                    let prefix = program_seq(left_prefix, left_capture);
                     if *left_type != Type::Bool || *right_type != Type::Bool {
                         return Err("Rust logical operators require bool operands".into());
                     }
@@ -1718,11 +1826,24 @@ impl Context<'_> {
                     ));
                 }
                 let (right_prefix, right_value) = self.prepared_expr(right)?;
-                let (right_capture, right_name) = self.capture_operand(right_value, right_type)?;
-                let mut prefix = program_seq(prefix, program_seq(right_prefix, right_capture));
+                // The left operand is read before the right one's own work,
+                // so it is used where it is read only when that work has no
+                // effect that could change it.
+                let (left_capture, left_operand, left_read) = self.read_operand(
+                    left,
+                    left_value,
+                    left_type,
+                    no_effect(&left_prefix) && no_effect(&right_prefix),
+                )?;
+                let (right_capture, right_operand, right_read) =
+                    self.read_operand(right, right_value, right_type, no_effect(&right_prefix))?;
+                let mut prefix = program_seq(
+                    program_seq(left_prefix, left_capture),
+                    program_seq(right_prefix, right_capture),
+                );
                 if matches!(left_type, Type::Usize | Type::U64) {
-                    let l = crate::kernel::program_expression::variable(&left_name);
-                    let r = crate::kernel::program_expression::variable(&right_name);
+                    let l = left_operand.clone();
+                    let r = right_operand.clone();
                     let max = crate::kernel::program_expression::uint64_literal(u64::MAX);
                     // Stay unsigned at the full target width. Widening to
                     // signed i64 would lose half of the usize value range.
@@ -1766,7 +1887,7 @@ impl Context<'_> {
                     let width = left_type
                         .integer_bits()
                         .ok_or("Rust signed shift operand has no width")?;
-                    let count = crate::kernel::program_expression::variable(&right_name);
+                    let count = right_operand.clone();
                     let obligation = if right_type.integer_bits() == Some(64) {
                         crate::kernel::program_expression::less_than(
                             crate::kernel::program_expression::cast(count, ProgramType::UInt64),
@@ -1789,11 +1910,11 @@ impl Context<'_> {
                     && matches!(operator.as_str(), "add" | "sub" | "mul")
                 {
                     let l = crate::kernel::program_expression::cast(
-                        crate::kernel::program_expression::variable(&left_name),
+                        left_operand.clone(),
                         ProgramType::Int32,
                     );
                     let r = crate::kernel::program_expression::cast(
-                        crate::kernel::program_expression::variable(&right_name),
+                        right_operand.clone(),
                         ProgramType::Int32,
                     );
                     let (minimum, maximum) = match left_type {
@@ -1835,11 +1956,11 @@ impl Context<'_> {
                         _ => i16::MIN as i32,
                     };
                     let l = crate::kernel::program_expression::cast(
-                        crate::kernel::program_expression::variable(&left_name),
+                        left_operand.clone(),
                         ProgramType::Int32,
                     );
                     let r = crate::kernel::program_expression::cast(
-                        crate::kernel::program_expression::variable(&right_name),
+                        right_operand.clone(),
                         ProgramType::Int32,
                     );
                     prefix = program_seq(
@@ -1867,11 +1988,11 @@ impl Context<'_> {
                 }
                 if matches!(left_type, Type::U8 | Type::U16 | Type::U32) {
                     let l = crate::kernel::program_expression::cast(
-                        crate::kernel::program_expression::variable(&left_name),
+                        left_operand.clone(),
                         ProgramType::UInt32,
                     );
                     let r = crate::kernel::program_expression::cast(
-                        crate::kernel::program_expression::variable(&right_name),
+                        right_operand.clone(),
                         ProgramType::UInt32,
                     );
                     let width = match left_type {
@@ -1906,7 +2027,7 @@ impl Context<'_> {
                         "shl" | "shr" => Some(if right_type.integer_bits() == Some(64) {
                             crate::kernel::program_expression::less_than(
                                 crate::kernel::program_expression::cast(
-                                    crate::kernel::program_expression::variable(&right_name),
+                                    right_operand.clone(),
                                     ProgramType::UInt64,
                                 ),
                                 crate::kernel::program_expression::uint64_literal(width),
@@ -1933,8 +2054,8 @@ impl Context<'_> {
                     operator: operator.clone(),
                     left_type: left_type.clone(),
                     right_type: right_type.clone(),
-                    left: Box::new(E::Local { name: left_name }),
-                    right: Box::new(E::Local { name: right_name }),
+                    left: Box::new(left_read),
+                    right: Box::new(right_read),
                 };
                 Ok((prefix, self.expr(&expression)?))
             }

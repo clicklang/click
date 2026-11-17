@@ -429,7 +429,7 @@ mod tests {
 
     #[test]
     fn callback_fold_append_and_memory_expansions_recheck() {
-        let proof = "by { peel(total(|acc: Integer, i: int32| -> Integer { acc + to_integer(i) }, lo, hi + 1)) using { lo <= hi; hi < 2147483647; }; solve(); }";
+        let proof = "by { unfold(total(|acc: Integer, i: int32| -> Integer { acc + to_integer(i) }, lo, hi + 1)); solve(); }";
         let source = format!(
             "function total(step: fn(Integer, int32) -> Integer, lo: int32, hi: int32) -> Integer {{ (lo..hi).fold(0, step) }} theorem test(lo: int32, hi: int32) {{ requires lo <= hi; requires hi < 2147483647; ensures total(|acc: Integer, i: int32| -> Integer {{ acc + to_integer(i) }}, lo, hi + 1) == total(|acc: Integer, i: int32| -> Integer {{ acc + to_integer(i) }}, lo, hi) + to_integer(hi) {proof} }}"
         );
@@ -653,12 +653,12 @@ mod tests {
 
     #[test]
     fn lambda_folds_expand_and_recheck_without_search() {
-        let source = "function total(lo: int32, hi: int32) -> Integer { (lo..hi).fold(0, |acc: Integer, k: int32| -> Integer { acc + to_integer(k) }) } theorem empty(n: int32) { ensures total(n, n) == 0 by { have n <= n; peel(total(n, n)) using { n <= n; }; solve(); } }";
+        let source = "function total(lo: int32, hi: int32) -> Integer { (lo..hi).fold(0, |acc: Integer, k: int32| -> Integer { acc + to_integer(k) }) } theorem empty(n: int32) { ensures total(n, n) == 0 by { have n <= n; unfold(total(n, n)); solve(); } }";
         let verified = verify_click_theorems(source).unwrap();
         let expanded = verified[0].expanded_proof_source().unwrap();
         assert!(!expanded.contains("solve("), "{expanded}");
         let rechecked = source.replace(
-            "by { have n <= n; peel(total(n, n)) using { n <= n; }; solve(); }",
+            "by { have n <= n; unfold(total(n, n)); solve(); }",
             &expanded,
         );
         verify_click_theorems(&rechecked)
@@ -667,8 +667,7 @@ mod tests {
 
     #[test]
     fn lambda_fold_alias_append_expands_and_rechecks_without_search() {
-        let proof =
-            "by { peel(total(lo, hi + 1, offset)) using { lo <= hi; hi < 2147483647; }; solve(); }";
+        let proof = "by { unfold(total(lo, hi + 1, offset)); solve(); }";
         let source = format!(
             "function total(lo: int32, hi: int32, offset: Integer) -> Integer {{ let step = |acc: Integer, k: int32| -> Integer {{ acc + to_integer(k) + offset }}; let alias = step; (lo..hi).fold(0, alias) }} theorem append(lo: int32, hi: int32, offset: Integer) {{ requires lo <= hi; requires hi < 2147483647; ensures total(lo, hi + 1, offset) == total(lo, hi, offset) + to_integer(hi) + offset {proof} }}"
         );

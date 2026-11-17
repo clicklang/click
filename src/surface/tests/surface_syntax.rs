@@ -1180,69 +1180,15 @@ fn parses_and_prints_pure_function_unfold() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_07")]
-fn parses_and_prints_pure_function_unfold_with_guards() {
-    let source = r#"
-        function icount(lo: int32, hi: int32) -> Integer {
-            (lo..hi).fold(0, |acc, k| { acc + to_integer(k) })
-        }
-
-        theorem icount_empty(lo: int32, hi: int32) {
-            requires hi <= lo;
-            ensures icount(lo, hi) == 0 by {
-                peel(icount(lo, hi)) using {
-                    hi <= lo;
-                }
-                normalize();
-            }
-        }
-    "#;
-    let file = parse(source).expect("a guarded pure-function unfold should parse");
-    let SourceProof::Script(tactics) = file.theorem_definitions()[0].ensures()[0].proof() else {
-        panic!("expected an explicit theorem proof");
-    };
-    assert!(matches!(
-        &tactics[0],
-        ProofTactic::PeelFunction { application, premises }
-            if application.name == "icount" && premises.len() == 1
-    ));
-    let printed = super::printing::format_partial_tactic_sequence(tactics);
-    assert!(
-        printed.contains("peel(icount(lo, hi)) using {"),
-        "{printed}"
-    );
-
-    // `peel` selects a range-fold law from the function's declaration, so it
-    // takes a pure-function application and nothing else.
-    let predicate_form = r#"
-        predicate nonnegative(x: int32) { x >= 0 }
-
-        theorem guarded_predicate_peel(x: int32) {
-            requires nonnegative(x);
-            ensures x >= 0 by {
-                peel(nonnegative) using {
-                    nonnegative(x);
-                }
-                solve();
-            }
-        }
-    "#;
-    let error = parse(predicate_form).expect_err("`peel` needs a pure-function application");
-    assert!(
-        error
-            .message()
-            .contains("`peel` requires a pure-function application"),
-        "{}",
-        error.message()
-    );
-
-    // The retired spelling names its replacement.
-    let error = parse(&source.replace("peel(", "unfold("))
-        .expect_err("`unfold` no longer takes a `using` list");
-    assert!(
-        error.message().contains("write `peel(f(args)) using"),
-        "{}",
-        error.message()
-    );
+fn rejects_removed_fold_tactic_syntax() {
+    for tactic in ["peel(total(n));", "peel(total(n)) using { n <= 0; };"] {
+        let source = format!(
+            "function total(n: int32) -> Integer {{ (0..n).fold(0, |acc, k| {{ acc + 1 }}) }} \
+             theorem empty(n: int32) {{ requires n <= 0; ensures total(n) == 0 by {{ {tactic} }} }}"
+        );
+        let error = parse(&source).expect_err("the retired tactic has no compatibility alias");
+        assert!(error.message().contains("unknown tactic `peel`"), "{error}");
+    }
 }
 
 #[test]
@@ -1601,7 +1547,7 @@ fn pure_bare_apply_builds_a_checked_proof_object_certificate() {
         theorem use_equality_from_conjunction(first: int32, second: int32) {
             requires (first == second) and (second == second);
             ensures second == first by {
-                extract(first == second);
+                have first == second by known();
                 apply(equality_symmetric(first, second));
             }
         }
@@ -1616,7 +1562,7 @@ fn pure_bare_apply_builds_a_checked_proof_object_certificate() {
     assert!(matches!(
         verified[2].proof_tactics().as_deref(),
         Some([
-            ProofTactic::Extract(_),
+            ProofTactic::Have(_),
             ProofTactic::Have(ProofHave { proof: SourceProof::Script(body), .. }),
             ProofTactic::ApplyTheoremUsing { application, premises },
         ]) if matches!(body.as_slice(), [ProofTactic::Known]) && application.name == "equality_symmetric"
@@ -1666,7 +1612,7 @@ fn pure_solve_after_unfold_exposes_an_explicit_certificate() {
         theorem equality_transitive_after_unfold(x: int32, y: int32, z: int32) {
             requires equality_chain(x, y, z);
             ensures x == z by {
-                unfold(equality_chain);
+                unfold(equality_chain(x, y, z));
                 solve();
             }
         }
@@ -1677,7 +1623,7 @@ fn pure_solve_after_unfold_exposes_an_explicit_certificate() {
         .proof_tactics()
         .expect("unfolded solve should commit a surface certificate");
     assert!(tactics.iter().any(
-        |tactic| matches!(tactic, ProofTactic::UnfoldPredicate(name) if name == "equality_chain")
+        |tactic| matches!(tactic, ProofTactic::UnfoldFunction(application) if application.name == "equality_chain")
     ));
     assert!(
         tactics
@@ -1990,22 +1936,6 @@ fn surface_synthesis_spells_reserved_predicates_by_their_click_names() {
         )
     };
     let state = Term::ExecutionState(Box::new(ExecutionState::new()));
-    let m = vec![ContractExpression::ProgramExpression(
-        ProgramExpression::Variable(("m".to_string()).into()),
-    )];
-    assert_eq!(
-        synthesize(
-            crate::kernel::MUTEX_HELD_PREDICATE_NAME.to_string(),
-            vec![
-                state.clone(),
-                Term::ProgramValue(ProgramValue::pointer(mutex.clone()))
-            ],
-        ),
-        Some(ClickProposition::PredicateCall {
-            name: "held".to_string(),
-            arguments: m
-        })
-    );
     assert_eq!(
         synthesize(
             crate::kernel::FunctionContract::predicate_name_for("ordered"),
@@ -4611,7 +4541,7 @@ fn inline_callback_identity_rejects_ambiguous_translation_units() {
         contract int32 One() { ensures result == 1; }
         int32 callback() { ensures result == 1; } by { step_until(function.exit); normalize(); }
         theorem callback_contract() {
-            ensures One(&callback) by { unfold(One); solve(); }
+            ensures One(&callback) by { unfold(One(&callback)); solve(); }
         }
     "#;
     let inputs = [
@@ -5339,7 +5269,7 @@ test_batches! {
     surface_syntax_batch_07: [
         parses_and_prints_structural_induction_arms,
         parses_and_prints_pure_function_unfold,
-        parses_and_prints_pure_function_unfold_with_guards,
+        rejects_removed_fold_tactic_syntax,
         parses_and_prints_arithmetic_certificates,
     ],
     surface_syntax_batch_09: [
@@ -5507,7 +5437,7 @@ fn local_storage_and_resource_stars_have_round_tripping_spellings() {
         },
     )
     .unwrap();
-    let Proposition::ProgramStatementExecutes {
+    let Proposition::ProgramStatementVerifies {
         outcome: crate::kernel::StatementOutcome::Normal(state),
         ..
     } = declaration.proposition()

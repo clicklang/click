@@ -165,7 +165,7 @@ fn pointer_index_keys_preserve_quantifiers_free_variables_and_stride() {
         let b = build(1019011, 1019012, 4, false, ty);
         let exports = KernelTermExport::machine_export_count();
         assert!(propositions_are_alpha_equal(&a, &b));
-        let facts = crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&a));
+        let facts = crate::kernel::proof::PureFactStore::from_ordered(std::slice::from_ref(&a));
         assert_eq!(facts.matching_quantified_fact(&b), Some(a.clone()));
         for different in [
             build(1019011, 1019013, 4, false, ty),

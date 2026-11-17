@@ -21,7 +21,7 @@ void overwrite(int32 *p) {
         normalize() using { separate(memory(*p), memory(p[0..-1073741823])); };
     }
     have *p == old(*p) by {
-        preserve(separate(statement(0).footprint, memory(p[0..-1073741823])));
+        preserve(memory(p[0..-1073741823]), statement(0));
     }
     step();
     rewrite(*p, old(*p));

@@ -2,7 +2,7 @@ use super::*;
 use crate::kernel::ExecutionFactSource;
 
 pub(in crate::surface::proof) struct CheckedFixedStateTheoremApplication {
-    pub(in crate::surface::proof) facts: ProofFacts,
+    pub(in crate::surface::proof) facts: PureFactStore,
     pub(in crate::surface::proof) added_facts: Vec<Proposition>,
     /// All conclusions this application checked, including already-stated ones.
     pub(in crate::surface::proof) checked_facts: Vec<Proposition>,
@@ -19,13 +19,12 @@ pub(in crate::surface::proof) fn check_fixed_state_theorem_application_using_fac
     surface_premises: &[ClickProposition],
     claim_label: &str,
     tactic_index: usize,
-    available: &ProofFacts,
+    available: &PureFactStore,
     parameter_binding: ParameterBinding<'_>,
     fixed_state: FixedStateFrame<'_>,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
     surface_propositions: &SurfacePropositionMap,
-    unfolded_predicates: &[String],
     effect_facts: &(impl ExecutionFactSource + ?Sized),
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<CheckedFixedStateTheoremApplication, ClickError> {
@@ -165,7 +164,6 @@ pub(in crate::surface::proof) fn check_fixed_state_theorem_application_using_fac
         &lowering_assumptions,
         &application_context,
         spec_definitions,
-        unfolded_predicates,
     )?;
 
     let mut facts = available.clone();
@@ -193,7 +191,6 @@ pub(in crate::surface::proof) fn lower_theorem_application_requirements_with_ass
     context: &TheoremApplicationContext<'_>,
     assumptions: &PureFactContext,
     spec_definitions: SpecDefinitions<'_>,
-    unfolded_predicates: &[String],
 ) -> Result<Vec<Proposition>, String> {
     let theorem = theorem_environment.get(&application.name).ok_or_else(|| {
         format!(
@@ -264,12 +261,7 @@ pub(in crate::surface::proof) fn lower_theorem_application_requirements_with_ass
                     ..Default::default()
                 },
             )?;
-            unfold_predicates_in_proposition(
-                spec_definitions,
-                unfolded_predicates,
-                &lowered,
-                assumptions,
-            )
+            Ok(Proposition::clone(&lowered))
         })
         .collect()
 }

@@ -51,6 +51,7 @@ pub(in crate::kernel) mod checked_scalar_facts;
 mod condition_reasoning;
 pub(super) mod contradiction_endpoints;
 pub(in crate::kernel) mod contradictions;
+pub(in crate::kernel) mod exact_propagation;
 pub(in crate::kernel) mod observation_comparisons;
 pub(in crate::kernel) mod retained_order_bounds;
 pub(in crate::kernel) mod shared_condition_variables;
@@ -5618,6 +5619,7 @@ impl PureFactContext {
     /// to replace the condition indexes and refile the selected facts.
     pub(super) fn clear_proposition_facts(&mut self) {
         self.prop_facts = Default::default();
+        self.exact_propagation = Default::default();
         self.comparison_views = Default::default();
         self.equality_graph.clear_proposition_pointer_facts();
         self.execution_fact_projection = self
@@ -6029,19 +6031,6 @@ impl PureFactContext {
     ) -> impl Iterator<Item = &(Proposition, usize)> {
         self.equality_graph
             .algebraic_constructor_field_sources(field)
-    }
-
-    /// Whether an exact same-constructor equality in this context entails
-    /// `field`. This is the checked no-confusion rule used by explicit
-    /// `extract`; the persistent index keeps the query independent of the
-    /// number of unrelated facts in the proof state.
-    pub(crate) fn contains_algebraic_constructor_field_equality(
-        &self,
-        field: &Proposition,
-    ) -> bool {
-        self.algebraic_constructor_field_sources(field)
-            .next()
-            .is_some()
     }
 
     /// Test census of the loadable facts whose base is in `block`.
@@ -6763,6 +6752,7 @@ impl PureFactContext {
                 self.composition_object_resources
                     .advance_memory_equalities(self);
                 self.content_fingerprint ^= Self::fingerprint(3, &resources);
+                self.admit_shared_exact_propagation(shared);
             }
             return;
         }
@@ -6802,6 +6792,7 @@ impl PureFactContext {
             self.adjust_memory_effect_fact(&proposition);
             self.adjust_pointer_class_fact(&proposition);
             self.content_fingerprint ^= Self::fingerprint(2, &proposition);
+            self.admit_shared_exact_propagation(shared);
         }
     }
 
@@ -7793,7 +7784,8 @@ impl PureFactContext {
         if condition.is_bool_value_form() {
             self.admit_bool_binder_truths(&condition);
         }
-        self.content_fingerprint ^= Self::fingerprint(1, &(condition, value));
+        self.content_fingerprint ^= Self::fingerprint(1, &(condition.clone(), value));
+        self.admit_exact_propagation(Proposition::ConditionIs(condition, value));
         self
     }
 
@@ -7819,10 +7811,11 @@ impl PureFactContext {
         }
     }
 
-    /// Files the signed range of a word an unsigned upper bound below the sign
-    /// bit established: `0 <= term`, and `term < bound + 1` (strict source)
-    /// or `term <= bound`.
+    /// Files the range of the typed signed reading established by an unsigned
+    /// bound below the sign bit: `0 <= signed(term)`, and
+    /// `signed(term) < bound + 1` (strict source) or `signed(term) <= bound`.
     fn assume_unsigned_word_range(mut self, term: MachineTerm, bound: u32, strict: bool) -> Self {
+        let term = condition_reasoning::signed_uint32_term(term);
         self = self.assume_condition_uncharged(
             ConditionTerm::signed_less_equal(MachineTerm::constant(0), term.clone()),
             true,
@@ -8538,6 +8531,9 @@ impl PureFactContext {
         restricted.rebuild_null_pointer_offsets();
         restricted.rebuild_memory_load_condition_facts();
         restricted.rebuild_condition_match_indexes();
+        for (condition, value) in conditions {
+            restricted.admit_exact_propagation(Proposition::ConditionIs(condition.clone(), *value));
+        }
         // File proposition edges and resource indexes only after their
         // condition graph is the selected one, never the inherited graph.
         for proposition in propositions {
@@ -13469,7 +13465,7 @@ mod shared_load_atom_comparison_tests {
 
     #[test]
     fn shared_state_premise_requires_the_selected_frame() {
-        use crate::kernel::proof::ProofFacts;
+        use crate::kernel::proof::PureFactStore;
         let _session = crate::kernel::VerificationSession::enter();
         let before = Memory::new()
             .with_block("shared-frame", 8)
@@ -13531,8 +13527,8 @@ mod shared_load_atom_comparison_tests {
         for source in std::iter::once(Proposition::ConditionIs(condition(&before), true)).chain(
             crate::kernel::proof::fact_reasoning::order_claim_forms(&source),
         ) {
-            let unframed = ProofFacts::from_ordered(std::slice::from_ref(&source));
-            let framed = ProofFacts::from_ordered(&[source.clone(), equality.clone()]);
+            let unframed = PureFactStore::from_ordered(std::slice::from_ref(&source));
+            let framed = PureFactStore::from_ordered(&[source.clone(), equality.clone()]);
             let exports = KernelTermExport::machine_export_count();
             assert!(!unframed.exact_available_across_effects(&target, &[]));
             let available = framed.exact_available_across_effects(&target, &[]);
@@ -13577,8 +13573,8 @@ mod shared_load_atom_comparison_tests {
             },
             false,
         );
-        let missing_frame = ProofFacts::from_ordered(std::slice::from_ref(&source));
-        let framed = ProofFacts::from_ordered(&[source, equality]);
+        let missing_frame = PureFactStore::from_ordered(std::slice::from_ref(&source));
+        let framed = PureFactStore::from_ordered(&[source, equality]);
         let later = condition(&after);
         let view = native_comparison_view(&later, true).unwrap();
         let query = OverflowQueryView::from_operands(
@@ -13605,7 +13601,7 @@ mod shared_load_atom_comparison_tests {
             Operation,
             definedness::{OverflowQueryView, defined_formats},
         };
-        use crate::kernel::proof::ProofFacts;
+        use crate::kernel::proof::PureFactStore;
         for ty in defined_formats() {
             for (operation, op) in [
                 (Operation::Add, OverflowOperation::Add),
@@ -13630,10 +13626,10 @@ mod shared_load_atom_comparison_tests {
                         truth,
                     )
                 };
-                let held = ProofFacts::from_ordered(&[source(op, false)]);
-                let missing = ProofFacts::from_ordered(&[]);
-                let refuted = ProofFacts::from_ordered(&[source(op, true)]);
-                let wrong = ProofFacts::from_ordered(&[source(
+                let held = PureFactStore::from_ordered(&[source(op, false)]);
+                let missing = PureFactStore::from_ordered(&[]);
+                let refuted = PureFactStore::from_ordered(&[source(op, true)]);
+                let wrong = PureFactStore::from_ordered(&[source(
                     if op == OverflowOperation::Add {
                         OverflowOperation::Multiply
                     } else {

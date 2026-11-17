@@ -199,7 +199,7 @@ mod tests {
         );
         for load in [named, structural] {
             let one = MachineTerm::constant(1);
-            let facts = ProofFacts::from_ordered(&[Proposition::ConditionIs(
+            let facts = PureFactStore::from_ordered(&[Proposition::ConditionIs(
                 ConditionTerm::equal(load.clone(), one.clone()),
                 true,
             )]);
@@ -311,7 +311,7 @@ mod tests {
         let equal = |value| {
             Proposition::ConditionIs(ConditionTerm::equal(value, MachineTerm::constant(1)), true)
         };
-        let facts = ProofFacts::from_ordered(&[equal(read.clone())]);
+        let facts = PureFactStore::from_ordered(&[equal(read.clone())]);
         let bind = |body| Proposition::ForAll {
             name: Default::default(),
             var: binder,
@@ -354,12 +354,12 @@ mod tests {
         let b = observed(native);
         let before = KernelTermExport::machine_export_count();
         assert!(
-            ProofFacts::default()
+            PureFactStore::default()
                 .with_checked_rewritten_loads(&a, &b)
                 .is_none()
         );
         assert!(
-            ProofFacts::default()
+            PureFactStore::default()
                 .with_checked_rewritten_loads(&b, &a)
                 .is_none()
         );
@@ -383,12 +383,12 @@ mod tests {
         let read = SharedMachineIntegerTerm::intern(ty, load.clone());
         let arithmetic = SharedMachineIntegerTerm::intern(ty, sum.clone());
         let source = Proposition::ConditionIs(ConditionTerm::equal(load, sum), true);
-        let facts = ProofFacts::from_ordered(&[source]);
+        let facts = PureFactStore::from_ordered(&[source]);
         let (a, b) = (observed(read), observed(arithmetic));
         let before = KernelTermExport::machine_export_count();
         assert!(facts.with_checked_rewritten_loads(&a, &b).is_some());
         assert!(
-            ProofFacts::default()
+            PureFactStore::default()
                 .with_checked_rewritten_loads(&a, &b)
                 .is_none()
         );
@@ -421,14 +421,14 @@ mod tests {
         let before = KernelTermExport::machine_export_count();
         for (a, b) in [(&stored_read, &arithmetic), (&arithmetic, &stored_read)] {
             assert!(
-                ProofFacts::default()
+                PureFactStore::default()
                     .with_checked_rewritten_loads(a, b)
                     .is_some()
             );
         }
         let early = load(initial.clone());
         let later = load(initial.clone().with_block("unrelated", 4));
-        let facts = ProofFacts::from_ordered(&[Proposition::ConditionIs(
+        let facts = PureFactStore::from_ordered(&[Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
@@ -444,7 +444,7 @@ mod tests {
                 .is_some()
         );
         assert!(
-            ProofFacts::default()
+            PureFactStore::default()
                 .with_checked_rewritten_loads(&later, &arithmetic)
                 .is_none()
         );

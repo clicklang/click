@@ -2183,6 +2183,11 @@ pub(in crate::surface) fn describe_iterated_memory(
 
 pub(super) fn describe_resource_subject(resource: &ResourceSubject) -> String {
     match resource {
+        ResourceSubject::At { selector, resource } => format!(
+            "at({}, {})",
+            describe_program_point_selector(selector),
+            describe_resource_subject(resource)
+        ),
         ResourceSubject::Emp => "separation::emp".into(),
         ResourceSubject::Star(a, b) => format!(
             "({} * {})",
@@ -3896,7 +3901,7 @@ fn describe_model_field_version_stop(
     stop: &resource_tracker::Stop,
     since: &str,
 ) -> Option<String> {
-    let field = crate::kernel::model_fields::instance_field_spelling(identity, field_index)?;
+    let field = crate::kernel::model_fields::instance_field_surface(identity, field_index)?;
     // A parent-qualified path is not what the registry names, so it has no
     // spelling of its own and this says nothing rather than the parent's.
     if !children.is_empty() {
@@ -4357,7 +4362,7 @@ pub(in crate::surface) fn diagnostic_source_load_cell(
     if let PointerOffsetTerm::Constant(offset) = &pointer.offset
         && let Ok(offset) = u32::try_from(*offset)
         && let Some(field) =
-            object_fields::object_field_spelling(&pointer.block, offset, kind.byte_width())
+            object_fields::object_field_surface(&pointer.block, offset, kind.byte_width())
     {
         return Some(field);
     }
@@ -4827,7 +4832,7 @@ fn describe_source_cell_of_width(
     let declared = describe_memory_block(&pointer.block, parameter_binding)?;
     if let (Some(width), PointerOffsetTerm::Constant(offset)) = (width, &pointer.offset)
         && let Ok(offset) = u32::try_from(*offset)
-        && let Some(field) = object_fields::object_field_spelling(&pointer.block, offset, width)
+        && let Some(field) = object_fields::object_field_surface(&pointer.block, offset, width)
     {
         return Some(SourceCell {
             object: field,
@@ -6838,8 +6843,6 @@ const MAX_STATEMENT_HEAD_BYTES: usize = 512;
 /// successors it is complaining about.
 pub(super) fn describe_execution_statement_head(statement: &ProgramStatement) -> String {
     let head = match statement {
-        ProgramStatement::EndScalarReference(_) => "borrow end".to_string(),
-        ProgramStatement::ScalarReferenceScope(_) => "borrow scope".to_string(),
         ProgramStatement::Skip => ";".to_string(),
         ProgramStatement::Break => "break;".to_string(),
         ProgramStatement::Continue => "continue;".to_string(),
@@ -7955,9 +7958,9 @@ pub(super) fn describe_bitvector_with_context(
         // stored inside the instance fact, so there is nothing in the term to
         // recover it from; the mint registered it.
         MachineTerm::Variable(variable)
-            if crate::kernel::model_fields::model_field_spelling(*variable).is_some() =>
+            if crate::kernel::model_fields::model_field_surface(*variable).is_some() =>
         {
-            crate::kernel::model_fields::model_field_spelling(*variable)
+            crate::kernel::model_fields::model_field_surface(*variable)
                 .expect("checked registered above")
         }
         MachineTerm::Variable(variable) => lowering_only_variable("v", variable.0),
@@ -8237,7 +8240,7 @@ fn describe_storage_write_outside_footprint(
             if let PointerOffsetTerm::Constant(offset) = &pointer.offset
                 && let Ok(offset) = u32::try_from(*offset)
                 && let Some(field) =
-                    object_fields::object_field_spelling(&pointer.block, offset, *bytes)
+                    object_fields::object_field_surface(&pointer.block, offset, *bytes)
             {
                 return format!("the {bytes}-byte store to `{field}`");
             }

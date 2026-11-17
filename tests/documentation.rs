@@ -1386,6 +1386,8 @@ fn tactic_form_inventory_is_bidirectional() {
             "step" => surface == "`step()`",
             "apply-induction" => surface == "`apply(ih(m))`",
             "apply-induction-using" => surface == "`apply(ih(m)) using { P; ... }`",
+            "apply-fact" => surface == "`apply(fact)`",
+            "apply-fact-using" => surface == "`apply(fact) using { P; ... }`",
             "apply-theorem" => surface == "`apply(theorem(args))`",
             "apply-theorem-using" => surface == "`apply(theorem(args)) using { P; ... }`",
             "arithmetic" => surface == "`solve() using {}`",
@@ -1399,7 +1401,6 @@ fn tactic_form_inventory_is_bidirectional() {
             "solve" => surface == "`solve()`",
             "solve-using" => surface == "`solve() using { P; ... }`",
             "unfold-function" => surface == "`unfold(function(args))`",
-            "peel-function" => surface == "`peel(function(args)) using { P; ... }`",
             _ => surface.contains(form.syntax),
         };
         let matching = rows

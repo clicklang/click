@@ -73,7 +73,7 @@ int32 copy3(int32 dst[3], int32 src[3]) {
             step();
             have forall (k: int32) { 0 <= k and k < 3 implies src[k] == old(src[k]) } by {
                 intro(); intro();
-                instantiate(at(iteration, forall (k: int32) { 0 <= k and k < 3 implies src[k] == old(src[k]) }), k) using { 0 <= k; k < 3; };
+                instantiate(at(iteration, forall (k: int32) { 0 <= k and k < 3 implies src[k] == old(src[k]) }), k);
                 have contains(memory(src[0..3]), memory(src[k])) by {
                     apply(click::separation::contains_element(src, 0, 3, k)) using { 0 <= k; k < 3; };
                 }
@@ -91,7 +91,7 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                     normalize() using { separate(memory(dst[i]), memory(src[k])); };
                 }
                 have src[k] == at(iteration, src[k]) by {
-                    preserve(separate(statement(2).statement(0).footprint, memory(src[k])));
+                    preserve(memory(src[k]), statement(2).statement(0));
                 }
                 known();
             }
@@ -99,7 +99,8 @@ int32 copy3(int32 dst[3], int32 src[3]) {
             have forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) } by {
                 intro(); intro();
                 if k < at(iteration, i) {
-                    instantiate(at(iteration, forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) }), k) using { 0 <= k; k < at(iteration, i); };
+                    have 0 <= k and k < i;
+                    instantiate(at(iteration, forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) }), k);
                     have k != at(iteration, i) by { solve() using { k < at(iteration, i); }; }
                     have at(iteration, separate(memory(dst[i]), memory(dst[k]))) by {
                         apply(click::separation::separate_elements(dst, at(iteration, i), k)) using { k != at(iteration, i); };
@@ -108,17 +109,17 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                         normalize() using { at(iteration, separate(memory(dst[i]), memory(dst[k]))); };
                     }
                     have at(statement(2).statement(0).exit, dst[k]) == at(iteration, dst[k]) by {
-                        preserve(separate(statement(2).statement(0).footprint, memory(dst[k])));
+                        preserve(memory(dst[k]), statement(2).statement(0));
                     }
                     have separate(statement(2).statement(1).footprint, memory(dst[k])) by { normalize() using { }; }
                     have dst[k] == at(statement(2).statement(1).entry, dst[k]) by {
-                        preserve(separate(statement(2).statement(1).footprint, memory(dst[k])));
+                        preserve(memory(dst[k]), statement(2).statement(1));
                     }
                     known();
                 } else {
                     have k == at(iteration, i) by { solve() using { k < i; not k < at(iteration, i); 0 <= at(iteration, i); at(iteration, i) < 3; }; }
                     have k < 3 by { solve() using { k == at(iteration, i); at(iteration, i) < 3; }; }
-                    instantiate(at(iteration, forall (k: int32) { 0 <= k and k < 3 implies src[k] == old(src[k]) }), k) using { 0 <= k; k < 3; };
+                    instantiate(at(iteration, forall (k: int32) { 0 <= k and k < 3 implies src[k] == old(src[k]) }), k);
                     rewrite(k, at(iteration, i));
                     known();
                 }
@@ -126,27 +127,18 @@ int32 copy3(int32 dst[3], int32 src[3]) {
         }
     }
     have dst[0] == old(src[0]) by {
-        instantiate(forall (k: int32) { at(loop(0).exit, 0) <= at(loop(0).exit, k) and at(loop(0).exit, k) < at(loop(0).exit, i) implies at(loop(0).exit, dst[k]) == old(src[k]) }, 0) using {
-            not at(loop(0).exit, i) < at(loop(0).exit, 3);
-            at(loop(0).exit, i) <= at(loop(0).exit, 3);
-            at(loop(0).exit, i) >= at(loop(0).exit, 0);
-        };
+        have at(loop(0).exit, 0) <= at(loop(0).exit, 0) and at(loop(0).exit, 0) < at(loop(0).exit, i);
+        instantiate(forall (k: int32) { at(loop(0).exit, 0) <= at(loop(0).exit, k) and at(loop(0).exit, k) < at(loop(0).exit, i) implies at(loop(0).exit, dst[k]) == old(src[k]) }, 0);
         known();
     }
     have dst[1] == old(src[1]) by {
-        instantiate(forall (k: int32) { at(loop(0).exit, 0) <= at(loop(0).exit, k) and at(loop(0).exit, k) < at(loop(0).exit, i) implies at(loop(0).exit, dst[k]) == old(src[k]) }, 1) using {
-            not at(loop(0).exit, i) < at(loop(0).exit, 3);
-            at(loop(0).exit, i) <= at(loop(0).exit, 3);
-            at(loop(0).exit, i) >= at(loop(0).exit, 0);
-        };
+        have at(loop(0).exit, 0) <= at(loop(0).exit, 1) and at(loop(0).exit, 1) < at(loop(0).exit, i);
+        instantiate(forall (k: int32) { at(loop(0).exit, 0) <= at(loop(0).exit, k) and at(loop(0).exit, k) < at(loop(0).exit, i) implies at(loop(0).exit, dst[k]) == old(src[k]) }, 1);
         known();
     }
     have dst[2] == old(src[2]) by {
-        instantiate(forall (k: int32) { at(loop(0).exit, 0) <= at(loop(0).exit, k) and at(loop(0).exit, k) < at(loop(0).exit, i) implies at(loop(0).exit, dst[k]) == old(src[k]) }, 2) using {
-            not at(loop(0).exit, i) < at(loop(0).exit, 3);
-            at(loop(0).exit, i) <= at(loop(0).exit, 3);
-            at(loop(0).exit, i) >= at(loop(0).exit, 0);
-        };
+        have at(loop(0).exit, 0) <= at(loop(0).exit, 2) and at(loop(0).exit, 2) < at(loop(0).exit, i);
+        instantiate(forall (k: int32) { at(loop(0).exit, 0) <= at(loop(0).exit, k) and at(loop(0).exit, k) < at(loop(0).exit, i) implies at(loop(0).exit, dst[k]) == old(src[k]) }, 2);
         known();
     }
     step();

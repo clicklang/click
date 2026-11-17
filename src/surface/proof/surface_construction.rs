@@ -271,7 +271,7 @@ pub(super) fn state_indexed_selectors<'a>(
 pub(super) fn checked_surface_comparison_fact_in_state_with_indexed_facts(
     view: ExecutionView<'_>,
     kernel: &Proposition,
-    available: &ProofFacts,
+    available: &PureFactStore,
     assumptions: &PureFactContext,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
@@ -296,7 +296,7 @@ fn checked_surface_comparison_fact_in_state_with_availability(
     kernel: &Proposition,
     available: &[Proposition],
     assumptions: &PureFactContext,
-    indexed_available: Option<&ProofFacts>,
+    indexed_available: Option<&PureFactStore>,
     allow_memory_erased_candidates: bool,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
@@ -653,7 +653,7 @@ fn checked_surface_comparison_fact_in_state_with_availability(
     )))
 }
 
-fn have_proof_is_smart_solve(proof: &SourceProof) -> bool {
+pub(in crate::surface::proof) fn have_proof_is_smart_solve(proof: &SourceProof) -> bool {
     match proof {
         SourceProof::Default
         | SourceProof::Tactic(SmartTactic::ImplicitTail | SmartTactic::Solve) => true,
@@ -662,24 +662,4 @@ fn have_proof_is_smart_solve(proof: &SourceProof) -> bool {
             [ProofTactic::Solve] | [ProofTactic::SolveUsing(_)]
         ),
     }
-}
-
-pub(super) fn smart_solve_unfold_prefix(proof: &SourceProof) -> Option<Vec<String>> {
-    if have_proof_is_smart_solve(proof) {
-        return Some(Vec::new());
-    }
-    let SourceProof::Script(tactics) = proof else {
-        return None;
-    };
-    let (last, prefix) = tactics.split_last()?;
-    if !matches!(last, ProofTactic::Solve | ProofTactic::SolveUsing(_)) {
-        return None;
-    }
-    prefix
-        .iter()
-        .map(|tactic| match tactic {
-            ProofTactic::UnfoldPredicate(name) => Some(name.clone()),
-            _ => None,
-        })
-        .collect()
 }

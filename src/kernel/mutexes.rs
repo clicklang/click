@@ -3499,7 +3499,7 @@ mod tests {
                 &state,
                 &statement,
                 &assumptions,
-                ExecutionContext::execute_bodies(&environment),
+                ExecutionContext::verify_loops(&environment),
                 &mut ExecutionBudget::new(),
             )
             .unwrap();
@@ -3769,7 +3769,7 @@ mod tests {
             &state,
             &statement,
             &PureFactContext::new(),
-            ExecutionContext::execute_bodies(&environment),
+            ExecutionContext::verify_loops(&environment),
             &mut ExecutionBudget::new(),
         )
         .unwrap();
@@ -3852,7 +3852,7 @@ mod tests {
                     callee: None,
                 },
                 &assumptions,
-                ExecutionContext::execute_bodies(&environment),
+                ExecutionContext::verify_loops(&environment),
                 &mut ExecutionBudget::new(),
             )
             .unwrap();
@@ -4066,7 +4066,7 @@ mod tests {
                     &state,
                     &declaration,
                     &PureFactContext::new(),
-                    ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+                    ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
                     &mut ExecutionBudget::new(),
                 )
                 .unwrap();
@@ -4079,7 +4079,7 @@ mod tests {
                 destroyed.state(),
                 &declaration,
                 &PureFactContext::new(),
-                ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+                ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
                 &mut ExecutionBudget::new(),
             )
             .unwrap();
@@ -4458,7 +4458,7 @@ mod tests {
             state,
             &statement,
             &PureFactContext::new(),
-            ExecutionContext::execute_bodies(&environment),
+            ExecutionContext::verify_loops(&environment),
             &mut ExecutionBudget::new(),
         )
         .unwrap();
