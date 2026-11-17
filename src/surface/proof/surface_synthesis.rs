@@ -6843,6 +6843,16 @@ fn synthesize_surface_pointer_expression(
     ) {
         return Some(result);
     }
+    // A pointer an earlier call returned, which no local here holds, is that
+    // call's result.
+    if let Some(region) = SYNTHESIS_RECORDED_POINTS.with(|points| {
+        points
+            .borrow()
+            .as_ref()?
+            .call_result_naming_pointer(pointer)
+    }) {
+        return Some(ContractExpression::RegionResult(region));
+    }
     if parameter_binding.arguments.iter().any(|argument| {
         matches!(
             argument,

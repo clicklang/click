@@ -3605,6 +3605,10 @@ struct RecordedStates {
     /// The call that produced each algebraic value a call returned, a Rust
     /// enum's: the value is spelled `<region>.result`.
     algebraic_call_results: crate::persistent::PersistentMap<crate::kernel::AlgebraicTerm, usize>,
+    /// The call that produced each pointer a call returned, by the
+    /// pointer's address: the value is spelled `<region>.result`, which
+    /// lowers to the exact returned value.
+    pointer_call_results: crate::persistent::PersistentMap<crate::kernel::Pointer, usize>,
     /// Each exited loop's pass count, the head's `iterations`, which the
     /// facts past the loop state over: spelled `loop(i).iterations`.
     loop_iterations: crate::persistent::PersistentMap<usize, crate::kernel::IntegerTerm>,
@@ -3677,6 +3681,7 @@ impl Default for RecordedStates {
             read_event_scalar_names: Default::default(),
             read_event_pointer_names: Default::default(),
             algebraic_call_results: crate::persistent::PersistentMap::default(),
+            pointer_call_results: crate::persistent::PersistentMap::default(),
             loop_iterations: crate::persistent::PersistentMap::default(),
             loop_iteration_variables: crate::persistent::PersistentMap::default(),
             field_points: crate::persistent::PersistentMap::default(),
@@ -4309,6 +4314,11 @@ impl RecordedStates {
         {
             self.algebraic_call_results.remove(term.as_ref());
         }
+        if let Some(ProgramValue::Pointer(pointer)) = self.call_results.get(&index)
+            && self.pointer_call_results.get(pointer.pointer()) == Some(&index)
+        {
+            self.pointer_call_results.remove(pointer.pointer());
+        }
         self.call_results.remove(&index);
         if let Some(value) = value.filter(|value| *value != ProgramValue::Void) {
             if let ProgramValue::Bool(term) | crate::kernel::integer_c_value!(term) =
@@ -4323,6 +4333,13 @@ impl RecordedStates {
             {
                 self.algebraic_call_results
                     .insert(term.as_ref().clone(), index);
+            }
+            // So does the first call to return a pointer.
+            if let ProgramValue::Pointer(pointer) = &value
+                && self.pointer_call_results.get(pointer.pointer()).is_none()
+            {
+                self.pointer_call_results
+                    .insert(pointer.pointer().clone(), index);
             }
             self.call_results.insert(index, value);
         }
@@ -4394,6 +4411,18 @@ impl RecordedStates {
         crate::instrumentation::record_deterministic_work(1);
         let index = *self.algebraic_call_results.get(term)?;
         matches!(self.call_results.get(&index), Some(ProgramValue::Parameter(held)) if held.as_ref() == term)
+            .then_some(CodeRegionRef::Region(index))
+    }
+
+    /// The call that returned the pointer at `pointer`'s address: one index
+    /// lookup, checked against the recorded value.
+    fn call_result_naming_pointer(
+        &self,
+        pointer: &crate::kernel::Pointer,
+    ) -> Option<CodeRegionRef> {
+        crate::instrumentation::record_deterministic_work(1);
+        let index = *self.pointer_call_results.get(pointer)?;
+        matches!(self.call_results.get(&index), Some(ProgramValue::Pointer(held)) if held.pointer() == pointer)
             .then_some(CodeRegionRef::Region(index))
     }
 
