@@ -90,7 +90,7 @@ pub(super) fn execute(
             if bytes != 0
                 && let Some(refusal) = subobject_access_refusal(
                     target,
-                    target_pointer.extent(),
+                    target_pointer.bounds(),
                     bytes,
                     &facts,
                     &obligations,
@@ -156,7 +156,7 @@ pub(super) fn execute(
                 };
                 if let Some(refusal) = subobject_access_refusal(
                     source.pointer(),
-                    source.extent(),
+                    source.bounds(),
                     bytes,
                     &facts,
                     &obligations,

@@ -1,7 +1,7 @@
 use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType, VerificationSession};
 
-/// [`allocation_continuity`] of two 32-bit extents.
+/// [`allocation_continuity`] of two 32-bit sizes.
 fn int32_continuity(
     input_base: &Pointer,
     input_bytes: &MachineTerm,
@@ -11,19 +11,19 @@ fn int32_continuity(
 ) -> AllocationContinuity {
     allocation_continuity(
         input_base,
-        &HeapExtent::int32(input_bytes.clone()),
+        &AllocationSize::int32(input_bytes.clone()),
         output_base,
-        &HeapExtent::int32(output_bytes.clone()),
+        &AllocationSize::int32(output_bytes.clone()),
         assumptions,
     )
 }
 
-/// Two extents of different formats are never one allocation's (D5): a pair
+/// Two sizes of different formats are never one allocation's (D5): a pair
 /// at one base, or at bases not proven distinct (two external pointers), is
-/// refused rather than compared, and distinct blocks stay distinct. Two 64-bit extents compare
+/// refused rather than compared, and distinct blocks stay distinct. Two 64-bit sizes compare
 /// at 64 bits.
 #[test]
-fn continuity_refuses_extents_of_different_formats() {
+fn continuity_refuses_allocation_sizes_of_different_formats() {
     let base = Pointer {
         block: PointerBlock::Heap(930_200),
         offset: PointerOffsetTerm::Constant(0),
@@ -33,11 +33,11 @@ fn continuity_refuses_extents_of_different_formats() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let count = MachineTerm::Variable(Variable(930_202));
-    let wide = HeapExtent::new(
+    let wide = AllocationSize::new(
         MachineTerm::uint64_multiply(count.clone(), MachineTerm::uint64_constant(4)),
-        HeapExtentKind::UInt64,
+        AllocationSizeKind::UInt64,
     );
-    let narrow = HeapExtent::int32(MachineTerm::constant(16));
+    let narrow = AllocationSize::int32(MachineTerm::constant(16));
     let assumptions = PureFactContext::new();
     for (input, output) in [(&wide, &narrow), (&narrow, &wide)] {
         assert_eq!(
@@ -63,12 +63,12 @@ fn continuity_refuses_extents_of_different_formats() {
         allocation_continuity(&base, &wide, &base, &wide, &assumptions),
         AllocationContinuity::Same,
     );
-    let other_wide = HeapExtent::new(
+    let other_wide = AllocationSize::new(
         MachineTerm::uint64_multiply(
             MachineTerm::Variable(Variable(930_204)),
             MachineTerm::uint64_constant(4),
         ),
-        HeapExtentKind::UInt64,
+        AllocationSizeKind::UInt64,
     );
     assert!(matches!(
         allocation_continuity(&base, &wide, &base, &other_wide, &assumptions),
@@ -90,7 +90,7 @@ fn contract_retirement_invalidates_creation_history_even_with_replacement() {
     let input = ResourceContext::new()
         .unchecked_with_fact(ResourceFact::own_allocation(base.clone(), bytes.clone()));
     let memory = Memory::new()
-        .with_heap_allocation_claim(base.clone(), HeapExtent::int32(bytes.clone()))
+        .with_heap_allocation_claim(base.clone(), AllocationSize::int32(bytes.clone()))
         .expect("live input allocation");
     let mut state = ExecutionState::new()
         .with_population_creation_tracking()
@@ -350,7 +350,7 @@ fn allocation_companion_call(unrelated: u64) -> (Pointer, ExecutionState, Execut
         offset: PointerOffsetTerm::Constant(0),
     };
     let memory = Memory::new()
-        .with_heap_allocation_claim(base.clone(), HeapExtent::int32(4))
+        .with_heap_allocation_claim(base.clone(), AllocationSize::int32(4))
         .unwrap();
     let mut caller = ExecutionState::new()
         .with_memory(memory)
@@ -456,14 +456,14 @@ mod scaling_tests {
     include!("../../scaling_tests/kernel/functions/allocation_continuity_tests.rs");
 }
 
-/// A contract's `uint64` `allocation` byte count is a 64-bit extent only
-/// under `malloc`'s decision (`design/heap-extents.md`, stage 3): a product
+/// A contract's `uint64` `allocation` byte count is a 64-bit size only
+/// under `malloc`'s decision (`design/heap-allocation-sizes.md`, stage 3): a product
 /// `n * 4u64` needs `1 <= n <= PTRDIFF_MAX / 4` decided, a product of two
-/// symbolic factors is never one, and a constant that fits a 32-bit extent is
-/// that extent. A clause already established elsewhere (a contract's own
+/// symbolic factors is never one, and a constant that fits a 32-bit size is
+/// that size. A clause already established elsewhere (a contract's own
 /// entry clause, a held body) is assumed.
 #[test]
-fn a_contract_uint64_allocation_extent_needs_the_no_wrap_decision() {
+fn a_contract_uint64_allocation_size_needs_the_no_wrap_decision() {
     let count = MachineTerm::Variable(Variable(930_300));
     let other = MachineTerm::Variable(Variable(930_301));
     let product = MachineTerm::uint64_multiply(count.clone(), MachineTerm::uint64_constant(4));
@@ -480,35 +480,32 @@ fn a_contract_uint64_allocation_extent_needs_the_no_wrap_decision() {
     });
 
     assert_eq!(
-        uint64_allocation_extent_argument(&MachineTerm::uint64_constant(16), &unbounded),
+        uint64_allocation_size_argument(&MachineTerm::uint64_constant(16), &unbounded),
         Ok(ProgramValue::Int32(MachineTerm::constant(16))),
     );
     assert!(matches!(
-        uint64_allocation_extent_argument(&product, &unbounded),
+        uint64_allocation_size_argument(&product, &unbounded),
         Err(RuntimeError::FunctionContract(_)),
     ));
     assert_eq!(
-        uint64_allocation_extent_argument(&product, &bounded),
+        uint64_allocation_size_argument(&product, &bounded),
         Ok(ProgramValue::UInt64(product.clone())),
     );
     assert_eq!(
-        uint64_allocation_extent_argument(
-            &product,
-            &unbounded.clone().assume_entry_clause_extents()
-        ),
+        uint64_allocation_size_argument(&product, &unbounded.clone().assume_entry_clause_spans()),
         Ok(ProgramValue::UInt64(product.clone())),
     );
     let symbolic_product = MachineTerm::uint64_multiply(count.clone(), other);
     assert!(matches!(
-        uint64_allocation_extent_argument(&symbolic_product, &bounded),
+        uint64_allocation_size_argument(&symbolic_product, &bounded),
         Err(RuntimeError::FunctionContract(_)),
     ));
     assert!(matches!(
-        uint64_allocation_extent_argument(&MachineTerm::uint64_constant(0), &unbounded),
+        uint64_allocation_size_argument(&MachineTerm::uint64_constant(0), &unbounded),
         Err(RuntimeError::FunctionContract(_)),
     ));
     assert!(matches!(
-        uint64_allocation_extent_argument(&MachineTerm::uint64_constant(u64::MAX), &unbounded),
+        uint64_allocation_size_argument(&MachineTerm::uint64_constant(u64::MAX), &unbounded),
         Err(RuntimeError::FunctionContract(_)),
     ));
 }

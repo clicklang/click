@@ -5,7 +5,7 @@ a range the contract states. The first `have` below is a triviality with no
 memory in it at all; what it does do is put a universal proposition in the
 context, whose bound variable identity is the one the second `have`'s lowering
 also chose. `intro` therefore has to freshen the second universal's binder, and
-that rename used to move the goal's byte extent from `((k + 1) - k) * 4` into
+that rename used to move the goal's byte span from `((k + 1) - k) * 4` into
 the folded `4`, which no re-lowering of the written range produces. The
 narrowing then had nothing to match, and the refusal said the range had never
 been stated.

@@ -849,8 +849,8 @@ fn stored_pointer_read_definitions_preserve_bounds_and_reject_partial_overwrites
     let _session = VerificationSession::enter();
     let slot = Pointer::symbolic(Variable(987_001));
     let target = Pointer::symbolic(Variable(987_002));
-    let stored = PointerValue::new(target.clone(), ProgramType::Int32Pointer).with_extent(Some(
-        SubobjectExtent {
+    let stored = PointerValue::new(target.clone(), ProgramType::Int32Pointer).with_bounds(Some(
+        SubobjectBounds {
             start: target.clone(),
             width: 4u32.into(),
         },
@@ -867,7 +867,7 @@ fn stored_pointer_read_definitions_preserve_bounds_and_reject_partial_overwrites
         &ConditionTerm::PointerValueEqual(Box::new(read.clone()), Box::new(stored.clone())),
         true
     ));
-    let larger = stored.clone().with_extent(Some(SubobjectExtent {
+    let larger = stored.clone().with_bounds(Some(SubobjectBounds {
         start: target,
         width: 8u32.into(),
     }));
@@ -948,8 +948,8 @@ fn pointer_domain_queries_register_stored_read_definitions_without_prior_address
     assert_eq!(
         [
             EqualityGraph::default().provenance_equal(&read, stored.provenance()),
-            EqualityGraph::default().opaque_extents_equal(&read, stored.opaque_extent().unwrap()),
-            EqualityGraph::default().opaque_extent_is_root(&root_read),
+            EqualityGraph::default().bounds_owners_equal(&read, stored.bounds_owner().unwrap()),
+            EqualityGraph::default().bounds_owner_is_root(&root_read),
         ],
         [true, true, true]
     );
@@ -963,9 +963,9 @@ fn pointer_domain_queries_register_stored_read_definitions_without_prior_address
     assert!(!EqualityGraph::default().provenance_equal(&partial_read, stored.provenance()));
     assert!(
         !EqualityGraph::default()
-            .opaque_extents_equal(&partial_read, stored.opaque_extent().unwrap())
+            .bounds_owners_equal(&partial_read, stored.bounds_owner().unwrap())
     );
-    assert!(!EqualityGraph::default().opaque_extent_is_root(&partial_read));
+    assert!(!EqualityGraph::default().bounds_owner_is_root(&partial_read));
 }
 
 #[test]

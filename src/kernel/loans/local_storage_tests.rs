@@ -52,7 +52,7 @@ fn local_views_preserve_aliases_check_bounds_and_mint_no_owned_escrow() {
         .recover_stable_views(&assumptions, &BTreeMap::new(), &[])
         .unwrap();
     assert!(recovery.resources.is_empty());
-    assert!(recovery.recovered_escrows.is_empty());
+    assert!(recovery.restorations.is_empty());
     assert!(recovery.terminal_ledger.invariant_holds());
     let mut outside = self::plan();
     assert!(

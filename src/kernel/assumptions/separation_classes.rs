@@ -48,7 +48,7 @@ fn pair(left: u64, right: u64) -> Pair {
 }
 
 // A fixed nonempty byte interval is identified by its start address and
-// extent, independently of the pointer spelling or element type.
+// span, independently of the pointer spelling or element type.
 fn fixed_span_bytes(range: &MemoryRange) -> Option<u32> {
     let elements = range
         .signed_constant_end()?
@@ -93,7 +93,7 @@ impl Index {
     fn attach_exact(&mut self, key: Pair, widths: (u32, u32), fact: Proposition) {
         crate::instrumentation::record_deterministic_work(1);
         let spans = self.exact_spans.get(&key).cloned().unwrap_or_default();
-        // Equal address classes and extents denote the same physical spans;
+        // Equal address classes and spans denote the same physical spans;
         // retain one selected authority rather than a growing fact bucket.
         self.exact_spans = self
             .exact_spans

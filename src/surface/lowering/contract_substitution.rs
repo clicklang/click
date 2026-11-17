@@ -843,7 +843,7 @@ fn rewrite_click_proposition_expression(
             let Some(lowered_base) = contract_expression_as_program_expression(&base) else {
                 return (proposition.clone(), false);
             };
-            // Keep the state and both extents exactly as written. This is
+            // Keep the state and both spans exactly as written. This is
             // only a proposed presentation: finish_rewrite lowers it and asks
             // the kernel to match its checked successor before retaining it.
             let mut rewritten = segment.clone();
@@ -2505,6 +2505,11 @@ pub(in crate::surface) fn collect_click_proposition_referenced_names(
 /// Lexical binders remove only named dependencies, never physical declarations.
 pub(in crate::surface) trait ReferencedBinding: Ord + From<String> {
     fn program(binding: &crate::kernel::BindingName) -> Option<Self>;
+    fn captured_value(_value: &ProgramValue, _names: &mut BTreeSet<Self>)
+    where
+        Self: Sized,
+    {
+    }
     fn leave_scope(names: &mut BTreeSet<Self>, binder: &Self) -> bool
     where
         Self: Sized,
@@ -3538,7 +3543,7 @@ pub(in crate::surface) fn pure_function_parameter_argument(
 
 /// Implicit argument conversions also apply when a helper's body is unfolded.
 /// Unlike an authored void-pointer cast, the object-pointer coercion retains
-/// the caller's provenance and selected extent.
+/// the caller's provenance and selected bounds.
 pub(in crate::surface) fn pure_function_parameter_conversion(
     parameter: &FunctionParameter,
 ) -> Option<(ProgramType, crate::kernel::IntegerCastMode)> {
@@ -3556,7 +3561,7 @@ pub(in crate::surface) fn pure_function_parameter_conversion(
 /// The compiler-inserted byte view of a C character pointer named `name`.
 /// A `uint8` predicate parameter reads unsigned bytes even when the source
 /// target's plain `char` is signed. The conversion changes that read type
-/// while retaining the source pointer's selected extent. An authored byte
+/// while retaining the source pointer's selected bounds. An authored byte
 /// cast uses the separate explicit-cast rule and can widen to the root.
 pub(in crate::surface) fn character_byte_view(
     name: impl Into<crate::kernel::BindingName>,
@@ -3702,7 +3707,7 @@ pub(in crate::surface) fn c_unary_with_operand(
     match &mut lowered {
         ProgramExpression::AddressOf(expression) => {
             let mut operand = operand;
-            // A member address selects the field's own extent. Rebuilding
+            // A member address selects the field's own bounds. Rebuilding
             // its source operand must keep that selection around the new
             // field pointer, including after a binding substitution.
             if let (

@@ -43,10 +43,10 @@ awk -F'\t' '$1 != "same" { count[$1 "\t" $2 "\t" $3]++ }
     END { for (key in count) printf "%7d\t%s\n", count[key], key }' "$output" |
     sort -rn | head -40
 echo
-echo "differs, examples (original | spelling | lowered):"
+echo "differs, examples (original | raised | lowered):"
 awk -F'\t' '$1 == "differs" { print $7 " | " $8 " | " $9 }' "$output" |
     cut -c1-300 | sort | uniq -c | sort -rn | head -20
 echo
-echo "unlowered, examples (original | spelling):"
+echo "unlowered, examples (original | raised):"
 awk -F'\t' '$1 == "unlowered" { print $7 " | " $8 }' "$output" |
     cut -c1-300 | sort | uniq -c | sort -rn | head -20

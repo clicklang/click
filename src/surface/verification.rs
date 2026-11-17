@@ -444,8 +444,15 @@ impl<'a> ProgramSourceContext<'a> {
 }
 
 fn collect_applied_theorems(tactics: &[ProofTactic], names: &mut BTreeSet<String>) {
-    for tactic in tactics {
+    for (index, tactic) in tactics.iter().enumerate() {
         match tactic {
+            ProofTactic::Induct { hypothesis, .. } => {
+                let mut subsequent = BTreeSet::new();
+                collect_applied_theorems(&tactics[index + 1..], &mut subsequent);
+                subsequent.remove(hypothesis);
+                names.extend(subsequent);
+                break;
+            }
             ProofTactic::ApplyTheorem(application)
             | ProofTactic::ApplyTheoremUsing { application, .. } => {
                 names.insert(application.name.clone());
@@ -483,16 +490,6 @@ fn collect_applied_theorems(tactics: &[ProofTactic], names: &mut BTreeSet<String
             ProofTactic::Cases(proof_cases) => {
                 for arm in proof_cases.arms() {
                     collect_applied_theorems(arm.tactics(), names);
-                }
-            }
-            ProofTactic::StructuralInduct {
-                hypothesis, arms, ..
-            } => {
-                for arm in arms {
-                    let mut arm_names = BTreeSet::new();
-                    collect_applied_theorems(&arm.tactics, &mut arm_names);
-                    arm_names.remove(hypothesis);
-                    names.extend(arm_names);
                 }
             }
             ProofTactic::Match(proof_match) => {
@@ -719,72 +716,6 @@ pub fn verify_standard_library() -> Result<Vec<VerifiedPureTheorem>, ClickError>
         &ResourceEnvironment::new(&combined_resource_definitions(&empty)?),
         function_source_registry,
     )
-}
-
-#[cfg(test)]
-pub(in crate::surface) fn verify_click_theorems_with_program_sources(
-    click_source: &str,
-    c_sources: &[(&str, &str)],
-) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
-    let sources = ProgramSourceContext::bundle(c_sources);
-    verify_click_theorems_with_context(click_source, &sources)
-}
-
-#[cfg(test)]
-pub(in crate::surface) fn verify_click_theorems_with_context(
-    click_source: &str,
-    sources: &ProgramSourceContext<'_>,
-) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
-    let layouts = parse_c_layouts(click_source, sources)?;
-    let resource_struct_layouts = layouts.struct_layouts.clone();
-    let file = parser::parse_with_layouts_and_aggregate_objects(
-        &sources.with_library_contracts(click_source),
-        layouts,
-    )?;
-    modules::reject_theorem_justification_cycles(&file)?;
-    let parsed_sources = parse_verified_sources_context(&file, sources)?;
-    let (file, parsed_sources) = with_tactic_procedures(file, parsed_sources)?;
-    let predicate_definitions = combined_predicate_definitions(&file)?;
-    let click_function_definitions = combined_click_function_definitions(&file)?;
-    let resource_definitions = combined_resource_definitions(&file)?;
-    let predicate_environment = PredicateEnvironment::new(&predicate_definitions)
-        .with_contracts(file.contract_definitions(), &file.program_function_names);
-    let click_function_environment = ClickFunctionEnvironment::with_algebraic_types(
-        &click_function_definitions,
-        &combined_algebraic_type_definitions(&file)?,
-    );
-    let resource_environment =
-        ResourceEnvironment::with_struct_layouts(&resource_definitions, &resource_struct_layouts);
-    let external_and_user_function_blocks = combined_external_function_blocks(&file)?;
-    let mut function_environment = build_function_environment(
-        &parsed_sources,
-        &external_and_user_function_blocks,
-        file.contract_definitions(),
-        SpecDefinitions::new(&predicate_environment, &click_function_environment)
-            .with_struct_sizes(&file.struct_sizes),
-        &resource_environment,
-    )?
-    .with_byte_order(file.selected_c_target().byte_order());
-    function_environment = with_unselected_tactic_interfaces(&file, function_environment);
-    let refinement_targets = file
-        .theorem_definitions()
-        .iter()
-        .flat_map(|theorem| contract_refinement_targets(&file, theorem.name()))
-        .collect::<BTreeSet<_>>();
-    for target in refinement_targets {
-        let Some(function) = function_environment
-            .get_function(file.program_function_names.get(&target).unwrap_or(&target))
-            .cloned()
-        else {
-            continue;
-        };
-        if let Some(hypothesis) =
-            crate::kernel::program_recursive_function_contract_hypothesis(function)
-        {
-            function_environment = function_environment.with_verified_function_rule(hypothesis);
-        }
-    }
-    verify_click_file_theorems_with_environment(&file, Some(&function_environment))
 }
 
 pub(in crate::surface) fn verify_click_theorem_context(
@@ -1816,12 +1747,6 @@ impl ProgramVerificationSession {
     pub fn function_termination_is_verified(&self, name: &str) -> bool {
         self.verified_function_environment
             .has_verified_function_termination(name)
-    }
-
-    /// Identity of the immutable inputs and resource semantics used by this
-    /// reusable verification session.
-    pub fn environment_identity(&self) -> ProofArtifactIdentity {
-        self.environment_identity
     }
 
     /// Refuses to reuse the retained environment once another verification
@@ -8758,14 +8683,6 @@ pub(in crate::surface) fn program_contract_failure(
             ))
             .at_declaration(name)
         }
-        #[cfg(test)]
-        ProgramContractFailure::MissingReturnEvidence(name) => {
-            let name = name.split_once('#').map_or(name.as_str(), |(name, _)| name);
-            ClickError::new(format!(
-                "contract proof for `{name}` still owes its program termination obligation"
-            ))
-            .at_declaration(name)
-        }
         ProgramContractFailure::Analysis(error) => {
             let located = ClickError::new(format!("could not certify C termination: {error}"));
             match error.function() {
@@ -8825,6 +8742,40 @@ pub(in crate::surface) fn program_contract_failure(
                     unreachable!("the program root was opened into its declared goals")
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod induction_dependency_tests {
+    use super::*;
+
+    #[test]
+    fn induction_hypothesis_is_local_only_after_its_declaration() {
+        let source = r#"
+            spec enum Chain { Nil, Link(Chain), }
+            theorem reflexive(xs: Chain) {
+                ensures xs == xs by {
+                    apply(ih());
+                    let ih = induct(xs);
+                    match xs {
+                        Chain::Nil => { apply(helper()); }
+                        Chain::Link(tail) => { apply(ih(tail)); }
+                    }
+                }
+            }
+        "#;
+        for (text, expected) in [
+            (source.to_string(), vec!["helper", "ih"]),
+            (source.replace("apply(ih());", ""), vec!["helper"]),
+        ] {
+            let file = crate::surface::parse(&text).unwrap();
+            let mut names = BTreeSet::new();
+            collect_applied_theorems_from_proof(
+                file.theorem_definitions()[0].ensures()[0].proof(),
+                &mut names,
+            );
+            assert_eq!(names, expected.into_iter().map(String::from).collect());
         }
     }
 }

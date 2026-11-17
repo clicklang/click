@@ -852,39 +852,6 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             }
             line(output, &prefix, "}");
         }
-        ProofTactic::StructuralInduct {
-            parameter,
-            hypothesis,
-            arms,
-        } => {
-            line(
-                output,
-                &prefix,
-                &format!("induct({parameter}) as {hypothesis} {{"),
-            );
-            for arm in arms {
-                let pattern = if arm.bindings.is_empty() {
-                    format!("{}::{}", arm.type_name, arm.variant)
-                } else {
-                    format!(
-                        "{}::{}({})",
-                        arm.type_name,
-                        arm.variant,
-                        arm.bindings.join(", ")
-                    )
-                };
-                line(
-                    output,
-                    &format!("{prefix}    "),
-                    &format!("{pattern} => {{"),
-                );
-                for tactic in &arm.tactics {
-                    write_tactic(output, tactic, indent + 2);
-                }
-                line(output, &format!("{prefix}    "), "}");
-            }
-            line(output, &prefix, "}");
-        }
         ProofTactic::ApplyInduction {
             hypothesis,
             arguments,
@@ -1513,7 +1480,6 @@ fn format_click_function_application(application: &ClickFunctionApplication) -> 
 fn format_fact_source(source: &ProofFactSource) -> String {
     match source {
         ProofFactSource::Requirement(index) => format!("requirement {index}"),
-        ProofFactSource::Invariant(index) => format!("invariant {index}"),
     }
 }
 

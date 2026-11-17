@@ -415,7 +415,7 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
             &facts,
             (
                 &Pointer::symbolic(Variable(988_406)),
-                cursor_value.opaque_extent()
+                cursor_value.bounds_owner()
             )
         ));
         assert!(!permits(
@@ -578,7 +578,7 @@ fn modeled_pointer_alias_field_lookup_scales_with_selected_addresses() {
 
 #[test]
 #[ignore = "nightly: 0.6s in the parallel gate"]
-fn mixed_extent_read_hits_and_misses_do_not_scan_unrelated_ranges() {
+fn mixed_span_read_hits_and_misses_do_not_scan_unrelated_ranges() {
     let mut samples = Vec::new();
     for size in [16_u32, 64, 256, 1024] {
         let base = Pointer::symbolic(Variable(851_030));
@@ -905,4 +905,62 @@ fn constant_owner_overlap_does_not_scan_covering_views() {
 #[test]
 fn constant_owner_overlap_merges_class_payload_without_scanning_it() {
     check_constant_owner_overlap_population(false, true);
+}
+
+#[test]
+fn cold_singleton_return_checks_do_not_enumerate_loaded_pointer_alias_stars() {
+    let mut samples = Vec::new();
+    for count in [4u64, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Pointer::symbolic(Variable(9_980_000));
+        let memory = crate::kernel::intern_memory_ref(
+            &Memory::new().with_block(field.block.clone(), C_POINTER_BYTE_WIDTH),
+        );
+        let query = Pointer::loaded_value(&memory, &field);
+        let held = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(9_980_001)), 4),
+        };
+        let mut facts = PureFactContext::new();
+        for index in 0..count {
+            facts = facts.assume_condition(
+                ConditionTerm::pointer_equal(
+                    query.clone(),
+                    Pointer::symbolic(Variable(9_981_000 + index)),
+                ),
+                true,
+            );
+        }
+        let range =
+            |pointer, end| MemoryRange::new_with_element_width(pointer, 0u32.into(), end, 1);
+        let frame = ResourceContext::new()
+            .unchecked_with_fact(ResourceFact::own_memory(range(held.clone(), 4u32.into())));
+        let new_owner = ResourceFact::own_memory(range(
+            query.clone(),
+            MachineTerm::Variable(Variable(9_980_002)),
+        ));
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let _fast = crate::kernel::search::FastOperationScope::enter(
+                "cold singleton returned frontier",
+            );
+            assert!(matches!(
+                frame.constant_owned_overlap(&new_owner, &facts),
+                ConstantOwnedOverlap::Clear
+            ));
+        });
+        samples.push(work);
+        let aliased =
+            facts.assume_condition(ConditionTerm::pointer_equal(query.clone(), held), true);
+        assert!(matches!(
+            frame.constant_owned_overlap(
+                &ResourceFact::own_memory(range(query, 4u32.into())),
+                &aliased
+            ),
+            ConstantOwnedOverlap::Overlap(_)
+        ));
+    }
+    assert!(
+        samples[2] <= samples[0] * 3 + 128,
+        "loaded pointer stars: {samples:?}"
+    );
 }

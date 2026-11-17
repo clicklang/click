@@ -377,7 +377,7 @@ fn construction_temporary_retirement_preserves_copies_and_external_backing() {
             panic!("one materialization path");
         };
         let StatementOutcome::Normal(state) = &path.outcome else {
-            panic!("materialization must finish");
+            panic!("materialization must finish: {:?}", path.outcome);
         };
         let temporary = state
             .locals
@@ -911,7 +911,7 @@ fn symbolic_construction_initialization_survives_havoc_and_intersects_at_join() 
 // Substitution retains the byte footprint even at a nonzero offset. This
 // metadata does not authorize resizing the caller object or subobject construction.
 #[test]
-fn symbolic_construction_initialization_substitution_preserves_extent() {
+fn symbolic_construction_initialization_substitution_preserves_size() {
     let _session = crate::kernel::VerificationSession::enter();
     let variable = Variable(870_012);
     let source = Pointer::symbolic(variable);
@@ -1267,7 +1267,10 @@ fn value_only_constructor_preserves_descriptor_across_result_copy_chains() {
                 outcome: StatementOutcome::Normal(state),
                 ..
             } => state,
-            _ => panic!("descriptor construction and copies must complete"),
+            Proposition::ProgramStatementVerifies { outcome, .. } => {
+                panic!("descriptor construction and copies must complete: {outcome:?}")
+            }
+            _ => panic!("descriptor construction and copies must produce a statement outcome"),
         };
         let result = state.locals.aggregate_object_pointer("result").unwrap();
         let backing = state.locals.slot("backing").unwrap();
@@ -1361,7 +1364,7 @@ mod scaling_tests {
 }
 
 #[test]
-fn aggregate_return_temporary_copy_requires_its_recorded_extent() {
+fn aggregate_return_temporary_copy_requires_its_recorded_size() {
     let layout = node_layout();
     let temporary = Pointer::verifier_temporary(Variable(870_101));
     let source = PointerValue::new(temporary.clone(), ProgramType::UInt8Pointer);

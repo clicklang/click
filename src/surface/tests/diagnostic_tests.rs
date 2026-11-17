@@ -857,7 +857,7 @@ fn execution_effect_diagnostics_omit_raw_memory_states() {
             before,
             after,
             allocation_base: pointer,
-            bytes: crate::kernel::HeapExtent::int32(MachineTerm::constant(4)),
+            bytes: crate::kernel::AllocationSize::int32(MachineTerm::constant(4)),
         }),
     ];
 
@@ -1004,27 +1004,6 @@ fn exhausted_work_budget_outweighs_missing_path_goal_diagnostic() {
         "{error:?}"
     );
     assert!(!error.message().contains("missing path goal"), "{error:?}");
-}
-
-#[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_07")]
-fn solve_uses_assumed_compound_proposition() {
-    let proposition = Proposition::Or(
-        Box::new(Proposition::Predicate {
-            name: "left".to_string(),
-            arguments: Vec::new(),
-        }),
-        Box::new(Proposition::Predicate {
-            name: "right".to_string(),
-            arguments: Vec::new(),
-        }),
-    );
-    let assumptions = PureFactContext::new().assume_proposition(proposition.clone());
-
-    assert_eq!(
-        solve_proposition(&proposition, &assumptions),
-        NormalizedProposition::True
-    );
 }
 
 #[test]
@@ -2418,7 +2397,8 @@ fn pure_theorem_generic_and_structural_induction_emit_written_tactics() {
     theorem reflexive<T>(x: T) { ensures x == x by { normalize(); } }
     theorem induction_shape(xs: TestList<int32>) {
         ensures xs == xs by {
-            induct(xs) as ih {
+            let ih = induct(xs);
+            match xs {
                 TestList::Nil => { normalize(); }
                 TestList::Cons(head, tail) => { apply(ih(tail)); normalize(); }
             }
@@ -2432,11 +2412,11 @@ fn pure_theorem_generic_and_structural_induction_emit_written_tactics() {
     )));
     assert!(events.iter().any(|event| matches!(event,
         VerificationEvent::TacticStarted(tactic) if tactic.claim == "induction_shape.ensures_0"
-            && tactic.class == "control" && tactic.source_tactic_path.as_deref() == Some(&[0])
+            && tactic.class == "control" && tactic.source_tactic_path.as_deref() == Some(&[1])
     )));
     assert!(events.iter().any(|event| matches!(event,
         VerificationEvent::TacticStarted(tactic) if tactic.claim == "induction_shape.ensures_0"
-            && tactic.source_tactic_path.as_deref() == Some(&[2])
+            && tactic.source_tactic_path.as_deref() == Some(&[3])
     )));
 }
 
@@ -3393,7 +3373,7 @@ fn native_view_solve_distinguishes_a_rejected_kernel_query() {
         "{report}"
     );
     assert!(!report.contains("accepted by the kernel"), "{report}");
-    assert!(!report.contains("valid 32-bit byte extent"), "{report}");
+    assert!(!report.contains("valid 32-bit byte span"), "{report}");
 }
 
 #[test]
@@ -4483,7 +4463,6 @@ test_batches! {
     ],
     diagnostic_batch_07: [
         exhausted_work_budget_outweighs_missing_path_goal_diagnostic,
-        solve_uses_assumed_compound_proposition,
         failed_algebraic_solve_reports_claim_without_internal_schema_dump,
         failed_compound_algebraic_solve_renders_the_goal_once_without_a_debug_dump,
     ],

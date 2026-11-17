@@ -1,7 +1,7 @@
 # Separation may name a reversed range without granting access
 
 The endpoints make a reversed range whose wrapped difference is two. Naming
-it in separation adds no extent fact or access permission. The independent
+it in separation adds no span fact or access permission. The independent
 ownership clause authorizes the read of `b[0]`.
 
 ```c filename=a_separation_over_a_reversed_range_is_refused.c

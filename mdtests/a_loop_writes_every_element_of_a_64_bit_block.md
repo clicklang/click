@@ -1,7 +1,7 @@
 # A loop writes every element of a 64-bit block
 
 A loop over a `size_t` index writes each element of a block with a 64-bit
-extent. The loop keeps the block's wide range `p[0..n]` like any owned range;
+size. The loop keeps the block's wide range `p[0..n]` like any owned range;
 the `allocation` token stays outside the loop, and `free` consumes both.
 
 ```c filename=a_loop_writes_every_element_of_a_64_bit_block.c

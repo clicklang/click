@@ -1,7 +1,7 @@
 # Native views support checked same-base prefixes
 
 Counts remain unsigned 64-bit values. The symbolic prefix is not limited to
-32-bit lengths, and wider element types compare their complete byte extents.
+32-bit lengths, and wider element types compare their complete byte spans.
 
 ```c filename=native_prefix.c
 void byte_prefix(const unsigned char *p, unsigned long held, unsigned long requested) {}

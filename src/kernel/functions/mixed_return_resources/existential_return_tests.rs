@@ -65,7 +65,7 @@ fn existential_returns_carry_the_producers_witness_and_independent_child_ids() {
         &state,
         &facts,
     );
-    assert!(bodies.1.is_empty());
+    assert!(!bodies.0.is_empty());
     let mut children = BTreeSet::new();
     for occurrence in &evaluated.occurrences {
         let body = bodies.get(occurrence.source).unwrap();
@@ -93,8 +93,6 @@ fn existential_returns_carry_the_producers_witness_and_independent_child_ids() {
         &evaluated.resources,
         &transfers,
         &bodies,
-        &[],
-        &state,
         &facts,
         &destination,
     )
@@ -136,8 +134,6 @@ fn existential_witness_memory_does_not_receive_parameter_borrow_custody() {
                 .unwrap(),
             Some(body),
         )),
-        &[],
-        &Memory::new(),
         &facts,
     );
     let Some(RuntimeError::ProducedCompositeOverlapsHeldResource {
@@ -211,7 +207,7 @@ fn viewed_existential_children_keep_their_binding_and_never_gain_owned_custody()
 }
 
 #[test]
-fn unsupported_existentials_stay_legacy_and_migrated_failures_do_not_retry() {
+fn unsupported_existentials_refuse_and_migrated_failures_do_not_retry() {
     let facts = PureFactContext::new();
     let evaluated = existential_outputs(Pointer::symbolic(Variable(8_850_003)), 1, &facts);
     let source = evaluated.occurrences[0].source;
@@ -228,20 +224,23 @@ fn unsupported_existentials_stay_legacy_and_migrated_failures_do_not_retry() {
             )),
             _ => definition.witnesses = vec![program_parameter("hidden", ProgramType::Int32)],
         }
-        let bodies = ConstructedReturnBodies::construct(
+        let bodies = ConstructedReturnBodies::try_construct(
             &evaluated,
             &[definition],
             &ExecutionState::new(),
+            ReturnResourceComposition::ValidateDescriptions,
             &facts,
         );
         if variant == 0 {
-            assert_eq!(bodies.get(source).unwrap().witnesses[&source].len(), 2);
-            assert!(bodies.1.is_empty());
+            assert_eq!(
+                bodies.unwrap().get(source).unwrap().witnesses[&source].len(),
+                2
+            );
         } else {
-            assert!(bodies.get(source).is_none());
-            assert!(bodies.1.contains(&source));
+            assert!(bodies.is_none());
         }
     }
+
     let mut invalid = existential_definition(1);
     invalid.contains.push(invalid.contains[1].clone());
     assert!(
@@ -338,7 +337,7 @@ fn nested_existential_returns_keep_bindings_and_do_not_infer_them_from_siblings(
         &ExecutionState::new(),
         &facts,
     );
-    assert!(bodies.1.is_empty());
+    assert!(!bodies.0.is_empty());
     let body = bodies.get(source).unwrap();
     let values = &body.witnesses[&source];
     assert_eq!(values.len(), 2);

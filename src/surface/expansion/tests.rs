@@ -101,7 +101,8 @@ theorem typed_tail(items: List<struct node*>) {
 }
 theorem list_has_typed_heads(xs: List<struct node*>) {
     ensures 0 == 0 by {
-        induct(xs) as ih {
+        let ih = induct(xs);
+        match xs {
             List::Nil => { normalize(); }
             List::Cons(head, tail) => {
                 apply(typed_head(head));
@@ -993,7 +994,8 @@ spec enum TestList<T> {
 
 theorem reflexive(xs: TestList<int32>) {
     ensures xs == xs by {
-        induct(xs) as ih {
+        let ih = induct(xs);
+        match xs {
             TestList::Nil => {
                 solve();
             }
@@ -1011,25 +1013,29 @@ theorem reflexive(xs: TestList<int32>) {
         vec![
             SmartTacticSourceSite {
                 claim_label: "reflexive.ensures_0".to_string(),
-                source_index: 1,
+                source_index: 2,
                 tactic_name: "solve".to_string(),
                 position: position_at_offset(click_source, click_source.find("solve();").unwrap()),
             },
             SmartTacticSourceSite {
                 claim_label: "reflexive.ensures_0".to_string(),
-                source_index: 2,
+                source_index: 3,
                 tactic_name: "solve".to_string(),
                 position: position_at_offset(click_source, click_source.rfind("solve();").unwrap()),
             },
         ]
     );
-    let position = c_tactic_source_position(click_source, &[], "reflexive.ensures_0", 1)
+    let position = c_tactic_source_position(click_source, &[], "reflexive.ensures_0", 2)
         .expect("the first induction arm should have a source position");
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("a smart tactic in an induction arm should expand");
     assert!(expanded.contains("TestList::Nil => {\n                known();"));
     assert!(expanded.contains("TestList::Cons(head, tail) => {\n                known();"));
-    verify_c_sources(&expanded, &[]).expect("the expanded structural proof should re-verify");
+    assert!(expanded.contains("let ih = induct(xs);"));
+    assert!(expanded.contains("match xs {"));
+    assert!(!expanded.contains(" as ih"));
+    crate::surface::without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+        .expect("the expanded structural proof should cold-replay");
 }
 
 fn expand_top_level_tactic_for_test(
@@ -3094,17 +3100,14 @@ theorem ordinary(x: int32) {
     ensures x == x by { solve(); }
 }
 "#;
-    verify_click_theorems_with_program_sources(source, &[]).unwrap();
+    verify_click_theorems(source).unwrap();
     let sites = c_smart_tactic_source_sites(source, &[]).unwrap();
     assert_eq!(sites.len(), 1);
     assert_eq!(sites[0].claim_label, "ordinary.ensures_0");
     assert_eq!(sites[0].tactic_name, "solve");
     assert!(
-        verify_click_theorems_with_program_sources(
-            &source.replace("ensures left == right", "ensures left != right"),
-            &[]
-        )
-        .is_err(),
+        verify_click_theorems(&source.replace("ensures left == right", "ensures left != right"))
+            .is_err(),
         "kernel axiom declarations must still be checked"
     );
 }

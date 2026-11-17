@@ -72,7 +72,7 @@ remains supported.
   constructors. See [Proposition reasoning](#proposition-reasoning).
 - `intro()`: assume an implication's antecedent or fix a universal's
   variable. See [Proposition reasoning](#proposition-reasoning).
-- `let ih = induct(n)` or `induct(xs) as ih { ... }`, with `apply(ih(m))`: prove
+- `let ih = induct(value)`, with `apply(ih(m))`: prove
   a pure theorem by induction. See
   [Proposition reasoning](#proposition-reasoning).
 - `rewrite(from, to)`: rewrite the goal with an available equality. See
@@ -1118,8 +1118,7 @@ step is still checked.
 | `apply(theorem(args)) using { P; ... }` | simple | Expansion output | Apply a theorem using written premises. | [Reference](#theorem-application-with-selected-premises) |
 | `unfold(function(args))` | simple | Core | Open one layer of a pure function. | [Reference](#unfolding-pure-functions) |
 | `match value [ensuring { ... }] { Type::Variant(fields) => { ... } ... }` | control | Core | Prove each constructor case of an algebraic value. | [Reference](#constructor-matches) |
-| `let ih = induct(n)` | simple | Core | Introduce strong induction on a nonnegative `int32` or a `uint64`. | [Reference](#scalar-induction) |
-| `induct(xs) as ih { Type::Variant(fields) => { ... } ... }` | control | Core | Prove constructor cases with recursive hypotheses. | [Reference](#algebraic-induction) |
+| `let ih = induct(value)` | simple | Core | Introduce scalar or structural induction. | [Reference](#proposition-reasoning) |
 | `apply(ih(m))` | smart | Core | Apply an induction hypothesis, looking up its premises. | [Reference](#induction-hypothesis-application) |
 | `apply(ih(m)) using { P; ... }` | simple | Expansion output | Apply an induction hypothesis using written premises. | [Reference](#induction-hypotheses-with-selected-premises) |
 | `have P by { ... }` | control | Core | Prove and retain a named or unnamed fact. | [Reference](#intermediate-facts) |
@@ -2172,7 +2171,7 @@ by identity; it does not unfold the resource or enumerate its other fields.
 Split expressions involving different resource fields into individual links.
 Supported field values include algebraic values, mathematical `Integer`,
 abstract C values, pointers, and the integer types listed above.
-A byte read retains its one-byte storage extent even though C promotes its
+A byte read retains its one-byte storage size even though C promotes its
 equality to `int32`; separating one byte never licenses a four-byte read. The
 result is oriented after-to-before. Logical read producers
 retain their complete typed values under the exact version point, address, and read
@@ -2185,7 +2184,7 @@ checking does not retain these observations. Missing observations fail locally;
 no alias or history fallback runs.
 Pointer preservation also accepts address equality when the pointer domains
 already agree. Equality composition uses ordinary `rewrite` and `known` steps.
-Footprints can record non-memory resources, symbolic release extents, and
+Footprints can record non-memory resources, symbolic release spans, and
 multiple mutable call resources. Wide-index memory ranges are not yet supported.
 Joined branch/loop footprints still need
 producer integration; use recorded individual transitions where available.
@@ -2270,10 +2269,10 @@ fact. Write `rewrite(x, y)`; the old `rewrite(x == y)` form is refused.
   range premise and does not turn a machine equality into an Integer one.
   The conversion is bounded to 64 nodes in the cited equality.
 - A pointer equality rewrites the base of an explicit `viewable(...)` claim
-  while preserving the point it is stated at and its byte extent. A cited shifted view
-  whose extent is `(i + 4) - i` also covers the same address with a literal
-  four-byte extent; constant endpoint differences are compared in the
-  extent's own modular arithmetic.
+  while preserving the point it is stated at and its byte span. A cited shifted view
+  whose span is `(i + 4) - i` also covers the same address with a literal
+  four-byte span; constant endpoint differences are compared in the
+  span's own modular arithmetic.
 - A pointer equality also rewrites the addresses of loads read through the
   pointer, including byte reads observed with `to_integer` and a pointer that
   is itself loaded (`o->in->cells[2]` under `o->in == a`); it keeps the read's
@@ -2847,7 +2846,7 @@ top-level `let ih = induct(n)`, when:
   measure needs no domain fact.
 
 It adds one fact, `ih`: for every `m` of the measure's type, `m >= 0` (signed
-only), `m < n`, and every theorem requirement at `m`, together with the extent
+only), `m < n`, and every theorem requirement at `m`, together with the span
 halves of each range that requirement names at `m`, imply the theorem's goal
 at `m`. Every other parameter keeps its current value. The goal is unchanged.
 Earlier helper proofs may precede `induct`; the hypothesis is unavailable
@@ -2862,7 +2861,7 @@ before its declaration. The script then uses `ih` through `apply(ih(m))` or
   induction while the original theorem goal remains focused.
 - A parameter of another C width (`uint32`, `int64`, ...), an `Integer`, or an
   algebraic value: induct on an `int32` or `uint64` parameter, or use
-  `induct(xs) as ih { ... }` for an algebraic one.
+  `let ih = induct(xs);` followed by `match xs { ... }` for an algebraic one.
 - A signed domain that only follows from other facts, such as `0 <= m` and
   `m <= n`: prove `have n >= 0;` before `induct`.
 - `induct` in a C function proof: state the property as a pure theorem and
@@ -2888,12 +2887,21 @@ and [`scalar_induction_domain_needs_a_bound_on_the_measure.md`](https://github.c
 
 ### Algebraic induction
 
-**Form:** `induct(xs) as ih { Type::Variant(fields) => { ... } ... }`
+**Form:** `let ih = induct(xs);` followed by
+`match xs { Type::Variant(fields) => { ... } ... }`.
 
 **Core.** Prove a pure theorem for a recursive algebraic parameter by exhaustive
 constructor cases; each immediate recursive field admits `ih(field)`, and
 `ih(field, other, ...)` states the theorem at that field and any well-typed
 terms in the remaining parameter positions.
+
+The declaration and its exhaustive `match` are the two top-level tactics in
+this form of a pure theorem proof. The match must inspect the inducted
+parameter itself. Each arm proves the theorem goal; a join `ensuring`
+interface is not supported. Both statements use the ordinary `induct` and
+`match` Surface and certificate nodes. Expansion preserves the declaration
+and expands the proofs inside the match arms. The retired
+`induct(xs) as ih { ... }` spelling is refused.
 
 **Failure, checking, and tools:**
 
@@ -2940,12 +2948,12 @@ type (any expression, such as `n - 1` or `n - 1u64`), when:
 - Every listed `P` is an available fact, read as `using` lists read premises:
   exactly, under another form of the same order claim (`0 <= m` for
   `m >= 0`, `n > m` for `m < n`), or true without facts. Listing a range a
-  clause stated also cites its two extent halves where they are available.
+  clause stated also cites its two span halves where they are available.
   Extra or repeated premises are allowed.
 - Every guard of the hypothesis at `m`, split into its `and` conjuncts, is
   true by context-free evaluation or is one listed premise under one of those
   forms. The guards are `m >= 0` (signed only), `m < n`, each requirement
-  at `m`, and the extent halves of every range a requirement names at `m`.
+  at `m`, and the span halves of every range a requirement names at `m`.
 
 It adds the theorem's goal at `m` as a fact and closes the current goal when
 that fact is the goal. Nothing else in context is read.
@@ -2974,8 +2982,8 @@ available: n - 2 < n``). Click performs one local instantiation with no premise
 search; expansion is unchanged.
 
 **Checked examples:** [`pure_induction_countdown_explicit.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown_explicit.md),
-[`induction_hypothesis_cites_a_listed_range_with_its_extent.md`](https://github.com/clicklang/click/blob/master/mdtests/induction_hypothesis_cites_a_listed_range_with_its_extent.md),
-and [`induction_hypothesis_owes_the_range_extent.md`](https://github.com/clicklang/click/blob/master/mdtests/induction_hypothesis_owes_the_range_extent.md).
+[`induction_hypothesis_cites_a_listed_range_with_its_span.md`](https://github.com/clicklang/click/blob/master/mdtests/induction_hypothesis_cites_a_listed_range_with_its_span.md),
+and [`induction_hypothesis_owes_the_range_span.md`](https://github.com/clicklang/click/blob/master/mdtests/induction_hypothesis_owes_the_range_span.md).
 
 ### Intermediate facts
 
@@ -3408,7 +3416,7 @@ pure theorem too, where the listed premises are all there is to read.
   without facts. A quantified premise may name its own binder: a call's
   postcondition held under the binder its lowering chose is cited by a written
   form with another, as in `apply using`. Listing a stated range also cites
-  its two extent halves.
+  its two span halves.
 - The source `P` is a listed premise, follows from the listed premises by the
   kernel's atomic derivation (`old(p[0]) <= 7` from `old(p[0]) == 7`), or is
   a reflexive equality, under binders and guards, which needs no entry. At a
@@ -3545,7 +3553,7 @@ Beyond it:
 
 - A `viewable` target is decided by the kernel's viewability rules, so a range
   narrows to a sub-range the listed order facts place inside it, provided the
-  source range is established to be a valid 32-bit byte extent.
+  source range is established to be a valid 32-bit byte span.
 - A fact about an application of an `Integer` range-fold function whose body
   the kernel checks, reading its one `T[]` argument (for a C integer `T` such
   as `int32` or `uint64`) only at the fold's own index, crosses each store and

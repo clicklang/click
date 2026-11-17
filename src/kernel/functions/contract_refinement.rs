@@ -60,7 +60,7 @@ pub(super) fn checked_access_mode_refinement_adapter(
         contract_entry,
         contract.resource_requires(),
         contract.composite_resource_definitions(),
-        &assumptions.clone().assume_entry_clause_extents(),
+        &assumptions.clone().assume_entry_clause_spans(),
         budget,
     )?
     else {
@@ -70,7 +70,7 @@ pub(super) fn checked_access_mode_refinement_adapter(
         function_entry,
         function.resource_requires(),
         function.composite_resource_definitions(),
-        &assumptions.clone().assume_entry_clause_extents(),
+        &assumptions.clone().assume_entry_clause_spans(),
         budget,
     )?
     else {
@@ -136,6 +136,7 @@ pub(super) fn checked_access_mode_refinement_adapter(
         .with_resource_context(function_resources);
     let ContractReturnResources {
         output_resources: _,
+        escrow_boundary,
         return_resources: returned,
         ensured_views: returned_views,
         produced_borrowing_pieces,
@@ -164,6 +165,7 @@ pub(super) fn checked_access_mode_refinement_adapter(
         &callee,
         &transfer,
         returned,
+        escrow_boundary,
         assumptions,
         assumptions,
         &[],

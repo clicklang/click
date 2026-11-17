@@ -1667,7 +1667,7 @@ fn normalizing_an_opaque_word_pointer_does_not_search_unrelated_call_resources()
         else {
             panic!("expected pointer")
         };
-        assert!(!pointer.extent_is_known());
+        assert!(!pointer.bounds_are_known());
         let context = context.assume_condition(ConditionTerm::Variable(Variable(989_703)), true);
         let (normalized, work) = crate::instrumentation::measure_deterministic_work(|| {
             context.pointer_value_at_entry(&pointer)
@@ -1676,8 +1676,8 @@ fn normalizing_an_opaque_word_pointer_does_not_search_unrelated_call_resources()
         if size == 16 {
             // A full pointer premise still supplies the selected member bounds.
             let root = Pointer::symbolic(Variable(989_704));
-            let bounded = PointerValue::new(root.clone(), ProgramType::Int32Pointer).with_extent(
-                Some(SubobjectExtent {
+            let bounded = PointerValue::new(root.clone(), ProgramType::Int32Pointer).with_bounds(
+                Some(SubobjectBounds {
                     start: root,
                     width: 4u32.into(),
                 }),
@@ -1687,8 +1687,8 @@ fn normalizing_an_opaque_word_pointer_does_not_search_unrelated_call_resources()
                 true,
             );
             assert_eq!(
-                related.pointer_value_at_entry(&pointer).extent(),
-                bounded.extent()
+                related.pointer_value_at_entry(&pointer).bounds(),
+                bounded.bounds()
             );
         }
         work
@@ -1813,8 +1813,8 @@ fn complete_pointer_read_definitions_scale_with_selected_reads() {
         for i in 0..selected {
             let slot = Pointer::symbolic(Variable(983_000 + i));
             let target = Pointer::symbolic(Variable(984_000 + i));
-            let stored = PointerValue::new(target.clone(), ProgramType::Int32Pointer).with_extent(
-                Some(SubobjectExtent {
+            let stored = PointerValue::new(target.clone(), ProgramType::Int32Pointer).with_bounds(
+                Some(SubobjectBounds {
                     start: target,
                     width: 4u32.into(),
                 }),

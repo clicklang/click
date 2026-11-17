@@ -239,30 +239,6 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_execution_statement(
     walk_execution_statement(statement, &BitvectorSubstitution { from, to })
 }
 
-pub(in crate::kernel) fn substitute_bitvector_variable_in_program_expression_outcome(
-    outcome: &ExpressionOutcome,
-    from: Variable,
-    to: &MachineTerm,
-) -> ExpressionOutcome {
-    walk_program_expression_outcome(outcome, &BitvectorSubstitution { from, to })
-}
-
-pub(in crate::kernel) fn substitute_bitvector_variable_in_execution_statement_outcome(
-    outcome: &StatementOutcome,
-    from: Variable,
-    to: &MachineTerm,
-) -> StatementOutcome {
-    walk_execution_statement_outcome(outcome, &BitvectorSubstitution { from, to })
-}
-
-pub(in crate::kernel) fn substitute_bitvector_variable_in_program_function_outcome(
-    outcome: &FunctionOutcome,
-    from: Variable,
-    to: &MachineTerm,
-) -> FunctionOutcome {
-    walk_program_function_outcome(outcome, &BitvectorSubstitution { from, to })
-}
-
 fn substitute_bitvector_variable_in_execution_state(
     state: &ExecutionState,
     from: Variable,
@@ -359,30 +335,6 @@ fn substitute_pointer_variable_in_execution_statement(
     to: &Pointer,
 ) -> ProgramStatement {
     walk_execution_statement(statement, &PointerSubstitution { from, to })
-}
-
-fn substitute_pointer_variable_in_program_expression_outcome(
-    outcome: &ExpressionOutcome,
-    from: Variable,
-    to: &Pointer,
-) -> ExpressionOutcome {
-    walk_program_expression_outcome(outcome, &PointerSubstitution { from, to })
-}
-
-fn substitute_pointer_variable_in_execution_statement_outcome(
-    outcome: &StatementOutcome,
-    from: Variable,
-    to: &Pointer,
-) -> StatementOutcome {
-    walk_execution_statement_outcome(outcome, &PointerSubstitution { from, to })
-}
-
-fn substitute_pointer_variable_in_program_function_outcome(
-    outcome: &FunctionOutcome,
-    from: Variable,
-    to: &Pointer,
-) -> FunctionOutcome {
-    walk_program_function_outcome(outcome, &PointerSubstitution { from, to })
 }
 
 fn substitute_pointer_variable_in_execution_state(
@@ -1271,7 +1223,6 @@ fn walk_execution_statement_outcome<S: VariableSubstitution + ?Sized>(
 
 fn walk_loop_effect<S: VariableSubstitution + ?Sized>(effect: &LoopEffect, s: &S) -> LoopEffect {
     match effect {
-        LoopEffect::Immutable => LoopEffect::Immutable,
         LoopEffect::Mutable(segments) => LoopEffect::Mutable(
             segments
                 .iter()
@@ -1735,12 +1686,12 @@ fn walk_memory_range<S: VariableSubstitution + ?Sized>(range: &MemoryRange, s: &
             s.bitvector(range.bound_terms().1),
         )
         .with_provenance(std::sync::Arc::new(s.pointer(&range.provenance)))
-        .with_opaque_extent(
+        .with_bounds_owner(
             range
-                .opaque_extent
+                .bounds_owner
                 .as_deref()
                 .map(|origin| std::sync::Arc::new(s.pointer(origin))),
-            range.carrier_extent_known,
+            range.carrier_bounds_known,
         );
     if !range.formation_coverage.is_empty() {
         result.formation_coverage = range
@@ -2304,6 +2255,7 @@ fn capture_avoiding_algebraic_quantifier_body(
 /// fresh variable first, then install the requested replacements in a second
 /// pass.  The ordinary substitution routine handles capture avoidance at each
 /// quantifier boundary.
+#[cfg(test)]
 pub(in crate::kernel) fn substitute_bitvector_variables_in_proposition(
     proposition: &Proposition,
     substitutions: &BTreeMap<Variable, MachineTerm>,
@@ -2567,15 +2519,6 @@ fn collect_term_bound_variables(term: &Term, variables: &mut BTreeSet<Variable>)
         Term::ProgramValue(value) => collect_program_value_bound_variables(value, variables),
         Term::Sequence(sequence) => collect_sequence_bound_variables(sequence, variables),
         Term::Algebraic(term) => collect_algebraic_bound_variables(term, variables),
-        Term::ExpressionOutcome(outcome) => {
-            collect_expression_outcome_bound_variables(outcome, variables)
-        }
-        Term::StatementOutcome(outcome) => {
-            collect_statement_outcome_bound_variables(outcome, variables)
-        }
-        Term::FunctionOutcome(outcome) => {
-            collect_function_outcome_bound_variables(outcome, variables)
-        }
         Term::ExecutionState(state) => collect_execution_state_bound_variables(state, variables),
         Term::Memory(memory) => collect_memory_bound_variables(memory, variables),
     }
@@ -2836,10 +2779,9 @@ pub(in crate::kernel) fn collect_execution_statement_bound_variables(
 }
 
 fn collect_loop_effect_bound_variables(effect: &LoopEffect, variables: &mut BTreeSet<Variable>) {
-    if let LoopEffect::Mutable(segments) = effect {
-        for segment in segments {
-            collect_memory_segment_bound_variables(segment, variables);
-        }
+    let LoopEffect::Mutable(segments) = effect;
+    for segment in segments {
+        collect_memory_segment_bound_variables(segment, variables);
     }
 }
 
@@ -3758,15 +3700,6 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
                 },
             },
         }),
-        Term::ExpressionOutcome(outcome) => Term::ExpressionOutcome(
-            substitute_bitvector_variable_in_program_expression_outcome(outcome, from, to),
-        ),
-        Term::StatementOutcome(outcome) => Term::StatementOutcome(Box::new(
-            substitute_bitvector_variable_in_execution_statement_outcome(outcome, from, to),
-        )),
-        Term::FunctionOutcome(outcome) => Term::FunctionOutcome(Box::new(
-            substitute_bitvector_variable_in_program_function_outcome(outcome, from, to),
-        )),
         Term::Memory(memory) => {
             Term::Memory(substitute_bitvector_variable_in_memory(memory, from, to))
         }
@@ -6417,7 +6350,7 @@ fn state_size_substitution_preserves_declared_types_and_write_protection() {
     let mut memory =
         Memory::new().with_declared_scalar_block("local:word".into(), 4, ProgramType::UInt32);
     let mut read_only = MemoryBlock::read_only(4);
-    read_only.size = HeapExtent::int32(MachineTerm::Variable(from));
+    read_only.size = AllocationSize::int32(MachineTerm::Variable(from));
     std::sync::Arc::make_mut(&mut memory.blocks).insert("global:protected".into(), read_only);
     let rewritten =
         substitute_bitvector_variable_in_memory_contents(&memory, from, &MachineTerm::constant(16));
@@ -6430,7 +6363,7 @@ fn state_size_substitution_preserves_declared_types_and_write_protection() {
         .get(&PointerBlock::from("global:protected"))
         .unwrap();
     assert!(protected.read_only);
-    assert_eq!(protected.size, HeapExtent::int32(16));
+    assert_eq!(protected.size, AllocationSize::int32(16));
 }
 
 fn substitute_bitvector_variable_in_memory_contents(
@@ -6458,12 +6391,12 @@ fn substitute_bitvector_variable_in_memory_contents(
                 .blocks
                 .iter()
                 .map(|(block, contents)| {
-                    // Substitution changes the extent term, not the storage
+                    // Substitution changes the size term, not the storage
                     // declaration or its write protection. Rebuilding a bare
                     // block erased these properties, even for a constant size.
                     let mut rewritten = contents.clone();
                     rewritten.size = contents
-                        .extent()
+                        .allocation_size()
                         .map_bytes(|bytes| substitute_bitvector_variable(bytes, from, to));
                     (block.clone(), rewritten)
                 })
@@ -6748,15 +6681,6 @@ fn substitute_pointer_variable_in_term(term: &Term, from: Variable, to: &Pointer
             algebraic_type: term.algebraic_type.clone(),
             node: substitute_pointer_variable_in_algebraic_term_node(term, from, to),
         }),
-        Term::ExpressionOutcome(outcome) => Term::ExpressionOutcome(
-            substitute_pointer_variable_in_program_expression_outcome(outcome, from, to),
-        ),
-        Term::StatementOutcome(outcome) => Term::StatementOutcome(Box::new(
-            substitute_pointer_variable_in_execution_statement_outcome(outcome, from, to),
-        )),
-        Term::FunctionOutcome(outcome) => Term::FunctionOutcome(Box::new(
-            substitute_pointer_variable_in_program_function_outcome(outcome, from, to),
-        )),
         Term::Memory(memory) => {
             Term::Memory(substitute_pointer_variable_in_memory(memory, from, to))
         }

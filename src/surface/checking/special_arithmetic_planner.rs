@@ -247,16 +247,8 @@ pub(in crate::surface) fn special_plan_to_surface(
 /// The premise indices a node cites, for renumbering.
 fn cited_premise_indices(node: &mut SpecialArithmeticNode) -> Vec<&mut usize> {
     match node {
-        SpecialArithmeticNode::IntegerProductBounds { bounds, .. }
-        | SpecialArithmeticNode::IntegerDivisionBounds { bounds, .. }
-        | SpecialArithmeticNode::IntegerMultiplyOrder { bounds, .. }
-        | SpecialArithmeticNode::IntegerQuotientBound { bounds, .. }
-        | SpecialArithmeticNode::IntegerBoundExclusion { bounds, .. }
-        | SpecialArithmeticNode::IntegerRelationTransport { bounds, .. }
-        | SpecialArithmeticNode::IntegerPolynomialIdentity { bounds, .. }
-        | SpecialArithmeticNode::IntegerQuotientShift { bounds, .. }
+        SpecialArithmeticNode::IntegerPolynomialIdentity { bounds, .. }
         | SpecialArithmeticNode::IntegerCastIdentity { bounds, .. }
-        | SpecialArithmeticNode::IntegerOperationIdentity { bounds, .. }
         | SpecialArithmeticNode::UnsignedSumBound { bounds, .. }
         | SpecialArithmeticNode::SignedDefined { bounds, .. } => bounds.iter_mut().collect(),
         SpecialArithmeticNode::PointerTranslation {

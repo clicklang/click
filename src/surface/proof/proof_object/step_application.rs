@@ -434,30 +434,30 @@ impl<'a> Proof<'a> {
         let goal = next.goal().map(|goal| ("goal", goal));
         for (role, original) in facts.chain(goal) {
             let scope = crate::surface::proof::attempt::search_scope("raise-lower audit");
-            let (outcome, spelling, lowered) = crate::instrumentation::without_charging(|| {
+            let (outcome, raised, lowered) = crate::instrumentation::without_charging(|| {
                 if next.premise_fixed_state_view().is_none() {
                     return (RoundTrip::NoState, String::new(), String::new());
                 }
                 // Raise as goal presentation does: with the path's recorded
                 // points and its entry state, so `at(point, ..)`, `old(..)`
-                // and `<call>.result` spellings are available.
+                // and `<call>.result` forms are available.
                 let Some(surface) = next.structural_proposition_candidate(original) else {
                     return (RoundTrip::Unraised, String::new(), String::new());
                 };
-                let spelling = crate::surface::printing::source_click_proposition(&surface);
+                let raised = crate::surface::printing::source_click_proposition(&surface);
                 let lowered =
                     crate::surface::proof::execution_planning::without_open_obligation_probe(
                         || next.lower_surface_proposition_direct(&surface, "raise-lower audit"),
                     );
                 match lowered {
-                    Err(_) => (RoundTrip::Unlowered, spelling, String::new()),
+                    Err(_) => (RoundTrip::Unlowered, raised, String::new()),
                     Ok(lowered) => match audit::classify(original, &lowered) {
                         RoundTrip::Differs => (
                             RoundTrip::Differs,
-                            spelling,
+                            raised,
                             next.render_diagnostic_proposition(&lowered),
                         ),
-                        outcome => (outcome, spelling, String::new()),
+                        outcome => (outcome, raised, String::new()),
                     },
                 }
             });
@@ -469,7 +469,7 @@ impl<'a> Proof<'a> {
                 self.claim_label(),
                 tactic,
                 &next.render_diagnostic_proposition(original),
-                &spelling,
+                &raised,
                 &lowered,
             );
         }
@@ -1582,11 +1582,11 @@ impl<'a> Proof<'a> {
             .map(|premise| self.lower_surface_proposition(premise, "induction premise"))
             .collect::<Result<Vec<_>, _>>()?;
         // The hypothesis is the theorem's own statement, so a range premise
-        // owes its extent halves beside it. Citing a stated range cites both
+        // owes its span halves beside it. Citing a stated range cites both
         // halves, by the one rule every `apply using` shares.
         let mut explicit_premises = Vec::with_capacity(lowered_premises.len());
         for premise in lowered_premises {
-            crate::surface::proof::theorem_application::cite_range_extent_guards(
+            crate::surface::proof::theorem_application::cite_range_span_guards(
                 &premise,
                 &mut explicit_premises,
                 |guard| self.facts().exact_available_across_effects(guard, &[]),

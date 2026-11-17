@@ -1085,7 +1085,7 @@ mod tests {
                         Pointer::symbolic(Variable(970_010)),
                         ProgramType::Int32Pointer,
                     )
-                    .with_extent(Some(SubobjectExtent {
+                    .with_bounds(Some(SubobjectBounds {
                         start: Pointer::symbolic(Variable(970_011)),
                         width: MachineTerm::Variable(Variable(970_012)),
                     })),

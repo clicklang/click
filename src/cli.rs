@@ -621,10 +621,6 @@ pub fn parse_work_limit(source: &str) -> Result<usize, String> {
         })
 }
 
-/// Disables tactic budget enforcement in the fixture harnesses, for A/B runs
-/// and archaeology on old trees.
-pub const DISABLE_TACTIC_BUDGETS: &str = "CLICK_DISABLE_TACTIC_BUDGETS";
-
 fn tactic_budget(class: &str) -> Option<(Duration, &'static str)> {
     match class {
         "simple" => Some((

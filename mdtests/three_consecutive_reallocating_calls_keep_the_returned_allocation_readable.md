@@ -6,7 +6,7 @@ Each `box_renew` call retires the allocation it was lent and installs the
 one it returns, and each retirement is covered by that call's own havoc, so
 the naming walk carries `box->data` across every retirement to the call that
 last wrote it. The read after the third call names the field exactly where the
-third call's `produces boxed(box)` did, with no nested heap-extent proof per
+third call's `produces boxed(box)` did, with no nested allocation-size proof per
 earlier call.
 
 ```c filename=box.c

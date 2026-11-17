@@ -23,10 +23,10 @@ memory accesses must be covered by the current resource context:
 
 - a load requires a viewed or owned memory resource,
 - a store requires an owned memory resource,
-- automatic scalar declarations create ownership of their exact byte extent;
+- automatic scalar declarations create ownership of their exact byte size;
   ordinary local access uses it without additional proof annotations,
 - ordinary record declarations and construction destinations create ownership
-  of their complete byte extent, including padding, without initializing fields;
+  of their complete byte size, including padding, without initializing fields;
 - legacy automatic arrays retain implicit local access.
 
 Scalar allocation ownership is independent of initialization. It can be lent to

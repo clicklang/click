@@ -14000,7 +14000,7 @@ fn nested_record_contracts_reject_missing_authority_false_frames_and_readonly_wr
 }
 
 #[test]
-fn nested_record_artifacts_reject_wrong_identity_extent_constness_and_cycles() {
+fn nested_record_artifacts_reject_wrong_identity_size_constness_and_cycles() {
     use sha2::{Digest, Sha256};
     let project = nested_record_project("FeeEnvelope::ReadStamp");
     refresh_import(&project.config()).unwrap();
@@ -16881,7 +16881,7 @@ fn cpp_bounded_native_descriptor_last_reference_verifies_offline() {
     let import = load_import(&project.config()).unwrap();
     // The bound is the code's `unsigned long`, uncast, and the last
     // element is at `size - 1` in that type. Nothing bounds `size` from
-    // above: the held range states its own extent limit.
+    // above: the held range states its own span limit.
     let source = r#"verifying "bounds.cpp";
 int32& run(const struct View& view) {
  views view.data;

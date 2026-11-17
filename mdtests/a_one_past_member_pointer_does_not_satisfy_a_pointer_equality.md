@@ -3,12 +3,12 @@
 `&pair->first + 1` and `&pair->second` have one address but are different
 pointers: the first is one past `first` and cannot be dereferenced
 (C11 6.5.6p7-p8). A contract `==` between pointers is value equality,
-subobject included (`design/pointer-subobject-extents.md`, D2), so the call
+subobject included (`design/pointer-subobject-bounds.md`, D2), so the call
 cannot establish `update`'s `h->value == p`. Otherwise `update` would read
 through `h->value` with the permission `p` carries.
 
 The C and contract are the original counterexample from
-the scalar-subobject reproduction recorded in `design/pointer-subobject-extents.md`, unchanged.
+the scalar-subobject reproduction recorded in `design/pointer-subobject-bounds.md`, unchanged.
 
 ```c filename=fields.c
 struct Pair { int first; int second; };

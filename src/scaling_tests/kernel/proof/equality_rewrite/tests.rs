@@ -485,7 +485,7 @@ fn cited_read_rewrite_requires_unchanged_cells_and_its_named_premise() {
 
 #[test]
 #[ignore = "nightly: 0.5s in the parallel gate"]
-fn same_block_pointer_view_rewrite_preserves_extent_and_selected_work() {
+fn same_block_pointer_view_rewrite_preserves_span_and_selected_work() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(192_920)), 1);
     let target = PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(192_921)), 1);
@@ -494,14 +494,14 @@ fn same_block_pointer_view_rewrite_preserves_extent_and_selected_work() {
         true,
     );
     let memory = Memory::new().with_block("offset-view-rewrite", 8);
-    let extent = MachineTerm::Variable(Variable(192_922));
+    let span = MachineTerm::Variable(Variable(192_922));
     let goal = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::add(source, PointerOffsetTerm::Constant(2)),
         },
-        bytes: extent.clone(),
+        bytes: span.clone(),
         wide: false,
     };
     assert!(
@@ -547,14 +547,14 @@ fn same_block_pointer_view_rewrite_preserves_extent_and_selected_work() {
             base.offset,
             PointerOffsetTerm::add(target.clone(), PointerOffsetTerm::Constant(2))
         );
-        assert_eq!(bytes, &extent);
+        assert_eq!(bytes, &span);
         costs.push(work);
     }
     assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
 }
 
 #[test]
-fn pointer_view_rewrite_preserves_state_extent_and_ambient_scaling() {
+fn pointer_view_rewrite_preserves_state_span_and_ambient_scaling() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = Pointer::symbolic(Variable(192_910));
     let target = Pointer::symbolic(Variable(192_911));
@@ -563,11 +563,11 @@ fn pointer_view_rewrite_preserves_state_extent_and_ambient_scaling() {
         true,
     );
     let memory = Memory::new().with_block("pointer-view-rewrite", 8);
-    let extent = MachineTerm::Variable(Variable(192_912));
+    let span = MachineTerm::Variable(Variable(192_912));
     let goal = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: source,
-        bytes: extent.clone(),
+        bytes: span.clone(),
         wide: false,
     };
     assert!(
@@ -601,7 +601,7 @@ fn pointer_view_rewrite_preserves_state_extent_and_ambient_scaling() {
             memory.diagnostic_identity()
         );
         assert_eq!(base, &target);
-        assert_eq!(bytes, &extent);
+        assert_eq!(bytes, &span);
         costs.push(work);
     }
     assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");

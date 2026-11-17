@@ -4,7 +4,7 @@ use super::*;
 fn whole_contract_retirement_is_indexed_and_preserves_candidate_forks() {
     for clauses in [16_usize, 64, 256, 512] {
         for unrelated in [0, 256] {
-            let (base, _) = contract_closing_tests::fixture(1);
+            let base = contract_closing_tests::fixture();
             let ensure = base.contract_ensures()[0].clone();
             let function = base.with_contract(
                 (0..unrelated)

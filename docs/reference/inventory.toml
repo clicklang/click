@@ -1501,9 +1501,6 @@ path = "reference/tactics/index.md#resources-and-transport"
 id = "tactic-form.induct"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
-id = "tactic-form.structural-induct"
-path = "reference/tactics/index.md#proposition-reasoning"
-[[item]]
 id = "tactic-form.proof-match"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
@@ -2304,6 +2301,22 @@ path = "reference/library/index.md#bytescontains"
 [[item]]
 id = "library.predicate.bytes::all_not_equal"
 path = "reference/library/index.md#bytesall_not_equal"
+
+[[item]]
+id = "library.predicate.bytes::comparison"
+path = "reference/library/index.md#bytescomparison"
+
+[[item]]
+id = "library.theorem.bytes::comparison_negative_after_prefix"
+path = "reference/library/index.md#bytescomparison_negative_after_prefix"
+
+[[item]]
+id = "library.theorem.bytes::comparison_positive_after_prefix"
+path = "reference/library/index.md#bytescomparison_positive_after_prefix"
+
+[[item]]
+id = "library.theorem.bytes::comparison_zero_when_equal"
+path = "reference/library/index.md#bytescomparison_zero_when_equal"
 
 [[item]]
 id = "library.predicate.cstr::prefix"

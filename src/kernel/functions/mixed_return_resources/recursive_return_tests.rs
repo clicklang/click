@@ -70,7 +70,7 @@ fn recursive_return_retains_one_explicit_frontier_and_its_actual_child_identity(
     let state = ExecutionState::new();
     let bodies =
         ConstructedReturnBodies::construct(&evaluated, &[recursive_definition()], &state, &facts);
-    assert!(bodies.1.is_empty());
+    assert!(!bodies.0.is_empty());
     let body = bodies.get(source).unwrap();
     assert_eq!(body.transfers.len(), 2);
     assert_eq!(body.expansion.len(), 2);
@@ -97,8 +97,6 @@ fn recursive_return_retains_one_explicit_frontier_and_its_actual_child_identity(
         &evaluated.resources,
         &transfers,
         &bodies,
-        &[],
-        &state,
         &facts,
         &destination,
     )
@@ -171,8 +169,6 @@ fn recursive_visible_memory_still_refuses_a_held_alias_and_preserves_branches() 
                     .unwrap(),
                 Some(body),
             )),
-            &[],
-            &Memory::new(),
             &facts,
         )
     };

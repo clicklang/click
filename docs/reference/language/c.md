@@ -1320,12 +1320,12 @@ Supported C surface includes:
   byte-oriented `uint8` backing allocation such as `malloc(count * sizeof(uint8))`,
   pointer-array allocation such as `malloc(count * sizeof(int32*))` or
   `malloc(count * sizeof(uint64*))` assigned to the matching `T**`, arbitrary
-  positive byte extents assigned to supported pointer types, zeroed
+  positive byte sizes assigned to supported pointer types, zeroed
   runtime-sized scalar allocation such as `calloc(count, sizeof(int32))`,
   matching zeroed struct allocation such as `calloc(count, sizeof(struct T))`,
   bounded `realloc(data, bytes)` for the pointer types listed in
   [Heap allocation](#heap-allocation), and matching `struct T*` allocations, including arbitrary byte
-  extents; initialized cells are preserved only when their complete byte
+  sizes; initialized cells are preserved only when their complete byte
   ranges fit, and standalone `free(pointer);`
 - local scalar, pointer, and fixed-size array declarations for the modeled
   integer and floating-point types, plus the supported struct shapes
@@ -2246,14 +2246,14 @@ extern uint8* external_alloc(int32 bytes) {
 The allocation authority's base is pointer-type independent; the owned range
 uses the returned pointer's logical element width. The declaration therefore
 also works for any modeled data pointer, pointer-to-pointer, or supported
-struct pointer result when the byte extent and owned range match that type.
+struct pointer result when the byte size and owned range match that type.
 This is a contract for a compatible allocator boundary, not a general
 `void*` allocator interface. The `allocation` byte count is the block's
-extent, an `int32` or a `uint64`. An allocator that takes a `size_t` states
-its block's 64-bit extent with that count, and owns the block with 64-bit
+size, an `int32` or a `uint64`. An allocator that takes a `size_t` states
+its block's 64-bit size with that count, and owns the block with 64-bit
 indices:
 
-<!-- verified-example: mdtests/an_extern_allocator_states_a_size_t_extent.md -->
+<!-- verified-example: mdtests/an_extern_allocator_states_a_size_t_allocation_size.md -->
 ```click
 extern uint8_t* external_alloc(size_t bytes) {
     requires 0u64 < bytes;
@@ -2267,11 +2267,11 @@ A caller assuming the returned token must have facts that make it fit a heap
 block, here `1 <= n <= PTRDIFF_MAX` for its argument `n`, and for
 `allocation(result, n * 4u64)` `1 <= n <= PTRDIFF_MAX / 4`; otherwise the
 call is refused
-(`mdtests/an_extern_size_t_extent_whose_product_may_wrap_is_refused.md`;
+(`mdtests/an_extern_size_t_allocation_size_whose_product_may_wrap_is_refused.md`;
 [Heap allocation](#heap-allocation) has the rule). The form
 `allocation(result, bytes as int32)` under a requirement that bounds `bytes`
 stays legal and states a 32-bit block
-(`mdtests/an_extern_allocator_states_a_bounded_64_bit_extent_as_int32.md`).
+(`mdtests/an_extern_allocator_states_a_bounded_64_bit_size_as_int32.md`).
 A signed 64-bit (`long`) count is refused; it is stated through its
 `size_t` conversion
 (`mdtests/a_signed_64_bit_allocation_byte_count_is_refused.md`).
@@ -2747,11 +2747,11 @@ must prove that the resulting byte count is
 positive, is an exact number of `int32` elements, and does not overflow signed
 `int32`. Click can package the result as
 `allocation(data, count * 4)` plus `data[0..count]`; `free(data)` consumes that
-same symbolic extent. Direct deallocation is a certified heap-lifetime effect
+same symbolic size. Direct deallocation is a certified heap-lifetime effect
 authorized by those resources; it does not need a separate footprint clause or
 to be routed through a helper function.
 
-`calloc(count, sizeof(int32))` uses the same runtime extent and allocation
+`calloc(count, sizeof(int32))` uses the same runtime size and allocation
 authority, but successful cells read as zero until a later store overwrites
 them. A matching struct-pointer target may instead use
 `calloc(count, sizeof(struct T))`; its supported scalar and pointer fields
@@ -2761,7 +2761,7 @@ pointee type.
 
 For a `uint8*`, Click accepts byte-oriented forms such as
 `malloc(count * sizeof(uint8))` and `calloc(count, sizeof(uint8))`. The
-allocation extent is a positive `int32` byte count, and `data[i]` uses a
+allocation size is a positive `int32` byte count, and `data[i]` uses a
 one-byte logical range element. Successful `malloc` storage is uninitialized;
 successful `calloc` storage reads as zero. `free(data)` consumes the complete
 one-byte range just as it does for the supported int32 and struct allocations.
@@ -2778,7 +2778,7 @@ be loaded and compared, but dereferencing it is still invalid.
 For a live, nonzero pointer-array allocation, `realloc(slots, bytes)` accepts a
 positive byte count that is an exact multiple of the matching eight-byte
 pointer cell size. It preserves initialized pointer cells that fit in the new
-extent and transfers the complete allocation authority to the successful
+size and transfers the complete allocation authority to the successful
 fresh result. When the source is a pointer-array `calloc`, the retained prefix
 remains initialized to null and any grown tail is uninitialized.
 
@@ -2789,7 +2789,7 @@ positive byte count, which need not be a whole number of elements
 targets are refused. It returns a pending null-or-success result like `malloc`: failure leaves
 `data` and its allocation authority unchanged, while success retires the old
 allocation, returns a fresh allocation, and preserves initialized cells whose
-complete elements fit in the new extent. When the source is a bounded zeroed
+complete elements fit in the new size. When the source is a bounded zeroed
 `calloc` allocation, the preserved prefix remains zeroed and any grown tail is
 uninitialized. Fixtures exercise `int32*`, `uint8*`, `int32**`, `uint8**`, and
 struct pointers.
@@ -2799,9 +2799,9 @@ allocation, incomplete types, allocator results declared as `void *`,
 unmodeled allocator prototypes, and non-concrete zeroed-prefix `realloc` cases
 remain unsupported.
 
-A heap block's byte extent has the format of its size's C type
-(`design/heap-extents.md`). A size of 32 bits or narrower is a checked 32-bit
-extent, and so is a 64-bit (`size_t` or `long`) size that is concrete or that
+A heap block's byte size has the format of its size's C type
+(`design/heap-allocation-sizes.md`). A size of 32 bits or narrower is a checked 32-bit
+size, and so is a 64-bit (`size_t` or `long`) size that is concrete or that
 exact contract facts reduce to a constant that fits `uint32`. Any other 64-bit
 `malloc` size makes a 64-bit block: its `allocation` token holds a `uint64`
 byte count and its owned range has 64-bit indices, like a `size_t` parameter
@@ -2837,7 +2837,7 @@ message, even for a count the facts fix where the product would wrap
 (`mdtests/a_bounded_size_t_calloc_count_allocates_a_zeroed_64_bit_block.md`,
 `mdtests/a_size_t_calloc_count_with_no_upper_bound_is_refused.md`,
 `mdtests/a_calloc_count_whose_product_would_wrap_is_refused.md`). Only the
-count is evaluated, so `calloc(count, sizeof(struct T))` has a 32-bit extent
+count is evaluated, so `calloc(count, sizeof(struct T))` has a 32-bit size
 for an `int` count
 (`mdtests/a_struct_calloc_with_an_int_count_allocates_a_32_bit_block.md`) and
 a 64-bit one for a `size_t` count.
@@ -2884,7 +2884,7 @@ a 64-bit byte count `1 <= bytes <= PTRDIFF_MAX`
 (`mdtests/a_size_t_realloc_size_with_no_upper_bound_is_refused.md`). The old
 block's token and complete range are consumed in their own format, and an
 initialized cell at a constant offset is kept where the facts place its end
-inside the new size; against an extent `n * w` that comparison is made over
+inside the new size; against a size `n * w` that comparison is made over
 the element count, so `n >= 1` keeps the first element
 (`mdtests/a_realloc_grows_a_64_bit_block_and_keeps_its_prefix.md`,
 `mdtests/a_realloc_shrinks_a_64_bit_block_and_keeps_its_prefix.md`,
@@ -2913,21 +2913,21 @@ calls like any other: a function returns it inside a resource
 `mdtests/a_store_after_a_callee_frees_a_64_bit_block_is_refused.md`), and a
 callee that `owns` it gives it back
 (`mdtests/a_callee_keeps_a_64_bit_block_its_caller_frees.md`). A `uint64`
-byte count is a 64-bit extent only under the decision `malloc` makes: at
+byte count is a 64-bit size only under the decision `malloc` makes: at
 least 1 and at most `PTRDIFF_MAX`, and for a product with a constant `k`,
 `1 <= n <= PTRDIFF_MAX / k`, because the heap reads `n * k` bytes back as `n`
 elements and a `size_t` product may wrap; a product of two symbolic counts
 is refused. The facts decide it wherever a token is formed: at a call that
 requires one, at a function's exit that produces one, and where a caller
 assumes one an opaque or `extern` call returns
-(`mdtests/a_call_naming_a_64_bit_extent_with_an_unbounded_count_is_refused.md`).
+(`mdtests/a_call_naming_a_64_bit_size_with_an_unbounded_count_is_refused.md`).
 A contract's own entry clause, and the body of a held resource, are assumed
 instead: every caller, or the fold, decided them
 (`mdtests/a_64_bit_allocation_requirement_is_assumed_at_entry.md`). The
 refusal says
 ``resource `allocation` has a 64-bit byte count not proved to fit a heap block``.
-A `uint64` constant that fits a 32-bit extent, such as `16u64`, states the
-32-bit extent `16`, as `malloc` of that constant makes it.
+A `uint64` constant that fits a 32-bit size, such as `16u64`, states the
+32-bit size `16`, as `malloc` of that constant makes it.
 
 The two formats never name one block: an `allocation` form of the other
 format than the block's token, `allocation(p, m * 4)` with an `int32` count
@@ -2936,18 +2936,18 @@ naming both
 (`mdtests/a_32_bit_allocation_spelling_of_a_64_bit_block_is_refused.md`,
 `mdtests/a_64_bit_allocation_spelling_of_a_32_bit_block_is_refused.md`). A
 call that consumes an allocation of one format and returns one of the other
-that may be the same block is refused, since its extents cannot be compared
-(`mdtests/a_returned_allocation_of_the_other_extent_format_is_refused.md`).
+that may be the same block is refused, since its sizes cannot be compared
+(`mdtests/a_returned_allocation_of_the_other_size_format_is_refused.md`).
 A `size_t` count the facts fix to a constant makes a 32-bit block, so its
 token is stated with that constant, not the `uint64` product.
 
-A 32-bit extent is signed: a `uint32` byte count must also be bounded by
+A 32-bit size is signed: a `uint32` byte count must also be bounded by
 `INT32_MAX`, and a `uint32` element count by `INT32_MAX` divided by the
 element size. Otherwise `malloc`, `calloc` and `realloc` refuse it with
-`heap allocation size must be known to fit the signed 32-bit heap extent`
+`heap allocation size must be known to fit the signed 32-bit allocation size`
 (`mdtests/a_uint32_malloc_size_above_int32_max_is_refused_at_the_malloc.md`,
 `mdtests/a_uint32_malloc_size_bounded_by_int32_max_allocates.md`).
-The 64-bit extent design is `design/heap-extents.md`.
+The 64-bit size design is `design/heap-allocation-sizes.md`.
 
 ## Loops
 

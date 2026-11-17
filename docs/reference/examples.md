@@ -163,10 +163,10 @@ authorities.
   malloc, calloc, and realloc member access.
 - `mdtests/heap_struct_array_bounds.md`: out-of-bounds access through a heap
   struct array is rejected.
-- `mdtests/arbitrary_layout_realloc.md`: raw byte extents through typed
+- `mdtests/arbitrary_layout_realloc.md`: raw byte sizes through typed
   pointers, including complete-cell preservation across `realloc`.
 - `mdtests/arbitrary_layout_realloc_bounds.md`: typed access beyond a raw
-  resized byte extent is rejected.
+  resized byte size is rejected.
 
 ## Aliasing and separation
 

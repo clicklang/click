@@ -574,14 +574,14 @@ fn write_program_lvalue_paths_for_initialization(
     let lvalue_access_provenance = lvalue.provenance.as_deref().map(|root| {
         (
             root,
-            if lvalue.extent_known {
+            if lvalue.bounds_known {
                 None
             } else {
-                lvalue.opaque_extent.as_deref()
+                lvalue.bounds_owner.as_deref()
             },
         )
     });
-    let lvalue_extent = lvalue.extent.clone();
+    let lvalue_bounds = lvalue.bounds.clone();
     let lvalue_value_type = lvalue.value_type;
     let lvalue_classes = (lvalue.access_class(), lvalue.object_class());
     match lvalue.storage {
@@ -602,7 +602,7 @@ fn write_program_lvalue_paths_for_initialization(
             if let Some(pointer) = state.locals.slot(&name)
                 && let Some(refusal) = subobject_access_refusal(
                     pointer,
-                    lvalue_extent.as_deref(),
+                    lvalue_bounds.as_deref(),
                     lvalue_value_type.byte_width(),
                     &facts,
                     &obligations,
@@ -631,7 +631,7 @@ fn write_program_lvalue_paths_for_initialization(
             if let Some(pointer) = state.locals.slot(&name)
                 && lvalue.provenance.as_deref().is_some_and(|origin| {
                     !effective_assumptions.provenance_equal(origin, &pointer.object_identity())
-                        || !lvalue.extent_known && lvalue.opaque_extent.is_some()
+                        || !lvalue.bounds_known && lvalue.bounds_owner.is_some()
                 })
                 && state
                     .resources()
@@ -717,7 +717,7 @@ fn write_program_lvalue_paths_for_initialization(
             let source_pointer = pointer.clone();
             if let Some(refusal) = subobject_access_refusal(
                 &pointer,
-                lvalue_extent.as_deref(),
+                lvalue_bounds.as_deref(),
                 lvalue_value_type.byte_width(),
                 &facts,
                 &obligations,
@@ -788,7 +788,7 @@ fn write_program_lvalue_paths_for_initialization(
             let is_external = is_external_memory_pointer(&pointer)
                 || lvalue.provenance.as_deref().is_some_and(|origin| {
                     !effective_assumptions.provenance_equal(origin, &pointer.object_identity())
-                        || !lvalue.extent_known && lvalue.opaque_extent.is_some()
+                        || !lvalue.bounds_known && lvalue.bounds_owner.is_some()
                 });
             let authorized_range = is_external
                 .then(|| {
@@ -855,7 +855,7 @@ fn write_program_lvalue_paths_for_initialization(
                 1u32.into(),
                 value.byte_width(),
             )
-            .with_opaque_extent(lvalue.opaque_extent.clone(), lvalue.extent_known)
+            .with_bounds_owner(lvalue.bounds_owner.clone(), lvalue.bounds_known)
             .with_typed_carrier();
             if let Some(provenance) = &lvalue.provenance {
                 write_range = write_range.with_provenance(provenance.clone());
@@ -1212,7 +1212,7 @@ fn execute_program_aggregate_copy_paths(
             }
             if let Some(refusal) = subobject_access_refusal(
                 source_pointer.pointer(),
-                source_pointer.extent(),
+                source_pointer.bounds(),
                 layout.size_bytes(),
                 &facts,
                 &obligations,
@@ -1221,7 +1221,7 @@ fn execute_program_aggregate_copy_paths(
             .or_else(|| {
                 subobject_access_refusal(
                     target_pointer.pointer(),
-                    target_pointer.extent(),
+                    target_pointer.bounds(),
                     layout.size_bytes(),
                     &facts,
                     &obligations,
@@ -1310,7 +1310,7 @@ fn missing_aggregate_copy_write_resource(
     assumptions: &PureFactContext,
 ) -> Option<ResourceFact> {
     if !is_external_memory_pointer(target)
-        && target.extent_is_known()
+        && target.bounds_are_known()
         && assumptions.provenance_equal(target.provenance(), &target.pointer().object_identity())
     {
         return None;
@@ -1359,16 +1359,16 @@ pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
     // A modular by-value return creates fresh caller storage, just as a
     // body return materializes a local return object. Copying that value
     // does not borrow an external resource. Use the temporary's recorded
-    // extent, not merely its identity, to authorize this selected copy.
+    // bounds, not merely its identity, to authorize this selected copy.
     if matches!(source.block, PointerBlock::Temporary(_))
-        && source.extent_is_known()
+        && source.bounds_are_known()
         && assumptions.provenance_equal(source.provenance(), &source.pointer().object_identity())
         && state.memory.access_in_bounds(source, layout.size_bytes())
     {
         return None;
     }
     if (!crate::kernel::eval::is_external_memory_pointer(source)
-        && source.extent_is_known()
+        && source.bounds_are_known()
         && assumptions.provenance_equal(source.provenance(), &source.pointer().object_identity())
         && !state.memory.requires_explicit_scalar_ownership(source)
         && !assumptions.should_require_owned_expression_loads())
@@ -1525,7 +1525,7 @@ fn execute_program_heap_allocate_to_paths(
         .byte_width();
 
     // calloc's size is its count of `count_width`-byte elements: the count
-    // alone is evaluated, never the product (`design/heap-extents.md`,
+    // alone is evaluated, never the product (`design/heap-allocation-sizes.md`,
     // stage 4).
     let (element_count_expression, count_width) =
         match zeroed.then(|| calloc_operands(bytes_expression)).flatten() {
@@ -1575,9 +1575,12 @@ fn execute_program_heap_allocate_to_paths(
         // 64-bit size calloc does not split into its operands is refused.
         let (bytes, size_refusal) = if zeroed
             && element_count_expression.is_none()
-            && size.kind == HeapExtentKind::UInt64
+            && size.kind == AllocationSizeKind::UInt64
         {
-            (size.into_extent(), Some(RuntimeError::HeapAllocationSize))
+            (
+                size.into_allocation_size(),
+                Some(RuntimeError::HeapAllocationSize),
+            )
         } else if element_count_expression.is_some() {
             let refusal =
                 allocation_size_validity_refusal(&size, count_width, true, &effective_assumptions);
@@ -1596,16 +1599,16 @@ fn execute_program_heap_allocate_to_paths(
                         false,
                         &effective_assumptions,
                     );
-                    (product.into_extent(), refusal)
+                    (product.into_allocation_size(), refusal)
                 }
-                (refusal, _) => (size.scaled(count_width).into_extent(), refusal),
+                (refusal, _) => (size.scaled(count_width).into_allocation_size(), refusal),
             }
         } else {
             // Heap blocks are byte-addressed even when the receiving pointer
             // has a wider logical element type. Typed accesses still carry
-            // their own width and must fit in the resulting byte extent.
+            // their own width and must fit in the resulting byte size.
             let refusal = allocation_size_validity_refusal(&size, 1, false, &effective_assumptions);
-            (size.into_extent(), refusal)
+            (size.into_allocation_size(), refusal)
         };
         if let Some(refusal) = size_refusal {
             paths.push(StatementExecutionPath::new(
@@ -1721,61 +1724,60 @@ fn heap_allocation_element_width(state: &ExecutionState, base: &Pointer) -> u32 
 
 /// Heap ownership is expressed in the narrowest logical unit that exactly
 /// describes the block. Preserve typed ranges for established allocation
-/// forms, but use bytes for a raw extent that is not divisible by the pointer's
+/// forms, but use bytes for a raw size that is not divisible by the pointer's
 /// logical element width.
-fn heap_range_element_width(extent: &HeapExtent, requested_width: u32) -> u32 {
-    extent
-        .element_count(requested_width)
+fn heap_range_element_width(size: &AllocationSize, requested_width: u32) -> u32 {
+    size.element_count(requested_width)
         .map(|_| requested_width)
         .unwrap_or(ProgramType::UInt8.byte_width())
 }
 
-/// The owned range of a whole heap block, `base[0..count]` in the extent's
+/// The owned range of a whole heap block, `base[0..count]` in the size's
 /// index kind, and its element width ([`heap_range_element_count`]).
 fn heap_block_range(
     base: Pointer,
-    extent: &HeapExtent,
+    size: &AllocationSize,
     requested_width: u32,
 ) -> (MemoryRange, u32) {
-    let (count, width) = heap_range_element_count(extent, requested_width);
-    (extent.range(base, count, width), width)
+    let (count, width) = heap_range_element_count(size, requested_width);
+    (size.range(base, count, width), width)
 }
 
 /// The element count and width of a whole heap block's owned range, in the
-/// extent's format ([`HeapExtent::element_count`]).
-fn heap_range_element_count(extent: &HeapExtent, requested_width: u32) -> (MachineTerm, u32) {
-    let element_width = heap_range_element_width(extent, requested_width);
-    let element_count = extent
+/// size's format ([`AllocationSize::element_count`]).
+fn heap_range_element_count(size: &AllocationSize, requested_width: u32) -> (MachineTerm, u32) {
+    let element_width = heap_range_element_width(size, requested_width);
+    let element_count = size
         .element_count(element_width)
-        .expect("byte width must describe every positive heap extent");
+        .expect("byte width must describe every positive allocation size");
     (element_count, element_width)
 }
 
 #[derive(Clone, Debug)]
-struct AllocationSize {
+struct RequestedAllocationSize {
     term: MachineTerm,
     unsigned: bool,
     /// The size's type admits values above `INT32_MAX` (`uint32`), so the
-    /// facts must bound it to the signed 32-bit heap extent.
-    needs_extent_bound: bool,
-    /// The format of the block extent this size makes, by its C type
-    /// (`design/heap-extents.md`, D1): `UInt64` for a symbolic 64-bit size,
+    /// facts must bound it to the signed 32-bit allocation size.
+    needs_size_bound: bool,
+    /// The format of the block size this size makes, by its C type
+    /// (`design/heap-allocation-sizes.md`, D1): `UInt64` for a symbolic 64-bit size,
     /// `Int32` for every other.
-    kind: HeapExtentKind,
+    kind: AllocationSizeKind,
     /// The size is a `size_t` in C, so `size * w` for a `size_t` or `int`
     /// constant `w` is C's wrapping `size_t` product. A `long` times an
     /// `int` constant may instead overflow, which is undefined.
     wraps: bool,
 }
 
-impl AllocationSize {
+impl RequestedAllocationSize {
     /// A 32-bit size of the given signedness.
-    fn int32(term: MachineTerm, unsigned: bool, needs_extent_bound: bool) -> Self {
+    fn int32(term: MachineTerm, unsigned: bool, needs_size_bound: bool) -> Self {
         Self {
             term,
             unsigned,
-            needs_extent_bound,
-            kind: HeapExtentKind::Int32,
+            needs_size_bound,
+            kind: AllocationSizeKind::Int32,
             wraps: false,
         }
     }
@@ -1786,18 +1788,18 @@ impl AllocationSize {
         Self {
             term,
             unsigned: true,
-            needs_extent_bound: false,
-            kind: HeapExtentKind::UInt64,
+            needs_size_bound: false,
+            kind: AllocationSizeKind::UInt64,
             wraps,
         }
     }
 
     /// The value C computes for `self * element_width` when the facts do not
     /// prove the product exact: the wrapped `size_t` product of a `size_t`
-    /// count (`design/heap-extents.md`, stage 2), a real block of that many
+    /// count (`design/heap-allocation-sizes.md`, stage 2), a real block of that many
     /// bytes. `None` for a `long` count, whose product may be undefined.
     fn wrapped_product(&self, element_width: u32, assumptions: &PureFactContext) -> Option<Self> {
-        (self.kind == HeapExtentKind::UInt64 && self.wraps).then(|| {
+        (self.kind == AllocationSizeKind::UInt64 && self.wraps).then(|| {
             let product = MachineTerm::uint64_multiply(
                 self.term.clone(),
                 MachineTerm::uint64_constant(u64::from(element_width)),
@@ -1811,10 +1813,10 @@ impl AllocationSize {
     /// decided the count fits, so the product does not wrap.
     fn scaled(&self, element_width: u32) -> Self {
         let term = match self.kind {
-            HeapExtentKind::Int32 => {
+            AllocationSizeKind::Int32 => {
                 MachineTerm::multiply(self.term.clone(), MachineTerm::constant(element_width))
             }
-            HeapExtentKind::UInt64 => MachineTerm::uint64_multiply(
+            AllocationSizeKind::UInt64 => MachineTerm::uint64_multiply(
                 self.term.clone(),
                 MachineTerm::uint64_constant(u64::from(element_width)),
             ),
@@ -1822,32 +1824,32 @@ impl AllocationSize {
         Self {
             term,
             unsigned: self.unsigned,
-            needs_extent_bound: false,
+            needs_size_bound: false,
             kind: self.kind,
             wraps: self.wraps,
         }
     }
 
-    fn into_extent(self) -> HeapExtent {
-        HeapExtent::new(self.term, self.kind)
+    fn into_allocation_size(self) -> AllocationSize {
+        AllocationSize::new(self.term, self.kind)
     }
 
     /// The size as a constant byte count, in either format.
     fn constant_bytes(&self) -> Option<u64> {
         match self.kind {
-            HeapExtentKind::Int32 => self.term.as_const().map(u64::from),
-            HeapExtentKind::UInt64 => self.term.uint64_as_const(),
+            AllocationSizeKind::Int32 => self.term.as_const().map(u64::from),
+            AllocationSizeKind::UInt64 => self.term.uint64_as_const(),
         }
     }
 
     /// `bytes <= self`, compared in the size's format and signedness.
     fn at_least(&self, bytes: u32) -> ConditionTerm {
         match (self.kind, self.unsigned) {
-            (HeapExtentKind::UInt64, _) => uint64_extent_at_least(&self.term, u64::from(bytes)),
-            (HeapExtentKind::Int32, true) => {
+            (AllocationSizeKind::UInt64, _) => uint64_size_at_least(&self.term, u64::from(bytes)),
+            (AllocationSizeKind::Int32, true) => {
                 ConditionTerm::unsigned_less_equal(MachineTerm::constant(bytes), self.term.clone())
             }
-            (HeapExtentKind::Int32, false) => {
+            (AllocationSizeKind::Int32, false) => {
                 ConditionTerm::signed_less_equal(MachineTerm::constant(bytes), self.term.clone())
             }
         }
@@ -1856,29 +1858,27 @@ impl AllocationSize {
     /// `self < bytes`, compared in the size's format and signedness.
     fn less_than(&self, bytes: u32) -> ConditionTerm {
         match (self.kind, self.unsigned) {
-            (HeapExtentKind::UInt64, _) => {
-                let (count, bound) = crate::kernel::reasoning::uint64_extent_in_elements(
-                    &self.term,
-                    u64::from(bytes),
-                );
+            (AllocationSizeKind::UInt64, _) => {
+                let (count, bound) =
+                    crate::kernel::reasoning::uint64_size_in_elements(&self.term, u64::from(bytes));
                 ConditionTerm::uint64_less_than(count.clone(), bound)
             }
-            (HeapExtentKind::Int32, true) => {
+            (AllocationSizeKind::Int32, true) => {
                 ConditionTerm::unsigned_less_than(self.term.clone(), MachineTerm::constant(bytes))
             }
-            (HeapExtentKind::Int32, false) => {
+            (AllocationSizeKind::Int32, false) => {
                 ConditionTerm::signed_less_than(self.term.clone(), MachineTerm::constant(bytes))
             }
         }
     }
 }
 
-/// `bytes <= extent` for an admitted 64-bit heap extent. An extent `n * k`
-/// with a constant `k` is exact ([`uint64_heap_extent_bytes_are_exact`]), so
+/// `bytes <= size` for an admitted 64-bit allocation size. A size `n * k`
+/// with a constant `k` is exact ([`uint64_allocation_size_bytes_are_exact`]), so
 /// the comparison is `ceil(bytes / k) <= n` over its element count, which
 /// the facts about `n` decide where the wrapping product would not.
-fn uint64_extent_at_least(extent: &MachineTerm, bytes: u64) -> ConditionTerm {
-    let (count, bound) = crate::kernel::reasoning::uint64_extent_in_elements(extent, bytes);
+fn uint64_size_at_least(size: &MachineTerm, bytes: u64) -> ConditionTerm {
+    let (count, bound) = crate::kernel::reasoning::uint64_size_in_elements(size, bytes);
     ConditionTerm::uint64_less_equal(bound, count.clone())
 }
 
@@ -1887,13 +1887,13 @@ fn uint64_extent_at_least(extent: &MachineTerm, bytes: u64) -> ConditionTerm {
 /// is their minimum; one constant, it is that one where the facts decide it
 /// is the smaller. A prefix that is not a 32-bit constant is not modeled.
 fn realloc_zeroed_prefix(
-    old_prefix: &HeapExtent,
-    new_size: &AllocationSize,
+    old_prefix: &AllocationSize,
+    new_size: &RequestedAllocationSize,
     assumptions: &PureFactContext,
 ) -> Option<u32> {
     let old_constant = match old_prefix.kind() {
-        HeapExtentKind::Int32 => old_prefix.bytes().as_const().map(u64::from),
-        HeapExtentKind::UInt64 => old_prefix.bytes().uint64_as_const(),
+        AllocationSizeKind::Int32 => old_prefix.bytes().as_const().map(u64::from),
+        AllocationSizeKind::UInt64 => old_prefix.bytes().uint64_as_const(),
     };
     let prefix = match (old_constant, new_size.constant_bytes()) {
         (Some(old), Some(new)) => old.min(new),
@@ -1904,12 +1904,12 @@ fn realloc_zeroed_prefix(
         (None, Some(new)) => {
             let new = u32::try_from(new).ok()?;
             let shrinks = match old_prefix.kind() {
-                HeapExtentKind::Int32 => ConditionTerm::unsigned_less_equal(
+                AllocationSizeKind::Int32 => ConditionTerm::unsigned_less_equal(
                     MachineTerm::constant(new),
                     old_prefix.bytes().clone(),
                 ),
-                HeapExtentKind::UInt64 => {
-                    uint64_extent_at_least(old_prefix.bytes(), u64::from(new))
+                AllocationSizeKind::UInt64 => {
+                    uint64_size_at_least(old_prefix.bytes(), u64::from(new))
                 }
             };
             (assumptions.decide(&shrinks) == Some(true)).then_some(u64::from(new))?
@@ -1929,32 +1929,37 @@ fn allocation_size_refusal(value: &ProgramValue) -> RuntimeError {
     }
 }
 
-/// The heap extent a C allocation size makes (`design/heap-extents.md`,
-/// D1 and D2). A 32-bit or narrower size is a checked 32-bit extent, and so
+/// The allocation size a C allocation size makes (`design/heap-allocation-sizes.md`,
+/// D1 and D2). A 32-bit or narrower size is a checked 32-bit size, and so
 /// is a 64-bit `size_t`/`long` size the facts fix to a constant that fits
-/// `uint32`. Any other 64-bit size is a `uint64` extent, its value as C's
+/// `uint32`. Any other 64-bit size is a `uint64` size, its value as C's
 /// `size_t` argument (a `long` converted). A `uint32` size is admitted here
 /// and must still be bounded by `INT32_MAX`, and a 64-bit one by
 /// `PTRDIFF_MAX` ([`allocation_size_validity_refusal`]).
 fn allocation_size_value(
     value: ProgramValue,
     assumptions: &PureFactContext,
-) -> Option<AllocationSize> {
+) -> Option<RequestedAllocationSize> {
     match value.numeric_value().clone() {
         ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
-        ProgramValue::Bool(term) => Some(AllocationSize::int32(term, true, false)),
-        ProgramValue::Int8(term) => Some(AllocationSize::int32(term, false, false)),
+        ProgramValue::Bool(term) => Some(RequestedAllocationSize::int32(term, true, false)),
+        ProgramValue::Int8(term) => Some(RequestedAllocationSize::int32(term, false, false)),
         ProgramValue::Int16(term) | ProgramValue::UInt8(term) | ProgramValue::UInt16(term) => {
-            Some(AllocationSize::int32(term, false, false))
+            Some(RequestedAllocationSize::int32(term, false, false))
         }
-        ProgramValue::Int32(term) => Some(AllocationSize::int32(term, false, false)),
-        ProgramValue::UInt32(term) => Some(AllocationSize::int32(term, true, true)),
+        ProgramValue::Int32(term) => Some(RequestedAllocationSize::int32(term, false, false)),
+        ProgramValue::UInt32(term) => Some(RequestedAllocationSize::int32(term, true, true)),
         ProgramValue::Int64(term) => Some(match exact_signed_size_value(&term, assumptions) {
             Some(value) => match u32::try_from(value) {
-                Ok(value) => AllocationSize::int32(MachineTerm::constant(value), false, false),
-                Err(_) => AllocationSize::uint64(MachineTerm::uint64_constant(value as u64), false),
+                Ok(value) => {
+                    RequestedAllocationSize::int32(MachineTerm::constant(value), false, false)
+                }
+                Err(_) => RequestedAllocationSize::uint64(
+                    MachineTerm::uint64_constant(value as u64),
+                    false,
+                ),
             },
-            None => AllocationSize::uint64(MachineTerm::uint64_from_int64(term), false),
+            None => RequestedAllocationSize::uint64(MachineTerm::uint64_from_int64(term), false),
         }),
         ProgramValue::UInt64(term) => Some(uint64_size_value(term, true, assumptions)),
         ProgramValue::Int128(_)
@@ -1967,19 +1972,19 @@ fn allocation_size_value(
     }
 }
 
-/// A `uint64` size: a 32-bit constant extent where the facts fix it to a
-/// value that fits `uint32` (D2), else a `uint64` extent.
+/// A `uint64` size: a 32-bit constant size where the facts fix it to a
+/// value that fits `uint32` (D2), else a `uint64` size.
 fn uint64_size_value(
     term: MachineTerm,
     wraps: bool,
     assumptions: &PureFactContext,
-) -> AllocationSize {
+) -> RequestedAllocationSize {
     match exact_unsigned_size_value(&term, assumptions) {
         Some(value) => match u32::try_from(value) {
-            Ok(value) => AllocationSize::int32(MachineTerm::constant(value), false, false),
-            Err(_) => AllocationSize::uint64(MachineTerm::uint64_constant(value), wraps),
+            Ok(value) => RequestedAllocationSize::int32(MachineTerm::constant(value), false, false),
+            Err(_) => RequestedAllocationSize::uint64(MachineTerm::uint64_constant(value), wraps),
         },
-        None => AllocationSize::uint64(term, wraps),
+        None => RequestedAllocationSize::uint64(term, wraps),
     }
 }
 
@@ -2098,7 +2103,10 @@ fn exact_unsigned_size_value(term: &MachineTerm, assumptions: &PureFactContext) 
     }
 }
 
-fn allocation_size_is_positive(size: &AllocationSize, assumptions: &PureFactContext) -> bool {
+fn allocation_size_is_positive(
+    size: &RequestedAllocationSize,
+    assumptions: &PureFactContext,
+) -> bool {
     let condition = if size.unsigned {
         ConditionTerm::unsigned_greater_than(size.term.clone(), MachineTerm::constant(0))
     } else {
@@ -2108,11 +2116,11 @@ fn allocation_size_is_positive(size: &AllocationSize, assumptions: &PureFactCont
 }
 
 /// Whether `size` elements of `element_width` bytes fit the checked signed
-/// 32-bit heap extent. The block's token and range store the extent as an
+/// 32-bit allocation size. The block's token and range store the size as an
 /// `int32`, so an unsigned size is bounded by `INT32_MAX` too: a `uint32`
 /// at or above 2^31 would read there as a negative count.
 fn allocation_size_fits_element_width(
-    size: &AllocationSize,
+    size: &RequestedAllocationSize,
     element_width: u32,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -2125,11 +2133,11 @@ fn allocation_size_fits_element_width(
     assumptions.decide(&condition) == Some(true)
 }
 
-/// Whether the facts decide that a 64-bit extent is exact: an element count
+/// Whether the facts decide that a 64-bit size is exact: an element count
 /// `1 <= n <= PTRDIFF_MAX / element_width` (so `n * element_width` does not
 /// wrap), or a byte count `1 <= bytes <= PTRDIFF_MAX` whose top-level
 /// product, if it is one, is by a constant `k` with the other factor at most
-/// `PTRDIFF_MAX / k` (`design/heap-extents.md`, D3).
+/// `PTRDIFF_MAX / k` (`design/heap-allocation-sizes.md`, D3).
 ///
 /// The product condition is what lets a reader take `n * k` bytes as `n`
 /// elements ([`crate::kernel::reasoning::uint64_element_count_from_bytes`]):
@@ -2137,7 +2145,7 @@ fn allocation_size_fits_element_width(
 /// value bounded by `PTRDIFF_MAX` says nothing about `n`. A product of two
 /// symbolic factors is not admitted.
 fn uint64_allocation_size_is_exact(
-    size: &AllocationSize,
+    size: &RequestedAllocationSize,
     element_width: u32,
     element_count: bool,
     assumptions: &PureFactContext,
@@ -2158,17 +2166,17 @@ fn uint64_allocation_size_is_exact(
     if element_count {
         return positive(&size.term) && at_most(&size.term, u64::from(element_width.max(1)));
     }
-    uint64_heap_extent_bytes_are_exact(&size.term, assumptions)
+    uint64_allocation_size_bytes_are_exact(&size.term, assumptions)
 }
 
-/// Whether `bytes`, a `uint64` byte count, is a 64-bit heap extent: positive
+/// Whether `bytes`, a `uint64` byte count, is a 64-bit allocation size: positive
 /// and at most `PTRDIFF_MAX`, and, when it is a top-level product with a
 /// constant factor `k`, with its other factor decided at most
 /// `PTRDIFF_MAX / k`, so the product is exact and reads back as its elements
 /// ([`crate::kernel::reasoning::uint64_element_count_from_bytes`]). A product
 /// of two symbolic factors is not one. `malloc` and a contract's
-/// `allocation(p, bytes)` admit a 64-bit extent only under this decision.
-pub(in crate::kernel) fn uint64_heap_extent_bytes_are_exact(
+/// `allocation(p, bytes)` admit a 64-bit size only under this decision.
+pub(in crate::kernel) fn uint64_allocation_size_bytes_are_exact(
     bytes: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -2199,32 +2207,32 @@ pub(in crate::kernel) fn uint64_heap_extent_bytes_are_exact(
     }
 }
 
-/// Why an admitted allocation size cannot be a heap extent, if it cannot. An
+/// Why an admitted allocation size cannot be a heap block's size, if it cannot. An
 /// element count must be positive and fit with `element_width`; a raw byte
 /// count must be positive and, for a `uint32`, at most `INT32_MAX`; a 64-bit
 /// size must be exact and at most `PTRDIFF_MAX` bytes
 /// ([`uint64_allocation_size_is_exact`]).
 fn allocation_size_validity_refusal(
-    size: &AllocationSize,
+    size: &RequestedAllocationSize,
     element_width: u32,
     element_count: bool,
     assumptions: &PureFactContext,
 ) -> Option<RuntimeError> {
-    if size.kind == HeapExtentKind::UInt64 {
+    if size.kind == AllocationSizeKind::UInt64 {
         return (!uint64_allocation_size_is_exact(size, element_width, element_count, assumptions))
             .then_some(RuntimeError::HeapAllocationSize);
     }
     if !allocation_size_is_positive(size, assumptions) {
         return Some(RuntimeError::TypeMismatch);
     }
-    let fits = if element_count || size.needs_extent_bound {
+    let fits = if element_count || size.needs_size_bound {
         allocation_size_fits_element_width(size, element_width, assumptions)
     } else {
         true
     };
     if fits {
         None
-    } else if size.needs_extent_bound {
+    } else if size.needs_size_bound {
         Some(RuntimeError::HeapAllocationSizeAboveInt32)
     } else {
         Some(RuntimeError::TypeMismatch)
@@ -2352,7 +2360,7 @@ fn execute_program_realloc_result_paths(
             continue;
         }
 
-        let Some(old_bytes) = state.memory.live_heap_block_extent(&old_pointer).cloned() else {
+        let Some(old_bytes) = state.memory.live_heap_block_size(&old_pointer).cloned() else {
             let error = if state
                 .memory
                 .is_deallocated_heap_address(&old_pointer, assumptions)
@@ -2472,7 +2480,7 @@ fn execute_program_realloc_result_paths(
                     .heap
                     .zeroed_prefix_allocations
                     .get(&old_pointer)
-                    .map(|prefix| HeapExtent::int32(prefix.clone()))
+                    .map(|prefix| AllocationSize::int32(prefix.clone()))
             };
             let zeroed_prefix = match zeroed_source {
                 None => None,
@@ -2654,7 +2662,7 @@ fn execute_program_realloc_result_paths(
                 .clone()
                 .with_pending_heap_allocation(
                     pending_pointer.clone(),
-                    new_bytes.clone().into_extent(),
+                    new_bytes.clone().into_allocation_size(),
                     false,
                 )
                 .with_pending_heap_reallocation(
@@ -2759,12 +2767,12 @@ fn execute_program_heap_free_paths(
         // allocation; it must not create a second lifetime under the alias.
         // The query's byte count is a placeholder: candidates match by base.
         let allocation_query =
-            ResourceFact::own_designated_allocation(pointer.clone(), &HeapExtent::int32(0));
+            ResourceFact::own_designated_allocation(pointer.clone(), &AllocationSize::int32(0));
         let declared_allocation = state
             .resources
             .direct_match_candidates_for(&allocation_query, &effective_assumptions)
             .into_iter()
-            .filter_map(ResourceFact::allocation_extent)
+            .filter_map(ResourceFact::allocation_size)
             .find(|(base, _)| {
                 crate::kernel::resource_arguments_proven_equal(
                     &ProgramValue::Pointer((*base).clone().with_type(ProgramType::Int32Pointer))
@@ -2780,7 +2788,7 @@ fn execute_program_heap_free_paths(
         };
         // The owned token can itself be spelled by a returned alias. Resolve
         // that address to its indexed storage coordinate before asking whether
-        // it is the exact live allocation base. Keep provenance and extent;
+        // it is the exact live allocation base. Keep provenance and bounds;
         // this address spelling grants no permission and preserves offsets.
         pointer.replace_pointer(
             effective_assumptions
@@ -2809,7 +2817,7 @@ fn execute_program_heap_free_paths(
             .unwrap_or(ProgramType::Int32.byte_width());
         let before_free = state.memory.clone();
         let mut working_memory = state.memory.clone();
-        let bytes = if let Some(bytes) = working_memory.live_heap_block_extent(pointer.pointer()) {
+        let bytes = if let Some(bytes) = working_memory.live_heap_block_size(pointer.pointer()) {
             bytes.clone()
         } else if working_memory
             .is_deallocated_heap_address(pointer.pointer(), &effective_assumptions)
@@ -5511,7 +5519,7 @@ pub(in crate::kernel) fn execute_program_loop_paths(
 ///   object's lifetime before taking the next generation; and
 /// * a *called* frame, which executes on the caller's memory with its own
 ///   locals map and so cannot see the caller's objects at all. Its `buf` and
-///   the caller's `buf` would be one block, one extent and one cell map. That
+///   the caller's `buf` would be one block, one size and one cell map. That
 ///   is why a called frame is generational unconditionally: the caller's
 ///   object may not even be visible in memory, as for a value-only parameter
 ///   whose pseudo-slot borrows the `local:<name>` spelling while owning no
@@ -6283,7 +6291,7 @@ pub(in crate::kernel) fn sync_retained_stack_local(
 }
 
 /// A pointer value moved from a pending allocation's base to its resolved
-/// block. Its subobject extent, which names the same block, moves with it.
+/// block. Its subobject bounds, which names the same block, moves with it.
 pub(in crate::kernel) fn rebase_resolved_allocation(
     value: &PointerValue,
     base: &Pointer,
@@ -6302,9 +6310,9 @@ pub(in crate::kernel) fn rebase_resolved_allocation(
                 address.clone()
             }
         })
-        .with_opaque_extent(None);
-    if resolved_value.extent().is_none() {
-        resolved_value.with_root_extent()
+        .with_bounds_owner(None);
+    if resolved_value.bounds().is_none() {
+        resolved_value.with_root_bounds()
     } else {
         resolved_value
     }

@@ -1391,10 +1391,7 @@ pub(in crate::surface) fn annotated_loop_function_extending(
         match crate::kernel::establish_resource_derived_loop_frames(
             previous.function.clone().with_body(lowered),
             &checked_entry,
-            &frame_entry
-                .assumptions
-                .clone()
-                .assume_entry_clause_extents(),
+            &frame_entry.assumptions.clone().assume_entry_clause_spans(),
             &mut budget,
         ) {
             Ok(Ok(function)) => function.body().clone(),
@@ -2074,10 +2071,7 @@ fn annotate_function(
             match crate::kernel::establish_resource_derived_loop_frames(
                 function,
                 &checked_entry,
-                &frame_entry
-                    .assumptions
-                    .clone()
-                    .assume_entry_clause_extents(),
+                &frame_entry.assumptions.clone().assume_entry_clause_spans(),
                 &mut budget,
             ) {
                 Ok(Ok(function)) => function,
@@ -2308,12 +2302,41 @@ pub(in crate::surface) fn elaborate_fixed_state_proposition_with_algebraic_and_i
     let mut context = context;
     context.algebraic_values = algebraic_values.into_iter().collect();
     context.integer_values = integer_values.clone();
-    // Reserve only captured Integer values referenced by this proposition.
-    // This one source walk keeps nested binders from rescanning the context.
+    // Reserve captured values referenced by this proposition, including native
+    // machine values supplied as predicate arguments. This one source walk
+    // keeps nested binders from rescanning the context.
+    let mut captures = BTreeSet::<QuantifierCapture>::new();
+    collect_click_proposition_referenced_bindings(proposition, &mut captures);
     let mut referenced = BTreeSet::new();
-    collect_click_proposition_referenced_names(proposition, &mut referenced);
+    for capture in captures {
+        match capture {
+            QuantifierCapture::Name(name) => {
+                referenced.insert(name);
+            }
+            QuantifierCapture::Variable(variable) => {
+                lowerer.next_quantifier_variable = lowerer.next_quantifier_variable.max(
+                    variable
+                        .0
+                        .checked_add(1)
+                        .ok_or("quantifier variable identity exhausted")?,
+                );
+            }
+        }
+    }
     lowerer.capture_referenced_names = Some(referenced.clone());
     for name in referenced {
+        if let Some(value) = context.values.get(&name) {
+            let captured =
+                crate::kernel::SpecIntegerExpression::FromMachine(Box::new(value.clone()));
+            if let Some(variable) = max_spec_integer_expression_variable(&captured) {
+                lowerer.next_quantifier_variable = lowerer.next_quantifier_variable.max(
+                    variable
+                        .0
+                        .checked_add(1)
+                        .ok_or("quantifier variable identity exhausted")?,
+                );
+            }
+        }
         if let Some(crate::kernel::SpecIntegerExpression::Term(term)) = integer_values.get(&name)
             && let Some(variable) = max_spec_integer_expression_variable(
                 &crate::kernel::SpecIntegerExpression::Term(term.clone()),
@@ -2458,6 +2481,40 @@ pub(in crate::surface) fn elaborate_fixed_state_integer_expression_with_integer_
         }
     }
     lowerer.lower_contract_integer_to_spec(expression, &context)
+}
+
+// The same lexical walk selects named bindings and captures already embedded
+// by `intro`/proof-local substitution. Neither route inspects ambient facts or
+// memory: only the values in the selected proposition reserve binder identities.
+#[derive(Eq, PartialEq, Ord, PartialOrd)]
+enum QuantifierCapture {
+    Name(String),
+    Variable(Variable),
+}
+
+impl From<String> for QuantifierCapture {
+    fn from(name: String) -> Self {
+        Self::Name(name)
+    }
+}
+
+impl ReferencedBinding for QuantifierCapture {
+    fn program(binding: &crate::kernel::BindingName) -> Option<Self> {
+        crate::instrumentation::record_deterministic_work(1);
+        binding
+            .unresolved_name()
+            .map(|name| Self::Name(name.to_owned()))
+    }
+
+    fn captured_value(value: &ProgramValue, names: &mut BTreeSet<Self>) {
+        crate::instrumentation::record_deterministic_work(1);
+        let captured = crate::kernel::SpecIntegerExpression::FromMachine(Box::new(
+            SpecExpression::Value(value.clone()),
+        ));
+        if let Some(variable) = max_spec_integer_expression_variable(&captured) {
+            names.insert(Self::Variable(variable));
+        }
+    }
 }
 
 /// Finds the largest identity in the surface quantifier band nested in a
@@ -6768,7 +6825,7 @@ impl AnnotationLowerer<'_> {
                     | ProgramExpression::CheckedObjectAddress(_) => {
                         // Rebuild from the authoritative surface operand,
                         // including values already bound into a postcondition.
-                        // Keep the address operation and selected member extent.
+                        // Keep the address operation and selected member bounds.
                         let values = if environment.contract_result_in_scope {
                             BTreeMap::from([(
                                 "result".to_string(),
@@ -8585,7 +8642,7 @@ impl AnnotationLowerer<'_> {
             return Ok(width);
         }
         // Whole-object and field syntax has already lowered its storage
-        // extent to the carrier's coordinates. Only an element range still
+        // size to the carrier's coordinates. Only an element range still
         // needs the instantiated generic pointee's physical stride.
         if !matches!(segment.surface, ContractSegmentSurface::Range { .. }) {
             return Ok(self
@@ -9580,7 +9637,7 @@ impl AnnotationLowerer<'_> {
             } = target.as_ref()
         {
             // Evaluate only the base through the selected specification state.
-            // Retain the C place steps for provenance, extent and qualification.
+            // Retain the C place steps for provenance, bounds and qualification.
             let mut base = pointer.as_ref();
             let mut steps = Vec::new();
             loop {
@@ -10866,6 +10923,72 @@ mod integer_source_quantifier_tests {
     }
 
     #[test]
+    fn machine_quantifier_avoids_referenced_native_captures() {
+        let file = crate::surface::parse(
+            "theorem capture(x: uint64) { ensures forall (z: uint64) { x == z }; }",
+        )
+        .unwrap();
+        let Ensure::Proposition(proposition) = file.theorem_definitions()[0].ensures()[0].ensure()
+        else {
+            panic!("expected proposition")
+        };
+        let state = ExecutionState::new();
+        for captured_variable in [1_999_999, 2_000_000, 2_000_017] {
+            let captured = ProgramValue::UInt64(crate::kernel::MachineTerm::Variable(Variable(
+                captured_variable,
+            )));
+            for embedded in [false, true] {
+                let mut proposition = proposition.clone();
+                if embedded {
+                    let ClickProposition::ForAll { body, .. } = &mut proposition else {
+                        panic!("expected forall")
+                    };
+                    let ClickProposition::Comparison { left, .. } = body.as_mut() else {
+                        panic!("expected comparison")
+                    };
+                    *left = ContractExpression::ProgramExpression(ProgramExpression::Value(
+                        captured.clone(),
+                    ));
+                }
+                let lowered = elaborate_fixed_state_proposition_with_algebraic_and_integer_values(
+                    &proposition,
+                    BTreeMap::new(),
+                    BTreeMap::new(),
+                    &state,
+                    &state,
+                    BTreeMap::new(),
+                    [("x".to_string(), captured.clone())].into_iter().collect(),
+                    BTreeMap::new(),
+                    &PersistentBinderMap::default(),
+                    None,
+                    &RecordedStates::new(),
+                    SpecDefinitions::new(
+                        &PredicateEnvironment::new(&[]),
+                        &ClickFunctionEnvironment::new(&[]),
+                    ),
+                    BTreeSet::new(),
+                    BTreeMap::new(),
+                )
+                .unwrap();
+                let SpecProposition::ForAllMachineInteger { variable, body, .. } = lowered else {
+                    panic!("expected machine forall")
+                };
+                assert_ne!(variable, Variable(captured_variable));
+                let SpecProposition::Comparison { left, right, .. } = *body else {
+                    panic!("expected native comparison")
+                };
+                assert_eq!(left, SpecExpression::Value(captured.clone()));
+                assert_eq!(
+                    right,
+                    SpecExpression::Value(ProgramValue::UInt64(
+                        crate::kernel::MachineTerm::Variable(variable)
+                    ))
+                );
+            }
+        }
+    }
+
+    #[test]
     fn integer_quantifier_stays_out_of_the_execution_band_and_avoids_caller_bindings() {
         let file = crate::surface::parse(
             "theorem capture(x: Integer) { ensures forall (z: Integer) { x == z }; }",
@@ -10927,6 +11050,13 @@ mod integer_source_quantifier_tests {
             assert_eq!(right, IntegerTerm::var(variable));
         }
     }
+}
+
+#[cfg(test)]
+mod quantifier_capture_scaling_tests {
+    include!(
+        "../../scaling_tests/surface/lowering/annotations/quantifier_capture_scaling_tests.rs"
+    );
 }
 
 #[cfg(test)]

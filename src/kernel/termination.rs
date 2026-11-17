@@ -768,7 +768,7 @@ fn call_passes_witness_child(
         .prefer_symbolic_external_loads()
         // This scope compares symbolic child identities. The ordinary
         // contract execution separately checks the call and its accesses.
-        .assume_entry_clause_extents();
+        .assume_entry_clause_spans();
     let mut parameter_state = ExecutionState::new();
     for (index, parameter) in function.parameters().iter().enumerate() {
         let variable = Variable(PARAMETER_VARIABLE_BASE + index as u64);
@@ -1490,22 +1490,6 @@ fn reject_address_escaped_measure(
             "termination measure `{measure}` in `{function_name}` has its address taken; a store \
              through that pointer could change the measure without a ranked update"
         )));
-    }
-    Ok(())
-}
-
-/// Rejects a loop `decreases` component naming a variable whose address
-/// escapes, before the back-edge bundle is built. A store through that
-/// pointer, here or inside a callee, could change the component without a
-/// ranked update, so the declaration is refused rather than proved.
-pub(super) fn program_reject_address_escaped_loop_measures(
-    function_name: &str,
-    measures: &[RankingComponent],
-    addressed: &BTreeSet<BindingName>,
-) -> Result<(), String> {
-    for measure in measures {
-        reject_address_escaped_ranking_component(function_name, measure, addressed)
-            .map_err(|error| error.message)?;
     }
     Ok(())
 }
@@ -6292,14 +6276,12 @@ mod local_descent_tests {
                 diverging_contracts: &BTreeSet::new(),
                 has_unselected_functions: false,
             })
-            .and_then(|proof| proof.prove_implicitly());
-        assert!(matches!(
-            result,
-            Err(ProgramContractFailure::Obligation {
-                goal: ProgramContractGoal::CallbackSafety,
-                ..
-            })
-        ));
+            .map_err(|_| "termination generation failed".to_string())
+            .and_then(|proof| proof.prove_through_native_root());
+        let error = result
+            .err()
+            .expect("callback safety must close before completion");
+        assert_eq!(error, "the checked termination facts do not close the root");
     }
 
     /// `spin` hands itself to `apply`. No direct call closes the cycle, and

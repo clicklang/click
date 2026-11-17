@@ -36,9 +36,10 @@ checked. Each one costs completeness, expansion, or a readable report.
   for a spelling and fall back to a placeholder, to another renderer, to
   `None`, or to dropping the fact.
 - **Name a value where it is introduced.** A step that introduces a fresh
-  value or memory state (a call result, a havoc, an allocation, a state
-  between recorded points) gives it a name from its origin at that
-  point. Do not recover a name later from whatever locals happen to hold the
+  value or memory state (a call result, a havoc, an allocation) gives it a
+  name from its origin at that point. A fact names only memories a recorded
+  point holds; a memory between recorded points has no name and is a defect
+  to fix where it is made, not one to name. Do not recover a name later from whatever locals happen to hold the
   value. A non-void call's result is `<region>.result`, including calls whose
   source discards the return value. The checked call transition retains the
   exact returned value, and its exit records it by region in
@@ -96,9 +97,10 @@ checked. Each one costs completeness, expansion, or a readable report.
   each integer a memory cell came to hold by the point that recorded it there
   (`cell_points`, filled from the cells each memory changed). The structural
   speller writes `at(point, ...)` from these indexes for a value no nearer
-  state names. A load or field read made in a memory no point
-  records, inside a call or after the last point, is read at the nearest
-  recorded memory that reads the same bytes.
+  state names. A read of a canonical load projection is raised at the point
+  recording the projection's source, which the kernel records when it
+  builds the projection (`load_projection_source`); no recorded state or
+  nearby memory is tried in turn.
   A local that keeps one value in memory, a borrowed Rust enum or
   type-parameter local (`AggregateLayout::holding_value`), is named by its
   own name: `o` lowers to the read of its object at the point it was last

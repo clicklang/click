@@ -290,10 +290,10 @@ impl TermRewrite<'_> {
         } else {
             self.boolean_address(&p.provenance)?
         };
-        let opaque = match &p.opaque_extent {
+        let opaque = match &p.bounds_owner {
             None => None,
             Some(origin) if replacement.is_some() && origin.syntax_equal(&base) => {
-                replacement.as_ref().unwrap().node().opaque_extent.clone()
+                replacement.as_ref().unwrap().node().bounds_owner.clone()
             }
             Some(origin) if selected(origin) => Some(target_identity),
             Some(origin) => Some(self.boolean_address(origin)?),
@@ -304,22 +304,22 @@ impl TermRewrite<'_> {
             .node()
             .clone();
         mapped.provenance = provenance;
-        mapped.opaque_extent = opaque;
-        if !p.qualifiers.as_ref().is_some_and(|q| q.extent_known)
+        mapped.bounds_owner = opaque;
+        if !p.qualifiers.as_ref().is_some_and(|q| q.bounds_known)
             && let Some(replacement) = replacement
         {
             let q = replacement.node().qualifiers.as_ref();
-            if q.is_some_and(|q| q.extent_known) || q.and_then(|q| q.extent.as_ref()).is_some() {
+            if q.is_some_and(|q| q.bounds_known) || q.and_then(|q| q.bounds.as_ref()).is_some() {
                 let qualifiers = std::sync::Arc::make_mut(
                     mapped.qualifiers.get_or_insert_with(Default::default),
                 );
-                qualifiers.extent = q.and_then(|q| q.extent.clone());
-                qualifiers.extent_known = true;
-                mapped.opaque_extent = None;
+                qualifiers.bounds = q.and_then(|q| q.bounds.clone());
+                qualifiers.bounds_known = true;
+                mapped.bounds_owner = None;
             }
         }
         // Native condition rewriting canonicalizes addresses after replacing
-        // the complete value, without rewriting the retained extent width.
+        // the complete value, without rewriting the retained bounds width.
         V::new(mapped)
             .map_condition_addresses(|address| {
                 let offsets = S::try_map_pair(

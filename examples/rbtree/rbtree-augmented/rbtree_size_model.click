@@ -215,7 +215,8 @@ tactic certify_size(p: struct rb_node*) {
 // Erasing metadata preserves the parent predicate used by ownership resources.
 theorem sized_parent_is_shape(tree: SizedTree, parent: struct rb_node*) {
     ensures sized_parent_is(tree, parent) == rb_parent_is(sized_shape(tree), parent) by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             SizedTree::Empty => {
                 unfold(sized_parent_is(SizedTree::Empty, parent));
                 unfold(sized_shape(SizedTree::Empty));

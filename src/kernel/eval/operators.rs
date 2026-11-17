@@ -2680,9 +2680,9 @@ fn pointer_offset_by_elements_paths(
         guards.extend(bounds);
         // C11 6.5.6p8 defines the sum only for a result inside the array
         // object or one past its end. When the state does not record the
-        // block's extent (every pointer parameter, and every symbolic or
+        // block's size (every pointer parameter, and every symbolic or
         // loaded pointer), the ranges it holds in that block are the only
-        // extent it knows, so the result must lie in one of them, one-past
+        // bounds it knows, so the result must lie in one of them, one-past
         // end included. A range decided to exclude the result drops out: when
         // the facts exclude it from every range the formation is refused, and
         // when exactly one range is left undecided its bounds are owed, as
@@ -3086,11 +3086,15 @@ fn pointer_block_bounds(
     byte_width: u32,
     assumptions: &PureFactContext,
 ) -> Option<Vec<PointerFormationGuard>> {
-    // The block's byte count is read through its extent kind: a 32-bit
-    // extent (in `0..=INT32_MAX`) zero extends into the 64-bit comparisons
-    // and is an `int32` in the 32-bit ones. A 64-bit extent (at most
+    // The block's byte count is read through its size kind: a 32-bit
+    // size (in `0..=INT32_MAX`) zero extends into the 64-bit comparisons
+    // and is an `int32` in the 32-bit ones. A 64-bit size (at most
     // `PTRDIFF_MAX`) is compared with a sign-extended 32-bit offset instead.
-    let Some(extent) = state.memory().block_extent(&pointer.block).cloned() else {
+    let Some(allocation_size) = state
+        .memory()
+        .block_allocation_size(&pointer.block)
+        .cloned()
+    else {
         return Some(Vec::new());
     };
 
@@ -3099,7 +3103,9 @@ fn pointer_block_bounds(
     // rebuilding them through a wrapping int32 term.
     if let (Some(offset), Some(size)) = (
         pointer.offset.as_const(),
-        extent.int32_bytes().and_then(MachineTerm::as_const),
+        allocation_size
+            .int32_bytes()
+            .and_then(MachineTerm::as_const),
     ) {
         if offset < 0 || offset > i64::from(size) {
             return Some(vec![PointerFormationGuard {
@@ -3113,8 +3119,9 @@ fn pointer_block_bounds(
         return Some(Vec::new());
     }
 
-    if extent.kind() == HeapExtentKind::UInt64
-        && let Some(guards) = wide_element_block_bounds(&pointer.offset, &extent, assumptions)
+    if allocation_size.kind() == AllocationSizeKind::UInt64
+        && let Some(guards) =
+            wide_element_block_bounds(&pointer.offset, &allocation_size, assumptions)
     {
         return Some(guards);
     }
@@ -3129,10 +3136,10 @@ fn pointer_block_bounds(
         // Compare the original 64-bit element count to the number of elements
         // the block can hold. Rebuilding it as a 32-bit residue can certify an
         // index several GiB past the block as a small in-bounds number.
-        // A 64-bit extent states its element count where its byte count
+        // A 64-bit size states its element count where its byte count
         // spells one (it was admitted exact, so `n * w` holds `n`).
-        let wide_count = (extent.kind() == HeapExtentKind::UInt64)
-            .then(|| extent.element_count(u32::try_from(*scale).ok()?))
+        let wide_count = (allocation_size.kind() == AllocationSizeKind::UInt64)
+            .then(|| allocation_size.element_count(u32::try_from(*scale).ok()?))
             .flatten();
         let limit = if let Some(count) = wide_count {
             if *unsigned {
@@ -3141,14 +3148,14 @@ fn pointer_block_bounds(
                 MachineTerm::int64_from_uint64_bits(count)
             }
         } else if *unsigned {
-            let bytes = extent.uint64_bytes();
+            let bytes = allocation_size.uint64_bytes();
             if *scale == 1 {
                 bytes
             } else {
                 MachineTerm::uint64_divide(bytes, MachineTerm::uint64_constant(*scale as u64))
             }
         } else {
-            let bytes = extent.int64_bytes();
+            let bytes = allocation_size.int64_bytes();
             if *scale == 1 {
                 bytes
             } else {
@@ -3206,7 +3213,7 @@ fn pointer_block_bounds(
                     MachineIntegerType::Int64,
                     CompareRelation::LessEqual,
                     offset.operand_view(),
-                    MachineOperandView::Legacy(&extent.int64_bytes()),
+                    MachineOperandView::Legacy(&allocation_size.int64_bytes()),
                 ),
                 value: true,
             },
@@ -3214,10 +3221,10 @@ fn pointer_block_bounds(
         return Some(guards);
     }
 
-    if extent.kind() == HeapExtentKind::UInt64 {
-        return wide_block_bounds_of_32_bit_offset(&pointer.offset, &extent);
+    if allocation_size.kind() == AllocationSizeKind::UInt64 {
+        return wide_block_bounds_of_32_bit_offset(&pointer.offset, &allocation_size);
     }
-    let block_size = extent.int32_bytes().cloned()?;
+    let block_size = allocation_size.int32_bytes().cloned()?;
     if byte_width == 1
         && let Some(guards) = strided_block_bounds(&pointer.offset, &block_size)
     {
@@ -3259,27 +3266,27 @@ fn pointer_block_bounds(
     ])
 }
 
-/// The formation bound of an address in a block with a 64-bit extent `n *
+/// The formation bound of an address in a block with a 64-bit size `n *
 /// k` (a constant `k`), stated over its elements: a constant byte offset `c`
-/// is `ceil(c / k) <= n` (`c <= bytes` for another extent), and `i * k + c`
+/// is `ceil(c / k) <= n` (`c <= bytes` for another size), and `i * k + c`
 /// with `0 <= c < k` (a field of element `i` of a struct array,
 /// [`scaled_element_offset`]) is `0 <= i` and `i <= n` when `c == 0`, else
 /// `i < n` ([`wide_index_bound_conditions`]).
 ///
 /// The byte spelling `offset <= n * k` compares with the wrapping `uint64`
 /// product, which the facts about `n` do not decide. The element spelling is
-/// equivalent because the extent was admitted with `n <= PTRDIFF_MAX / k`
-/// decided (`uint64_heap_extent_bytes_are_exact` in `eval/statements.rs`),
-/// so `n * k` is the mathematical byte count, as [`HeapExtent::element_count`]
+/// equivalent because the size was admitted with `n <= PTRDIFF_MAX / k`
+/// decided (`uint64_allocation_size_bytes_are_exact` in `eval/statements.rs`),
+/// so `n * k` is the mathematical byte count, as [`AllocationSize::element_count`]
 /// reads it; then `0 <= i <= n` also rules out overflow of an `int64`
-/// product `i * k`. `None` for another offset or extent shape, which the
+/// product `i * k`. `None` for another offset or size shape, which the
 /// caller compares in bytes.
 ///
 /// [`scaled_element_offset`]: crate::kernel::reasoning::scaled_element_offset
 /// [`wide_index_bound_conditions`]: crate::kernel::reasoning::wide_index_bound_conditions
 fn wide_element_block_bounds(
     offset: &PointerOffsetTerm,
-    extent: &HeapExtent,
+    size: &AllocationSize,
     assumptions: &PureFactContext,
 ) -> Option<Vec<PointerFormationGuard>> {
     let guard = |condition| PointerFormationGuard {
@@ -3288,8 +3295,7 @@ fn wide_element_block_bounds(
     };
     if let PointerOffsetTerm::Constant(bytes) = offset {
         let bytes = u64::try_from(*bytes).ok()?;
-        let (count, bound) =
-            crate::kernel::reasoning::uint64_extent_in_elements(extent.bytes(), bytes);
+        let (count, bound) = crate::kernel::reasoning::uint64_size_in_elements(size.bytes(), bytes);
         return Some(vec![guard(ConditionTerm::uint64_less_equal(
             bound,
             count.clone(),
@@ -3303,7 +3309,7 @@ fn wide_element_block_bounds(
     if !(0..element.stride).contains(&element.field) {
         return None;
     }
-    let count = extent.element_count(u32::try_from(element.stride).ok()?)?;
+    let count = size.element_count(u32::try_from(element.stride).ok()?)?;
     Some(
         crate::kernel::reasoning::wide_index_bound_conditions(
             &element.index,
@@ -3319,13 +3325,13 @@ fn wide_element_block_bounds(
 }
 
 /// The formation bound of a pointer with a 32-bit offset into a block with a
-/// 64-bit extent, at 64 bits: `0 <= i <= count` for one scaled `int32` index
-/// `i` (with the block's element count where its extent spells one), else
+/// 64-bit size, at 64 bits: `0 <= i <= count` for one scaled `int32` index
+/// `i` (with the block's element count where its size spells one), else
 /// `0 <= offset <= bytes` over the exact 64-bit byte offset. An offset with
 /// no exact reading has no checked normal path.
 fn wide_block_bounds_of_32_bit_offset(
     offset: &PointerOffsetTerm,
-    extent: &HeapExtent,
+    size: &AllocationSize,
 ) -> Option<Vec<PointerFormationGuard>> {
     if let PointerOffsetTerm::Int32Scaled {
         value,
@@ -3333,11 +3339,11 @@ fn wide_block_bounds_of_32_bit_offset(
     } = offset
         && *scale > 0
     {
-        let limit = match extent.element_count(u32::try_from(*scale).ok()?) {
+        let limit = match size.element_count(u32::try_from(*scale).ok()?) {
             Some(count) => MachineTerm::int64_from_uint64_bits(count),
-            None if *scale == 1 => extent.int64_bytes(),
+            None if *scale == 1 => size.int64_bytes(),
             None => {
-                MachineTerm::int64_divide(extent.int64_bytes(), MachineTerm::int64_constant(*scale))
+                MachineTerm::int64_divide(size.int64_bytes(), MachineTerm::int64_constant(*scale))
             }
         };
         return Some(vec![
@@ -3382,7 +3388,7 @@ fn wide_block_bounds_of_32_bit_offset(
                 MachineIntegerType::Int64,
                 CompareRelation::LessEqual,
                 offset.operand_view(),
-                MachineOperandView::Legacy(&extent.int64_bytes()),
+                MachineOperandView::Legacy(&size.int64_bytes()),
             ),
             value: true,
         },
@@ -3454,12 +3460,12 @@ fn strided_block_bounds(
 
 /// How a formed pointer relates to the memory ranges the state holds in its
 /// block: the `owns` and `views` ranges of the current resources and of
-/// every admitted composition, and the `viewable` extents the facts hold for
+/// every admitted composition, and the `viewable` spans the facts hold for
 /// its object. A range contains the pointer when `start <= index <= end` in
 /// the range's own element coordinates, so the one-past end counts.
 ///
 /// This is intentionally a small, structural query. Every lookup is keyed:
-/// the ranges by the pointer's block, the extents by its object identity,
+/// the ranges by the pointer's block, the spans by its object identity,
 /// and the pointer is resolved against each range's base by exact offset
 /// arithmetic, never by searching the resource algebra. `ExternalArgument`
 /// is the one block every pointer parameter shares, so a formation there
@@ -3491,10 +3497,10 @@ struct HeldRangeSurvey {
     /// The undecided resource ranges: whether the displaced operand is the
     /// range's base, and the guards that place the result inside it.
     undecided: Vec<(bool, Vec<PointerFormationGuard>)>,
-    /// A `viewable` extent is undecided. Its byte-scaled bounds are not the
+    /// A `viewable` span is undecided. Its byte-scaled bounds are not the
     /// element shape the formation guard rules read, so it is never a guard
     /// source, and it keeps a resource range from standing in for it alone.
-    undecided_extent: bool,
+    undecided_span: bool,
 }
 
 impl HeldRangeSurvey {
@@ -3554,7 +3560,7 @@ impl HeldRangeSurvey {
                         ],
                     ));
                 } else {
-                    self.undecided_extent = true;
+                    self.undecided_span = true;
                 }
                 false
             }
@@ -3565,9 +3571,9 @@ impl HeldRangeSurvey {
         let Self {
             refuted,
             mut undecided,
-            undecided_extent,
+            undecided_span,
         } = self;
-        if undecided_extent {
+        if undecided_span {
             return HeldRangeMembership::Unknown;
         }
         match undecided.len() {
@@ -3758,7 +3764,7 @@ fn simplify_program_int32_add_operand(
 }
 
 /// Splits the paths on the formation guards. The formed value keeps the
-/// operand's type, volatility and subobject extent. It drops the operand's
+/// operand's type, volatility and subobject bounds. It drops the operand's
 /// `const` pointee qualifier, as formation always has; the write-through-const
 /// check reads the lvalue's static type.
 fn apply_pointer_formation_guards(
@@ -5676,7 +5682,7 @@ fn pointer_object_displacement(pointer: &Pointer) -> Option<PointerOffsetTerm> {
 /// `None` when it cannot be: a pointer at its object's start, or one at a
 /// constant offset other than the block's constant size. A displacement the
 /// terms do not resolve, and any nonzero displacement into a block whose
-/// extent the state does not record, may be the end.
+/// bounds the state does not record, may be the end.
 fn pointer_at_block_end_condition(
     state: &ExecutionState,
     pointer: &Pointer,
@@ -5687,11 +5693,11 @@ fn pointer_at_block_end_condition(
     if displacement.as_const() == Some(0) {
         return None;
     }
-    // The end is compared as a 32-bit offset; a 64-bit extent may be it.
+    // The end is compared as a 32-bit offset; a 64-bit bounds may be it.
     let Some(size) = state
         .memory()
-        .block_extent(&pointer.block)
-        .and_then(HeapExtent::int32_bytes)
+        .block_allocation_size(&pointer.block)
+        .and_then(AllocationSize::int32_bytes)
         .cloned()
     else {
         return Some(ConditionTerm::Constant(true));
@@ -5735,7 +5741,7 @@ pub(in crate::kernel) fn pointer_equality_condition(
 /// holds although only the second may be read through. The comparison is
 /// therefore an equality of the two `uint64` addresses, not the kernel's
 /// pointer equality, and grants no permission from one pointer to the other
-/// (`design/pointer-subobject-extents.md`, Phase B). Equal pointers still
+/// (`design/pointer-subobject-bounds.md`, Phase B). Equal pointers still
 /// decide it true. A null operand is a null test, which C makes exact.
 pub(in crate::kernel) fn program_pointer_comparison_condition(
     left: Pointer,
@@ -5754,18 +5760,18 @@ pub(in crate::kernel) fn pointer_is_null_condition(pointer: Pointer) -> Conditio
     pointer_equality_condition(pointer, Pointer::null())
 }
 
-/// Whether the `bytes` bytes at `pointer` stay inside `extent`; zero bytes
+/// Whether the `bytes` bytes at `pointer` stay inside `bounds`; zero bytes
 /// asks for a position, the one-past end included
-/// (`design/pointer-subobject-extents.md`). Each returned guard must hold.
-/// `None` when the address has no byte offset from the extent's start in
-/// the address's own spelling; [`subobject_extent_proven`] then decides it
+/// (`design/pointer-subobject-bounds.md`). Each returned guard must hold.
+/// `None` when the address has no byte offset from the bounds' start in
+/// the address's own spelling; [`subobject_bounds_proven`] then decides it
 /// through the fact context.
-fn subobject_extent_guards(
+fn subobject_bounds_guards(
     pointer: &Pointer,
-    extent: &SubobjectExtent,
+    bounds: &SubobjectBounds,
     bytes: u32,
 ) -> Option<Vec<PointerFormationGuard>> {
-    let offset = shared_pointer_byte_offset_from_base(pointer, &extent.start)?;
+    let offset = shared_pointer_byte_offset_from_base(pointer, &bounds.start)?;
     Some(vec![
         PointerFormationGuard {
             condition: crate::kernel::assumptions::index_comparison(
@@ -5784,25 +5790,25 @@ fn subobject_extent_guards(
                     MachineOperandView::Legacy(&MachineTerm::constant(bytes)),
                 )
                 .operand_view(),
-                MachineOperandView::Legacy(&extent.width),
+                MachineOperandView::Legacy(&bounds.width),
             ),
             value: true,
         },
     ])
 }
 
-/// Whether the facts prove the `bytes` bytes at `pointer` inside `extent`,
-/// resolving the address against the extent's start as a held range's
+/// Whether the facts prove the `bytes` bytes at `pointer` inside `bounds`,
+/// resolving the address against the bounds' start as a held range's
 /// base is resolved.
-fn subobject_extent_proven(
+fn subobject_bounds_proven(
     pointer: &Pointer,
-    extent: &SubobjectExtent,
+    bounds: &SubobjectBounds,
     bytes: u32,
     facts: &ExecutionFacts,
     obligations: &[ProofObligation],
     assumptions: &PureFactContext,
 ) -> bool {
-    if let Some(guards) = subobject_extent_guards(pointer, extent, bytes)
+    if let Some(guards) = subobject_bounds_guards(pointer, bounds, bytes)
         && guards.iter().all(|guard| {
             decide_with_facts(assumptions, facts, &guard.condition) == Some(guard.value)
         })
@@ -5812,34 +5818,34 @@ fn subobject_extent_proven(
     assumptions_with_path_context(assumptions, facts, obligations).pointer_access_in_range(
         pointer,
         bytes,
-        &extent.start,
+        &bounds.start,
         &MachineTerm::constant(0),
-        &extent.width,
+        &bounds.width,
         1,
     )
 }
 
 /// Refuses a read or write of `bytes` bytes at `pointer` outside the
-/// subobject extent of the pointer it was reached through.
+/// subobject bounds of the pointer it was reached through.
 pub(in crate::kernel) fn subobject_access_refusal(
     pointer: &Pointer,
-    extent: Option<&SubobjectExtent>,
+    bounds: Option<&SubobjectBounds>,
     bytes: u32,
     facts: &ExecutionFacts,
     obligations: &[ProofObligation],
     assumptions: &PureFactContext,
 ) -> Option<UndefinedBehavior> {
-    let extent = extent?;
-    if subobject_extent_proven(pointer, extent, bytes, facts, obligations, assumptions) {
+    let bounds = bounds?;
+    if subobject_bounds_proven(pointer, bounds, bytes, facts, obligations, assumptions) {
         return None;
     }
-    // Retain the selected access and its actual designated extent. Construct
+    // Retain the selected access and its actual designated bounds. Construct
     // this diagnostic only after checking has refused the access.
     let required = Proposition::ResourceContains {
         parent: Box::new(Resource::Memory(MemoryRange::new_with_element_width(
-            extent.start.clone(),
+            bounds.start.clone(),
             0u32.into(),
-            extent.width.clone(),
+            bounds.width.clone(),
             1,
         ))),
         child: Box::new(Resource::Memory(MemoryRange::new_with_element_width(
@@ -5904,8 +5910,8 @@ pub(in crate::kernel) fn effective_type_refusal_of(
 }
 
 /// The formation guards a pointer arithmetic result owes to its operand's
-/// subobject extent. A result whose position cannot be related to the
-/// extent is refused outright.
+/// subobject bounds. A result whose position cannot be related to the
+/// bounds is refused outright.
 fn subobject_formation_guards(
     value: &PointerValue,
     result: &Pointer,
@@ -5914,11 +5920,11 @@ fn subobject_formation_guards(
     assumptions: &PureFactContext,
     resources: &ResourceContext,
 ) -> Result<Vec<PointerFormationGuard>, ()> {
-    let Some(extent) = value.extent() else {
-        if value.extent_is_known()
-            || value.opaque_extent().is_none()
+    let Some(bounds) = value.bounds() else {
+        if value.bounds_are_known()
+            || value.bounds_owner().is_none()
             || result == value.pointer()
-            || assumptions.should_assume_entry_clause_extents()
+            || assumptions.should_assume_entry_clause_spans()
             // Spec offsets name mathematical addresses, as SpecExpression::PointerOffset
             // does. Executed C arithmetic must establish its bounds here.
             || crate::kernel::eval::SpecificationAccessScope::is_active()
@@ -5941,11 +5947,11 @@ fn subobject_formation_guards(
             .then(Vec::new)
             .ok_or(());
     };
-    // Address equality establishes position without changing the extent.
-    if subobject_extent_proven(result, extent, 0, facts, obligations, assumptions) {
+    // Address equality establishes position without changing the bounds.
+    if subobject_bounds_proven(result, bounds, 0, facts, obligations, assumptions) {
         return Ok(Vec::new());
     }
-    match subobject_extent_guards(result, extent, 0) {
+    match subobject_bounds_guards(result, bounds, 0) {
         Some(guards) => Ok(guards),
         None => Err(()),
     }
@@ -5962,12 +5968,12 @@ pub(in crate::kernel) fn subobject_paths(
     assumptions: &PureFactContext,
     resources: &ResourceContext,
 ) -> Vec<ExpressionPath> {
-    // A pointer type alone does not establish the extent of an enclosing
+    // A pointer type alone does not establish the bounds of an enclosing
     // object. Entry clauses establish their selected member's full bounds;
     // subsequent selections consume that evidence or a matching held range.
-    if pointer.extent().is_none() && !pointer.extent_is_known() && pointer.opaque_extent().is_some()
+    if pointer.bounds().is_none() && !pointer.bounds_are_known() && pointer.bounds_owner().is_some()
     {
-        if assumptions.should_assume_entry_clause_extents() {
+        if assumptions.should_assume_entry_clause_spans() {
             if let Some(coverage) =
                 pointer.opaque_coverage_fact(&MemoryRange::new_with_element_width(
                     pointer.pointer().clone(),
@@ -5999,7 +6005,7 @@ pub(in crate::kernel) fn subobject_paths(
                                         width.into(),
                                         1,
                                     ))
-                                    .expect("the refused pointer has an opaque extent"),
+                                    .expect("the refused pointer has a bounds owner"),
                             ),
                         },
                     ),
@@ -6011,7 +6017,7 @@ pub(in crate::kernel) fn subobject_paths(
     }
     if let Some(refusal) = subobject_access_refusal(
         pointer.pointer(),
-        pointer.extent(),
+        pointer.bounds(),
         width,
         &facts,
         &obligations,
@@ -6024,7 +6030,7 @@ pub(in crate::kernel) fn subobject_paths(
         }];
     }
     let start = pointer.pointer().clone();
-    let narrowed = pointer.with_extent(Some(SubobjectExtent::constant(start, width)));
+    let narrowed = pointer.with_bounds(Some(SubobjectBounds::constant(start, width)));
     vec![ExpressionPath {
         outcome: ExpressionOutcome::Value(ProgramValue::Pointer(narrowed)),
         facts,

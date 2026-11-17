@@ -955,7 +955,7 @@ mod tests {
             Some(KernelTermNode::PointerRead { .. })
         ));
         let memory = memory
-            .with_heap_allocation_claim(base.clone(), HeapExtent::int32(4))
+            .with_heap_allocation_claim(base.clone(), AllocationSize::int32(4))
             .unwrap();
         let freed = memory.free_heap_block(&base, &assumptions).unwrap();
         let state = ExecutionState::new().with_memory(freed);

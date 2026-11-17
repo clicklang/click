@@ -2,7 +2,7 @@
 
 The callee returns the allocation it consumed through an equal result pointer.
 Its resource token and existing cleanup anchor return together: both 32-bit
-and size_t extents remain live, and the caller can free the returned alias.
+and size_t sizes remain live, and the caller can free the returned alias.
 No population resource is involved. Before, the heap checker retained the
 allocation while the companion ledger lost its alias and refused the call.
 

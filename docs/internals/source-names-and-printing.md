@@ -57,7 +57,7 @@ needs several tactics and preserves source outside its selected byte span.
 The parser records each braced proof block it reads (`ProofBlockSpan`: its
 braces and the start of each tactic), and `ProofSourceIndex::for_project`
 indexes exactly the blocks the entry module's verification parse recorded.
-A tactic's extent within a block is the range from its recorded start to
+A tactic's span within a block is the range from its recorded start to
 the next one's, so expansion finds no tactic's end by scanning tokens. The
 parser also records each proof clause it reads (`ProofClauseSpan`: the `by`
 or a default clause's `;`, its last token, and for a loop's `initialize` or

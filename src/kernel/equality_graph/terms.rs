@@ -672,10 +672,12 @@ pub(super) struct TermClasses {
     // newly identified pairs for the legacy affine/index projection.
     pointer_value_witnesses: PersistentMap<u64, PointerBlock>,
     pointer_values: PersistentMap<u64, crate::kernel::PointerValue>,
-    extent_values: PersistentMap<u64, crate::kernel::PointerValue>,
+    bounds_values: PersistentMap<u64, crate::kernel::PointerValue>,
     read_domains: crate::kernel::pointer_provenance::ValueClasses<Pointer>,
     read_provenance_nodes: PersistentMap<Pointer, u64>,
-    read_extent_nodes: PersistentMap<Pointer, u64>,
+    // Every registered opaque origin, including symbols and complete reads.
+    // A domain query reads this index without registering terms or reads.
+    bounds_origin_nodes: PersistentMap<Pointer, u64>,
     pointer_value_merges: imbl::Vector<(PointerBlock, PointerBlock)>,
     nodes: PersistentMap<Node, u64>,
     load_blocks: PersistentMap<PointerBlock, u64>,
@@ -3001,15 +3003,15 @@ impl TermClasses {
                 self.pointer_values.remove(&moved);
                 self.retain_pointer_value(kept, value);
             }
-            if let Some(value) = self.extent_values.get(&moved).cloned() {
-                self.extent_values.remove(&moved);
+            if let Some(value) = self.bounds_values.get(&moved).cloned() {
+                self.bounds_values.remove(&moved);
                 let witness = self
-                    .extent_values
+                    .bounds_values
                     .get(&kept)
                     .map_or(value.clone(), |previous| {
                         crate::kernel::pointer_provenance::prefer_pointer(previous, &value)
                     });
-                self.extent_values.insert(kept, witness);
+                self.bounds_values.insert(kept, witness);
             }
             self.merge_affine_applications(moved, kept);
             let weight = self.weight(kept) + self.weight(moved);
@@ -3573,14 +3575,14 @@ mod tests {
     }
 
     #[test]
-    fn complete_pointer_identity_tracks_symbolic_extent_widths() {
-        use crate::kernel::{PointerValue, ProgramType, SubobjectExtent};
+    fn complete_pointer_identity_tracks_symbolic_bounds_widths() {
+        use crate::kernel::{PointerValue, ProgramType, SubobjectBounds};
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Pointer::symbolic(Variable(942_001));
         let width = MachineTerm::Variable(Variable(942_002));
         let bounded = |width| {
-            PointerValue::new(pointer.clone(), ProgramType::Int32Pointer).with_extent(Some(
-                SubobjectExtent {
+            PointerValue::new(pointer.clone(), ProgramType::Int32Pointer).with_bounds(Some(
+                SubobjectBounds {
                     start: pointer.clone(),
                     width,
                 },

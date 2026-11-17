@@ -711,11 +711,40 @@ impl ResourceContextIndex {
                     result.owned_memory_by_anchor =
                         insert_resource_index_entry(&result.owned_memory_by_anchor, anchor, entry);
                 }
+                if result.owned_memory_by_block.is_empty() {
+                    result.owned_hidden_memory_by_block = Default::default();
+                    result.owned_hidden_memory_generation =
+                        Some(super::memory_state::never_address_taken_generation());
+                }
+                if matches!(
+                    block,
+                    PointerBlock::Concrete(_)
+                        | PointerBlock::AutomaticLocal { .. }
+                        | PointerBlock::StaticObject { .. }
+                        | PointerBlock::AggregateReturn { .. }
+                        | PointerBlock::ContractResult
+                        | PointerBlock::ContractException
+                        | PointerBlock::Heap(_)
+                        | PointerBlock::Temporary(_)
+                ) {
+                    result.owned_physical_memory_by_block = insert_resource_index_entry(
+                        &result.owned_physical_memory_by_block,
+                        block.clone(),
+                        entry,
+                    );
+                }
                 result.owned_memory_by_block = insert_resource_index_entry(
                     &result.owned_memory_by_block,
                     block.clone(),
                     entry,
                 );
+                if block_is_never_address_taken_local(&block) {
+                    result.owned_hidden_memory_by_block = insert_resource_index_entry(
+                        &result.owned_hidden_memory_by_block,
+                        block.clone(),
+                        entry,
+                    );
+                }
                 if block.is_local_block() {
                     result.owned_automatic_memory_by_block = insert_resource_index_entry(
                         &result.owned_automatic_memory_by_block,
@@ -1033,6 +1062,16 @@ impl ResourceContextIndex {
                 }
                 result.owned_memory_by_block =
                     remove_resource_index_entry(&result.owned_memory_by_block, &block, entry);
+                result.owned_hidden_memory_by_block = remove_resource_index_entry(
+                    &result.owned_hidden_memory_by_block,
+                    &block,
+                    entry,
+                );
+                result.owned_physical_memory_by_block = remove_resource_index_entry(
+                    &result.owned_physical_memory_by_block,
+                    &block,
+                    entry,
+                );
                 if block.is_local_block() {
                     result.owned_automatic_memory_by_block = remove_resource_index_entry(
                         &result.owned_automatic_memory_by_block,
@@ -1168,14 +1207,14 @@ pub(in crate::kernel) fn memory_range_overlaps_pointer(
         return true;
     };
     // An access whose end is not representable is read as reaching everything,
-    // as is a range whose extent is not; neither is a bound to subtract from.
-    let (Some(_), Some(extent)) = (
+    // as is a range whose span is not; neither is a bound to subtract from.
+    let (Some(_), Some(span)) = (
         pointer_offset.checked_add(i64::from(bytes)),
         end.checked_sub(start),
     ) else {
         return true;
     };
-    !byte_intervals_disjoint(pointer_offset, i64::from(bytes), start, extent)
+    !byte_intervals_disjoint(pointer_offset, i64::from(bytes), start, span)
 }
 
 fn add_memory_interval_candidates(
@@ -6882,7 +6921,7 @@ impl ResourceContext {
             return false;
         };
         let bytes =
-            memory_equality_index::read_extent(fact).and_then(|bytes| u32::try_from(bytes).ok());
+            memory_equality_index::read_span(fact).and_then(|bytes| u32::try_from(bytes).ok());
         let start = required.start_pointer();
         self.structural_memory_entries(required.base(), &start, bytes)
             .any(|entry| {
@@ -6895,8 +6934,8 @@ impl ResourceContext {
                 available.is_some_and(|available| {
                     (!required.typed_carrier
                         || (available.provenance == required.provenance
-                            && (required.carrier_extent_known
-                                || available.opaque_extent == required.opaque_extent)))
+                            && (required.carrier_bounds_known
+                                || available.bounds_owner == required.bounds_owner)))
                         && memory_range_structurally_covers(&available, required, None)
                             == Some(true)
                 })
@@ -7161,7 +7200,7 @@ impl ResourceContext {
     /// The live owner selected by the shared address-class access index.
     /// Keep its occurrence identity so separation can distinguish independent
     /// members from two accesses within one member. Equality selects the
-    /// candidate; the physical frame judgment checks its complete byte extent.
+    /// candidate; the physical frame judgment checks its complete byte span.
     pub(in crate::kernel) fn owned_memory_member_covering_access(
         &self,
         pointer: &Pointer,
@@ -7415,7 +7454,7 @@ impl ResourceContext {
                     if range.wide_bounds().is_none()
                         && selected.wide_bounds().is_none()
                         && selected.base() != range.base()
-                        && constant_range_extent(selected).is_some() =>
+                        && constant_range_span(selected).is_some() =>
                 {
                     ResourceFact::own_memory(memory_range_rebased(
                         selected,
@@ -10809,7 +10848,7 @@ pub(in crate::kernel) fn memory_range_covers_interior_element(
             _ => Some((offset.clone(), 0)),
         }
     }
-    let Some((start, count)) = constant_range_extent(required) else {
+    let Some((start, count)) = constant_range_span(required) else {
         return false;
     };
     if count <= 0 {
@@ -10887,7 +10926,7 @@ fn memory_range_covers_struct_array_field(
     if required.wide_bounds().is_some() || available.wide_bounds().is_none() {
         return false;
     }
-    let Some(bytes) = constant_range_extent(required)
+    let Some(bytes) = constant_range_span(required)
         .and_then(|(_, count)| count.checked_mul(i64::from(required.element_width())))
         .and_then(|bytes| u32::try_from(bytes).ok())
         .filter(|bytes| *bytes > 0)
@@ -11138,7 +11177,7 @@ fn wide_memory_range_covers_window(
     let [start_view, end_view] = available_bounds;
     let first_view = MachineOperandView::Legacy(&first);
     let last_view = MachineOperandView::Legacy(&last);
-    // Native translated windows require a non-wrapping byte extent. Keep
+    // Native translated windows require a non-wrapping byte span. Keep
     // the existing constant-int32 window path unchanged.
     if required.wide_bounds().is_some()
         && !holds(
@@ -11213,7 +11252,7 @@ fn wide_memory_range_covers_window(
     }
     // Only aliases explicitly indexed for this selected address are candidates.
     // Each candidate still owes exact address equality and the complete native
-    // extent; equality proposes a spelling, never memory authority.
+    // span; equality proposes a spelling, never memory authority.
     std::iter::once(aligned)
         .chain(assumptions.exact_pointer_aliases(&selected).cloned())
         .chain(assumptions.exact_pointer_offset_aliases(&selected))
@@ -11412,7 +11451,7 @@ fn memory_range_definitely_shorter(available: &MemoryRange, required: &MemoryRan
 /// does not carry, and `p[i32::MAX..i32::MIN]` is a forward range of exactly
 /// one element. Taking the count by the wrapping subtraction and the start by
 /// its signed value makes both exact, in `i64`, with nothing left modular.
-fn constant_range_extent(range: &MemoryRange) -> Option<(i64, i64)> {
+fn constant_range_span(range: &MemoryRange) -> Option<(i64, i64)> {
     let start = range.constant_start()? as i32;
     let end = range.constant_end()? as i32;
     Some((i64::from(start), i64::from(end.wrapping_sub(start))))
@@ -11425,11 +11464,7 @@ fn constant_range_extent(range: &MemoryRange) -> Option<(i64, i64)> {
 /// premise of its own: the caller's obligation is to have obtained `delta`
 /// exactly. A reversed range is refused rather than answered, because neither
 /// side of this test means what it reads as when a count runs backwards.
-fn constant_extents_contain(
-    available: (i64, i64),
-    delta: i64,
-    required: (i64, i64),
-) -> Option<bool> {
+fn constant_spans_contain(available: (i64, i64), delta: i64, required: (i64, i64)) -> Option<bool> {
     let (available_start, available_count) = available;
     let (required_start, required_count) = required;
     if available_count < 0 || required_count < 0 {
@@ -11499,10 +11534,10 @@ fn memory_range_structurally_covers(
     } else {
         exact_constant_base_delta(available, required, assumptions)?
     };
-    constant_extents_contain(
-        constant_range_extent(available)?,
+    constant_spans_contain(
+        constant_range_span(available)?,
         delta,
-        constant_range_extent(required)?,
+        constant_range_span(required)?,
     )
 }
 
@@ -12199,12 +12234,12 @@ fn memory_range_covers_with_exact_index(
         return false;
     };
     let (Some(available), Some(required)) = (
-        constant_range_extent(available),
-        constant_range_extent(required),
+        constant_range_span(available),
+        constant_range_span(required),
     ) else {
         return false;
     };
-    constant_extents_contain(available, delta, required) == Some(true)
+    constant_spans_contain(available, delta, required) == Some(true)
 }
 
 impl Resource {
@@ -12303,23 +12338,23 @@ impl ResourceFact {
 
     /// `allocation(base, bytes)` with a 32-bit byte count.
     pub fn own_allocation(base: Pointer, bytes: impl Into<MachineTerm>) -> Self {
-        Self::own_heap_allocation(base, &HeapExtent::int32(bytes))
+        Self::own_heap_allocation(base, &AllocationSize::int32(bytes))
     }
 
-    /// `allocation(base, bytes)` with the byte count in the extent's format.
-    pub(in crate::kernel) fn own_heap_allocation(base: Pointer, extent: &HeapExtent) -> Self {
-        Self::own_designated_allocation(PointerValue::new(base, ProgramType::Int32Pointer), extent)
+    /// `allocation(base, bytes)` with the byte count in the size's format.
+    pub(in crate::kernel) fn own_heap_allocation(base: Pointer, size: &AllocationSize) -> Self {
+        Self::own_designated_allocation(PointerValue::new(base, ProgramType::Int32Pointer), size)
     }
 
     pub(in crate::kernel) fn own_designated_allocation(
         base: PointerValue,
-        extent: &HeapExtent,
+        size: &AllocationSize,
     ) -> Self {
         Self::own_token(
             Self::ALLOCATION_RESOURCE_NAME.to_string(),
             vec![
                 ProgramValue::Pointer(base.with_type(ProgramType::Int32Pointer)),
-                extent.token_value(),
+                size.token_value(),
             ],
         )
     }
@@ -12332,7 +12367,7 @@ impl ResourceFact {
         if !self.has_proven_positive_quantity(assumptions) {
             return None;
         }
-        // The coverage range has the token's extent kind.
+        // The coverage range has the token's size kind.
         let (base, bytes) = self.allocation_arguments()?;
         let range = match bytes {
             ProgramValue::Int32(bytes) => {
@@ -12350,7 +12385,7 @@ impl ResourceFact {
     }
 
     /// The base and byte term of an owned `allocation` token of either
-    /// extent kind; [`Self::allocation_extent`] also gives the kind.
+    /// size kind; [`Self::allocation_size`] also gives the kind.
     pub fn allocation(&self) -> Option<(&Pointer, &MachineTerm)> {
         self.allocation_value()
             .map(|(base, bytes)| (base.pointer(), bytes))
@@ -12364,10 +12399,10 @@ impl ResourceFact {
         Some((base, bytes))
     }
 
-    /// The base and tagged extent of an owned `allocation` token.
-    pub(in crate::kernel) fn allocation_extent(&self) -> Option<(&PointerValue, HeapExtent)> {
+    /// The base and tagged size of an owned `allocation` token.
+    pub(in crate::kernel) fn allocation_size(&self) -> Option<(&PointerValue, AllocationSize)> {
         let (base, bytes) = self.allocation_arguments()?;
-        Some((base, HeapExtent::from_token_value(bytes)?))
+        Some((base, AllocationSize::from_token_value(bytes)?))
     }
 
     fn allocation_arguments(&self) -> Option<(&PointerValue, &ProgramValue)> {
@@ -12403,7 +12438,7 @@ impl ResourceFact {
     pub(in crate::kernel) fn is_proven_separate_from_allocation(
         &self,
         base: &Pointer,
-        bytes: &HeapExtent,
+        bytes: &AllocationSize,
         assumptions: &PureFactContext,
     ) -> bool {
         self.is_proven_separate_from_allocation_with_element_width(base, bytes, 4, assumptions)
@@ -12412,7 +12447,7 @@ impl ResourceFact {
     pub(in crate::kernel) fn is_proven_separate_from_allocation_with_element_width(
         &self,
         base: &Pointer,
-        bytes: &HeapExtent,
+        bytes: &AllocationSize,
         element_width: u32,
         assumptions: &PureFactContext,
     ) -> bool {
@@ -12665,12 +12700,9 @@ fn merge_memory_ranges(
     assumptions: &PureFactContext,
 ) -> Option<MemoryRange> {
     if !assumptions.provenance_equal(&left.provenance, &right.provenance)
-        || !match (
-            left.opaque_extent.as_deref(),
-            right.opaque_extent.as_deref(),
-        ) {
+        || !match (left.bounds_owner.as_deref(), right.bounds_owner.as_deref()) {
             (None, None) => true,
-            (Some(a), Some(b)) => assumptions.opaque_extents_equal(a, b),
+            (Some(a), Some(b)) => assumptions.bounds_owners_equal(a, b),
             _ => false,
         }
     {
@@ -12801,7 +12833,7 @@ fn memory_range_rebased(
     base: &Pointer,
     assumptions: &PureFactContext,
 ) -> Option<MemoryRange> {
-    let (start, count) = constant_range_extent(range)?;
+    let (start, count) = constant_range_span(range)?;
     let delta = range.base().exact_element_delta_from_base(
         base,
         range.element_width(),

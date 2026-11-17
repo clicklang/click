@@ -384,7 +384,7 @@ fn normalizing_64_bit_allocation_tokens_in_distinct_heap_blocks_is_linear() {
             let count = MachineTerm::Variable(Variable((1 << 40) + identity));
             resources.unchecked_with_fact(ResourceFact::own_heap_allocation(
                 heap_cell(identity, 0),
-                &wide_heap_extent(&count),
+                &wide_allocation_size(&count),
             ))
         });
         let assumptions = PureFactContext::new();
@@ -435,7 +435,7 @@ fn with_initialized_allocation(memory: Memory, identity: u64, value: u32) -> Mem
         offset: PointerOffsetTerm::Constant(0),
     };
     let (memory, _, base) = memory
-        .with_pending_heap_allocation(pending.clone(), HeapExtent::int32(16), false)
+        .with_pending_heap_allocation(pending.clone(), AllocationSize::int32(16), false)
         .resolve_pending_heap_allocation(&pending, true)
         .expect("the pending allocation resolves");
     assert_eq!(base, heap_cell(identity, 0));
@@ -513,12 +513,12 @@ fn one_heap_store_is_logarithmic_in_unrelated_allocations() {
     assert_constant_plus_log_growth("one C store into a heap block", &samples, 16.0);
 }
 
-/// `n * 4` bytes for a symbolic `size_t` count `n`: a 64-bit extent
-/// (`design/heap-extents.md`, stage 2).
-fn wide_heap_extent(count: &MachineTerm) -> HeapExtent {
-    HeapExtent::new(
+/// `n * 4` bytes for a symbolic `size_t` count `n`: a 64-bit size
+/// (`design/heap-allocation-sizes.md`, stage 2).
+fn wide_allocation_size(count: &MachineTerm) -> AllocationSize {
+    AllocationSize::new(
         MachineTerm::uint64_multiply(count.clone(), MachineTerm::uint64_constant(4)),
-        HeapExtentKind::UInt64,
+        AllocationSizeKind::UInt64,
     )
 }
 
@@ -537,7 +537,7 @@ fn wide_heap_range(identity: u64, count: &MachineTerm) -> MemoryRange {
 /// element count and is owned by a wide range, which the interval index
 /// does not hold, and the store's index is a `size_t` the facts bound by
 /// the target's count. Finding the target's range and forming the pointer
-/// against its 64-bit extent must not visit the unrelated ones.
+/// against its 64-bit size must not visit the unrelated ones.
 #[test]
 fn one_store_into_a_64_bit_heap_block_is_logarithmic_in_unrelated_64_bit_allocations() {
     let mut samples = Vec::new();
@@ -566,7 +566,7 @@ fn one_store_into_a_64_bit_heap_block_is_logarithmic_in_unrelated_64_bit_allocat
             let (memory, _, base) = memory
                 .with_pending_heap_allocation(
                     pending.clone(),
-                    wide_heap_extent(&count(identity)),
+                    wide_allocation_size(&count(identity)),
                     false,
                 )
                 .resolve_pending_heap_allocation(&pending, true)
@@ -628,7 +628,7 @@ fn one_store_into_a_64_bit_heap_block_is_logarithmic_in_unrelated_64_bit_allocat
 /// for a field of a struct-array block: every block holds `m * 8u64` bytes
 /// of eight-byte structs, owned as a wide byte range, and the store writes
 /// the second field of element `i`, `*byte_offset(p + (int64)i * 8, 4)`.
-/// Placing the field over the element count (formation against the extent,
+/// Placing the field over the element count (formation against the size,
 /// membership in the byte range) must not visit the unrelated blocks.
 #[test]
 fn one_field_store_into_a_64_bit_struct_array_block_is_logarithmic_in_unrelated_blocks() {
@@ -660,7 +660,7 @@ fn one_field_store_into_a_64_bit_struct_array_block_is_logarithmic_in_unrelated_
             let (memory, _, base) = memory
                 .with_pending_heap_allocation(
                     pending.clone(),
-                    HeapExtent::new(bytes(identity), HeapExtentKind::UInt64),
+                    AllocationSize::new(bytes(identity), AllocationSizeKind::UInt64),
                     false,
                 )
                 .resolve_pending_heap_allocation(&pending, true)
@@ -897,7 +897,7 @@ fn one_heap_load_is_logarithmic_in_unrelated_allocations() {
                 .fold(Memory::new(), |memory, index| {
                     with_initialized_allocation(memory, index as u64 + 1, index as u32)
                 })
-                .with_heap_allocation_claim(heap_cell(TARGET_HEAP, 0), HeapExtent::int32(16))
+                .with_heap_allocation_claim(heap_cell(TARGET_HEAP, 0), AllocationSize::int32(16))
                 .expect("the claim registers")
                 .store(
                     heap_cell(TARGET_HEAP, 0),
@@ -1134,7 +1134,7 @@ fn consecutive_reallocating_calls_cost_the_same_each() {
                     &lent,
                     &kept,
                     &data(call),
-                    &HeapExtent::int32(bytes.clone()),
+                    &AllocationSize::int32(bytes.clone()),
                     &assumptions,
                 )
                 .cloned();
@@ -1148,7 +1148,10 @@ fn consecutive_reallocating_calls_cost_the_same_each() {
                         None,
                     )
                     .retire_contract_heap_allocation_claim(&data(call), &bytes, &assumptions)
-                    .with_heap_allocation_claim(data(call + 1), HeapExtent::int32(bytes.clone()))
+                    .with_heap_allocation_claim(
+                        data(call + 1),
+                        AllocationSize::int32(bytes.clone()),
+                    )
                     .expect("a fresh claim");
                 let point =
                     crate::kernel::resource_tracker::ProgramPoint::at(&intern_memory_ref(&next));
@@ -1244,7 +1247,7 @@ fn retirement_admits_a_view_of_a_kept_owned_range() {
             &lent,
             &owned_and_viewed,
             &data,
-            &HeapExtent::int32(bytes.clone()),
+            &AllocationSize::int32(bytes.clone()),
             &assumptions,
         )
         .cloned()
@@ -1261,7 +1264,7 @@ fn retirement_admits_a_view_of_a_kept_owned_range() {
             &lent,
             &viewed_only,
             &data,
-            &HeapExtent::int32(bytes.clone()),
+            &AllocationSize::int32(bytes.clone()),
             &assumptions,
         ),
         Some(&view),
@@ -1272,7 +1275,7 @@ fn retirement_admits_a_view_of_a_kept_owned_range() {
             &ResourceContext::new(),
             &owned_and_viewed,
             &data,
-            &HeapExtent::int32(bytes.clone()),
+            &AllocationSize::int32(bytes.clone()),
             &assumptions,
         )
         .is_some(),
@@ -1735,7 +1738,7 @@ fn symbolic_range_membership_ignores_unrelated_index_bounds() {
 
 /// [`symbolic_range_membership_ignores_unrelated_index_bounds`] for a range
 /// with unsigned 64-bit bounds. The access at index `i` is placed in
-/// `base[0..end]` by deciding `i < end` and the extent limit on `end`; the
+/// `base[0..end]` by deciding `i < end` and the span limit on `end`; the
 /// bounds other indices have against the same `end` are edges below `end`,
 /// which an upward order walk through it does not read.
 #[test]
@@ -3240,7 +3243,7 @@ fn pointer_read_naming_samples(with_history: bool, same_cell: bool) -> Vec<(u32,
             assert_eq!(value.pointer(), read);
             let exact = Pointer::loaded_value(&current, address);
             assert_eq!(value.provenance(), &exact);
-            assert_eq!(value.opaque_extent(), Some(&exact));
+            assert_eq!(value.bounds_owner(), Some(&exact));
         }
         samples.push((size, work));
     }

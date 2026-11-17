@@ -103,7 +103,7 @@ fn read_type(result: &Proposition) -> Option<ReadType> {
 /// Interpret an explicitly bounded logical range as a physical observation.
 /// A modular byte count is insufficient: reversed or oversized ranges can
 /// wrap to the width of a scalar. Use the actual signed endpoint difference
-/// and checked scaling instead. Symbolic extents need an explicit reduction
+/// and checked scaling instead. Symbolic spans need an explicit reduction
 /// to a complete cell before this primitive can use them.
 fn observation_footprint(range: &MemoryRange) -> Option<(Pointer, u32)> {
     let start = range.signed_constant_start()?;
@@ -424,7 +424,7 @@ mod tests {
     }
 
     #[test]
-    fn observation_footprint_uses_nonwrapping_signed_extent() {
+    fn observation_footprint_uses_nonwrapping_signed_span() {
         let _session = crate::kernel::VerificationSession::enter();
         for (start, end, width, expected) in [
             (0i32, 1i32, 4, Some(4)),

@@ -559,7 +559,7 @@ pub(in crate::surface) fn initial_call_state(
         // A symbolic block is an arbitrary input identity, not a fresh local.
         // Record the raw footprint before resource naming can seed typed cells.
         // The constructor can target a subobject, so do not fix its containing
-        // allocation's extent. Field liveness comes from the entry contract.
+        // allocation's size. Field liveness comes from the entry contract.
         let destination = Pointer::symbolic(input_pointer_variable(scope, index)?);
         crate::kernel::register_block_alignment(&destination.block, layout.alignment_bytes());
         arguments[index] = initial_pointer_argument(destination.clone(), parameter, index, scope);
@@ -997,10 +997,10 @@ fn mark_uninitialized_resource_memory(
             let state = ExecutionState::new().with_memory(memory.clone());
             let element_width =
                 contract_segment_element_width(parameter_binding.parameters, segment);
-            let (start, extent) =
+            let (start, span) =
                 match evaluate_requirement_segment(parameter_binding, &state, segment) {
                     Ok(evaluated) => {
-                        let extent = match (&evaluated.start, &evaluated.end) {
+                        let span = match (&evaluated.start, &evaluated.end) {
                             (bits32_constant!(start), bits32_constant!(end)) => {
                                 if constant_u32(*end) <= constant_u32(*start) {
                                     continue;
@@ -1013,14 +1013,14 @@ fn mark_uninitialized_resource_memory(
                                         )
                                     })?
                             }
-                            _ => Memory::UNBOUNDED_UNWRITTEN_EXTENT,
+                            _ => Memory::UNBOUNDED_UNWRITTEN_SPAN,
                         };
                         let start = offset_pointer_by_elements(
                             evaluated.base,
                             evaluated.start,
                             element_width,
                         );
-                        (start, extent)
+                        (start, span)
                     }
                     // Wide bounds, such as `buffer[0..size]` with a `uint64`
                     // size: mark from the base, which covers the segment.
@@ -1033,10 +1033,10 @@ fn mark_uninitialized_resource_memory(
                                     crate::surface::diagnostics::describe_contract_segment(segment)
                                 ))
                             })?;
-                        (base, Memory::UNBOUNDED_UNWRITTEN_EXTENT)
+                        (base, Memory::UNBOUNDED_UNWRITTEN_SPAN)
                     }
                 };
-            memory = memory.with_uninitialized_object(start, extent);
+            memory = memory.with_uninitialized_object(start, span);
         }
     }
     Ok(memory)
@@ -1508,8 +1508,8 @@ pub(in crate::surface) fn requirement_propositions_sharing_lowering_state(
     let mut pending = (0..requires.len()).collect::<Vec<_>>();
     // These are the function's own entry requirements: a member selected
     // through a pointer argument was checked by the caller, so it is
-    // assumed and recorded (`PureFactContext::assume_entry_clause_extents`).
-    let mut assumptions = initial_assumptions.clone().assume_entry_clause_extents();
+    // assumed and recorded (`PureFactContext::assume_entry_clause_spans`).
+    let mut assumptions = initial_assumptions.clone().assume_entry_clause_spans();
 
     // Requirements may be written in either order, so use one retry pass
     // after the first pass has published the facts it could lower. A bounded
@@ -2327,7 +2327,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                 let matches_type = if name == ResourceFact::ALLOCATION_RESOURCE_NAME && index == 0 {
                     program_value_matches_allocation_pointer(&value)
                 } else if name == ResourceFact::ALLOCATION_RESOURCE_NAME && index == 1 {
-                    program_value_matches_allocation_extent(&value)
+                    program_value_matches_allocation_size(&value)
                 } else {
                     program_value_matches_click_type(&value, *parameter_type)
                 };
@@ -2961,7 +2961,7 @@ fn lower_resource_segment_with_values(
         .prefer_symbolic_external_loads()
         // This pass names a clause; the kernel checks its establishment
         // against the actual pointer and resources at a call or fold.
-        .assume_entry_clause_extents();
+        .assume_entry_clause_spans();
     let (surface_base, surface_start, surface_end) = match &segment.surface {
         ContractSegmentSurface::Range { base, start, end }
         | ContractSegmentSurface::StructRange {
@@ -3024,10 +3024,10 @@ fn lower_resource_segment_with_values(
     };
     let base_value = base;
     // A clause through a member pointer may not claim past the member
-    // (`design/pointer-subobject-extents.md`, D1). Constant bounds are
+    // (`design/pointer-subobject-bounds.md`, D1). Constant bounds are
     // refused here by name; the kernel decides the rest when it checks
     // the step.
-    let refuse_past_extent = |range: MemoryRange| {
+    let refuse_past_bounds = |range: MemoryRange| {
         let (start, end) = match range.wide_bounds() {
             Some(bounds) => bounds,
             None => (range.start(), range.end()),
@@ -3035,7 +3035,7 @@ fn lower_resource_segment_with_values(
         if start.as_const().is_none() || end.as_const().is_none() {
             return Ok(range);
         }
-        match crate::kernel::memory_range_extent_refusal(
+        match crate::kernel::memory_range_bounds_refusal(
             &base_value,
             &range,
             &crate::kernel::PureFactContext::new(),
@@ -3070,7 +3070,7 @@ fn lower_resource_segment_with_values(
     };
     // The same rule as the kernel's resource and proposition lowering.
     if let Some((start, end)) = crate::kernel::wide_range_bounds(&start_value, &end_value) {
-        return refuse_past_extent(MemoryRange::from_pointer_value_wide(
+        return refuse_past_bounds(MemoryRange::from_pointer_value_wide(
             &base_value,
             start,
             end,
@@ -3088,7 +3088,7 @@ fn lower_resource_segment_with_values(
             end = constant_u32(*end)
         )));
     }
-    refuse_past_extent(MemoryRange::from_pointer_value(
+    refuse_past_bounds(MemoryRange::from_pointer_value(
         &base_value,
         start,
         end,
@@ -3296,7 +3296,7 @@ pub(in crate::surface) fn memory_range_loadable_atom_prop(
 }
 
 pub(in crate::surface) fn memory_range_loadable_guards(range: &MemoryRange) -> Vec<Proposition> {
-    crate::kernel::memory_range_extent_guard_spellings(range)
+    crate::kernel::memory_range_span_guard_spellings(range)
 }
 
 pub(in crate::surface) fn concrete_loadable_block(

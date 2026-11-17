@@ -2,7 +2,7 @@
 
 `to_integer(i + 1)` converts a C `int32` expression, and the conversion is
 defined only where `i + 1` does not overflow. That condition is a side
-condition of the invariant's lowering, like the extent half of a stated range,
+condition of the invariant's lowering, like the span half of a stated range,
 and it is ordinary invariant content: entry and every back edge owe it with the
 invariant, and the head, the body and the exit assume it.
 

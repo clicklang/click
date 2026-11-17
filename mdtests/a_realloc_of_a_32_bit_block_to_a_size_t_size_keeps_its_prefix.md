@@ -1,7 +1,7 @@
 # A `realloc` of a 32-bit block to a `size_t` size keeps its prefix
 
-A constant-size block has a 32-bit extent; `realloc` to a bounded `size_t`
-count gives the new block a 64-bit one (`design/heap-extents.md`, stage 4).
+A constant-size block has a 32-bit size; `realloc` to a bounded `size_t`
+count gives the new block a 64-bit one (`design/heap-allocation-sizes.md`, stage 4).
 The old block's 32-bit token and range are consumed, and its second element,
 which ends at byte 8, fits `n * 4u64` because `n >= 2`.
 

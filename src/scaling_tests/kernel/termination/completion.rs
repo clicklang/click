@@ -81,8 +81,8 @@ fn generation_and_execution_scale_with_requirements_and_completion_only_moves_th
         );
         let (proved, execution_work) = crate::instrumentation::measure_deterministic_work(|| {
             proof
-                .prove_implicitly()
-                .unwrap_or_else(|_| panic!("prove leaf requirements"))
+                .prove_through_native_root()
+                .unwrap_or_else(|error| panic!("prove leaf requirements: {error}"))
         });
         assert!(proved.proof.completion().is_some());
         assert!(

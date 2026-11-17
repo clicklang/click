@@ -6,7 +6,7 @@ mod rewrite;
 pub(crate) use rewrite::{PointerRewrite, PointerRewriteError};
 
 #[derive(Clone, Debug)]
-pub(crate) struct KernelSubobjectExtent {
+pub(crate) struct KernelSubobjectBounds {
     pub(crate) start: SharedPointerAddress,
     pub(crate) width: KernelTerm,
 }
@@ -14,8 +14,8 @@ pub(crate) struct KernelSubobjectExtent {
 pub(crate) struct KernelPointerQualifiers {
     pub(crate) volatile: bool,
     pub(crate) constant: bool,
-    pub(crate) extent: Option<KernelSubobjectExtent>,
-    pub(crate) extent_known: bool,
+    pub(crate) bounds: Option<KernelSubobjectBounds>,
+    pub(crate) bounds_known: bool,
     pub(crate) object_class: Option<crate::kernel::effective_type::CAccessClass>,
     pub(crate) object_type_evidence: Option<ObjectTypeEvidence>,
 }
@@ -23,7 +23,7 @@ pub(crate) struct KernelPointerQualifiers {
 pub(crate) struct KernelPointerValue {
     pub(crate) address: SharedPointerAddress,
     pub(crate) provenance: SharedPointerAddress,
-    pub(crate) opaque_extent: Option<SharedPointerAddress>,
+    pub(crate) bounds_owner: Option<SharedPointerAddress>,
     pub(crate) program_type: ProgramType,
     pub(crate) qualifiers: Option<Arc<KernelPointerQualifiers>>,
 }
@@ -65,7 +65,7 @@ impl SharedPointerValue {
             program_type: value.program_type,
             volatile: qualifiers.is_some_and(|q| q.volatile),
             constant: qualifiers.is_some_and(|q| q.constant),
-            extent_known: qualifiers.is_some_and(|q| q.extent_known),
+            bounds_known: qualifiers.is_some_and(|q| q.bounds_known),
             declared_class: qualifiers.and_then(|q| q.object_class.as_ref()),
             evidence: qualifiers.and_then(|q| q.object_type_evidence.as_ref()),
         }
@@ -106,7 +106,7 @@ impl SharedPointerValue {
         let (a, b) = (self.node(), other.node());
         if a.address != b.address
             || a.provenance != b.provenance
-            || a.opaque_extent != b.opaque_extent
+            || a.bounds_owner != b.bounds_owner
             || a.program_type != b.program_type
         {
             return false;
@@ -116,7 +116,7 @@ impl SharedPointerValue {
             (Some(a), Some(b)) => (a, b),
             _ => return false,
         };
-        let extent_matches = match (&a.extent, &b.extent) {
+        let bounds_match = match (&a.bounds, &b.bounds) {
             (None, None) => true,
             (Some(a), Some(b)) => a.start == b.start && a.width == b.width,
             _ => false,
@@ -133,9 +133,9 @@ impl SharedPointerValue {
         };
         a.volatile == b.volatile
             && a.constant == b.constant
-            && a.extent_known == b.extent_known
+            && a.bounds_known == b.bounds_known
             && a.object_class == b.object_class
-            && extent_matches
+            && bounds_match
             && evidence_matches
     }
     /// Same address roles as PointerValue::pointers. Widths remain separate
@@ -144,13 +144,13 @@ impl SharedPointerValue {
         let value = self.node();
         std::iter::once(&value.address)
             .chain(std::iter::once(&value.provenance))
-            .chain(value.opaque_extent.as_ref())
+            .chain(value.bounds_owner.as_ref())
             .chain(
                 value
                     .qualifiers
                     .as_ref()
-                    .and_then(|q| q.extent.as_ref())
-                    .map(|extent| &extent.start),
+                    .and_then(|q| q.bounds.as_ref())
+                    .map(|bounds| &bounds.start),
             )
     }
     pub(crate) fn import(value: &PointerValue) -> Self {
@@ -166,20 +166,20 @@ impl SharedPointerValue {
         Self::new(KernelPointerValue {
             address: address(&value.pointer),
             provenance: address(&value.provenance),
-            opaque_extent: value.opaque_extent.as_ref().map(|pointer| address(pointer)),
+            bounds_owner: value.bounds_owner.as_ref().map(|pointer| address(pointer)),
             program_type: value.program_type,
             qualifiers: value.qualifiers.as_ref().map(|q| {
                 Arc::new(KernelPointerQualifiers {
                     volatile: q.volatile,
                     constant: q.constant,
-                    extent: q.extent.as_ref().map(|extent| KernelSubobjectExtent {
-                        start: address(&extent.start),
+                    bounds: q.bounds.as_ref().map(|bounds| KernelSubobjectBounds {
+                        start: address(&bounds.start),
                         width: KernelTerm::retained_machine_operand(
                             MachineIntegerType::Int32,
-                            MachineOperandView::Legacy(&extent.width),
+                            MachineOperandView::Legacy(&bounds.width),
                         ),
                     }),
-                    extent_known: q.extent_known,
+                    bounds_known: q.bounds_known,
                     object_class: q.object_class.clone(),
                     object_type_evidence: q.object_type_evidence.clone(),
                 })
@@ -191,8 +191,8 @@ impl SharedPointerValue {
         Ok(PointerValue {
             pointer: value.address.export()?,
             provenance: Arc::new(value.provenance.export()?),
-            opaque_extent: value
-                .opaque_extent
+            bounds_owner: value
+                .bounds_owner
                 .as_ref()
                 .map(|address| address.export().map(Arc::new))
                 .transpose()?,
@@ -204,17 +204,17 @@ impl SharedPointerValue {
                     Ok(Arc::new(PointerQualifiers {
                         volatile: q.volatile,
                         constant: q.constant,
-                        extent: q
-                            .extent
+                        bounds: q
+                            .bounds
                             .as_ref()
-                            .map(|extent| -> Result<_, &'static str> {
-                                Ok(SubobjectExtent {
-                                    start: extent.start.export()?,
-                                    width: KernelTermExport::machine(&extent.width)?,
+                            .map(|bounds| -> Result<_, &'static str> {
+                                Ok(SubobjectBounds {
+                                    start: bounds.start.export()?,
+                                    width: KernelTermExport::machine(&bounds.width)?,
                                 })
                             })
                             .transpose()?,
-                        extent_known: q.extent_known,
+                        bounds_known: q.bounds_known,
                         object_class: q.object_class.clone(),
                         object_type_evidence: q.object_type_evidence.clone(),
                     }))
@@ -370,16 +370,16 @@ mod tests {
         PointerValue {
             pointer: Pointer::symbolic(Variable(1000001)),
             provenance: Arc::new(Pointer::symbolic(Variable(1000002))),
-            opaque_extent: Some(Arc::new(Pointer::symbolic(Variable(1000003)))),
+            bounds_owner: Some(Arc::new(Pointer::symbolic(Variable(1000003)))),
             program_type: ProgramType::VoidPointer,
             qualifiers: Some(Arc::new(PointerQualifiers {
                 volatile: true,
                 constant: true,
-                extent: Some(SubobjectExtent {
+                bounds: Some(SubobjectBounds {
                     start: Pointer::symbolic(Variable(1000004)),
                     width: MachineTerm::Variable(Variable(1000005)),
                 }),
-                extent_known: true,
+                bounds_known: true,
                 object_class: Some(class.clone()),
                 object_type_evidence: Some(ObjectTypeEvidence::parameter(class, 3, 1000006, false)),
             })),
@@ -392,7 +392,7 @@ mod tests {
         let output = shared.export().unwrap();
         assert_eq!(source, output);
         // Logical equality omits these; compare the exact payload separately.
-        assert_eq!(output.opaque_extent, source.opaque_extent);
+        assert_eq!(output.bounds_owner, source.bounds_owner);
         let before = source.qualifiers.as_ref().unwrap();
         let after = output.qualifiers.as_ref().unwrap();
         assert_eq!(before.constant, after.constant);
@@ -417,15 +417,15 @@ mod tests {
         q.constant = false;
         q.object_class = Some(CAccessClass::Scalar(CScalarClass::Char));
         q.object_type_evidence = None;
-        b.opaque_extent = None; // Ignored by logical equality when extent_known.
+        b.bounds_owner = None; // Ignored by logical equality when bounds_known.
         assert_eq!(a, b);
         let left = SharedPointerValue::import(&a);
         let right = SharedPointerValue::import(&b);
         assert_ne!(left, right);
         assert!(left.export().unwrap().qualifiers.unwrap().constant);
         assert!(!right.export().unwrap().qualifiers.unwrap().constant);
-        assert!(left.node().opaque_extent.is_some());
-        assert!(right.node().opaque_extent.is_none());
+        assert!(left.node().bounds_owner.is_some());
+        assert!(right.node().bounds_owner.is_none());
     }
     #[test]
     fn source_payload_names_do_not_inherit_logical_equality_omissions() {
@@ -434,7 +434,7 @@ mod tests {
         assert!(retained.same_source_payload(&SharedPointerValue::import(&source)));
         let mut variants = vec![source.clone().with_pointee_constant(false)];
         let mut changed = source.clone();
-        changed.opaque_extent = None;
+        changed.bounds_owner = None;
         variants.push(changed);
         let mut changed = source.clone();
         Arc::make_mut(changed.qualifiers.as_mut().unwrap()).object_class = None;

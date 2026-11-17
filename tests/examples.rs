@@ -15,7 +15,7 @@ use click::cli::{
     VerificationInput, files_with_extension, read_click_project, read_click_project_at_root,
     read_verification_inputs_for_project, read_verifying_sources, select_sidecars, source_refs,
 };
-use click::instrumentation::{self, ArtifactReuseRejection, HiddenPrerequisiteRoute};
+use click::instrumentation::{self, HiddenPrerequisiteRoute};
 use click::surface::{
     c_tactic_source_position, project_tactic_source_position, verify_c_prepared_project,
     verify_c_project, verify_c_sources, verify_c_sources_at, verify_program_prepared_project,
@@ -39,10 +39,6 @@ const SOURCE_METADATA: &str = "SOURCE.md";
 /// all of them with `CLICK_RUN_QUARANTINED=1`. Each entry names the reason;
 /// remove entries as they are fixed (see docs/internals/testing.md).
 const QUARANTINED: &[(&str, &str)] = &[];
-
-/// The artifact reuse rejection ratchet (`docs/internals/testing.md`) over
-/// every example project; see `tests/mdtests.rs` for the rule.
-const ARTIFACT_REUSE_REJECTION_BASELINE: &[(ArtifactReuseRejection, usize)] = &[];
 
 /// The hidden prerequisite ratchet (`docs/internals/testing.md`): count the
 /// prerequisites simple statement checking derived by a search the proof does
@@ -339,7 +335,6 @@ fn example_projects() {
     // Verify projects on every core. Deterministic tactic work budgets decide
     // correctness, so concurrency cannot change a verdict; the test runner
     // owns hang containment.
-    let _ = instrumentation::take_artifact_reuse_rejection_census();
     let _ = instrumentation::take_hidden_prerequisite_census();
     let workers = std::thread::available_parallelism().map_or(1, usize::from);
     let failures = limits::run_parallel(&projects, workers, |project| {
@@ -370,17 +365,7 @@ fn example_projects() {
         }
         panic!("{message}");
     }
-    let census = instrumentation::take_artifact_reuse_rejection_census();
     let hidden_prerequisites = instrumentation::take_hidden_prerequisite_census();
-    if requested.is_none()
-        && !run_quarantined
-        && let Some(mismatch) = instrumentation::artifact_reuse_rejection_census_mismatch(
-            &census,
-            ARTIFACT_REUSE_REJECTION_BASELINE,
-        )
-    {
-        panic!("artifact reuse rejection ratchet (tests/examples.rs baselines):\n{mismatch}");
-    }
     if requested.is_none()
         && !run_quarantined
         && let Some(mismatch) = instrumentation::hidden_prerequisite_census_mismatch(

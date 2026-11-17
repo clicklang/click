@@ -124,10 +124,12 @@ impl RegionFootprint {
                         continue;
                     }
                     extra_effect = true;
-                    members.push_back(Resource::Memory(contents.extent().byte_range(Pointer {
-                        block: block.clone(),
-                        offset: PointerOffsetTerm::Constant(0),
-                    })));
+                    members.push_back(Resource::Memory(contents.allocation_size().byte_range(
+                        Pointer {
+                            block: block.clone(),
+                            offset: PointerOffsetTerm::Constant(0),
+                        },
+                    )));
                 }
             }
         }
@@ -248,7 +250,7 @@ pub(crate) fn separate_using(left: &Resource, right: &Resource, facts: &PureFact
                 pending.extend(fp.members.iter().map(|member| (member, other)));
             }
             // Primitive tokens contain no bytes. Releasing an allocation
-            // still records its memory extent separately above.
+            // still records its memory range separately above.
             (Resource::Token { .. }, Resource::Memory(_))
             | (Resource::Memory(_), Resource::Token { .. }) => {}
             (Resource::Memory(left), Resource::Memory(right))
@@ -266,7 +268,7 @@ pub(crate) fn separate_using(left: &Resource, right: &Resource, facts: &PureFact
                     right: Box::new(left),
                 };
                 // Parent/child restriction is explicit. Exact physical spans
-                // use the maintained address-class/extent index, never an
+                // use the maintained address-class/span index, never an
                 // alias or separation-fact search per member.
                 if !facts.contains_known(&forward) && !facts.contains_known(&reverse) {
                     return false;

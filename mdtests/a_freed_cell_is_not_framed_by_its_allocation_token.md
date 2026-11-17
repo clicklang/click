@@ -11,7 +11,7 @@ allocation is separate from the cell `data[0]`, and answered yes from the
 token's separation from `data[0..n]`, so `data[0]` read after `free(data)` was
 framed back to its entry value and `ensures data[0] == old(data[0])` held.
 
-The extent is variable on purpose: with a constant one the entry state seeded a
+The size is variable on purpose: with a constant one the entry state seeded a
 cell for `data[0]`, and its history already stopped at the free. Only the
 allocation's memory, `data[0..n]`, can be separate from a cell by address,
 which is what the positive twin

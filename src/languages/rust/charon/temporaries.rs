@@ -220,6 +220,81 @@ fn iterator_definition(statement: &mut S) -> Option<(IteratorKind, &mut String)>
     }
 }
 
+/// Removes the temporaries of `temporaries` the body never uses: those no
+/// statement or terminator names apart from their storage markers, and a
+/// `()` temporary that is only a call's destination, which the call never
+/// writes. Their storage markers go with them.
+pub(super) fn remove_unused(
+    locals: &mut Vec<Place>,
+    blocks: &mut [MirBlock],
+    temporaries: &BTreeSet<String>,
+) {
+    let mut used = BTreeSet::new();
+    for block in blocks.iter() {
+        for statement in &block.statements {
+            if !matches!(statement, S::BeginStorage { .. } | S::EndStorage { .. }) {
+                used.extend(mentioned_locals(statement));
+            }
+        }
+        let mut reads = BTreeMap::new();
+        let mut named = BTreeSet::new();
+        terminator_uses(&block.terminator, &mut reads, &mut named);
+        used.extend(reads.into_keys());
+        used.extend(named);
+        if let T::Call { destination, .. } = &block.terminator {
+            used.insert(destination.clone());
+        }
+        if let T::BoxNew {
+            source,
+            destination,
+            ..
+        } = &block.terminator
+        {
+            used.insert(source.clone());
+            used.insert(destination.clone());
+        }
+    }
+    // A `()` call result holds nothing, so being a destination is no use.
+    let unit: BTreeSet<&String> = locals
+        .iter()
+        .filter(|local| local.value_type == super::super::schema::Type::Unit)
+        .map(|local| &local.name)
+        .collect();
+    let unused: BTreeSet<String> = locals
+        .iter()
+        .map(|local| &local.name)
+        .filter(|name| temporaries.contains(*name))
+        .filter(|name| {
+            !used.contains(*name) || (unit.contains(name) && only_destination(blocks, name))
+        })
+        .cloned()
+        .collect();
+    if unused.is_empty() {
+        return;
+    }
+    for block in blocks.iter_mut() {
+        block.statements.retain(|statement| match statement {
+            S::BeginStorage { local } | S::EndStorage { local } => !unused.contains(local),
+            _ => true,
+        });
+    }
+    locals.retain(|local| !unused.contains(&local.name));
+}
+
+/// Whether `name` is named only as a call's destination.
+fn only_destination(blocks: &[MirBlock], name: &str) -> bool {
+    blocks.iter().all(|block| {
+        let statements = block.statements.iter().all(|statement| {
+            matches!(statement, S::BeginStorage { .. } | S::EndStorage { .. })
+                || !mentioned_locals(statement).contains(name)
+        });
+        let mut reads = BTreeMap::new();
+        let mut named = BTreeSet::new();
+        terminator_uses(&block.terminator, &mut reads, &mut named);
+        statements && !reads.contains_key(name) && !named.contains(name)
+    })
+}
+
 /// Returns the value MIR writes to the return place where nothing runs
 /// between the write and the return, as `return value` does in C.
 ///
@@ -1890,5 +1965,49 @@ mod tests {
         ]);
         assert_eq!(locals, ["__rust_mir_0", "x"]);
         assert!(matches!(blocks[3].terminator, T::Return));
+    }
+
+    #[test]
+    fn unused_temporaries_and_unit_call_results_are_removed() {
+        // `StorageLive(t1); StorageDead(t1); t2 = f(x) -> 1;  1: return`,
+        // with `t2: ()`: neither temporary holds anything a later step reads.
+        let mut locals = vec![
+            place("x"),
+            place("t1"),
+            Place {
+                value_type: Type::Unit,
+                ..place("t2")
+            },
+            place("t3"),
+        ];
+        let mut blocks = vec![
+            MirBlock {
+                terminator_site: None,
+                statements: vec![
+                    S::BeginStorage { local: "t1".into() },
+                    S::EndStorage { local: "t1".into() },
+                    assign("t3", local("x")),
+                ],
+                terminator: T::Call {
+                    function: "f".into(),
+                    arguments: vec![local("t3")],
+                    owned_arguments: vec![],
+                    destination: "t2".into(),
+                    target: 1,
+                    through_pointer: false,
+                    result: None,
+                },
+            },
+            MirBlock {
+                terminator_site: None,
+                statements: vec![],
+                terminator: T::Return,
+            },
+        ];
+        let temporaries = BTreeSet::from(["t1".into(), "t2".into(), "t3".into()]);
+        super::remove_unused(&mut locals, &mut blocks, &temporaries);
+        let names: Vec<_> = locals.iter().map(|local| local.name.as_str()).collect();
+        assert_eq!(names, ["x", "t3"]);
+        assert_eq!(blocks[0].statements.len(), 1);
     }
 }

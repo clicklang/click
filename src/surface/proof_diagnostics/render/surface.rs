@@ -585,7 +585,7 @@ impl Printer<'_> {
                     body?.text
                 )))
             }
-            // Viewability is about an object's extent and lifetime, and a
+            // Viewability is about an object's size and lifetime, and a
             // lifetime can end between two points, so a fact checked in an
             // earlier memory keeps its point: `at(point, viewable(..))`, as a
             // proof writes it to carry the fact forward.
@@ -703,13 +703,12 @@ impl Printer<'_> {
         match sort {
             Sort::Condition => "bool".into(),
             Sort::Bitvector32 | Sort::ProgramInt32 => "int32".into(),
-            Sort::Bitvector64 | Sort::ProgramInt64 => "int64".into(),
+            Sort::ProgramInt64 => "int64".into(),
             Sort::Integer => "Integer".into(),
             Sort::ProgramInteger(ty) => machine_type_spelling(*ty).into(),
             Sort::ProgramObjectPointer(_, class) => format!("{}*", class.spelling()),
             Sort::ProgramPointer(ty) => crate::kernel::program_type_spelling(*ty).into(),
             Sort::Algebraic(ty) => algebraic_type_spelling(&ty.name, &ty.arguments),
-            other => format!("{other:?}").to_ascii_lowercase(),
         }
     }
 
@@ -1347,9 +1346,6 @@ impl Printer<'_> {
             Term::PointerOffset(offset) => Some(atom(self.offset(offset, depth + 1))),
             Term::Memory(memory) => Some(atom(self.state_phrase(memory))),
             Term::ExecutionState(state) => Some(atom(self.state_phrase(state.memory()))),
-            Term::ExpressionOutcome(_) | Term::StatementOutcome(_) | Term::FunctionOutcome(_) => {
-                Some(atom("<an execution outcome>"))
-            }
             Term::Sequence(_) => Some(atom("<a sequence>")),
         }
     }

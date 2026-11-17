@@ -903,7 +903,6 @@ pub(super) fn with_implicit_tail(tactics: &[ProofTactic]) -> (Vec<ProofTactic>, 
                 | ProofTactic::Match(_)
                 | ProofTactic::CallOutcomes(_)
                 | ProofTactic::Both(_)
-                | ProofTactic::StructuralInduct { .. }
         )
     );
     if ends_linearly {

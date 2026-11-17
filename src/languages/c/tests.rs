@@ -5857,7 +5857,7 @@ fn c_scalar_array_typedef_retains_length_and_struct_layout() {
         "typedef long int words[8]; struct holder { words data; int tail; }; \
          int tail(struct holder *p) { return p->tail; }",
     )
-    .expect("scalar array typedef should retain its declared ABI extent");
+    .expect("scalar array typedef should retain its declared ABI size");
     let holder = function.structs().get("holder").unwrap();
     assert_eq!(holder.field("data").unwrap().byte_width(), 64);
     assert_eq!(holder.field("tail").unwrap().offset_bytes(), 64);
@@ -6449,7 +6449,7 @@ fn c_syntax_accepts_malloc_size_that_does_not_match_its_target() {
         }
         "#,
     )
-    .expect("malloc should accept a raw byte extent independent of target type");
+    .expect("malloc should accept a raw byte size independent of target type");
     assert!(matches!(function.body(), syntax::CStatement::Seq(_, _)));
 }
 
@@ -15226,7 +15226,7 @@ fn c_string_literal_identities_are_function_local_occurrences_not_variables() {
 }
 
 #[test]
-fn c_sizeof_string_literal_uses_the_array_extent_without_a_variable() {
+fn c_sizeof_string_literal_uses_the_array_length_without_a_variable() {
     let function =
         syntax::parse_function("int32 width() { return sizeof(\"ab\" \"cd\"); }").unwrap();
     let execution = crate::kernel::prove_symbolic_program_function_execution(

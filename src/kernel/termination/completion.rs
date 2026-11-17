@@ -149,8 +149,6 @@ pub(crate) struct ProgramTerminationInputs<'a> {
 
 pub(crate) enum ProgramContractFailure {
     Analysis(TerminationError),
-    #[cfg(test)]
-    MissingReturnEvidence(String),
     UnfinishedBody(String),
     Obligation {
         goal: ProgramContractGoal,
@@ -353,23 +351,10 @@ impl ProgramContractProof {
         )
         .map_err(ProgramContractFailure::Analysis)?;
         state.retire(&ProgramContractGoal::BodyOpening);
-        #[cfg(test)]
-        let divergence_goals = self
-            .declared_diverging
-            .iter()
-            .filter(|name| {
-                state
-                    .open
-                    .contains_key(&ProgramContractGoal::DivergencePolicy((*name).clone()))
-            })
-            .cloned()
-            .collect();
         Ok(ProgramTerminationProof {
             state,
             obligations,
             requested: self.requested,
-            #[cfg(test)]
-            divergence_goals,
         })
     }
 }
@@ -380,8 +365,6 @@ pub(crate) struct ProgramTerminationProof {
     state: ProgramState,
     obligations: super::obligations::TerminationObligations,
     requested: BTreeSet<String>,
-    #[cfg(test)]
-    divergence_goals: Vec<String>,
 }
 
 /// This token can only be constructed by proof execution after discharging
@@ -407,70 +390,24 @@ impl ProgramTerminationProof {
         super::ordinary::OrdinaryTerminationScope::new(self.state, self.obligations, self.requested)
     }
 
+    /// Completes the program's termination goal the way a proof does: plan
+    /// the ordinary scope's checks, apply each, close the root with the
+    /// checked facts, and finish the native root.
     #[cfg(test)]
-    pub(crate) fn prove_implicitly(
-        mut self,
-    ) -> Result<ProvedProgramContracts, ProgramContractFailure> {
-        let assumed = self.obligations.assumed_terminating.clone();
-        let verdicts = self
-            .obligations
-            .prove_implicitly()
-            .map_err(ProgramContractFailure::Analysis)?;
-        let failed = verdicts
-            .unjustified_diverging
-            .iter()
-            .map(|name| ProgramContractGoal::DivergencePolicy(name.clone()))
-            .find(|goal| self.state.open.contains_key(goal))
-            .or_else(|| {
-                (!verdicts.unsuitable_callbacks.is_empty())
-                    .then_some(ProgramContractGoal::CallbackSafety)
-            });
-        let refused = || {
-            let mut first = None;
-            for name in &self.requested {
-                charge_termination_work(1);
-                if let Some(refusal) = verdicts.refusals.get(name) {
-                    if !matches!(refusal, TerminationRefusal::Callee { .. }) {
-                        return Some(ProgramContractGoal::Returns(name.clone()));
-                    }
-                    first.get_or_insert_with(|| ProgramContractGoal::Returns(name.clone()));
-                }
-            }
-            first
+    pub(crate) fn prove_through_native_root(self) -> Result<ProvedProgramContracts, String> {
+        use crate::kernel::proof::{
+            OutcomeProofState, ProofObject, ProofObligation, PropositionKnownContext, PureFactStore,
         };
-        if let Some(goal) = failed.or_else(refused) {
-            return Err(ProgramContractFailure::Obligation {
-                goal,
-                verdicts: Box::new(verdicts),
-            });
+        type Proof = ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()>;
+        let scope = self.into_ordinary_scope();
+        let mut proof = Proof::for_program_termination((), scope.clone(), ());
+        for step in scope.plan(scope.goal(), &PureFactStore::default())? {
+            proof = proof.check_termination(&step)?.0;
         }
-        // Consume this execution's native conclusions directly, closing only
-        // the matching return goals. No blanket retirement of open goals.
-        for rule in &verdicts.rules {
-            charge_termination_work(1);
-            let name = rule.function.name();
-            if self.requested.remove(name) {
-                self.state
-                    .retire(&ProgramContractGoal::Returns(name.to_string()));
-            }
-        }
-        for name in self.requested {
-            charge_termination_work(1);
-            if !assumed.contains(&name) {
-                return Err(ProgramContractFailure::MissingReturnEvidence(name));
-            }
-            self.state.retire(&ProgramContractGoal::Returns(name));
-        }
-        for name in self.divergence_goals {
-            self.state
-                .retire(&ProgramContractGoal::DivergencePolicy(name));
-        }
-        self.state.retire(&ProgramContractGoal::CallbackSafety);
-        Ok(ProvedProgramContracts {
-            proof: self.state.proof,
-            bodies: self.state.bodies,
-            rules: verdicts.rules,
-        })
+        proof
+            .apply_known(PropositionKnownContext::Exact)
+            .map_err(|_| "the checked termination facts do not close the root".to_string())?
+            .finish_program_termination()
     }
 }
 
@@ -506,9 +443,10 @@ mod tests {
     fn finish(
         owner: ProgramContractProof,
         rules: &[VerifiedFunctionRule],
-    ) -> Result<CompletedProgramContracts, ProgramContractFailure> {
+    ) -> Result<CompletedProgramContracts, String> {
         generate(owner, rules)
-            .and_then(|proof| proof.prove_implicitly())
+            .map_err(|_| "termination generation failed".to_string())?
+            .prove_through_native_root()
             .map(|proof| proof.complete())
     }
 
@@ -539,47 +477,53 @@ mod tests {
 
     #[test]
     fn a_partial_body_cannot_complete_with_an_unranked_loop() {
-        let owner = ProgramContractProof::open(
-            BTreeSet::from(["spin".into()]),
-            BTreeSet::new(),
-            &BTreeSet::new(),
-        );
-        let generated = generate(
-            owner,
-            &[rule(
-                "spin",
-                crate::kernel::program_while(
-                    crate::kernel::program_expression::int32_literal(1),
-                    vec![Proposition::ConditionIs(
-                        ConditionTerm::Constant(true),
-                        true,
-                    )],
-                    ProgramStatement::Skip,
-                ),
-            )],
-        );
-        let generated =
-            generated.unwrap_or_else(|_| panic!("generation must not attempt the loop proof"));
+        let generated = || {
+            let owner = ProgramContractProof::open(
+                BTreeSet::from(["spin".into()]),
+                BTreeSet::new(),
+                &BTreeSet::new(),
+            );
+            generate(
+                owner,
+                &[rule(
+                    "spin",
+                    crate::kernel::program_while(
+                        crate::kernel::program_expression::int32_literal(1),
+                        vec![Proposition::ConditionIs(
+                            ConditionTerm::Constant(true),
+                            true,
+                        )],
+                        ProgramStatement::Skip,
+                    ),
+                )],
+            )
+            .unwrap_or_else(|_| panic!("generation must not attempt the loop proof"))
+        };
+        let analyzed = generated();
         assert_eq!(
-            generated.obligations.function_goals["spin"].loop_indices,
+            analyzed.obligations.function_goals["spin"].loop_indices,
             [0]
         );
         assert!(
-            generated
+            analyzed
                 .state
                 .open
                 .contains_key(&ProgramContractGoal::Returns("spin".into()))
         );
-        assert!(generated.state.proof.completion().is_none());
-        let result = generated.prove_implicitly();
-        let Err(ProgramContractFailure::Obligation { goal, verdicts }) = result else {
-            panic!("termination is required before contract completion");
-        };
-        assert_eq!(goal, ProgramContractGoal::Returns("spin".into()));
+        assert!(analyzed.state.proof.completion().is_none());
+        let verdicts = analyzed
+            .obligations
+            .prove_implicitly()
+            .unwrap_or_else(|_| panic!("the loop is analyzed"));
         assert_eq!(
             verdicts.refusals["spin"],
             TerminationRefusal::UnrankedLoop { index: 0 }
         );
+        let error = generated()
+            .prove_through_native_root()
+            .err()
+            .expect("termination is required before contract completion");
+        assert_eq!(error, "the checked termination facts do not close the root");
     }
 
     #[test]
@@ -591,13 +535,10 @@ mod tests {
                 &BTreeSet::new(),
             )
         };
-        assert!(matches!(
-            finish(open(), &[rule("spin", ProgramStatement::Skip)]),
-            Err(ProgramContractFailure::Obligation {
-                goal: ProgramContractGoal::DivergencePolicy(_),
-                ..
-            })
-        ));
+        let error = finish(open(), &[rule("spin", ProgramStatement::Skip)])
+            .err()
+            .expect("an unjustified diverges marker does not close");
+        assert_eq!(error, "the checked termination facts do not close the root");
         let completed = finish(
             open(),
             &[rule(
@@ -644,7 +585,7 @@ mod tests {
         assumptions.clear();
         drop(rules);
         let proved = proof
-            .prove_implicitly()
+            .prove_through_native_root()
             .unwrap_or_else(|_| panic!("the captured assumption remains available"));
         assert!(proved.proof.completion().is_some());
         assert_eq!(proved.complete().into_termination_rules().len(), 1);
@@ -657,9 +598,10 @@ mod tests {
             BTreeSet::new(),
             &BTreeSet::new(),
         );
-        assert!(
-            matches!(finish(owner, &[]), Err(ProgramContractFailure::MissingReturnEvidence(name)) if name == "missing")
-        );
+        let error = finish(owner, &[])
+            .err()
+            .expect("a missing body has no return evidence");
+        assert_eq!(error, "the checked termination facts do not close the root");
     }
 }
 
