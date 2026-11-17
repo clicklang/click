@@ -10460,25 +10460,15 @@ impl Parser {
         let mut nested_both = 0;
         // The left blocks that hold only a nested `both`, outermost first.
         let mut nested_left_blocks = Vec::new();
-        self.expect(Token::LBrace)?;
-        let mut left_tactics = if self.peek_ident() == Some("both") {
-            nested_left_blocks.push((
-                self.positions[self.position - 1].clone(),
-                self.positions[self.position].clone(),
-            ));
-            self.position += 1;
-            nested_both += 1;
-            None
-        } else {
-            Some(self.parse_tactics_until_rbrace()?)
-        };
-
-        while left_tactics.is_none() {
-            if self.proof_nesting + nested_both >= STRUCTURAL_NESTING_LIMIT {
+        let mut left_tactics = Some(loop {
+            if nested_both > 0 && self.proof_nesting + nested_both >= STRUCTURAL_NESTING_LIMIT {
                 return Err(self.error(format!(
                     "structural proof nesting exceeds Click's supported depth of {STRUCTURAL_NESTING_LIMIT}"
                 )));
             }
+            self.expect(Token::LBrace)?;
+            self.expect_ident_spelling("left")?;
+            self.expect(Token::FatArrow)?;
             self.expect(Token::LBrace)?;
             if self.peek_ident() == Some("both") {
                 nested_left_blocks.push((
@@ -10488,17 +10478,18 @@ impl Parser {
                 self.position += 1;
                 nested_both += 1;
             } else {
-                left_tactics = Some(self.parse_tactics_until_rbrace()?);
+                break self.parse_tactics_until_rbrace()?;
             }
-        }
+        });
         self.expect(Token::RBrace)?;
 
         let mut current = None;
         for level in 0..=nested_both {
-            self.expect_ident_spelling("and")?;
-            self.expect(Token::LBrace)?;
-            let right_tactics = self.parse_tactics_until_rbrace()?;
+            self.expect_ident_spelling("right")?;
+            self.expect(Token::FatArrow)?;
+            let right_tactics = self.parse_possibly_empty_tactic_block()?;
             self.expect(Token::RBrace)?;
+            self.skip_redundant_semicolon();
             let left = if let Some(current) = current.take() {
                 vec![current]
             } else {
@@ -10517,7 +10508,6 @@ impl Parser {
                 self.expect(Token::RBrace)?;
             }
         }
-        self.skip_redundant_semicolon();
         Ok(current.expect("the both tactic chain has a root"))
     }
 
@@ -17652,11 +17642,17 @@ fn validate_parenthesis_nesting(
                     .is_some_and(|(_, parent_proof, _)| *parent_proof);
                 let proof = pending_proof_blocks != 0 || parent_is_proof;
                 pending_proof_blocks = pending_proof_blocks.saturating_sub(1);
+                let preceding = index.checked_sub(1).and_then(|i| tokens.get(i));
+                // The outer `both` braces group the labeled arms. Only
+                // the arm bodies add proof nesting.
+                let both_container = matches!(preceding, Some(Token::Ident(name)) if name == "both")
+                    && matches!(tokens.get(index + 1..index + 4),
+                        Some([Token::Ident(label), Token::FatArrow, Token::LBrace]) if label == "left");
                 // Proof `if` else blocks are read by the iterative spine
                 // parser. They retain a scope, but no recursive parser frame.
                 let recursive_proof = proof
-                    && !matches!(index.checked_sub(1).and_then(|i| tokens.get(i)),
-                        Some(Token::Ident(name)) if name == "else");
+                    && !both_container
+                    && !matches!(preceding, Some(Token::Ident(name)) if name == "else");
                 brace_kinds.push((quantifier, proof, recursive_proof));
                 if quantifier {
                     if quantifier_depth + 1 >= STRUCTURAL_NESTING_LIMIT {
@@ -18186,7 +18182,10 @@ mod tactic_classification_tests {
             "cases",
             "cases { x == 1 => { normalize(); } x != 1 => { normalize(); } }",
         ),
-        ("both", "both { normalize(); } and { normalize(); }"),
+        (
+            "both",
+            "both { left => { normalize(); } right => { normalize(); } }",
+        ),
         (
             "branch",
             "branch ensuring { fact x == 1; } then { normalize(); } else { normalize(); }",

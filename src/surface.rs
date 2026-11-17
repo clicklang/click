@@ -516,26 +516,11 @@ pub(crate) fn rust_iterator_method(
         (K::RangeInclusive, "start()") => variable("start"),
         (K::RangeInclusive, "end()") => variable("end"),
         (K::RangeInclusive, "is_empty()") => {
-            let local = |suffix| ContractExpression::ProgramExpression(variable(suffix));
-            let compare = |left, operator, right| ClickProposition::Comparison {
-                left,
-                operator,
-                right,
-            };
-            return proposition_bool_value(ClickProposition::Or(
-                Box::new(compare(
-                    local("done"),
-                    ComparisonOperator::NotEqual,
-                    ContractExpression::ProgramExpression(
-                        crate::kernel::program_expression::int32_literal(0),
-                    ),
-                )),
-                Box::new(compare(
-                    local("start"),
-                    ComparisonOperator::GreaterThan,
-                    local("end"),
-                )),
-            ));
+            return proposition_bool_value(ClickProposition::Comparison {
+                left: ContractExpression::ProgramExpression(variable("start")),
+                operator: ComparisonOperator::GreaterThan,
+                right: ContractExpression::ProgramExpression(variable("end")),
+            });
         }
         (K::Range, "len()") => {
             ProgramExpression::Subtract(Box::new(variable("end")), Box::new(variable("start")))
@@ -5330,7 +5315,7 @@ fn recorded_state_entries<'a>(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SpecArrayRef {
-    memory: SpecPoint,
+    point: SpecPoint,
     pointer: SpecExpression,
     element_type: ProgramType,
 }
@@ -5341,15 +5326,15 @@ struct SpecElaborationContext {
     integer_values: PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     algebraic_values: PersistentBinderMap<SpecAlgebraicExpression>,
     array_refs: PersistentBinderMap<SpecArrayRef>,
-    /// The memory a bound array name reads in, when its binding names a state
+    /// The point a bound array name reads at, when its binding names a state
     /// of its own. A theorem argument that names another state (`old(a)`,
     /// `at(mark, a)`) binds the parameter to that state's array reference, and
-    /// an array reference is a memory as well as a pointer; without this the
-    /// clause's indexing would read the application's current memory. Only a
+    /// an array reference is a point as well as a pointer; without this the
+    /// clause's indexing would read at the application's current point. Only a
     /// binding that names another state appears here, so an ordinary array
-    /// name keeps reading through `current_memory` and carries no state.
-    array_memories: PersistentBinderMap<SpecPoint>,
-    current_memory: SpecPoint,
+    /// name keeps reading at `current_point` and carries no state.
+    array_points: PersistentBinderMap<SpecPoint>,
+    current_point: SpecPoint,
     current_loop_entry: Option<usize>,
     function_contract: bool,
     /// The context is the function entry (`old(...)`), so a resource count
@@ -5375,8 +5360,8 @@ impl Default for SpecElaborationContext {
             integer_values: PersistentBinderMap::default(),
             algebraic_values: PersistentBinderMap::default(),
             array_refs: PersistentBinderMap::default(),
-            array_memories: PersistentBinderMap::default(),
-            current_memory: SpecPoint::Current,
+            array_points: PersistentBinderMap::default(),
+            current_point: SpecPoint::Current,
             current_loop_entry: None,
             at_function_entry: false,
             function_contract: false,
@@ -5389,9 +5374,9 @@ impl Default for SpecElaborationContext {
 }
 
 impl SpecElaborationContext {
-    fn with_current_memory(current_memory: SpecPoint) -> Self {
+    fn with_current_point(current_point: SpecPoint) -> Self {
         Self {
-            current_memory,
+            current_point,
             ..Self::default()
         }
     }
@@ -5430,8 +5415,8 @@ impl SpecElaborationContext {
                 integer_values: self.integer_values.clone(),
                 algebraic_values: self.algebraic_values.clone(),
                 array_refs: PersistentBinderMap::default(),
-                array_memories: PersistentBinderMap::default(),
-                current_memory: SpecPoint::FunctionEntry,
+                array_points: PersistentBinderMap::default(),
+                current_point: SpecPoint::FunctionEntry,
                 current_loop_entry: None,
                 function_contract: true,
                 at_function_entry: true,
@@ -5465,8 +5450,8 @@ impl SpecElaborationContext {
             integer_values: self.integer_values.clone(),
             algebraic_values: self.algebraic_values.clone(),
             array_refs: PersistentBinderMap::default(),
-            array_memories: PersistentBinderMap::default(),
-            current_memory: SpecPoint::At(entry.clone()),
+            array_points: PersistentBinderMap::default(),
+            current_point: SpecPoint::At(entry.clone()),
             current_loop_entry: None,
             function_contract: false,
             at_function_entry: true,

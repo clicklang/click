@@ -4536,33 +4536,21 @@ impl SymbolicMemory {
     pub(in crate::kernel) fn with_pending_heap_reallocation(
         mut self,
         base: Address,
-        old_pointer: Address,
-        old_bytes: AllocationSize,
-        zeroed_prefix: Option<MachineTerm>,
-        copied_cells: Vec<(AddressOffset, ProgramValue)>,
-        initialized_prefix: Vec<(i64, u32)>,
+        pending: PendingReallocation,
     ) -> Self {
         let diagnostic_base = self.clone();
+        let arguments = vec![
+            ProgramValue::pointer(base.clone()),
+            ProgramValue::pointer(pending.old_pointer.clone()),
+            pending.old_bytes.token_value(),
+        ];
         std::sync::Arc::make_mut(&mut self.heap)
             .pending_reallocations
-            .insert(
-                base.clone(),
-                PendingReallocation {
-                    old_pointer: old_pointer.clone(),
-                    old_bytes: old_bytes.clone(),
-                    zeroed_prefix,
-                    copied_cells,
-                    initialized_prefix,
-                },
-            );
+            .insert(base, pending);
         self.record_diagnostic_transform(
             "register pending reallocation",
             vec![diagnostic_base],
-            vec![
-                ProgramValue::pointer(base.clone()),
-                ProgramValue::pointer(old_pointer.clone()),
-                old_bytes.token_value(),
-            ],
+            arguments,
         );
         self
     }
@@ -5327,7 +5315,7 @@ impl SymbolicMemory {
         mutable_ranges: &[MemoryRange],
         assumptions: &PureFactContext,
     ) -> Self {
-        self.with_memory_havoc(variable, mutable_ranges, assumptions, None, false)
+        self.with_memory_havoc(variable, mutable_ranges, assumptions, None, false, None)
     }
 
     pub(in crate::kernel) fn with_call_memory_havoc(
@@ -5337,7 +5325,18 @@ impl SymbolicMemory {
         assumptions: &PureFactContext,
         kept: Option<&CallKeptOwnership>,
     ) -> Self {
-        self.with_memory_havoc(variable, mutable_ranges, assumptions, kept, true)
+        self.with_call_memory_havoc_with_copy(variable, mutable_ranges, assumptions, kept, None)
+    }
+
+    pub(in crate::kernel) fn with_call_memory_havoc_with_copy(
+        self,
+        variable: Variable,
+        mutable_ranges: &[MemoryRange],
+        assumptions: &PureFactContext,
+        kept: Option<&CallKeptOwnership>,
+        copy: Option<&RepresentationCopyRange>,
+    ) -> Self {
+        self.with_memory_havoc(variable, mutable_ranges, assumptions, kept, true, copy)
     }
 
     fn with_memory_havoc(
@@ -5347,6 +5346,7 @@ impl SymbolicMemory {
         assumptions: &PureFactContext,
         kept: Option<&CallKeptOwnership>,
         preserve_local_slots: bool,
+        copy: Option<&RepresentationCopyRange>,
     ) -> Self {
         let base = Some(intern_derivation_base(&mut self));
         let candidates = call_havoc_candidates(mutable_ranges);
@@ -5387,6 +5387,9 @@ impl SymbolicMemory {
             },
             ask_every_slot,
         );
+        if let (Some(copy), Some(before)) = (copy, &base) {
+            self.replace_initialization_for_representation_copy(before, copy);
+        }
         let kept_ranges = call_havoc_kept_ranges(kept);
         self.forget_zeroed_allocations_written_by(mutable_ranges, assumptions);
         std::sync::Arc::make_mut(&mut self.blocks).insert(
@@ -5414,6 +5417,79 @@ impl SymbolicMemory {
             );
         }
         self
+    }
+
+    /// A representation copy replaces the destination's initialization,
+    /// including holes. Use the pre-call state even when the two spans share
+    /// one block. The ordinary call edge already describes the write, so
+    /// publish this metadata as part of that edge.
+    fn replace_initialization_for_representation_copy(
+        &mut self,
+        source_memory: &SymbolicMemory,
+        copy: &RepresentationCopyRange,
+    ) {
+        let source_start = copy.source.offset.as_const().expect("exact source");
+        let source_end = source_start + i64::from(copy.bytes);
+        let destination_start = copy
+            .destination
+            .offset
+            .as_const()
+            .expect("exact destination");
+        let at = |offset| Address {
+            base: copy.source.base.clone(),
+            offset: AddressOffset::Constant(offset),
+        };
+        let mut initialized = self.heap.initialized.clone();
+        initialized.forget(&copy.destination, copy.bytes);
+        initialized.forget_symbolic_offsets(&copy.destination.base);
+        let mut record = |start: i64, bytes| {
+            let address = Address {
+                base: copy.destination.base.clone(),
+                offset: AddressOffset::Constant(destination_start + (start - source_start)),
+            };
+            initialized.record(&address, bytes);
+        };
+        for (start, bytes) in source_memory.heap.initialized.constant_runs_in_range(
+            &copy.source.base,
+            source_start,
+            source_end,
+        ) {
+            record(start, bytes);
+        }
+        // A cell can establish initialization even if it has no separate
+        // record, or if the copy cuts through it and cannot retain its type.
+        let first = source_memory
+            .cells
+            .range(at(i64::MIN)..at(source_start))
+            .next_back()
+            .map_or_else(|| at(source_start), |(address, _)| address.clone());
+        crate::instrumentation::record_deterministic_work(1);
+        for (address, value) in source_memory.cells.range(first..at(source_end)) {
+            crate::instrumentation::record_deterministic_work(1);
+            let offset = address.offset.as_const().expect("constant cell range");
+            let start = offset.max(source_start);
+            let end = offset
+                .saturating_add(i64::from(value.byte_width()))
+                .min(source_end);
+            if start < end {
+                record(start, u32::try_from(end - start).expect("clipped cell"));
+            }
+        }
+        let heap = Arc::make_mut(&mut self.heap);
+        heap.initialized = initialized;
+        if !copy.destination.base.is_local_block() {
+            // A zeroed allocation, for example, may not already have an
+            // unwritten marker. The copy creates an initialization history
+            // for the destination span even in that case.
+            let width = heap
+                .uninitialized_objects
+                .get(&copy.destination)
+                .copied()
+                .unwrap_or(0)
+                .max(copy.bytes);
+            heap.uninitialized_objects
+                .insert(copy.destination.clone(), width);
+        }
     }
 
     /// Checks that `self` is exactly the cell-and-marker result produced by a
@@ -9011,7 +9087,7 @@ impl ExecutionState {
             let is_parameter = |expression: &SpecExpression| matches!(expression, SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) if name.is_named(parameter));
             let is_counter_load = |expression: &SpecExpression| {
                 let SpecExpression::MemoryLoad {
-                    memory: SpecPoint::Current,
+                    point: SpecPoint::Current,
                     pointer,
                     value_type: ProgramType::Int32,
                 } = expression

@@ -378,13 +378,21 @@ fn memory_write_obligation_outcome(
     {
         return Some(StatementOutcome::RuntimeError(error));
     }
+    require_write_loan_separation(state, &range, obligations);
+    memory_write_ownership_outcome(state, storage_range, assumptions)
+}
+
+fn require_write_loan_separation(
+    state: &ExecutionState,
+    range: &MemoryRange,
+    obligations: &mut Vec<ProofObligation>,
+) {
     if let Some(requirement) = state
         .loan_ledger()
-        .and_then(|ledger| ledger.memory_access_requirement(&range))
+        .and_then(|ledger| ledger.memory_access_requirement(range))
     {
         obligations.push(ProofObligation::verification_condition(requirement));
     }
-    memory_write_ownership_outcome(state, storage_range, assumptions)
 }
 
 fn memory_write_ownership_outcome(
@@ -423,19 +431,6 @@ fn stable_loan_memory_range_outcome(
         .map(|diagnostic| {
             StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(Box::new(diagnostic)))
         })
-}
-
-fn allocation_retirement_outcome(
-    state: &ExecutionState,
-    range: &MemoryRange,
-    assumptions: &PureFactContext,
-) -> Option<StatementOutcome> {
-    if let Some(error) =
-        super::super::mutexes::storage_retirement_refusal(state, range, assumptions)
-    {
-        return Some(StatementOutcome::RuntimeError(error));
-    }
-    stable_loan_memory_range_outcome(state, range, assumptions)
 }
 
 pub(in crate::kernel) fn write_program_lvalue_paths(
@@ -1141,6 +1136,7 @@ fn execute_program_aggregate_step_paths(
         &ProgramExpression::Value(result.clone()),
         expression,
         layout,
+        AggregateCopyDestination::ResultTemporary,
         assumptions,
         budget,
     )?;
@@ -1163,11 +1159,46 @@ fn execute_program_aggregate_step_paths(
     Ok(paths)
 }
 
+#[derive(Clone, Copy)]
+enum AggregateCopyDestination {
+    Assignment,
+    ResultTemporary,
+}
+
+fn aggregate_assignment_write_outcome(
+    state: &ExecutionState,
+    target: &PointerValue,
+    bytes: u32,
+    assumptions: &PureFactContext,
+    obligations: &mut Vec<ProofObligation>,
+) -> Option<StatementOutcome> {
+    #[cfg(test)]
+    let _fast = crate::kernel::search::FastOperationScope::enter("aggregate copy loan check");
+    let pointer = target.pointer();
+    let storage =
+        MemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), 1u32.into(), bytes);
+    if let Some(error) = super::super::mutexes::storage_write_refusal(state, &storage, assumptions)
+    {
+        return Some(StatementOutcome::RuntimeError(error));
+    }
+    if let Some(outcome) = memory_write_ownership_outcome(state, storage, assumptions) {
+        return Some(outcome);
+    }
+    // Express the full destination, including padding, as a byte slice that
+    // the proof can name at the assignment's entry point.
+    let byte_pointer =
+        super::expression::cast_pointer_value(target.clone(), ProgramType::UInt8Pointer);
+    let destination = MemoryRange::from_pointer_value(&byte_pointer, 0u32.into(), bytes.into(), 1);
+    require_write_loan_separation(state, &destination, obligations);
+    None
+}
+
 fn execute_program_aggregate_copy_paths(
     state: &ExecutionState,
     target: &ProgramExpression,
     source: &ProgramExpression,
     layout: &AggregateLayout,
+    destination: AggregateCopyDestination,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
@@ -1194,7 +1225,7 @@ fn execute_program_aggregate_copy_paths(
                 facts: source_facts,
                 obligations: source_obligations,
             } = source_path;
-            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+            let Some((facts, mut obligations)) = merge_execution_pure_facts_and_obligations(
                 &target_facts,
                 &target_obligations,
                 &source_facts,
@@ -1250,12 +1281,24 @@ fn execute_program_aggregate_copy_paths(
                 ));
                 continue;
             }
-            if let Some(outcome) = memory_write_permission_outcome(
-                state,
-                target_pointer.pointer(),
-                layout.size_bytes(),
-                &assumptions_with_path_context(assumptions, &facts, &obligations),
-            ) {
+            let write_assumptions =
+                assumptions_with_path_context(assumptions, &facts, &obligations);
+            let write_refusal = match destination {
+                AggregateCopyDestination::Assignment => aggregate_assignment_write_outcome(
+                    state,
+                    &target_pointer,
+                    layout.size_bytes(),
+                    &write_assumptions,
+                    &mut obligations,
+                ),
+                AggregateCopyDestination::ResultTemporary => memory_write_permission_outcome(
+                    state,
+                    target_pointer.pointer(),
+                    layout.size_bytes(),
+                    &write_assumptions,
+                ),
+            };
+            if let Some(outcome) = write_refusal {
                 paths.push(StatementExecutionPath::new(outcome, facts, obligations));
                 continue;
             }
@@ -1263,7 +1306,7 @@ fn execute_program_aggregate_copy_paths(
                 state,
                 &target_pointer,
                 layout,
-                &assumptions_with_path_context(assumptions, &facts, &obligations),
+                &write_assumptions,
             ) {
                 paths.push(StatementExecutionPath::new(
                     StatementOutcome::RuntimeError(RuntimeError::MissingResource {
@@ -1665,7 +1708,7 @@ fn execute_program_heap_allocate_to_paths(
             budget,
         )?;
         for assigned_path in assigned {
-            let Some((merged_facts, merged_obligations)) =
+            let Some((merged_facts, mut merged_obligations)) =
                 merge_execution_pure_facts_and_obligations(
                     &facts,
                     &obligations,
@@ -1679,13 +1722,14 @@ fn execute_program_heap_allocate_to_paths(
             // Its success already known, the allocation is a live block now.
             let outcome = match assigned_path.outcome {
                 StatementOutcome::Normal(state) if ends_program_on_failure => {
-                    StatementOutcome::Normal(Box::new(resolve_pending_heap_allocations(
+                    StatementOutcome::Normal(Box::new(resolve_pending_heap_allocations_recording(
                         &state,
                         &assumptions_with_path_context(
                             assumptions,
                             &merged_facts,
                             &merged_obligations,
                         ),
+                        &mut merged_obligations,
                     )))
                 }
                 outcome => outcome,
@@ -2310,9 +2354,11 @@ fn execute_program_realloc_result_paths(
 
         let effective_assumptions =
             assumptions_with_path_context(assumptions, &facts, &obligations);
-        let old_pointer = match old_value {
-            ProgramValue::Pointer(pointer) => pointer.into_pointer(),
-            ProgramValue::Int32(bits) if bits.as_const() == Some(0) => Address::null(),
+        let old_argument = match old_value {
+            ProgramValue::Pointer(pointer) => pointer,
+            ProgramValue::Int32(bits) if bits.as_const() == Some(0) => {
+                PointerValue::new(Address::null(), target_type)
+            }
             _ => {
                 paths.push(StatementExecutionPath::new(
                     StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
@@ -2323,6 +2369,7 @@ fn execute_program_realloc_result_paths(
             }
         };
 
+        let old_pointer = old_argument.pointer().clone();
         // C specifies realloc(NULL, size) as an allocation. Reuse the
         // existing pending-allocation machinery so a later null check can
         // resolve this branch just like malloc/calloc.
@@ -2535,14 +2582,13 @@ fn execute_program_realloc_result_paths(
                 ));
                 continue;
             };
-            // Ownership of the old allocation and its complete access is
-            // established, so a refusal here names the live loan that keeps
-            // these bytes from being reallocated.
-            if let Some(outcome) =
-                allocation_retirement_outcome(state, &old_allocation_range, &effective_assumptions)
-            {
+            if let Some(error) = super::super::mutexes::storage_retirement_refusal(
+                state,
+                &old_allocation_range,
+                &effective_assumptions,
+            ) {
                 paths.push(StatementExecutionPath::new(
-                    outcome,
+                    StatementOutcome::RuntimeError(error),
                     all_facts,
                     all_obligations,
                 ));
@@ -2657,6 +2703,20 @@ fn execute_program_realloc_result_paths(
                     break Address::symbolic(identity);
                 }
             };
+            // Save the call-entry loan footprint. Only success retires the
+            // old allocation, and intervening proof steps can change the ledger.
+            let retirement_separation = state.loan_ledger().and_then(|ledger| {
+                let byte_pointer = super::expression::cast_pointer_value(
+                    old_argument.clone(),
+                    ProgramType::UInt8Pointer,
+                );
+                let range = old_allocation_range
+                    .clone()
+                    .with_pointer_carrier(&byte_pointer);
+                ledger
+                    .memory_access_requirement(&range)
+                    .map(std::sync::Arc::new)
+            });
             let pending_memory = state
                 .memory
                 .clone()
@@ -2667,14 +2727,19 @@ fn execute_program_realloc_result_paths(
                 )
                 .with_pending_heap_reallocation(
                     pending_pointer.clone(),
-                    old_pointer.clone(),
-                    old_bytes.clone(),
-                    zeroed_prefix,
-                    copied_cells
-                        .into_iter()
-                        .map(|(offset, value)| (AddressOffset::Constant(i64::from(offset)), value))
-                        .collect(),
-                    initialized_prefix,
+                    PendingReallocation {
+                        old_pointer: old_pointer.clone(),
+                        old_bytes: old_bytes.clone(),
+                        zeroed_prefix,
+                        copied_cells: copied_cells
+                            .into_iter()
+                            .map(|(offset, value)| {
+                                (AddressOffset::Constant(i64::from(offset)), value)
+                            })
+                            .collect(),
+                        initialized_prefix,
+                        retirement_separation,
+                    },
                 );
             let pending_state = state.clone().with_memory(pending_memory);
             let assigned = AllocationDestination::Value(target_type).finish(
@@ -3037,10 +3102,13 @@ fn execute_program_heap_free_paths(
     Ok(paths)
 }
 
-pub(crate) fn resolve_pending_heap_allocations(
+/// Resolve one path, letting its caller record or discharge any retirement
+/// prerequisites before the corresponding old allocation is retired.
+pub(crate) fn resolve_pending_heap_allocations_with<E>(
     state: &ExecutionState,
     assumptions: &PureFactContext,
-) -> ExecutionState {
+    mut require: impl FnMut(ProofObligation) -> Result<(), E>,
+) -> Result<ExecutionState, E> {
     let pending = state
         .memory
         .heap
@@ -3061,6 +3129,11 @@ pub(crate) fn resolve_pending_heap_allocations(
         if let Some(pending_reallocation) =
             state.memory.heap.pending_reallocations.get(&base).cloned()
         {
+            if !is_null && let Some(separation) = &pending_reallocation.retirement_separation {
+                require(ProofObligation::verification_condition(
+                    separation.as_ref().clone(),
+                ))?;
+            }
             let (memory, bytes, resolved_base, _) = state
                 .memory
                 .clone()
@@ -3175,7 +3248,35 @@ pub(crate) fn resolve_pending_heap_allocations(
                 ));
         }
     }
-    state
+    Ok(state)
+}
+
+fn resolve_pending_heap_allocations_recording(
+    state: &ExecutionState,
+    assumptions: &PureFactContext,
+    obligations: &mut Vec<ProofObligation>,
+) -> ExecutionState {
+    match resolve_pending_heap_allocations_with(state, assumptions, |obligation| {
+        obligations.push(obligation);
+        Ok::<_, std::convert::Infallible>(())
+    }) {
+        Ok(state) => state,
+        Err(never) => match never {},
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn resolve_pending_heap_allocations(
+    state: &ExecutionState,
+    assumptions: &PureFactContext,
+) -> ExecutionState {
+    resolve_pending_heap_allocations_with(state, assumptions, |obligation| {
+        assumptions
+            .states_required_goal(obligation.proposition())
+            .then_some(())
+            .ok_or(obligation)
+    })
+    .expect("test requires checked allocation retirement")
 }
 
 fn has_live_thread_completion(state: &ExecutionState) -> bool {
@@ -3245,7 +3346,7 @@ fn execute_program_return_expression_paths(
                 }) =>
             {
                 let pointer = value.pointer().expect("pending pointer result").clone();
-                for truthiness_path in pending_allocation_outcome_paths(
+                for mut truthiness_path in pending_allocation_outcome_paths(
                     pointer.pointer().clone(),
                     facts,
                     obligations,
@@ -3256,7 +3357,11 @@ fn execute_program_return_expression_paths(
                         &truthiness_path.facts,
                         &truthiness_path.obligations,
                     );
-                    let resolved_state = resolve_pending_heap_allocations(state, &path_assumptions);
+                    let resolved_state = resolve_pending_heap_allocations_recording(
+                        state,
+                        &path_assumptions,
+                        &mut truthiness_path.obligations,
+                    );
                     let resolved_pointer = if truthiness_path.is_true {
                         let AddressBase::Symbolic(variable) = pointer.base else {
                             unreachable!("pending malloc results have symbolic heap identities");
@@ -4210,6 +4315,7 @@ fn execute_execution_statement_leaf_paths(
             target,
             source,
             layout,
+            AggregateCopyDestination::Assignment,
             assumptions,
             budget,
         )?,
@@ -4804,14 +4910,17 @@ fn execute_execution_statement_leaf_paths(
                     ExpressionOutcome::Value(value) => {
                         let truthiness_paths =
                             program_truthiness_paths(value, facts, obligations, assumptions);
-                        for truthiness_path in truthiness_paths {
+                        for mut truthiness_path in truthiness_paths {
                             let path_assumptions = assumptions_with_path_context(
                                 assumptions,
                                 &truthiness_path.facts,
                                 &truthiness_path.obligations,
                             );
-                            let branch_state =
-                                resolve_pending_heap_allocations(state, &path_assumptions);
+                            let branch_state = resolve_pending_heap_allocations_recording(
+                                state,
+                                &path_assumptions,
+                                &mut truthiness_path.obligations,
+                            );
                             let branch_state =
                                 crate::kernel::publication::resolve_observed_publications(
                                     &branch_state,

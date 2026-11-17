@@ -1,6 +1,66 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: wide element bounds, initializedness, and cold replay"]
+fn wide_viewable_element_needs_containment_and_initializedness() {
+    let (source, sources) =
+        mdtest_sources("mdtests/transport_wide_viewable_range_outside_element_is_refused.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    assert!(!source.contains("transport("));
+    let report = verify_c_sources(&source, &sources).unwrap_err().report();
+    assert!(
+        report.contains("goal:") && report.contains("k < to_integer(n + 1u64)"),
+        "{report}"
+    );
+
+    // An inside index gets through containment, but viewability alone cannot
+    // establish that the byte has been initialized.
+    let inside = source.replace(
+        "k < n + 2u64 implies",
+        "to_integer(k) < to_integer(n + 1u64) implies",
+    );
+    assert_ne!(inside, source);
+    let report = verify_c_sources(&inside, &sources).unwrap_err().report();
+    assert!(report.contains("goal: defined"), "{report}");
+
+    let initialized = inside
+        .replace(
+            "    ensures result",
+            concat!(
+                "    requires forall (j: uint64) {\n",
+                "        to_integer(j) < to_integer(n + 1u64) implies defined(bytes[j])\n",
+                "    };\n    ensures result",
+            ),
+        )
+        .replace(
+            "            known();\n        }",
+            concat!(
+                "            instantiate(forall (j: uint64) {\n",
+                "                to_integer(j) < to_integer(n + 1u64) implies defined(old(bytes[j]))\n",
+                "            }, k);\n",
+                "            have defined(old(bytes[k])) by { known(); }\n",
+                "            have separate(memory(x), memory(bytes[k])) by { normalize(); }\n",
+                "            have separate(statement(0).footprint, memory(bytes[k])) by {\n",
+                "                normalize() using { separate(memory(x), memory(bytes[k])); };\n",
+                "            }\n",
+                "            preserve(memory(bytes[k]), statement(0));\n        }",
+            ),
+        );
+    verify_c_sources(&initialized, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let label = "f.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&initialized, &sources, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 #[ignore = "nightly: C string viewability and call authority"]
 fn cstr_viewability_without_transport_does_not_supply_call_authority() {
     let (source, sources) = mdtest_sources("mdtests/cstr_dynamic_invalidated_transport.md");
@@ -2976,16 +3036,25 @@ theorem fixed_integer_witness(value: int32) {
     } by {
         witness(0);
         both {
-            both {
-                known();
-            } and {
-                known();
+            left => {
+                both {
+                    left => {
+                        known();
+                    }
+                    right => {
+                        known();
+                    }
+                }
             }
-        } and {
-            both {
-                normalize();
-            } and {
-                normalize();
+            right => {
+                both {
+                    left => {
+                        normalize();
+                    }
+                    right => {
+                        normalize();
+                    }
+                }
             }
         }
     }
@@ -4006,6 +4075,40 @@ fn whole_claim_expansion_keeps_a_call_steps_empty_binder_map() {
     }
     let expanded = expand_c_claim_source_by_label(&click, &sources, "keep.contract").unwrap();
     assert!(expanded.contains("step(inner, {});"), "{expanded}");
+}
+
+#[test]
+#[ignore = "nightly: cold replay of two default call binding proofs"]
+fn bare_step_call_result_bindings_expand_and_replay() {
+    for (fixture, binding) in [
+        ("mdtests/c_static_function.md", "let { result: r } = step()"),
+        (
+            "mdtests/step_binds_call_result_with_default_resource.md",
+            "let { result: saved } = step()",
+        ),
+    ] {
+        let (source, owned_sources) = mdtest_sources(fixture);
+        let sources = crate::cli::source_refs(&owned_sources);
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "run.contract")
+            .unwrap_or_else(|error| panic!("{fixture}: {error}"));
+        assert!(expanded.contains(binding), "{expanded}");
+        without_implicit_solve_for_claim("run.contract", || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: {error}"));
+    }
+
+    let (source, owned_sources) = mdtest_sources("mdtests/call_result_discarded.md");
+    let sources = crate::cli::source_refs(&owned_sources);
+    let source = source.replace("step(classify, { })", "step()");
+    let error = verify_c_sources(&source, &sources)
+        .expect_err("discarding a C call result leaves no value to bind");
+    assert!(
+        error
+            .message()
+            .contains("requires a scalar assignment or a used call result"),
+        "{error}"
+    );
 }
 
 /// The loop back edge needs both the current zero and the previous entry's
@@ -20490,9 +20593,12 @@ fn arithmetic_in_each_both_arm_is_selected_at_its_location() {
  requires 0 <= b;
  ensures 0 <= a and 0 <= b by {
   both {
-   solve() using { 0 <= a; };
-  } and {
-   solve() using { 0 <= b; };
+      left => {
+       solve() using { 0 <= a; };
+      }
+      right => {
+       solve() using { 0 <= b; };
+      }
   }
  }
 }
@@ -21551,15 +21657,18 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
             requires b == 0;
             ensures a == 0 and (a == 0 implies a + 1 == 1) by {
                 both {
-                    have a == 0 by {
-                        rewrite(a, b); rewrite(b, 0); normalize();
+                    left => {
+                        have a == 0 by {
+                            rewrite(a, b); rewrite(b, 0); normalize();
+                        }
+                        known();
                     }
-                    known();
-                } and {
-                    intro();
-                    have a == 0 by { known(); }
-                    have a + 1 == 1 by { rewrite(a, 0); normalize(); }
-                    known();
+                    right => {
+                        intro();
+                        have a == 0 by { known(); }
+                        have a + 1 == 1 by { rewrite(a, 0); normalize(); }
+                        known();
+                    }
                 }
             }
         }
@@ -21587,7 +21696,7 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
             requires a == b;
             requires b == 0;
             ensures a == 0 and (a == 0 implies a + 1 == 1)
-            {} both {{ known(); }} and {{ intro(); known(); }}
+            {} both {{ left => {{ known(); }} right => {{ intro(); known(); }} }}
             }}
         }}
     "#,

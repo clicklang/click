@@ -2792,6 +2792,82 @@ struct FunctionContractApplication<'a> {
     value_arguments: &'a [ProgramValue],
 }
 
+fn representation_copy_arguments(
+    values: &[ProgramValue],
+    effect: RepresentationCopyEffect,
+) -> Option<(&Address, &Address, &ProgramValue)> {
+    let ProgramValue::Pointer(destination) = values.get(effect.destination_argument)? else {
+        return None;
+    };
+    let ProgramValue::Pointer(source) = values.get(effect.source_argument)? else {
+        return None;
+    };
+    Some((
+        destination.pointer(),
+        source.pointer(),
+        values.get(effect.bytes_argument)?,
+    ))
+}
+
+fn constant_representation_copy_count(bytes: &ProgramValue) -> Option<i64> {
+    match bytes {
+        ProgramValue::UInt64(bytes) => i64::try_from(bytes.uint64_as_const()?).ok(),
+        ProgramValue::Int32(bytes) => Some(i64::from(bytes.as_const()? as i32)),
+        _ => None,
+    }
+}
+
+/// Either the source is initialized, so an ordinary call transition can
+/// keep old destination initialization, or the transition replaces it using
+/// the exact copied span. Unknown placement cannot establish either rule.
+fn representation_copy_initialization(
+    memory: &SymbolicMemory,
+    values: &[ProgramValue],
+    effect: RepresentationCopyEffect,
+    inputs: &[CheckedResourceFact],
+    assumptions: &PureFactContext,
+) -> Result<Option<RepresentationCopyRange>, &'static str> {
+    let refusal = "memcpy with a possibly uninitialized source requires exact offsets and length and an automatic or heap destination";
+    let (destination, source, count) =
+        representation_copy_arguments(values, effect).ok_or(refusal)?;
+    let bytes = constant_representation_copy_count(count);
+    if bytes == Some(0) {
+        return Ok(None);
+    }
+    // The recognized library declaration has exactly one source view. Use
+    // its checked range (including the index kind selected when lending it).
+    let source_view = inputs
+        .iter()
+        .filter(|input| input.fact.is_view())
+        .find_map(|input| input.fact.memory_range())
+        .ok_or(refusal)?;
+    if call_initialization::representation_copy_source_is_initialized(
+        memory,
+        source_view,
+        assumptions,
+    ) {
+        return Ok(None);
+    }
+    if !destination.base.is_local_block() && !matches!(destination.base, AddressBase::Heap(_)) {
+        return Err(refusal);
+    }
+    let bytes = bytes
+        .and_then(|bytes| u32::try_from(bytes).ok())
+        .ok_or(refusal)?;
+    for address in [source, destination] {
+        address
+            .offset
+            .as_const()
+            .and_then(|start| start.checked_add(i64::from(bytes)))
+            .ok_or(refusal)?;
+    }
+    Ok(Some(RepresentationCopyRange {
+        destination: destination.clone(),
+        source: source.clone(),
+        bytes,
+    }))
+}
+
 /// Transfers initialized typed cells across a recognized byte-copy call.
 ///
 /// Only a cell whose complete byte representation lies inside the copied
@@ -2824,29 +2900,14 @@ pub(in crate::kernel) fn representation_copy_cell_moves(
     argument_values: &[ProgramValue],
     effect: RepresentationCopyEffect,
 ) -> Vec<(Address, ProgramValue)> {
-    let (Some(destination), Some(source), Some(bytes)) = (
-        argument_values.get(effect.destination_argument),
-        argument_values.get(effect.source_argument),
-        argument_values.get(effect.bytes_argument),
-    ) else {
-        return Vec::new();
-    };
-    let (ProgramValue::Pointer(destination), ProgramValue::Pointer(source)) = (destination, source)
+    let Some((destination, source, bytes)) = representation_copy_arguments(argument_values, effect)
     else {
         return Vec::new();
     };
-    // The count is C's `size_t`; a 32-bit count is accepted as the same
-    // number when nonnegative.
-    let bytes = match bytes {
-        ProgramValue::UInt64(bytes) => bytes
-            .uint64_as_const()
-            .and_then(|bytes| i64::try_from(bytes).ok()),
-        ProgramValue::Int32(bytes) => bytes.as_const().map(|bytes| i64::from(bytes as i32)),
-        _ => None,
-    };
+    let bytes = constant_representation_copy_count(bytes);
     let (Some(source_offset), Some(destination_offset), Some(bytes)) = (
-        source.pointer().offset.as_const(),
-        destination.pointer().offset.as_const(),
+        source.offset.as_const(),
+        destination.offset.as_const(),
         bytes,
     ) else {
         return Vec::new();
@@ -2854,11 +2915,16 @@ pub(in crate::kernel) fn representation_copy_cell_moves(
     if bytes <= 0 {
         return Vec::new();
     }
-    let source_block = source.pointer().base.clone();
-    let destination_block = destination.pointer().base.clone();
-    // A checked byte copy requires the ranges be separate, so a self-copy in
-    // one block is not the recognized effect.
-    if source_block == destination_block {
+    let source_block = source.base.clone();
+    let destination_block = destination.base.clone();
+    // A checked byte copy requires disjoint ranges, including within one block.
+    let Some(destination_end) = destination_offset.checked_add(bytes) else {
+        return Vec::new();
+    };
+    if source_block == destination_block
+        && source_offset < destination_end
+        && destination_offset < source_offset.saturating_add(bytes)
+    {
         return Vec::new();
     }
     // Constant offsets order before every other offset form and among
@@ -3321,6 +3387,31 @@ fn execute_verified_function_applications_with_suspension(
             ));
             continue;
         }
+        let copy_initialization = if let Some(effect) = application.representation_copy
+            && !transfer.memory_effects.is_empty()
+        {
+            match representation_copy_initialization(
+                &entry_state.memory,
+                &argument_values,
+                effect,
+                &transfer.borrowed_inputs,
+                &effective_assumptions,
+            ) {
+                Ok(copy) => copy,
+                Err(message) => {
+                    paths.push(FunctionPath::new(
+                        FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
+                            message.into(),
+                        )),
+                        facts,
+                        obligations,
+                    ));
+                    continue;
+                }
+            }
+        } else {
+            None
+        };
         let memory = if transfer.memory_effects.is_empty() {
             entry_state.memory.clone()
         } else {
@@ -3341,11 +3432,12 @@ fn execute_verified_function_applications_with_suspension(
                 &effective_assumptions,
             )
             .with_caller_before_transfer(caller_state.resources());
-            entry_state.memory.clone().with_call_memory_havoc(
+            entry_state.memory.clone().with_call_memory_havoc_with_copy(
                 memory_identity,
                 &transfer.memory_effects,
                 &effective_assumptions,
                 Some(&kept),
+                copy_initialization.as_ref(),
             )
         };
         let exceptional_path = if let Some(payload_identity) = exceptional_payload_identity {

@@ -511,10 +511,10 @@ fn borrowed_contract_input_rejects_derived_or_ambiguous_views() {
 
 /// The aggregate-copy path is the same shape at a wider width: the copy's
 /// target is owned, its source is readable, and the lent range inside the
-/// target refuses the whole-struct write at the ledger (R01 aggregate case;
-/// docs/internals/stable-views.md).
+/// target cannot discharge the whole-struct separation obligation (R01
+/// aggregate case in docs/internals/stable-views.md).
 #[test]
-fn owner_authorized_aggregate_copy_into_a_lent_range_is_refused() {
+fn owner_authorized_aggregate_copy_into_a_lent_range_requires_separation() {
     let target = Address {
         base: "target".into(),
         offset: AddressOffset::Constant(0),
@@ -587,21 +587,21 @@ fn owner_authorized_aggregate_copy_into_a_lent_range_is_refused() {
         ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
     )
     .expect("an owner-authorized aggregate copy over a lent field has a checked outcome");
-    let Proposition::ProgramFunctionVerifies { outcome, .. } = theorem.proposition() else {
-        panic!("expected a function execution proposition");
+    let Proposition::Implies(requirement, execution) = theorem.proposition() else {
+        panic!("the aggregate copy must remain conditional on loan separation");
     };
-    let FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(diagnostic)) = outcome else {
-        panic!("expected a loan refusal, got {outcome:?}");
+    let Proposition::ResourceSeparate { left, right } = requirement.as_ref() else {
+        panic!("expected the explicit loan separation premise");
     };
-    assert_eq!(diagnostic.category(), LoanRefusalCategory::ActiveDependency);
-    assert_eq!(
-        diagnostic.operation(),
-        crate::kernel::LoanRefusalOperation::MemoryAccess
-    );
-    assert_eq!(
-        diagnostic.subject().conflicting_resource_fact(),
-        Some(&view_memory_fact(target, 1, 2))
-    );
+    assert!(!PureFactContext::new().proves_resource_separate(left, right));
+    assert_eq!(right.as_ref(), view_memory_fact(target, 1, 2).resource());
+    assert!(matches!(
+        execution.as_ref(),
+        Proposition::ProgramFunctionVerifies {
+            outcome: FunctionOutcome::Return { .. },
+            ..
+        }
+    ));
 }
 
 /// The loan barrier exists for exactly one shape: a write the ordinary
@@ -1692,13 +1692,13 @@ fn verified_function_rule_does_not_publish_one_spec_alias_path() {
     let q = SpecExpression::ProgramExpression(crate::kernel::program_expression::variable("q"));
     let reflexive_load = SpecProposition::Comparison {
         left: SpecExpression::MemoryLoad {
-            memory: SpecPoint::Current,
+            point: SpecPoint::Current,
             pointer: Box::new(q.clone()),
             value_type: ProgramType::Int32,
         },
         operator: ComparisonOperator::Equal,
         right: SpecExpression::MemoryLoad {
-            memory: SpecPoint::Current,
+            point: SpecPoint::Current,
             pointer: Box::new(q),
             value_type: ProgramType::Int32,
         },

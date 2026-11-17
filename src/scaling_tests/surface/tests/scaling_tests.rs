@@ -391,7 +391,7 @@ fn nested_conjunction_body_parsing_uses_small_frames_and_linear_work() {
             let samples = [2, 4, 8, 16].map(|depth| {
                 let mut body = "have 0 == 0 by { normalize(); } normalize();".to_string();
                 for _ in 0..depth {
-                    body = format!("both {{ {body} }} and {{ normalize(); }}");
+                    body = format!("both {{ left => {{ {body} }} right => {{ normalize(); }} }}");
                 }
                 let source = format!("theorem nested() {{ ensures 0 == 0 by {{ {body} }} }}");
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {

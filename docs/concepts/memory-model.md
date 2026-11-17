@@ -246,8 +246,12 @@ storage, and memory a contract holds as `uninitialized(p[a..b])` start
 uninitialized
 ([uninitialized owned memory](../reference/language/index.md#uninitialized-owned-memory)),
 and a plain `owns`, `views`, or `consumes` clause requires the caller to have
-initialized the bytes it lends; a store initializes its bytes, and nothing but
-the end of the object's lifetime makes them uninitialized again. A store the
+initialized the bytes it lends. A store initializes its bytes. A recognized
+`memcpy` can transfer unwritten bytes over previously initialized storage. For a
+possibly unwritten source, the copy needs exact offsets and size and an automatic
+or heap destination. Only initialized source bytes make the corresponding
+destination bytes readable, and bytes outside that span keep their initialization.
+A store the
 facts cannot place (`a[u] = 7` where `u` may name several elements), a call or
 loop havoc, or a join forgets cached values, but the bytes those values
 occupied stay initialized, so a later read of them is an initialized value the

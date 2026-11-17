@@ -584,6 +584,9 @@ history and temporary session notes are not the plan's durable record.
 
 Checkpoint: 10a–10g have landed; 10f is [PR #3075](https://github.com/clicklang/click/pull/3075)
 and 10g is [PR #3080](https://github.com/clicklang/click/pull/3080).
+10l landed in [PR #3160](https://github.com/clicklang/click/pull/3160); all five
+pushed commits were verified on upstream and the clean primary was advanced
+through Git.
 10k landed in [PR #3151](https://github.com/clicklang/click/pull/3151); all eight
 pushed commits were verified on upstream and the clean primary was advanced
 through Git.
@@ -598,8 +601,8 @@ sequence below. These rows record planned scope, not completed implementation.
 | --- | --- | --- | --- |
 | 10j | Remove redundant native payloads from stored execution and memory values. | Audit actual wrapper-owned and reachable duplicate payloads first; remove demonstrated redundancy while preserving producer, storage and exact-refresh contracts. Account for live compatibility readers. | Audit complete; wrapper field duplication already absent; live dependencies below remain. |
 | 10k | Migrate native Integer result storage. | Integer results retain shared roots through result handoffs; exact native output is an explicit boundary. | Landed in [PR #3151](https://github.com/clicklang/click/pull/3151); all eight pushed commits verified on upstream. Evidence below. |
-| 10l | Migrate deferred Integer bindings and fold endpoints. | Deferred bindings and endpoints retain shared operands through substitution and evaluation with unchanged fold behavior. | Implemented and locally validated; [PR #3160](https://github.com/clicklang/click/pull/3160) has auto-merge requested. Integration pending. |
-| 10m | Migrate algebraic field and match-result storage. | Fields and match results retain shared values with existing constructor/arm identity and producer metadata. | Planned. |
+| 10l | Migrate deferred Integer bindings and fold endpoints. | Deferred bindings and endpoints retain shared operands through substitution and evaluation with unchanged fold behavior. | Landed in [PR #3160](https://github.com/clicklang/click/pull/3160); all five pushed commits verified on upstream. |
+| 10m | Migrate algebraic field and match-result storage. | Fields and match results retain shared values with existing constructor/arm identity and producer metadata. | Implemented and locally validated; [PR #3169](https://github.com/clicklang/click/pull/3169) has auto-merge requested. Integration pending. |
 | 10n | Migrate theorem argument and recorded-state value storage. | Stored arguments and recorded values retain shared operands with unchanged substitution and state selection. | Planned. |
 | 10o | Migrate program-valued resource-field storage. | Program-valued fields retain shared operands while preserving resource identity and substitution. | Planned. |
 | 10p | Migrate remaining expression payloads in sequence/resource descriptors. | Inventory and subdivide independent families before implementation; preserve legitimate opaque descriptor identities. | Planned; family split may be needed. |
@@ -913,6 +916,39 @@ pending. After integrating upstream `4f614f04e`, all 512 focused checks,
 the fold-read and loop-iteration selections, and quality checks passed again
 (script exit zero). The subsequent `5a58b73d3` integration adds the merged 10k
 commits already present in this implementation.
+
+### 10m Algebraic fields and match-result storage
+
+Both origins of `AlgebraicResult` and `AlgebraicFieldResult` now store a
+`KernelTerm`. The imported/retained tag preserves the previous checking and
+producer handoffs, constructor classification, scope binding behavior and
+separate equality classes. Imported equality still follows the native output
+contract; retained equality keeps exact common producer identity. This is
+origin metadata, not a second expression representation or native payload.
+
+Pointer field refinement owns a temporary native pointer reading and retains
+the checked metadata back into its root; field storage no longer becomes a
+mutable native value. Lowered Integer match arms retain common bodies and
+`KernelMatchArm` declarations. Symbolic result construction passes them directly
+to `KernelMatch`, preserving arm order, binder identities and written names.
+Native constructor/iota readings, selected typed rewriting, legacy lexical
+bindings and native output schemas remain explicit live compatibility readers.
+Their cache cleanup still depends on 10r–10s; this slice does not erase them.
+
+Regression coverage checks the two origin/equality contracts, native-child
+release, raw Boolean word preservation, logical versus program-parameter
+fields, and growing-DAG import with constant-cost result/field root handoffs.
+Existing constructor, read, match, pointer-metadata, scope and scaling checks
+remain unchanged. Local validation passed: 516 Spec/API/termination checks,
+all 1,889 scaling cases, the full regular mdtest corpus, fact-stability
+recording (121 refused lowerings, zero changed terms or paths), and quality
+checks (script exit zero). An incremental compiler fingerprint error was
+resolved by clearing only the failed crate cache and rebuilding with unchanged
+settings. The old private native Integer-match factory has no remaining
+callers and is removed. After integrating upstream `affad43dd`, all 516
+focused checks and quality checks passed again (script exit zero). PR delivery
+is pending.
+Full nightly was not run.
 
 ## Chunk 3: machine-valued pure-function results
 

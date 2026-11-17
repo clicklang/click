@@ -661,8 +661,10 @@ signed components owe `0 <= x`. The unsigned countdown idiom
 (`mdtests/an_unsigned_count_down_loop_owes_an_unsigned_descent.md`).
 Explicitly observing a machine expression, as in
 `decreases to_integer(3u32 - x)`, retains its wrapping arithmetic. A back
-edge on which that expression wraps upward is refused
-(`mdtests/an_unsigned_measure_that_wraps_upward_is_refused.md`). A plain
+edge on which that expression wraps upward is refused if the loop can
+continue (`mdtests/an_unsigned_measure_that_wraps_upward_is_refused.md`). When
+the next test is provably false, the exit owes no descent
+(`mdtests/loop_numeric_descent_on_exit.md`). A plain
 `decreases 3 - x` cannot wrap; it instead owes Integer nonnegativity and
 strict descent. A `long` loop's `length - i` likewise ranks by an Integer
 difference, without a signed 64-bit overflow obligation.

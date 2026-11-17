@@ -3413,7 +3413,7 @@ fn a_parsed_source_index_holds_only_proof_blocks() {
 
 #[test]
 fn trace_source_index_preserves_nested_locations_and_containment() {
-    let source = "// αβ UTF-8\nresource cell(p: int32*) { owns *p; }\nvoid f(int32* p) {\n    owns r: cell(p);\n} by {\n  have true by { open(cell(p)) { known(); } }\n  if true { normalize(); } else { solve(); }\n  cases { true => { step(); } false => { normalize(); } }\n  both { normalize(); } and { solve(); }\n  outcomes { threw => { step(); } returned => { solve(); } }\n  branch ensuring { fact true; } then { step(); } else { solve(); }\n  normalize();\n}\n";
+    let source = "// αβ UTF-8\nresource cell(p: int32*) { owns *p; }\nvoid f(int32* p) {\n    owns r: cell(p);\n} by {\n  have true by { open(cell(p)) { known(); } }\n  if true { normalize(); } else { solve(); }\n  cases { true => { step(); } false => { normalize(); } }\n  both { left => { normalize(); } right => { solve(); } }\n  outcomes { threw => { step(); } returned => { solve(); } }\n  branch ensuring { fact true; } then { step(); } else { solve(); }\n  normalize();\n}\n";
     let index = ProofSourceIndex::new(source).unwrap();
     // A `branch` shares its line only with its own arms' tactics, which are
     // inside it, so the line names it alone.
@@ -3436,7 +3436,7 @@ fn trace_source_index_preserves_nested_locations_and_containment() {
     for (kind, inner) in [
         ("if", "solve(); }\n  cases"),
         ("cases", "normalize(); } }\n  both"),
-        ("both", "solve(); }\n  outcomes"),
+        ("both", "solve(); } }\n  outcomes"),
     ] {
         let outer = position_at_offset(source, source.find(kind).unwrap());
         assert_eq!(
@@ -4248,11 +4248,14 @@ theorem fold_case(end: int32) {
     requires end <= 0;
     ensures tally(end) == 0 and 0 <= tally(end) by {
         both {
-            unfold(tally(end));
-            normalize();
-        } and {
-            unfold(tally(end));
-            normalize();
+            left => {
+                unfold(tally(end));
+                normalize();
+            }
+            right => {
+                unfold(tally(end));
+                normalize();
+            }
         }
     }
 }
@@ -4310,4 +4313,40 @@ void release(uint8* p, uint64 n, int32* q) {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })
     .unwrap();
+}
+
+#[test]
+fn aggregate_copy_loan_separation_expands_and_rechecks() {
+    let c = r#"
+union Payload { int32 value; };
+struct Packet { int32 tag; union Payload payload; };
+void copy(struct Packet *dst, struct Packet *src, int32 *q) {
+    *dst = *src;
+}
+"#;
+    let proof = r#"
+verifying "copy_loan.c";
+void copy(struct Packet* dst, struct Packet* src, int32* q) {
+    owns dst->tag;
+    owns dst->payload.value;
+    owns src->tag;
+    owns src->payload.value;
+    views *q;
+    requires separate(memory((dst as (uint8*))[0..8]), memory(*q));
+} by { step() by { known(); } }
+"#;
+    let sources = [("copy_loan.c", c)];
+    verify_c_sources(proof, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_c_claim_source_by_label(proof, &sources, "copy.contract").unwrap();
+    without_implicit_solve_for_claim("copy.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+
+    // The loan can alias the second member when the separation is absent.
+    let missing = proof.replace(
+        "requires separate(memory((dst as (uint8*))[0..8]), memory(*q));",
+        "",
+    );
+    assert!(verify_c_sources(&missing, &sources).is_err());
 }
