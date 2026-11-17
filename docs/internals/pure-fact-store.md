@@ -1,10 +1,10 @@
 # Pure fact store design
 
 `PureFactStore` owns the pure facts available in one proof scope, their indexes,
-and their maintained reasoning state. The first implementation extracts that
-ownership from `ProofFacts` and shares it through the ordinary statement path.
-This page records the ownership boundary, the mapped statement transition,
-and the remaining migration order. Legacy list consumers still exist.
+and their maintained reasoning state. `ProofFacts` pairs that store with
+proof-local evidence; `PureFactList` is an ordered view of it. This page records
+the ownership boundary, the mapped statement transition, and the completed
+migration.
 
 ## Design check
 
@@ -15,7 +15,8 @@ and the remaining migration order. Legacy list consumers still exist.
 - **Fast reads:** exact and conjunct membership use proposition keys;
   predicate selection uses a predicate key; variable adjacency uses a variable
   key; equality and order reads retain their existing term-keyed indexes.
-  Ordered presentation uses a persistent sequence. Successor operations retain
+  Ordered presentation uses persistent order indexes; ordinal selection uses
+  subtree sizes to select one occurrence without traversing its prefix. Successor operations retain
   their explicit deltas instead of finding them by comparing entire stores.
   Each implementation increment must specify the keys for any additional read.
 - **Scaling:** proposed regressions at sizes 32, 128, and 512 measure
@@ -113,34 +114,52 @@ evidence across store successors. Read-only queries delegate to the store.
 Mutations construct store successors; `ProofFacts` has no second proposition
 collection or reasoning context.
 
-`PureFactList` can be a view of an append-only statement-local store. In that
-mode its legacy map,
-syntax index, and context cache stay empty. Strict written conjunction queries
-use the store's syntax index, separately from the aliases accepted by proof
-reasoning. Statement-local construction enables that index; general proof
-stores do not build it. A shared store view presents each available proposition
-once.
-General proof-to-list conversions still use the legacy representation, which
-supports occurrence-oriented edits and statement priority order. Retention or
-reordering of a local store view materializes the legacy representation
-explicitly until those callers migrate.
+`PureFactList` now contains only a `ProofFacts` handle. It has no independent
+proposition map, syntax index, context cache, flattened slice cache, or retained
+source prefix. General proof/list adapters clone the persistent handle.
+`PropositionSource` forwards retained stores and reasoning views through references,
+`Arc`, lists, and fixed-state views; slices and vectors construct a root only
+when they are explicit inputs for a separate scope.
 
-The overlapping responsibilities before extraction were:
+The store maintains two presentation indexes over the same proposition objects:
+raw occurrence order for explicit input/origin alignment, and first-occurrence
+order for proof presentation. A duplicate list input adds an occurrence without
+re-admitting the proposition to reasoning. Statement publication moves its named
+batch to the front, once per proposition, by changing only that batch's order
+keys. Derived constructor facts remain indexed for reasoning without becoming
+additional written statement inputs. The introduction log serves ancestry and
+explicit-delta queries, separately from presentation order.
 
-| Current type | Relevant responsibilities | Source |
-| --- | --- | --- |
-| `PureFactList` | Ordered propositions, exact/conjunct index, cached context, and retained source `ProofFacts`. | `src/surface/pure_fact_list.rs` |
-| `ProofFacts` | Ordered propositions, proof selection indexes, variable reservations, and reasoning contexts. | `src/kernel/proof/facts.rs` |
-| `PureFactContext` | Assumed facts and maintained reasoning indexes/graphs. | `src/kernel/primitives.rs`, `src/kernel/assumptions.rs` |
-| `ExecutionFacts` | Ordered execution evidence and membership indexes. | `src/kernel/execution_facts.rs` |
+Strict conjunction selection interns atomic syntax and conjunction child-ID
+pairs. It recognizes only actually written subtree shapes, independently of
+comparison aliases admitted by proof reasoning. Interning visits each conjunction
+node once rather than copying every nested subtree as a map key.
 
-`PureFactList::from_proof_facts`, `extended_to_proof_facts`, and `proof_facts`
-remain the general proof/list migration boundary for stage 4. The ordinary
-statement driver already borrows its ambient `ProofFacts` directly; its local
-facts are the first store-backed view. Preserve the checked context's lineage,
-including
-its association with resources; replaying equal propositions into a fresh
-context is not a substitute for retaining that context.
+Retention is an explicit scope restriction: an unchanged selection retains its
+context; a changed selection constructs a new scope from the retained inputs
+and shares freshness reservations. It never withdraws facts from a retained
+parent or sibling context, and drops proof-local rewritten-load evidence that
+belonged to the old scope.
+
+`PureFactContext` is the store's retained reasoning component. Its standalone
+kernel APIs still construct explicitly supplied assumption scopes; they do not
+maintain another list/cache for an existing proof scope. Preserve its lineage,
+including its association with resources: replaying equal propositions into a
+fresh context is not a substitute for retaining the context.
+
+`ExecutionPureFact` retains an `Arc<Proposition>` and its own occurrence-specific
+certification, visibility, transport, generated-load, and producer metadata.
+Store admission, the context's execution projection, and execution membership
+indexes share that proposition object where the syntax and scope agree. An
+identical proposition does not merge or upgrade evidence. Context publication
+shares persistent projection blocks. Checked loop exits retain the proof store;
+explicit loop-exit constructor inputs remain a separately owned input sequence.
+Loop publication certifies its produced occurrences while sharing stored syntax.
+
+Full vectors remain appropriate for initial declarations and explicitly selected
+premises, emitted deltas, printing/serialization, and search that requests an
+explicit snapshot. Resource lists, memory state, written proof syntax, origin
+alignment, and execution evidence remain outside pure-fact ownership.
 
 ## One statement transition
 
@@ -153,13 +172,13 @@ ambient fact an explicit premise of the statement theorem.
 | Boundary | Operation and authority | Storage behavior |
 | --- | --- | --- |
 | Focused proof to checked driver | `check_statement_step_with_policy` borrows the ambient `ProofFacts` and its assumptions. | Retains the ambient store and checked context; no enumeration. |
-| Select statement-local inputs | The driver selects available case assumptions and observable resource facts, preserving their written order and the checked case context when present. | `PureFactList::for_statement` constructs one local store; its Surface map/index/cache stay empty. These are explicitly selected inputs, not a copy of ambient facts. |
+| Select statement-local inputs | The driver selects available case assumptions and observable resource facts, preserving their written order and the checked case context when present. | `PureFactList::for_statement` constructs one local store; the list retains its handle. These are explicitly selected inputs, not a copy of ambient facts. |
 | Advance the frontier | `execute_step_successor_from_frontier_position` clones the local view and calls `execute_step_from_frontier_position_selecting_path`. | Cloning shares persistent storage. Execution state and the caller's ambient reasoning context retain their existing roles. |
 | Certify an outcome | `certified_statement_transitions` executes under the selected context; `certified_transitions_from_execution` extends each local store with kernel-produced path facts and checks prerequisites under the existing policy. | Appending updates store indexes and reasoning state. Exact conflict/conjunct queries use the store; execution evidence remains on the certified transition. |
 | Publish successor facts | The driver uses `with_statement_facts_retaining_prefix` on the ambient store, then `retain_checked_read_fact` for this statement's effect suffix. | Only the selected local result is enumerated. Ambient facts stay shared; the statement batch preserves priority, the producer's case prefix, and typed read authority. |
 | Commit the proof successor | The proof-object driver publishes the returned `CheckedStatementStep` atomically. | The successor owns its store version; unsuccessful or sibling paths retain their own versions. |
 
-The first extraction removes the local Surface map, duplicate syntax index,
+The extraction removes the local Surface map, duplicate syntax index,
 and independently cached context on this path. The statement-local result is
 still enumerated into its explicit publication batch; this is bounded by the
 selected inputs and emitted facts, not the ambient proof history.
@@ -198,29 +217,28 @@ Source: `src/surface/proof/checked_drivers/statement_step.rs`,
    Replace the selected `PureFactList` conversion/synchronization path and
    remove the storage it duplicates. Completion: one statement transition
    carries a shared store throughout and updates it only by its fact delta.
-4. **Migrate remaining list consumers.** Cover loops, calls, nested proofs,
+4. **Migrate remaining list consumers (complete).** Cover loops, calls, nested proofs,
    branch joins, and smart planning. Preserve explicit ordering, scoped
    assumptions, and context lineage. Completion: remove `PureFactList`'s
    independent storage and prefix-synchronization machinery; make
    `PureFactContext` an internal reasoning component reached through the store.
-5. **Integrate execution publication.** Separate available propositions from
+5. **Integrate execution publication (complete).** Separate available propositions from
    execution evidence and share proposition storage where scope permits.
    Retain evidence-specific order, certification, transport, and producer
    identity. Completion: publication does not rebuild an already retained
    fact context or maintain another available-fact owner for the same scope.
-6. **Close remaining reconstruction paths.** Replace internal flatten/rebuild
+6. **Close remaining reconstruction paths (complete).** Replace internal flatten/rebuild
    APIs with store handles, indexed queries, or explicit deltas. Keep full
    enumeration for consumers such as printing or bounded smart search that
    actually need it. Completion: each remaining collection has an explicit
    role as an index, view, different scope, or evidence sequence.
 
-Deliver coherent increments in this order. Each storage extraction must remove
-the old ownership at its migrated boundary; a wrapper around unchanged owners
-does not complete a stage. Exact API names, fact handles, deletion support,
-and eager versus lazy index construction remain implementation decisions to
-resolve from the operation map.
+The first increment delivered stages 1–3. The second removed the legacy list
+backend and synchronization, migrated general and fixed-state views, retained
+loop-exit stores, and shared execution proposition storage. Explicit input and
+evidence sequences retain their separate roles described above.
 
-## Validation and first milestone
+## Validation
 
 For code changes, test exact membership, top-level versus proper-conjunct
 authority, ordering, branch isolation, nested-assumption scope, and preservation
@@ -229,8 +247,14 @@ round trips on the migrated path. Add deterministic scaling coverage for
 unrelated input, related chains, and repeated transitions, including copies
 and context rebuilds that existing counters expose.
 
-The first implementation milestone covers stages 1 through 3: an ordinary
-single-successor statement transition uses a shared `PureFactStore` through
-planning and checked proof construction, with its former duplicate Surface
-storage removed. Stages 4 through 6 remain: general proof/list adapters,
-remaining list edits, and execution publication have not migrated.
+The general-view regression
+`general_store_round_trips_and_priority_only_touch_the_batch` grows ambient
+facts and fork count together at 32, 128, and 512, for both unrelated and
+same-predicate facts. It checks order, duplicate occurrences, branch isolation,
+context identity, and zero prefix copies/rebuilds. `written_syntax_and_ordinal_queries_scale_with_input`
+grows both unrelated atoms and a nested conjunction at the same sizes.
+`checked_loop_exit_retains_the_store_and_publishes_shared_propositions` checks
+constant-work retention and pointer sharing through certified publication.
+Behavior tests cover strict written conjunctions, explicit restriction, occurrence
+order, and execution evidence isolation. The existing branch, transport, loop,
+proof-fixture, and search-boundary regressions remain applicable.

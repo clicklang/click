@@ -7553,8 +7553,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .execution_proposition_fixed_state_view()
                 .and_then(|view| {
                     view.requirement_facts
-                        .as_slice()
-                        .iter()
+                        .propositions()
                         .zip(view.original_requirements)
                         .find(|(fact, _)| *fact == kernel)
                         .and_then(|(_, requirement)| requirement.proposition().cloned())

@@ -183,12 +183,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         )
         .is_none()
         {
-            let facts = search_input.facts().to_vec();
             return Err(ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: `transport` requires a source derivable from its ambient facts: {}",
                 describe_missing_pure_fact(
                     &source,
-                    &facts,
+                    search_input.facts(),
                     data.core.state.resources().facts(),
                     context.parameter_binding(),
                     &*data.core.effect_facts,
