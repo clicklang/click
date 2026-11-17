@@ -1,6 +1,42 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: fold framing, C read authority, and cold replay"]
+fn preserved_fold_does_not_grant_c_read_authority() {
+    let (source, sources) = mdtest_sources("mdtests/fold_read_transport_grants_no_c_read.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    assert!(!source.contains("transport("));
+    let report = verify_c_sources(&source, &sources).unwrap_err().report();
+    assert!(
+        report.contains("missing resource fact `views v[0]`"),
+        "{report}"
+    );
+    assert!(report.contains("return v[0]"), "{report}");
+
+    // Supply only the missing C read authority. The C and proof stay the same.
+    let control = source.replace(
+        "    owns v[i..(i + 1)];",
+        "    owns v[i..(i + 1)];\n    views v[0];",
+    );
+    assert_ne!(control, source);
+    verify_c_sources(&control, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_c_claim_source_by_label(&control, &sources, "same_zeros.ensures_0")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_c_claim_source_by_label(&expanded, &sources, "set_then_read.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    for label in ["same_zeros.ensures_0", "set_then_read.contract"] {
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+}
+
+#[test]
 #[ignore = "nightly: helper fold preservation and cold replay"]
 fn fold_through_a_helper_survives_the_endpoint_store_without_transport() {
     let (source, sources) =
