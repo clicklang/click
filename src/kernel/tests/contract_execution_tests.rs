@@ -1479,7 +1479,7 @@ fn contract_certification_checks_every_spec_lowering_path() {
     )
     .with_contract(
         vec![SpecProposition::MemoryLoadable {
-            memory: SpecMemory::Current,
+            memory: SpecPoint::Current,
             base: q.clone(),
             start: SpecExpression::Value(int32(0)),
             end: SpecExpression::Value(int32(1)),
@@ -1487,7 +1487,7 @@ fn contract_certification_checks_every_spec_lowering_path() {
         }],
         vec![SpecProposition::Comparison {
             left: SpecExpression::MemoryLoad {
-                memory: SpecMemory::Current,
+                memory: SpecPoint::Current,
                 pointer: Box::new(q),
                 value_type: ProgramType::Int32,
             },
@@ -1773,13 +1773,13 @@ fn verified_function_rule_does_not_publish_one_spec_alias_path() {
     let q = SpecExpression::ProgramExpression(crate::kernel::program_expression::variable("q"));
     let reflexive_load = SpecProposition::Comparison {
         left: SpecExpression::MemoryLoad {
-            memory: SpecMemory::Current,
+            memory: SpecPoint::Current,
             pointer: Box::new(q.clone()),
             value_type: ProgramType::Int32,
         },
         operator: ComparisonOperator::Equal,
         right: SpecExpression::MemoryLoad {
-            memory: SpecMemory::Current,
+            memory: SpecPoint::Current,
             pointer: Box::new(q),
             value_type: ProgramType::Int32,
         },
@@ -2926,7 +2926,7 @@ fn exceptional_postconditions_observe_the_throw_state() {
     };
     let p = SpecExpression::ProgramExpression(crate::kernel::program_expression::variable("p"));
     let loadable = SpecProposition::MemoryLoadable {
-        memory: SpecMemory::Current,
+        memory: SpecPoint::Current,
         base: p.clone(),
         start: SpecExpression::Value(int32(0)),
         end: SpecExpression::Value(int32(1)),
@@ -2934,7 +2934,7 @@ fn exceptional_postconditions_observe_the_throw_state() {
     };
     let claims_ten = SpecProposition::Comparison {
         left: SpecExpression::MemoryLoad {
-            memory: SpecMemory::Current,
+            memory: SpecPoint::Current,
             pointer: Box::new(p),
             value_type: ProgramType::Int32,
         },

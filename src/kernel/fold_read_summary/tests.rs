@@ -23,7 +23,7 @@ fn item() -> SpecExpression {
 
 fn read_at(elements: SpecExpression) -> SpecExpression {
     SpecExpression::MemoryLoad {
-        memory: SpecMemory::Current,
+        memory: SpecPoint::Current,
         pointer: Box::new(SpecExpression::PointerOffset {
             pointer: Box::new(name("v")),
             elements: Box::new(elements),
@@ -183,7 +183,7 @@ fn each_unsupported_read_pattern_declines_the_whole_definition() {
                 SpecIntegerExpression::PureFunctionApplication {
                     name: "helper".into(),
                     arguments: vec![SpecPureFunctionArgument::ArrayRef {
-                        memory: SpecMemory::Current,
+                        memory: SpecPoint::Current,
                         pointer: name("v"),
                         element_type: ProgramType::Int32,
                     }],
@@ -247,7 +247,7 @@ fn each_unsupported_read_pattern_declines_the_whole_definition() {
                 zero(),
                 counted(
                     SpecExpression::MemoryLoad {
-                        memory: SpecMemory::FunctionEntry,
+                        memory: SpecPoint::FunctionEntry,
                         pointer: Box::new(SpecExpression::PointerOffset {
                             pointer: Box::new(name("v")),
                             elements: Box::new(item()),
@@ -269,7 +269,7 @@ fn each_unsupported_read_pattern_declines_the_whole_definition() {
                 zero(),
                 counted(
                     SpecExpression::MemoryLoad {
-                        memory: SpecMemory::Current,
+                        memory: SpecPoint::Current,
                         pointer: Box::new(SpecExpression::PointerOffset {
                             pointer: Box::new(name("v")),
                             elements: Box::new(item()),
@@ -923,7 +923,7 @@ fn byte_fold_summary_checks_the_read_type_and_stride() {
     let mut parameters = parameters();
     parameters[0].1 = ProgramType::UInt8Pointer;
     let read = |width, value_type| SpecExpression::MemoryLoad {
-        memory: SpecMemory::Current,
+        memory: SpecPoint::Current,
         pointer: Box::new(SpecExpression::PointerOffset {
             pointer: Box::new(name("v")),
             elements: Box::new(item()),
@@ -963,7 +963,7 @@ fn byte_fold_framing_refuses_overlap_and_counts_byte_endpoints() {
     let mut parameters = parameters();
     parameters[0].1 = ProgramType::UInt8Pointer;
     let read = SpecExpression::MemoryLoad {
-        memory: SpecMemory::Current,
+        memory: SpecPoint::Current,
         pointer: Box::new(SpecExpression::PointerOffset {
             pointer: Box::new(name("v")),
             elements: Box::new(item()),

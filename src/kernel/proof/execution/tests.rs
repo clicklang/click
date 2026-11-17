@@ -1327,7 +1327,7 @@ fn return_resource_observations_construct_successors_and_reject_other_paths() {
 #[test]
 fn return_exchange_keeps_the_published_body_state() {
     use crate::kernel::{
-        PointerValue, ResourceFieldSchema, ResourceFieldType, ResourceInstance, SpecMemory,
+        PointerValue, ResourceFieldSchema, ResourceFieldType, ResourceInstance, SpecPoint,
     };
     let pointer = Pointer::symbolic(Variable(810_000));
     let schema = ResourceFieldSchema::new(vec![(
@@ -1351,7 +1351,7 @@ fn return_exchange_keeps_the_published_body_state() {
         vec![],
         vec![SpecProposition::Comparison {
             left: SpecExpression::MemoryLoad {
-                memory: SpecMemory::Current,
+                memory: SpecPoint::Current,
                 pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
                     PointerValue::new(pointer.clone(), ProgramType::Int32Pointer),
                 ))),
@@ -2820,14 +2820,14 @@ fn branch_split_obligations_require_evidence_on_each_named_arm() {
 
 #[test]
 fn interface_logical_read_does_not_establish_validity() {
-    use crate::kernel::{PointerValue, SpecMemory};
+    use crate::kernel::{PointerValue, SpecPoint};
     let state = ExecutionState::new();
     let pointer = crate::kernel::Pointer {
         block: "interface_cell".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
     let load = SpecExpression::MemoryLoad {
-        memory: SpecMemory::Current,
+        memory: SpecPoint::Current,
         pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
             PointerValue::new(pointer, ProgramType::Int32Pointer),
         ))),

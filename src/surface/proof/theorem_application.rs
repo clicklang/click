@@ -1413,7 +1413,7 @@ pub(in crate::surface::proof) fn theorem_application_bound_array_memories(
     theorem: &TheoremDefinition,
     application: &TheoremApplication,
     array_refs: &ClickArrayRefs,
-) -> BTreeMap<String, SpecMemory> {
+) -> BTreeMap<String, SpecPoint> {
     theorem
         .parameters()
         .iter()
@@ -1428,7 +1428,7 @@ pub(in crate::surface::proof) fn theorem_application_bound_array_memories(
             let array_ref = array_refs.get(parameter.name())?;
             Some((
                 parameter.name().to_string(),
-                SpecMemory::Fixed(array_ref.memory.clone()),
+                SpecPoint::At(crate::kernel::ProgramPoint::of_memory(&array_ref.memory)),
             ))
         })
         .collect()

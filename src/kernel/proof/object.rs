@@ -3434,7 +3434,7 @@ mod tests {
         };
         use crate::kernel::{
             ExecutionState, LoopInvariantCheck, Pointer, PointerOffsetTerm, ProgramType,
-            ProgramValue, SpecExpression, SpecMemory, SpecProposition,
+            ProgramValue, SpecExpression, SpecPoint, SpecProposition,
         };
         type TestProof = ProofObject<
             (),
@@ -3442,7 +3442,7 @@ mod tests {
             ProofExecutionState<()>,
         >;
         let load = SpecExpression::MemoryLoad {
-            memory: SpecMemory::Current,
+            memory: SpecPoint::Current,
             pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
                 crate::kernel::PointerValue::new(
                     Pointer {

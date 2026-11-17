@@ -25,7 +25,7 @@ use crate::kernel::{
     PropositionDerivation, PureFactContext, Resource,
     ResourceAccessMode as KernelResourceAccessMode, ResourceContext, ResourceContextValidityError,
     ResourceFact, ResourceFamily, ResourceSpec, ResourceStateSource, ResourceTransferRole, Sort,
-    SpecAlgebraicExpression, SpecExpression, SpecMemory, SpecPredicateArgument, SpecProposition,
+    SpecAlgebraicExpression, SpecExpression, SpecPoint, SpecPredicateArgument, SpecProposition,
     SpecResource, StatementOutcome, SymbolicExecution, Term, TerminationRefusal, Theorem,
     UnsuitableCallback, Variable, VerifiedLoopRule,
     VerifiedPureTheorem as KernelVerifiedPureTheorem, abstract_execution_state_for_join,
@@ -5430,7 +5430,7 @@ fn recorded_state_entries<'a>(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SpecArrayRef {
-    memory: SpecMemory,
+    memory: SpecPoint,
     pointer: SpecExpression,
     element_type: ProgramType,
 }
@@ -5448,8 +5448,8 @@ struct SpecElaborationContext {
     /// clause's indexing would read the application's current memory. Only a
     /// binding that names another state appears here, so an ordinary array
     /// name keeps reading through `current_memory` and carries no state.
-    array_memories: PersistentBinderMap<SpecMemory>,
-    current_memory: SpecMemory,
+    array_memories: PersistentBinderMap<SpecPoint>,
+    current_memory: SpecPoint,
     current_loop_entry: Option<usize>,
     function_contract: bool,
     /// The context is the function entry (`old(...)`), so a resource count
@@ -5476,7 +5476,7 @@ impl Default for SpecElaborationContext {
             algebraic_values: PersistentBinderMap::default(),
             array_refs: PersistentBinderMap::default(),
             array_memories: PersistentBinderMap::default(),
-            current_memory: SpecMemory::Current,
+            current_memory: SpecPoint::Current,
             current_loop_entry: None,
             at_function_entry: false,
             function_contract: false,
@@ -5489,7 +5489,7 @@ impl Default for SpecElaborationContext {
 }
 
 impl SpecElaborationContext {
-    fn with_current_memory(current_memory: SpecMemory) -> Self {
+    fn with_current_memory(current_memory: SpecPoint) -> Self {
         Self {
             current_memory,
             ..Self::default()
@@ -5522,7 +5522,7 @@ impl SpecElaborationContext {
     fn old_state(
         &self,
         entry_values: &BTreeMap<String, ProgramValue>,
-        entry_memory: &Memory,
+        entry: &crate::kernel::ProgramPoint,
     ) -> Result<Self, String> {
         if self.function_contract {
             return Ok(Self {
@@ -5531,7 +5531,7 @@ impl SpecElaborationContext {
                 algebraic_values: self.algebraic_values.clone(),
                 array_refs: PersistentBinderMap::default(),
                 array_memories: PersistentBinderMap::default(),
-                current_memory: SpecMemory::FunctionEntry,
+                current_memory: SpecPoint::FunctionEntry,
                 current_loop_entry: None,
                 function_contract: true,
                 at_function_entry: true,
@@ -5566,7 +5566,7 @@ impl SpecElaborationContext {
             algebraic_values: self.algebraic_values.clone(),
             array_refs: PersistentBinderMap::default(),
             array_memories: PersistentBinderMap::default(),
-            current_memory: SpecMemory::Fixed(entry_memory.clone()),
+            current_memory: SpecPoint::At(entry.clone()),
             current_loop_entry: None,
             function_contract: false,
             at_function_entry: true,

@@ -276,7 +276,7 @@ pub(in crate::surface) struct FixedStateLoweringOptions<'a> {
     /// application binds its parameters. An argument that names another state
     /// (`old(a)`, `at(mark, a)`) binds the parameter to that state's memory;
     /// one read at the lowering state is absent and reads through it.
-    pub(in crate::surface) bound_array_memories: Option<&'a BTreeMap<String, SpecMemory>>,
+    pub(in crate::surface) bound_array_memories: Option<&'a BTreeMap<String, SpecPoint>>,
     /// Click functions that stay applications: the proof unfolds them itself.
     pub(in crate::surface) opaque_click_functions: Option<&'a BTreeSet<String>>,
     pub(in crate::surface) pointer_element_widths: BTreeMap<String, u32>,

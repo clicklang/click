@@ -5,7 +5,7 @@ use super::*;
 use crate::kernel::spec::walk::generated::Gen;
 
 fn old_collect_spec_memory_bitvector_variables(
-    _memory: &SpecMemory,
+    _memory: &SpecPoint,
     _variables: &mut BTreeSet<Variable>,
 ) {
     // A specification memory is an execution state. Its blocks and cells
@@ -570,11 +570,11 @@ fn old_collect_spec_sequence_bound_identities(
 }
 
 fn old_collect_spec_memory_bound_identities(
-    _memory: &SpecMemory,
+    _memory: &SpecPoint,
     _variables: &mut BTreeSet<Variable>,
     _integer_seen: &mut SeenTerms,
 ) {
-    // A SpecMemory is a captured execution state, not lexical input to
+    // A SpecPoint is a captured execution state, not lexical input to
     // the expression.  Its blocks, cells, and union overlays are therefore
     // opaque to freshness collection; callers recurse through explicit
     // pointer and expression payloads adjacent to the state instead.
