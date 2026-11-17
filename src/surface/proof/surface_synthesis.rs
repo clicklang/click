@@ -3145,6 +3145,20 @@ fn synthesize_surface_atomic_proposition(
                 {
                     raise_call(name, arguments, parameter_binding, state, bound_variables)?
                 }
+                // A read there is likewise the read as written, `s.value`,
+                // and not a typed word read at the equality's signedness
+                // (`load_int64(&s)`), which lowers to a different read.
+                crate::kernel::KernelTermNode::MemoryLoad { .. }
+                    if *relation == CompareRelation::Equal
+                        && let Some(read) = synthesize_surface_bitvector(
+                            term,
+                            parameter_binding,
+                            state,
+                            bound_variables,
+                        ) =>
+                {
+                    read
+                }
                 _ => raise_kernel_term(&root, parameter_binding, state, bound_variables)?,
             }
         } else {
