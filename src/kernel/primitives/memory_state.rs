@@ -4536,33 +4536,21 @@ impl SymbolicMemory {
     pub(in crate::kernel) fn with_pending_heap_reallocation(
         mut self,
         base: Address,
-        old_pointer: Address,
-        old_bytes: AllocationSize,
-        zeroed_prefix: Option<MachineTerm>,
-        copied_cells: Vec<(AddressOffset, ProgramValue)>,
-        initialized_prefix: Vec<(i64, u32)>,
+        pending: PendingReallocation,
     ) -> Self {
         let diagnostic_base = self.clone();
+        let arguments = vec![
+            ProgramValue::pointer(base.clone()),
+            ProgramValue::pointer(pending.old_pointer.clone()),
+            pending.old_bytes.token_value(),
+        ];
         std::sync::Arc::make_mut(&mut self.heap)
             .pending_reallocations
-            .insert(
-                base.clone(),
-                PendingReallocation {
-                    old_pointer: old_pointer.clone(),
-                    old_bytes: old_bytes.clone(),
-                    zeroed_prefix,
-                    copied_cells,
-                    initialized_prefix,
-                },
-            );
+            .insert(base, pending);
         self.record_diagnostic_transform(
             "register pending reallocation",
             vec![diagnostic_base],
-            vec![
-                ProgramValue::pointer(base.clone()),
-                ProgramValue::pointer(old_pointer.clone()),
-                old_bytes.token_value(),
-            ],
+            arguments,
         );
         self
     }
