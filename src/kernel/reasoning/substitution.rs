@@ -6538,6 +6538,15 @@ fn substitute_bitvector_variable_in_memory_contents(
                                 .zeroed_prefix
                                 .as_ref()
                                 .map(|prefix| substitute_bitvector_variable(prefix, from, to)),
+                            retirement_separation: pending.retirement_separation.as_ref().map(
+                                |goal| {
+                                    std::sync::Arc::new(
+                                        substitute_bitvector_variable_in_proposition(
+                                            goal, from, to,
+                                        ),
+                                    )
+                                },
+                            ),
                             initialized_prefix: pending.initialized_prefix.clone(),
                             copied_cells: pending
                                 .copied_cells
@@ -7225,6 +7234,13 @@ pub(crate) fn substitute_pointer_variable_in_memory(
                             ),
                             old_bytes: pending.old_bytes.clone(),
                             zeroed_prefix: pending.zeroed_prefix.clone(),
+                            retirement_separation: pending.retirement_separation.as_ref().map(
+                                |goal| {
+                                    std::sync::Arc::new(substitute_pointer_variable_in_proposition(
+                                        goal, from, to,
+                                    ))
+                                },
+                            ),
                             initialized_prefix: pending.initialized_prefix.clone(),
                             copied_cells: pending
                                 .copied_cells

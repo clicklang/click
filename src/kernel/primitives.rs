@@ -9154,6 +9154,8 @@ impl AllocationSize {
 pub(super) struct PendingReallocation {
     pub(super) old_pointer: Address,
     pub(super) old_bytes: AllocationSize,
+    /// Full old byte range separated from the active loans at the call.
+    pub(super) retirement_separation: Option<std::sync::Arc<Proposition>>,
     /// Bytes at the start of the new block that retain calloc's guaranteed
     /// zero value. A prefix equal to the new allocation size means the whole
     /// block is zeroed; a shorter prefix leaves the grown tail uninitialized.
