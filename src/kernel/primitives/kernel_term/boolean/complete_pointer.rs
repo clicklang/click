@@ -5,7 +5,7 @@ use super::*;
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 struct PointerIdentity {
     address: SharedPointerAddress,
-    designation: SharedPointerAddress,
+    provenance: SharedPointerAddress,
     program_type: ProgramType,
     volatile: bool,
     extent_known: bool,
@@ -53,7 +53,7 @@ impl KernelPointerEquality {
             let known = q.is_some_and(|q| q.extent_known);
             PointerIdentity {
                 address: address(&p.address),
-                designation: address(&p.designation),
+                provenance: address(&p.provenance),
                 program_type: p.program_type,
                 volatile: q.is_some_and(|q| q.volatile),
                 extent_known: known,
@@ -86,7 +86,7 @@ impl SharedPointerValue {
             && aq.is_some_and(|q| q.volatile) == bq.is_some_and(|q| q.volatile)
             && known == bq.is_some_and(|q| q.extent_known)
             && a.address.syntax_equal(&b.address)
-            && a.designation.syntax_equal(&b.designation)
+            && a.provenance.syntax_equal(&b.provenance)
             && (known
                 || match (&a.opaque_extent, &b.opaque_extent) {
                     (None, None) => true,
@@ -126,7 +126,7 @@ impl SharedPointerValue {
     ) -> Result<Self, E> {
         let mut p = self.node().clone();
         p.address = map(&p.address)?;
-        p.designation = map(&p.designation)?;
+        p.provenance = map(&p.provenance)?;
         p.opaque_extent = p.opaque_extent.as_ref().map(&mut map).transpose()?;
         if let Some(q) = &mut p.qualifiers
             && let Some(e) = &q.extent
@@ -160,7 +160,7 @@ impl KernelTerm {
         let (a, b) = (left.node(), right.node());
         let (aq, bq) = (a.qualifiers.as_ref(), b.qualifiers.as_ref());
         let known = aq.is_some_and(|q| q.extent_known);
-        let same_domain = a.designation.syntax_equal(&b.designation)
+        let same_domain = a.provenance.syntax_equal(&b.provenance)
             && left.condition_extent_equal(right)
             && known == bq.is_some_and(|q| q.extent_known)
             && (known
@@ -245,7 +245,7 @@ mod tests {
             })));
             values.push(
                 raw.clone()
-                    .with_designation(Arc::new(Pointer::symbolic(Variable(999103)))),
+                    .with_provenance(Arc::new(Pointer::symbolic(Variable(999103)))),
             );
             values.push(raw.clone().with_address(Pointer {
                 block: raw.block.clone(),

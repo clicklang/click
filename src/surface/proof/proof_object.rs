@@ -3752,7 +3752,6 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::ApplyFactUsing { .. } | ProofStep::ApplyTheoremUsing { .. } => "apply",
         ProofStep::ApplyInductionUsing { .. } => "apply",
         ProofStep::Induct { .. } => "induct",
-        ProofStep::StructuralInduct { .. } => "induct",
         ProofStep::TransportUsing { .. } => "transport",
         ProofStep::Instantiate { .. } => "instantiate",
         ProofStep::Have { .. } => "have",

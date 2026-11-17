@@ -1118,33 +1118,6 @@ fn instantiate_proof_tactic(
         ProofTactic::UnfoldFunction(application) => ProofTactic::UnfoldFunction(
             instantiate_function_application(application, substitution, algebraic_parameters)?,
         ),
-        ProofTactic::StructuralInduct {
-            parameter,
-            hypothesis,
-            arms,
-        } => ProofTactic::StructuralInduct {
-            parameter: parameter.clone(),
-            hypothesis: hypothesis.clone(),
-            arms: arms
-                .iter()
-                .map(|arm| {
-                    let mut scoped_parameters = algebraic_parameters.clone();
-                    for binding in &arm.bindings {
-                        scoped_parameters.remove(binding);
-                    }
-                    Ok(ProofInductionArm {
-                        type_name: arm.type_name.clone(),
-                        variant: arm.variant.clone(),
-                        bindings: arm.bindings.clone(),
-                        tactics: instantiate_proof_tactics(
-                            &arm.tactics,
-                            substitution,
-                            &scoped_parameters,
-                        )?,
-                    })
-                })
-                .collect::<Result<Vec<_>, String>>()?,
-        },
         ProofTactic::ApplyInduction {
             hypothesis,
             arguments,

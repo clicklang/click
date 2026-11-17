@@ -171,7 +171,7 @@ impl<'a, R: PointerRewrite> Rewrite<'a, R> {
     ) -> Result<SharedPointerValue, PointerRewriteError<R::Error>> {
         let source = value.node();
         let address = self.address(&source.address)?;
-        let designation = self.address(&source.designation)?;
+        let provenance = self.address(&source.provenance)?;
         let opaque_extent = source
             .opaque_extent
             .as_ref()
@@ -189,7 +189,7 @@ impl<'a, R: PointerRewrite> Rewrite<'a, R> {
             }
         }
         if address == source.address
-            && designation == source.designation
+            && provenance == source.provenance
             && opaque_extent == source.opaque_extent
             && !extent_changed
         {
@@ -197,7 +197,7 @@ impl<'a, R: PointerRewrite> Rewrite<'a, R> {
         }
         Ok(SharedPointerValue::new(KernelPointerValue {
             address,
-            designation,
+            provenance,
             opaque_extent,
             program_type: source.program_type,
             qualifiers,
@@ -272,7 +272,7 @@ mod tests {
             })
             .unwrap();
         assert_eq!(output.node().address, replacement);
-        assert_eq!(output.node().designation, source.node().designation);
+        assert_eq!(output.node().provenance, source.node().provenance);
         assert_eq!(output.node().opaque_extent, source.node().opaque_extent);
         assert!(Arc::ptr_eq(
             output.node().qualifiers.as_ref().unwrap(),

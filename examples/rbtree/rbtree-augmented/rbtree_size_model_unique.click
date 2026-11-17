@@ -7,7 +7,8 @@ theorem sized_model_unique(a: SizedTree, b: SizedTree) {
     requires sized_counts_valid(b) == 1;
     requires sized_shape(a) == sized_shape(b);
     ensures a == b by {
-        induct(a) as ih {
+        let ih = induct(a);
+        match a {
             SizedTree::Empty => {
                 match b {
                     SizedTree::Empty => { known(); },

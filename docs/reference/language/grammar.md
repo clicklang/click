@@ -277,7 +277,7 @@ still requires the relevant resource permissions.
 
 A model field or pure-helper parameter declared `void*` accepts an object
 pointer through implicit coercion: its carrier changes to `void*`, preserving
-its designation, bounds, qualifiers, and object-type evidence. Opaque helper
+its provenance, bounds, qualifiers, and object-type evidence. Opaque helper
 calls and unfolded bodies use this same argument conversion. Function pointers
 are excluded. An authored `p as (void *)` remains an explicit cast and selects the
 root view according to C cast semantics. Address-only models should use `void*`
@@ -373,7 +373,8 @@ grants no authority, and distinct applications such as `TestList<int32>` and
 ```click
 theorem append_right_identity<T>(xs: TestList<T>) {
     ensures append(xs, TestList<T>::Nil) == xs by {
-        induct(xs) as ih {
+        let ih = induct(xs);
+        match xs {
             // ...
         }
     }
@@ -400,7 +401,7 @@ ensures match Maybe<int32>::Some(value) {
 that leaves out its type arguments takes them from one of two places:
 
 - Its own arguments, by their declared types: a declaration parameter, the
-  binder of a `match` arm or of a proof `match` or `induct` arm (typed from
+  binder of a `match` arm or of a proof `match` arm (typed from
   its scrutinee), a quantifier binder, a typed `let`, a resource field,
   another constructor whose type is known, or a pure-function call's result.
 - The type its position expects: a pure function's result type, the
@@ -513,7 +514,8 @@ data types issue. A recursive pure function may name an algebraic parameter in
 `decreases` and recurse on algebraic fields introduced by exhaustive matches
 of that parameter or an already-smaller field. Such calls stay symbolic until
 explicitly unfolded. A pure theorem may use constructor-branching
-`induct(value) as ih { Type::Variant(fields) => { ... } ... }`; it requires one
+`let ih = induct(value);` followed by
+`match value { Type::Variant(fields) => { ... } ... }`; it requires one
 arm per constructor and permits `ih(field)` for immediate fields of the same
 recursive datatype. Mutual induction across distinct datatype families is not
 generated. Reusing one constructor refinement across repeated matches is

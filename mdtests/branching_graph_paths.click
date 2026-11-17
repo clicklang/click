@@ -66,7 +66,8 @@ theorem walk_frame(a: int32[], b: int32[], c: int32[], d: int32[], n: int32, fro
     requires forall (k: int32) { 0 <= k and k < n implies a[k] == c[k] };
     requires forall (k: int32) { 0 <= k and k < n implies b[k] == d[k] };
     ensures walk(a, b, from, path) == walk(c, d, from, path) by {
-        induct(path) as ih {
+        let ih = induct(path);
+        match path {
             Path::Here => {
                 unfold(walk(a, b, from, Path::Here));
                 unfold(walk(c, d, from, Path::Here));
@@ -117,7 +118,8 @@ theorem closed_marks_exclude_target(left: int32[], right: int32[], v: int32[], n
     requires forall (k: int32) { 0 <= k and k < n implies 0 <= right[k] and right[k] < n };
     requires forall (k: int32) { 0 <= k and k < n and v[k] != 0 implies k != to and (v[left[k]] != 0 and v[right[k]] != 0) };
     ensures walk(left, right, from, path) != to by {
-        induct(path) as ih {
+        let ih = induct(path);
+        match path {
             Path::Here => {
                 instantiate(forall (k: int32) { 0 <= k and k < n and v[k] != 0 implies k != to and (v[left[k]] != 0 and v[right[k]] != 0) }, from);
                 have from != to;

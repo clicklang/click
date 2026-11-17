@@ -284,7 +284,8 @@ cite.
   theorem plug_inorder_transport(ctx: Context, a: HeapTree, b: HeapTree) {
       requires heap_inorder(a) == heap_inorder(b);
       ensures heap_inorder(plug(ctx, a)) == heap_inorder(plug(ctx, b)) by {
-          induct(ctx) as ih { ... }
+          let ih = induct(ctx);
+          match ctx { ... }
       }
   }
   ```

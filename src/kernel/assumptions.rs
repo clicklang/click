@@ -610,7 +610,7 @@ pub fn conditions_equal_ignoring_memories(left: &ConditionTerm, right: &Conditio
         (left, right)
     {
         // Candidate selection only. The context's state bridge separately
-        // compares both complete designations before accepting this candidate.
+        // compares both complete provenances before accepting this candidate.
         return a.program_type() == c.program_type()
             && b.program_type() == d.program_type()
             && pointers_equal_with_load_atoms(
@@ -3876,36 +3876,32 @@ impl PureFactContext {
         self.equality_graph.add_equality(left, right);
     }
 
-    pub(in crate::kernel) fn designations_equal(&self, left: &Pointer, right: &Pointer) -> bool {
+    pub(in crate::kernel) fn provenance_equal(&self, left: &Pointer, right: &Pointer) -> bool {
         left == right
             || self
                 .equality_graph
                 .admitted
-                .designation_graph
+                .provenance_graph
                 .equal(left, right)
-            || self.equality_graph.designations_equal(left, right)
-            || crate::kernel::memory_history::pointer_read_designations_equal(left, right, self)
+            || self.equality_graph.provenance_equal(left, right)
+            || crate::kernel::memory_history::pointer_read_provenance_equal(left, right, self)
             || self
                 .equality_graph
                 .admitted
-                .designation_graph
+                .provenance_graph
                 .unique_direct_alias(right)
                 .is_some_and(|alias| {
                     crate::instrumentation::record_deterministic_work(1);
-                    crate::kernel::memory_history::pointer_read_designations_equal(
-                        left, alias, self,
-                    )
+                    crate::kernel::memory_history::pointer_read_provenance_equal(left, alias, self)
                 })
             || self
                 .equality_graph
                 .admitted
-                .designation_graph
+                .provenance_graph
                 .unique_direct_alias(left)
                 .is_some_and(|alias| {
                     crate::instrumentation::record_deterministic_work(1);
-                    crate::kernel::memory_history::pointer_read_designations_equal(
-                        alias, right, self,
-                    )
+                    crate::kernel::memory_history::pointer_read_provenance_equal(alias, right, self)
                 })
     }
 
@@ -3933,7 +3929,7 @@ impl PureFactContext {
                 })
     }
 
-    pub(in crate::kernel) fn access_designations_match(
+    pub(in crate::kernel) fn access_provenance_match(
         &self,
         required: (&Pointer, Option<&Pointer>),
         available: &MemoryRange,
@@ -3941,7 +3937,7 @@ impl PureFactContext {
         pointer_checks::access_match(
             required,
             (
-                &available.designation,
+                &available.provenance,
                 available.opaque_extent.as_deref(),
                 available.carrier_extent_known,
             ),
@@ -3949,34 +3945,34 @@ impl PureFactContext {
         )
     }
 
-    pub(in crate::kernel) fn pointer_designations_match(
+    pub(in crate::kernel) fn pointer_provenance_match(
         &self,
         left: &PointerValue,
         right: &PointerValue,
     ) -> bool {
         // A complete read can carry a pointer copied from a different cell.
         // Compare the producer's entire stored value once; scalar address
-        // aliases and partial stores cannot supply its designation or bounds.
+        // aliases and partial stores cannot supply its provenance or bounds.
         let stored_value = |value: &PointerValue| {
             // A cast or member selection has already chosen its own view.
             // Recover only the untouched opaque value of a complete read.
             if value.extent_is_known()
                 || value.extent().is_some()
-                || value.opaque_extent() != Some(value.designation())
+                || value.opaque_extent() != Some(value.provenance())
             {
                 return None;
             }
-            crate::kernel::memory_history::complete_pointer_read_value(value.designation(), self)
+            crate::kernel::memory_history::complete_pointer_read_value(value.provenance(), self)
         };
         pointer_checks::complete_match(
             left,
             right,
-            |a, b| self.pointer_designations_match_without_stored_values(a, b),
+            |a, b| self.pointer_provenance_match_without_stored_values(a, b),
             stored_value,
         )
     }
 
-    fn pointer_designations_match_without_stored_values(
+    fn pointer_provenance_match_without_stored_values(
         &self,
         left: &PointerValue,
         right: &PointerValue,
@@ -4010,14 +4006,14 @@ impl PureFactContext {
             .admitted
             .pointer_value_classes
             .representative(value);
-        let representative = super::pointer_designations::prefer_pointer(
+        let representative = super::pointer_provenance::prefer_pointer(
             &representative,
             &self.equality_graph.pointer_value_representative(value),
         );
         let mut framed_address = None;
         let representative = if !representative.extent_is_known()
-            && value.designation().as_loaded_value().is_some()
-            && value.opaque_extent() == Some(value.designation())
+            && value.provenance().as_loaded_value().is_some()
+            && value.opaque_extent() == Some(value.provenance())
         {
             self.known_value_of_framed_pointer_read(value)
                 .inspect(|known| {
@@ -4036,7 +4032,7 @@ impl PureFactContext {
         }
         let adopted = value
             .clone()
-            .with_designation(std::sync::Arc::new(representative.designation().clone()))
+            .with_provenance(std::sync::Arc::new(representative.provenance().clone()))
             .with_extent(representative.extent().cloned())
             .with_opaque_extent(
                 representative
@@ -4092,7 +4088,7 @@ impl PureFactContext {
             if read.pointer() != value.pointer()
                 || read.extent_is_known()
                 || read.extent().is_some()
-                || read.opaque_extent() != Some(read.designation())
+                || read.opaque_extent() != Some(read.provenance())
             {
                 continue;
             }
@@ -4101,20 +4097,20 @@ impl PureFactContext {
                 .admitted
                 .pointer_value_classes
                 .representative(read);
-            let representative = super::pointer_designations::prefer_pointer(
+            let representative = super::pointer_provenance::prefer_pointer(
                 &representative,
                 &self.equality_graph.pointer_value_representative(read),
             );
             if !representative.extent_is_known() {
                 continue;
             }
-            if crate::kernel::memory_history::pointer_read_designations_equal(
-                value.designation(),
-                read.designation(),
+            if crate::kernel::memory_history::pointer_read_provenance_equal(
+                value.provenance(),
+                read.provenance(),
                 self,
             ) && crate::kernel::memory_history::pointer_read_extents_equal(
-                value.designation(),
-                read.designation(),
+                value.provenance(),
+                read.provenance(),
                 self,
             ) {
                 return Some(representative);
@@ -4140,9 +4136,9 @@ impl PureFactContext {
             .admitted
             .pointer_value_equalities
             .with_value(key);
-        self.equality_graph.admitted.designation_graph.insert(
-            left.designation(),
-            right.designation(),
+        self.equality_graph.admitted.provenance_graph.insert(
+            left.provenance(),
+            right.provenance(),
             |a, _| a.clone(),
         );
         if left.extent().is_none()
@@ -4159,7 +4155,7 @@ impl PureFactContext {
         self.equality_graph.admitted.pointer_value_classes.insert(
             left,
             right,
-            super::pointer_designations::prefer_pointer,
+            super::pointer_provenance::prefer_pointer,
         );
         self.equality_graph.add_pointer_value_equality(left, right);
     }
@@ -4943,7 +4939,7 @@ impl PureFactContext {
         self.equality_graph.admitted.pointer_offset_aliases_by_root =
             crate::persistent::PersistentMap::default();
         self.equality_graph.admitted.pointer_address_sources = Default::default();
-        self.equality_graph.admitted.designation_graph = Default::default();
+        self.equality_graph.admitted.provenance_graph = Default::default();
         self.equality_graph.admitted.extent_graph = Default::default();
         self.equality_graph.admitted.pointer_value_classes = Default::default();
         self.equality_graph.admitted.pointer_value_equalities = Default::default();
@@ -7375,7 +7371,7 @@ impl PureFactContext {
                     .admitted
                     .pointer_value_classes
                     .equal(left, right)
-                    || (self.designations_equal(left.designation(), right.designation())
+                    || (self.provenance_equal(left.provenance(), right.provenance())
                         && left.extent() == right.extent()
                         && self.pointers_known_equal(left.pointer(), right.pointer()))
             }
@@ -10444,7 +10440,7 @@ impl ExecutionPureFact {
                     return;
                 }
                 // A complete value equation simplifies to address equality
-                // when its designation and bounds already match. Retain that
+                // when its provenance and bounds already match. Retain that
                 // exact producer conclusion without adding object authority.
                 Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => {
                     context
@@ -12798,7 +12794,7 @@ mod annotated_numeric_pointer_condition_tests {
         for value in [false, true] {
             let context = PureFactContext::new().assume_condition(source.clone(), value);
             assert_eq!(context.fast_leaf_decision(&target, &[]), Some(value));
-            assert!(!context.pointer_designations_match(
+            assert!(!context.pointer_provenance_match(
                 &PointerValue::new(p.clone(), ProgramType::Int32Pointer),
                 &PointerValue::new(q.clone(), ProgramType::Int32Pointer)
             ));

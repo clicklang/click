@@ -3296,7 +3296,7 @@ pub(crate) fn condition_holds_by_memory_resolution(
         // state-modulo condition matchers already accept.
         (ConditionTerm::PointerValueEqual(left, right), true) => assumptions
             .contains_known(&Proposition::ConditionIs(condition.clone(), true))
-            || (assumptions.pointer_designations_match(left, right)
+            || (assumptions.pointer_provenance_match(left, right)
                 && (pointers_proven_equal_for_memory_resolution(
                     left.pointer(),
                     right.pointer(),

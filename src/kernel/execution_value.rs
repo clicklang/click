@@ -372,26 +372,45 @@ impl From<ExpressionPath> for ExpressionPath<ExecutionValue> {
     }
 }
 
-/// A memory cell's common pointer, Boolean, algebraic or float carrier. Its key is exactly the previous
-/// ProgramValue key, including for native numeric cells. Native observations
-/// are explicit and borrow the selected value's cached compatibility view.
+/// A memory cell retains its producer and native structural equality/order.
+/// Shared family keys cache structural fingerprints instead of exporting an
+/// enclosing native value. Numeric cells keep their existing native carrier.
 #[derive(Clone)]
-pub struct StoredMemoryValue(ExecutionValue);
+pub struct StoredMemoryValue(std::sync::Arc<StoredMemoryData>);
+#[derive(Debug)]
+struct StoredMemoryData {
+    value: ExecutionValue,
+    key: std::sync::OnceLock<StoredKey>,
+}
 impl std::fmt::Debug for StoredMemoryValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::Debug::fmt(self.native(), f)
     }
 }
 impl StoredMemoryValue {
+    fn identity(&self) -> NativeStorageIdentity<'_> {
+        self.0
+            .key
+            .get_or_init(|| match &self.0.value {
+                ExecutionValue::Native(value) => StoredKey::for_native_memory_value(value),
+                value => StoredKey::for_value(value),
+            })
+            .memory_identity(|| self.native())
+    }
+    fn same_retained_value(&self, other: &Self) -> bool {
+        std::sync::Arc::ptr_eq(&self.0, &other.0)
+            || matches!((self.value().shared(), other.value().shared()), (Some(a), Some(b)) if a == b)
+    }
     pub fn native(&self) -> &ProgramValue {
         self.0
+            .value
             .native_payload()
-            .or_else(|| self.0.shared()?.algebraic_native_value())
-            .or_else(|| self.0.shared()?.float_native_value())
+            .or_else(|| self.0.value.shared()?.algebraic_native_value())
+            .or_else(|| self.0.value.shared()?.float_native_value())
             .expect("native cell or retained value")
     }
     pub(crate) fn value(&self) -> &ExecutionValue {
-        &self.0
+        &self.0.value
     }
     pub(crate) fn with_native_value(&self, value: ProgramValue) -> Self {
         if self.value().shared().is_some() {
@@ -401,46 +420,57 @@ impl StoredMemoryValue {
         }
     }
     pub(crate) fn into_value(self) -> ExecutionValue {
-        self.0
+        match std::sync::Arc::try_unwrap(self.0) {
+            Ok(data) => data.value,
+            Err(data) => data.value.clone(),
+        }
     }
     pub(crate) fn into_native(self) -> ProgramValue {
-        self.0.into_native()
+        self.into_value().into_native()
     }
     pub(crate) fn program_type(&self) -> ProgramType {
-        self.0.program_type()
+        self.0.value.program_type()
     }
     pub(crate) fn byte_width(&self) -> u32 {
-        self.0.byte_width()
+        self.0.value.byte_width()
     }
 }
 impl From<ProgramValue> for StoredMemoryValue {
     fn from(value: ProgramValue) -> Self {
-        Self(value.into())
+        Self::from(ExecutionValue::Native(value))
     }
 }
 impl From<ExecutionValue> for StoredMemoryValue {
     fn from(value: ExecutionValue) -> Self {
-        if value.shared().is_some_and(|root| {
+        let value = if value.shared().is_some_and(|root| {
             root.pointer_payload().is_none()
                 && root.ty() != &KernelType::Bool
                 && !matches!(root.ty(), KernelType::Algebraic(_))
                 && FloatOperandView::from_shared(root).is_none()
         }) {
-            Self(value.into_native().into())
+            value.into_native().into()
         } else {
-            Self(value)
-        }
+            value
+        };
+        Self(std::sync::Arc::new(StoredMemoryData {
+            value,
+            key: Default::default(),
+        }))
     }
 }
 impl PartialEq for StoredMemoryValue {
     fn eq(&self, other: &Self) -> bool {
-        self.native() == other.native()
+        self.same_retained_value(other) || self.identity() == other.identity()
     }
 }
 impl Eq for StoredMemoryValue {}
 impl std::hash::Hash for StoredMemoryValue {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        std::hash::Hash::hash(self.native(), state)
+        match self.identity() {
+            // Native scalar cells keep their existing structural carrier/hash.
+            NativeStorageIdentity::Value(value) => std::hash::Hash::hash(value, state),
+            key => std::hash::Hash::hash(&key, state),
+        }
     }
 }
 impl PartialOrd for StoredMemoryValue {
@@ -450,17 +480,21 @@ impl PartialOrd for StoredMemoryValue {
 }
 impl Ord for StoredMemoryValue {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.native().cmp(other.native())
+        if self.same_retained_value(other) {
+            std::cmp::Ordering::Equal
+        } else {
+            self.identity().cmp(&other.identity())
+        }
     }
 }
 impl PartialEq<ProgramValue> for StoredMemoryValue {
     fn eq(&self, other: &ProgramValue) -> bool {
-        self.native() == other
+        StoredKey::for_native_memory_value(other).memory_identity(|| other) == self.identity()
     }
 }
 impl PartialEq<StoredMemoryValue> for ProgramValue {
     fn eq(&self, other: &StoredMemoryValue) -> bool {
-        self == other.native()
+        other == self
     }
 }
 
@@ -479,8 +513,8 @@ enum StoredIdentity<'a> {
     Machine(&'a SharedMachineIntegerTerm),
     Native(NativeStorageIdentity<'a>),
 }
-/// A machine key owns only its shared observation handle. Families awaiting
-/// migration select their existing native descriptor at the consumer boundary.
+/// Local machine keys own shared observation handles. Memory cells reuse the
+/// structural family projections and leave native numeric carriers explicit.
 #[derive(Debug)]
 enum StoredKey {
     Machine(SharedMachineIntegerTerm),
@@ -492,6 +526,30 @@ enum StoredKey {
     Native,
 }
 impl StoredKey {
+    fn for_native_memory_value(value: &ProgramValue) -> Self {
+        match value {
+            ProgramValue::Bool(word) => Self::Boolean(BooleanStorageKey::native(word)),
+            ProgramValue::Float32(word) => Self::Float32(FloatStorageKey::native(word)),
+            ProgramValue::Float64(word) => Self::Float64(FloatStorageKey::native(word)),
+            ProgramValue::Parameter(value) => Self::Algebraic(AlgebraicStorageKey::native(value)),
+            ProgramValue::Pointer(value) => Self::Pointer(PointerStorageKey::native(value)),
+            _ => Self::Native,
+        }
+    }
+    fn memory_identity<'a>(
+        &'a self,
+        native: impl FnOnce() -> &'a ProgramValue,
+    ) -> NativeStorageIdentity<'a> {
+        match self {
+            Self::Boolean(key) => NativeStorageIdentity::Boolean(key),
+            Self::Float32(key) => NativeStorageIdentity::Float32(key),
+            Self::Float64(key) => NativeStorageIdentity::Float64(key),
+            Self::Algebraic(key) => NativeStorageIdentity::Algebraic(key),
+            Self::Pointer(key) => NativeStorageIdentity::Pointer(key),
+            Self::Native => NativeStorageIdentity::Value(native()),
+            Self::Machine(_) => unreachable!("numeric memory cells keep native structural keys"),
+        }
+    }
     fn for_value(value: &ExecutionValue) -> Self {
         match value {
             ExecutionValue::Native(ProgramValue::Pointer(pointer)) => {
@@ -684,7 +742,7 @@ mod tests {
             );
             let cell = StoredMemoryValue::from(value);
             assert_eq!(cell.native(), &native);
-            assert_eq!(hash(&cell), hash(&native));
+            assert_eq!(hash(&cell), hash(&StoredMemoryValue::from(native.clone())));
             assert_eq!(cell.into_value().shared(), Some(&root));
         }
     }
@@ -719,7 +777,7 @@ mod tests {
             assert_eq!(stored.into_value().shared(), Some(&root));
             let cell = StoredMemoryValue::from(ExecutionValue::Shared(root.clone()));
             assert_eq!(cell.native(), &native);
-            assert_eq!(hash(&cell), hash(&native));
+            assert_eq!(hash(&cell), hash(&StoredMemoryValue::from(native.clone())));
             for other in [
                 ProgramValue::Void,
                 ProgramValue::Bool(MachineTerm::Constant {
@@ -926,8 +984,7 @@ mod tests {
             std::hash::Hash::hash(value, &mut hash);
             hash.finish()
         }
-        assert_eq!(hash(&retained), hash(&native));
-        assert_eq!(hash(&native_cell), hash(&native));
+        assert_eq!(hash(&retained), hash(&native_cell));
         assert_eq!(format!("{retained:?}"), format!("{native:?}"));
         let address = Pointer::symbolic(Variable(1027501));
         let mut cells = CellStore::new();
@@ -1110,7 +1167,7 @@ mod float_cell_key_tests {
                 let cell = StoredMemoryValue::from(value);
                 assert_eq!(cell.value().shared(), Some(&root));
                 assert_eq!(cell.native(), &native);
-                assert_eq!(hash(&cell), hash(&native));
+                assert_eq!(hash(&cell), hash(&StoredMemoryValue::from(native.clone())));
                 for other in [
                     ProgramValue::Void,
                     native.clone(),

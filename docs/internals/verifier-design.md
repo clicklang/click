@@ -174,11 +174,11 @@ Whole-scalar consumption also requires uniqueness, established by inspecting at
 most two indexed entries. Explicit footprint composition retains its separate
 output-sensitive interface. The resource checker cannot import or call the raw
 access-candidate API. Object-provenance queries use the object-identity index's
-nonempty witness or singleton symbolic supplier. Designation/opaque-extent
+nonempty witness or singleton symbolic supplier. Provenance/opaque-extent
 fallback comparisons use a singleton direct alias after indexed equality fails.
 Framed pointer-value recovery requires one address alias and one full-pointer
 source in that address bucket; multiple states do not authorize a hidden
-source search. Complete-read, state, designation and extent checks still
+source search. Complete-read, state, provenance and extent checks still
 apply to the selected source. The direct order, supplier, and provenance-source
 lookup stages have their own `CheckingWorkScope`, charged to one explicit query
 key. These scopes do not excuse scans or cover general memory-history traversal.
@@ -654,12 +654,12 @@ subtraction and multiplication, then exact conversion to the indexed byte
 cursor; native pieces are never narrowed to 32 bits. An unrepresentable length
 or coordinate refuses composition without entering the candidate fallback.
 For a native request, each selected supplier must satisfy its typed access
-designation, as the previous whole-range entailment route required.
+provenance, as the previous whole-range entailment route required.
 A constant native request may have symbolic intermediate partition points.
 When its nominated supplier has symbolic bounds, consumption follows unique
 exact-start entries, applying the existing binary range-composition rule.
 Every selected piece must lie inside the request; a gap, ambiguous successor,
-cycle, wrong designation, or non-unit owner refuses without trying alternatives.
+cycle, wrong provenance, or non-unit owner refuses without trying alternatives.
 Consumption and non-consuming queries share this persistent operation. Scaling
 controls grow unrelated same-base fragments beside a fixed symbolic partition.
 Symbolic unit-owned requests use the same singleton supplier and exact-endpoint
@@ -686,7 +686,7 @@ preserve parent ownership and branch isolation. A structurally known shorter
 selected footprint skips whole-supplier coverage before adjacent composition;
 byte lengths include element widths, with no order-premise or pointer-offset
 search to establish that refusal. Typed queries check each selected piece's
-access designation for both narrow and native coordinates; narrow byte
+access provenance for both narrow and native coordinates; narrow byte
 transfers retain their suppliers' carriers instead. After the first
 piece, constant fragment composition requires exact adjacency and refuses
 selected overlapping suppliers. Other-quantity memory satisfaction routes

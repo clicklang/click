@@ -233,8 +233,8 @@ pub(crate) fn instance_arguments_proven_equal(
         && let (ProgramValue::Pointer(left), ProgramValue::Pointer(right)) =
             (left.numeric_value(), right.numeric_value())
     {
-        return (assumptions.pointer_designations_match(left, right)
-            || assumptions.designations_equal(left.designation(), right.designation()))
+        return (assumptions.pointer_provenance_match(left, right)
+            || assumptions.provenance_equal(left.provenance(), right.provenance()))
             && crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
                 left.pointer(),
                 right.pointer(),
@@ -333,7 +333,7 @@ pub(crate) fn resources_directly_match(
                 "resource context equality",
                 "resource direct match: pointer value",
                 || {
-                    assumptions.pointer_designations_match(left, right)
+                    assumptions.pointer_provenance_match(left, right)
                         && pointers_match_for_resource_check(left, right, assumptions)
                 },
             )
@@ -344,10 +344,9 @@ pub(crate) fn resources_directly_match(
         (Resource::Memory(left), Resource::Memory(right)) => {
             left == right
                 || (((!left.typed_carrier
-                    || assumptions.access_designations_match(left.access_designation(), right))
+                    || assumptions.access_provenance_match(left.access_provenance(), right))
                     && (!right.typed_carrier
-                        || assumptions
-                            .access_designations_match(right.access_designation(), left)))
+                        || assumptions.access_provenance_match(right.access_provenance(), left)))
                     && left.int32_bounds().is_some()
                     && right.int32_bounds().is_some()
                     && crate::instrumentation::measure_operation(
@@ -3116,7 +3115,7 @@ pub(in crate::kernel) fn complete_pointer_reads_equal_across_frame(
     })
 }
 
-pub(in crate::kernel) fn pointer_read_designations_equal(
+pub(in crate::kernel) fn pointer_read_provenance_equal(
     left: &Pointer,
     right: &Pointer,
     assumptions: &PureFactContext,
@@ -3174,8 +3173,8 @@ fn pointer_read_domains_equal(
     }
     let a_value = a.resolved_value(&left.defining_address, LoadKind::Int32);
     let b_value = b.resolved_value(&left.defining_address, LoadKind::Int32);
-    if matches!(&a_value, Some(ProgramValue::Pointer(stored)) if if extent { stored.extent().is_none() && !stored.extent_is_known() && stored.opaque_extent() == Some(right_origin) } else { stored.designation() == right_origin })
-        || matches!(&b_value, Some(ProgramValue::Pointer(stored)) if if extent { stored.extent().is_none() && !stored.extent_is_known() && stored.opaque_extent() == Some(left_origin) } else { stored.designation() == left_origin })
+    if matches!(&a_value, Some(ProgramValue::Pointer(stored)) if if extent { stored.extent().is_none() && !stored.extent_is_known() && stored.opaque_extent() == Some(right_origin) } else { stored.provenance() == right_origin })
+        || matches!(&b_value, Some(ProgramValue::Pointer(stored)) if if extent { stored.extent().is_none() && !stored.extent_is_known() && stored.opaque_extent() == Some(left_origin) } else { stored.provenance() == left_origin })
     {
         return true;
     }
@@ -3312,7 +3311,7 @@ fn pointer_reads_share_recorded_cell(
 }
 
 /// Select one exact complete pointer read's checked endpoint for address-index
-/// discovery. The result carries no object designation or access authority.
+/// discovery. The result carries no object provenance or access authority.
 /// The caller must keep any numeric union local to its resource query.
 pub(in crate::kernel) fn checked_pointer_read_endpoint(
     read: &Pointer,
@@ -6826,7 +6825,7 @@ fn transport_framed_atomic_pointer_value(
     after: &Memory,
     assumptions: Option<(&PureFactContext, bool)>,
 ) -> Option<PointerValue> {
-    // Only reconstructed complete words need their read designation moved
+    // Only reconstructed complete words need their read provenance moved
     // alongside their numeric address. Ordinary pointers keep their origin.
     let reconstructed_word = value.pointer().integer_address_bits().is_some();
     value.try_map_pointers(|pointer| {
@@ -7848,20 +7847,12 @@ mod opaque_pointer_frame_tests {
         };
         let numbers_only =
             PureFactContext::new().assume_condition(address_equality(&left, &right), true);
-        assert!(!pointer_read_designations_equal(
-            &left,
-            &right,
-            &numbers_only
-        ));
+        assert!(!pointer_read_provenance_equal(&left, &right, &numbers_only));
         let mut same_storage = PureFactContext::new();
         for (a, b) in [(&a, &b), (&c, &d), (&b, &c)] {
             same_storage = same_storage.assume_condition(address_equality(a, b), true);
         }
-        assert!(pointer_read_designations_equal(
-            &left,
-            &right,
-            &same_storage
-        ));
+        assert!(pointer_read_provenance_equal(&left, &right, &same_storage));
         assert!(pointer_read_extents_equal(&left, &right, &same_storage));
         let overwritten = intern_memory(
             memory
@@ -7870,7 +7861,7 @@ mod opaque_pointer_frame_tests {
                 .store(a.offset_by_bytes(4), ProgramValue::UInt32(0u32.into())),
         );
         let changed = Pointer::loaded_value(&overwritten, &d);
-        assert!(!pointer_read_designations_equal(
+        assert!(!pointer_read_provenance_equal(
             &left,
             &changed,
             &same_storage
@@ -7894,7 +7885,7 @@ mod opaque_pointer_frame_tests {
         let a = Pointer::loaded_value(&left, &field);
         let b = Pointer::loaded_value(&right, &field);
         let context = PureFactContext::new();
-        assert!(pointer_read_designations_equal(&a, &b, &context));
+        assert!(pointer_read_provenance_equal(&a, &b, &context));
         assert!(pointer_read_extents_equal(&a, &b, &context));
         assert!(complete_pointer_reads_equal_across_frame(&a, &b, &context));
         let changed = intern_memory(
@@ -7990,12 +7981,12 @@ mod opaque_pointer_frame_tests {
         };
         let empty = PureFactContext::new();
         let context = empty.clone().assume_proposition(separation(4));
-        assert!(!pointer_read_designations_equal(
+        assert!(!pointer_read_provenance_equal(
             &read(&before),
             &read(&after),
             &empty
         ));
-        assert!(pointer_read_designations_equal(
+        assert!(pointer_read_provenance_equal(
             &read(&before),
             &read(&after),
             &context
@@ -8006,7 +7997,7 @@ mod opaque_pointer_frame_tests {
             &context
         ));
         let too_short = empty.assume_proposition(separation(1));
-        assert!(!pointer_read_designations_equal(
+        assert!(!pointer_read_provenance_equal(
             &read(&before),
             &read(&after),
             &too_short
@@ -8015,7 +8006,7 @@ mod opaque_pointer_frame_tests {
             field.clone().offset_by_bytes(4),
             ProgramValue::Int32(0u32.into()),
         ));
-        assert!(!pointer_read_designations_equal(
+        assert!(!pointer_read_provenance_equal(
             &read(&before),
             &read(&overwritten),
             &context
@@ -8070,25 +8061,25 @@ mod opaque_pointer_frame_tests {
             ))),
         };
         let empty = PureFactContext::new();
-        assert!(!empty.pointer_designations_match(&read(&memory), &stored));
+        assert!(!empty.pointer_provenance_match(&read(&memory), &stored));
         let context = empty.clone().assume_proposition(separation(4));
         let (observed, equality) =
             explicit_pointer_store_frame(&before, memory.memory(), &field, &write, &context)
                 .unwrap();
         let context = context.assume_proposition(equality);
-        assert!(context.pointer_designations_match(&observed, &stored));
-        // Designation matching includes the complete pointer's subobject extent.
+        assert!(context.pointer_provenance_match(&observed, &stored));
+        // Provenance matching includes the complete pointer's subobject extent.
         let too_short = empty.assume_proposition(separation(1));
         assert!(
             explicit_pointer_store_frame(&before, memory.memory(), &field, &write, &too_short)
                 .is_none()
         );
-        assert!(!too_short.pointer_designations_match(&read(&memory), &stored));
+        assert!(!too_short.pointer_provenance_match(&read(&memory), &stored));
         let partial = intern_memory(memory.memory().clone().store(
             field.clone().offset_by_bytes(4),
             ProgramValue::Int32(0u32.into()),
         ));
-        assert!(!context.pointer_designations_match(&read(&partial), &stored));
+        assert!(!context.pointer_provenance_match(&read(&partial), &stored));
     }
 
     fn setup() -> (Pointer, Pointer, Pointer, Proposition, Proposition) {

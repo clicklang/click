@@ -4330,11 +4330,7 @@ mod numeric_address_annotation_tests {
         for width in [4, 8] {
             let right = PointerValue::new(q.clone(), ProgramType::Int32Pointer)
                 .with_extent(Some(SubobjectExtent::constant(q.clone(), width)));
-            assert!(
-                !facts
-                    .assumptions()
-                    .pointer_designations_match(&left, &right)
-            );
+            assert!(!facts.assumptions().pointer_provenance_match(&left, &right));
         }
     }
     #[test]

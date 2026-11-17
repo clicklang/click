@@ -19870,6 +19870,31 @@ pub(crate) fn quantified_resource_requirement_assumptions(
 #[cfg(test)]
 mod quantified_entry_read_tests;
 
+/// An entry clause's evaluation frame can add read authority while remaining
+/// at the entry point. Equal memory contents at a later point do not make
+/// that later frame eligible to supply entry authority or bindings.
+fn declared_resource_argument_state<'a>(
+    entry_state: &'a ExecutionState,
+    state: &'a ExecutionState,
+    source: ResourceStateSource,
+) -> &'a ExecutionState {
+    match source {
+        ResourceStateSource::Entry
+            if std::ptr::eq(state, entry_state)
+                || state
+                    .program_point_id()
+                    .is_some_and(|point| entry_state.program_point_id() == Some(point)) =>
+        {
+            state
+        }
+        ResourceStateSource::Entry => entry_state,
+        ResourceStateSource::Current | ResourceStateSource::Post => state,
+    }
+}
+
+#[cfg(test)]
+mod resource_argument_point_tests;
+
 fn evaluate_function_declared_resource_spec(
     entry_state: &ExecutionState,
     state: &ExecutionState,
@@ -19896,15 +19921,8 @@ fn evaluate_function_declared_resource_spec(
         .zip(parameter_types)
         .enumerate()
     {
-        let argument_state = match argument_state_source {
-            // A clause checked at entry is evaluated in a frame that adds
-            // the read authority of the clause set's own folded instances;
-            // an `old(..)` argument read at that same state reads through
-            // the same authority. The frame changes no cell.
-            ResourceStateSource::Entry if state.memory() == entry_state.memory() => state,
-            ResourceStateSource::Entry => entry_state,
-            ResourceStateSource::Current | ResourceStateSource::Post => state,
-        };
+        let argument_state =
+            declared_resource_argument_state(entry_state, state, *argument_state_source);
         let written = argument;
         let mut argument = argument.clone();
         resolve_retained_aggregate_fields(

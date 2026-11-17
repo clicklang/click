@@ -1,4 +1,4 @@
-# A C address comparison cannot transfer a pointer's write designation
+# A C address comparison cannot transfer a pointer's write provenance
 
 ```c filename=probe.c
 struct Pair { int32 first; int32 second; };

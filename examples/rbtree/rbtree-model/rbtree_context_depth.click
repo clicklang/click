@@ -15,7 +15,8 @@ decreases ctx
 
 theorem ctx_depth_is_nonnegative(ctx: Context) {
     ensures 0 <= ctx_depth(ctx) by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => {
                 unfold(ctx_depth(Context::Top));
                 normalize();

@@ -15,7 +15,8 @@ theorem rb_erase_root_child_nonempty_left(node: struct rb_node*, parent: struct 
     left: RbTree, right: RbTree) {
     requires not(left == RbTree::Empty);
     ensures rb_erase_root_child(RbTree::Node(node, parent, color, left, right)) == left by {
-        induct(left) as ih {
+        let ih = induct(left);
+        match left {
             RbTree::Empty => {
                 have RbTree::Empty == RbTree::Empty;
                 contradiction(RbTree::Empty == RbTree::Empty);
@@ -31,7 +32,8 @@ theorem rb_erase_root_child_nonempty_left(node: struct rb_node*, parent: struct 
 theorem rb_erase_root_child_no_right(node: struct rb_node*, parent: struct rb_node*, color: Color, left:
     RbTree) {
     ensures rb_erase_root_child(RbTree::Node(node, parent, color, left, RbTree::Empty)) == left by {
-        induct(left) as ih {
+        let ih = induct(left);
+        match left {
             RbTree::Empty => {
                 unfold(rb_erase_root_child(RbTree::Node(node, parent, color, RbTree::Empty,
                     RbTree::Empty))); normalize();
@@ -47,7 +49,8 @@ theorem rb_erase_root_child_no_right(node: struct rb_node*, parent: struct rb_no
 theorem rb_erase_root_child_is_rb(tree: RbTree) {
     requires is_rb(tree) == 1;
     ensures is_rb(rb_erase_root_child(tree)) == 1 by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_erase_root_child(RbTree::Empty)); known();
             }
@@ -92,7 +95,8 @@ theorem rb_erase_root_child_inorder(tree: RbTree) {
     requires rb_left(tree) == RbTree::Empty or rb_right(tree) == RbTree::Empty;
     ensures rb_inorder(rb_erase_root_child(tree))
     == list::append(rb_inorder(rb_left(tree)), rb_inorder(rb_right(tree))) by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_erase_root_child(RbTree::Empty));
                 unfold(rb_left(RbTree::Empty)); unfold(rb_right(RbTree::Empty));

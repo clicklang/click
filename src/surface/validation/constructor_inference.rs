@@ -602,14 +602,6 @@ impl ConstructorTypes {
         self.known_type(scrutinee)
     }
 
-    /// The type of the name `name` in scope, for `induct(name)`.
-    pub(super) fn variable_type(&self, name: &str) -> Option<ClickType> {
-        if !self.active {
-            return None;
-        }
-        self.variables.borrow().get(name).cloned().flatten()
-    }
-
     fn variant_binding_types(
         &self,
         scrutinee: Option<&ClickType>,

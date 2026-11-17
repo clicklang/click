@@ -1,6 +1,6 @@
 # A cast contract names a complete packed-pointer relationship
 
-The precondition supplies designation and selected bounds explicitly, without
+The precondition supplies provenance and selected bounds explicitly, without
 an auxiliary numeric address equation. A whole local copy keeps the carrier.
 
 ```c filename=packed.c

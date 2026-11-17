@@ -24,7 +24,7 @@ proposition can appear:
 
 The payload retains the full pointer value through `p == identity`. The model
 compares numeric addresses to match the C branch; it does not infer equal
-designations from that branch. The payload carries no ownership of its own.
+provenances from that branch. The payload carries no ownership of its own.
 
 ```c filename=pointer_payload.c
 struct cell {

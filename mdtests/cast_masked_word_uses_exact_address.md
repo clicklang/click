@@ -3,7 +3,7 @@
 The cast uses the checked address equation for the complete masked expression.
 An opaque input word must not prevent that exact lookup. The conclusion is
 address equality; the numeric premise does not establish a complete pointer
-designation or permission to dereference the result.
+provenance or permission to dereference the result.
 
 ```c filename=cast_masked_word_uses_exact_address.c
 struct node { int32 value; };
