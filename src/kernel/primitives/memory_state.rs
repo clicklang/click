@@ -3970,7 +3970,9 @@ impl SymbolicMemory {
             .insert(block.clone());
         // A later object is uninitialized until written; the tombstone
         // already refuses every access to this one.
-        if own.any_entry(memory.heap.initialized.as_map(), |_, _| true) {
+        if own.any_entry(memory.heap.initialized.as_map(), |_, _| true)
+            || own.any_entry(memory.heap.initialized.partial_map(), |_, _| true)
+        {
             std::sync::Arc::make_mut(&mut memory.heap)
                 .initialized
                 .forget_block(block);
@@ -5376,6 +5378,7 @@ impl SymbolicMemory {
             Some((selected, runs)) => ForgetScope::Ordered {
                 candidates: &candidates,
                 selected,
+                cells_kept: &[],
                 runs: Some(runs),
             },
             None => ForgetScope::candidates(&candidates),
@@ -5452,7 +5455,14 @@ impl SymbolicMemory {
             offset: AddressOffset::Constant(offset),
         };
         let mut initialized = self.heap.initialized.clone();
-        initialized.forget(&copy.destination, copy.bytes);
+        initialized
+            .copy_exact_range_from(
+                &source_memory.heap.initialized,
+                &copy.source,
+                &copy.destination,
+                copy.bytes,
+            )
+            .expect("checked representation copy range");
         initialized.forget_symbolic_offsets(&copy.destination.base);
         let mut record = |start: i64, bytes| {
             let address = Address {
@@ -5461,13 +5471,6 @@ impl SymbolicMemory {
             };
             initialized.record(&address, bytes);
         };
-        for (start, bytes) in source_memory.heap.initialized.constant_runs_in_range(
-            &copy.source.base,
-            source_start,
-            source_end,
-        ) {
-            record(start, bytes);
-        }
         // A cell can establish initialization even if it has no separate
         // record, or if the copy cuts through it and cannot retain its type.
         let first = source_memory
@@ -5502,6 +5505,99 @@ impl SymbolicMemory {
             heap.uninitialized_objects
                 .insert(copy.destination.clone(), width);
         }
+    }
+
+    /// Commit a checked write that leaves a partial byte. No whole-byte
+    /// value may be published in the cell cache or on the memory edge.
+    pub(in crate::kernel) fn store_partial_byte(
+        mut self,
+        pointer: Address,
+        mask: u8,
+        value: ProgramValue,
+        assumptions: &PureFactContext,
+    ) -> Self {
+        let base = intern_derivation_base(&mut self);
+        if let Some((mut prepared, lost_knowledge)) =
+            self.prepare_store_cache(&pointer, 1, assumptions)
+        {
+            if lost_knowledge {
+                prepared.mark_forgotten_from(&base);
+            }
+            self = prepared;
+        }
+        Arc::make_mut(&mut self.heap)
+            .initialized
+            .set_partial(pointer.clone(), mask, Some(value));
+        record_memory_derivation(
+            &mut self,
+            MemoryDerivation::RepresentationWrite {
+                base,
+                pointer,
+                bytes: 1,
+            },
+        );
+        self
+    }
+
+    /// Copy one local bit-field record, including the holes in its
+    /// initialization. The aggregate path checks the C lvalues first.
+    pub(in crate::kernel) fn copy_local_bit_field_record(
+        mut self,
+        source: &Address,
+        destination: &Address,
+        bytes: u32,
+    ) -> Result<Self, UndefinedBehavior> {
+        if !source.base.is_local_block()
+            || !destination.base.is_local_block()
+            || !self.access_in_bounds(source, bytes)
+            || !self.access_in_bounds(destination, bytes)
+            || self.is_read_only_block(&destination.base)
+        {
+            return Err(UndefinedBehavior::InvalidMemory);
+        }
+        if source == destination {
+            return Ok(self);
+        }
+        let snapshot = self.clone();
+        let base = intern_derivation_base(&mut self);
+        let context = PureFactContext::new();
+        if let Some((mut prepared, lost_knowledge)) =
+            self.prepare_store_cache(destination, bytes, &context)
+        {
+            if lost_knowledge {
+                prepared.mark_forgotten_from(&base);
+            }
+            self = prepared;
+        }
+        self.replace_initialization_for_representation_copy(
+            &snapshot,
+            &RepresentationCopyRange {
+                source: source.clone(),
+                destination: destination.clone(),
+                bytes,
+            },
+        );
+        for byte in 0..bytes {
+            if let Some(value) = crate::kernel::eval::known_integer_byte(
+                &snapshot,
+                &source.offset_by_bytes(byte),
+                Some(ByteOrder::Little),
+            ) {
+                Arc::make_mut(&mut self.cells).insert(
+                    destination.offset_by_bytes(byte),
+                    ProgramValue::UInt8(value),
+                );
+            }
+        }
+        record_memory_derivation(
+            &mut self,
+            MemoryDerivation::RepresentationWrite {
+                base,
+                pointer: destination.clone(),
+                bytes,
+            },
+        );
+        Ok(self)
     }
 
     /// Checks that `self` is exactly the cell-and-marker result produced by a
@@ -5606,6 +5702,23 @@ impl SymbolicMemory {
         // a dropped value or the write set ([`SymbolicMemory::forget_cached_values`]).
         let mut expected = before.clone();
         expected.record_dropped_initialized_cells(&dropped_initialized);
+        if !before.heap.initialized.partial_map().is_empty() {
+            Arc::make_mut(&mut expected.heap)
+                .initialized
+                .forget_partial_values(Some((&candidates, &[])), |address, value| {
+                    matches!(
+                        call_havoc_keeps_cell(
+                            address,
+                            value,
+                            mutable_ranges,
+                            assumptions,
+                            kept,
+                            true
+                        ),
+                        CallHavocCellRule::Separate
+                    )
+                });
+        }
         expected.forget_zero_readings_under(
             dropped_initialized.iter().map(|(pointer, _)| &pointer.base),
         );
@@ -6543,7 +6656,9 @@ impl SymbolicMemory {
         let base = intern_derivation_base(&mut self);
         // Cache invalidation is internal to this store, not a memory event.
         // Retain its original input, and never intern the intermediate cache.
-        if (invalidate_aliases || !self.union_cells.is_empty())
+        if (invalidate_aliases
+            || !self.union_cells.is_empty()
+            || !self.heap.initialized.partial_map().is_empty())
             && let Some((mut prepared, lost_knowledge)) =
                 self.prepare_store_cache(&pointer, value.byte_width(), context)
         {
@@ -6553,6 +6668,11 @@ impl SymbolicMemory {
             self = prepared;
         }
         std::sync::Arc::make_mut(&mut self.cells).insert_retained(pointer.clone(), value.clone());
+        if !self.heap.initialized.partial_map().is_empty() {
+            Arc::make_mut(&mut self.heap)
+                .initialized
+                .forget_masks(&pointer, value.byte_width());
+        }
         if (self.is_live_heap_address(&pointer, context)
             || !self.heap.uninitialized_objects.is_empty())
             && !self.heap.initialized.covers(&pointer, value.byte_width())
@@ -7169,6 +7289,7 @@ impl SymbolicMemory {
                     candidates,
                     selected,
                     runs,
+                    ..
                 } => cells.retain_selected_concrete_by(
                     selected,
                     candidates,
@@ -7216,12 +7337,33 @@ impl SymbolicMemory {
                 }
             }
         }
+        let forgot_partial = if self.heap.initialized.partial_map().is_empty() {
+            false
+        } else {
+            let candidates = match scope {
+                ForgetScope::Everywhere => None,
+                ForgetScope::Candidates {
+                    candidates,
+                    cells_kept,
+                }
+                | ForgetScope::Ordered {
+                    candidates,
+                    cells_kept,
+                    ..
+                } => Some((candidates, cells_kept)),
+            };
+            Arc::make_mut(&mut self.heap)
+                .initialized
+                .forget_partial_values(candidates, |address, value| {
+                    fate(address, CachedValue::Cell(value)) == CachedValueFate::Kept
+                })
+        };
         self.record_dropped_initialized_cells(&forgotten_cells);
         // A run's slots are cells too, dropped by `run_rule` as a whole run
         // without `fate` being asked; preserve their initialization evidence.
         self.record_dropped_initialized_run_slots(&dropped_run_slots);
         self.forget_zero_readings_under(forgotten_cells.iter().map(|(pointer, _)| &pointer.base));
-        !forgotten_cells.is_empty()
+        !forgotten_cells.is_empty() || forgot_partial
     }
 
     /// Drops the zero reading of every allocation that may hold a byte of
@@ -7636,6 +7778,7 @@ impl SymbolicMemory {
             Some(selected) => ForgetScope::Ordered {
                 candidates: &candidates,
                 selected,
+                cells_kept: &gap_kept,
                 runs: None,
             },
             None => ForgetScope::Candidates {
@@ -7657,6 +7800,7 @@ impl SymbolicMemory {
         // instead of stopping at an edge that records no write.
         if memory.cells.len() == self.cells.len()
             && memory.union_cells.len() == self.union_cells.len()
+            && !forgot_values
         {
             return None;
         }
@@ -10924,6 +11068,7 @@ pub(super) enum ForgetScope<'a> {
     Ordered {
         candidates: &'a AliasCandidates,
         selected: &'a [Address],
+        cells_kept: &'a [(Address, Address)],
         runs: Option<&'a [cell_store::RunKey]>,
     },
     /// Every cached value, for a transition that may have written anywhere.

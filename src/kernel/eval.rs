@@ -57,7 +57,7 @@ fn volatile_access_fact(
 pub(in crate::kernel) use byte_view::{ContainingIntegerCell, integer_cell_byte};
 pub(in crate::kernel) use byte_view::{
     assemble_declared_uint32_after_byte_store, byte_view_load_value, containing_integer_cell,
-    declared_uint32_read_representation, integer_cell_with_byte,
+    declared_uint32_read_representation, integer_cell_with_byte, known_integer_byte,
 };
 pub(super) use expression::*;
 #[cfg(test)]

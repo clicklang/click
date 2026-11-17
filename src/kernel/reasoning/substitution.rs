@@ -3109,6 +3109,12 @@ fn collect_memory_bound_variables(memory: &SymbolicMemory, variables: &mut BTree
     {
         collect_pointer_bound_variables(pointer, variables);
     }
+    for (pointer, byte) in memory.heap.initialized.partial_map().iter() {
+        collect_pointer_bound_variables(pointer, variables);
+        if let Some(value) = &byte.value {
+            collect_program_value_bound_variables(value, variables);
+        }
+    }
     for contents in memory.blocks.values() {
         collect_bitvector_bound_variables(contents.size(), variables);
     }
@@ -3154,6 +3160,17 @@ fn collect_memory_bound_variables_entering(
             let pointer = change.key();
             if after.contains_key(pointer) {
                 collect_pointer_bound_variables(pointer, variables);
+            }
+        }
+    }
+    let before = base.heap.initialized.partial_map();
+    let after = memory.heap.initialized.partial_map();
+    for change in before.diff(after) {
+        let pointer = change.key();
+        if let Some(byte) = after.get(pointer) {
+            collect_pointer_bound_variables(pointer, variables);
+            if let Some(value) = &byte.value {
+                collect_program_value_bound_variables(value, variables);
             }
         }
     }
@@ -6492,9 +6509,10 @@ fn substitute_bitvector_variable_in_memory_contents(
                 .iter()
                 .map(|base| substitute_bitvector_variable_in_pointer(base, from, to))
                 .collect(),
-            initialized: memory.heap.initialized.map_pointers(|pointer| {
-                substitute_bitvector_variable_in_pointer(pointer, from, to)
-            }),
+            initialized: memory.heap.initialized.map_pointers(
+                |pointer| substitute_bitvector_variable_in_pointer(pointer, from, to),
+                |value| substitute_bitvector_variable_in_program_value(value, from, to),
+            ),
             zeroed_allocations: memory
                 .heap
                 .zeroed_allocations
@@ -7183,10 +7201,10 @@ pub(crate) fn substitute_pointer_variable_in_memory(
                 .iter()
                 .map(|base| substitute_pointer_variable_in_pointer(base, from, to))
                 .collect(),
-            initialized: memory
-                .heap
-                .initialized
-                .map_pointers(|pointer| substitute_pointer_variable_in_pointer(pointer, from, to)),
+            initialized: memory.heap.initialized.map_pointers(
+                |pointer| substitute_pointer_variable_in_pointer(pointer, from, to),
+                |value| substitute_pointer_variable_in_program_value(value, from, to),
+            ),
             zeroed_allocations: memory
                 .heap
                 .zeroed_allocations

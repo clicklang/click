@@ -895,6 +895,76 @@ fn write_program_lvalue_paths_for_initialization(
                 };
                 obligations
             };
+            let value = if let Some(crate::kernel::effective_type::CAccessClass::BitFieldByte(
+                mask,
+            )) = &lvalue_classes.0
+            {
+                let ProgramValue::UInt8(incoming) = value else {
+                    unreachable!("bit-field byte store has type uint8");
+                };
+                if !pointer.base.is_local_block() || !state.memory.access_in_bounds(&pointer, 1) {
+                    return Ok(vec![StatementExecutionPath::new(
+                        StatementOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
+                        facts,
+                        obligations,
+                    )]);
+                }
+                let mask = mask.get();
+                let initialized = &state.memory.heap.initialized;
+                let partial = initialized.partial_byte(&pointer);
+                let old_full = super::byte_view::known_integer_byte(
+                    &state.memory,
+                    &pointer,
+                    budget.program_byte_order(),
+                );
+                let before = if old_full.is_some() {
+                    u8::MAX
+                } else {
+                    initialized.mask_at(&pointer)
+                };
+                let preserve = before & !mask;
+                let written = super::byte_view::mask_byte(incoming, mask);
+                let combined = if preserve == 0 {
+                    written
+                } else if let Some(old) = old_full.or_else(|| {
+                    let ProgramValue::UInt8(value) = partial?.value.as_ref()? else {
+                        return None;
+                    };
+                    Some(value.clone())
+                }) {
+                    super::byte_view::merge_byte_bits(
+                        super::byte_view::mask_byte(old, preserve),
+                        written,
+                    )
+                } else {
+                    return Ok(vec![StatementExecutionPath::new(
+                        StatementOutcome::RuntimeError(RuntimeError::FunctionContract(
+                            "bit-field update requires the retained value of the other initialized bits in its byte".into(),
+                        )),
+                        facts,
+                        obligations,
+                    )]);
+                };
+                let value = ProgramValue::UInt8(combined);
+                if before | mask != u8::MAX {
+                    let mut state = state.clone();
+                    let memory = state.memory.clone().store_partial_byte(
+                        pointer,
+                        before | mask,
+                        value,
+                        &effective_assumptions,
+                    );
+                    state.set_memory(memory);
+                    return Ok(vec![StatementExecutionPath::new(
+                        StatementOutcome::Normal(Box::new(state)),
+                        facts,
+                        obligations,
+                    )]);
+                }
+                value
+            } else {
+                value
+            };
             // A one-byte store inside a wider integer cell updates that cell's
             // little-endian representation in place. The transition is then
             // exactly a store of the updated wider value at the cell's own

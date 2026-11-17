@@ -4376,6 +4376,11 @@ impl ResourceContext {
                         }
                     }
                 }
+                MemoryDerivation::RepresentationWrite { pointer, .. } => {
+                    // There is no corresponding whole-cell store fact to
+                    // establish a guarded iteration survived this write.
+                    dropped.extend(facts_in_block(&self, &pointer.base));
+                }
                 MemoryDerivation::CallHavoc { mutable_ranges, .. } => {
                     for range in mutable_ranges {
                         for fact in facts_in_block(&self, &range.base().base) {
@@ -4439,7 +4444,10 @@ impl ResourceContext {
             });
         let ambiguous_event = match derivation {
             MemoryDerivation::BranchJoin { .. } => true,
-            MemoryDerivation::Store { pointer, .. } => memory_block_may_alias(&pointer.base),
+            MemoryDerivation::Store { pointer, .. }
+            | MemoryDerivation::RepresentationWrite { pointer, .. } => {
+                memory_block_may_alias(&pointer.base)
+            }
             MemoryDerivation::CellsSeeded { run, .. } => memory_block_may_alias(&run.base().base),
             MemoryDerivation::CallHavoc { mutable_ranges, .. }
             | MemoryDerivation::LoopHavoc {
@@ -4477,19 +4485,25 @@ impl ResourceContext {
             }
         }
         match derivation {
-            MemoryDerivation::Store { .. } | MemoryDerivation::CellsSeeded { .. } => {
-                let stores = match derivation {
-                    MemoryDerivation::Store { pointer, value, .. } => {
-                        vec![(pointer.clone(), value.native().clone())]
-                    }
-                    _ => derivation.seeded_stores().expect("a CellsSeeded edge"),
+            MemoryDerivation::Store { .. }
+            | MemoryDerivation::RepresentationWrite { .. }
+            | MemoryDerivation::CellsSeeded { .. } => {
+                let stores = if let Some((pointer, width)) = derivation.single_write() {
+                    vec![(pointer.clone(), width)]
+                } else {
+                    derivation
+                        .seeded_stores()
+                        .expect("a CellsSeeded edge")
+                        .into_iter()
+                        .map(|(pointer, value)| (pointer, value.byte_width()))
+                        .collect()
                 };
-                for (pointer, value) in &stores {
+                for (pointer, width) in stores {
                     let write = MemoryRange::new_with_element_width(
                         pointer.clone(),
                         MachineTerm::constant(0),
                         MachineTerm::constant(1),
-                        value.byte_width(),
+                        width,
                     );
                     if memory_interval_nodes(&write).is_some() {
                         add_memory_interval_candidates(

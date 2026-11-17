@@ -16,10 +16,6 @@ fn bit_field_lookup_work_is_independent_of_other_bindings() {
         let object = LocalBitFields {
             record,
             word: BindingName::from("private"),
-            partial: PartialInitialization {
-                mask: BindingName::from("written"),
-                unwritten: BindingName::from("unwritten"),
-            },
             pointer: None,
             read_only: false,
         };

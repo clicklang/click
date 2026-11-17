@@ -6513,6 +6513,9 @@ impl AggregateInitializer {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct AggregateLayout {
+    /// A local C bit-field record is copied as a representation with
+    /// potentially unwritten bits.
+    pub(super) copy_bit_field_representation: bool,
     pub(super) size_bytes: u32,
     pub(super) alignment_bytes: u32,
     pub(super) fields: Vec<AggregateField>,
@@ -6532,6 +6535,14 @@ impl AggregateLayout {
             fields,
             unions: Vec::new(),
             value_type: None,
+            copy_bit_field_representation: false,
+        }
+    }
+
+    pub(crate) fn bit_field_record(size_bytes: u32, alignment_bytes: u32) -> Self {
+        Self {
+            copy_bit_field_representation: true,
+            ..Self::new(size_bytes, alignment_bytes, Vec::new())
         }
     }
 
@@ -6564,6 +6575,7 @@ impl AggregateLayout {
             fields,
             unions,
             value_type: None,
+            copy_bit_field_representation: false,
         }
     }
 
@@ -9705,6 +9717,14 @@ pub enum MemoryDerivation {
         pointer: Address,
         value: StoredMemoryValue,
     },
+    /// A write to the physical bytes of a bit-field representation. The
+    /// successor may know only some bits, so this is no evidence for a
+    /// load of the entire written byte.
+    RepresentationWrite {
+        base: SharedMemory,
+        pointer: Address,
+        bytes: u32,
+    },
     /// `base` with one block declared; no cell changes, so every load reads
     /// exactly what it read in `base`. This fourth edge kind was added after
     /// the initial DAG arc; without it, block declaration split the DAG into
@@ -9839,6 +9859,16 @@ pub enum MemoryDerivation {
 }
 
 impl MemoryDerivation {
+    /// The physical destination of a single checked write. A representation
+    /// write names a footprint without supplying a whole-byte value.
+    pub(in crate::kernel) fn single_write(&self) -> Option<(&Address, u32)> {
+        match self {
+            Self::Store { pointer, value, .. } => Some((pointer, value.byte_width())),
+            Self::RepresentationWrite { pointer, bytes, .. } => Some((pointer, *bytes)),
+            _ => None,
+        }
+    }
+
     /// The stores a `CellsSeeded` edge stands for, newest first: the order a
     /// walk from the produced state meets them in. `None` for every other
     /// edge kind.
@@ -9860,6 +9890,7 @@ impl MemoryDerivation {
         match self {
             Self::CellsSeeded { .. } => "CellsSeeded",
             Self::Store { .. } => "Store",
+            Self::RepresentationWrite { .. } => "RepresentationWrite",
             Self::BlockDeclared { .. } => "BlockDeclared",
             Self::HeapAllocated { .. } => "HeapAllocated",
             Self::HeapAllocationPending { .. } => "HeapAllocationPending",
@@ -9881,6 +9912,7 @@ impl MemoryDerivation {
     pub fn base(&self) -> &SharedMemory {
         match self {
             Self::Store { base, .. }
+            | Self::RepresentationWrite { base, .. }
             | Self::BlockDeclared { base, .. }
             | Self::HeapAllocated { base, .. }
             | Self::HeapAllocationPending { base, .. }
@@ -10143,7 +10175,10 @@ pub(crate) fn record_memory_derivation(result: &mut SymbolicMemory, derivation: 
         // or lifetimes. All other effects conservatively retain a fresh key.
         if interned_here {
             let versions = match derivation.as_ref() {
-                MemoryDerivation::Store { base, pointer, .. } if pointer.base.is_local_block() => {
+                MemoryDerivation::Store { base, pointer, .. }
+                | MemoryDerivation::RepresentationWrite { base, pointer, .. }
+                    if pointer.base.is_local_block() =>
+                {
                     let mut versions = arena.local_definedness_versions[base.id as usize].clone();
                     versions.changed = versions
                         .changed

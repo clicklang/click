@@ -1393,16 +1393,32 @@ and `*destination = *source`, transfer the source word and its initialization
 state. Assigning a record with an unwritten field leaves that field unwritten
 in the destination. Reads of such a field are refused.
 
-Pointers are limited to these local aliases. Reassignment, pointer arithmetic,
-calling functions with a record or its pointer, byte access, `memcpy`, bit-field
-addresses, unevaluated field operands, and combinations with `goto` are outside
-the subset. Packed or aligned definitions, ordinary fields mixed with
-bit-fields, unnamed or zero-width fields, and multiword records are unsupported.
+A character pointer cast from the address of a local record observes that
+record's representation. A byte write initializes all eight bits of its
+destination and subsequent field reads see the new bits. A field write
+initializes only its own bits. Reading a whole byte requires all eight bits
+to have been written, including any padding bits it contains.
+
+The modeled `memcpy` transports values and initialization together. Copying
+a partially written record to a local record or character array retains the
+written fields and replaces initialization in the copied span, even when the
+destination was previously initialized. A copy with unwritten source bits
+requires exact source and destination offsets and an exact byte count. Use
+`sizeof(record)` or `sizeof(struct tag)` for the full representation.
+
+Typed field access through pointers still requires a fixed local alias.
+Pointer reassignment for such aliases, bit-field addresses, unevaluated field
+operands, and combinations with `goto` are outside the subset. Packed or
+aligned definitions, ordinary fields mixed with bit-fields, unnamed or
+zero-width fields, and multiword records are unsupported.
 
 <!-- verified-example: mdtests/c_bit_field_neighbor.md -->
 <!-- verified-example: mdtests/c_bit_field_partial_initialization.md -->
 <!-- verified-example: mdtests/c_bit_field_pointer_and_promotion.md -->
 <!-- verified-example: mdtests/c_bit_field_assignment_through_pointers.md -->
+<!-- verified-example: mdtests/c_bit_field_byte_interop.md -->
+<!-- verified-example: mdtests/c_bit_field_memcpy_partial.md -->
+<!-- verified-example: mdtests/c_bit_field_memcpy_roundtrip.md -->
 
 ### Block-scope struct compound literals
 
