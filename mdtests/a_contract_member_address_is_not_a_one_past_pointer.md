@@ -1,7 +1,7 @@
 # A contract member address is not a one-past pointer
 
 A member address written in a contract designates the member, as the C
-frontend's `&p->second` does (`design/pointer-subobject-extents.md`). So a
+frontend's `&p->second` does (`design/pointer-subobject-bounds.md`). So a
 function returning `&p->first + 1` cannot promise `result == &p->second`:
 the two share an address, but only the second may be dereferenced
 (C11 6.5.6p7-p8). A caller would otherwise read through the result.

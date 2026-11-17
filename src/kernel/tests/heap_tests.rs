@@ -14,7 +14,7 @@ fn free_retires_a_cached_interior_alias() {
         true,
     ));
     let memory = Memory::new()
-        .with_heap_allocation_claim(base.clone(), HeapExtent::int32(12))
+        .with_heap_allocation_claim(base.clone(), AllocationSize::int32(12))
         .unwrap()
         .with_block(base.block.clone(), 12)
         .store(alias.clone(), int32(7));
@@ -32,7 +32,7 @@ fn free_keeps_an_uncertain_block_only_with_ownership_of_the_whole_cell() {
     let base = Pointer::symbolic(Variable(945_010));
     let cell = Pointer::symbolic(Variable(945_011));
     let memory = Memory::new()
-        .with_heap_allocation_claim(base.clone(), HeapExtent::int32(12))
+        .with_heap_allocation_claim(base.clone(), AllocationSize::int32(12))
         .unwrap()
         .store(
             cell.clone(),
@@ -79,7 +79,7 @@ fn a_free_publishes_its_owned_pointer_frame_as_an_equality() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let memory = Memory::new()
-        .with_heap_allocation_claim(base.clone(), HeapExtent::int32(4))
+        .with_heap_allocation_claim(base.clone(), AllocationSize::int32(4))
         .unwrap()
         .store(cell.clone(), ProgramValue::pointer(value));
     let resources = ResourceContext::new()
@@ -276,8 +276,8 @@ fn heap_allocate_has_null_or_fresh_uninitialized_outcomes() {
         panic!("allocation should assign a pointer");
     };
     assert_eq!(
-        success.memory().live_heap_block_extent(pointer),
-        Some(&HeapExtent::int32(16))
+        success.memory().live_heap_block_size(pointer),
+        Some(&AllocationSize::int32(16))
     );
     let derivation = intern_memory_ref(success.memory())
         .derivation()
@@ -325,7 +325,7 @@ fn heap_allocate_has_null_or_fresh_uninitialized_outcomes() {
     assert!(null.resources().facts().is_empty());
     assert!(
         null.memory()
-            .live_heap_block_extent(pointer.pointer())
+            .live_heap_block_size(pointer.pointer())
             .is_none()
     );
 }
@@ -625,12 +625,7 @@ fn realloc_preserves_zeroed_prefix_and_leaves_growth_uninitialized() {
             .and_then(|pending| pending.zeroed_prefix.as_ref()),
         Some(&MachineTerm::constant(8))
     );
-    assert!(
-        pending
-            .memory()
-            .live_heap_block_extent(old_pointer)
-            .is_some()
-    );
+    assert!(pending.memory().live_heap_block_size(old_pointer).is_some());
 
     let success = resolve_pending_heap_allocations(
         pending,
@@ -763,7 +758,7 @@ fn pending_and_failed_heap_allocation_preserve_existing_memory() {
     assert!(
         failed
             .memory()
-            .live_heap_block_extent(pending_pointer.pointer())
+            .live_heap_block_size(pending_pointer.pointer())
             .is_none()
     );
     assert!(checked_memory_load_equality(
@@ -868,7 +863,7 @@ fn successful_heap_allocation_is_fresh_from_every_existing_block() {
 }
 
 /// A `free` ends the whole allocation, so the question a cell has to answer
-/// is whether the released *extent* reaches it — not whether its address is
+/// is whether the released *size* reaches it — not whether its address is
 /// the allocation's base. Asking `pointers_proven_distinct_for_memory_resolution`
 /// about the base answered "this free left it alone" for every element of the
 /// block but the first, so a fact about `p[3]` crossed a `free(p)`.
@@ -933,7 +928,7 @@ mod a_free_reaches_every_element_of_its_block {
 
     /// The other polarity: a cell in an object the kernel proves is not the
     /// released one is still framed across the free, on the block ladder
-    /// that decides it above the extent question.
+    /// that decides it above the size question.
     #[test]
     fn a_freed_allocation_leaves_another_object_alone() {
         let (freed, _) = freed_sixteen_byte_allocation();
@@ -987,7 +982,7 @@ fn heap_free_deallocates_the_complete_block_and_rejects_double_free() {
             after, allocation_base, bytes, ..
         } if after == freed.memory()
             && allocation_base == pointer.pointer()
-            && *bytes == HeapExtent::int32(MachineTerm::constant(16)))
+            && *bytes == AllocationSize::int32(MachineTerm::constant(16)))
     ));
     let derivation = intern_memory_ref(freed.memory())
         .derivation()
@@ -1247,7 +1242,7 @@ fn free_of_external_allocation_forgets_cells_without_separation() {
     };
     let memory = Memory::new()
         .store(unrelated.clone(), int32(37))
-        .with_heap_allocation_claim(allocation_base.clone(), HeapExtent::int32(16))
+        .with_heap_allocation_claim(allocation_base.clone(), AllocationSize::int32(16))
         .expect("external allocation claim should be fresh");
     let resources = ResourceContext::new()
         .unchecked_with_fact(ResourceFact::own_allocation(allocation_base.clone(), 16))
@@ -1307,7 +1302,7 @@ fn interface_heap_join_retains_potential_live_allocation() {
     };
     let retained = ExecutionState::new().with_memory(
         Memory::new()
-            .with_heap_allocation_claim(allocation_base.clone(), HeapExtent::int32(16))
+            .with_heap_allocation_claim(allocation_base.clone(), AllocationSize::int32(16))
             .expect("the allocation claim should be fresh"),
     );
     let freed = retained.clone().with_memory(
@@ -1328,8 +1323,8 @@ fn interface_heap_join_retains_potential_live_allocation() {
     assert_eq!(freed_join, retained_join);
     let freed_join = freed_join.state;
     assert_eq!(
-        freed_join.memory().live_heap_block_extent(&allocation_base),
-        Some(&HeapExtent::int32(16))
+        freed_join.memory().live_heap_block_size(&allocation_base),
+        Some(&AllocationSize::int32(16))
     );
     assert!(
         freed_join
@@ -1522,12 +1517,7 @@ fn realloc_keeps_old_resources_until_result_and_transfers_them_on_success() {
             .pending_reallocations
             .contains_key(pending_pointer)
     );
-    assert!(
-        pending
-            .memory()
-            .live_heap_block_extent(old_pointer)
-            .is_some()
-    );
+    assert!(pending.memory().live_heap_block_size(old_pointer).is_some());
 
     let success_assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
         pointer_is_null_condition(pending_pointer.pointer().clone()),
@@ -1539,8 +1529,8 @@ fn realloc_keeps_old_resources_until_result_and_transfers_them_on_success() {
         panic!("successful realloc should assign a pointer");
     };
     assert_eq!(
-        success.memory().live_heap_block_extent(resized.pointer()),
-        Some(&HeapExtent::int32(8))
+        success.memory().live_heap_block_size(resized.pointer()),
+        Some(&AllocationSize::int32(8))
     );
     assert!(
         success
@@ -1571,12 +1561,7 @@ fn realloc_keeps_old_resources_until_result_and_transfers_them_on_success() {
         failure.locals().get_native("q").as_deref(),
         Some(&ProgramValue::pointer(Pointer::null()))
     );
-    assert!(
-        failure
-            .memory()
-            .live_heap_block_extent(old_pointer)
-            .is_some()
-    );
+    assert!(failure.memory().live_heap_block_size(old_pointer).is_some());
     assert!(
         failure
             .resources()
@@ -1631,7 +1616,7 @@ fn free_preserves_a_separate_recursive_tail_with_the_same_symbolic_block() {
         )))
         .unchecked_with_fact(tail_resource.clone());
     let memory = Memory::new()
-        .with_heap_allocation_claim(base.clone(), HeapExtent::int32(16))
+        .with_heap_allocation_claim(base.clone(), AllocationSize::int32(16))
         .expect("symbolic allocation claim should be fresh");
     let state = ExecutionState::new()
         .with_memory(memory)
@@ -1835,7 +1820,7 @@ fn free_resolves_an_owned_return_alias_without_losing_its_offset() {
         let alias = Pointer::symbolic(Variable(984_100));
         let bytes = success
             .memory()
-            .live_heap_block_extent(base.pointer())
+            .live_heap_block_size(base.pointer())
             .unwrap()
             .clone();
         let facts = PureFactContext::new().assume_condition(
@@ -1997,8 +1982,8 @@ fn returning_malloc_result_resolves_null_and_success_outcomes() {
             saw_success = true;
             assert!(matches!(pointer.block, PointerBlock::Heap(_)));
             assert_eq!(
-                state.memory().live_heap_block_extent(&pointer),
-                Some(&HeapExtent::int32(16))
+                state.memory().live_heap_block_size(&pointer),
+                Some(&AllocationSize::int32(16))
             );
             assert!(
                 state
@@ -2065,7 +2050,7 @@ fn freeing_through_one_spelling_retires_the_equal_spelling_too() {
         .store(alias.clone(), int32(7))
         .with_block(fresh.block.clone(), 8)
         .store(fresh.clone(), int32(11))
-        .with_heap_allocation_claim(base.clone(), HeapExtent::int32(4))
+        .with_heap_allocation_claim(base.clone(), AllocationSize::int32(4))
         .expect("the allocation claim should be fresh")
         .with_block(base.block.clone(), 4);
     let before = memory;
@@ -2381,7 +2366,7 @@ fn read_validity_transports_field_offsets_through_equal_base_pointers() {
     let field = base.offset_by_bytes(4);
     let alias_field = alias.offset_by_bytes(4);
     let memory = Memory::new()
-        .with_heap_allocation_claim(base.clone(), HeapExtent::int32(8))
+        .with_heap_allocation_claim(base.clone(), AllocationSize::int32(8))
         .unwrap();
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::MemoryReadDefined {
@@ -2543,7 +2528,7 @@ mod scaling_tests {
 }
 
 #[test]
-fn fresh_heap_struct_binding_checks_extent_alignment_and_resolution() {
+fn fresh_heap_struct_binding_checks_size_alignment_and_resolution() {
     let _session = crate::kernel::VerificationSession::enter();
     let class = crate::kernel::effective_type::CAccessClass::Struct(
         crate::kernel::effective_type::CStructClass::opaque("node"),
@@ -2722,8 +2707,8 @@ fn size_t_heap_allocation_with_zeroed(
 }
 
 /// A bounded `size_t` element count makes a 64-bit block: the exact `uint64`
-/// product is its extent, its token holds a `uint64`, and its owned range is
-/// wide, counted in elements (`design/heap-extents.md`, stage 2).
+/// product is its size, its token holds a `uint64`, and its owned range is
+/// wide, counted in elements (`design/heap-allocation-sizes.md`, stage 2).
 #[test]
 fn a_bounded_size_t_element_count_makes_a_64_bit_block() {
     let n = MachineTerm::Variable(Variable(1 << 40));
@@ -2736,20 +2721,20 @@ fn a_bounded_size_t_element_count_makes_a_64_bit_block() {
     let Some(ProgramValue::Pointer(pointer)) = local_native_output_2538.as_deref() else {
         panic!("allocation should assign a pointer");
     };
-    let extent = HeapExtent::new(
+    let size = AllocationSize::new(
         MachineTerm::uint64_multiply(n.clone(), MachineTerm::uint64_constant(4)),
-        HeapExtentKind::UInt64,
+        AllocationSizeKind::UInt64,
     );
     assert_eq!(
-        success.memory().live_heap_block_extent(pointer.pointer()),
-        Some(&extent)
+        success.memory().live_heap_block_size(pointer.pointer()),
+        Some(&size)
     );
     let facts = success.resources().facts();
     assert!(facts.contains(&ResourceFact::own_heap_allocation(
         pointer.pointer().clone(),
-        &extent
+        &size
     )));
-    let range = extent.range(pointer.pointer().clone(), n, 4);
+    let range = size.range(pointer.pointer().clone(), n, 4);
     assert_eq!(range.kind(), RangeIndexKind::UInt64);
     assert!(facts.contains(&ResourceFact::own_memory(range)));
 }
@@ -2795,14 +2780,14 @@ fn a_wrapping_size_t_product_is_the_wrapped_block() {
         panic!("allocation should assign a pointer");
     };
     assert_eq!(
-        success.memory().live_heap_block_extent(pointer.pointer()),
-        Some(&HeapExtent::int32(4))
+        success.memory().live_heap_block_size(pointer.pointer()),
+        Some(&AllocationSize::int32(4))
     );
 }
 
 /// `calloc(n, 4)` with a bounded `size_t` count makes a zeroed 64-bit block:
-/// the exact `uint64` product is its extent and it reads as zero
-/// (`design/heap-extents.md`, stage 4).
+/// the exact `uint64` product is its size and it reads as zero
+/// (`design/heap-allocation-sizes.md`, stage 4).
 #[test]
 fn a_bounded_size_t_calloc_count_makes_a_zeroed_64_bit_block() {
     let n = MachineTerm::Variable(Variable(1 << 40));
@@ -2818,13 +2803,13 @@ fn a_bounded_size_t_calloc_count_makes_a_zeroed_64_bit_block() {
     let Some(ProgramValue::Pointer(pointer)) = local_native_output_2618.as_deref() else {
         panic!("calloc should assign a pointer");
     };
-    let extent = HeapExtent::new(
+    let size = AllocationSize::new(
         MachineTerm::uint64_multiply(n, MachineTerm::uint64_constant(4)),
-        HeapExtentKind::UInt64,
+        AllocationSizeKind::UInt64,
     );
     assert_eq!(
-        success.memory().live_heap_block_extent(pointer.pointer()),
-        Some(&extent)
+        success.memory().live_heap_block_size(pointer.pointer()),
+        Some(&size)
     );
     assert!(
         success
@@ -2832,7 +2817,7 @@ fn a_bounded_size_t_calloc_count_makes_a_zeroed_64_bit_block() {
             .facts()
             .contains(&ResourceFact::own_heap_allocation(
                 pointer.pointer().clone(),
-                &extent
+                &size
             ))
     );
     assert!(
@@ -2874,7 +2859,7 @@ fn a_size_t_calloc_count_whose_product_may_wrap_is_refused() {
 
 /// `realloc(p, m * 4u64)` of a 64-bit block to a bounded `size_t` count:
 /// the old token and wide range are consumed, and the new block has the
-/// exact 64-bit extent `m * 4u64` and a wide range.
+/// exact 64-bit size `m * 4u64` and a wide range.
 #[test]
 fn a_64_bit_block_reallocates_to_a_64_bit_size() {
     let n = MachineTerm::Variable(Variable(1 << 40));
@@ -2943,34 +2928,30 @@ fn a_64_bit_block_reallocates_to_a_64_bit_size() {
     let Some(ProgramValue::Pointer(resized)) = local_native_output_2736.as_deref() else {
         panic!("successful realloc should assign a heap pointer");
     };
-    let extent = HeapExtent::new(
+    let size = AllocationSize::new(
         MachineTerm::uint64_multiply(m.clone(), MachineTerm::uint64_constant(4)),
-        HeapExtentKind::UInt64,
+        AllocationSizeKind::UInt64,
     );
     assert_eq!(
-        success.memory().live_heap_block_extent(resized.pointer()),
-        Some(&extent)
+        success.memory().live_heap_block_size(resized.pointer()),
+        Some(&size)
     );
-    assert_eq!(success.memory().live_heap_block_extent(&old_pointer), None);
-    let old_extent = HeapExtent::new(
+    assert_eq!(success.memory().live_heap_block_size(&old_pointer), None);
+    let old_size = AllocationSize::new(
         MachineTerm::uint64_multiply(n.clone(), MachineTerm::uint64_constant(4)),
-        HeapExtentKind::UInt64,
+        AllocationSizeKind::UInt64,
     );
     let facts = success.resources().facts();
     assert!(!facts.contains(&ResourceFact::own_heap_allocation(
         old_pointer.clone(),
-        &old_extent
+        &old_size
     )));
-    assert!(!facts.contains(&ResourceFact::own_memory(old_extent.range(
-        old_pointer,
-        n,
-        4
-    ))));
+    assert!(!facts.contains(&ResourceFact::own_memory(old_size.range(old_pointer, n, 4))));
     assert!(facts.contains(&ResourceFact::own_heap_allocation(
         resized.pointer().clone(),
-        &extent
+        &size
     )));
-    let range = extent.range(resized.pointer().clone(), m, 4);
+    let range = size.range(resized.pointer().clone(), m, 4);
     assert_eq!(range.kind(), RangeIndexKind::UInt64);
     assert!(facts.contains(&ResourceFact::own_memory(range)));
 }

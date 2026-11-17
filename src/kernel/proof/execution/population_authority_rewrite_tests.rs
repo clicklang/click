@@ -306,7 +306,7 @@ fn checked_member_events_conserve_one_occurrence_and_reject_forged_deltas() {
 }
 
 #[test]
-fn member_exchange_requires_both_external_body_ownership_and_checked_extent() {
+fn member_exchange_requires_both_external_body_ownership_and_checked_span() {
     let (state, authority) = source_state();
     let external = crate::kernel::Pointer {
         block: crate::kernel::PointerBlock::ExternalArgument,
@@ -351,19 +351,19 @@ fn member_exchange_requires_both_external_body_ownership_and_checked_extent() {
             .checked_population_member_exchange(&member, true, &definition, &PureFactContext::new())
             .is_err()
     );
-    let extent = |bytes| Proposition::MemoryLoadable {
+    let span = |bytes| Proposition::MemoryLoadable {
         memory: owned.memory().clone(),
         base: external.clone(),
         bytes: MachineTerm::constant(bytes),
         wide: false,
     };
-    let small = PureFactStore::default().with_fact(extent(1));
+    let small = PureFactStore::default().with_fact(span(1));
     assert!(
         owned
             .checked_population_member_exchange(&member, true, &definition, small.assumptions())
             .is_err()
     );
-    let facts = PureFactStore::default().with_fact(extent(4));
+    let facts = PureFactStore::default().with_fact(span(4));
     assert!(
         empty
             .checked_population_member_exchange(&member, true, &definition, facts.assumptions())
@@ -384,7 +384,7 @@ fn member_exchange_requires_both_external_body_ownership_and_checked_extent() {
         )
         .is_err()
     );
-    // The checked introduction packaged the extent evidence in the owned
+    // The checked introduction packaged the span evidence in the owned
     // member. Its elimination needs custody, not the original ambient fact.
     let no_facts = PureFactContext::new();
     let (returned, _) = one

@@ -6,14 +6,14 @@ use super::*;
 pub(in crate::kernel) enum PointerDomain {
     Unknown,
     Root,
-    Selected(SubobjectExtent),
+    Selected(SubobjectBounds),
 }
 
 impl PointerDomain {
     pub(in crate::kernel) fn intrinsic(value: &PointerValue) -> Self {
-        match value.extent() {
-            Some(extent) => Self::Selected(extent.clone()),
-            None if value.extent_is_known() => Self::Root,
+        match value.bounds() {
+            Some(bounds) => Self::Selected(bounds.clone()),
+            None if value.bounds_are_known() => Self::Root,
             None => Self::Unknown,
         }
     }
@@ -23,7 +23,7 @@ impl PointerDomain {
 /// the full value. Neither entry point reconstructs a synthetic pointer.
 pub(in crate::kernel) enum PointerDomainSource<'a> {
     Value(&'a PointerValue),
-    OpaqueExtent(&'a Pointer),
+    BoundsOwner(&'a Pointer),
 }
 
 impl<'a> From<&'a PointerValue> for PointerDomainSource<'a> {
@@ -33,7 +33,7 @@ impl<'a> From<&'a PointerValue> for PointerDomainSource<'a> {
 }
 
 impl PureFactContext {
-    /// Intrinsic bounds, or the cached witness for this opaque extent class.
+    /// Intrinsic bounds, or the cached witness for this bounds-owner class.
     /// Complete-pointer equality can establish that witness; equal numeric
     /// addresses cannot. No aliases, resources or memory history are searched,
     /// no terms are registered, and the input value remains unchanged.
@@ -43,13 +43,13 @@ impl PureFactContext {
     ) -> PointerDomain {
         let origin = match source.into() {
             PointerDomainSource::Value(value) => match PointerDomain::intrinsic(value) {
-                PointerDomain::Unknown => match value.opaque_extent() {
+                PointerDomain::Unknown => match value.bounds_owner() {
                     Some(origin) => origin,
                     None => return PointerDomain::Unknown,
                 },
                 known => return known,
             },
-            PointerDomainSource::OpaqueExtent(origin) => origin,
+            PointerDomainSource::BoundsOwner(origin) => origin,
         };
         self.equality_graph.opaque_pointer_domain(origin)
     }
@@ -66,11 +66,11 @@ impl PureFactContext {
         let Some(origin) = required.1 else {
             return false;
         };
-        if !available.carrier_extent_known {
+        if !available.carrier_bounds_known {
             return false;
         }
-        let PointerDomain::Selected(extent) =
-            self.pointer_domain(PointerDomainSource::OpaqueExtent(origin))
+        let PointerDomain::Selected(bounds) =
+            self.pointer_domain(PointerDomainSource::BoundsOwner(origin))
         else {
             return false;
         };
@@ -83,7 +83,7 @@ impl PureFactContext {
         };
         // Exact typed offsets retain full-width coordinates. Check both ends
         // as positions (one-past allowed), without narrowing a uint64 range
-        // or searching for another footprint with a convenient extent.
+        // or searching for another footprint with a convenient bounds.
         [start, end].into_iter().all(|bound| {
             let endpoint = available.base().offset_by_typed_elements(
                 bound.clone(),
@@ -94,9 +94,9 @@ impl PureFactContext {
             self.pointer_access_in_range(
                 &endpoint,
                 0,
-                &extent.start,
+                &bounds.start,
                 &0u32.into(),
-                &extent.width,
+                &bounds.width,
                 1,
             )
         })
@@ -120,7 +120,7 @@ mod tests {
         parent
             .clone()
             .with_address(parent.pointer().offset_by_bytes(4))
-            .with_extent(Some(SubobjectExtent {
+            .with_bounds(Some(SubobjectBounds {
                 start: parent.pointer().offset_by_bytes(4),
                 width: 4u32.into(),
             }))
@@ -137,10 +137,10 @@ mod tests {
         assert_eq!(empty.pointer_domain(&parent), PointerDomain::Unknown);
         assert_eq!(
             empty.pointer_domain(&selected),
-            PointerDomain::Selected(selected.extent().unwrap().clone())
+            PointerDomain::Selected(selected.bounds().unwrap().clone())
         );
         assert_eq!(
-            empty.pointer_domain(&parent.clone().with_root_extent()),
+            empty.pointer_domain(&parent.clone().with_root_bounds()),
             PointerDomain::Root
         );
         assert_eq!(empty.pointer_domain(&returned), PointerDomain::Unknown);
@@ -150,7 +150,7 @@ mod tests {
         ] {
             assert_eq!(
                 facts.pointer_domain(&returned),
-                PointerDomain::Selected(selected.extent().unwrap().clone())
+                PointerDomain::Selected(selected.bounds().unwrap().clone())
             );
             assert_eq!(
                 facts.pointer_domain(&parent),
@@ -179,11 +179,11 @@ mod tests {
         assert_eq!(numeric.pointer_domain(&returned), PointerDomain::Unknown);
         let widened = equal(
             numeric.clone(),
-            &returned.clone().with_root_extent(),
-            &parent.clone().with_root_extent(),
+            &returned.clone().with_root_bounds(),
+            &parent.clone().with_root_bounds(),
         );
         assert_eq!(widened.pointer_domain(&returned), PointerDomain::Unknown);
-        let root = equal(numeric, &returned, &parent.clone().with_root_extent());
+        let root = equal(numeric, &returned, &parent.clone().with_root_bounds());
         assert_eq!(root.pointer_domain(&returned), PointerDomain::Root);
     }
 
@@ -211,7 +211,7 @@ mod tests {
         let facts = equal(empty.clone(), &read, &selected);
         assert_eq!(
             facts.pointer_domain(&read),
-            PointerDomain::Selected(selected.extent().unwrap().clone())
+            PointerDomain::Selected(selected.bounds().unwrap().clone())
         );
         assert_eq!(read, original);
         assert_eq!(empty.pointer_domain(&read), PointerDomain::Unknown);

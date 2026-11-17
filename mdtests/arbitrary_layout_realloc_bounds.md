@@ -1,7 +1,7 @@
 # realloc retains byte bounds for typed accesses
 
 An arbitrary byte-layout allocation may be viewed through a typed pointer, but
-an access must still fit completely within the byte extent after `realloc`.
+an access must still fit completely within the byte size after `realloc`.
 
 ```c filename=arbitrary_layout_realloc_bounds.c
 int32 arbitrary_layout_realloc_bounds() {

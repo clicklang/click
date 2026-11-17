@@ -143,7 +143,7 @@ fn external_array_source_selection_skips_unrelated_parameter_cells() {
 }
 
 #[test]
-fn external_array_ambiguous_run_aliasing_forgets_without_extent_work() {
+fn external_array_ambiguous_run_aliasing_forgets_without_length_work() {
     let mut samples = Vec::new();
     for count in [8, 1024, 1_000_000] {
         let _session = crate::kernel::VerificationSession::enter();

@@ -15,7 +15,7 @@ retirement is covered by the havoc's range `box->data[0..1]`, so the naming
 walk crosses it (`RetirementInsideItsCallHavoc`, see
 `docs/internals/resource-tracker.md`). Before that rule, the read after the
 first call was named at the retirement and related to the field only through
-a heap-extent proof, and the second call nested a second such proof inside
+an allocation-size proof, and the second call nested a second such proof inside
 the first, so the read failed with a missing `views` fact.
 `three_consecutive_reallocating_calls_keep_the_returned_allocation_readable.md`
 and the four-call form extend the chain, and

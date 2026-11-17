@@ -174,11 +174,11 @@ Whole-scalar consumption also requires uniqueness, established by inspecting at
 most two indexed entries. Explicit footprint composition retains its separate
 output-sensitive interface. The resource checker cannot import or call the raw
 access-candidate API. Object-provenance queries use the object-identity index's
-nonempty witness or singleton symbolic supplier. Provenance/opaque-extent
+nonempty witness or singleton symbolic supplier. Provenance/opaque-bounds
 fallback comparisons use a singleton direct alias after indexed equality fails.
 Framed pointer-value recovery requires one address alias and one full-pointer
 source in that address bucket; multiple states do not authorize a hidden
-source search. Complete-read, state, provenance and extent checks still
+source search. Complete-read, state, provenance and bounds checks still
 apply to the selected source. The direct order, supplier, and provenance-source
 lookup stages have their own `CheckingWorkScope`, charged to one explicit query
 key. These scopes do not excuse scans or cover general memory-history traversal.

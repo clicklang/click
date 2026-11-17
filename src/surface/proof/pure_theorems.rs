@@ -592,9 +592,9 @@ pub(super) fn pure_induction_hypothesis(
         // so the guards are recomputed for the moved range and become
         // premises of the hypothesis. Without them the hypothesis would be
         // strictly stronger than the theorem it is proving — it would grant
-        // the conclusion at an argument where the range's extent wraps, which
+        // the conclusion at an argument where the range's span wraps, which
         // is an argument the theorem itself never covered.
-        for guard in crate::kernel::stated_loadable_extent_guards(&requirement)
+        for guard in crate::kernel::stated_loadable_span_guards(&requirement)
             .into_iter()
             .rev()
         {
@@ -1252,7 +1252,7 @@ fn check_pure_structural_induction(
                     .iter()
                     .rev()
                     .fold(conclusion.clone(), |body, premise| {
-                        let body = crate::kernel::stated_loadable_extent_guards(premise)
+                        let body = crate::kernel::stated_loadable_span_guards(premise)
                             .into_iter()
                             .rev()
                             .fold(body, |body, guard| {
@@ -1286,7 +1286,7 @@ fn check_pure_structural_induction(
         // a guard has no source clause for.
         for guard in branch_requires
             .iter()
-            .flat_map(crate::kernel::stated_loadable_extent_guards)
+            .flat_map(crate::kernel::stated_loadable_span_guards)
             .collect::<Vec<_>>()
         {
             if !branch_requires.contains(&guard) {
@@ -1438,7 +1438,7 @@ pub(super) fn pure_theorem_context(
     let mut requires = requires;
     for guard in requires
         .iter()
-        .flat_map(crate::kernel::stated_loadable_extent_guards)
+        .flat_map(crate::kernel::stated_loadable_span_guards)
         .collect::<Vec<_>>()
     {
         if !requires.contains(&guard) {

@@ -1,7 +1,7 @@
 # A frame holds across a write at a 64-bit index
 
 `set_at` writes one element through a pointer `at` returned, and its
-contract says every other element is unchanged. The extent is a field of
+contract says every other element is unchanged. The size is a field of
 a nested struct, as `std::span` keeps it.
 
 Two 64-bit indices held unequal are different cells: the offset of an

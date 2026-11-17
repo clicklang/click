@@ -42,7 +42,7 @@ fn selected_view_checks_alias_coordinates_without_enumerating_the_class() {
             let root = Pointer::symbolic(Variable(820_000));
             let source = Pointer::symbolic(Variable(820_001));
             let query = Pointer::symbolic(Variable(820_002));
-            let extent = |n| {
+            let span = |n| {
                 if wide {
                     MachineTerm::uint64_constant(n)
                 } else {
@@ -52,7 +52,7 @@ fn selected_view_checks_alias_coordinates_without_enumerating_the_class() {
             let fact = Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: source.clone(),
-                bytes: extent(16),
+                bytes: span(16),
                 wide,
             };
             let mut context = PureFactContext::new().assume_proposition(fact);
@@ -67,7 +67,7 @@ fn selected_view_checks_alias_coordinates_without_enumerating_the_class() {
                 context.proves_atomic_without_search(&Proposition::MemoryLoadable {
                     memory: memory.clone(),
                     base: pointer.clone(),
-                    bytes: extent(bytes),
+                    bytes: span(bytes),
                     wide,
                 })
             };
@@ -219,7 +219,7 @@ fn selected_views_follow_same_block_aliases_without_walking_the_star() {
             };
             let source = pointer(870_000);
             let memory = Memory::new();
-            let extent = |n| {
+            let span = |n| {
                 if wide {
                     MachineTerm::uint64_constant(n)
                 } else {
@@ -230,7 +230,7 @@ fn selected_views_follow_same_block_aliases_without_walking_the_star() {
                 PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
                     memory: memory.clone(),
                     base: source.clone(),
-                    bytes: extent(16),
+                    bytes: span(16),
                     wide,
                 });
             for index in 0..size {
@@ -247,7 +247,7 @@ fn selected_views_follow_same_block_aliases_without_walking_the_star() {
                             context.proves_atomic_without_search(&Proposition::MemoryLoadable {
                                 memory: memory.clone(),
                                 base: query.clone(),
-                                bytes: extent(bytes),
+                                bytes: span(bytes),
                                 wide,
                             }),
                             expected

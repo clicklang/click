@@ -35,8 +35,8 @@ nothing compares the access type with the object afterwards.
 
 ## Principles
 
-- **Separate from authority and extent.** Ownership, views and subobject
-  extents stay as they are. The new check is independent: the type an access
+- **Separate from authority and bounds.** Ownership, views and subobject
+  bounds stay as they are. The new check is independent: the type an access
   uses must be allowed for the object at that position.
 - **Object types come from declarations and stores, not from addresses.** A
   declared object has an authoritative type. A pointer parameter carries the
@@ -71,7 +71,7 @@ nothing compares the access type with the object afterwards.
   - `CBlock.declared_scalar_type` becomes `declared_object`, filled for locals,
     globals, statics, string literals and aggregate temporaries;
   - a pointer value's qualifiers gain `object: (anchor, object type)`. It is
-    not part of the value's identity, like `extent`, and survives casts,
+    not part of the value's identity, like `bounds`, and survives casts,
     `void *`, arithmetic, copies and store-and-reload;
   - `CHeapMemory` gains effective types for written heap cells.
 - **Access side:** `TypedLoad` and the store lvalue carry the access class.
@@ -283,7 +283,7 @@ allowed cases:
   `integer_pointers_of_either_signedness_read_the_same_bits.md`, the
   `byte_representation_*` and union mdtests, `c_pointer_cell_cast_store.md`,
   the Linux rbtree tests and the examples.
-- A scaling regression in the style of the subobject-extent work, so the check
+- A scaling regression in the style of the subobject-bounds work, so the check
   stays linear in the accesses checked.
 
 ## GCC alias probes

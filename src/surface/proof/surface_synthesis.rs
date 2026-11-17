@@ -1725,7 +1725,7 @@ fn synthesize_zero_based_loadable_segment(
             ProgramType::Int32Pointer,
         )
     } else if !matches!(bytes, binary_term!(Int32, Subtract, _, _)) {
-        // A byte extent remains unscaled over an explicit byte pointer.
+        // A byte span remains unscaled over an explicit byte pointer.
         (
             contract_expression_to_program_expression(&synthesize_surface_bitvector(
                 bytes,
@@ -3390,7 +3390,7 @@ pub(super) fn raise_kernel_term(
 }
 
 // A comparison's presentation reads addresses and declared pointer types.
-// Keep producer qualifiers/evidence/extents on the root; do not export those
+// Keep producer qualifiers/evidence/bounds on the root; do not export those
 // unrelated payloads merely to pass through a native condition constructor.
 fn raise_pointer_comparison(
     term: &crate::kernel::KernelTerm,
@@ -3634,8 +3634,8 @@ fn raise_constructor_pointer(
             // is needed only for a checked root view; adding
             // it to a saved narrow view would change the value.
             if pointer.program_type() == ProgramType::VoidPointer
-                && pointer.extent_is_known()
-                && pointer.extent().is_none()
+                && pointer.bounds_are_known()
+                && pointer.bounds().is_none()
             {
                 ContractExpression::CUnary {
                     lowered: ProgramExpression::Cast {

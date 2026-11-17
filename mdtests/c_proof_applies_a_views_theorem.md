@@ -12,8 +12,8 @@ statement inside it — which is also why the theorem's requirement is printed i
 that form when an application cannot discharge it; see
 `mdtests/views_theorem_premise_must_be_established.md`.
 
-The range here has a constant extent, so nothing else is owed. A symbolic range
-also owes its valid-extent facts at the application, in the form
+The range here has a constant span, so nothing else is owed. A symbolic range
+also owes its valid-span facts at the application, in the form
 `0 <= count` and `count <= 1073741823`.
 
 ```c filename=c_proof_applies_a_views_theorem.c

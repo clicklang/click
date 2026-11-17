@@ -3206,7 +3206,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             }
             return Err(error);
         };
-        let same_memory_extent = match (requirement.fact.resource(), caller_fact.resource()) {
+        let same_memory_span = match (requirement.fact.resource(), caller_fact.resource()) {
             (Resource::Memory(required), Resource::Memory(caller)) => {
                 match (required.wide_bounds(), caller.wide_bounds()) {
                     (None, None) => {
@@ -3215,7 +3215,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                         assumptions
                             .bitvector_terms_equal_for_transport(&required_bytes, &caller_bytes)
                     }
-                    // Two wide ranges have one extent when their widths and
+                    // Two wide ranges have one span when their widths and
                     // 64-bit bounds agree.
                     (Some((required_start, required_end)), Some((caller_start, caller_end))) => {
                         let same = |left: &MachineTerm, right: &MachineTerm| {
@@ -3234,7 +3234,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             }
             _ => false,
         };
-        let canonical_caller_fact = if !same_memory_extent
+        let canonical_caller_fact = if !same_memory_span
             && requirement.role == ResourceTransferRole::Borrow
             && let (
                 ResourceFact::Own(Resource::Memory(required), quantity),
@@ -3249,7 +3249,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                 quantity.clone(),
             ))
         } else {
-            (same_memory_extent
+            (same_memory_span
                 || ResourceContext::new_with_equalities(assumptions)
                     .unchecked_with_fact(requirement.fact.clone())
                     .satisfies_fact(caller_fact, assumptions))
@@ -3688,7 +3688,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             }
             // The checked supplier owns this slice in its original pointer
             // domain. Keep that domain in escrow; the callee's view may have
-            // selected a known member extent instead.
+            // selected a known member bounds instead.
             let selected = match (selected, owned.memory_own_range()) {
                 (ResourceFact::Own(Resource::Memory(range), quantity), Some(source)) => {
                     ResourceFact::Own(Resource::Memory(range.with_carrier_of(source)), quantity)

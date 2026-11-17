@@ -3299,34 +3299,34 @@ fn describe_spec_lowering_limit(what: &str, limit: ExecutionLimit) -> String {
 /// 8-byte cell behind "0 paths" for three proof attempts.
 fn no_single_path_message<T>(what: &str, paths: &[T], budget: &ExecutionBudget) -> String {
     if paths.is_empty()
-        && let Some(extent) = budget.dropped_range_extent()
+        && let Some(span) = budget.dropped_range_span()
     {
-        let width = extent.element_width;
-        let limit = extent.byte_limit;
-        return if extent.element_count < 0 {
-            let count = -extent.element_count;
+        let width = span.element_width;
+        let limit = span.byte_limit;
+        return if span.element_count < 0 {
+            let count = -span.element_count;
             let elements = if count == 1 { "element" } else { "elements" };
             format!(
-                "the kernel {what} produced no path: a memory range runs backwards, so it is not a byte extent: its end is {count} {elements} before its start"
+                "the kernel {what} produced no path: a memory range runs backwards, so it is not a byte span: its end is {count} {elements} before its start"
             )
         } else {
             format!(
-                "the kernel {what} produced no path: a memory range is too wide to be a 32-bit byte extent: {} elements of {width} bytes is {} bytes, past the {limit}-byte limit",
-                extent.element_count,
-                extent.element_count.saturating_mul(i64::from(width))
+                "the kernel {what} produced no path: a memory range is too wide to be a 32-bit byte span: {} elements of {width} bytes is {} bytes, past the {limit}-byte limit",
+                span.element_count,
+                span.element_count.saturating_mul(i64::from(width))
             )
         };
     }
     if paths.is_empty()
-        && let Some(reversed) = budget.dropped_refuted_range_extent()
+        && let Some(reversed) = budget.dropped_refuted_range_span()
     {
         return if reversed {
             format!(
-                "the kernel {what} produced no path: a memory range runs backwards, so it is not a byte extent: this context proves its end is before its start"
+                "the kernel {what} produced no path: a memory range runs backwards, so it is not a byte span: this context proves its end is before its start"
             )
         } else {
             format!(
-                "the kernel {what} produced no path: a memory range is too wide to be a 32-bit byte extent: this context bounds its element count past the byte limit"
+                "the kernel {what} produced no path: a memory range is too wide to be a 32-bit byte span: this context bounds its element count past the byte limit"
             )
         };
     }
@@ -3820,12 +3820,12 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
         return Ok(rooted);
     }
     let mut rooted = if has_views {
-        // The function's own entry clauses (`assume_entry_clause_extents`).
+        // The function's own entry clauses (`assume_entry_clause_spans`).
         install_borrowed_contract_inputs(
             state.clone(),
             function,
             arguments,
-            &assumptions.clone().assume_entry_clause_extents(),
+            &assumptions.clone().assume_entry_clause_spans(),
         )?
     } else {
         state.clone()
@@ -3986,7 +3986,7 @@ fn install_borrowed_contract_inputs(
         &entry,
         function.resource_requires(),
         function.composite_resource_definitions(),
-        &assumptions.clone().assume_entry_clause_extents(),
+        &assumptions.clone().assume_entry_clause_spans(),
         &mut budget,
     )
     .map_err(|_| LoanRefusal::InvalidEvidence.diagnostic(LoanRefusalOperation::Entry))?

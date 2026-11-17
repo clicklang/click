@@ -4,7 +4,7 @@ With `n == 2^62 + 1`, `n * 4` wraps to 4 as a `size_t` product, and
 `malloc(n * 4)` allocates those 4 bytes
 (`a_wrapping_size_t_product_allocates_only_the_wrapped_bytes.md`). `calloc(n, 4)`
 instead returns null because `n * 4` is not representable, so it never
-evaluates the product (`design/heap-extents.md`, stage 4): its count fails
+evaluates the product (`design/heap-allocation-sizes.md`, stage 4): its count fails
 `n <= PTRDIFF_MAX / 4` and the `calloc` is refused rather than modeled as a
 4-byte block.
 

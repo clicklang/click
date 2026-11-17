@@ -282,7 +282,7 @@ pub struct ModeledPthreadBinding {
     pub mutex_init_name: &'static str,
     pub mutex_lock_name: &'static str,
     pub mutex_unlock_name: &'static str,
-    /// Storage extent fixed by the selected modeled pthread ABI.
+    /// Storage size fixed by the selected modeled pthread ABI.
     pub mutex_storage_bytes: u32,
     pub mutex_storage_alignment: u32,
     pub mutex_destroy_name: &'static str,

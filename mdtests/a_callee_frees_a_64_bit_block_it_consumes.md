@@ -1,10 +1,10 @@
 # A callee frees a 64-bit block it consumes
 
 `malloc(n * sizeof(uint32_t))` with a `size_t` count makes a block with a
-64-bit extent, whose token is `allocation(p, n * 4u64)`. A callee that
+64-bit size, whose token is `allocation(p, n * 4u64)`. A callee that
 `consumes allocation(p, n * 4u64)` with its range takes the block: it writes
 the last element at a `size_t` index and frees it. The caller decides the
-requirement's extent, `1 <= n <= PTRDIFF_MAX / 4`, from its own bound.
+requirement's size, `1 <= n <= PTRDIFF_MAX / 4`, from its own bound.
 
 ```c filename=a_callee_frees_a_64_bit_block_it_consumes.c
 #include <stdint.h>

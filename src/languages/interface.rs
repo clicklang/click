@@ -132,7 +132,7 @@ pub struct ImportedParameter {
     /// parameter's type is the pointer that carries it.
     pub(super) reference: bool,
     pub(super) slice_length_parameter: Option<usize>,
-    pub(super) fixed_reference_extent: Option<u32>,
+    pub(super) fixed_reference_bounds: Option<u32>,
     pub(super) struct_name: Option<String>,
     pub(super) union_name: Option<String>,
     pub(super) struct_layout: Option<RecordLayout>,
@@ -1322,8 +1322,8 @@ impl ImportedParameter {
         self
     }
 
-    pub(crate) fn with_fixed_reference_extent(mut self, bytes: u32) -> Self {
-        self.fixed_reference_extent = Some(bytes);
+    pub(crate) fn with_fixed_reference_bounds(mut self, bytes: u32) -> Self {
+        self.fixed_reference_bounds = Some(bytes);
         self
     }
 
@@ -1373,7 +1373,7 @@ impl ImportedParameter {
             array_element_width: None,
             pointee_struct_class: None,
             slice_length_parameter: None,
-            fixed_reference_extent: None,
+            fixed_reference_bounds: None,
         }
     }
 

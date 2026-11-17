@@ -15,7 +15,7 @@ proof fails with two terms that print alike.
 - **resource** — a piece of mutable state, or part of one. Today: a memory
   cell, a memory block as a pure function reads it through an array argument,
   and one model field of a resource instance. A byte
-  range, a struct extent and a local are the kinds that come next.
+  range, a struct object and a local are the kinds that come next.
 - **program point** — a node a proof path reached, named by the location or
   proof mark passed to `at`. The kernel represents it with `ProgramPoint`,
   for now identified by the interned memory state there. `RecordedStates`
@@ -230,7 +230,7 @@ established.
 | Recorded step | A cell | A block, as an array argument | A stated footprint |
 | --- | --- | --- | --- |
 | `Store` | separate on proven-distinct blocks, a common-base offset inequality, checked full-byte separation through a base alias, typed `separate(..)` evidence, an explicit range, general distinctness, or two owned members of one composition | separate **only** on `PointerBlock::proven_distinct` | separate when the written bytes miss every range |
-| `BlockDeclared` | separate under the extended-bridging gate: it writes nothing | separate when the declared object is proven distinct: it has its own `blocks` key, so this block's extent is the entry it was | separate: it writes nothing |
+| `BlockDeclared` | separate under the extended-bridging gate: it writes nothing | separate when the declared object is proven distinct: it has its own `blocks` key, so this block's size is the entry it was | separate: it writes nothing |
 | `HeapAllocationPending` | separate under the extended-bridging gate | separate: a request with no address yet records nothing a read of a block consults | separate: it writes nothing |
 | `ContractAllocationClaimsChanged` | separate under the extended-bridging gate | **stops** | separate: it writes nothing |
 | `ContractAllocationRetired` | separate when the possibly released allocation misses the cell, or, on every path including naming, when the retiring call's own havoc covers the whole allocation | separate when the allocation's object is proven distinct | separate when its bytes miss every range |
@@ -254,7 +254,7 @@ what they concern is what would settle either.
 A contract with undecided allocation continuity records
 `ContractAllocationRetired` for the consumed input. It removes cached cells,
 initialization, and zeroed status under equal pointer forms, while leaving
-definite deallocation unasserted. The edge names the allocation and its extent,
+definite deallocation unasserted. The edge names the allocation and its size,
 so a later memory proof may cross it only for storage shown separate from that
 possible release.
 
@@ -290,7 +290,7 @@ retirement keeps that havoc's forget mark for the same reason
 projections load naming interns agree with the walk. Without this, the
 produced composite's fields were named at the havoc (where the return
 resources are evaluated) and later reads at the retirement, and every further
-reallocating call added one nested heap-extent proof to relate the two.
+reallocating call added one nested allocation-size proof to relate the two.
 
 Where the cell column names a gate, the answer is one a scope decides rather
 than the edge. `extended_dag_bridging_active` and `explicit_dag_check_active`
@@ -489,9 +489,9 @@ them without losing every pair the DAG does not connect.
 | Site | Class | Note |
 | --- | --- | --- |
 | `memory_load_is_directly_unchanged`, `memories_directly_match_for_pointer_load` `src/kernel/memory_history.rs` | disagrees | The transport rule. It already asks the tracker as one disjunct — two states that name the cell by one point hold the same cell — and the rest reads `MemoryMutatesOnly`, `MemoryEffectSummary` and `HeapAllocationFreed` over *stated* endpoints. Its per-write ladder is the same four predicates the rule's `Store` arm uses, applied to a stated write list. |
-| `memories_match_for_pointer_load` `src/kernel/reasoning/memory_resolution.rs` | disagrees | Assumption-free structural agreement about one load: the same forgotten-source identity; equal extents for every object the load may designate plus equal havoc markers; agreement about retirement tombstones and all load-observable heap lifetime, initialization and implicit-zero metadata; and equal cells and union cells under `observable_by_load`. Decides pairs with no common ancestor. |
+| `memories_match_for_pointer_load` `src/kernel/reasoning/memory_resolution.rs` | disagrees | Assumption-free structural agreement about one load: the same forgotten-source identity; equal sizes for every object the load may designate plus equal havoc markers; agreement about retirement tombstones and all load-observable heap lifetime, initialization and implicit-zero metadata; and equal cells and union cells under `observable_by_load`. Decides pairs with no common ancestor. |
 | `memory_states_match_for_resolution`, `memory_states_proven_equal_at_pointer`, `memories_match_for_pointer_load_bounded_alias`, `memories_match_for_pointer_load_under_assumptions` `src/kernel/reasoning/memory_resolution.rs` | disagrees | The same question with assumptions: every cell the two states differ on must both miss the load's bytes and be proven distinct from the load. All refuse a load whose own block is `local:`, and all select the cells to check with `cell_is_observable_by_load`, the one filter — *not*, as they used to, by dropping every differing `local:` cell unasked. See below. The second is a thin name for the first, so that a caller asking "are these two states one state as far as this pointer is concerned" reads as that question rather than as a resolution internal. |
-| `state_objects_agree`, `retirements_agree_for_load` | separation | The object half, as against the values in the cells: an extent is what says an object is there and how big it is, and a tombstone is the only record that an automatic object's lifetime ended once its cells are gone. The first is the assumption-carrying comparisons' extent check, and the only extents it leaves out are the ones `local_block_no_pointer_can_reach` allows. The second is the tombstone check, which all four comparisons ask, and it allows a difference only where the load's block is proven distinct from the retired object or no pointer value in the program designates it — two exclusions, each catching what the other does not. A load through a stale alias is exactly the load these comparisons are asked about, which is why neither half may be skipped on a representation. |
+| `state_objects_agree`, `retirements_agree_for_load` | separation | The object half, as against the values in the cells: a size is what says an object is there and how big it is, and a tombstone is the only record that an automatic object's lifetime ended once its cells are gone. The first is the assumption-carrying comparisons' size check, and the only sizes it leaves out are the ones `local_block_no_pointer_can_reach` allows. The second is the tombstone check, which all four comparisons ask, and it allows a difference only where the load's block is proven distinct from the retired object or no pointer value in the program designates it — two exclusions, each catching what the other does not. A load through a stale alias is exactly the load these comparisons are asked about, which is why neither half may be skipped on a representation. |
 | `differing_cell_bytes_miss_the_load`, `differing_cell_byte_width` | separation | The byte half, asked of each differing cell before the address ladder may speak. A cell at `p + 1` holding one byte is a different address from `p` and is still the second byte a four-byte read there returns, so an address ladder alone is not an answer. The width is read from whichever side holds a value, the wider where both do and disagree, and the widest scalar where neither does, since over-stating a width can only shrink the separated set. |
 | `memory_matches_effect_summary_endpoint` | disagrees | Whether a recorded effect summary's endpoint is the state in hand: interned identity, else the assumption-free structural agreement above. An endpoint pair has no ancestry to walk, which is the whole reason this section exists. |
 | `memory_load_terms_equal_for_fact_transport` | another question | Whether a fact about one load *term* is a fact about another: the two pointers proven equal, or one recorded offset equality between them, and then the state comparison. A term question that ends in a listed state comparison, not a staleness decision of its own. |
@@ -784,14 +784,14 @@ answered on the first rung of the ladder rather than skipped.
 (`src/kernel/tests/memory_reasoning_tests.rs`) pins the history directly.
 
 The cells were only half of what these comparisons hold. Beside them sits the
-object map — each block's extent, and the tombstones that say an automatic
+object map — each block's size, and the tombstones that say an automatic
 object's lifetime has ended — and it carried the shortcut in its own form:
-the three assumption-carrying comparisons compared the extent of every block
+the three assumption-carrying comparisons compared the size of every block
 *not* named `local:`, and none of the four compared the tombstones at all. An
-extent is what says an object is there and how big it is, and a tombstone is
+size is what says an object is there and how big it is, and a tombstone is
 the only record left once the object's cells are gone, so two states
 disagreeing about either disagree about what a load through a pointer that may
-designate it reads. The extent check is now `state_objects_agree`, dropping
+designate it reads. The size check is now `state_objects_agree`, dropping
 only what `local_block_no_pointer_can_reach` allows, which is the same thing
 the pointerless equality below spends; the tombstone check is
 `retirements_agree_for_load`, which all four ask, and which allows a difference
@@ -1617,7 +1617,7 @@ permitted stores or a transition that drops the fact:
   from contract parameter bindings at entry; invariant borrowed footprints
   and actual allocation origin supply the other explicit transfers.
   Post-call loads do not acquire invariant-borrow authority. Body custody,
-  allocation extent and lifetime checks still apply to executed returns.
+  allocation size and lifetime checks still apply to executed returns.
   Admission uses only the remaining unclassified ownership boundary, so cold
   or symbolic fallback cannot rediscover separation for transferred children.
   Prepared constant-coordinate memory leaves query the frame's address-class

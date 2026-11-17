@@ -1932,7 +1932,7 @@ impl<'a> Proof<'a> {
             if view.negated || view.relation != crate::kernel::CompareRelation::LessEqual {
                 return None;
             }
-            // An implicit resource extent has no written comparison. Its two
+            // An implicit resource span has no written comparison. Its two
             // operands are still explicit source terms of this plan.
             let native = |operand| ContractExpression::CUnary {
                 operand: Box::new(operand),
@@ -3146,7 +3146,7 @@ impl<'a> Proof<'a> {
     pub(super) fn solve_failure(&self) -> ClickError {
         // A range-loadability goal has a reason a reader can act on, in the
         // spelling they wrote it with. The lowered rendering below would show
-        // them a byte extent over an internal pointer name instead.
+        // them a byte span over an internal pointer name instead.
         if let Some(reason) = self.unproved_loadable_range_goal_reason() {
             return self.step_error(format!(
                 "`solve` failed for `{}`: {reason}",

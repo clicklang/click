@@ -2856,7 +2856,7 @@ fn evaluate_entry_resource_context(
             &evaluation_state,
             &resource_specs,
             &definitions,
-            &assumptions.clone().assume_entry_clause_extents(),
+            &assumptions.clone().assume_entry_clause_spans(),
             &mut budget,
         ) {
             Ok(Ok(evaluated)) => evaluated,

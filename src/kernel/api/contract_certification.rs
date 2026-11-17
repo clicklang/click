@@ -110,7 +110,7 @@ pub(crate) fn prepare_function_contract_entry_cases(
         state,
         function,
         arguments,
-        &base_assumptions.clone().assume_entry_clause_extents(),
+        &base_assumptions.clone().assume_entry_clause_spans(),
     )
     .ok_or("could not enumerate the undecided resource guards of the contract entry")?;
     let raw_entry_state = program_function_entry_state(state, function, arguments)
@@ -176,7 +176,7 @@ pub(crate) fn contract_resource_condition_cases(
         &entry_state,
         function.resource_requires(),
         function.composite_resource_definitions(),
-        &assumptions.clone().assume_entry_clause_extents(),
+        &assumptions.clone().assume_entry_clause_spans(),
         &mut budget,
     )
     .ok()?
@@ -1240,8 +1240,10 @@ pub enum ContractEntryFactOrigin {
     ResourceQuantity,
     /// Disjointness of the transferred and the borrowed entry clauses.
     Partition,
-    /// A guard that a stated memory range's extent is well formed.
-    Extent,
+    /// A guard that a stated memory range's byte span is well formed.
+    Span,
+    /// A fact that a pointer's opaque bounds cover a stated range.
+    Bounds,
     /// Loadability of a stated clause range at the entry memory.
     ClauseLoadable,
     /// Initialized typed reads promised by an admitted input clause.
@@ -1530,7 +1532,7 @@ fn program_function_contract_entry_facts(
         function.contract_interface().value_parameters(),
     ] {
         for (index, parameter) in parameters.iter().enumerate() {
-            if let Some(bytes) = parameter.fixed_reference_extent {
+            if let Some(bytes) = parameter.fixed_reference_bounds {
                 let pointer_value = entry_state
                     .locals
                     .get_native(parameter.binding_name().clone());
@@ -1544,7 +1546,7 @@ fn program_function_contract_entry_facts(
                     1,
                 )) {
                     assumptions =
-                        entry_facts.assume(assumptions, ContractEntryFactOrigin::Extent, coverage);
+                        entry_facts.assume(assumptions, ContractEntryFactOrigin::Bounds, coverage);
                 }
             }
             let Some(length_index) = parameter.slice_length_parameter else {
@@ -1570,7 +1572,7 @@ fn program_function_contract_entry_facts(
                 .byte_width();
             assumptions = entry_facts.assume(
                 assumptions,
-                ContractEntryFactOrigin::Extent,
+                ContractEntryFactOrigin::Span,
                 Proposition::ConditionIs(
                     ConditionTerm::uint64_less_equal(
                         length.clone(),
@@ -1586,7 +1588,7 @@ fn program_function_contract_entry_facts(
                 width,
             )) {
                 assumptions =
-                    entry_facts.assume(assumptions, ContractEntryFactOrigin::Extent, coverage);
+                    entry_facts.assume(assumptions, ContractEntryFactOrigin::Bounds, coverage);
             }
         }
     }
@@ -1608,7 +1610,7 @@ fn program_function_contract_entry_facts(
             .clone()
             .allow_symbolic_contract_loads()
             .prefer_symbolic_external_loads()
-            .assume_entry_clause_extents();
+            .assume_entry_clause_spans();
         let paths = match lower_spec_proposition_at_state_with_loop_entry(
             &entry_state,
             requirement,
@@ -1744,7 +1746,7 @@ fn program_function_contract_entry_facts(
             &entry_state,
             function.resource_requires(),
             function.composite_resource_definitions(),
-            &assumptions.clone().assume_entry_clause_extents(),
+            &assumptions.clone().assume_entry_clause_spans(),
             &mut budget,
         ) {
             Ok(Ok(evaluated)) => evaluated,
@@ -1788,7 +1790,7 @@ fn program_function_contract_entry_facts(
             continue;
         };
         let mut well_formed = true;
-        for guard in crate::kernel::admitted_memory_range_extent_facts(range) {
+        for guard in crate::kernel::admitted_memory_range_span_facts(range) {
             let guard_is_false = match &guard {
                 Proposition::ConditionIs(condition, true) => {
                     assumptions.decide(condition) == Some(false)
@@ -1798,8 +1800,7 @@ fn program_function_contract_entry_facts(
             if guard_is_false {
                 well_formed = false;
             } else {
-                assumptions =
-                    entry_facts.assume(assumptions, ContractEntryFactOrigin::Extent, guard);
+                assumptions = entry_facts.assume(assumptions, ContractEntryFactOrigin::Span, guard);
             }
         }
         // A range its own guards refute states no memory to read.
@@ -1855,7 +1856,7 @@ fn program_function_contract_entry_facts(
     for fact in required_resources.facts() {
         if let Some(coverage) = fact.allocation_bounds_fact(&assumptions) {
             assumptions =
-                entry_facts.assume(assumptions, ContractEntryFactOrigin::Extent, coverage);
+                entry_facts.assume(assumptions, ContractEntryFactOrigin::Bounds, coverage);
         }
         // Owned ranges carry their byte-count guards exactly as viewed ranges
         // do: the clause states the same range, and the loadability rules read
@@ -1863,7 +1864,7 @@ fn program_function_contract_entry_facts(
         let Some(range) = fact.memory_view_range().or_else(|| fact.memory_own_range()) else {
             continue;
         };
-        for guard in crate::kernel::admitted_memory_range_extent_facts(range) {
+        for guard in crate::kernel::admitted_memory_range_span_facts(range) {
             let guard_is_false = match &guard {
                 Proposition::ConditionIs(condition, true) => {
                     assumptions.decide(condition) == Some(false)
@@ -1871,8 +1872,7 @@ fn program_function_contract_entry_facts(
                 _ => false,
             };
             if !guard_is_false {
-                assumptions =
-                    entry_facts.assume(assumptions, ContractEntryFactOrigin::Extent, guard);
+                assumptions = entry_facts.assume(assumptions, ContractEntryFactOrigin::Span, guard);
             }
         }
     }
@@ -1895,12 +1895,12 @@ fn program_function_contract_entry_facts(
     for fact in expanded_resources.facts() {
         if let Some(coverage) = fact.allocation_bounds_fact(&assumptions) {
             assumptions =
-                entry_facts.assume(assumptions, ContractEntryFactOrigin::Extent, coverage);
+                entry_facts.assume(assumptions, ContractEntryFactOrigin::Bounds, coverage);
         }
         let Some(range) = fact.memory_view_range().or_else(|| fact.memory_own_range()) else {
             continue;
         };
-        for guard in crate::kernel::admitted_memory_range_extent_facts(range) {
+        for guard in crate::kernel::admitted_memory_range_span_facts(range) {
             let guard_is_false = match &guard {
                 Proposition::ConditionIs(condition, true) => {
                     assumptions.decide(condition) == Some(false)
@@ -1908,8 +1908,7 @@ fn program_function_contract_entry_facts(
                 _ => false,
             };
             if !guard_is_false {
-                assumptions =
-                    entry_facts.assume(assumptions, ContractEntryFactOrigin::Extent, guard);
+                assumptions = entry_facts.assume(assumptions, ContractEntryFactOrigin::Span, guard);
             }
         }
     }

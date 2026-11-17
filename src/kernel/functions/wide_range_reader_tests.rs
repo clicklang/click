@@ -1,5 +1,5 @@
 use super::*;
-// Both symbolic bases and native extents reach call-framing readers.
+// Both symbolic bases and native spans reach call-framing readers.
 #[test]
 fn wide_call_ranges_are_undecided() {
     let base = Pointer::symbolic(Variable(984_000));
@@ -22,7 +22,7 @@ fn wide_call_ranges_are_undecided() {
 // Wide resource bodies are opened, folded and queried without constructing
 // signed loadability facts in the instance and ordinary-composite paths.
 #[test]
-fn wide_resource_body_loadability_preserves_native_extent() {
+fn wide_resource_body_loadability_preserves_native_span() {
     let _session = crate::kernel::VerificationSession::enter();
     let base = Pointer::symbolic(Variable(984_010));
     let segment = MemorySegment::new(

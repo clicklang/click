@@ -1304,7 +1304,7 @@ fn range_misses_interval(
     if written.base().blocks_proven_distinct(&interval.base) {
         return true;
     }
-    // Same-block arithmetic uses signed indices; native extents are undecided.
+    // Same-block arithmetic uses signed indices; native spans are undecided.
     if written.wide_bounds().is_some() {
         return false;
     }

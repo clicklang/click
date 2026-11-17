@@ -423,9 +423,9 @@ fn pointer_domain_queries_scale_with_selected_read_definitions() {
                 );
                 let read = Pointer::loaded_value(&intern_memory_ref(&memory), &slot);
                 assert!(graph.provenance_equal(&read, &target));
-                assert!(graph.opaque_extent_is_root(&read));
+                assert!(graph.bounds_owner_is_root(&read));
                 if previous != target {
-                    assert!(graph.opaque_extents_equal(&read, &previous));
+                    assert!(graph.bounds_owners_equal(&read, &previous));
                 }
                 previous = read;
             }

@@ -774,8 +774,8 @@ Progress:
      three 32-bit word identities 4b left: a load-term answer from a cell
      reads the stored word through σ at the other signedness
      (`LoadKind::read_cell`; `LoadKind::reads_value` holds only at the
-     stored kind), and the range extent guard compares σ of the `int32`
-     element count (`memory_range_byte_count_extent`). A second follow-up
+     stored kind), and the range span guard compares σ of the `int32`
+     element count (`memory_range_byte_count_span`). A second follow-up
      (2026-11-03, [Decisions](#decisions)) removes the third: the two
      32-bit widenings of one narrow value are two nodes, related by σ
      where both exist, a specification comparison reads its operands at
@@ -1601,8 +1601,8 @@ maintainer's rule that equivalences live in reasoning, not in terms:
   stays one kind whose typed carrier gives the signedness. The checked
   stored-value evidence compares the read's value of the store, so its
   derivation and its check agree. R-mem through σ, K5's naming deleted.
-- **The range extent guard is `σ(end - start) <=u limit`.** The guard
-  asks whether the byte extent fits a `uint32` count, and `start <= end`
+- **The range span guard is `σ(end - start) <=u limit`.** The guard
+  asks whether the byte span fits a `uint32` count, and `start <= end`
   puts the true difference in `[0, 2^32)`, which σ of the wrapped `int32`
   difference is exactly; the count's own `int32` order is not the
   condition, since the one-byte limit exceeds `2^31 - 1`. So σ, which the

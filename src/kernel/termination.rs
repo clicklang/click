@@ -768,7 +768,7 @@ fn call_passes_witness_child(
         .prefer_symbolic_external_loads()
         // This scope compares symbolic child identities. The ordinary
         // contract execution separately checks the call and its accesses.
-        .assume_entry_clause_extents();
+        .assume_entry_clause_spans();
     let mut parameter_state = ExecutionState::new();
     for (index, parameter) in function.parameters().iter().enumerate() {
         let variable = Variable(PARAMETER_VARIABLE_BASE + index as u64);

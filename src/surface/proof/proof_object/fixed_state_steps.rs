@@ -737,7 +737,7 @@ impl<'a> Proof<'a> {
             }
             // Citing a stated range cites both of its halves, exactly as in
             // a fixed-state `apply using`.
-            crate::surface::proof::theorem_application::cite_range_extent_guards(
+            crate::surface::proof::theorem_application::cite_range_span_guards(
                 premise,
                 &mut explicit_premises,
                 |guard| self.facts().exact_available_across_effects(guard, &[]),
@@ -3164,7 +3164,7 @@ impl<'a> Proof<'a> {
 
     /// Report the actual native checker result separately from source proof
     /// construction. Search-stage failures are retained by the solve driver;
-    /// absence of a certificate is not evidence of a missing extent premise.
+    /// absence of a certificate is not evidence of a missing span premise.
     pub(in crate::surface::proof) fn unproved_loadable_range_goal_reason(&self) -> Option<String> {
         let goal = self.surface_goal()?;
         loadable_surface_range_endpoints(goal)?;

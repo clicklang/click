@@ -13,7 +13,7 @@ fn implicit_void_pointer_coercions_preserve_complete_views_in_both_evaluators() 
         .with_object_class(Some(class.clone()));
     let member = opaque
         .clone()
-        .with_extent(Some(SubobjectExtent::constant(base, 4)));
+        .with_bounds(Some(SubobjectBounds::constant(base, 4)));
     for source in [opaque, member] {
         let expected = source.clone().with_type(ProgramType::VoidPointer);
         let state = ExecutionState::new();
@@ -86,8 +86,8 @@ fn implicit_void_pointer_coercions_preserve_complete_views_in_both_evaluators() 
         let ProgramValue::Pointer(root) = &path.value.clone().into_native() else {
             panic!("pointer expected")
         };
-        assert!(root.extent_is_known());
-        assert!(root.extent().is_none());
+        assert!(root.bounds_are_known());
+        assert!(root.bounds().is_none());
         assert_ne!(
             &path.value.clone().into_native(),
             &ProgramValue::Pointer(actual.clone())

@@ -19,13 +19,13 @@ linkage, shared receiver, generic signature and concrete element type. Incoming
 i32/u32 slices and source calls carry paired pointer/usize length values;
 reborrows accept only matching metadata from the same pointer origin. Mutable
 iteration, owned arrays and unmodeled iterator adapters remain rejected.
-Lengths remain usize; iteration checks its signed-word memory-model extent
+Lengths remain usize; iteration checks its signed-word memory-model span
 bound before narrowing. Metadata-name collisions fail promptly.
 
 Regressions reject forged identities, signatures, mutability, instantiations,
 and mismatched pointer/length origins. Deterministic checks at slice lengths
 8/128/1024 confirm that initialization and first-read verification do not expand
-with the extent. Verification, profiling, auditing, expansion and expanded
+with the length. Verification, profiling, auditing, expansion and expanded
 rechecking agree. The live suite re-extracts both sources, rechecks the frozen
 proof gap, and retains compiler/borrow-checker and adapter rejections.
 

@@ -27,9 +27,9 @@ pub struct ThreadHandleId(pub(crate) u64);
 pub(crate) const LITTLE_ENDIAN_PREDICATE_NAME: &str = "__click_little_endian";
 
 pub(crate) const SAME_OBJECT_PREDICATE_NAME: &str = "__click_same_object";
-/// The prefix of the fact that an opaque subobject extent covers a range of
+/// The prefix of the fact that opaque subobject bounds cover a range of
 /// `element_width`-byte elements: `{prefix}{element_width}(start, from, to)`
-/// (`design/pointer-subobject-extents.md`, Phase C).
+/// (`design/pointer-subobject-bounds.md`, Phase C).
 pub(crate) const SUBOBJECT_COVERS_PREDICATE_PREFIX: &str = "__click_subobject_covers_";
 
 /// The Click spelling of the kernel predicate `name`: `same_object`
@@ -60,11 +60,11 @@ impl Proposition {
     }
 }
 
+#[cfg(test)]
+mod allocation_size_tests;
 mod bool_sort;
 mod contracts;
 pub(in crate::kernel) mod float_conversion;
-#[cfg(test)]
-mod heap_extent_tests;
 #[cfg(test)]
 mod memory_construction_tests;
 pub(crate) mod program_point;
@@ -73,12 +73,12 @@ mod statement_clone;
 #[cfg(test)]
 pub(crate) use contracts::memory_range_byte_count_guards;
 pub(crate) use contracts::{
-    MemoryRangeExtent, admitted_memory_range_extent_facts, is_unnamed_footprint_base,
-    memory_range_byte_count, memory_range_byte_count_extent, memory_range_element_count,
+    MemoryRangeSpan, admitted_memory_range_span_facts, is_unnamed_footprint_base,
+    memory_range_byte_count, memory_range_byte_count_span, memory_range_element_count,
     memory_range_element_count_guards, memory_range_element_count_limit,
-    memory_range_extent_guard_spellings, memory_range_extent_guards, narrow_range_constant,
-    scaled_extent_element_width, stated_loadable_extent_guard_spellings,
-    stated_loadable_extent_guards, wide_loadable_element_count, wide_range_bounds,
+    memory_range_span_guard_spellings, memory_range_span_guards, narrow_range_constant,
+    scaled_span_element_width, stated_loadable_span_guard_spellings, stated_loadable_span_guards,
+    wide_loadable_element_count, wide_range_bounds,
 };
 mod integer;
 pub(crate) use integer::WeakIntegerTerm;
@@ -816,7 +816,7 @@ pub enum MachineTerm {
     /// different values, so they are different terms. See [`LoadKind`].
     MemoryLoad(ProgramPoint, Box<Pointer>, LoadKind),
     /// The physical LP64 address bits of an object pointer. This numeric
-    /// observation carries no provenance or selected extent. Complete C
+    /// observation carries no provenance or selected bounds. Complete C
     /// integer copies retain that information separately in PointerInteger.
     /// Checked tag identities can recover address bits, never pointer bounds.
     /// The annotation retains the source object class for a later cast and
@@ -1272,7 +1272,7 @@ pub enum ConditionTerm {
     Float64(FloatCondition),
     PointerOffsetEqual(Box<PointerOffsetTerm>, Box<PointerOffsetTerm>),
     PointerEqual(Box<Pointer>, Box<Pointer>),
-    /// Specification pointer equality includes the designated object and extent.
+    /// Specification pointer equality includes the designated object and bounds.
     PointerValueEqual(Box<PointerValue>, Box<PointerValue>),
     IntegerLessThan(SharedIntegerTerm, SharedIntegerTerm),
     IntegerLessEqual(SharedIntegerTerm, SharedIntegerTerm),
@@ -2355,9 +2355,9 @@ pub struct PointerValue {
     /// The object designated when this value entered. Address aliases never
     /// replace this component; only value transport or substitution maps it.
     provenance: Arc<Pointer>,
-    /// The opaque containing extent retained through narrowing. A byte/void
+    /// The opaque containing bounds retained through narrowing. A byte/void
     /// view clears it, so that wider view cannot authorize the original input.
-    opaque_extent: Option<Arc<Pointer>>,
+    bounds_owner: Option<Arc<Pointer>>,
     program_type: ProgramType,
     qualifiers: Option<Arc<PointerQualifiers>>,
 }
@@ -2366,8 +2366,8 @@ pub struct PointerValue {
 struct PointerQualifiers {
     volatile: bool,
     constant: bool,
-    extent: Option<SubobjectExtent>,
-    extent_known: bool,
+    bounds: Option<SubobjectBounds>,
+    bounds_known: bool,
     /// The class of the object the pointer was formed to designate, from the
     /// declaration that produced it (`design/effective-types.md`). It is not
     /// part of the value's identity, and it survives casts, `void *`,
@@ -2384,35 +2384,35 @@ pub(in crate::kernel) struct RetainedPointerMetadata<'a> {
     program_type: ProgramType,
     volatile: bool,
     constant: bool,
-    extent_known: bool,
+    bounds_known: bool,
     declared_class: Option<&'a crate::kernel::effective_type::CAccessClass>,
     evidence: Option<&'a ObjectTypeEvidence>,
 }
 
 /// The subobject a pointer was formed from, narrower than its complete
-/// object (`design/pointer-subobject-extents.md`). C11 6.5.6p7-p8 and C++
+/// object (`design/pointer-subobject-bounds.md`). C11 6.5.6p7-p8 and C++
 /// [expr.add] bound pointer arithmetic and access by the designated object,
 /// not by the enclosing allocation: `&pair.first + 1` is one past `first`,
 /// even though `pair.second` lives at that address.
 ///
-/// The extent is absolute, `[start, start + width)` bytes, so it does not
+/// The bounds are absolute, `[start, start + width)` bytes, so it does not
 /// change as the pointer moves through arithmetic or loops. Respelling the
 /// pointer's address through a proven alias leaves it alone; a substitution
 /// of the variables the address mentions maps `start` the same way. A value
-/// without a concrete extent either has a known complete object or carries
+/// without concrete bounds either has a known complete object or carries
 /// an opaque domain whose bounds come from coverage evidence.
 ///
-/// The term-valued width also supports the legacy symbolic-extent prototype.
-/// Production unseen pointers use `PointerValue::opaque_extent` instead
-/// (`design/pointer-subobject-extents.md`, Phase C).
+/// The term-valued width also supports the legacy symbolic-bounds prototype.
+/// Production unseen pointers use `PointerValue::bounds_owner` instead
+/// (`design/pointer-subobject-bounds.md`, Phase C).
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct SubobjectExtent {
+pub struct SubobjectBounds {
     pub(crate) start: Pointer,
     pub(crate) width: MachineTerm,
 }
 
-impl SubobjectExtent {
-    /// The fact that this opaque extent covers `range`.
+impl SubobjectBounds {
+    /// The fact that these opaque bounds cover `range`.
     pub(crate) fn coverage_fact(&self, range: &MemoryRange) -> Proposition {
         let pointer = |pointer: Pointer| {
             Term::ProgramValue(ProgramValue::Pointer(PointerValue::new(
@@ -2497,7 +2497,7 @@ impl SubobjectExtent {
         ))
     }
 
-    /// The `width` bytes at `start`: a member's extent.
+    /// The `width` bytes at `start`: a member's bounds.
     pub(crate) fn constant(start: Pointer, width: u32) -> Self {
         Self {
             start,
@@ -2538,13 +2538,13 @@ impl PointerValue {
             pointer.object_identity()
         };
         Self {
-            opaque_extent: (!known_root).then(|| Arc::new(root.clone())),
+            bounds_owner: (!known_root).then(|| Arc::new(root.clone())),
             provenance: Arc::new(root),
             pointer,
             program_type,
             qualifiers: known_root.then(|| {
                 Arc::new(PointerQualifiers {
-                    extent_known: true,
+                    bounds_known: true,
                     ..Default::default()
                 })
             }),
@@ -2573,7 +2573,7 @@ impl PointerValue {
         let source = memory.unchanged_bytes_source();
         let origin = Arc::new(Pointer::loaded_value(&source, cell));
         value
-            .with_opaque_extent(Some(origin.clone()))
+            .with_bounds_owner(Some(origin.clone()))
             .with_provenance(origin)
     }
 
@@ -2581,7 +2581,7 @@ impl PointerValue {
     /// its numeric address alone names a different read version. This is
     /// the producing read, not an address-alias or preservation query.
     pub(crate) fn complete_read_source(&self) -> Option<(SharedMemory, Pointer)> {
-        if self.opaque_extent() != Some(self.provenance())
+        if self.bounds_owner() != Some(self.provenance())
             || self.pointer.object_identity() == *self.provenance()
         {
             return None;
@@ -2601,12 +2601,12 @@ impl PointerValue {
         &self.provenance
     }
 
-    pub(in crate::kernel) fn opaque_extent(&self) -> Option<&Pointer> {
-        self.opaque_extent.as_deref()
+    pub(in crate::kernel) fn bounds_owner(&self) -> Option<&Pointer> {
+        self.bounds_owner.as_deref()
     }
 
-    pub(in crate::kernel) fn with_opaque_extent(mut self, extent: Option<Arc<Pointer>>) -> Self {
-        self.opaque_extent = extent;
+    pub(in crate::kernel) fn with_bounds_owner(mut self, bounds: Option<Arc<Pointer>>) -> Self {
+        self.bounds_owner = bounds;
         self
     }
 
@@ -2615,12 +2615,12 @@ impl PointerValue {
         &self,
         range: &MemoryRange,
     ) -> Option<Proposition> {
-        if self.extent_is_known() {
+        if self.bounds_are_known() {
             return None;
         }
-        let origin = self.opaque_extent()?;
+        let origin = self.bounds_owner()?;
         Some(
-            SubobjectExtent {
+            SubobjectBounds {
                 start: origin.clone(),
                 width: MachineTerm::constant(0),
             }
@@ -2631,10 +2631,10 @@ impl PointerValue {
     pub(in crate::kernel) fn access_provenance(&self) -> (&Pointer, Option<&Pointer>) {
         (
             self.provenance(),
-            if self.extent_is_known() {
+            if self.bounds_are_known() {
                 None
             } else {
-                self.opaque_extent()
+                self.bounds_owner()
             },
         )
     }
@@ -2663,7 +2663,7 @@ impl PointerValue {
             program_type: self.program_type,
             volatile: self.pointee_volatile(),
             constant: self.pointee_constant(),
-            extent_known: self.extent_is_known(),
+            bounds_known: self.bounds_are_known(),
             declared_class: self
                 .qualifiers
                 .as_ref()
@@ -2684,7 +2684,7 @@ impl PointerValue {
         Self {
             pointer: self.pointer,
             provenance: self.provenance,
-            opaque_extent: self.opaque_extent,
+            bounds_owner: self.bounds_owner,
             program_type,
             qualifiers: self.qualifiers,
         }
@@ -2706,7 +2706,7 @@ impl PointerValue {
         self
     }
 
-    /// Respells the address as a proven-equal alias. The extent keeps its
+    /// Respells the address as a proven-equal alias. The bounds keep their
     /// own spelling: it names the same bytes either way, and the access
     /// check resolves the address against it as it resolves a held range.
     pub(crate) fn replace_pointer(&mut self, pointer: Pointer) {
@@ -2714,25 +2714,25 @@ impl PointerValue {
     }
 
     /// The same value at another address in the same subobject: the result
-    /// of pointer arithmetic, which keeps the type, qualifiers and extent.
+    /// of pointer arithmetic, which keeps the type, qualifiers and bounds.
     pub(crate) fn with_address(mut self, pointer: Pointer) -> Self {
         self.pointer = pointer;
         self
     }
 
-    pub(crate) fn extent(&self) -> Option<&SubobjectExtent> {
-        self.qualifiers.as_ref()?.extent.as_ref()
+    pub(crate) fn bounds(&self) -> Option<&SubobjectBounds> {
+        self.qualifiers.as_ref()?.bounds.as_ref()
     }
 
-    pub(crate) fn extent_is_known(&self) -> bool {
-        self.qualifiers.as_ref().is_some_and(|q| q.extent_known)
+    pub(crate) fn bounds_are_known(&self) -> bool {
+        self.qualifiers.as_ref().is_some_and(|q| q.bounds_known)
     }
 
-    pub(in crate::kernel) fn with_root_extent(mut self) -> Self {
-        self.opaque_extent = None;
+    pub(in crate::kernel) fn with_root_bounds(mut self) -> Self {
+        self.bounds_owner = None;
         let qualifiers = Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default));
-        qualifiers.extent = None;
-        qualifiers.extent_known = true;
+        qualifiers.bounds = None;
+        qualifiers.bounds_known = true;
         self
     }
 
@@ -2794,18 +2794,18 @@ impl PointerValue {
         self
     }
 
-    pub(crate) fn with_extent(mut self, extent: Option<SubobjectExtent>) -> Self {
-        if extent.is_some() {
-            Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).extent_known = true;
+    pub(crate) fn with_bounds(mut self, bounds: Option<SubobjectBounds>) -> Self {
+        if bounds.is_some() {
+            Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).bounds_known = true;
         }
-        if extent.is_some() || self.extent().is_some() {
-            Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).extent = extent;
+        if bounds.is_some() || self.bounds().is_some() {
+            Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).bounds = bounds;
         }
         self
     }
 
     /// Applies a substitution to every address the value mentions: its own
-    /// address and its extent's start. Use it where the rewrite maps
+    /// address and its bounds' start. Use it where the rewrite maps
     /// variables, not where it only respells the address.
     pub(crate) fn map_pointers(&self, mut map: impl FnMut(&Pointer) -> Pointer) -> Self {
         let mut result = self.clone();
@@ -2814,11 +2814,11 @@ impl PointerValue {
         if provenance != *self.provenance {
             result.provenance = Arc::new(provenance);
         }
-        result.opaque_extent = self.opaque_extent().map(|origin| Arc::new(map(origin)));
-        if let Some(extent) = self.extent() {
-            result = result.with_extent(Some(SubobjectExtent {
-                start: map(&extent.start),
-                width: extent.width.clone(),
+        result.bounds_owner = self.bounds_owner().map(|origin| Arc::new(map(origin)));
+        if let Some(bounds) = self.bounds() {
+            result = result.with_bounds(Some(SubobjectBounds {
+                start: map(&bounds.start),
+                width: bounds.width.clone(),
             }));
         }
         result
@@ -2830,14 +2830,14 @@ impl PointerValue {
     ) -> Option<Self> {
         let pointer = map(&self.pointer)?;
         let provenance = map(&self.provenance)?;
-        let opaque_extent = match self.opaque_extent() {
+        let bounds_owner = match self.bounds_owner() {
             Some(origin) => Some(Arc::new(map(origin)?)),
             None => None,
         };
-        let extent = match self.extent() {
-            Some(extent) => Some(SubobjectExtent {
-                start: map(&extent.start)?,
-                width: extent.width.clone(),
+        let bounds = match self.bounds() {
+            Some(bounds) => Some(SubobjectBounds {
+                start: map(&bounds.start)?,
+                width: bounds.width.clone(),
             }),
             None => None,
         };
@@ -2845,8 +2845,8 @@ impl PointerValue {
             self.clone()
                 .with_address(pointer)
                 .with_provenance(Arc::new(provenance))
-                .with_extent(extent)
-                .with_opaque_extent(opaque_extent),
+                .with_bounds(bounds)
+                .with_bounds_owner(bounds_owner),
         )
     }
 
@@ -2854,15 +2854,15 @@ impl PointerValue {
     pub(in crate::kernel) fn map_addresses(&self, map: impl FnMut(&Pointer) -> Pointer) -> Self {
         self.map_pointers(map)
             .with_provenance(self.provenance.clone())
-            .with_opaque_extent(self.opaque_extent.clone())
+            .with_bounds_owner(self.bounds_owner.clone())
     }
 
     /// Every address the value mentions, for variable collection.
     pub(crate) fn pointers(&self) -> impl Iterator<Item = &Pointer> {
         std::iter::once(&self.pointer)
             .chain(std::iter::once(self.provenance.as_ref()))
-            .chain(self.opaque_extent())
-            .chain(self.extent().map(|extent| &extent.start))
+            .chain(self.bounds_owner())
+            .chain(self.bounds().map(|bounds| &bounds.start))
     }
 
     pub(crate) fn is_null(&self) -> bool {
@@ -2876,7 +2876,7 @@ impl PointerValue {
     /// viewed through, whether the pointee is volatile, and the subobject it
     /// designates, plus its opaque local-reference custody. A lease key is a
     /// fresh scalar id, never a structural resource or ledger key.
-    /// Two values at one address with different extents are
+    /// Two values at one address with different bounds are
     /// different values: address equality does not make a one-past pointer
     /// designate the object that follows it.
     fn identity(
@@ -2888,20 +2888,20 @@ impl PointerValue {
         bool,
         bool,
         Option<&Pointer>,
-        Option<&SubobjectExtent>,
+        Option<&SubobjectBounds>,
     ) {
         (
             &self.pointer,
             &self.provenance,
             &self.program_type,
             self.pointee_volatile(),
-            self.extent_is_known(),
-            if self.extent_is_known() {
+            self.bounds_are_known(),
+            if self.bounds_are_known() {
                 None
             } else {
-                self.opaque_extent()
+                self.bounds_owner()
             },
-            self.extent(),
+            self.bounds(),
         )
     }
 }
@@ -3759,11 +3759,11 @@ pub struct LValue {
     pub(super) pointee_volatile: bool,
     pub(super) constant: bool,
     pub(super) pointee_constant: bool,
-    /// The subobject extent of the pointer this memory lvalue was reached
+    /// The subobject bounds of the pointer this memory lvalue was reached
     /// through. The access is checked against it, and `&lvalue` keeps it.
-    pub(super) extent_known: bool,
-    pub(super) opaque_extent: Option<Arc<Pointer>>,
-    pub(super) extent: Option<Arc<SubobjectExtent>>,
+    pub(super) bounds_known: bool,
+    pub(super) bounds_owner: Option<Arc<Pointer>>,
+    pub(super) bounds: Option<Arc<SubobjectBounds>>,
     pub(super) provenance: Option<Arc<Pointer>>,
     /// The class of the lvalue's type, which the access uses, when the
     /// frontend supplied one.
@@ -3872,8 +3872,8 @@ pub enum ProgramExpression {
         bytes: u32,
     },
     /// The pointer narrowed to the `width`-byte subobject that starts at its
-    /// address: a member access selects the member's own extent
-    /// (`design/pointer-subobject-extents.md`). It performs no load, grants
+    /// address: a member access selects the member's own bounds
+    /// (`design/pointer-subobject-bounds.md`). It performs no load, grants
     /// no access authority and does not move the address.
     Subobject {
         pointer: Box<ProgramExpression>,
@@ -5953,8 +5953,8 @@ pub struct MemoryRange {
     /// intervals ask only about physical authority; both retain supplier
     /// provenances through resource algebra and subsequent C access checks.
     pub(super) typed_carrier: bool,
-    pub(super) carrier_extent_known: bool,
-    pub(super) opaque_extent: Option<Arc<Pointer>>,
+    pub(super) carrier_bounds_known: bool,
+    pub(super) bounds_owner: Option<Arc<Pointer>>,
     /// The bounds, in elements. Read them through [`MemoryRange::start`]
     /// and [`MemoryRange::end`], which hold only for an `Int32` range, or
     /// through [`MemoryRange::wide_bounds`]: a term carries no width, so a
@@ -5992,7 +5992,7 @@ impl MemoryRange {
         (
             &self.base,
             &self.provenance,
-            self.opaque_extent.as_deref(),
+            self.bounds_owner.as_deref(),
             &self.start_bound,
             &self.end_bound,
             self.element_width,
@@ -6045,12 +6045,12 @@ pub struct ProgramParameter {
     /// designates, when the frontend supplied one.
     pub(super) pointee_class: Option<crate::kernel::effective_type::CAccessClass>,
     /// Relative index of a Rust slice's adjacent length argument. Its valid
-    /// extent grants formation bounds across argument/value-parameter splits,
+    /// length grants formation bounds across argument/value-parameter splits,
     /// independently of byte access authority. C pointers have none.
     pub(super) slice_length_parameter: Option<usize>,
-    /// Byte extent of a valid fixed-size Rust array reference. This grants
+    /// Byte width of the bounds of a valid fixed-size Rust array reference. This grants
     /// pointer formation bounds, independently of byte access authority.
-    pub(super) fixed_reference_extent: Option<u32>,
+    pub(super) fixed_reference_bounds: Option<u32>,
 }
 
 /// A linked file-scope scalar. Globals use one stable memory block across all
@@ -7874,12 +7874,12 @@ pub enum RuntimeError {
     UnknownFunction(String),
     TypeMismatch,
     /// A 64-bit `malloc`, `calloc` or `realloc` size Click cannot use as a
-    /// heap block's extent: a symbolic `malloc` size the facts do not prove
+    /// heap block's size: a symbolic `malloc` size the facts do not prove
     /// exact and within `1..=PTRDIFF_MAX` bytes, or a symbolic `calloc` or
-    /// `realloc` size (`design/heap-extents.md`). Diagnostic only.
+    /// `realloc` size (`design/heap-allocation-sizes.md`). Diagnostic only.
     HeapAllocationSize,
     /// A `uint32` heap allocation size, or element count, the facts do not
-    /// bound to the checked signed 32-bit heap extent. Diagnostic only.
+    /// bound to the checked signed 32-bit allocation size. Diagnostic only.
     HeapAllocationSizeAboveInt32,
     /// A typed memory load whose type does not fit the value the cell
     /// holds: a 4-byte load of an 8-byte cell, or a pointer cell read as an
@@ -8208,7 +8208,7 @@ impl RuntimeError {
 
     /// Why an unsigned 32-bit heap allocation size was refused
     /// ([`Self::HeapAllocationSizeAboveInt32`]).
-    pub const HEAP_ALLOCATION_SIZE_ABOVE_INT32_MESSAGE: &'static str = "heap allocation size must be known to fit the signed 32-bit heap extent: Click models a heap block with a checked 32-bit extent of at most 2147483647 bytes, and accepts a `uint32` size, or element count, only where the facts bound it to that extent";
+    pub const HEAP_ALLOCATION_SIZE_ABOVE_INT32_MESSAGE: &'static str = "heap allocation size must be known to fit the signed 32-bit allocation size: Click models a heap block with a checked 32-bit size of at most 2147483647 bytes, and accepts a `uint32` size, or element count, only where the facts bound it to that size";
 
     pub fn kernel_summary(&self) -> String {
         match self {
@@ -8265,11 +8265,11 @@ pub struct ExecutionBudget {
     /// resource permits). Diagnostic only: no evaluation reads it back.
     pub(super) dropped_runtime_error: Option<RuntimeError>,
     /// The first constant element range a specification lowering dropped
-    /// because it is not a valid 32-bit byte extent: reversed, or wider than
+    /// because it is not a valid 32-bit byte span: reversed, or wider than
     /// `u32::MAX` bytes once scaled. Such a range prunes its own evaluation
     /// path, and the surviving path count says nothing about why. Diagnostic
     /// only: no evaluation reads it back.
-    pub(super) dropped_range_extent: Option<DroppedRangeExtent>,
+    pub(super) dropped_range_span: Option<DroppedRangeSpan>,
     /// The first range fold a specification lowering dropped because its body
     /// did not evaluate to one symbolic iteration under the fold's binders.
     /// Such a fold prunes its own evaluation path, and the surviving path
@@ -8280,16 +8280,16 @@ pub struct ExecutionBudget {
     /// Diagnostic only; it never changes which paths or terms are produced.
     pub(super) dropped_comparison: Option<(ProgramType, ComparisonOperator, ProgramType)>,
     /// Set when a stated resource relation was dropped because this context
-    /// already proves one of its memory ranges is not a valid byte extent.
-    /// Unlike [`Self::dropped_range_extent`] the endpoints here need not be
+    /// already proves one of its memory ranges is not a valid byte span.
+    /// Unlike [`Self::dropped_range_span`] the endpoints here need not be
     /// constants — the surrounding facts are what decide it — so there is no
     /// element count to report, only the reason. Diagnostic only: no
     /// evaluation reads it back.
     /// Set when a stated memory range was dropped because this context
-    /// refutes one of its extent guards: `Some(true)` when the refuted guard
+    /// refutes one of its span guards: `Some(true)` when the refuted guard
     /// orders its endpoints (the range runs backwards), `Some(false)` when
     /// it bounds the byte count (the range is too wide). Diagnostic only.
-    pub(super) dropped_refuted_range_extent: Option<bool>,
+    pub(super) dropped_refuted_range_span: Option<bool>,
     /// The byte order of the environment whose statements this budget is
     /// executing, installed from `ExecutionEnvironment` at each statement.
     /// `None` until a statement installs it: an expression evaluated with no
@@ -8297,10 +8297,10 @@ pub struct ExecutionBudget {
     pub(super) program_byte_order: Option<ByteOrder>,
 }
 
-/// A constant element range a lowering refused as a byte extent, for the
+/// A constant element range a lowering refused as a byte span, for the
 /// message a caller writes when the lowering produced no path.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct DroppedRangeExtent {
+pub struct DroppedRangeSpan {
     pub element_count: i64,
     pub element_width: u32,
     pub byte_limit: u32,
@@ -8777,7 +8777,7 @@ impl Memory {
 /// state where its block is still live.
 #[derive(Clone)]
 pub(in crate::kernel) struct ReadRegionIdentity {
-    block_size: Option<HeapExtent>,
+    block_size: Option<AllocationSize>,
     local_lifetime_ended: bool,
     heap: Arc<HeapMemory>,
 }
@@ -8953,7 +8953,7 @@ impl PartialOrd for Memory {
 }
 
 /// The machine format of a memory block's byte count
-/// (`design/heap-extents.md`, decision D1).
+/// (`design/heap-allocation-sizes.md`, decision D1).
 ///
 /// `Int32` is a 32-bit byte count in `0..=INT32_MAX`, on which its signed
 /// and unsigned readings agree: every block but a heap block with a symbolic
@@ -8962,7 +8962,7 @@ impl PartialOrd for Memory {
 /// and its owned range is wide ([`RangeIndexKind::UInt64`]). `malloc` of a
 /// symbolic 64-bit size proved to fit makes one.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum HeapExtentKind {
+pub enum AllocationSizeKind {
     Int32,
     UInt64,
 }
@@ -8970,53 +8970,55 @@ pub enum HeapExtentKind {
 /// A memory block's byte count together with its format.
 ///
 /// Equality and ordering compare the kind after the bytes. Hashing and
-/// `Debug` of an `Int32` extent are exactly those of its byte term, so
+/// `Debug` of an `Int32` size are exactly those of its byte term, so
 /// state hashes (which name symbolic loads and order forgotten states)
 /// and traces of every 32-bit block are those of the untagged term; a
-/// `UInt64` extent hashes and prints its kind as well.
+/// `UInt64` size hashes and prints its kind as well.
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
-pub struct HeapExtent {
+pub struct AllocationSize {
     bytes: MachineTerm,
-    kind: HeapExtentKind,
+    kind: AllocationSizeKind,
 }
 
-impl std::hash::Hash for HeapExtent {
+impl std::hash::Hash for AllocationSize {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.bytes.hash(state);
-        if self.kind != HeapExtentKind::Int32 {
+        if self.kind != AllocationSizeKind::Int32 {
             self.kind.hash(state);
         }
     }
 }
 
-impl std::fmt::Debug for HeapExtent {
+impl std::fmt::Debug for AllocationSize {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.kind {
-            HeapExtentKind::Int32 => self.bytes.fmt(formatter),
-            HeapExtentKind::UInt64 => formatter.debug_tuple("UInt64").field(&self.bytes).finish(),
+            AllocationSizeKind::Int32 => self.bytes.fmt(formatter),
+            AllocationSizeKind::UInt64 => {
+                formatter.debug_tuple("UInt64").field(&self.bytes).finish()
+            }
         }
     }
 }
 
-impl HeapExtent {
-    pub fn new(bytes: MachineTerm, kind: HeapExtentKind) -> Self {
+impl AllocationSize {
+    pub fn new(bytes: MachineTerm, kind: AllocationSizeKind) -> Self {
         Self { bytes, kind }
     }
 
     /// A 32-bit byte count in `0..=INT32_MAX`.
     pub fn int32(bytes: impl Into<MachineTerm>) -> Self {
-        Self::new(bytes.into(), HeapExtentKind::Int32)
+        Self::new(bytes.into(), AllocationSizeKind::Int32)
     }
 
     pub fn bytes(&self) -> &MachineTerm {
         &self.bytes
     }
 
-    pub fn kind(&self) -> HeapExtentKind {
+    pub fn kind(&self) -> AllocationSizeKind {
         self.kind
     }
 
-    /// The same kind of extent over rewritten bytes.
+    /// The same kind of size over rewritten bytes.
     pub(crate) fn map_bytes(&self, rewrite: impl FnOnce(&MachineTerm) -> MachineTerm) -> Self {
         Self::new(rewrite(&self.bytes), self.kind)
     }
@@ -9024,66 +9026,68 @@ impl HeapExtent {
     /// The `allocation` token's byte-count argument: an `int32` or a `uint64`.
     pub(crate) fn token_value(&self) -> ProgramValue {
         match self.kind {
-            HeapExtentKind::Int32 => ProgramValue::Int32(self.bytes.clone()),
-            HeapExtentKind::UInt64 => ProgramValue::UInt64(self.bytes.clone()),
+            AllocationSizeKind::Int32 => ProgramValue::Int32(self.bytes.clone()),
+            AllocationSizeKind::UInt64 => ProgramValue::UInt64(self.bytes.clone()),
         }
     }
 
-    /// The extent an `allocation` token's byte-count argument states.
+    /// The size an `allocation` token's byte-count argument states.
     pub(crate) fn from_token_value(value: &ProgramValue) -> Option<Self> {
         match value {
             ProgramValue::Int32(bytes) => Some(Self::int32(bytes.clone())),
-            ProgramValue::UInt64(bytes) => Some(Self::new(bytes.clone(), HeapExtentKind::UInt64)),
+            ProgramValue::UInt64(bytes) => {
+                Some(Self::new(bytes.clone(), AllocationSizeKind::UInt64))
+            }
             _ => None,
         }
     }
 
-    /// The byte count as an unsigned 64-bit value: a 32-bit extent zero
+    /// The byte count as an unsigned 64-bit value: a 32-bit size zero
     /// extended (it is nonnegative), a 64-bit one as it is.
     pub(crate) fn uint64_bytes(&self) -> MachineTerm {
         match self.kind {
-            HeapExtentKind::Int32 => MachineTerm::uint64_from_32(self.bytes.clone()),
-            HeapExtentKind::UInt64 => self.bytes.clone(),
+            AllocationSizeKind::Int32 => MachineTerm::uint64_from_32(self.bytes.clone()),
+            AllocationSizeKind::UInt64 => self.bytes.clone(),
         }
     }
 
-    /// The byte count as a signed 64-bit value: a 32-bit extent zero
+    /// The byte count as a signed 64-bit value: a 32-bit size zero
     /// extended, a 64-bit one reinterpreted (it is at most `PTRDIFF_MAX`).
     pub(crate) fn int64_bytes(&self) -> MachineTerm {
         match self.kind {
-            HeapExtentKind::Int32 => MachineTerm::int64_from_uint32(self.bytes.clone()),
-            HeapExtentKind::UInt64 => MachineTerm::int64_from_uint64_bits(self.bytes.clone()),
+            AllocationSizeKind::Int32 => MachineTerm::int64_from_uint32(self.bytes.clone()),
+            AllocationSizeKind::UInt64 => MachineTerm::int64_from_uint64_bits(self.bytes.clone()),
         }
     }
 
-    /// The byte count as a 32-bit word, for a 32-bit extent only. A 32-bit
-    /// comparison against a 64-bit extent has no meaning.
+    /// The byte count as a 32-bit word, for a 32-bit size only. A 32-bit
+    /// comparison against a 64-bit size has no meaning.
     pub(crate) fn int32_bytes(&self) -> Option<&MachineTerm> {
-        (self.kind == HeapExtentKind::Int32).then_some(&self.bytes)
+        (self.kind == AllocationSizeKind::Int32).then_some(&self.bytes)
     }
 
-    /// A constant byte count in this extent's format.
+    /// A constant byte count in this size's format.
     pub(crate) fn constant(&self, bytes: u32) -> MachineTerm {
         match self.kind {
-            HeapExtentKind::Int32 => MachineTerm::constant(bytes),
-            HeapExtentKind::UInt64 => MachineTerm::uint64_constant(u64::from(bytes)),
+            AllocationSizeKind::Int32 => MachineTerm::constant(bytes),
+            AllocationSizeKind::UInt64 => MachineTerm::uint64_constant(u64::from(bytes)),
         }
     }
 
-    /// `left <= right` over unsigned values of this extent's format.
+    /// `left <= right` over unsigned values of this size's format.
     pub(crate) fn unsigned_less_equal(
         &self,
         left: MachineTerm,
         right: MachineTerm,
     ) -> ConditionTerm {
         match self.kind {
-            HeapExtentKind::Int32 => ConditionTerm::unsigned_less_equal(left, right),
-            HeapExtentKind::UInt64 => ConditionTerm::uint64_less_equal(left, right),
+            AllocationSizeKind::Int32 => ConditionTerm::unsigned_less_equal(left, right),
+            AllocationSizeKind::UInt64 => ConditionTerm::uint64_less_equal(left, right),
         }
     }
 
     /// The range `base[0..count]` of `element_width`-byte elements in this
-    /// extent's index kind; `count` is in the extent's format.
+    /// size's index kind; `count` is in the size's format.
     pub(crate) fn range(
         &self,
         base: Pointer,
@@ -9091,31 +9095,33 @@ impl HeapExtent {
         element_width: u32,
     ) -> MemoryRange {
         match self.kind {
-            HeapExtentKind::Int32 => MemoryRange::new_with_element_width(
+            AllocationSizeKind::Int32 => MemoryRange::new_with_element_width(
                 base,
                 MachineTerm::constant(0),
                 count,
                 element_width,
             ),
-            HeapExtentKind::UInt64 => {
+            AllocationSizeKind::UInt64 => {
                 MemoryRange::new_wide(base, MachineTerm::uint64_constant(0), count, element_width)
             }
         }
     }
 
-    /// The number of `element_width`-byte elements this extent holds, in its
+    /// The number of `element_width`-byte elements this size holds, in its
     /// format, when its byte count spells it: an `int32` count through
     /// [`crate::kernel::reasoning::element_count_from_bytes`], a `uint64` one
     /// through [`crate::kernel::reasoning::uint64_element_count_from_bytes`].
     pub(crate) fn element_count(&self, element_width: u32) -> Option<MachineTerm> {
         match self.kind {
-            HeapExtentKind::Int32 => {
+            AllocationSizeKind::Int32 => {
                 crate::kernel::reasoning::element_count_from_bytes(&self.bytes, element_width)
             }
-            HeapExtentKind::UInt64 => crate::kernel::reasoning::uint64_element_count_from_bytes(
-                &self.bytes,
-                element_width,
-            ),
+            AllocationSizeKind::UInt64 => {
+                crate::kernel::reasoning::uint64_element_count_from_bytes(
+                    &self.bytes,
+                    element_width,
+                )
+            }
         }
     }
 
@@ -9128,7 +9134,7 @@ impl HeapExtent {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub(super) struct PendingReallocation {
     pub(super) old_pointer: Pointer,
-    pub(super) old_bytes: HeapExtent,
+    pub(super) old_bytes: AllocationSize,
     /// Bytes at the start of the new block that retain calloc's guaranteed
     /// zero value. A prefix equal to the new allocation size means the whole
     /// block is zeroed; a shorter prefix leaves the grown tail uninitialized.
@@ -9147,15 +9153,15 @@ pub(super) struct PendingReallocation {
 pub(super) struct HeapMemory {
     /// Live heap blocks are also present in `blocks`; this set distinguishes
     /// them from automatic storage and memory-havoc markers.
-    pub(super) live_allocations: HashedOrdMap<Pointer, HeapExtent>,
+    pub(super) live_allocations: HashedOrdMap<Pointer, AllocationSize>,
     /// Heap identities are never reused within a proof. These are semantic
     /// tombstones for double-free and stale-pointer diagnostics, not
     /// resources or surviving allocation authority.
-    pub(super) deallocated_allocations: HashedOrdMap<Pointer, HeapExtent>,
+    pub(super) deallocated_allocations: HashedOrdMap<Pointer, AllocationSize>,
     /// A malloc result whose null/success outcome has not yet been refined by
     /// control flow or direct return. Pending allocations carry no authority
     /// until resolved.
-    pub(super) pending_allocations: HashedOrdMap<Pointer, HeapExtent>,
+    pub(super) pending_allocations: HashedOrdMap<Pointer, AllocationSize>,
     /// Object classes established by a fresh allocation's checked typed binding.
     pub(super) pending_object_classes:
         HashedOrdMap<Pointer, crate::kernel::effective_type::CAccessClass>,
@@ -9325,7 +9331,7 @@ impl HeapMemory {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct MemoryBlock {
-    pub(super) size: HeapExtent,
+    pub(super) size: AllocationSize,
     pub(super) read_only: bool,
     /// A complete automatic scalar's declared type, independent of whether
     /// its representation has been initialized. Untyped blocks and arrays
@@ -13291,20 +13297,20 @@ pub enum Proposition {
         writes: Vec<(Pointer, u32)>,
     },
     /// Internal write bound expressed as [`MemoryRange`] descriptors, including
-    /// symbolic extents. Like [`Self::MemoryMutatesOnly`], this bounds possible
+    /// symbolic spans. Like [`Self::MemoryMutatesOnly`], this bounds possible
     /// writes rather than claiming that every listed cell changed.
     MemoryEffectSummary {
         before: Memory,
         after: Memory,
         mutable_ranges: Vec<MemoryRange>,
     },
-    /// A free of the block at `allocation_base` with extent `bytes`, which
+    /// A free of the block at `allocation_base` with size `bytes`, which
     /// keeps its format, so a 64-bit block's free reinstates a 64-bit claim.
     HeapAllocationFreed {
         before: Memory,
         after: Memory,
         allocation_base: Pointer,
-        bytes: HeapExtent,
+        bytes: AllocationSize,
     },
     And(Box<Proposition>, Box<Proposition>),
     Or(Box<Proposition>, Box<Proposition>),
@@ -14439,9 +14445,9 @@ impl ReasoningPolicy {
     pub(super) const KEEP_SPEC_LOADS_SYMBOLIC: Self = Self(1 << 6);
     pub(super) const REQUIRE_OWNED_EXPRESSION_LOADS: Self = Self(1 << 7);
     /// Evaluate a contract entry's own clauses: a clause through a pointer
-    /// with an opaque extent states what the extent covers, so it is not
-    /// checked against it (`design/pointer-subobject-extents.md`, Phase C).
-    pub(super) const ASSUME_ENTRY_CLAUSE_EXTENTS: Self = Self(1 << 8);
+    /// with opaque bounds states what the bounds cover, so it is not
+    /// checked against it (`design/pointer-subobject-bounds.md`, Phase C).
+    pub(super) const ASSUME_ENTRY_CLAUSE_SPANS: Self = Self(1 << 8);
     /// A held resource carries the arithmetic domains established by its fold.
     pub(super) const ASSUME_HELD_RESOURCE_DOMAINS: Self = Self(1 << 9);
     pub(super) const RETAIN_REQUIRED_OBLIGATIONS: Self = Self(1 << 10);

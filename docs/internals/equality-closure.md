@@ -63,7 +63,7 @@ A full pointer-value query also registers its two numeric addresses against
 the current affine block representatives before checking value congruence.
 Earlier address nodes may predate a block alias; without these bridges, the
 query can miss an established equality depending on premise admission order.
-Provenance and retained extent remain separate value operands: refreshing
+Provenance and retained bounds remain separate value operands: refreshing
 addresses does not establish either identity. The cursor-chain regressions in
 `src/kernel/equality_graph/fact_congruence_tests.rs` combine symbolic loop
 values, a native argument, signed prefix counts and native lengths, with
@@ -78,9 +78,9 @@ table's iteration order must not choose whether an emitted certificate checks.
 ## Read-only pointer domains
 
 `PureFactContext::pointer_domain` returns `Unknown`, `Root`, or a selected
-subobject extent without changing the pointer value. Intrinsic bounds are
+subobject bounds without changing the pointer value. Intrinsic bounds are
 read directly. An opaque domain uses its retained origin to find an already
-registered extent node and the cached witness of its equality class. The query
+registered bounds node and the cached witness of its equality class. The query
 registers no terms or reads, runs no closure, and recovers no memory history.
 Complete-pointer equality supplies domain knowledge; numeric address equality
 and equality of widened byte views do not supply the original domain.
@@ -91,7 +91,7 @@ inside that selected domain. Both endpoints are checked in their original
 32-bit or native-width coordinates. A wider enclosing range cannot stand for
 the selected domain. This supplies domain compatibility, not ownership,
 initialization, liveness or permission to dereference a one-past pointer.
-Pointer arithmetic and other extent consumers still retain their existing
+Pointer arithmetic and other bounds consumers still retain their existing
 checks and value-adoption path pending their separate migration.
 
 The domain unit tests and deterministic scaling tests in
@@ -701,9 +701,9 @@ equality. Regressions cover same-state loads, changed states, missing
 premises, width mismatch, and multi-size queries without the legacy fact index.
 
 The structural, memory-resolution, and covering-span loadable-range readers
-share one typed int32 value rule for matching byte extents at the same
+share one typed int32 value rule for matching byte spans at the same
 base. Their callers retain the range-availability check for the goal state;
-equal extents do not supply viewability by themselves. Tests retain the
+equal spans do not supply viewability by themselves. Tests retain the
 loadable-premise and base boundaries and check direct multi-size queries
 without the legacy fact index.
 
@@ -1097,7 +1097,7 @@ permission nor equality between different states.
 Specification reads also use the paired index for concrete affine addresses in classes whose memory entries
 all have positive concrete read cores. A persistent AVL interval tree stores
 each occurrence's byte start/end and each subtree's maximum end. It lazily
-selects ranges covering the access's candidate footprint, including mixed extents and overlapping
+selects ranges covering the access's candidate footprint, including mixed spans and overlapping
 views where the nearest predecessor is too short. A read stops at the first
 candidate accepted by the ordinary permission and bounds checks; it does not
 materialize every overlapping view. Updates copy only the affected tree path,
@@ -1224,7 +1224,7 @@ silently tighten that rule to physical pointer width.
 Deterministic regressions cover late aliases,
 nonzero displacement, branch isolation, insertion/removal and normalization,
 growing alias classes, disjoint spans sharing one base, concrete read hits and
-misses, mixed extents, overlapping views, lazy delivery of covering ranges,
+misses, mixed spans, overlapping views, lazy delivery of covering ranges,
 interval updates against an independent model, and incremental merges
 with a large resource payload. Resource-section publication uses the expansion
 delta rather than recreating views for unrelated ambient memory ranges.
@@ -1346,9 +1346,9 @@ equalities; those forms are applied only in the queried pointer's own block
 and cannot identify unrelated blocks. A wide-view requirement selects a checked
 uint64 displacement instead of losing its window bounds in an equal signed or
 mixed-index expression. Payload lookup and class merging use a constant number
-of indexed entries. The original extent and permission checks still decide
+of indexed entries. The original span and permission checks still decide
 whether the selected supplier covers the requirement. Regressions cover missing
-aliases, short extents, mixed prefixes, block isolation, and increasing numbers
+aliases, short spans, mixed prefixes, block isolation, and increasing numbers
 of aliases.
 
 Read, write, and fold consumers are integration examples. A lookup must not
@@ -1399,7 +1399,7 @@ expansion/rechecking regression. Kernel regressions cover symbolic index bounds,
 late endpoint equality, states, sibling contexts, retired occurrences,
 read/write authority, and same-base non-supplier scaling at multiple sizes.
 
-The symbolic-byte-extent consumer uses this service exclusively. Unknown or
+The symbolic-byte-span consumer uses this service exclusively. Unknown or
 ambiguous selection refuses without an exact-base retry or whole-input
 scan. After selecting
 one supplier, the checker inverts explicitly scaled byte counts into that
@@ -1665,7 +1665,7 @@ state (or its recorded canonical projection source) is a `CellsSeeded`
 edge supplying the entire read footprint, admits equality with that run's
 source read into the branch's graph. Only load-valued, contiguous, live slots
 of the required width qualify. The check inspects the selected slots rather
-than the run's extent, address aliases, or state history. Canonical
+than the run's span, address aliases, or state history. Canonical
 projection bridges use exact producer registry entries. These are trusted
 kernel rules; they introduce neither proposition premises nor access rights.
 
@@ -1934,7 +1934,7 @@ that constructor joins its numeric address to `bits` in the uint64 classes,
 using the existing iterative dependency worklist once per constructor. Byte
 displacements and compatible same-state reads therefore use the same
 classes as the original word. Complete pointer-value applications use the numeric
-address as one operand, alongside independent provenance and extent operands;
+address as one operand, alongside independent provenance and bounds operands;
 address equality cannot merge those other operands. Complete-value comparisons whose provenance and
 bounds already match reduce the remaining zero-offset constructor comparison to
 uint64 equality. The internal constructor does not enter the result-domain

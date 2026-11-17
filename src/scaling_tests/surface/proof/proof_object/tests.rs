@@ -1302,7 +1302,7 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
 }
 
 #[test]
-fn loop_entry_wide_extent_guard_retains_its_own_source_and_scales() {
+fn loop_entry_wide_span_guard_retains_its_own_source_and_scales() {
     let parsed = syntax::parse_function("void span(const uint8* buf, uint64 len) { }").unwrap();
     let pointer = Pointer::symbolic(Variable(812_000));
     let original = MachineTerm::Variable(Variable(812_001));
@@ -1310,14 +1310,14 @@ fn loop_entry_wide_extent_guard_retains_its_own_source_and_scales() {
         MachineTerm::uint64_subtract(original.clone(), MachineTerm::uint64_constant(16));
     // The source retains `16 + len`, including when len stores `original - 16`.
     // Algebraic cancellation is a comparison rule, not the source's term.
-    let extent = MachineTerm::logical_machine_binary(
+    let span = MachineTerm::logical_machine_binary(
         crate::kernel::MachineIntegerType::UInt64,
         crate::kernel::MachineBinaryOp::Add,
         MachineTerm::uint64_constant(16),
         remaining.clone(),
     );
     let goal = Proposition::ConditionIs(
-        ConditionTerm::uint64_less_equal(extent, MachineTerm::uint64_constant(i64::MAX as u64)),
+        ConditionTerm::uint64_less_equal(span, MachineTerm::uint64_constant(i64::MAX as u64)),
         true,
     );
     let obligation = crate::kernel::ProofObligation::new(goal.clone());

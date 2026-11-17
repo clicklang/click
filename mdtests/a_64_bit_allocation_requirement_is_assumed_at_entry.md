@@ -2,7 +2,7 @@
 
 A callee's `consumes allocation(p, n * 4u64)` is established by each caller,
 which decides `1 <= n <= PTRDIFF_MAX / 4` where it calls
-(`mdtests/a_call_naming_a_64_bit_extent_with_an_unbounded_count_is_refused.md`).
+(`mdtests/a_call_naming_a_64_bit_size_with_an_unbounded_count_is_refused.md`).
 The callee assumes it, so its contract needs no bound on `n` of its own to
 free the block.
 

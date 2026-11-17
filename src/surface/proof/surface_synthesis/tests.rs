@@ -56,7 +56,7 @@ fn separation_names_loaded_pointer_fields_at_their_declared_type() {
 }
 
 #[test]
-fn separate_round_trips_without_generating_extent_obligations() {
+fn separate_round_trips_without_generating_span_obligations() {
     use crate::kernel::{MemoryRange, PointerValue, Resource};
     for wide in [false, true] {
         let pointer = PointerValue::new(
@@ -145,7 +145,7 @@ fn separate_round_trips_without_generating_extent_obligations() {
         assert_eq!(lowered, expected, "{text}");
         assert!(
             obligations.is_empty(),
-            "naming ranges must not owe physical extents: {obligations:?}"
+            "naming ranges must not owe physical spans: {obligations:?}"
         );
     }
 }

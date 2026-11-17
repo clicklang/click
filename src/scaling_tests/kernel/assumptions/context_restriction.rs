@@ -196,18 +196,18 @@ fn exact_view_candidate_does_not_prepare_its_alias_class() {
 }
 
 #[test]
-fn memory_view_miss_does_not_scan_same_address_extents() {
+fn memory_view_miss_does_not_scan_same_address_spans() {
     let mut samples = Vec::new();
     for size in [8u32, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = Memory::new();
         let base = Pointer::symbolic(Variable(780_000));
         let mut context = PureFactContext::new();
-        for extent in 1..=size {
+        for span in 1..=size {
             context = context.assume_proposition(Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: base.clone(),
-                bytes: extent.into(),
+                bytes: span.into(),
                 wide: false,
             });
         }
@@ -237,7 +237,7 @@ fn ambiguous_view_buckets_keep_exact_and_selected_evidence() {
                 let _session = crate::kernel::VerificationSession::enter();
                 let memory = Memory::new();
                 let base = Pointer::symbolic(Variable(790_000));
-                let extent = |n: u32| {
+                let span = |n: u32| {
                     if wide {
                         MachineTerm::uint64_constant(u64::from(n))
                     } else {
@@ -258,7 +258,7 @@ fn ambiguous_view_buckets_keep_exact_and_selected_evidence() {
                     let fact = Proposition::MemoryLoadable {
                         memory: source,
                         base: base.clone(),
-                        bytes: extent(index * 4),
+                        bytes: span(index * 4),
                         wide,
                     };
                     if index == size / 2 {
@@ -276,7 +276,7 @@ fn ambiguous_view_buckets_keep_exact_and_selected_evidence() {
                 };
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                     for _ in 0..4 {
-                        assert!(!proves(&context, &extent(4096)));
+                        assert!(!proves(&context, &span(4096)));
                     }
                 });
                 misses.push(work);
@@ -294,18 +294,18 @@ fn ambiguous_view_buckets_keep_exact_and_selected_evidence() {
                 });
                 assert!(work >= 4, "exact view lookups must charge work");
                 hits.push(work);
-                // Six bytes is a valid subrange, but no asserted extent is six.
+                // Six bytes is a valid subrange, but no asserted span is six.
                 // Ambiguity is a refusal, not an arbitrary premise choice.
-                assert!(!proves(&context, &extent(6)));
+                assert!(!proves(&context, &span(6)));
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                     let selected_context = crate::kernel::SelectedFacts::from_propositions(
                         std::slice::from_ref(&selected),
                     );
-                    assert!(proves(&selected_context, &extent(6)));
-                    assert!(!proves(&selected_context, &extent(4096)));
+                    assert!(proves(&selected_context, &span(6)));
+                    assert!(!proves(&selected_context, &span(4096)));
                 });
                 selected_work.push(work);
-                assert!(!proves(&PureFactContext::new(), &extent(6)));
+                assert!(!proves(&PureFactContext::new(), &span(6)));
             }
             eprintln!(
                 "view buckets wide={wide} states={retained_states}: misses={misses:?}, hits={hits:?}, selected={selected_work:?}"

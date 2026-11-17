@@ -2463,7 +2463,7 @@ fn effect_endpoint_allows_resource_allocation_bookkeeping() {
     let before = Memory::new();
     let after = before
         .clone()
-        .with_heap_allocation_claim(allocation, HeapExtent::int32(16))
+        .with_heap_allocation_claim(allocation, AllocationSize::int32(16))
         .expect("a fresh symbolic allocation claim should be registerable");
 
     assert!(
@@ -4028,7 +4028,7 @@ fn a_recursion_anchor_is_part_of_the_environment_identity() {
 /// kernel sites read two equal blocks as one object. A called frame runs on
 /// the caller's memory with its own locals map, so it cannot see the caller's
 /// objects; if it minted the plain `local:<name>` anyway, the callee's object
-/// and the caller's would be one block, one extent and one cell map.
+/// and the caller's would be one block, one allocation size and one cell map.
 #[test]
 fn a_called_frames_declaration_does_not_take_the_callers_block() {
     let callers = Pointer {
@@ -4684,7 +4684,7 @@ fn aggregate_copy_requires_write_authority_for_each_destination_field() {
     }
 }
 
-// Allocation grants only its exact byte extent, never initialization; taking
+// Allocation grants only its exact byte span, never initialization; taking
 // that owner away must block both named and pointer-mediated local accesses.
 #[test]
 fn automatic_scalar_ownership_is_exact_and_required_for_all_accesses() {

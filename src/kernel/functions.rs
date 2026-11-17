@@ -1442,7 +1442,7 @@ enum VerifiedAllocationDeltaError {
 enum AllocationContinuity {
     Same,
     Distinct,
-    /// The blocks may be one, but the extents have different formats (D5).
+    /// The blocks may be one, but the sizes have different formats (D5).
     CrossKind,
     Undecided(ConditionTerm),
     Inconsistent,
@@ -2817,7 +2817,7 @@ pub(in crate::kernel) fn transfer_representation_copy_cells(
 /// The destination cells a recognized byte copy plants, in source order.
 ///
 /// The source cells are found with one bounded range query, so this work is
-/// the copied extent's cell count plus one, independent of every other cell
+/// the copied span's cell count plus one, independent of every other cell
 /// in memory.
 pub(in crate::kernel) fn representation_copy_cell_moves(
     entry_memory: &Memory,
@@ -4275,7 +4275,7 @@ fn execute_verified_function_applications_with_suspension(
                     && !events.recognizes_imported_population(&description)
                     && (anchor.offset != PointerOffsetTerm::Constant(0)
                         || !(matches!(&anchor.block, PointerBlock::Heap(_))
-                            && post_state.memory.live_heap_block_extent(anchor).is_some()
+                            && post_state.memory.live_heap_block_size(anchor).is_some()
                             || anchor.block.is_local_block()
                                 && post_state.memory.has_block(&anchor.block)))
                 {
@@ -6205,7 +6205,7 @@ fn prepare_verified_function_call<'a>(
     );
     drop(requirement_timing);
 
-    // The callee is given each of its ranges' extent guards on entry
+    // The callee is given each of its ranges' span guards on entry
     // (`program_function_contract_entry_facts`), among them `start <= end`. The
     // planner shows each range lies inside one the caller holds, which
     // gives every other guard from the held range's own, but not the order:
@@ -7908,7 +7908,7 @@ fn open_unmatched_instance_body(
         .allow_symbolic_contract_loads()
         .prefer_symbolic_external_loads()
         // This opens a held body's established footprint, as unfold does.
-        .assume_entry_clause_extents()
+        .assume_entry_clause_spans()
         .assume_held_resource_domains();
     let mut budget = ExecutionBudget::beside_live_state();
     let Ok(Ok(body_resources)) = evaluate_function_resource_context_with_normalization(
@@ -9277,17 +9277,17 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
 /// test `continuity_requires_both_the_allocation_base_and_size` pins it, and
 /// fails when the route is denied.
 ///
-/// The two extents are compared in their common format. Extents of
+/// The two sizes are compared in their common format. Sizes of
 /// different formats are never the same allocation's (D5): a pair whose
 /// bases are not proven distinct is [`AllocationContinuity::CrossKind`].
 fn allocation_continuity(
     input_base: &Pointer,
-    input_extent: &HeapExtent,
+    input_size: &AllocationSize,
     output_base: &Pointer,
-    output_extent: &HeapExtent,
+    output_size: &AllocationSize,
     assumptions: &PureFactContext,
 ) -> AllocationContinuity {
-    if input_extent.kind() != output_extent.kind() {
+    if input_size.kind() != output_size.kind() {
         return if pointers_proven_distinct_for_memory_resolution(
             input_base,
             output_base,
@@ -9298,15 +9298,15 @@ fn allocation_continuity(
             AllocationContinuity::CrossKind
         };
     }
-    let (input_bytes, output_bytes) = (input_extent.bytes(), output_extent.bytes());
+    let (input_bytes, output_bytes) = (input_size.bytes(), output_size.bytes());
     if pointers_proven_equal_for_memory_resolution(input_base, output_base, assumptions) {
-        let format = match input_extent.kind() {
-            HeapExtentKind::Int32 => MachineIntegerType::Int32,
-            HeapExtentKind::UInt64 => MachineIntegerType::UInt64,
+        let format = match input_size.kind() {
+            AllocationSizeKind::Int32 => MachineIntegerType::Int32,
+            AllocationSizeKind::UInt64 => MachineIntegerType::UInt64,
         };
         if program_values_proven_equal_for_memory_resolution(
-            &input_extent.token_value(),
-            &output_extent.token_value(),
+            &input_size.token_value(),
+            &output_size.token_value(),
             assumptions,
         ) {
             return AllocationContinuity::Same;
@@ -9352,7 +9352,7 @@ mod allocation_continuity_tests;
 fn refuse_retiring_a_lent_allocation(
     ledger: Option<&LoanLedger>,
     base: &Pointer,
-    bytes: &HeapExtent,
+    bytes: &AllocationSize,
     assumptions: &PureFactContext,
 ) -> Result<(), VerifiedAllocationDeltaError> {
     let Some(ledger) = ledger else {
@@ -9402,7 +9402,7 @@ pub(in crate::kernel) fn caller_resource_left_stale_by_retirement<'a>(
     lent: &ResourceContext,
     kept: &'a ResourceContext,
     base: &Pointer,
-    bytes: &HeapExtent,
+    bytes: &AllocationSize,
     assumptions: &PureFactContext,
 ) -> Option<&'a ResourceFact> {
     let mut lent_owners_cover_allocation = None;
@@ -9437,7 +9437,7 @@ pub(in crate::kernel) fn caller_resource_left_stale_by_retirement<'a>(
 fn lent_owned_memory_covers_allocation(
     lent: &ResourceContext,
     base: &Pointer,
-    bytes: &HeapExtent,
+    bytes: &AllocationSize,
     assumptions: &PureFactContext,
 ) -> bool {
     if let Some(constant) = bytes.int32_bytes().and_then(MachineTerm::as_const)
@@ -9503,7 +9503,7 @@ fn apply_verified_heap_allocation_delta(
         .facts()
         .iter()
         .filter_map(|fact| {
-            fact.allocation_extent()
+            fact.allocation_size()
                 .map(|(base, bytes)| (fact, base.pointer().clone(), bytes))
         })
         .collect::<Vec<_>>();
@@ -9543,7 +9543,7 @@ fn apply_verified_heap_allocation_delta(
         .iter()
         .chain(preserved.facts())
         .filter_map(|fact| {
-            fact.allocation_extent().map(|(base, bytes)| {
+            fact.allocation_size().map(|(base, bytes)| {
                 (
                     base.pointer().clone(),
                     bytes,
@@ -9630,9 +9630,9 @@ fn apply_verified_heap_allocation_delta(
                             RuntimeError::FunctionContract(format!(
                                 "the call consumes an allocation with {} byte count and returns \
                                  one that may be the same block with {} byte count; a heap \
-                                 block's extent keeps one format",
-                                heap_extent_kind_spelling(bytes.kind()),
-                                heap_extent_kind_spelling(output_bytes.kind()),
+                                 block's size keeps one format",
+                                allocation_size_kind_spelling(bytes.kind()),
+                                allocation_size_kind_spelling(output_bytes.kind()),
                             )),
                         ));
                     }
@@ -9711,7 +9711,7 @@ fn apply_verified_heap_allocation_delta(
 
         retired_creations.push(base.block.clone());
         let before_free = memory.clone();
-        if memory.live_heap_block_extent(&base).is_none() {
+        if memory.live_heap_block_size(&base).is_none() {
             memory = memory
                 .with_heap_allocation_claim(base.clone(), bytes.clone())
                 .ok_or(VerifiedAllocationDeltaError::Runtime(
@@ -9744,13 +9744,13 @@ fn apply_verified_heap_allocation_delta(
             continue;
         };
         if input.satisfies_fact(fact, &allocation_assumptions)
-            || memory.live_heap_block_extent(base).is_some()
+            || memory.live_heap_block_size(base).is_some()
         {
             continue;
         }
         let (_, bytes) = fact
-            .allocation_extent()
-            .expect("an allocation token states its extent");
+            .allocation_size()
+            .expect("an allocation token states its size");
         memory = memory
             .with_heap_allocation_claim(base.clone(), bytes)
             .ok_or_else(|| {
@@ -11130,7 +11130,7 @@ fn prepare_contract_resource_transfer(
     )?;
     // Memory a live mutex's initialization consumed is missing because the
     // mutex holds it; name the mutex rather than the bytes.
-    // An allocation the caller holds only in the other extent format is
+    // An allocation the caller holds only in the other size format is
     // named with both formats (D5). A wide range held in another element
     // width names the product that must not wrap.
     Ok(transfer.map_err(|error| match &error {
@@ -11148,7 +11148,7 @@ fn prepare_contract_resource_transfer(
                     .unwrap_or(error)
             }
             fact if fact.allocation().is_some() => {
-                allocation_extent_kind_refusal(&caller_state.resources, fact, assumptions)
+                allocation_size_kind_refusal(&caller_state.resources, fact, assumptions)
                     .unwrap_or(error)
             }
             _ => error,
@@ -11159,24 +11159,24 @@ fn prepare_contract_resource_transfer(
 
 /// The refusal for a required `allocation(base, bytes)` whose block the
 /// context holds with a byte count of the other format: a 32-bit (`int32`)
-/// spelling of a 64-bit (`uint64`) block's extent, or the reverse. Tokens of
-/// different formats never match (`design/heap-extents.md`, D5), so the
+/// spelling of a 64-bit (`uint64`) block's size, or the reverse. Tokens of
+/// different formats never match (`design/heap-allocation-sizes.md`, D5), so the
 /// ordinary refusal would only report the token missing. The held token is
 /// found by base through the context's argument index, as `free` finds it.
-pub(in crate::kernel) fn allocation_extent_kind_refusal(
+pub(in crate::kernel) fn allocation_size_kind_refusal(
     resources: &ResourceContext,
     required: &ResourceFact,
     assumptions: &PureFactContext,
 ) -> Option<RuntimeError> {
-    let (required_base, required_extent) = required.allocation_extent()?;
+    let (required_base, required_size) = required.allocation_size()?;
     let query =
-        ResourceFact::own_designated_allocation(required_base.clone(), &HeapExtent::int32(0));
+        ResourceFact::own_designated_allocation(required_base.clone(), &AllocationSize::int32(0));
     let held_kind = resources
         .direct_match_candidates_for(&query, assumptions)
         .into_iter()
-        .filter_map(ResourceFact::allocation_extent)
-        .find(|(base, extent)| {
-            extent.kind() != required_extent.kind()
+        .filter_map(ResourceFact::allocation_size)
+        .find(|(base, size)| {
+            size.kind() != required_size.kind()
                 && crate::kernel::resource_arguments_proven_equal(
                     &ProgramValue::Pointer((*base).clone().with_type(ProgramType::Int32Pointer))
                         .into(),
@@ -11187,21 +11187,21 @@ pub(in crate::kernel) fn allocation_extent_kind_refusal(
                     assumptions,
                 )
         })
-        .map(|(_, extent)| extent.kind())?;
+        .map(|(_, size)| size.kind())?;
     Some(RuntimeError::FunctionContract(format!(
         "`allocation` states {} byte count, but the block's allocation token holds {} one: \
-         a heap block's extent keeps the format of its size's C type, and an `allocation` of \
+         a heap block's size keeps the format of its size's C type, and an `allocation` of \
          the other format does not name it; state the byte count in the block's format",
-        heap_extent_kind_spelling(required_extent.kind()),
-        heap_extent_kind_spelling(held_kind),
+        allocation_size_kind_spelling(required_size.kind()),
+        allocation_size_kind_spelling(held_kind),
     )))
 }
 
-/// How a diagnostic names an extent format.
-pub(in crate::kernel) fn heap_extent_kind_spelling(kind: HeapExtentKind) -> &'static str {
+/// How a diagnostic names a size format.
+pub(in crate::kernel) fn allocation_size_kind_spelling(kind: AllocationSizeKind) -> &'static str {
     match kind {
-        HeapExtentKind::Int32 => "a 32-bit (`int32`)",
-        HeapExtentKind::UInt64 => "a 64-bit (`uint64`, `size_t`)",
+        AllocationSizeKind::Int32 => "a 32-bit (`int32`)",
+        AllocationSizeKind::UInt64 => "a 64-bit (`uint64`, `size_t`)",
     }
 }
 
@@ -12536,12 +12536,12 @@ fn produced_memory_initialization(
         let Resource::Memory(range) = fact.resource() else {
             continue;
         };
-        let extent = if range.wide_bounds().is_some() {
+        let byte_span = if range.wide_bounds().is_some() {
             None
         } else {
             range.byte_footprint().1.as_const()
         };
-        if extent == Some(0) {
+        if byte_span == Some(0) {
             continue;
         }
         // Transfer checking established this output's authority and bounds.
@@ -12554,31 +12554,34 @@ fn produced_memory_initialization(
         if segment.is_uninitialized() {
             memory = memory.with_uninitialized_object(
                 start,
-                extent.unwrap_or(Memory::UNBOUNDED_UNWRITTEN_EXTENT),
+                byte_span.unwrap_or(Memory::UNBOUNDED_UNWRITTEN_SPAN),
             );
             continue;
         }
         // Initialized bytes of a length known only at the call are not
         // recorded; a read of them then needs a store or `defined` evidence.
-        let Some(extent) = extent else {
+        let Some(byte_span) = byte_span else {
             continue;
         };
         match segment.value_runs() {
             Some(runs) => {
                 for &(offset, length) in runs {
-                    if offset.checked_add(length).is_some_and(|end| end <= extent) {
+                    if offset
+                        .checked_add(length)
+                        .is_some_and(|end| end <= byte_span)
+                    {
                         memory =
                             memory.with_initialized_object(&start.offset_by_bytes(offset), length);
                     }
                 }
             }
-            None => memory = memory.with_initialized_object(&start, extent),
+            None => memory = memory.with_initialized_object(&start, byte_span),
         }
         // Only an explicit complete byte output needs this representation
         // equation. Ordinary scalar reads keep their retained roots and do
         // no extra byte-view work. Initialization is supplied above by the
         // checked output clause, never by the numeric equation.
-        if extent == 4
+        if byte_span == 4
             && range.element_width() == 1
             && segment.value_runs().is_none()
             && let Some(equation) = crate::kernel::eval::declared_uint32_read_representation(
@@ -14999,12 +15002,12 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     }
     let body_specs = &body_specs[..];
     // Unfolding assumes the body the fold established, its clauses through
-    // pointers of unseen formation included (`assume_entry_clause_extents`);
+    // pointers of unseen formation included (`assume_entry_clause_spans`);
     // folding checks them.
     let body_assumptions = if unfold {
         assumptions
             .clone()
-            .assume_entry_clause_extents()
+            .assume_entry_clause_spans()
             .assume_held_resource_domains()
     } else {
         assumptions.clone()
@@ -15294,7 +15297,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
         let Some(range) = fact.memory_range() else {
             continue;
         };
-        facts.extend(crate::kernel::admitted_memory_range_extent_facts(range));
+        facts.extend(crate::kernel::admitted_memory_range_span_facts(range));
         facts.push(range.loadable_fact(&state.memory));
     }
     // What a fold consumes is what holding the folded instance lets C read.
@@ -15780,12 +15783,12 @@ fn construct_composite_resource_body(
     };
     let mut budget = ExecutionBudget::beside_live_state();
     // Opening a held composite assumes the body its fold established
-    // (`assume_entry_clause_extents`).
+    // (`assume_entry_clause_spans`).
     let evaluation_assumptions = assumptions
         .clone()
         .allow_symbolic_contract_loads()
         .prefer_symbolic_external_loads()
-        .assume_entry_clause_extents()
+        .assume_entry_clause_spans()
         .assume_held_resource_domains();
     let mut child_facts = Vec::new();
     let Some(body_active) = evaluate_composite_resource_body_condition(
@@ -17953,7 +17956,7 @@ fn resource_clause_memory_views(
         .allow_symbolic_contract_loads()
         .prefer_symbolic_external_loads()
         // These are the established clauses of the held instance.
-        .assume_entry_clause_extents()
+        .assume_entry_clause_spans()
         .assume_held_resource_domains();
     let mut budget = ExecutionBudget::beside_live_state();
     let Ok(Ok(body_resources)) = evaluate_function_resource_context_with_normalization(
@@ -19902,19 +19905,19 @@ fn evaluate_function_declared_resource_spec(
             && index == 1
             && let ProgramValue::UInt64(bytes) = value.numeric_value()
         {
-            match uint64_allocation_extent_argument(bytes, assumptions) {
+            match uint64_allocation_size_argument(bytes, assumptions) {
                 Ok(value) => value,
                 Err(error) => return Ok(Err(error)),
             }
         } else {
             value
         };
-        // A 64-bit `allocation` byte count is a `uint64` extent (D4).
-        let accepts_allocation_extent = name == ResourceFact::ALLOCATION_RESOURCE_NAME
+        // A 64-bit `allocation` byte count is a `uint64` size (D4).
+        let accepts_allocation_size = name == ResourceFact::ALLOCATION_RESOURCE_NAME
             && index == 1
             && matches!(&value, ProgramValue::UInt64(_));
         if !accepts_allocation_pointer
-            && !accepts_allocation_extent
+            && !accepts_allocation_size
             && !parameter_type.accepts(&value)
         {
             return Ok(Err(RuntimeError::FunctionContract(format!(
@@ -19962,12 +19965,12 @@ fn evaluate_function_declared_resource_spec(
 }
 
 /// The `allocation` token argument a contract's `uint64` (`size_t`) byte
-/// count states (`design/heap-extents.md`, D4).
+/// count states (`design/heap-allocation-sizes.md`, D4).
 ///
-/// A constant that fits a 32-bit extent is one, as `malloc` of a constant
-/// `size_t` size makes it (D2). Any other value is a 64-bit extent, admitted
+/// A constant that fits a 32-bit size is one, as `malloc` of a constant
+/// `size_t` size makes it (D2). Any other value is a 64-bit size, admitted
 /// under the decision `malloc` makes for one
-/// ([`crate::kernel::eval::uint64_heap_extent_bytes_are_exact`]): at most
+/// ([`crate::kernel::eval::uint64_allocation_size_bytes_are_exact`]): at most
 /// `PTRDIFF_MAX` and positive, and a product with a constant factor `k` only
 /// with its other factor decided at most `PTRDIFF_MAX / k`. A `size_t`
 /// product may wrap, and the heap reads `n * k` bytes back as `n` elements,
@@ -19976,10 +19979,10 @@ fn evaluate_function_declared_resource_spec(
 /// A clause someone else established is assumed, not decided again: a
 /// contract's own entry clauses, which every caller establishes by
 /// evaluating them under this decision, and the body of a held composite,
-/// which its fold established (`assume_entry_clause_extents`). Every other
+/// which its fold established (`assume_entry_clause_spans`). Every other
 /// evaluation decides: a requirement at a call, a clause a function produces
 /// at its exit, and one an opaque or extern call returns to its caller.
-fn uint64_allocation_extent_argument(
+fn uint64_allocation_size_argument(
     bytes: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> Result<ProgramValue, RuntimeError> {
@@ -19988,8 +19991,8 @@ fn uint64_allocation_extent_argument(
     {
         return Ok(int32(MachineTerm::constant(constant as u32)));
     }
-    if assumptions.should_assume_entry_clause_extents()
-        || crate::kernel::eval::uint64_heap_extent_bytes_are_exact(bytes, assumptions)
+    if assumptions.should_assume_entry_clause_spans()
+        || crate::kernel::eval::uint64_allocation_size_bytes_are_exact(bytes, assumptions)
     {
         Ok(ProgramValue::UInt64(bytes.clone()))
     } else {
@@ -20530,7 +20533,7 @@ pub(crate) fn unreturned_allocation_with_checked_returned_resources(
             &entry_state,
             function.resource_requires(),
             function.composite_resource_definitions(),
-            &assumptions.clone().assume_entry_clause_extents(),
+            &assumptions.clone().assume_entry_clause_spans(),
             &mut budget,
         )
         .map_err(|limit| RuntimeError::FunctionContract(limit.describe()))??;
@@ -20621,7 +20624,7 @@ pub(crate) fn unreturned_allocation_at_function_exit(
         &entry_state,
         function.resource_requires(),
         function.composite_resource_definitions(),
-        &assumptions.clone().assume_entry_clause_extents(),
+        &assumptions.clone().assume_entry_clause_spans(),
         budget,
     )? {
         Ok((_, clauses)) => clauses,

@@ -508,21 +508,21 @@ fn loadability_explanation(
         |surface| crate::surface::diagnostics::describe_click_proposition(&surface),
     );
     // Reading that range at element granularity needs it to be a valid 32-bit
-    // byte extent. A range stated in this scope carries that; one this proof
+    // byte span. A range stated in this scope carries that; one this proof
     // established itself does not, and saying which fact is missing is the
     // difference between a usable refusal and "not true".
-    let missing_extent = crate::kernel::stated_loadable_extent_guards(covering)
+    let missing_span = crate::kernel::stated_loadable_span_guards(covering)
         .into_iter()
         .find(|guard| !established_condition(assumptions, guard));
-    if let Some(guard) = missing_extent {
+    if let Some(guard) = missing_span {
         let guard = site.spell_proposition(&guard).map_or_else(
             || render::render_proposition_labeled(&guard, labels),
             |surface| crate::surface::diagnostics::describe_click_proposition(&surface),
         );
         return Some(format!(
             "`{spelled}` is a premise here and was consulted, but it is not a valid 32-bit byte \
-             extent in this scope: `{guard}` is not an established fact. A range's extent is \
-             `(end - start) * width` in 32-bit arithmetic, so without that bound the extent can \
+             span in this scope: `{guard}` is not an established fact. A range's span is \
+             `(end - start) * width` in 32-bit arithmetic, so without that bound the span can \
              wrap to fewer bytes than its element count names — a count of `1 << 30` four-byte \
              elements scales to `0` — and the range would not cover the cell it appears to. \
              State that bound where the range is stated"

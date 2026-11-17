@@ -1,10 +1,10 @@
-# A quantified viewable invariant takes its extent bound from the `views` clause
+# A quantified viewable invariant takes its span bound from the `views` clause
 
 [`loop_initialize_narrows_a_held_range_under_a_universal.md`](loop_initialize_narrows_a_held_range_under_a_universal.md)
-without `requires n <= 1073741823`. At the back edge the extent member
+without `requires n <= 1073741823`. At the back edge the span member
 `forall (k: int32) { 0 <= k and k <= n implies (k as uint32) <= 1073741823u32 }`
 needs `n <= 1073741823`, and the only clause that says so is `views a[0..n]`,
-whose extent half is a fact beside the range it states. The closer cites that
+whose span half is a fact beside the range it states. The closer cites that
 half as it cites a written precondition.
 
 ```c filename=loop_quantified_viewable_invariant_bounded_by_its_views_clause.c

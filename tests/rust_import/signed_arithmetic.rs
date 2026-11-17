@@ -119,11 +119,11 @@ fn rust_shift_resource_arguments_retain_width_and_count_obligations() {
     );
     ProgramVerificationSession::new_program_prepared(&source, &prepared)
         .unwrap_or_else(|error| panic!("Rust shifts in resource arguments and bounds: {error:?}"));
-    let narrow_extent = source.replace(
+    let narrow_span = source.replace(
         "total[0..(1i32 << 0u32)]",
         "total[0..((1i8 << 0u32) as i32)]",
     );
-    verify_rust_function(&narrow_extent, &prepared, "split")
+    verify_rust_function(&narrow_span, &prepared, "split")
         .unwrap_or_else(|error| panic!("a valid narrow shift, widened to an index: {error:?}"));
     // The first positive run covers every body; subsequent edits affect one function.
     for (function, invalid) in [
@@ -131,7 +131,7 @@ fn rust_shift_resource_arguments_retain_width_and_count_obligations() {
             "shift_narrow",
             source.replace("owns byte(x << n);", "owns byte(x << 8u32);"),
         ),
-        ("split", narrow_extent.replace("1i8 << 0u32", "1i8 << 8u32")),
+        ("split", narrow_span.replace("1i8 << 0u32", "1i8 << 8u32")),
     ] {
         let error = verify_rust_function(&invalid, &prepared, function)
             .err()

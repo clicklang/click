@@ -1530,7 +1530,7 @@ mod tests {
     fn legacy_adapter_keeps_complete_pointers_and_scoped_integer_nodes() {
         let base = Pointer::symbolic(Variable(75));
         let root = PointerValue::new(base.clone(), ProgramType::Int32Pointer);
-        let member = root.clone().with_extent(Some(SubobjectExtent {
+        let member = root.clone().with_bounds(Some(SubobjectBounds {
             start: base,
             width: 4u32.into(),
         }));

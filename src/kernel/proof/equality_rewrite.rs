@@ -1702,7 +1702,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
             } => Proposition::MemoryLoadable {
                 // Same-block pointer equalities use offsets rather than the
                 // PointerEqual carrier. Substitute the selected address while
-                // retaining the exact state and readable byte extent.
+                // retaining the exact state and readable byte span.
                 memory: memory.clone(),
                 base: Pointer {
                     block: base.block.clone(),
@@ -2053,7 +2053,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
             } => {
                 Proposition::MemoryLoadable {
                     // Clone only shared state roots. Equality changes the
-                    // selected address, never the memory or view extent.
+                    // selected address, never the memory or view span.
                     memory: memory.clone(),
                     base: rewrite_pointer(base),
                     bytes: bytes.clone(),
@@ -4346,10 +4346,10 @@ mod numeric_address_annotation_tests {
             &equality,
         );
         let left = PointerValue::new(p.clone(), ProgramType::Int32Pointer)
-            .with_extent(Some(SubobjectExtent::constant(p, 4)));
+            .with_bounds(Some(SubobjectBounds::constant(p, 4)));
         for width in [4, 8] {
             let right = PointerValue::new(q.clone(), ProgramType::Int32Pointer)
-                .with_extent(Some(SubobjectExtent::constant(q.clone(), width)));
+                .with_bounds(Some(SubobjectBounds::constant(q.clone(), width)));
             assert!(!facts.assumptions().pointer_provenance_match(&left, &right));
         }
     }

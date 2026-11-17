@@ -1230,7 +1230,7 @@ fn prepare_function_claim_path(
             &entry_state,
             function.resource_requires(),
             function.composite_resource_definitions(),
-            &assumptions.clone().assume_entry_clause_extents(),
+            &assumptions.clone().assume_entry_clause_spans(),
             &mut budget,
         ) {
             Ok(Ok(resources)) => resources,
@@ -2412,11 +2412,11 @@ fn heap_free_effect_is_valid(
     before: &Memory,
     after: &Memory,
     allocation_base: &Pointer,
-    bytes: &HeapExtent,
+    bytes: &AllocationSize,
 ) -> bool {
-    // The effect states the freed extent with its format, so the claim it
+    // The effect states the freed size with its format, so the claim it
     // reinstates is the block's own, 32-bit or 64-bit.
-    let Some(live) = (if before.live_heap_block_extent(allocation_base).is_some() {
+    let Some(live) = (if before.live_heap_block_size(allocation_base).is_some() {
         Some(before.clone())
     } else {
         before
@@ -2425,7 +2425,7 @@ fn heap_free_effect_is_valid(
     }) else {
         return false;
     };
-    live.live_heap_block_extent(allocation_base) == Some(bytes)
+    live.live_heap_block_size(allocation_base) == Some(bytes)
         && live
             .free_heap_block(allocation_base, &PureFactContext::new())
             .is_ok_and(|expected| expected == *after)
@@ -3116,9 +3116,9 @@ fn function_contract_claims_are_complete(function: &ProgramFunction) -> bool {
 mod heap_free_effect_tests {
     use super::*;
 
-    /// A free effect reinstates the freed block's claim in the extent's own
+    /// A free effect reinstates the freed block's claim in the size's own
     /// format: a 64-bit block whose claim was not live before the free (a
-    /// contract-imported allocation) is matched by its `uint64` extent, and
+    /// contract-imported allocation) is matched by its `uint64` size, and
     /// a 32-bit reading of the same byte term is not that block's free.
     #[test]
     fn a_free_effect_reinstates_a_64_bit_claim_in_its_format() {
@@ -3130,7 +3130,7 @@ mod heap_free_effect_tests {
             MachineTerm::Variable(Variable(940_101)),
             MachineTerm::uint64_constant(4),
         );
-        let wide = HeapExtent::new(bytes.clone(), HeapExtentKind::UInt64);
+        let wide = AllocationSize::new(bytes.clone(), AllocationSizeKind::UInt64);
         let before = Memory::new();
         let after = before
             .clone()
@@ -3143,7 +3143,7 @@ mod heap_free_effect_tests {
             &before,
             &after,
             &base,
-            &HeapExtent::int32(bytes),
+            &AllocationSize::int32(bytes),
         ));
     }
 }
@@ -3373,7 +3373,7 @@ mod heap_status_equality_tests {
         let mut base = Memory::new().with_block(block.block.clone(), 4);
         std::sync::Arc::make_mut(&mut base.heap)
             .live_allocations
-            .insert(block.clone(), HeapExtent::int32(4));
+            .insert(block.clone(), AllocationSize::int32(4));
         std::sync::Arc::make_mut(&mut base.heap)
             .zeroed_allocations
             .insert(block.clone());

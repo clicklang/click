@@ -1,7 +1,7 @@
 # An unbounded `size_t` `malloc` size is refused
 
 A symbolic 64-bit size makes a heap block only where the facts prove it fits
-one (`design/heap-extents.md`, D3): at least 1 and at most `PTRDIFF_MAX`
+one (`design/heap-allocation-sizes.md`, D3): at least 1 and at most `PTRDIFF_MAX`
 bytes, and for `malloc(n * w)` `n <= PTRDIFF_MAX / w`. There is no assumption
 that `malloc` returns null for a larger size, so a count with only a lower
 bound is refused at the allocation, with that reason. Replaces the 32-bit

@@ -1,6 +1,6 @@
 # Logical conversion does not require a viewable cell
 
-A logical read has a value even without a proved viewable extent. Its
+A logical read has a value even without a proved viewable span. Its
 reflexive equality needs no validity premise; actual C reads remain checked.
 
 ```c filename=conversion_condition_in_a_c_proof_have.c

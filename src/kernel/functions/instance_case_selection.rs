@@ -153,7 +153,7 @@ pub(super) fn matched_resource_instance_case_read_projection(
         let Some(range) = fact.memory_range() else {
             continue;
         };
-        supporting_facts.extend(crate::kernel::admitted_memory_range_extent_facts(range));
+        supporting_facts.extend(crate::kernel::admitted_memory_range_span_facts(range));
         supporting_facts.push(range.loadable_fact(&state.memory));
     }
     supporting_facts.push(Proposition::ResourceComposition(body_resources));

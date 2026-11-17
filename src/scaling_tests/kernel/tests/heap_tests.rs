@@ -150,7 +150,7 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
             offset: PointerOffsetTerm::Constant(0),
         };
         let pending =
-            memory.with_pending_heap_allocation(request.clone(), HeapExtent::int32(4), false);
+            memory.with_pending_heap_allocation(request.clone(), AllocationSize::int32(4), false);
         // C assigns malloc's result before branching on it. That intervening
         // store prevents failure from merely interning back to the old memory.
         let pending = pending.store(
@@ -326,7 +326,7 @@ fn typed_pending_heap_binding_uses_the_allocation_delta() {
         for index in 0..count {
             memory = memory.with_pending_typed_heap_allocation(
                 Pointer::symbolic(Variable(950_000 + index)),
-                HeapExtent::int32(8),
+                AllocationSize::int32(8),
                 false,
                 Some(class.clone()),
             );
@@ -335,7 +335,7 @@ fn typed_pending_heap_binding_uses_the_allocation_delta() {
             let base = Pointer::symbolic(Variable(960_000));
             let next = memory.clone().with_pending_typed_heap_allocation(
                 base.clone(),
-                HeapExtent::int32(8),
+                AllocationSize::int32(8),
                 false,
                 Some(class.clone()),
             );
@@ -367,7 +367,7 @@ fn free_ownership_lookup_ignores_unrelated_resources() {
     let mut samples = Vec::new();
     for count in [0, 16, 64, 256] {
         let memory = Memory::new()
-            .with_heap_allocation_claim(base.clone(), HeapExtent::int32(4))
+            .with_heap_allocation_claim(base.clone(), AllocationSize::int32(4))
             .unwrap()
             .store(cell.clone(), int32(7));
         let mut ownership = ResourceContext::new().unchecked_with_fact(range(cell.clone()));
@@ -407,7 +407,7 @@ fn sequential_frees_preserving_one_owned_cell_stay_near_linear() {
             .collect::<Vec<_>>();
         for base in &bases {
             memory = memory
-                .with_heap_allocation_claim(base.clone(), HeapExtent::int32(4))
+                .with_heap_allocation_claim(base.clone(), AllocationSize::int32(4))
                 .unwrap();
             ownership = ownership.unchecked_with_fact(range(base.clone()));
         }
@@ -452,7 +452,7 @@ fn sequential_free_pointer_frames_stay_near_linear() {
             .collect::<Vec<_>>();
         for base in &bases {
             memory = memory
-                .with_heap_allocation_claim(base.clone(), HeapExtent::int32(4))
+                .with_heap_allocation_claim(base.clone(), AllocationSize::int32(4))
                 .unwrap();
             resources = resources
                 .unchecked_with_fact(ResourceFact::own_allocation(base.clone(), 4))
