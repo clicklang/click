@@ -744,7 +744,8 @@ fn advance_execution_proof_statement(
                 );
                 recorded_states.record_read_events(statement_index, &transition.execution_facts);
                 if let Some(result) = &transition.call_result {
-                    recorded_states.record_call_result(statement_index, Some(result.clone()));
+                    recorded_states
+                        .record_retained_call_result(statement_index, Some(result.clone()));
                 }
                 if let Some(parameters) = &transition.call_parameters {
                     record_code_region_program_state(
@@ -792,7 +793,7 @@ fn advance_execution_proof_statement(
                         recorded_states.record_region_points(points);
                     }
                     if let Some(iterations) = &transition.loop_iterations {
-                        recorded_states.record_loop_iterations(loop_index, iterations);
+                        recorded_states.record_loop_iterations_root(loop_index, iterations.clone());
                     }
                     if let Some(loop_clause) = environment
                         .function_block

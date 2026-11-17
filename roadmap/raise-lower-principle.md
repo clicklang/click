@@ -584,6 +584,9 @@ history and temporary session notes are not the plan's durable record.
 
 Checkpoint: 10a–10g have landed; 10f is [PR #3075](https://github.com/clicklang/click/pull/3075)
 and 10g is [PR #3080](https://github.com/clicklang/click/pull/3080).
+10m landed in [PR #3169](https://github.com/clicklang/click/pull/3169); all four
+pushed commits were verified on upstream and the clean primary was advanced
+through Git.
 10l landed in [PR #3160](https://github.com/clicklang/click/pull/3160); all five
 pushed commits were verified on upstream and the clean primary was advanced
 through Git.
@@ -602,8 +605,8 @@ sequence below. These rows record planned scope, not completed implementation.
 | 10j | Remove redundant native payloads from stored execution and memory values. | Audit actual wrapper-owned and reachable duplicate payloads first; remove demonstrated redundancy while preserving producer, storage and exact-refresh contracts. Account for live compatibility readers. | Audit complete; wrapper field duplication already absent; live dependencies below remain. |
 | 10k | Migrate native Integer result storage. | Integer results retain shared roots through result handoffs; exact native output is an explicit boundary. | Landed in [PR #3151](https://github.com/clicklang/click/pull/3151); all eight pushed commits verified on upstream. Evidence below. |
 | 10l | Migrate deferred Integer bindings and fold endpoints. | Deferred bindings and endpoints retain shared operands through substitution and evaluation with unchanged fold behavior. | Landed in [PR #3160](https://github.com/clicklang/click/pull/3160); all five pushed commits verified on upstream. |
-| 10m | Migrate algebraic field and match-result storage. | Fields and match results retain shared values with existing constructor/arm identity and producer metadata. | Implemented and locally validated; [PR #3169](https://github.com/clicklang/click/pull/3169) has auto-merge requested. Integration pending. |
-| 10n | Migrate theorem argument and recorded-state value storage. | Stored arguments and recorded values retain shared operands with unchanged substitution and state selection. | Planned. |
+| 10m | Migrate algebraic field and match-result storage. | Fields and match results retain shared values with existing constructor/arm identity and producer metadata. | Landed in [PR #3169](https://github.com/clicklang/click/pull/3169); all four pushed commits verified on upstream. |
+| 10n | Migrate theorem argument and recorded-state value storage. | Stored arguments and recorded values retain shared operands with unchanged substitution and state selection. | Implemented; validation in progress. |
 | 10o | Migrate program-valued resource-field storage. | Program-valued fields retain shared operands while preserving resource identity and substitution. | Planned. |
 | 10p | Migrate remaining expression payloads in sequence/resource descriptors. | Inventory and subdivide independent families before implementation; preserve legitimate opaque descriptor identities. | Planned; family split may be needed. |
 | 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | Planned. |
@@ -946,9 +949,38 @@ checks (script exit zero). An incremental compiler fingerprint error was
 resolved by clearing only the failed crate cache and rebuilding with unchanged
 settings. The old private native Integer-match factory has no remaining
 callers and is removed. After integrating upstream `affad43dd`, all 516
-focused checks and quality checks passed again (script exit zero). PR delivery
-is pending.
+focused checks and quality checks passed again (script exit zero).
+[PR #3169](https://github.com/clicklang/click/pull/3169) landed; all four pushed
+commits were verified on upstream and the clean primary advanced through Git.
 Full nightly was not run.
+
+### 10n Theorem bindings and recorded values
+
+Named program bindings in theorem contexts, theorem application, current/entry
+lowering and selected witness captures now own immutable `RetainedProgramValue` carriers. Shared producer roots remain
+shared, and exact native inputs remain explicit inputs; cloning either carrier
+is a handle copy.
+Native lookup is a selected compatibility output, not a second map payload.
+Ordinary theorem argument evaluation and recorded call transitions transfer
+the retained producer directly. Native call argument carrier forms are not
+canonicalized to numerical observation identity.
+Captures that already own roots transfer those roots directly. The existing
+native syntax equality contract remains distinct from execution observation
+identity. The existing root-owned compatibility slot serves reference-returning
+readers; cache removal still depends on migrating those readers in 10r–10s.
+
+Recorded call results, region-result handoffs and volatile read results retain
+the same carrier. Recorded loop counts and statement-transition loop-count
+handoffs retain Integer roots; diagnostic output is explicit. Existing source
+selection and variable-name indexes remain unchanged. Algebraic/pointer/scalar
+naming keys, `ReadEventNames` native identity keys, native input ASTs, contract
+interface argument lists and explicit native diagnostics remain live consumers;
+this slice does not claim to eliminate their distinct identity/input contracts.
+No state, address, allocation, binder or source-event identity is replaced.
+
+Regression coverage checks selected lookup without exporting unrelated bindings,
+root-only growing-DAG handoffs, call-form/bit/metadata round trips, and loop-count
+replacement with persistent state naming. Validation and PR delivery are pending.
 
 ## Chunk 3: machine-valued pure-function results
 

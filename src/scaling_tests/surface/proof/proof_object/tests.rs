@@ -1261,7 +1261,7 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
             memory: SymbolicMemory::new(),
-            values: BTreeMap::from([
+            values: ProgramValueBindings::from([
                 ("x".into(), ProgramValue::UInt64(x.clone())),
                 ("y".into(), ProgramValue::UInt64(y.clone())),
             ]),
@@ -2654,6 +2654,7 @@ fn cold_theorem_application_ignores_declaration_proof_length() {
     let mut baseline = None;
     let mut previous_proof_work = 0;
     for size in [4, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
         let source = format!(
             "theorem identity<T>(x: T) {{ requires x == x; ensures x == x by {{ {} known(); }} }}",
             "have x == x by solve(); ".repeat(size)
@@ -2724,14 +2725,19 @@ fn cold_theorem_application_ignores_declaration_proof_length() {
             root.apply_theorem_using(&application, std::slice::from_ref(&premise))
         });
         result.unwrap();
-        assert_eq!(work, *baseline.get_or_insert(work), "proof length {size}");
         let (repeated, repeated_work) = crate::instrumentation::measure_deterministic_work(|| {
             root.apply_theorem_using(&application, std::slice::from_ref(&premise))
         });
         repeated.unwrap();
+        // A retained argument caches its selected native compatibility output.
+        // Both modes must remain flat with declaration proof length; warming
+        // may save work but may not increase it.
+        assert!(repeated_work <= work);
+        let sample = (work, repeated_work);
         assert_eq!(
-            work, repeated_work,
-            "cold and repeated applications must match"
+            sample,
+            *baseline.get_or_insert(sample),
+            "proof length {size}"
         );
     }
 }

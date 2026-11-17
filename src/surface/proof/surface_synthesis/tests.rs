@@ -137,7 +137,7 @@ fn separate_round_trips_without_generating_span_obligations() {
         let (lowered, _, _, obligations) =
             crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
                 written, &PureFactContext::new(),
-                ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+                ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
                 FixedStateFrame::new(&state, &state, None, &RecordedStates::default()),
                 SpecDefinitions::new(&PredicateEnvironment::new(&[]), &ClickFunctionEnvironment::new(&[])),
                 FixedStateLoweringOptions::default(),
@@ -168,7 +168,7 @@ fn relower_written_proposition_with_states(
     crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
         surface,
         &PureFactContext::new(),
-        ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+        ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
         FixedStateFrame::new(pre_state, state, None, recorded_states),
         SpecDefinitions::new(
             &PredicateEnvironment::new(&[]),
@@ -3712,7 +3712,7 @@ fn boolean_calls_conditionals_and_equalities_round_trip_in_both_polarities() {
                 synthesize_surface_proposition(&fact, ParameterBinding::default(), &state)
                     .expect("Bool fact spelling");
             let lowered = crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
-                &surface, &PureFactContext::new(), ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+                &surface, &PureFactContext::new(), ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
                 FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
                 SpecDefinitions::new(&PredicateEnvironment::new(&[]), &ClickFunctionEnvironment::new(file.click_function_definitions())),
                 FixedStateLoweringOptions::default(),
@@ -3737,7 +3737,7 @@ fn generic_call_spelling_reparses_to_the_same_concrete_and_nested_instance() {
             "x",
             ProgramValue::Int32(MachineTerm::Variable(Variable(99001))),
         );
-        let values = BTreeMap::from([(
+        let values = ProgramValueBindings::from([(
             "x".to_string(),
             ProgramValue::Int32(MachineTerm::Variable(Variable(99001))),
         )]);
@@ -3960,7 +3960,7 @@ fn unified_terms_round_trip_nested_calls_and_mixed_integer_arguments() {
         let file = parser::parse(&source).unwrap();
         let value = ProgramValue::Int32(MachineTerm::Variable(Variable(99002)));
         let state = ExecutionState::new().with_local("x", value.clone());
-        let values = BTreeMap::from([("x".to_string(), value)]);
+        let values = ProgramValueBindings::from([("x".to_string(), value)]);
         let lower = |proposition: &ClickProposition| {
             crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
                 proposition, &PureFactContext::new(), ContractEnvironment::new(&values, &BTreeMap::new()),
@@ -4320,7 +4320,7 @@ fn check_common_machine_call_formats(formats: &[(MachineIntegerType, &str)]) {
         let file = parser::parse(&declarations).unwrap();
         let variable = ProgramValue::Int32(MachineTerm::Variable(Variable(995900)));
         let state = ExecutionState::new().with_local("x", variable.clone());
-        let values = BTreeMap::from([("x".to_string(), variable)]);
+        let values = ProgramValueBindings::from([("x".to_string(), variable)]);
         let parse_expression = |text: &str, result_type: &str| {
             let parsed = parser::parse(&format!(
                 "{declarations} function probe(x: int32) -> {result_type} {{ {text} }}"
@@ -4521,7 +4521,7 @@ fn common_match_surface_preserves_typed_binders_and_relowers_nested_results() {
             node: crate::kernel::SpecAlgebraicExpressionNode::Variable(Variable(991900)),
         },
     )]);
-    let values = BTreeMap::from([
+    let values = ProgramValueBindings::from([
         (
             "payload".to_string(),
             ProgramValue::Parameter(Box::new(scrutinee.clone())),
@@ -4606,7 +4606,7 @@ fn common_pointer_calls_round_trip_nested_source_calls() {
         ProgramType::Int32Pointer,
     ));
     let state = ExecutionState::new().with_local("p", input.clone());
-    let values = BTreeMap::from([("p".to_string(), input)]);
+    let values = ProgramValueBindings::from([("p".to_string(), input)]);
     let lower = |expression: &SurfaceTerm| {
         let spec = crate::surface::lowering::elaborate_fixed_state_expression(
             expression,
@@ -4805,8 +4805,8 @@ fn float_bit_literals_round_trip_exact_native_values() {
                 expression,
                 BTreeMap::new(),
                 &state,
-                BTreeMap::new(),
-                BTreeMap::new(),
+                ProgramValueBindings::new(),
+                ProgramValueBindings::new(),
                 None,
                 &RecordedStates::new(),
                 SpecDefinitions::new(
@@ -4919,8 +4919,8 @@ fn common_float_atoms_round_trip_printed_surface_bits() {
                 expression,
                 BTreeMap::new(),
                 &state,
-                values.clone(),
-                values.clone(),
+                values.clone().into(),
+                values.clone().into(),
                 None,
                 &RecordedStates::new(),
                 SpecDefinitions::new(
@@ -5007,8 +5007,8 @@ fn float_pointer_casts_round_trip_native_load_spelling() {
                 parsed.click_function_definitions()[0].body().unwrap(),
                 BTreeMap::new(),
                 &state,
-                BTreeMap::new(),
-                BTreeMap::new(),
+                ProgramValueBindings::new(),
+                ProgramValueBindings::new(),
                 None,
                 &RecordedStates::new(),
                 SpecDefinitions::new(
@@ -5089,8 +5089,8 @@ fn common_float_reads_round_trip_existing_cast_dereference_syntax() {
             expression,
             BTreeMap::new(),
             &state,
-            BTreeMap::new(),
-            BTreeMap::new(),
+            ProgramValueBindings::new(),
+            ProgramValueBindings::new(),
             None,
             &RecordedStates::new(),
             SpecDefinitions::new(
@@ -5216,8 +5216,8 @@ fn click_float_unary_negation_preserves_positive_zero_sign() {
             parsed.click_function_definitions()[0].body().unwrap(),
             BTreeMap::new(),
             &state,
-            BTreeMap::new(),
-            BTreeMap::new(),
+            ProgramValueBindings::new(),
+            ProgramValueBindings::new(),
             None,
             &RecordedStates::new(),
             SpecDefinitions::new(
@@ -5298,8 +5298,8 @@ fn click_float_unary_negation_preserves_bits_and_symbolic_operands() {
                 body,
                 BTreeMap::new(),
                 &state,
-                BTreeMap::new(),
-                BTreeMap::new(),
+                ProgramValueBindings::new(),
+                ProgramValueBindings::new(),
                 None,
                 &RecordedStates::new(),
                 SpecDefinitions::new(
@@ -5417,8 +5417,8 @@ fn common_float_arithmetic_round_trips_existing_operators() {
                 parsed.click_function_definitions()[0].body().unwrap(),
                 BTreeMap::new(),
                 &state,
-                BTreeMap::new(),
-                BTreeMap::new(),
+                ProgramValueBindings::new(),
+                ProgramValueBindings::new(),
                 None,
                 &RecordedStates::new(),
                 SpecDefinitions::new(
@@ -5536,8 +5536,8 @@ fn numeric_float_cast_spellings_match_native_conversions_and_round_trip() {
                     expression,
                     BTreeMap::new(),
                     &state,
-                    BTreeMap::new(),
-                    BTreeMap::new(),
+                    ProgramValueBindings::new(),
+                    ProgramValueBindings::new(),
                     None,
                     &RecordedStates::new(),
                     SpecDefinitions::new(
@@ -5588,8 +5588,8 @@ fn numeric_float_casts_read_historical_and_current_operands() {
         expression,
         BTreeMap::new(),
         &state,
-        BTreeMap::from([("x".into(), entry)]),
-        BTreeMap::from([("x".into(), current)]),
+        ProgramValueBindings::from([("x".into(), entry)]),
+        ProgramValueBindings::from([("x".into(), current)]),
         None,
         &RecordedStates::new(),
         SpecDefinitions::new(
@@ -5694,8 +5694,8 @@ fn common_float_conversions_round_trip_existing_casts() {
                     parsed.click_function_definitions()[0].body().unwrap(),
                     BTreeMap::new(),
                     &state,
-                    BTreeMap::new(),
-                    BTreeMap::new(),
+                    ProgramValueBindings::new(),
+                    ProgramValueBindings::new(),
                     None,
                     &RecordedStates::new(),
                     SpecDefinitions::new(
@@ -5775,8 +5775,8 @@ fn common_float_to_integer_conversions_round_trip_with_definedness() {
                     parsed.click_function_definitions()[0].body().unwrap(),
                     BTreeMap::new(),
                     &state,
-                    BTreeMap::new(),
-                    BTreeMap::new(),
+                    ProgramValueBindings::new(),
+                    ProgramValueBindings::new(),
                     None,
                     &RecordedStates::new(),
                     SpecDefinitions::new(
@@ -5863,8 +5863,8 @@ fn common_float_predicates_round_trip_existing_spelling() {
                 parsed.click_function_definitions()[0].body().unwrap(),
                 BTreeMap::new(),
                 &state,
-                BTreeMap::new(),
-                BTreeMap::new(),
+                ProgramValueBindings::new(),
+                ProgramValueBindings::new(),
                 None,
                 &RecordedStates::new(),
                 SpecDefinitions::new(
@@ -5927,8 +5927,8 @@ fn common_float_calls_round_trip_existing_function_syntax() {
                 .unwrap(),
             BTreeMap::new(),
             &state,
-            BTreeMap::new(),
-            BTreeMap::new(),
+            ProgramValueBindings::new(),
+            ProgramValueBindings::new(),
             None,
             &RecordedStates::new(),
             SpecDefinitions::new(
@@ -6003,8 +6003,8 @@ fn mixed_float_boolean_calls_round_trip_existing_surface_syntax() {
             .unwrap(),
         BTreeMap::new(),
         &state,
-        BTreeMap::new(),
-        BTreeMap::new(),
+        ProgramValueBindings::new(),
+        ProgramValueBindings::new(),
         None,
         &RecordedStates::new(),
         SpecDefinitions::new(
@@ -6401,7 +6401,7 @@ fn closed_machine_orders_round_trip_after_checked_rewrite() {
         for bound in [5, 100] {
             let _session = crate::kernel::VerificationSession::enter();
             let state = ExecutionState::new().with_local("x", value.clone());
-            let values = BTreeMap::from([("x".to_string(), value.clone())]);
+            let values = ProgramValueBindings::from([("x".to_string(), value.clone())]);
             let empty = BTreeMap::new();
             let lower = |surface: &ClickProposition| {
                 crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
@@ -6568,7 +6568,7 @@ fn machine_arithmetic_round_trips_after_checked_rewrite() {
                     _ => unreachable!(),
                 };
                 let state = ExecutionState::new().with_local("x", value.clone());
-                let values = BTreeMap::from([("x".to_string(), value)]);
+                let values = ProgramValueBindings::from([("x".to_string(), value)]);
                 let empty = BTreeMap::new();
                 let lower = |surface: &ClickProposition| {
                     crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
@@ -6699,7 +6699,7 @@ fn narrow_comparisons_round_trip_after_checked_rewrite() {
                     let _session = crate::kernel::VerificationSession::enter();
                     let x = source.value_from_term(MachineTerm::Variable(Variable(999702)));
                     let state = ExecutionState::new().with_local("x", x.clone());
-                    let values = BTreeMap::from([("x".to_string(), x)]);
+                    let values = ProgramValueBindings::from([("x".to_string(), x)]);
                     let empty = BTreeMap::new();
                     let lower = |surface: &ClickProposition| {
                         crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(

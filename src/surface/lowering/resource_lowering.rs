@@ -2010,7 +2010,7 @@ pub(in crate::surface) fn lower_resource_clause_facts_at_state_with_result_and_e
 /// not rebuild a map over every parameter.
 struct ClauseParameters<'a> {
     parameters: &'a [crate::languages::interface::ImportedParameter],
-    values: &'a BTreeMap<String, ProgramValue>,
+    values: &'a ProgramValueBindings,
     memory: &'a SymbolicMemory,
     index: Option<&'a crate::surface::ParameterIndex>,
     array_refs: std::cell::OnceCell<ClickArrayRefs>,
@@ -2019,7 +2019,7 @@ struct ClauseParameters<'a> {
 impl<'a> ClauseParameters<'a> {
     fn new(
         parameters: &'a [crate::languages::interface::ImportedParameter],
-        values: &'a BTreeMap<String, ProgramValue>,
+        values: &'a ProgramValueBindings,
         memory: &'a SymbolicMemory,
     ) -> Self {
         Self {
@@ -2053,7 +2053,7 @@ impl<'a> ClauseParameters<'a> {
 fn lower_resource_clause_with_values(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    values: &BTreeMap<String, ProgramValue>,
+    values: &ProgramValueBindings,
     state: &ExecutionState,
     result: Option<&ProgramValue>,
 ) -> Result<ResourceFact, ClickError> {
@@ -2070,7 +2070,7 @@ fn lower_resource_clause_with_values(
 fn lower_resource_clause_with_values_mode(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    values: &BTreeMap<String, ProgramValue>,
+    values: &ProgramValueBindings,
     state: &ExecutionState,
     result: Option<&ProgramValue>,
     allow_symbolic_resource_arguments: bool,
@@ -2600,7 +2600,7 @@ fn evaluate_resource_argument_with_state(
 fn lower_resource_clause_facts_with_values(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    values: &BTreeMap<String, ProgramValue>,
+    values: &ProgramValueBindings,
     state: &ExecutionState,
     result: Option<&ProgramValue>,
 ) -> Result<Vec<ResourceFact>, ClickError> {
@@ -2617,7 +2617,7 @@ fn lower_resource_clause_facts_with_values(
 fn lower_resource_clause_facts_with_values_mode(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    values: &BTreeMap<String, ProgramValue>,
+    values: &ProgramValueBindings,
     state: &ExecutionState,
     result: Option<&ProgramValue>,
     allow_symbolic_resource_arguments: bool,
@@ -3988,7 +3988,7 @@ fn requirement_proposition_and_facts_with_assumptions(
 
 pub(in crate::surface) fn parameter_values(
     parameter_binding: ParameterBinding<'_>,
-) -> Result<BTreeMap<String, ProgramValue>, ClickError> {
+) -> Result<ProgramValueBindings, ClickError> {
     crate::instrumentation::record_deterministic_work(parameter_binding.parameters.len());
     parameter_binding
         .parameters
@@ -4011,7 +4011,7 @@ pub(in crate::surface) fn parameter_values(
 pub(in crate::surface) fn parameter_values_named(
     parameter_binding: ParameterBinding<'_>,
     names: &BTreeSet<String>,
-) -> Result<BTreeMap<String, ProgramValue>, ClickError> {
+) -> Result<ProgramValueBindings, ClickError> {
     let Some(index) = parameter_binding.index else {
         return parameter_values(parameter_binding);
     };
@@ -4040,7 +4040,7 @@ pub(in crate::surface) fn parameter_values_named(
 /// index, found from those values alone rather than from every parameter.
 pub(in crate::surface) fn array_refs_for_values(
     parameter_binding: ParameterBinding<'_>,
-    values: &BTreeMap<String, ProgramValue>,
+    values: &ProgramValueBindings,
     memory: &SymbolicMemory,
 ) -> ClickArrayRefs {
     let Some(index) = parameter_binding.index else {
@@ -4107,7 +4107,7 @@ fn resource_clause_referenced_names(resource: &ResourceClause) -> Option<BTreeSe
 fn resource_clause_parameter_values(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-) -> Result<BTreeMap<String, ProgramValue>, ClickError> {
+) -> Result<ProgramValueBindings, ClickError> {
     match resource_clause_referenced_names(resource) {
         Some(names) => parameter_values_named(parameter_binding, &names),
         None => parameter_values(parameter_binding),
@@ -4116,7 +4116,7 @@ fn resource_clause_parameter_values(
 
 pub(in crate::surface) fn array_refs_for_parameters(
     parameters: &[crate::languages::interface::ImportedParameter],
-    values: &BTreeMap<String, ProgramValue>,
+    values: &ProgramValueBindings,
     memory: &SymbolicMemory,
 ) -> ClickArrayRefs {
     crate::instrumentation::record_deterministic_work(parameters.len());

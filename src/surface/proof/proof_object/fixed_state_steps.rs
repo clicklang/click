@@ -1846,7 +1846,7 @@ impl<'a> Proof<'a> {
                 context
                     .theorem_context
                     .values
-                    .get(name)
+                    .get_retained(name)
                     .map(|value| (name.clone(), value.clone()))
             })
             .collect();
@@ -2021,13 +2021,13 @@ impl<'a> Proof<'a> {
         let expression = self.substitute_fixed_state_locals_in_expression(expression)?;
         let mut names = BTreeSet::new();
         collect_contract_expression_referenced_names(&expression, &mut names);
-        let values: BTreeMap<_, _> = names
+        let values: ProgramValueBindings = names
             .iter()
             .filter_map(|name| {
                 context
                     .theorem_context
                     .values
-                    .get(name)
+                    .get_retained(name)
                     .map(|value| (name.clone(), value.clone()))
             })
             .collect();
@@ -2101,13 +2101,13 @@ impl<'a> Proof<'a> {
         {
             return Ok(value);
         }
-        let values: BTreeMap<_, _> = names
+        let values: ProgramValueBindings = names
             .iter()
             .filter_map(|name| {
                 context
                     .theorem_context
                     .values
-                    .get(name)
+                    .get_retained(name)
                     .map(|value| (name.clone(), value.clone()))
             })
             .collect();

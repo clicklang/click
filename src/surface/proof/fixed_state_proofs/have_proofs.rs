@@ -1165,8 +1165,8 @@ pub(in crate::surface::proof) struct FixedStateLowering {
     pub(in crate::surface::proof) entry_state: ExecutionState,
     pub(in crate::surface::proof) lowering_state: ExecutionState,
     pub(in crate::surface::proof) element_types: BTreeMap<String, ProgramType>,
-    pub(in crate::surface::proof) entry_values: BTreeMap<String, ProgramValue>,
-    pub(in crate::surface::proof) current_values: BTreeMap<String, ProgramValue>,
+    pub(in crate::surface::proof) entry_values: ProgramValueBindings,
+    pub(in crate::surface::proof) current_values: ProgramValueBindings,
 }
 
 fn has_live_aggregate_binding(state: &ExecutionState, name: &str) -> bool {
@@ -1246,8 +1246,8 @@ impl FixedStateLowering {
         let mut entry_state = pre_state.clone();
         let mut lowering_state = state.clone();
         let mut element_types = BTreeMap::new();
-        let mut entry_values = BTreeMap::new();
-        let mut current_values = BTreeMap::new();
+        let mut entry_values = ProgramValueBindings::new();
+        let mut current_values = ProgramValueBindings::new();
         for name in names {
             crate::instrumentation::record_deterministic_work(1);
             if name.named().is_none() {
@@ -1735,7 +1735,7 @@ mod retained_capture_tests {
         capture_fixed_state_retained_expression_with_guards(
             expression,
             &PureFactContext::new(),
-            ContractEnvironment::new(&BTreeMap::new(), &ClickArrayRefs::new()),
+            ContractEnvironment::new(&ProgramValueBindings::new(), &ClickArrayRefs::new()),
             BTreeMap::new(),
             &PersistentBinderMap::default(),
             FixedStateFrame::new(&state, &state, None, &RecordedStates::default()),

@@ -263,7 +263,7 @@ fn named_int32_function(
 }
 
 /// [`named_int32`]'s names as a pure theorem's values.
-fn named_int32_values(terms: &[MachineTerm]) -> BTreeMap<String, ProgramValue> {
+fn named_int32_values(terms: &[MachineTerm]) -> ProgramValueBindings {
     terms
         .iter()
         .enumerate()
@@ -484,7 +484,7 @@ fn pure_identity_fixture() -> PureTheoremContext {
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
         memory: SymbolicMemory::new(),
-        values: BTreeMap::new(),
+        values: ProgramValueBindings::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
         surface_requirements: SurfacePropositionMap::default(),
@@ -1486,7 +1486,7 @@ fn proof_failure_preserves_ancestor_and_selected_lineage() {
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
         memory: SymbolicMemory::new(),
-        values: BTreeMap::new(),
+        values: ProgramValueBindings::new(),
         array_refs: BTreeMap::new(),
         requires: vec![goal.clone()],
         surface_requirements: SurfacePropositionMap::default(),
@@ -1532,7 +1532,7 @@ fn branch_identity_is_stable_across_fork_refinement_and_closure() {
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
         memory: SymbolicMemory::new(),
-        values: BTreeMap::new(),
+        values: ProgramValueBindings::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
         surface_requirements: SurfacePropositionMap::default(),
@@ -1598,7 +1598,7 @@ fn certificate_suffix_requires_an_exact_shared_ancestor() {
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
         memory: SymbolicMemory::new(),
-        values: BTreeMap::new(),
+        values: ProgramValueBindings::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
         surface_requirements: SurfacePropositionMap::default(),
@@ -1673,7 +1673,7 @@ fn have_scope_publishes_only_a_completed_checked_body() {
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
         memory: SymbolicMemory::new(),
-        values: BTreeMap::new(),
+        values: ProgramValueBindings::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
         surface_requirements: SurfacePropositionMap::default(),
@@ -1771,7 +1771,7 @@ fn pure_have_presentation_root(surface: ClickProposition) -> Proof<'static> {
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
         memory: SymbolicMemory::new(),
-        values: BTreeMap::new(),
+        values: ProgramValueBindings::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
         surface_requirements: SurfacePropositionMap::default(),
@@ -2134,7 +2134,7 @@ fn smart_have_scope_and_explicit_step_scale_with_local_output() {
     let kernel = lower_pure_theorem_proposition(
         "smart have scaling",
         &proposition,
-        ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+        ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
         &memory,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
@@ -2155,7 +2155,7 @@ fn smart_have_scope_and_explicit_step_scale_with_local_output() {
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
             memory: memory.clone(),
-            values: BTreeMap::new(),
+            values: ProgramValueBindings::new(),
             array_refs: BTreeMap::new(),
             requires: requires.clone(),
             surface_requirements: SurfacePropositionMap::default(),
@@ -2391,7 +2391,7 @@ fn persistent_fact_lookup_scales_logarithmically() {
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
             memory: SymbolicMemory::new(),
-            values: BTreeMap::new(),
+            values: ProgramValueBindings::new(),
             array_refs: BTreeMap::new(),
             requires,
             surface_requirements: SurfacePropositionMap::default(),
@@ -2689,7 +2689,7 @@ fn proposition_unfold_uses_indexed_facts_and_persistent_local_state() {
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
         memory: SymbolicMemory::new(),
-        values: BTreeMap::new(),
+        values: ProgramValueBindings::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
         surface_requirements: SurfacePropositionMap::default(),
@@ -3213,7 +3213,7 @@ fn proof_if_fork_and_join_work_is_logarithmic_in_unrelated_facts() {
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
             memory: SymbolicMemory::new(),
-            values: BTreeMap::new(),
+            values: ProgramValueBindings::new(),
             array_refs: BTreeMap::new(),
             requires,
             surface_requirements: SurfacePropositionMap::default(),
@@ -3758,7 +3758,7 @@ fn pure_rewrite_uses_indexed_equality_availability_without_changing_facts() {
             ("w".to_string()).into(),
         )),
     };
-    let values = BTreeMap::from([
+    let values = ProgramValueBindings::from([
         (
             "x".to_string(),
             ProgramValue::Int32(MachineTerm::Variable(Variable(9_100_000))),
@@ -3918,7 +3918,7 @@ fn surface_rewrite_retains_structural_successor_and_scales() {
             zero,
         )),
     );
-    let values = BTreeMap::from([
+    let values = ProgramValueBindings::from([
         (
             "x".to_string(),
             ProgramValue::Int32(MachineTerm::Variable(Variable(9_101_000))),
@@ -4042,7 +4042,7 @@ fn apply_fact_uses_selected_implication_and_alpha_equivalent_antecedent() {
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
         memory: SymbolicMemory::new(),
-        values: BTreeMap::from([(
+        values: ProgramValueBindings::from([(
             "x".to_string(),
             ProgramValue::Int32(MachineTerm::Variable(Variable(8_000_000))),
         )]),
@@ -9156,7 +9156,7 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
     let kernel_premise = lower_pure_theorem_proposition(
         "persistent pure theorem search",
         &premise,
-        ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+        ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
         &memory,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
@@ -9164,7 +9164,7 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
     let kernel_conclusion = lower_pure_theorem_proposition(
         "persistent pure theorem search",
         &conclusion,
-        ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+        ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
         &memory,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
@@ -9190,7 +9190,7 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
             memory: memory.clone(),
-            values: BTreeMap::new(),
+            values: ProgramValueBindings::new(),
             array_refs: BTreeMap::new(),
             requires: requires.clone(),
             surface_requirements: SurfacePropositionMap::default(),
@@ -9303,7 +9303,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
     let kernel_premise = lower_pure_theorem_proposition(
         "checked conjunct theorem application",
         &premise,
-        ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+        ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
         &memory,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
@@ -9311,7 +9311,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
     let kernel_selected = lower_pure_theorem_proposition(
         "checked conjunct theorem application",
         &selected,
-        ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+        ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
         &memory,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
@@ -9319,7 +9319,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
     let kernel_disjunction = lower_pure_theorem_proposition(
         "checked conjunct theorem application",
         &disjunction,
-        ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+        ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
         &memory,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
@@ -9327,7 +9327,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
     let kernel_wrong_conjunction = lower_pure_theorem_proposition(
         "checked conjunct theorem application",
         &wrong_conjunction,
-        ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+        ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
         &memory,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
@@ -9335,7 +9335,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
     let kernel_implication = lower_pure_theorem_proposition(
         "checked conjunct theorem application",
         &implication,
-        ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+        ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
         &memory,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
@@ -9365,7 +9365,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
     let kernel_conclusion = lower_pure_theorem_proposition(
         "checked conjunct theorem application",
         &conclusion,
-        ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+        ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
         &memory,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
@@ -9375,7 +9375,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
         memory,
-        values: BTreeMap::new(),
+        values: ProgramValueBindings::new(),
         array_refs: BTreeMap::new(),
         requires: vec![kernel_selected],
         surface_requirements: SurfacePropositionMap::default(),

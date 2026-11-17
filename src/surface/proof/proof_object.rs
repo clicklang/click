@@ -1644,7 +1644,7 @@ pub(in crate::surface::proof) fn register_recorded_state_names(
     // Each exited loop's pass count, `loop(i).iterations`.
     for (name, iterations) in retained_states.loop_iteration_bindings() {
         if let crate::kernel::IntegerTerm::Variable(variable) = iterations {
-            labels.integer_source_name(*variable, name);
+            labels.integer_source_name(variable, name);
         }
     }
     // Each recorded call's result, `statement(0).call(f, 0).result`.

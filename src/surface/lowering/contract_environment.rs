@@ -28,10 +28,10 @@ pub(in crate::surface) fn array_refs_with_memory(
 }
 
 pub(in crate::surface) fn contract_environment_at_state(
-    parameter_values: &BTreeMap<String, ProgramValue>,
+    parameter_values: &ProgramValueBindings,
     array_refs: &ClickArrayRefs,
     state: &ExecutionState,
-) -> (BTreeMap<String, ProgramValue>, ClickArrayRefs) {
+) -> (ProgramValueBindings, ClickArrayRefs) {
     let mut values = parameter_values.clone();
     values.extend(state.locals().object_values().filter_map(|(name, value)| {
         Some((
@@ -90,7 +90,7 @@ pub(in crate::surface) fn contract_environment_for_names(
     parameter_binding: ParameterBinding<'_>,
     names: &BTreeSet<String>,
     state: &ExecutionState,
-) -> Result<(BTreeMap<String, ProgramValue>, ClickArrayRefs), ClickError> {
+) -> Result<(ProgramValueBindings, ClickArrayRefs), ClickError> {
     let mut values = parameter_values_named(parameter_binding, names)?;
     let mut array_refs = array_refs_for_values(parameter_binding, &values, state.memory());
     for name in names {
@@ -337,7 +337,7 @@ mod tests {
     }
 
     fn assert_bytes(
-        values: &BTreeMap<String, ProgramValue>,
+        values: &ProgramValueBindings,
         arrays: &ClickArrayRefs,
         value: &ProgramValue,
         element_type: ProgramType,
@@ -367,7 +367,7 @@ mod tests {
         )];
         let arguments = [ProgramExpression::Value(value.clone())];
         let binding = ParameterBinding::new(&parameters, &arguments);
-        let values = BTreeMap::from([("bytes".to_string(), value.clone())]);
+        let values = ProgramValueBindings::from([("bytes".to_string(), value.clone())]);
         let arrays = array_refs_for_parameters(&parameters, &values, state.memory());
         let names = BTreeSet::from(["bytes".to_string()]);
         let reassigned = ProgramValue::typed_pointer(
@@ -396,7 +396,7 @@ mod tests {
             ProgramType::UInt8Pointer,
         );
         let (values, arrays) =
-            contract_environment_at_state(&BTreeMap::new(), &BTreeMap::new(), &state);
+            contract_environment_at_state(&ProgramValueBindings::new(), &BTreeMap::new(), &state);
         assert_bytes(&values, &arrays, &expected, ProgramType::UInt8);
         let (values, arrays) =
             contract_environment_for_names(ParameterBinding::default(), &names, &state).unwrap();

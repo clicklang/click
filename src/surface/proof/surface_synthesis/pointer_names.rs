@@ -51,7 +51,7 @@ mod tests {
 
     fn check_names(values: Vec<(&str, PointerValue)>) {
         let state = ExecutionState::new();
-        let bindings: BTreeMap<_, _> = values
+        let bindings: ProgramValueBindings = values
             .iter()
             .map(|(name, value)| (name.to_string(), ProgramValue::Pointer(value.clone())))
             .collect();
@@ -182,7 +182,8 @@ mod tests {
             ProgramType::Int32Pointer,
         );
         let state = ExecutionState::new().with_local("p", ProgramValue::Pointer(pointer.clone()));
-        let bindings = BTreeMap::from([("p".to_string(), ProgramValue::Pointer(pointer.clone()))]);
+        let bindings =
+            ProgramValueBindings::from([("p".to_string(), ProgramValue::Pointer(pointer.clone()))]);
         for format in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
             let value = format.value_from_term(MachineTerm::object_pointer_address(
                 pointer.pointer().clone(),

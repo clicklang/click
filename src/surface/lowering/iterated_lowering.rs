@@ -451,7 +451,7 @@ pub(in crate::surface) fn iterated_clause_to_spec(
 pub(in crate::surface) fn lower_iterated_clause_with_values(
     clause: &IteratedResourceClause,
     parameters: &[crate::languages::interface::ImportedParameter],
-    values: &BTreeMap<String, ProgramValue>,
+    values: &ProgramValueBindings,
     state: &ExecutionState,
     result: Option<&ProgramValue>,
     assumptions: &PureFactContext,
