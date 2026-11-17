@@ -1846,8 +1846,8 @@ impl IntegerTerm {
         let matched =
             crate::kernel::KernelMatch::import_integer(&mut KernelTermImport::default(), &native)
                 .expect("Integer match producer");
-        // The path result still has a shallow native Integer reading. Arm
-        // bodies retain their common handles across this explicit boundary.
+        // This native API returns a shallow Integer reading. Arm bodies retain
+        // their common handles across the explicit compatibility boundary.
         KernelTermExport::default()
             .integer(&matched.into_term())
             .expect("Integer match result reading")
@@ -1872,8 +1872,8 @@ impl IntegerTerm {
         let fold = KernelFold::import_integer(&mut KernelTermImport::default(), &native)
             .expect("Integer fold producer");
         let root = fold.into_term();
-        // SpecIntegerPath still returns the native Integer carrier. This is
-        // one shallow root reading; its children retain their common handles.
+        // This native API returns one shallow root reading; its children retain
+        // common handles. Common producers retain KernelFold directly.
         KernelTermExport::default()
             .integer(&root)
             .expect("Integer fold result reading")

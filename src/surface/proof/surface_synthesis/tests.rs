@@ -2413,7 +2413,7 @@ fn actual_struct_field_load_equation(
         panic!("load equation must remain an equality: {spelled:?}");
     };
     assert_ne!(left, right, "the source spelling must not be tautological");
-    assert!(matches!(left, ContractExpression::CBinding(name) if name == "result"));
+    assert!(matches!(left, ContractExpression::ProgramBinding(name) if name == "result"));
     assert!(matches!(right, ContractExpression::Field { field, .. } if field == field_name));
     let lowered = relower_written_proposition(&spelled, &state).unwrap();
     assert_eq!(

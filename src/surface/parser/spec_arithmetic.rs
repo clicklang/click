@@ -149,7 +149,7 @@ impl Parser {
                 ContractExpression::Apply { function, .. } => {
                     let proposition_result = match function.as_ref() {
                         ContractExpression::Binding(name)
-                        | ContractExpression::CBinding(name)
+                        | ContractExpression::ProgramBinding(name)
                         | ContractExpression::ProgramExpression(ProgramExpression::Variable(
                             crate::kernel::BindingName::Named(name),
                         )) => matches!(
@@ -165,7 +165,7 @@ impl Parser {
                     proposition_result.then_some(SpecificationBinding::Proposition)
                 }
                 ContractExpression::Binding(name)
-                | ContractExpression::CBinding(name)
+                | ContractExpression::ProgramBinding(name)
                 | ContractExpression::ProgramExpression(ProgramExpression::Variable(
                     crate::kernel::BindingName::Named(name),
                 )) => self.specification_binding_kind(name),
@@ -286,7 +286,7 @@ impl Parser {
     fn c_only_value(&self, value: &ContractExpression) -> bool {
         match value {
             ContractExpression::Binding(name)
-            | ContractExpression::CBinding(name)
+            | ContractExpression::ProgramBinding(name)
             | ContractExpression::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) if self.local_operand(&LocalOperands::new(), name).is_some() => {
@@ -579,8 +579,8 @@ impl Parser {
                     self.integer_operand_in_scope(&arm.body, scope)
                 })
             }),
-            // `c(name)` is the program's binding, never a Click Integer.
-            ContractExpression::CBinding(_) => false,
+            // `program::name` is the program's binding, never a Click Integer.
+            ContractExpression::ProgramBinding(_) => false,
             ContractExpression::Binding(name)
             | ContractExpression::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
@@ -599,7 +599,7 @@ impl Parser {
                     || crate::surface::integer_truncation::is_integer_truncation(name)
                     || self.integer_function_names.contains(name)
             }
-            ContractExpression::CBinding(_) => false,
+            ContractExpression::ProgramBinding(_) => false,
             ContractExpression::Binding(name)
             | ContractExpression::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
@@ -687,14 +687,14 @@ impl Parser {
                 })
             }),
             ContractExpression::Binding(name)
-            | ContractExpression::CBinding(name)
+            | ContractExpression::ProgramBinding(name)
             | ContractExpression::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) if self.local_operand(scope, name).is_some() => {
                 self.local_operand(scope, name) == Some(LocalOperand::COnly)
             }
             ContractExpression::Binding(name)
-            | ContractExpression::CBinding(name)
+            | ContractExpression::ProgramBinding(name)
             | ContractExpression::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) if matches!(
@@ -735,7 +735,7 @@ impl Parser {
                 ..
             } if target_type.is_pointer() => true,
             ContractExpression::Binding(name)
-            | ContractExpression::CBinding(name)
+            | ContractExpression::ProgramBinding(name)
             | ContractExpression::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => {
@@ -868,7 +868,7 @@ impl Parser {
             }
             ContractExpression::IntegerLiteral(value) => ContractExpression::IntegerLiteral(value),
             ContractExpression::Binding(ref name)
-            | ContractExpression::CBinding(ref name)
+            | ContractExpression::ProgramBinding(ref name)
             | ContractExpression::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(ref name),
             )) if self.local_operand(scope, name) == Some(LocalOperand::Unknown) => expression,
@@ -914,7 +914,7 @@ impl Parser {
             }),
             ContractExpression::IntegerLiteral(_) => None,
             ContractExpression::Binding(name)
-            | ContractExpression::CBinding(name)
+            | ContractExpression::ProgramBinding(name)
             | ContractExpression::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) if self.local_operand(scope, name).is_some() => (self.local_operand(scope, name)
@@ -942,7 +942,7 @@ impl Parser {
                 expression: inner, ..
             } => self.machine_operand_type(inner),
             ContractExpression::Binding(name)
-            | ContractExpression::CBinding(name)
+            | ContractExpression::ProgramBinding(name)
             | ContractExpression::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => self

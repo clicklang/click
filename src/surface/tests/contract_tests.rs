@@ -964,7 +964,7 @@ pub(super) fn result_case_split_sources() -> (&'static str, &'static str, &'stat
                 step();
                 step();
                 step();
-                if c(replaced) == 0 {
+                if program::replaced == 0 {
                     step();
                     step();
                 } else {
@@ -983,8 +983,8 @@ pub(super) fn result_case_split_sources() -> (&'static str, &'static str, &'stat
 fn explicit_proof_if_does_not_capture_shared_following_c_if() {
     let (replace_source, caller_source, click_source) = result_case_split_sources();
     let click_source = click_source.replace(
-        "                if c(replaced) == 0 {",
-        "                if at(region(1).exit, owner->data) == old(owner->data) {\n                } else {\n                }\n                if c(replaced) == 0 {",
+        "                if program::replaced == 0 {",
+        "                if at(region(1).exit, owner->data) == old(owner->data) {\n                } else {\n                }\n                if program::replaced == 0 {",
     );
     assert!(
         click_source.contains("if at(region(1).exit, owner->data)"),

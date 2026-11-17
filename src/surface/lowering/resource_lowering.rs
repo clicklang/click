@@ -2854,11 +2854,11 @@ pub(in crate::surface) fn resource_argument_to_program_expression(
         ContractExpression::Field { lowered, .. } => Ok(lowered.clone()),
         ContractExpression::ArrayIndex { lowered, .. } => Ok(lowered.clone()),
         // A loop's pass count is a Click Integer, never a C value; a program
-        // variable of that name is `c(iterations)`.
+        // variable of that name is `program::iterations`.
         ContractExpression::Binding(name) if name == crate::surface::LOOP_ITERATIONS_NAME => Err(
             ClickError::new("a loop's `iterations` is an Integer, not a C value"),
         ),
-        ContractExpression::Binding(name) | ContractExpression::CBinding(name) => {
+        ContractExpression::Binding(name) | ContractExpression::ProgramBinding(name) => {
             Ok(ProgramExpression::Variable((name.clone()).into()))
         }
         ContractExpression::Add(left, right) => Ok(ProgramExpression::Add(
@@ -3607,7 +3607,7 @@ pub(in crate::surface) fn contract_segment_element_width_for_result_type(
     if matches!(&segment.base, ProgramExpression::Variable(name)
         if name == &crate::kernel::CONTRACT_RESULT
             || (name.is_named("result") && !matches!(&segment.surface,
-                ContractSegmentSurface::Range { base: ContractExpression::CBinding(_), .. })))
+                ContractSegmentSurface::Range { base: ContractExpression::ProgramBinding(_), .. })))
         && let Some(element_width) = result_type
             .and_then(ProgramType::pointee_type)
             .map(ProgramType::byte_width)
@@ -3649,7 +3649,7 @@ pub(in crate::surface) fn contract_segment_element_width_with_pointer_types(
         || matches!(&segment.base, ProgramExpression::Variable(name)
             if name == &crate::kernel::CONTRACT_RESULT
                 || (name.is_named("result") && !matches!(&segment.surface,
-                    ContractSegmentSurface::Range { base: ContractExpression::CBinding(_), .. })))
+                    ContractSegmentSurface::Range { base: ContractExpression::ProgramBinding(_), .. })))
     {
         return contract_segment_element_width_for_result_type(parameters, segment, result_type);
     }
