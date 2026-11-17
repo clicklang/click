@@ -874,8 +874,9 @@ passed in isolation, and the remaining selection passed with two workers.
 The workspace reconnect lost that latter runner handle; its completed log
 reports all 2,288 selected cases passing. The regular mdtest corpus, fact
 stability (zero changed terms/paths), regular examples and quality checks
-passed before the final direct-fold producer adjustment; affected fold fixtures
-and replay are checked separately after that adjustment. Full nightly was not
+passed before the final direct-fold producer adjustment; after integrating upstream `2ba6b3961`, all 509 Spec/API/termination checks,
+the fold-read fixture selection, named expansion/replay with implicit solving
+disabled, and quality checks passed (combined script exit zero). Full nightly was not
 run.
 
 ## Chunk 3: machine-valued pure-function results
