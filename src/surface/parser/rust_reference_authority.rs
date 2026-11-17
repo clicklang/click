@@ -367,7 +367,7 @@ fn path_type_name(path: &[Token]) -> Option<String> {
         .into_iter()
         .flatten()
         .collect::<Vec<_>>();
-    if segments.is_empty() || path.len() % 2 == 0 {
+    if segments.is_empty() || path.len().is_multiple_of(2) {
         return None;
     }
     Some(crate::languages::rust::names::path_name(&segments))

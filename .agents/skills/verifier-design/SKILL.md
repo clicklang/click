@@ -15,7 +15,7 @@ A `Memory` or `SharedMemory` value is a **memory state**, which can contain
 partial or abstract information. See the vocabulary in
 `docs/concepts/memory-model.md`.
 Externally defined API symbols and opaque import-profile identifiers retain
-their exact upstream spelling; do not rewrite frozen compiler artifacts.
+their exact upstream names; do not rewrite frozen compiler artifacts.
 
 ## 1. Name the part
 
@@ -102,11 +102,11 @@ implicit fact per address shape and uses exact membership for stated goals;
 do not recover a missed proof by enumerating an ambiguous bucket. Select its
 source in planning, retain the explicit transport in expansion, and test both
 exact hits and misses as the bucket grows.
-Checked view queries also must not enumerate pointer spellings or exact alias
-lists. Use indexed class/storage coordinates and align a selected source with
-the query; other spellings belong behind `SearchPermission`. Grow both affine
-classes and same-block alias stars in tests, including misses and displaced
-accesses beside unrelated views.
+Checked view queries also must not enumerate pointer representations or exact
+alias lists. Use indexed class/storage coordinates and align a selected source
+with the query; other representations belong behind `SearchPermission`. Grow
+both affine classes and same-block alias stars in tests, including misses and
+displaced accesses beside unrelated views.
 Condition queries use indexed truth or singleton shape/variable buckets, never
 scalar-class enumeration. Read-validity sources retain their type and state
 checks; alternate-source search requires planner permission. Kept-frame raw

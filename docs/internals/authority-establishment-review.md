@@ -169,7 +169,7 @@ and a produced return. The kernel checks actual body ownership and allocation
 lifetime before accepting the effect. An inactive guard contributes no units;
 an unresolved guard does not certify a resource transition. Smart closers and
 explicit assumptions retain the same checked resource evidence, so their
-presentation spelling grants no additional transfer permission.
+printed form grants no additional transfer permission.
 
 Retirement requires authority and a zero total. It removes the live authority
 but retains the fact that this scope has already been established until the
@@ -181,7 +181,7 @@ any authority remains registered. Scope exit cannot silently discard authority, 
 ownership. Moving these obligations to another owner is allowed.
 
 An exact count read selects the already-owned population authority of its
-anchor as written. Lowering does not respell the anchor through a proved
+anchor as written. Lowering does not rewrite the anchor through a proved
 pointer alias; a proof that counts through an alias rewrites it to the anchor
 first. The selected authority is authenticated against the live creation
 ledger. Pointer equality supplies neither authority ownership nor membership

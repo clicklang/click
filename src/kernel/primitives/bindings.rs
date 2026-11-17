@@ -291,21 +291,21 @@ impl BinderIds {
                 self.reserved.remove(&left);
             }
         }
-        if let Some((&left, &right)) = self.reserved.range(number..).next() {
-            if number.checked_add(1) == Some(left) {
-                end = right;
-                self.reserved.remove(&left);
-            }
+        if let Some((&left, &right)) = self.reserved.range(number..).next()
+            && number.checked_add(1) == Some(left)
+        {
+            end = right;
+            self.reserved.remove(&left);
         }
         self.reserved.insert(start, end);
     }
     fn fresh(&mut self) -> u64 {
-        if let Some((_, &end)) = self.reserved.range(..=self.next).next_back() {
-            if end >= self.next {
-                self.next = end
-                    .checked_add(1)
-                    .expect("specification binder identity space exhausted");
-            }
+        if let Some((_, &end)) = self.reserved.range(..=self.next).next_back()
+            && end >= self.next
+        {
+            self.next = end
+                .checked_add(1)
+                .expect("specification binder identity space exhausted");
         }
         let number = self.next;
         self.reserve(number);

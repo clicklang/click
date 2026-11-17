@@ -583,26 +583,33 @@ fn every_guard(
     if let Some(value) = guard_holds_for(&hypotheses, iterated, &cell) {
         return Ok(Some(value));
     }
-    // The guard over the whole range is a universally quantified fact;
-    // instantiating it at the arbitrary index is the one scan over the
-    // context's quantified facts this whole-range step makes.
-    let instantiated = instantiate_guard(&hypotheses, iterated, &cell);
-    Ok(guard_holds_for(&instantiated, iterated, &cell))
-}
-
-/// `hypotheses` with every universally quantified fact instantiated at the
-/// guard comparison of `cell`.
-fn instantiate_guard(
-    hypotheses: &PureFactContext,
-    iterated: &IteratedMemory,
-    cell: &MachineTerm,
-) -> PureFactContext {
-    hypotheses
-        .instantiated_universal_consequents(cell, iterated.guard().value())
-        .into_iter()
-        .fold(hypotheses.clone(), |facts, consequent| {
-            facts.assume_proposition(consequent)
-        })
+    let antecedent = Proposition::And(
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::signed_less_equal(iterated.lower().clone(), index.clone()),
+            true,
+        )),
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::signed_less_than(index, iterated.upper().clone()),
+            true,
+        )),
+    );
+    let Some((value, equal)) = hypotheses.selected_universal_equality_value(
+        ITERATED_GUARD_INDEX,
+        antecedent,
+        &cell,
+        iterated.guard().value(),
+    ) else {
+        return Ok(None);
+    };
+    if equal {
+        Ok(guard_holds_for(&hypotheses, iterated, &value))
+    } else {
+        Ok((hypotheses.decide(&ConditionTerm::equal(
+            value,
+            iterated.guard().value().clone(),
+        )) == Some(true))
+        .then_some(!iterated.guard().holds_when_equal()))
+    }
 }
 
 /// The frame of a loop that declares its own resources, without the iterated

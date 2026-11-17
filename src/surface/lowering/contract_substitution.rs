@@ -2766,10 +2766,8 @@ fn collect_contract_expression_referenced_bindings_one<N: ReferencedBinding>(
             let previous = N::binder(name).is_some_and(|name| N::leave_scope(names, &name));
             collect_contract_expression_referenced_bindings(body, names);
             let _ = N::binder(name).is_some_and(|name| N::leave_scope(names, &name));
-            if previous {
-                if let Some(name) = N::binder(name) {
-                    names.insert(name);
-                }
+            if previous && let Some(name) = N::binder(name) {
+                names.insert(name);
             }
         }
         ContractExpression::MethodCall {
@@ -2911,10 +2909,8 @@ fn collect_click_proposition_referenced_bindings_one<N: ReferencedBinding>(
             let previous = N::binder(name).is_some_and(|name| N::leave_scope(names, &name));
             collect_click_proposition_referenced_bindings(body, names);
             let _ = N::binder(name).is_some_and(|name| N::leave_scope(names, &name));
-            if previous {
-                if let Some(name) = N::binder(name) {
-                    names.insert(name);
-                }
+            if previous && let Some(name) = N::binder(name) {
+                names.insert(name);
             }
         }
         ClickProposition::RangeAll {
@@ -2936,10 +2932,8 @@ fn collect_click_proposition_referenced_bindings_one<N: ReferencedBinding>(
             let previous = N::binder(item).is_some_and(|name| N::leave_scope(names, &name));
             collect_click_proposition_referenced_bindings(body, names);
             let _ = N::binder(item).is_some_and(|name| N::leave_scope(names, &name));
-            if previous {
-                if let Some(name) = N::binder(item) {
-                    names.insert(name);
-                }
+            if previous && let Some(name) = N::binder(item) {
+                names.insert(name);
             }
         }
         ClickProposition::PredicateCall { name, .. }
@@ -3767,10 +3761,10 @@ fn substitute_contract_expression_node(
     expression: &ContractExpression,
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<ContractExpression, String> {
-    if let ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) = expression {
-        if let Some(value) = substitutions.value(name) {
-            return Ok(value.clone());
-        }
+    if let ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) = expression
+        && let Some(value) = substitutions.value(name)
+    {
+        return Ok(value.clone());
     }
     match expression {
         ContractExpression::IntegerContext(value) => Ok(ContractExpression::IntegerContext(

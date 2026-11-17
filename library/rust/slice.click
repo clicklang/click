@@ -1,7 +1,7 @@
 // Rust's slices, `&[T]` and `&mut [T]`: the data pointer and the length a
 // Rust slice carries, as one value. A Rust sidecar writes them with Rust's
-// own spellings (`s.len()`, `s.as_ptr()`, `s[i]`, `s[a..b]`); these are what
-// those spellings mean. `==` on slices is identity: the same data pointer and
+// own syntax (`s.len()`, `s.as_ptr()`, `s[i]`, `s[a..b]`); these are what
+// those forms mean. `==` on slices is identity: the same data pointer and
 // the same length. Reading `s[i]` reads memory through `as_ptr(s)` under the
 // caller's `views` or `owns`; a slice value grants no access.
 spec enum Slice<T> {

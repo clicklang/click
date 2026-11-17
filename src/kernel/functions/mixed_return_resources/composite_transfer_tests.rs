@@ -201,8 +201,8 @@ fn borrowed_parameter_bounded_bodies_keep_entry_footprint_provenance() {
     let head = ResourceFact::own_composite(
         "packet".into(),
         vec![
-            ProgramValue::pointer(owner.memory_own_range().unwrap().base().clone()).into(),
-            ProgramValue::Int32(owner.memory_own_range().unwrap().end().clone()).into(),
+            ProgramValue::pointer(owner.memory_own_range().unwrap().base().clone()),
+            ProgramValue::Int32(owner.memory_own_range().unwrap().end().clone()),
         ],
     );
     let evaluated = EvaluatedReturnResources::new(&facts)

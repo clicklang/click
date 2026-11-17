@@ -2,8 +2,8 @@
 
 `exists (v: int32) { r == Result<int32, uint8>::Ok(v) }` holds because a fact
 fixes `r` to `Ok(5)`: `solve` reads the payload off that constructor and
-writes `witness { v: 5 }`. A payload a parameter holds is written as the
-parameter, `witness { v: x }`. This is the requirement of a Rust
+writes `witness(5)`. A payload a parameter holds is written as the
+parameter, `witness(x)`. This is the requirement of a Rust
 `Result::unwrap`, so a caller that knows the value meets it by `solve`.
 
 ```click

@@ -64,7 +64,7 @@ facts. An available existential body can be opened with `obtain (...)`.
 A predicate body may name its parameters, its own bindings, pure functions
 and other predicates. It may not read a C object by name, whether a
 file-scope variable by its bare name or any object by its qualified
-`unit::name` spelling. A predicate fact is keyed on its arguments, so a body
+`unit::name` form. A predicate fact is keyed on its arguments, so a body
 reading `counter` would make `counter_is(5)` the same fact before and after a
 store to `counter`. Pass the value as an argument instead, as
 [pure functions](pure-functions.md#bodies-read-only-their-parameters) do:

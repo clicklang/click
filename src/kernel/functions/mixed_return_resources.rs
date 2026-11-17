@@ -733,11 +733,14 @@ impl PreparedReturnComposition {
                 .collect();
             return Ok((frame, transfers));
         }
+        // Description admission already established the pending group's
+        // internal composition. Only its boundary with the restored frame
+        // is missing; construct that successor without checking it twice.
         let (frame, inserted) = if self.pending.facts().is_empty() {
             (self.frame, Vec::new())
         } else {
             self.frame
-                .try_compose_with_legacy_discovery_and_occurrences(
+                .try_compose_certified_group_into_valid_context_delaying_normalization_with_occurrences(
                     self.pending.facts().iter().cloned(),
                     assumptions,
                 )?

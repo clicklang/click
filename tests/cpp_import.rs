@@ -20896,14 +20896,12 @@ fn check_noexcept_cleanup(profile: &str, declaration: &str, thrown: &str) {
     project.write_config_with_exception_behavior("probe", "cleanup.cpp", true, profile);
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let source = format!(
-        r#"verifying "cleanup.cpp";
-    Guard::Guard(int32* p) {{ owns this->slot; owns p[0]; ensures this->slot == p; ensures separate(memory(*this), memory(this->slot[0..1])); }}
-    Guard::~Guard() {{ requires separate(memory(*this), memory(this->slot[0..1])); views this->slot; owns this->slot[0]; ensures this->slot[0] == 9; }}
-    int32 fallible(bool fail) {{ requires fail == false; ensures result == 4; }}
-    int32 probe(int32* slot, bool fail) {{ requires fail == false; owns slot[0]; ensures slot[0] == 9; ensures result == 4; }}
-    "#
-    );
+    let source = r#"verifying "cleanup.cpp";
+    Guard::Guard(int32* p) { owns this->slot; owns p[0]; ensures this->slot == p; ensures separate(memory(*this), memory(this->slot[0..1])); }
+    Guard::~Guard() { requires separate(memory(*this), memory(this->slot[0..1])); views this->slot; owns this->slot[0]; ensures this->slot[0] == 9; }
+    int32 fallible(bool fail) { requires fail == false; ensures result == 4; }
+    int32 probe(int32* slot, bool fail) { requires fail == false; owns slot[0]; ensures slot[0] == 9; ensures result == 4; }
+    "#.to_string();
     click::surface::with_proof_trace("probe", || {
         check_noexcept_replay_all(&project, &import, &source)
     });

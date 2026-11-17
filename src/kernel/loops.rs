@@ -8844,7 +8844,7 @@ pub(super) fn collect_loop_modified_locals(
             ..
         } => {
             collect_loop_modified_locals(try_body, names);
-            names.insert(binding.clone().into());
+            names.insert(binding.clone());
             collect_loop_modified_locals(handler, names);
         }
         ProgramStatement::If {

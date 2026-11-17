@@ -173,7 +173,7 @@ pub(super) fn expand_all_composite_resource_facts_and_propositions_with_state(
             evaluate_composite_resource_relation_propositions(
                 &composite,
                 definitions,
-                memory,
+                at,
                 assumptions,
             )?
         };
@@ -435,7 +435,7 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
 pub(in crate::kernel) fn evaluate_composite_resource_relation_propositions(
     composite: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Option<Vec<Proposition>> {
     let Resource::Composite { name, arguments } = composite.resource() else {
@@ -447,7 +447,7 @@ pub(in crate::kernel) fn evaluate_composite_resource_relation_propositions(
     if definition.parameters().len() != arguments.len() {
         return None;
     }
-    let mut state = ExecutionState::new().with_memory(memory.clone());
+    let mut state = ExecutionState::at_point(at);
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
         let argument = argument.as_program_value()?;
         if parameter.program_type() != argument.program_type() {
@@ -524,7 +524,7 @@ pub(in crate::kernel) fn evaluate_composite_resource_relation_propositions(
 pub(in crate::kernel) fn evaluate_composite_resource_memory_ranges(
     composite: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Option<Vec<MemoryRange>> {
     let Resource::Composite { name, arguments } = composite.resource() else {
@@ -536,7 +536,7 @@ pub(in crate::kernel) fn evaluate_composite_resource_memory_ranges(
     if definition.parameters().len() != arguments.len() {
         return None;
     }
-    let mut state = ExecutionState::new().with_memory(memory.clone());
+    let mut state = ExecutionState::at_point(at);
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
         let argument = argument.as_program_value()?;
         if parameter.program_type() != argument.program_type() {
@@ -600,8 +600,12 @@ pub(in crate::kernel) fn evaluate_composite_resource_loadable_propositions(
     memory: &Memory,
     assumptions: &PureFactContext,
 ) -> Option<Vec<Proposition>> {
-    let ranges =
-        evaluate_composite_resource_memory_ranges(composite, definitions, memory, assumptions)?;
+    let ranges = evaluate_composite_resource_memory_ranges(
+        composite,
+        definitions,
+        &crate::kernel::ProgramPoint::of_memory(memory),
+        assumptions,
+    )?;
     let mut propositions = Vec::new();
     for range in ranges {
         propositions.extend(crate::kernel::admitted_memory_range_extent_facts(&range));

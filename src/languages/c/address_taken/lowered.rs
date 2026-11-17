@@ -108,7 +108,7 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
                 handler,
                 ..
             } => {
-                declare(summary, &binding.clone().into(), ProgramType::Int32);
+                declare(summary, &binding.clone(), ProgramType::Int32);
                 statements.extend([try_body.as_ref(), handler.as_ref()]);
             }
             ProgramStatement::If {

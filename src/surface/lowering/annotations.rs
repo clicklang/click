@@ -3443,7 +3443,6 @@ pub(in crate::surface) fn lower_integer_arithmetic_proposition(
 }
 
 /// The decimal spelling of an integer literal, negated or not.
-
 fn integer_literal_spelling(expression: &ContractExpression) -> Option<String> {
     match expression {
         ContractExpression::IntegerLiteral(text) => Some(text.clone()),
@@ -6017,10 +6016,10 @@ impl AnnotationLowerer<'_> {
         expression: &ContractExpression,
         environment: &SpecElaborationContext,
     ) -> Result<crate::kernel::SpecIntegerExpression, String> {
-        if let Some(id) = expression.generated_binder() {
-            if let Some(value) = environment.integer_values.get(&id) {
-                return Ok(value.clone());
-            }
+        if let Some(id) = expression.generated_binder()
+            && let Some(value) = environment.integer_values.get(&id)
+        {
+            return Ok(value.clone());
         }
 
         if let Some(reduced) = lambdas::reduce_head(expression)? {
@@ -7640,10 +7639,10 @@ impl AnnotationLowerer<'_> {
         expression: &ContractExpression,
         environment: &SpecElaborationContext,
     ) -> Result<SpecAlgebraicExpression, String> {
-        if let Some(id) = expression.generated_binder() {
-            if let Some(value) = environment.algebraic_values.get(&id) {
-                return Ok(value.clone());
-            }
+        if let Some(id) = expression.generated_binder()
+            && let Some(value) = environment.algebraic_values.get(&id)
+        {
+            return Ok(value.clone());
         }
 
         if let Some(reduced) = lambdas::reduce_head(expression)? {
@@ -7903,7 +7902,7 @@ impl AnnotationLowerer<'_> {
                                                 binding_type,
                                             )?,
                                         node: SpecAlgebraicExpressionNode::Binding(
-                                            binding.kernel_name().into(),
+                                            binding.kernel_name(),
                                         ),
                                     },
                                 );

@@ -2109,12 +2109,7 @@ fn resource_fields_reject_counting_and_unimplemented_instance_operations() {
         "{declaration} abstract resource credit(n: int32); int32 f(int32* p) {{ consumes credit(count(cell(p))); }}"
     );
     assert_eq!(parser::parse(&nested).unwrap_err().message(), unauthorized);
-    for tactic in [
-        "apply(law(count(cell(p))));",
-        "witness { x: count(cell(p)) };",
-    ]
-    .into_iter()
-    {
+    for tactic in ["apply(law(count(cell(p))));", "witness(count(cell(p)));"].into_iter() {
         let source =
             format!("{declaration} int32 f(int32* p) {{ ensures result == 0 by {{ {tactic} }} }}");
         assert_eq!(parser::parse(&source).unwrap_err().message(), unauthorized);

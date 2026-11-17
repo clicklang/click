@@ -131,7 +131,7 @@ fn exact_propagation_keeps_condition_polarity_and_restriction_support() {
     assert!(!parent.contains_known(&b));
     assert!(
         !child
-            .restricted_to_facts(&[(a.clone(), true)], &[rule.clone()])
+            .restricted_to_facts(&[(a.clone(), true)], std::slice::from_ref(&rule))
             .contains_known(&b)
     );
     assert!(

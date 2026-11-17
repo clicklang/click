@@ -3503,6 +3503,29 @@ fn charon_program_bindings_are_written_rust_name() {
     );
 }
 
+// A refused back-edge member of a Rust loop prints the incremented value as
+// `at(<iteration entry>, local) + 1u32`, a spelling a proof can write, never
+// the compiler temporary that holds it (`__rust_mir_N`).
+#[test]
+fn charon_refused_loop_member_names_no_compiler_temporary() {
+    let p = Project::from_fixture("design/charon-trial/program-bindings");
+    let doubled = PROGRAM_BINDING_SIDECAR.replacen(
+        "invariant rust(iterations) == iterations;",
+        "invariant rust(iterations) == 2 * iterations;",
+        1,
+    );
+    assert_ne!(doubled, PROGRAM_BINDING_SIDECAR);
+    fs::write(p.root.join("borrow.click"), &doubled).unwrap();
+    let prepared = p.prepared().unwrap();
+    let Err(error) = ProgramVerificationSession::new_program_prepared(&doubled, &prepared) else {
+        panic!("a doubled pass count is not an invariant");
+    };
+    let rendered = format!("{error:?} {error}");
+    assert!(rendered.contains("remained open"), "{rendered}");
+    assert!(rendered.contains("+ 1u32"), "{rendered}");
+    assert!(!rendered.contains("__rust_mir_"), "{rendered}");
+}
+
 const VEC_VALUE_SIDECAR: &str = include_str!("../design/charon-trial/vec-values/vecs.click");
 
 // A `Vec<u32>` is the library's `Vec<uint32>`: `Vec::new`, `with_capacity`,

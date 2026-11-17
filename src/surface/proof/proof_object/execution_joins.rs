@@ -3859,7 +3859,7 @@ fn advance_joined_kernel_variable_mark(
 fn migrate_arm_metadata(
     execution: &mut ExecutionProofState,
     arms: &[CheckedExecutionJoinArm<'_>; 2],
-    retain_common_unfolds: bool,
+    _retain_common_unfolds: bool,
 ) {
     for arm in arms {
         for theorem in &arm.introduced_derivations {
@@ -3869,7 +3869,7 @@ fn migrate_arm_metadata(
                 .insert(theorem.clone());
         }
     }
-    if retain_common_unfolds {}
+
     for arm in arms {
         // Clauses describe source presentation and may share a C loop across
         // proof branches. Rules are checked path evidence: retain every rule,

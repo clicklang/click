@@ -61,7 +61,7 @@ int32 first::helper() {
 ```
 
 `first::helper` selects `helper` from `first.c`; calls in that translation unit
-use this contract. Call binder maps use the same qualified spelling, as in
+use this contract. Call binder maps use the same qualified name, as in
 `step(first::helper, { before: input })`; the selected definition must be
 the actual call at the execution frontier. The alias is resolved in the declaring sidecar and keeps
 that binding when the contract is imported. An unqualified head still works
@@ -172,8 +172,8 @@ imports. They name a library theorem by its qualified identity, such as
 a theorem with a library theorem's bare name: a bare citation then names the
 file's theorem, a path names the library's, and the tactics keep the
 library's (`mdtests/a_file_theorem_may_share_a_library_theorem_name.md`).
-When `click expand` writes such a step out, it spells the theorem by the
-shortest spelling that resolves to it in the file: its bare name after a
+When `click expand` writes such a step out, it writes the theorem by the
+shortest name that resolves to it in the file: its bare name after a
 selective import, `integer::name` when the module is in scope, and otherwise
 the full `click::integer::name` path, which needs no import. Diagnostics name a library theorem by its qualified
 identity.
@@ -231,7 +231,7 @@ bring, is refused, as Rust refuses a clashing `use`
 (`mdtests/a_selective_import_cannot_clash_with_a_file_declaration.md`).
 Types and constructors such as `Nat`, `List` and `List::Cons` keep their
 bare names, as does the primitive conversion `to_nat`. When `click expand`
-writes out a theorem of these modules, it spells it by its bare name when a
+writes out a theorem of these modules, it writes it by its bare name when a
 selective import brings it, otherwise as `module::name`, such as
 `list::append_cons`, when the module is in scope, and otherwise by its full
 `click::` path.

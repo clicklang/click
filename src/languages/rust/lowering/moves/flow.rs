@@ -196,7 +196,7 @@ impl Flow {
             if target == exit
                 && matches!(
                     mir.blocks[block].terminator,
-                    T::Return | T::Unreachable | T::Panic { .. }
+                    T::Return | T::ReturnValue { .. } | T::Unreachable | T::Panic { .. }
                 )
             {
                 continue;
@@ -218,7 +218,7 @@ impl Flow {
         let mut exit_tails = vec![false; exit];
         for &block in &order {
             exit_tails[block] = match &mir.blocks[block].terminator {
-                T::Return => true,
+                T::Return | T::ReturnValue { .. } => true,
                 T::Goto { target }
                 | T::Drop { target, .. }
                 | T::Call { target, .. }

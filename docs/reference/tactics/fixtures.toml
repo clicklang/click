@@ -165,7 +165,7 @@ needle = "observe(live_fd(fd));"
 [[form]]
 id = "witness"
 path = "mdtests/witness_and_choose.md"
-needle = "witness { k: 0 }"
+needle = "witness(0)"
 
 [[form]]
 id = "obtain"

@@ -9847,7 +9847,6 @@ impl ExecutionState {
     }
 
     /// The point this state stands at on its path.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn program_point(&self) -> super::ProgramPoint {
         super::ProgramPoint::of_state(&self.memory, &self.point)
     }
@@ -9860,6 +9859,21 @@ impl ExecutionState {
         state.memory = point.memory().clone();
         state.point = point.path_link().clone();
         state
+    }
+
+    /// A fresh state standing where `state` stands, holding `state`'s own
+    /// memory value. A callee frame is the caller's state at the call seen
+    /// through the callee's parameter names, so it starts here; it keeps the
+    /// caller's memory value, not only equal contents, because a call's
+    /// requirements are matched to the memory they were evaluated in by its
+    /// storage.
+    pub(crate) fn at_state(state: &Self) -> Self {
+        let point = state.program_point();
+        let mut fresh = Self::new();
+        fresh.memory = state.memory.clone();
+        fresh.memory.pending_steps = None;
+        fresh.point = point.path_link().clone();
+        fresh
     }
 
     /// Where on its path this state stands.

@@ -5555,7 +5555,7 @@ pub enum SpecResource {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct SwitchCase {
     /// `None` is the default case; integer values are represented in the
-    /// promoted int32 bit pattern used by C.
+    /// promoted int32 or uint32 bit pattern used by C.
     pub value: Option<u32>,
     pub body: Box<ProgramStatement>,
 }
@@ -14561,6 +14561,13 @@ pub struct PureFactContext {
     pub(super) universals_by_conclusion: crate::persistent::PersistentMap<
         super::assumptions::UniversalConclusionKey,
         crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
+    >,
+    /// One retained source per alpha/load identity of an explicit universal
+    /// equality or its selected operand. Range-guard checking never enumerates
+    /// the context's equality universals.
+    pub(super) universal_equality_sources: crate::persistent::PersistentMap<
+        crate::kernel::proof::PropositionIdentityKey,
+        (std::sync::Arc<Proposition>, bool),
     >,
     pub(super) condition_facts: super::fact_collections::FactMap<ConditionTerm, bool>,
     pub(super) signed_variable_chains: super::assumptions::variable_chains::VariableChains,

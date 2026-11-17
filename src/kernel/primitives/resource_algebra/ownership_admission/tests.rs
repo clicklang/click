@@ -189,3 +189,75 @@ fn cold_return_boundary_keeps_the_aliased_held_fact_and_parent_partition() {
     assert_eq!(parent.facts().len(), 1);
     assert_eq!(branch.facts().len(), 2);
 }
+
+#[test]
+fn checked_output_composition_carries_the_sources_occurrences_and_projections() {
+    let facts = PureFactContext::new();
+    let owned = owner(at(0), 0, 4);
+    let viewed = ResourceFact::view_memory(owned.memory_own_range().unwrap().clone());
+    let (outputs, inserted) = ResourceContext::new_with_equalities(&facts)
+        .unchecked_with_facts_and_occurrences([owned.clone()]);
+    let source = inserted[0].1;
+    let outputs = outputs.unchecked_with_supported_facts(&owned, [viewed.clone()]);
+    let frame =
+        ResourceContext::new_with_equalities(&facts).unchecked_with_fact(owner(at(0), 4, 8));
+    let joined = frame.compose_checked_outputs(&outputs, &facts).unwrap();
+    assert_eq!(joined.owned_fact_for_occurrence(source), Some(&owned));
+    let consumed = joined
+        .clone()
+        .without_exact_representation_for_occurrence(source)
+        .unwrap();
+    assert!(!consumed.contains_exact_representation(&viewed));
+    assert!(joined.compose_checked_outputs(&outputs, &facts).is_err());
+    let conflicting_frame =
+        ResourceContext::new_with_equalities(&facts).unchecked_with_fact(owner(at(0), 3, 8));
+    assert!(
+        conflicting_frame
+            .compose_checked_outputs(&outputs, &facts)
+            .is_err()
+    );
+}
+
+#[test]
+fn certified_symbolic_quantities_use_empty_frame_and_block_boundaries() {
+    let quantity = MachineTerm::Variable(Variable(8_770_099));
+    let facts = PureFactContext::new()
+        .assume_condition(ConditionTerm::equal(quantity.clone(), 1u32.into()), true);
+    let output = ResourceFact::Own(
+        Resource::Memory(MemoryRange::new_with_element_width(
+            at(0),
+            0u32.into(),
+            4u32.into(),
+            1,
+        )),
+        Box::new(quantity),
+    );
+    for retained in [
+        ResourceFact::own_composite("frame".into(), Vec::new()),
+        owner(at(1), 0, 4),
+    ] {
+        let frame = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(retained);
+        let _fast = crate::kernel::search::FastOperationScope::enter(
+            "certified symbolic group beside an absent block",
+        );
+        let next = frame
+            .try_compose_certified_group_into_valid_context_delaying_normalization(
+                [output.clone()],
+                &facts,
+            )
+            .unwrap();
+        assert!(next.contains_exact_representation(&output));
+    }
+    let aliases = facts.assume_condition(ConditionTerm::pointer_equal(at(0), at(1)), true);
+    let frame =
+        ResourceContext::new_with_equalities(&aliases).unchecked_with_fact(owner(at(1), 0, 4));
+    assert!(
+        frame
+            .try_compose_certified_group_into_valid_context_delaying_normalization(
+                [output],
+                &aliases,
+            )
+            .is_err(),
+        "an empty exact block bucket must retain cross-block alias checks"
+    );
+}

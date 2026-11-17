@@ -18,7 +18,7 @@ int32 identity(int32 x) {
     step_until(function.exit);
     solve();
     have exists (k: int32) { k + 1 == result + 1 } by {
-        witness { k: result };
+        witness(result);
         solve();
     }
 }

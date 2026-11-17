@@ -1122,7 +1122,7 @@ impl LoweringContext<'_> {
                 let mut result = program_seq(
                     program_declare(object.clone(), ProgramType::Int32Pointer),
                     ProgramStatement::HeapAllocate {
-                        target: (object.clone()).into(),
+                        target: (object.clone()),
                         bytes: crate::kernel::program_expression::int32_literal(source.size_bytes),
                         zeroed: false,
                         object_type: class,
@@ -1346,9 +1346,7 @@ impl LoweringContext<'_> {
                 } else {
                     program_seq(
                         operation,
-                        program_end_automatic_lifetimes(
-                            temporaries.into_iter().map(Into::into).collect(),
-                        ),
+                        program_end_automatic_lifetimes(temporaries.into_iter().collect()),
                     )
                 };
                 Ok(evaluate_then(prefix, operation))
@@ -1497,7 +1495,7 @@ impl LoweringContext<'_> {
                                     crate::kernel::program_expression::variable(temporary.clone()),
                                     layout,
                                 ),
-                                program_end_automatic_lifetimes(vec![(temporary).into()]),
+                                program_end_automatic_lifetimes(vec![(temporary)]),
                             ),
                         ),
                     ),
