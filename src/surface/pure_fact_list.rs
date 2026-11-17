@@ -58,13 +58,15 @@ impl PureFactList {
         context: Option<PureFactContext>,
         reservations: &PureFactStore,
     ) -> Self {
-        Self::from_statement_store(PureFactStore::from_statement_facts(
+        Self::from_produced_store(PureFactStore::from_statement_facts(
             &facts,
             context,
             Some(reservations),
         ))
     }
-    fn from_statement_store(store: PureFactStore) -> Self {
+    // Keep occurrence order when source provenance addresses producer positions.
+    // `from_store` intentionally offers a unique-fact presentation instead.
+    pub(crate) fn from_produced_store(store: PureFactStore) -> Self {
         Self { facts: store }
     }
     pub(crate) fn context(&self) -> PureFactContext {
@@ -192,7 +194,7 @@ mod tests {
         let pair = Proposition::And(Box::new(left.clone()), Box::new(right.clone()));
         let root = PureFactStore::from_statement_facts(std::slice::from_ref(&original), None, None);
         let branch = root.with_kernel_checked_fact(pair.clone());
-        let view = PureFactList::from_statement_store(branch.clone());
+        let view = PureFactList::from_produced_store(branch.clone());
         assert!(view.facts.shares_exact_index_with(&branch));
         assert!(view.fact_store().shares_exact_index_with(&branch));
         assert!(
