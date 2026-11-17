@@ -45,7 +45,7 @@ fn a_missing_premise_spelling_walks_recorded_history_only_once() {
             kind: ProgramPointKind::Entry,
         };
         let root = Proof::for_fixed_state_goal_with_requirements(
-            "missing premise spelling",
+            "missing premise raising",
             0,
             &facts,
             Proposition::ConditionIs(ConditionTerm::Constant(true), true),
@@ -396,7 +396,7 @@ fn both_and_scopes_are_isolated_check_provenance_and_scale() {
 
 #[test]
 #[ignore = "nightly: 5.7s in the parallel gate"]
-fn loop_entry_solve_keeps_checked_unspellable_assumptions_and_scales() {
+fn loop_entry_solve_keeps_checked_unraisable_assumptions_and_scales() {
     let parsed = syntax::parse_function("int32 identity(int32 x) { return x; }").unwrap();
     let state = ExecutionState::new();
     let result = int32(0);
@@ -437,7 +437,7 @@ fn loop_entry_solve_keeps_checked_unspellable_assumptions_and_scales() {
             .collect::<Vec<_>>();
         facts.push(goal.clone());
         let root = Proof::for_fixed_state_frontier(
-            "loop entry unspellable assumption",
+            "loop entry unraisable assumption",
             0,
             &facts,
             ParameterBinding::new(parsed.parameters(), &arguments),
@@ -1871,7 +1871,7 @@ fn current_scalar_premise_spelling_ignores_unrelated_recorded_states() {
     }
     assert!(
         samples.iter().all(|work| *work <= samples[0] + 64),
-        "current premise spelling searched unrelated states: {samples:?}"
+        "current premise raising searched unrelated states: {samples:?}"
     );
 }
 
@@ -1969,7 +1969,7 @@ fn mixed_entry_and_current_premise_spelling_ignores_unrelated_states() {
     }
     assert!(
         samples.iter().all(|work| *work <= samples[0] + 64),
-        "mixed premise spelling searched unrelated history: {samples:?}"
+        "mixed premise raising searched unrelated history: {samples:?}"
     );
 }
 

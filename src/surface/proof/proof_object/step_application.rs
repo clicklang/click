@@ -355,12 +355,12 @@ fn chosen_step_text(step: &ProofStep) -> Option<String> {
 }
 
 impl<'a> Proof<'a> {
-    /// Under `CLICK_SPELLABILITY_CENSUS`, records whether each fact this step
-    /// added, and the goal it leaves focused, has a checked Click spelling.
-    fn record_spellability_census(&self, next: &Self, tactic: &str) {
-        use crate::surface::proof::spellability_census as census;
+    /// Under `CLICK_RAISE_LOWER_CENSUS`, records whether each fact this step
+    /// added, and the goal it leaves focused, raises to a checked Surface form.
+    fn record_raise_lower_census(&self, next: &Self, tactic: &str) {
+        use crate::surface::proof::raise_lower_census as census;
         // A step that closes its goal leaves no proof state to hold its
-        // facts, and spelling reads the focused goal's facts.
+        // facts, and raising reads the focused goal's facts.
         if next.focused_branch().is_none() || next.focused_discharged() {
             return;
         }
@@ -379,7 +379,7 @@ impl<'a> Proof<'a> {
         {
             // The census charges no tactic budget and keeps no search note,
             // so the proof and its report are the run's without it.
-            let scope = crate::surface::proof::attempt::search_scope("spellability census");
+            let scope = crate::surface::proof::attempt::search_scope("raise-lower census");
             let spelled = crate::instrumentation::without_charging(|| {
                 crate::kernel::search::ProofSearch::resolve_solve_premises(
                     next,
@@ -415,7 +415,7 @@ impl<'a> Proof<'a> {
     /// again, and records how the round trip ended.
     fn record_raise_lower_audit(&self, next: &Self, tactic: &str) {
         use crate::surface::proof::raise_lower_audit::{self as audit, RoundTrip};
-        use crate::surface::proof::spellability_census::kind;
+        use crate::surface::proof::raise_lower_census::kind;
         if next.focused_branch().is_none() || next.focused_discharged() {
             return;
         }

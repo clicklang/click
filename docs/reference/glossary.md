@@ -1181,7 +1181,7 @@ path assumption.
 The [point](#point) a memory read is lowered to. A read of `*p` lowers to a
 load at its version point, spelled `at(V, *p)`. Choosing it does not depend on
 facts ([fact-stable
-lowering](../internals/spellability.md#lowering-is-fact-stable)); facts relate
+lowering](../internals/raise-lower-principle.md#lowering-is-fact-stable)); facts relate
 reads at different version points as ordinary equalities. Reads of one cell
 connected without a possible write share a version point and therefore lower
 to one term. A version point is never earlier than `function.entry`: the

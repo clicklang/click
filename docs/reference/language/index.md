@@ -2860,6 +2860,12 @@ spelled separately with `*base`. Allocation authority cannot be
 the authority must be returned (possibly inside a composite resource) or
 consumed by an actual `free`.
 
+A callee can consume `allocation(p, bytes)` and produce
+`allocation(result, bytes)` with `ensures result == p`. This returns the same
+live allocation and its cleanup obligation through the result alias; it does
+not create a new lifetime. Freeing that alias invalidates both pointer spellings
+([checked example](https://github.com/clicklang/click/blob/master/mdtests/returned_allocation_pass_through_keeps_cleanup_authority.md)).
+
 <!-- verified-example: mdtests/conditional_resource_branchless_free.md -->
 ```click
 resource owned_item(item: struct item*) {

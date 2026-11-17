@@ -1,12 +1,12 @@
-//! A measurement of the facts Click cannot spell.
+//! A measurement of the facts Click cannot raise.
 //!
 //! Every fact a proof state holds, and every goal it focuses, must have a
-//! Click spelling that lowers back to it: expansion writes the proof out as
+//! Surface form that lowers back to it: expansion writes the proof out as
 //! steps a person could have written, so whatever those steps cite or prove
-//! must be writable (`docs/internals/spellability.md`). Setting
-//! `CLICK_SPELLABILITY_CENSUS=<path>` appends one line per fact a checked
-//! step adds, and per goal it leaves focused, saying whether the premise
-//! speller found a spelling. `scripts/spellability-census.sh` runs the
+//! must be writable (`docs/internals/raise-lower-principle.md`). Setting
+//! `CLICK_RAISE_LOWER_CENSUS=<path>` appends one line per fact a checked
+//! step adds, and per goal it leaves focused, saying whether raising produces
+//! a Surface form that lowers back to it. `scripts/raise-lower-census.sh` runs the
 //! corpus under it and summarizes the misses by kind.
 //!
 //! The census only observes: it never changes a proof, and without the
@@ -23,7 +23,7 @@ use crate::kernel::{ConditionTerm, Proposition, Term};
 fn sink() -> Option<&'static Mutex<File>> {
     static SINK: OnceLock<Option<Mutex<File>>> = OnceLock::new();
     SINK.get_or_init(|| {
-        let path = std::env::var_os("CLICK_SPELLABILITY_CENSUS")?;
+        let path = std::env::var_os("CLICK_RAISE_LOWER_CENSUS")?;
         File::options()
             .create(true)
             .append(true)
@@ -58,7 +58,7 @@ pub(super) fn enabled() -> bool {
 
 /// What a censused proposition is, by its outermost kernel form. A quantifier
 /// or implication is classified by the atom it finally concludes, since that
-/// is what decides whether a spelling exists.
+/// is what decides whether a Surface form exists.
 pub(super) fn kind(proposition: &Proposition) -> String {
     match proposition {
         Proposition::ForAll { body, .. } => format!("forall/{}", kind(body)),
@@ -117,11 +117,11 @@ fn condition_kind(condition: &ConditionTerm) -> String {
         .to_owned()
 }
 
-/// Appends one census line: `spelled|unspelled`, the role (`fact` or
+/// Appends one census line: `raised|unraised`, the role (`fact` or
 /// `goal`), the kind, the claim, the tactic, the origin (`written` for a step
 /// a person wrote, `smart` for one a smart tactic's search took, which matters
 /// only if that search succeeds), and the diagnostic rendering.
-pub(super) fn record(spelled: bool, role: &str, kind: &str, claim: &str, tactic: &str, text: &str) {
+pub(super) fn record(raised: bool, role: &str, kind: &str, claim: &str, tactic: &str, text: &str) {
     if !enabled() {
         return;
     }
@@ -137,7 +137,7 @@ pub(super) fn record(spelled: bool, role: &str, kind: &str, claim: &str, tactic:
     };
     let line = format!(
         "{}\t{role}\t{kind}\t{claim}\t{tactic}\t{origin}\t{text}\n",
-        if spelled { "spelled" } else { "unspelled" }
+        if raised { "raised" } else { "unraised" }
     );
     #[cfg(test)]
     if CAPTURE.with(|lines| {
@@ -162,7 +162,7 @@ mod tests {
     use crate::kernel::{MachineTerm, Sort, Variable};
 
     #[test]
-    fn hidden_child_fields_have_structural_resource_spellings() {
+    fn hidden_child_fields_have_structural_resource_surface_forms() {
         let fixture = crate::cli::parse_mdtest(
             std::path::Path::new("a_hidden_record_is_shown_beside_its_resource.md"),
             include_str!("../../../mdtests/a_hidden_record_is_shown_beside_its_resource.md"),
@@ -205,17 +205,17 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(!rewrites.is_empty(), "{lines:#?}");
         assert!(
-            rewrites.iter().all(|line| line.starts_with("spelled\t")),
+            rewrites.iter().all(|line| line.starts_with("raised\t")),
             "{rewrites:#?}"
         );
         assert!(
-            fields.iter().all(|line| line.starts_with("spelled\t")),
+            fields.iter().all(|line| line.starts_with("raised\t")),
             "{fields:#?}"
         );
     }
 
     #[test]
-    fn joined_structural_read_goals_keep_a_spellable_memory_version() {
+    fn joined_structural_read_goals_keep_a_raisable_memory_version() {
         let fixture =
             include_str!("../../../mdtests/a_join_forgets_a_cell_the_arms_disagree_on.md");
         let c = fixture
@@ -260,7 +260,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(!reads.is_empty(), "{lines:#?}");
         assert!(
-            reads.iter().all(|line| line.starts_with("spelled\t")),
+            reads.iter().all(|line| line.starts_with("raised\t")),
             "{reads:#?}"
         );
     }
@@ -300,7 +300,7 @@ void keep(int32* p) {
             .collect::<Vec<_>>();
         assert!(!facts.is_empty(), "{lines:#?}");
         assert!(
-            facts.iter().all(|line| line.starts_with("spelled\t")),
+            facts.iter().all(|line| line.starts_with("raised\t")),
             "{facts:#?}"
         );
     }
@@ -322,20 +322,20 @@ void keep(int32* p) {
             .collect::<Vec<_>>();
         assert!(!equalities.is_empty(), "{lines:#?}");
         assert!(
-            equalities.iter().all(|line| line.starts_with("spelled\t")),
+            equalities.iter().all(|line| line.starts_with("raised\t")),
             "{equalities:#?}"
         );
     }
 
     #[test]
-    fn nested_algebraic_conditions_in_list_facts_are_spelled() {
+    fn nested_algebraic_conditions_in_list_facts_are_raised() {
         check_algebraic_condition_fixture(include_str!(
             "../../../mdtests/stdlib_list_compositionality.md"
         ));
     }
 
     #[test]
-    fn rigid_algebraic_conditions_in_list_facts_are_spelled() {
+    fn rigid_algebraic_conditions_in_list_facts_are_raised() {
         // Exercise the generic proof itself: applications instantiate the
         // checked statement and no longer replay the library theorem's body.
         let library = include_str!("../../../library/list.click");
@@ -348,7 +348,7 @@ void keep(int32* p) {
     }
 
     #[test]
-    fn generic_list_calls_keep_exact_spellings_after_unfold_and_intro() {
+    fn generic_list_calls_keep_exact_surface_forms_after_unfold_and_intro() {
         for fixture in [
             include_str!("../../../mdtests/constructor_type_arguments_are_inferred.md"),
             include_str!(
@@ -371,7 +371,7 @@ void keep(int32* p) {
                 .collect::<Vec<_>>();
             assert!(!facts.is_empty());
             assert!(
-                facts.iter().all(|line| line.starts_with("spelled\t")),
+                facts.iter().all(|line| line.starts_with("raised\t")),
                 "{facts:#?}"
             );
         }
@@ -398,7 +398,7 @@ theorem only_element(v: int32, x: int32) {
     }
 
     #[test]
-    fn boolean_function_unfold_facts_and_goals_have_exact_spellings() {
+    fn boolean_function_unfold_facts_and_goals_have_exact_surface_forms() {
         let fixture = include_str!("../../../mdtests/a_bool_pure_function_states_a_claim.md");
         let source = fixture
             .split("```click\n")
@@ -420,7 +420,7 @@ theorem only_element(v: int32, x: int32) {
             .collect::<Vec<_>>();
         assert!(!bool_lines.is_empty(), "{lines:#?}");
         assert!(
-            bool_lines.iter().all(|line| line.starts_with("spelled\t")),
+            bool_lines.iter().all(|line| line.starts_with("raised\t")),
             "{bool_lines:#?}"
         );
     }
@@ -447,7 +447,7 @@ theorem only_element(v: int32, x: int32) {
     }
 
     #[test]
-    fn introduced_narrow_binder_bounds_have_checked_spellings() {
+    fn introduced_narrow_binder_bounds_have_checked_surface_forms() {
         for ty in ["int8", "uint8", "int16", "uint16"] {
             let source = format!(
                 r#"
@@ -466,7 +466,7 @@ theorem only_element(v: int32, x: int32) {
             });
             // An 8- or 16-bit binder is a value of its own format, so its
             // range is the format's and intro states no bound fact; what the
-            // census records is spelled.
+            // census records is raised.
             let facts = lines
                 .iter()
                 .filter(|line| line.split('\t').nth(1) == Some("fact"))
@@ -474,7 +474,7 @@ theorem only_element(v: int32, x: int32) {
             assert!(facts.is_empty(), "{ty}: {facts:#?}");
             assert!(!lines.is_empty(), "{ty}");
             assert!(
-                lines.iter().all(|line| line.starts_with("spelled\t")),
+                lines.iter().all(|line| line.starts_with("raised\t")),
                 "{ty}: {lines:#?}"
             );
         }
@@ -535,16 +535,15 @@ void set(int32* a, int32 i, int32 j) {
             .collect::<Vec<_>>();
         assert!(!rewritten.is_empty(), "{lines:#?}");
         assert!(
-            rewritten
-                .iter()
-                .all(|line| line.starts_with("spelled\t")
-                    && line.trim_end().ends_with("\ta[i] == 5")),
+            rewritten.iter().all(
+                |line| line.starts_with("raised\t") && line.trim_end().ends_with("\ta[i] == 5")
+            ),
             "{rewritten:#?}"
         );
     }
 
     #[test]
-    fn facts_an_unfold_adds_at_the_execution_frontier_are_spelled() {
+    fn facts_an_unfold_adds_at_the_execution_frontier_are_raised() {
         let c = "struct cell { int32 value; int32 other; };\n\
                  void bump(struct cell* p) { int32 seen = p->other; p->value = seen; }";
         let click = r#"resource flat(p: struct cell*) {
@@ -576,15 +575,13 @@ void bump(struct cell* p) {
             .collect::<Vec<_>>();
         assert!(!unfold_facts.is_empty(), "{lines:#?}");
         assert!(
-            unfold_facts
-                .iter()
-                .all(|line| line.starts_with("spelled\t")),
+            unfold_facts.iter().all(|line| line.starts_with("raised\t")),
             "{unfold_facts:#?}"
         );
     }
 
     #[test]
-    fn an_unfold_fact_over_a_match_arm_binder_is_spelled_through_it() {
+    fn an_unfold_fact_over_a_match_arm_binder_is_raised_through_it() {
         let c = "struct node { uint64 tag; };\n\
                  void pack(struct node *p, struct node *id) { p->tag = 7; }";
         let click = r#"verifying "f.c";
@@ -611,12 +608,12 @@ void pack(struct node* p, struct node* id) {
         let lines = capture(|| {
             crate::surface::verify_c_sources(click, &[("f.c", c)]).unwrap();
         });
-        // The arm binder `model_id` names the only spelling of this range.
+        // The arm binder `model_id` names the only Surface form of this range.
         let binder_fact = lines
             .iter()
             .find(|line| line.ends_with("\tviewable((model_id as (uint8 *))[0..8])\n"))
             .unwrap_or_else(|| panic!("{lines:#?}"));
-        assert!(binder_fact.starts_with("spelled\t"), "{binder_fact}");
+        assert!(binder_fact.starts_with("raised\t"), "{binder_fact}");
     }
 
     #[test]
@@ -660,7 +657,7 @@ theorem add3_adds_four() {
         assert!(
             rewritten_goals
                 .iter()
-                .all(|line| line.starts_with("spelled\t")),
+                .all(|line| line.starts_with("raised\t")),
             "{rewritten_goals:#?}"
         );
     }

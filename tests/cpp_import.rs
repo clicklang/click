@@ -6141,7 +6141,7 @@ fn cpp_reference_parameters_are_declared_and_named_as_their_referents() {
     );
 
     // A fact about the referent names it as the sidecar does: the read of
-    // the stored referent keeps its name (`docs/internals/spellability.md`).
+    // the stored referent keeps its name (`docs/internals/raise-lower-principle.md`).
     let false_claim = refusal(&SIDECAR.replace(
         "ensures value == old(value) + 1;",
         "ensures value == old(value) + 2;",

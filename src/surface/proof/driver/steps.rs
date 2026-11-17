@@ -107,10 +107,10 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             );
         }
         if let Ok(next) = &result
-            && crate::surface::proof::spellability_census::enabled()
+            && crate::surface::proof::raise_lower_census::enabled()
             && !Arc::ptr_eq(&driver_proof.node, &next.node)
         {
-            driver_proof.record_spellability_census(next, tactic);
+            driver_proof.record_raise_lower_census(next, tactic);
         }
         if let Ok(next) = &result
             && crate::surface::proof::raise_lower_audit::enabled()

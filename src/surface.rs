@@ -3472,7 +3472,7 @@ impl<'a> ContractEnvironment<'a> {
         Some(value)
     }
 }
-/// How many recorded memories on each side of a load's own the speller
+/// How many recorded memories on each side of a load's own the raiser
 /// checks for it.
 const MEMORY_POINTS_NEAR: usize = 4;
 
@@ -3508,10 +3508,10 @@ fn instance_holds_field_value(
 }
 
 /// How many recorded points whose memory held a value's fingerprint the
-/// speller tries.
+/// raiser tries.
 const CELL_POINTS_OFFERED: usize = 4;
 
-/// How many recorded points holding a pointer's block the speller tries.
+/// How many recorded points holding a pointer's block the raiser tries.
 const POINTER_POINTS_OFFERED: usize = 4;
 
 type ReadEventNames<T> =

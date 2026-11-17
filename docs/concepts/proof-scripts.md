@@ -321,7 +321,7 @@ and splits, and each path's closing proof in that path's own arm. Each proof
 stays in the branch where it was checked, so a loop's earlier guards are not
 evaluated again at function exit.
 A post-execution `have` retains its established fact for later tactics. Smart
-proofs recheck `at(...)`-qualified premise spellings, so when a loop records a
+proofs recheck `at(...)`-qualified premise raisings, so when a loop records a
 statement's point again, the new state cannot substitute a different fact for
 an earlier one.
 A back-edge closure shared by several preservation paths can likewise

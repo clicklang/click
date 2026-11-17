@@ -63,6 +63,14 @@ theorem sized_context_parent_word_black(ctx: SizedContext, parent: struct rb_nod
     }
 }
 
+// Keep the complete copied parent pointer across the ancestor-link update.
+resource sized_copied_parent_tag(p: struct rb_node*, up: struct rb_node*) {
+    field word: uint64;
+    owns p->__rb_parent_color;
+    fact p->__rb_parent_color == word;
+    fact ((p->__rb_parent_color & ~3) as (struct rb_node*)) == up;
+}
+
 void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                              struct rb_root* root, int32 color) {
     consumes c: sized_link_at(old, root, (old as (void *) as (struct sized_node *))->size);
@@ -78,10 +86,12 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
     // The numeric word relation does not establish the parent designation.
     requires ((old->__rb_parent_color & ~3) as (struct rb_node *))
         == sized_context_parent(c.model, 0);
-    produces after: sized_link_at(new, root, (old as (void *) as (struct sized_node *))->size);
+    produces after: sized_link_at(new, root, old((old as (void *) as (struct sized_node *))->size));
     ensures after.model == old(c.model);
     ensures (old as (void *) as (struct sized_node *))->size == old((old as (void *) as (struct sized_node *))->size);
     ensures new->__rb_parent_color == old(old->__rb_parent_color);
+    ensures ((new->__rb_parent_color & ~3) as (struct rb_node *))
+        == sized_context_parent(old(c.model), 0);
     ensures old->__rb_parent_color == address(new) + color;
     ensures ((old->__rb_parent_color & ~3) as (struct rb_node *)) == new;
 } by {
@@ -118,6 +128,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             have (old as (void *) as (struct sized_node *))->size == at(s0, (old as (void *) as (struct sized_node *))->size) by solve();
             mark s1; step();
             have (old as (void *) as (struct sized_node *))->size == at(s1, (old as (void *) as (struct sized_node *))->size) by solve();
+            step(); // Assign the decoded parent before reading the C local.
             have parent == 0;
             have parent == sized_context_parent(d.model, 0) by { rewrite(d.model, SizedContext::Top); unfold(sized_context_parent(SizedContext::Top, 0)); normalize(); }
             mark s2; step();
@@ -143,7 +154,11 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             mark words;
             have at(words, new->__rb_parent_color) == old(old->__rb_parent_color) by known();
             have at(words, old->__rb_parent_color) == address(new) + color by known();
+            have parent == sized_context_parent(old(c.model), 0) by known();
+            have ((new->__rb_parent_color & ~3) as (struct rb_node*)) == parent by known();
+            let copied_tag = fold(sized_copied_parent_tag(new, parent), { word: new->__rb_parent_color });
             let { after: after } = step(insert::__rb_change_child, { before: d });
+            unfold(copied_tag);
             have old->__rb_parent_color == address(new) + color by {
                 have old->__rb_parent_color == at(words, old->__rb_parent_color);
                 rewrite(old->__rb_parent_color, at(words, old->__rb_parent_color)); known();
@@ -169,6 +184,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                 }
                 rewrite(new->__rb_parent_color, at(words, new->__rb_parent_color)); known();
             }
+            have ((new->__rb_parent_color & ~3) as (struct rb_node*)) == sized_context_parent(old(c.model), 0) by known();
             step_until(function.exit);
         },
         SizedContext::Left(id, above, pc, count, sibling, up) => {
@@ -204,6 +220,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             have (old as (void *) as (struct sized_node *))->size == at(s0, (old as (void *) as (struct sized_node *))->size) by solve();
             mark s1; step();
             have (old as (void *) as (struct sized_node *))->size == at(s1, (old as (void *) as (struct sized_node *))->size) by solve();
+            step(); // Assign the decoded parent before reading the C local.
             have parent == id;
             have parent == sized_context_parent(d.model, 0) by { rewrite(d.model, SizedContext::Left(id, above, pc, count, sibling, up)); unfold(sized_context_parent(SizedContext::Left(id, above, pc, count, sibling, up), 0)); normalize(); }
             mark s2; step();
@@ -229,7 +246,11 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             mark words;
             have at(words, new->__rb_parent_color) == old(old->__rb_parent_color) by known();
             have at(words, old->__rb_parent_color) == address(new) + color by known();
+            have parent == sized_context_parent(old(c.model), 0) by known();
+            have ((new->__rb_parent_color & ~3) as (struct rb_node*)) == parent by known();
+            let copied_tag = fold(sized_copied_parent_tag(new, parent), { word: new->__rb_parent_color });
             let { after: after } = step(insert::__rb_change_child, { before: d });
+            unfold(copied_tag);
             have old->__rb_parent_color == address(new) + color by {
                 have old->__rb_parent_color == at(words, old->__rb_parent_color);
                 rewrite(old->__rb_parent_color, at(words, old->__rb_parent_color)); known();
@@ -255,6 +276,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                 }
                 rewrite(new->__rb_parent_color, at(words, new->__rb_parent_color)); known();
             }
+            have ((new->__rb_parent_color & ~3) as (struct rb_node*)) == sized_context_parent(old(c.model), 0) by known();
             step_until(function.exit);
         },
         SizedContext::Right(id, above, pc, count, sibling, up) => {
@@ -290,6 +312,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             have (old as (void *) as (struct sized_node *))->size == at(s0, (old as (void *) as (struct sized_node *))->size) by solve();
             mark s1; step();
             have (old as (void *) as (struct sized_node *))->size == at(s1, (old as (void *) as (struct sized_node *))->size) by solve();
+            step(); // Assign the decoded parent before reading the C local.
             have parent == id;
             have parent == sized_context_parent(d.model, 0) by { rewrite(d.model, SizedContext::Right(id, above, pc, count, sibling, up)); unfold(sized_context_parent(SizedContext::Right(id, above, pc, count, sibling, up), 0)); normalize(); }
             mark s2; step();
@@ -315,7 +338,11 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             mark words;
             have at(words, new->__rb_parent_color) == old(old->__rb_parent_color) by known();
             have at(words, old->__rb_parent_color) == address(new) + color by known();
+            have parent == sized_context_parent(old(c.model), 0) by known();
+            have ((new->__rb_parent_color & ~3) as (struct rb_node*)) == parent by known();
+            let copied_tag = fold(sized_copied_parent_tag(new, parent), { word: new->__rb_parent_color });
             let { after: after } = step(insert::__rb_change_child, { before: d });
+            unfold(copied_tag);
             have old->__rb_parent_color == address(new) + color by {
                 have old->__rb_parent_color == at(words, old->__rb_parent_color);
                 rewrite(old->__rb_parent_color, at(words, old->__rb_parent_color)); known();
@@ -341,6 +368,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                 }
                 rewrite(new->__rb_parent_color, at(words, new->__rb_parent_color)); known();
             }
+            have ((new->__rb_parent_color & ~3) as (struct rb_node*)) == sized_context_parent(old(c.model), 0) by known();
             step_until(function.exit);
         },
     }

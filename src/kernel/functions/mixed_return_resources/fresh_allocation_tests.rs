@@ -88,6 +88,108 @@ pub(super) fn fresh_return_facts(pointer: &Pointer, cells: u32) -> [ResourceFact
 }
 
 #[test]
+fn fresh_return_group_checks_sibling_overlap_before_restoration() {
+    for overlap in [false, true] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let facts = PureFactContext::new();
+        let (caller, entry, post, pointer) = allocated_call(16);
+        let creator = checked_allocation_creator(&caller, &entry).unwrap();
+        let events = post.population_effects.creation.as_ref().unwrap();
+        let memory_spec = |start, end| {
+            ResourceSpec::owned_memory(
+                MemorySegment::new(variable("p"), int32_literal(start), int32_literal(end))
+                    .with_uninitialized(true),
+            )
+            .with_role(ResourceTransferRole::Produce)
+            .with_state_source(ResourceStateSource::Post)
+        };
+        let second_start = u32::from(!overlap);
+        let first =
+            ResourceFact::own_memory(MemoryRange::new(pointer.clone(), 0u32.into(), 1u32.into()));
+        let second = ResourceFact::own_memory(MemoryRange::new(
+            pointer,
+            second_start.into(),
+            (second_start + 1).into(),
+        ));
+        // Allocation provenance is valid for either piece separately, even
+        // when both descriptions name the same cell. It is not a partition.
+        assert_eq!(
+            FreshAllocationReturn::from_created_owner(&first, &creator, events),
+            FreshAllocationReturn::from_created_owner(&second, &creator, events),
+        );
+        assert!(FreshAllocationReturn::from_created_owner(&first, &creator, events).is_some());
+        let function =
+            program_function(ProgramType::Void, "fresh_siblings", vec![], program_skip())
+                .with_resource_summary(
+                    vec![],
+                    vec![
+                        memory_spec(0, 1),
+                        memory_spec(second_start, second_start + 1),
+                    ],
+                );
+        // Body return checks joint custody separately. Even though either
+        // slice is fresh, the actual owner cannot supply the same cell twice.
+        let required =
+            ResourceContext::new_with_equalities(&facts).unchecked_with_facts([first, second]);
+        assert_eq!(
+            jointly_consume_returned_resource_units(
+                post.resources(),
+                &required,
+                &post,
+                function.contract_interface(),
+                &facts,
+            ),
+            !overlap,
+        );
+        let result = evaluate_contract_return_resource_context(
+            function.contract_interface(),
+            &[],
+            &[],
+            &[],
+            &entry,
+            &post,
+            2,
+            &[],
+            ReturnResourceComposition::BodyAllocations {
+                consumed: None,
+                creator: &creator,
+                events,
+            },
+            &facts,
+            &mut ExecutionBudget::beside_live_state(),
+        )
+        .unwrap();
+        if overlap {
+            assert!(matches!(
+                result,
+                Err(RuntimeError::OverlappingOwnedMemoryResources { .. })
+            ));
+        } else {
+            let evaluated = result.unwrap();
+            assert_eq!(evaluated.occurrences.len(), 2);
+            let (resources, transfers) = evaluated
+                .restore_entry_borrows(
+                    caller.resources().clone(),
+                    ReturnResourceComposition::BodyAllocations {
+                        consumed: None,
+                        creator: &creator,
+                        events,
+                    },
+                    &facts,
+                )
+                .unwrap()
+                .finish(&facts)
+                .unwrap();
+            assert_eq!(transfers.len(), 2);
+            assert_eq!(
+                resources.facts().len(),
+                caller.resources().facts().len() + 2
+            );
+        }
+    }
+}
+
+#[test]
 fn allocator_provenance_is_attached_to_each_emitted_ownership_occurrence() {
     let _session = crate::kernel::VerificationSession::enter();
     let facts = PureFactContext::new();
@@ -293,6 +395,73 @@ fn executed_allocator_returns_preserve_the_frame_and_check_actual_body_custody()
                 matches!(paths.as_slice(), [FunctionPath { outcome: FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(message)), .. }]
                 if message.contains("joint returned resource units")),
                 "oversized return accepted: {paths:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn executed_body_return_constructs_splits_and_refuses_duplicate_custody() {
+    for duplicate in [false, true] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (caller, _, _, _) = allocated_call(16);
+        let mut specs = returned_specs(CONTRACT_RESULT, 1);
+        let second = if duplicate {
+            specs[0].clone()
+        } else {
+            ResourceSpec::owned_memory(
+                MemorySegment::new(
+                    variable(CONTRACT_RESULT),
+                    int32_literal(1),
+                    int32_literal(4),
+                )
+                .with_uninitialized(true),
+            )
+            .with_role(ResourceTransferRole::Produce)
+            .with_state_source(ResourceStateSource::Post)
+        };
+        specs.insert(1, second);
+        let function = allocating_function(1).with_resource_summary(vec![], specs);
+        let paths = execute_program_function_call_paths(
+            &caller,
+            &function,
+            &[],
+            &PureFactContext::new(),
+            ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+            &mut ExecutionBudget::new(),
+        )
+        .unwrap();
+        if duplicate {
+            assert!(
+                matches!(paths.as_slice(), [FunctionPath {
+                outcome: FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(message)), ..
+            }] if message.contains("joint returned resource units")),
+                "{paths:?}"
+            );
+        } else {
+            let [
+                FunctionPath {
+                    outcome: FunctionOutcome::Return { value, state },
+                    ..
+                },
+            ] = paths.as_slice()
+            else {
+                panic!("split return refused: {paths:?}");
+            };
+            let pointer = value.pointer().unwrap().pointer();
+            for (start, end) in [(0u32, 1u32), (1, 4)] {
+                assert!(state.resources().contains_exact_representation(
+                    &ResourceFact::own_memory(MemoryRange::new(
+                        pointer.clone(),
+                        start.into(),
+                        end.into()
+                    ))
+                ));
+            }
+            assert!(
+                state
+                    .resources()
+                    .contains_exact_representation(&caller.resources().facts()[0])
             );
         }
     }

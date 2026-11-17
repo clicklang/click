@@ -252,35 +252,17 @@ impl<T> generic_stack::Stack<T> {
                 have at(region(30).exit, old(self.head).next) == at(region(30).entry, old(self.head).next) by {
                     preserve(at(before_pop, memory(self.head.next)), region(30));
                 }
-                have at(before_pop, separate(region(36).footprint, memory(self.head.next))) by { normalize() using {
-                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
-                }; }
-                have at(region(36).exit, old(self.head).next) == at(region(36).entry, old(self.head).next) by {
-                    preserve(at(before_pop, memory(self.head.next)), region(36));
-                }
-                have at(before_pop, separate(region(37).footprint, memory(self.head.next))) by { normalize() using {
-                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
-                }; }
-                have at(region(37).exit, old(self.head).next) == at(region(37).entry, old(self.head).next) by {
-                    preserve(at(before_pop, memory(self.head.next)), region(37));
-                }
                 have at(before_pop, separate(region(39).footprint, memory(self.head.next))) by { normalize() using {
                     at(before_pop, separate(memory(self.head.next), memory(self.head)));
                 }; }
                 have at(region(39).exit, old(self.head).next) == at(region(39).entry, old(self.head).next) by {
                     preserve(at(before_pop, memory(self.head.next)), region(39));
                 }
-                have at(before_pop, separate(region(40).footprint, memory(self.head.next))) by { normalize() using {
+                have at(before_pop, separate(region(46).footprint, memory(self.head.next))) by { normalize() using {
                     at(before_pop, separate(memory(self.head.next), memory(self.head)));
                 }; }
-                have at(region(40).exit, old(self.head).next) == at(region(40).entry, old(self.head).next) by {
-                    preserve(at(before_pop, memory(self.head.next)), region(40));
-                }
-                have at(before_pop, separate(region(41).footprint, memory(self.head.next))) by { normalize() using {
-                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
-                }; }
-                have at(region(41).exit, old(self.head).next) == at(region(41).entry, old(self.head).next) by {
-                    preserve(at(before_pop, memory(self.head.next)), region(41));
+                have at(region(46).exit, old(self.head).next) == at(region(46).entry, old(self.head).next) by {
+                    preserve(at(before_pop, memory(self.head.next)), region(46));
                 }
                 have at(before_pop, separate(region(48).footprint, memory(self.head.next))) by { normalize() using {
                     at(before_pop, separate(memory(self.head.next), memory(self.head)));
@@ -294,11 +276,11 @@ impl<T> generic_stack::Stack<T> {
                 have at(region(50).exit, old(self.head).next) == at(region(50).entry, old(self.head).next) by {
                     preserve(at(before_pop, memory(self.head.next)), region(50));
                 }
-                have at(before_pop, separate(region(52).footprint, memory(self.head.next))) by { normalize() using {
+                have at(before_pop, separate(region(54).footprint, memory(self.head.next))) by { normalize() using {
                     at(before_pop, separate(memory(self.head.next), memory(self.head)));
                 }; }
-                have at(region(52).exit, old(self.head).next) == at(region(52).entry, old(self.head).next) by {
-                    preserve(at(before_pop, memory(self.head.next)), region(52));
+                have at(region(54).exit, old(self.head).next) == at(region(54).entry, old(self.head).next) by {
+                    preserve(at(before_pop, memory(self.head.next)), region(54));
                 }
                 have at(before_pop, separate(region(56).footprint, memory(self.head.next))) by { normalize() using {
                     at(before_pop, separate(memory(self.head.next), memory(self.head)));
@@ -312,30 +294,18 @@ impl<T> generic_stack::Stack<T> {
                 have at(region(58).exit, old(self.head).next) == at(region(58).entry, old(self.head).next) by {
                     preserve(at(before_pop, memory(self.head.next)), region(58));
                 }
-                have at(before_pop, separate(region(60).footprint, memory(self.head.next))) by { normalize() using {
+                have at(before_pop, separate(region(67).footprint, memory(self.head.next))) by { normalize() using {
                     at(before_pop, separate(memory(self.head.next), memory(self.head)));
                 }; }
-                have at(region(60).exit, old(self.head).next) == at(region(60).entry, old(self.head).next) by {
-                    preserve(at(before_pop, memory(self.head.next)), region(60));
+                have at(region(67).exit, old(self.head).next) == at(region(67).entry, old(self.head).next) by {
+                    preserve(at(before_pop, memory(self.head.next)), region(67));
                 }
-                have at(before_pop, separate(region(69).footprint, memory(self.head.next))) by { normalize() using {
-                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
-                }; }
-                have at(region(69).exit, old(self.head).next) == at(region(69).entry, old(self.head).next) by {
-                    preserve(at(before_pop, memory(self.head.next)), region(69));
-                }
-                have at(before_pop, separate(region(72).footprint, memory(self.head.next))) by { normalize() using {
-                    at(before_pop, separate(memory(self.head.next), memory(self.head)));
-                }; }
-                have at(region(72).exit, old(self.head).next) == at(region(72).entry, old(self.head).next) by {
-                    preserve(at(before_pop, memory(self.head.next)), region(72));
-                }
-                have separate(region(75).footprint, memory(self.head)) by { normalize() using {
+                have separate(region(71).footprint, memory(self.head)) by { normalize() using {
                     separate(memory(self.head), memory(self.len));
                     at(before_pop, separate(memory(*self.head), memory(self.head)));
                 }; }
-                have at(region(75).exit, self.head) == at(region(75).entry, self.head) by {
-                    preserve(memory(self.head), region(75));
+                have at(region(71).exit, self.head) == at(region(71).entry, self.head) by {
+                    preserve(memory(self.head), region(71));
                 }
                 have separate(region(76).footprint, memory(self.head)) by { normalize() using {
                     separate(memory(self.head), memory(self.len));
@@ -344,35 +314,28 @@ impl<T> generic_stack::Stack<T> {
                 have at(region(76).exit, self.head) == at(region(76).entry, self.head) by {
                     preserve(memory(self.head), region(76));
                 }
-                have separate(region(79).footprint, memory(self.head)) by { normalize() using {
+                have separate(region(80).footprint, memory(self.head)) by { normalize() using {
                     separate(memory(self.head), memory(self.len));
                     at(before_pop, separate(memory(*self.head), memory(self.head)));
                 }; }
-                have at(region(79).exit, self.head) == at(region(79).entry, self.head) by {
-                    preserve(memory(self.head), region(79));
+                have at(region(80).exit, self.head) == at(region(80).entry, self.head) by {
+                    preserve(memory(self.head), region(80));
                 }
-                have separate(region(83).footprint, memory(self.head)) by { normalize() using {
+                have separate(region(81).footprint, memory(self.head)) by { normalize() using {
                     separate(memory(self.head), memory(self.len));
                     at(before_pop, separate(memory(*self.head), memory(self.head)));
                 }; }
-                have at(region(83).exit, self.head) == at(region(83).entry, self.head) by {
-                    preserve(memory(self.head), region(83));
+                have at(region(81).exit, self.head) == at(region(81).entry, self.head) by {
+                    preserve(memory(self.head), region(81));
                 }
-                have separate(region(84).footprint, memory(self.head)) by { normalize() using {
+                have separate(region(87).footprint, memory(self.head)) by { normalize() using {
                     separate(memory(self.head), memory(self.len));
                     at(before_pop, separate(memory(*self.head), memory(self.head)));
                 }; }
-                have at(region(84).exit, self.head) == at(region(84).entry, self.head) by {
-                    preserve(memory(self.head), region(84));
+                have at(region(87).exit, self.head) == at(region(87).entry, self.head) by {
+                    preserve(memory(self.head), region(87));
                 }
-                have separate(region(90).footprint, memory(self.head)) by { normalize() using {
-                    separate(memory(self.head), memory(self.len));
-                    at(before_pop, separate(memory(*self.head), memory(self.head)));
-                }; }
-                have at(region(90).exit, self.head) == at(region(90).entry, self.head) by {
-                    preserve(memory(self.head), region(90));
-                }
-                have at(region(73).exit, self.head) == old(self.head.next) by { known(); }
+                have at(region(70).exit, self.head) == old(self.head.next) by { known(); }
                 have self.head == old(self.head.next) by { known(); }
                 have result == Option::Some(v) by {
                     transport(old(self.head.value) == v, result == Option::Some(v)) using {
@@ -396,8 +359,8 @@ impl<T> generic_stack::Stack<T> {
                     }
                     List::Cons(w, more) => {
                         let { tail: next } = unfold(tail);
-                        have old(self.head.next).next == at(region(84).exit, old(self.head.next).next) by {
-                            transport(at(region(84).exit, old(self.head.next).next) == at(region(84).exit, old(self.head.next).next), old(self.head.next).next == at(region(84).exit, old(self.head.next).next));
+                        have old(self.head.next).next == at(region(81).exit, old(self.head.next).next) by {
+                            transport(at(region(81).exit, old(self.head.next).next) == at(region(81).exit, old(self.head.next).next), old(self.head.next).next == at(region(81).exit, old(self.head.next).next));
                         }
                         have self.head.next == old(self.head.next).next by {
                             rewrite(self.head, old(self.head.next));

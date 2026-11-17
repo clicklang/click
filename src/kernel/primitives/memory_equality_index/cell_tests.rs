@@ -324,7 +324,7 @@ fn typed_cell_candidates_follow_raw_offset_syntax_and_check_ownership() {
 }
 
 #[test]
-fn exact_address_classes_survive_unspellable_affine_shifts() {
+fn exact_address_classes_survive_unraisable_affine_shifts() {
     let owner = Pointer::symbolic(Variable(855_000));
     let alias = Pointer::symbolic(Variable(855_001));
     let x = PointerOffsetTerm::Variable(Variable(855_002));
@@ -355,7 +355,7 @@ fn exact_address_classes_survive_unspellable_affine_shifts() {
     let entry = candidates.next().expect("retained supplier");
     assert_eq!(candidates.address(entry), Some(owner.clone()));
     assert!(resources.permits_memory_read(&displaced, 4, &facts));
-    // A nearby address has no exact class witness; an unspellable coordinate
+    // A nearby address has no exact class witness; an unraisable coordinate
     // cannot turn the interval classifier's unknown into a decisive miss.
     assert!(
         resources

@@ -4,7 +4,7 @@ The proof establishes `parent_is(t.model, node_parent) == 1` inside a match
 arm and cites it with `apply(parent_is_holds(t.model, node_parent))`. The
 selector uses the theorem's own requirement to retain a checked source
 spelling of that premise. The certificate preserves the written arguments
-instead of replacing the named pointer with an unspellable kernel value.
+instead of replacing the named pointer with an unraisable kernel value.
 
 ```c filename=parent_value.c
 struct node {

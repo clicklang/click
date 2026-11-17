@@ -1,5 +1,296 @@
 use super::*;
 
+fn executed_body_return_axis(axis: &str) {
+    let mut samples = Vec::new();
+    for count in [4_u64, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(100)), 4),
+        };
+        let other = |index| {
+            if axis == "same-block aliases" {
+                Pointer {
+                    block: PointerBlock::ExternalArgument,
+                    offset: PointerOffsetTerm::scale_int32(
+                        MachineTerm::Variable(Variable(9_910_000 + index)),
+                        4,
+                    ),
+                }
+            } else {
+                Pointer::symbolic(Variable(9_910_000 + index))
+            }
+        };
+        let neighbor = other(0);
+        let end = MachineTerm::Variable(Variable(9_920_000));
+        let mut facts = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::pointer_equal(pointer.clone(), neighbor.clone()),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::signed_less_equal(2u32.into(), end.clone()),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::signed_less_equal(end.clone(), 16u32.into()),
+                true,
+            );
+        let outputs = [
+            ResourceFact::own_memory(MemoryRange::new(neighbor, 1u32.into(), end)),
+            ResourceFact::own_memory(MemoryRange::new(pointer.clone(), 0u32.into(), 1u32.into())),
+        ];
+        let mut extra_body = Vec::new();
+        let mut extra_frame = Vec::new();
+        for index in 1..=count {
+            match axis {
+                "cross-block aliases" | "same-block aliases" => {
+                    facts = facts.assume_condition(
+                        ConditionTerm::pointer_equal(pointer.clone(), other(index)),
+                        true,
+                    );
+                }
+                "body owners" => extra_body.push(ResourceFact::own_memory(MemoryRange::new(
+                    other(index),
+                    0u32.into(),
+                    1u32.into(),
+                ))),
+                _ => extra_frame.push(ResourceFact::own_memory(MemoryRange::new(
+                    other(index),
+                    0u32.into(),
+                    1u32.into(),
+                ))),
+            }
+        }
+        let body = ResourceContext::new_with_equalities(&facts)
+            .unchecked_with_facts(outputs.iter().cloned())
+            .unchecked_with_facts(extra_body);
+        body.synchronize_memory_equalities(&facts);
+        let frame = ResourceContext::new_with_equalities(&facts).unchecked_with_facts(extra_frame);
+        frame.synchronize_memory_equalities(&facts);
+        let state = ExecutionState::new().with_resource_context(body.clone());
+        let function = program_function(ProgramType::Void, "body_return", vec![], program_skip());
+        let consumed = ConsumedCellReturns::default();
+        let composition = ReturnResourceComposition::BodyReturn {
+            state: &state,
+            frame: &frame,
+            allocations: None,
+            consumed: &consumed,
+        };
+        let ((returned, transfers, sources), work) =
+            crate::instrumentation::measure_deterministic_work(|| {
+                let _fast =
+                    crate::kernel::search::FastOperationScope::enter("executed body return group");
+                let mut evaluated = EvaluatedReturnResources::for_composition(composition, &facts);
+                for (clause, fact) in outputs.iter().enumerate() {
+                    evaluated = evaluated
+                        .construct_clause(
+                            fact.clone(),
+                            ReturnOwnershipOrigin::Description,
+                            Some(clause),
+                            composition,
+                            function.contract_interface(),
+                            &facts,
+                        )
+                        .unwrap();
+                }
+                let sources = evaluated
+                    .occurrences
+                    .iter()
+                    .map(|output| output.source)
+                    .collect::<Vec<_>>();
+                let (returned, transfers) = evaluated
+                    .restore_entry_borrows(frame.clone(), composition, &facts)
+                    .unwrap()
+                    .finish(&facts)
+                    .unwrap();
+                (returned, transfers, sources)
+            });
+        assert_eq!(returned.facts().len(), frame.facts().len() + 2);
+        for ((transfer, source), fact) in transfers.iter().zip(sources).zip(&outputs) {
+            assert_eq!(transfer.source, source);
+            assert_eq!(
+                returned.owned_fact_for_occurrence(transfer.destination),
+                Some(fact)
+            );
+        }
+        assert_eq!(
+            state.resources().facts().len(),
+            if axis == "body owners" {
+                count as usize + 2
+            } else {
+                2
+            }
+        );
+        samples.push(work);
+    }
+    eprintln!("executed body return: {axis}, work={samples:?}");
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 64),
+        "{axis}: {samples:?}"
+    );
+}
+
+#[test]
+fn executed_body_return_construction_ignores_aliases() {
+    executed_body_return_axis("cross-block aliases");
+    executed_body_return_axis("same-block aliases");
+}
+
+#[test]
+fn executed_body_return_construction_ignores_unrelated_owners() {
+    executed_body_return_axis("body owners");
+    executed_body_return_axis("frame owners");
+}
+
+#[test]
+fn executed_body_return_construction_scales_with_selected_splits() {
+    let mut samples = Vec::new();
+    for count in [4u32, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let facts = PureFactContext::new();
+        let pointer = Pointer::symbolic(Variable(9_930_000));
+        let owner =
+            ResourceFact::own_memory(MemoryRange::new(pointer.clone(), 0u32.into(), count.into()));
+        let source =
+            ResourceContext::new_with_equalities(&facts).unchecked_with_fact(owner.clone());
+        source.synchronize_memory_equalities(&facts);
+        let state = ExecutionState::new().with_resource_context(source);
+        let frame = ResourceContext::new_with_equalities(&facts);
+        let consumed = ConsumedCellReturns::default();
+        let composition = ReturnResourceComposition::BodyReturn {
+            state: &state,
+            frame: &frame,
+            allocations: None,
+            consumed: &consumed,
+        };
+        let function = program_function(ProgramType::Void, "split_return", vec![], program_skip());
+        let ((returned, transfers), work) =
+            crate::instrumentation::measure_deterministic_work(|| {
+                let _fast = crate::kernel::search::FastOperationScope::enter(
+                    "selected executed return splits",
+                );
+                let mut evaluated = EvaluatedReturnResources::for_composition(composition, &facts);
+                for index in 0..count {
+                    let piece = ResourceFact::own_memory(MemoryRange::new(
+                        pointer.clone(),
+                        index.into(),
+                        (index + 1).into(),
+                    ));
+                    evaluated = evaluated
+                        .construct_clause(
+                            piece,
+                            ReturnOwnershipOrigin::Description,
+                            Some(index as usize),
+                            composition,
+                            function.contract_interface(),
+                            &facts,
+                        )
+                        .unwrap();
+                }
+                evaluated
+                    .restore_entry_borrows(frame.clone(), composition, &facts)
+                    .unwrap()
+                    .finish(&facts)
+                    .unwrap()
+            });
+        assert_eq!(returned.facts().len(), count as usize);
+        assert_eq!(transfers.len(), count as usize);
+        assert!(state.resources().contains_exact_representation(&owner));
+        samples.push((count, work));
+    }
+    eprintln!("selected executed return splits: {samples:?}");
+    for (count, work) in &samples {
+        assert!(
+            *work <= samples[0].1 * (*count as usize / 4) * 3 + *count as usize * 64,
+            "{samples:?}"
+        );
+    }
+}
+
+fn early_return_group_alias_work(symbolic_end: bool) -> Vec<[usize; 3]> {
+    let mut curves = Vec::new();
+    for overlap in [false, true] {
+        let samples = [4_u64, 16, 64].map(|count| {
+            let _session = crate::kernel::VerificationSession::enter();
+            let pointer = Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(100)), 4),
+            };
+            let neighbor = Pointer::symbolic(Variable(9_810_000));
+            let mut facts = PureFactContext::new();
+            let end = MachineTerm::Variable(Variable(9_820_000));
+            if symbolic_end {
+                facts = facts
+                    .assume_condition(
+                        ConditionTerm::signed_less_equal(2u32.into(), end.clone()),
+                        true,
+                    )
+                    .assume_condition(
+                        ConditionTerm::signed_less_equal(end.clone(), 16u32.into()),
+                        true,
+                    );
+            }
+            for index in 0..count {
+                facts = facts.assume_condition(
+                    ConditionTerm::pointer_equal(
+                        pointer.clone(),
+                        Pointer::symbolic(Variable(9_810_000 + index)),
+                    ),
+                    true,
+                );
+            }
+            let start = u32::from(!overlap);
+            let first = ResourceFact::own_memory(MemoryRange::new(
+                neighbor,
+                start.into(),
+                if symbolic_end {
+                    end
+                } else {
+                    (start + 1).into()
+                },
+            ));
+            let second =
+                ResourceFact::own_memory(MemoryRange::new(pointer, 0u32.into(), 1u32.into()));
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                EvaluatedReturnResources::new(&facts)
+                    .admit(first, ReturnOwnershipOrigin::Description, &facts)
+                    .unwrap()
+                    .admit(second, ReturnOwnershipOrigin::Description, &facts)
+            });
+            assert_eq!(result.is_ok(), !overlap);
+            if let Ok(evaluated) = result {
+                assert_eq!(evaluated.occurrences.len(), 2);
+                assert_eq!(evaluated.resources.facts().len(), 2);
+            }
+            work
+        });
+        eprintln!(
+            "early return group: symbolic_end={symbolic_end}, overlap={overlap}, aliases=[4,16,64], work={samples:?}"
+        );
+        curves.push(samples);
+    }
+    curves
+}
+
+#[test]
+fn constant_return_group_admission_ignores_ambient_aliases() {
+    for samples in early_return_group_alias_work(false) {
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 32),
+            "early return-group admission walks ambient aliases: {samples:?}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "diagnostic: measure symbolic return-group admission work"]
+fn symbolic_return_group_admission_work() {
+    // This preserves the success/refusal controls and exposes work counts;
+    // it does not claim a fast bound for unsupported indexed geometry.
+    early_return_group_alias_work(true);
+}
+
 #[test]
 fn mixed_return_composition_ignores_related_aliases_and_retained_owners() {
     for axis in ["aliases", "related owners", "unrelated owners"] {
@@ -399,6 +690,7 @@ fn selected_scalar_transfers_scale_with_the_return_delta() {
         let (resources, emitted) = ResourceContext::new_with_equalities(&facts)
             .unchecked_with_facts_and_occurrences(pieces);
         let mut evaluated = EvaluatedReturnResources {
+            body: None,
             resources,
             occurrences: emitted
                 .into_iter()
@@ -545,6 +837,7 @@ fn fixed_range_transfer_work_ignores_length_aliases_and_retained_owners() {
             let (resources, inserted) = ResourceContext::new_with_equalities(&facts)
                 .unchecked_with_facts_and_occurrences([output.clone()]);
             let mut evaluated = EvaluatedReturnResources {
+                body: None,
                 resources,
                 occurrences: vec![EvaluatedReturnOccurrence {
                     clause: None,
@@ -709,6 +1002,7 @@ fn fresh_allocation_return_work_scales_with_selected_return_pieces() {
         let (resources, inserted) = ResourceContext::new_with_equalities(&facts)
             .unchecked_with_facts_and_occurrences(pieces);
         let mut evaluated = EvaluatedReturnResources {
+            body: None,
             resources,
             occurrences: inserted
                 .iter()

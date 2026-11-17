@@ -5021,7 +5021,7 @@ impl Pointer {
 
     /// The pointer a logical read of `address` in `memory` reads, named by
     /// the cell's version as every logical read is
-    /// (`docs/internals/spellability.md`): never by a pointer the cell
+    /// (`docs/internals/raise-lower-principle.md`): never by a pointer the cell
     /// holds, which the read-over-write authority relates to the read
     /// (`eval::pointer_read_over_write_value`). A cell holding its own read
     /// is that read.
