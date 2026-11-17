@@ -759,6 +759,7 @@ mod tests {
             }
         }
         let state = Rejected(Proposition::MemoryReadDefined {
+            at: None,
             memory: Memory::new(),
             pointer: Pointer::symbolic(Variable(987_001)),
             value_type: ProgramType::Int32,
@@ -800,6 +801,7 @@ mod tests {
             }
         }
         let read = |memory| Proposition::MemoryReadDefined {
+            at: None,
             memory,
             pointer: Pointer::symbolic(Variable(987_002)),
             value_type: ProgramType::Int32,

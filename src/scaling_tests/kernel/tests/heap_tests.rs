@@ -13,6 +13,7 @@ fn aliased_read_validity_lookup_ignores_unrelated_facts() {
     };
     let alias = Pointer::symbolic(Variable(941_001));
     let validity = Proposition::MemoryReadDefined {
+        at: None,
         memory: memory.clone(),
         pointer: pointer.offset_by_bytes(4),
         value_type: ProgramType::Int32,
@@ -26,6 +27,7 @@ fn aliased_read_validity_lookup_ignores_unrelated_facts() {
         ));
         for index in 1..=count {
             unrelated = unrelated.assume_proposition(Proposition::MemoryReadDefined {
+                at: None,
                 memory: memory.clone(),
                 pointer: Pointer {
                     block: PointerBlock::Heap(942_000 + index),
@@ -60,6 +62,7 @@ fn read_validity_lookup_ignores_unrelated_cells() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let validity = Proposition::MemoryReadDefined {
+        at: None,
         memory: memory.clone(),
         pointer: pointer.clone(),
         value_type: ProgramType::Int32,
@@ -69,6 +72,7 @@ fn read_validity_lookup_ignores_unrelated_cells() {
         let mut unrelated = PureFactContext::new();
         for index in 1..=count {
             unrelated = unrelated.assume_proposition(Proposition::MemoryReadDefined {
+                at: None,
                 memory: memory.clone(),
                 pointer: Pointer {
                     block: PointerBlock::ExternalArgument,
@@ -133,6 +137,7 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
         let mut assumptions = PureFactContext::new();
         for index in 0..count {
             assumptions = assumptions.assume_proposition(Proposition::MemoryReadDefined {
+                at: None,
                 memory: memory.clone(),
                 pointer: address.clone(),
                 value_type: ProgramType::Int32,
@@ -163,6 +168,7 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
         // Supply validity at the selected adjacent transition's entry.
         // Earlier history is deliberately not an implicit proof argument.
         let assumptions = assumptions.assume_proposition(Proposition::MemoryReadDefined {
+            at: None,
             memory: pending.clone(),
             pointer: address.clone(),
             value_type: ProgramType::Int32,
@@ -171,6 +177,7 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
             .resolve_pending_heap_allocation(&request, false)
             .unwrap();
         let goal = Proposition::MemoryReadDefined {
+            at: None,
             memory: failed.clone(),
             pointer: address.clone(),
             value_type: ProgramType::Int32,

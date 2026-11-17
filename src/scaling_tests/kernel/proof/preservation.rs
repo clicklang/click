@@ -379,11 +379,13 @@ fn definedness_preservation_ignores_history_and_ambient_facts() {
                 memory,
                 pointer,
                 value_type,
+                ..
             } = &old
             else {
                 unreachable!()
             };
             facts = facts.with_fact(Proposition::MemoryReadDefined {
+                at: None,
                 memory: memory
                     .clone()
                     .store(pointer.clone(), ProgramValue::Int32((i as u32).into())),
@@ -391,6 +393,7 @@ fn definedness_preservation_ignores_history_and_ambient_facts() {
                 value_type: *value_type,
             });
             facts = facts.with_fact(Proposition::MemoryReadDefined {
+                at: None,
                 memory: memory.clone(),
                 pointer: Pointer::symbolic(Variable(8_500_000 + i)),
                 value_type: *value_type,

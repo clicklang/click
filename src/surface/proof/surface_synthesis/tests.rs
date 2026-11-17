@@ -7596,3 +7596,41 @@ fn closed_word32_equality_guards_with_selected_literal_arms_round_trip() {
         }
     }
 }
+
+#[test]
+fn definedness_round_trips_at_a_distinct_point_with_equal_memory() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = Pointer::symbolic(Variable(981_301));
+    let historical = ExecutionState::new().with_memory(Memory::new()).with_local(
+        "p",
+        ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
+    );
+    let current = historical.clone().with_memory(historical.memory().clone());
+    let selector = ProgramPointSelector::Mark("observed".into());
+    let mut points = RecordedStates::new();
+    points.insert(selector.clone(), historical.clone());
+    let _points = SynthesisRecordedPointsScope::enter(&points);
+    let fact = Proposition::MemoryReadDefined {
+        at: historical.program_point().id(),
+        memory: historical.memory().clone(),
+        pointer,
+        value_type: ProgramType::Int32,
+    };
+    let spelled = synthesize_surface_proposition(&fact, ParameterBinding::default(), &current)
+        .expect("the recorded observation has a source selector");
+    assert!(
+        matches!(&spelled, ClickProposition::At { selector: selected, .. } if selected == &selector)
+    );
+    let lowered = crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
+        &spelled,
+        &PureFactContext::new(),
+        ContractEnvironment::new(&BTreeMap::new(), &ClickArrayRefs::new()),
+        FixedStateFrame::new(&current, &current, None, &points),
+        SpecDefinitions::new(
+            &PredicateEnvironment::new(&[]),
+            &ClickFunctionEnvironment::new(&[]),
+        ),
+        FixedStateLoweringOptions::default(),
+    ).map(|(proposition, _, _, _)| proposition);
+    assert_eq!(lowered, Ok(fact));
+}

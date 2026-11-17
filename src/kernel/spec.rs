@@ -7718,17 +7718,15 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     continue;
                 };
                 let pointer = pointer.into_pointer();
-                let memory = match memory {
-                    SpecPoint::Current => state.memory(),
-                    SpecPoint::FunctionEntry => match loop_entry_state {
-                        Some(entry_state) => entry_state.memory(),
-                        None => continue,
-                    },
-                    SpecPoint::LoopEntry => match loop_entry_state {
-                        Some(loop_entry_state) => loop_entry_state.memory(),
-                        None => continue,
-                    },
-                    SpecPoint::At(point) => point.memory(),
+                let (memory_view, selected_state) = match memory {
+                    SpecPoint::Current => (state.memory(), Some(state)),
+                    SpecPoint::FunctionEntry | SpecPoint::LoopEntry => {
+                        let Some(entry) = loop_entry_state else {
+                            continue;
+                        };
+                        (entry.memory(), Some(entry))
+                    }
+                    SpecPoint::At(point) => (point.memory(), None),
                 };
                 let mut obligations = pointer_path.obligations;
                 // A written definedness claim must retain the typed premise,
@@ -7738,20 +7736,24 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 if budget.checked_reads
                     && (budget.program_definedness
                         || !PureFactContext::new().proves_memory_read_defined(
-                            memory,
+                            memory_view,
                             &pointer,
                             *value_type,
                         ))
                 {
                     obligations.push(ProofObligation::new(Proposition::MemoryReadDefined {
-                        memory: memory.clone(),
+                        at: match memory {
+                            SpecPoint::At(point) => point.id(),
+                            _ => selected_state.and_then(|state| state.program_point().id()),
+                        },
+                        memory: memory_view.clone(),
                         pointer: pointer.clone(),
                         value_type: *value_type,
                     }));
                 }
                 paths.extend(spec_value_paths_in(
                     crate::kernel::eval::evaluate_logical_memory_load_paths(
-                        memory,
+                        memory_view,
                         pointer,
                         *value_type,
                         pointer_path.facts,

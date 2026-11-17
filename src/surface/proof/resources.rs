@@ -527,6 +527,7 @@ fn dynamic_body_fact_dependency(
                 memory,
                 pointer,
                 value_type,
+                ..
             } => {
                 // Definedness is an observation of the same cell as a load.
                 // Retain its access dependency, including loads in its address.
@@ -5825,6 +5826,7 @@ void child_release(struct child* obj) {
                 .is_some()
         );
         let fact = Proposition::MemoryReadDefined {
+            at: None,
             memory: observed.memory().clone(),
             pointer: range.base().offset_by_bytes(4),
             value_type: ProgramType::Int32,
@@ -5949,6 +5951,7 @@ void child_release(struct child* obj) {
             body: Box::new(Proposition::Implies(
                 Box::new(guard),
                 Box::new(Proposition::MemoryReadDefined {
+                    at: None,
                     memory: memory.clone(),
                     pointer: Pointer {
                         block: PointerBlock::ExternalArgument,
@@ -6044,6 +6047,7 @@ void child_release(struct child* obj) {
         };
         let proposition = if definedness {
             Proposition::MemoryReadDefined {
+                at: None,
                 memory: memory.clone(),
                 pointer: pointer.clone(),
                 value_type: crate::kernel::ProgramType::Int32,

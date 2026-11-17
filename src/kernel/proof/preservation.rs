@@ -152,12 +152,16 @@ fn preserve_definedness(
     if bytes != value_type.byte_width() {
         return None;
     }
-    let defined = |memory: &Memory| Proposition::MemoryReadDefined {
+    let defined = |point: &ProgramPoint, memory: &Memory| Proposition::MemoryReadDefined {
+        at: point.id(),
         memory: memory.clone(),
         pointer: pointer.clone(),
         value_type,
     };
-    Some((defined(&footprint.before), defined(&footprint.after)))
+    Some((
+        defined(&footprint.before_point, &footprint.before),
+        defined(&footprint.after_point, &footprint.after),
+    ))
 }
 
 // Resource field values are retained by the persistent resource contexts.
@@ -402,11 +406,13 @@ mod tests {
             ))),
         };
         let old = Proposition::MemoryReadDefined {
+            at: before.program_point().id(),
             memory: before.memory().clone(),
             pointer: pointer.clone(),
             value_type: ty,
         };
         let goal = Proposition::MemoryReadDefined {
+            at: after.program_point().id(),
             memory: after.memory().clone(),
             pointer,
             value_type: ty,
@@ -467,9 +473,10 @@ mod tests {
                     .contains("footprint entry")
             );
             assert!(preservation.apply(|p| p == &old).is_err());
-            for corruption in 0..3 {
+            for corruption in 0..4 {
                 let mut bad = goal.clone();
                 let Proposition::MemoryReadDefined {
+                    at,
                     memory,
                     pointer,
                     value_type,
@@ -480,6 +487,12 @@ mod tests {
                 match corruption {
                     0 => *memory = Memory::new(),
                     1 => *pointer = Pointer::symbolic(Variable(8_499_000)),
+                    2 => {
+                        *at = ExecutionState::new()
+                            .with_memory(memory.clone())
+                            .program_point()
+                            .id()
+                    }
                     _ => {
                         *value_type = if ty == ProgramType::UInt8 {
                             ProgramType::Int32

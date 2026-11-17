@@ -164,6 +164,7 @@ enum ReferenceObservation {
         source: Arc<ReferenceAccessSourceId>,
         pointer: Pointer,
         retained_state: MemoryStateIdentity,
+        at: Option<super::program_point::ProgramPointId>,
         value_type: ProgramType,
     },
     Borrow(ReferenceBorrowObservation),
@@ -173,12 +174,14 @@ impl ReferenceObservationSource {
         source: Arc<ReferenceAccessSourceId>,
         pointer: Pointer,
         memory: &Memory,
+        at: Option<super::program_point::ProgramPointId>,
         value_type: ProgramType,
     ) -> Self {
         Self(Some(Arc::new(ReferenceObservation::Read {
             source,
             pointer,
             retained_state: MemoryStateIdentity::of(memory),
+            at,
             value_type,
         })))
     }
@@ -191,9 +194,9 @@ impl ReferenceObservationSource {
     }
     pub(super) fn matches_proposition(&self, proposition: &Proposition) -> bool {
         self.0.as_deref().is_none_or(|observation| match observation {
-            ReferenceObservation::Read { source: _, pointer: expected, retained_state, value_type: expected_type } => matches!(proposition,
-                Proposition::MemoryReadDefined { memory, pointer, value_type }
-                if *retained_state == MemoryStateIdentity::of(memory) && expected == pointer && expected_type == value_type),
+            ReferenceObservation::Read { source: _, pointer: expected, retained_state, at: expected_point, value_type: expected_type } => matches!(proposition,
+                Proposition::MemoryReadDefined { memory, pointer, value_type, at }
+                if expected_point == at && *retained_state == MemoryStateIdentity::of(memory) && expected == pointer && expected_type == value_type),
             ReferenceObservation::Borrow(birth) => matches!(proposition,
                 Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true)
                 if left.as_ref() == &birth.pointer && right.as_ref() == &birth.pointer),
@@ -425,6 +428,7 @@ mod tests {
             kind: ReferenceAccessKind::Read,
         });
         let mut fact = ExecutionPureFact::certified(Proposition::MemoryReadDefined {
+            at: None,
             memory: memory.clone(),
             pointer: pointer.clone(),
             value_type: ProgramType::Int32,
@@ -432,7 +436,7 @@ mod tests {
         fact.public = false;
         fact.logical_read_equation = true;
         fact.reference_observation =
-            ReferenceObservationSource::new(source, pointer, &memory, ProgramType::Int32);
+            ReferenceObservationSource::new(source, pointer, &memory, None, ProgramType::Int32);
         fact
     }
     #[test]

@@ -5661,6 +5661,7 @@ impl PureFactContext {
 
     fn adjust_memory_loadable_fact(&mut self, proposition: &Proposition) {
         if let Proposition::MemoryReadDefined {
+            memory,
             pointer,
             value_type,
             ..
@@ -5675,12 +5676,22 @@ impl PureFactContext {
                 .get(&key)
                 .cloned()
                 .unwrap_or_default();
-            let facts = facts.with_value(proposition.clone());
-            self.memory_read_defined_facts = if facts.is_empty() {
-                self.memory_read_defined_facts.without_key(&key)
-            } else {
-                self.memory_read_defined_facts.with_inserted(key, facts)
+            // The evaluator asks about validity of a memory view. The exact
+            // fact store separately retains the observation's point.
+            let validity = Proposition::MemoryReadDefined {
+                at: None,
+                memory: memory.clone(),
+                pointer: pointer.clone(),
+                value_type: *value_type,
             };
+            let sources = facts
+                .get(&validity)
+                .cloned()
+                .unwrap_or_default()
+                .with_value(proposition.clone());
+            self.memory_read_defined_facts = self
+                .memory_read_defined_facts
+                .with_inserted(key, facts.with_inserted(validity, sources));
             return;
         }
         let Proposition::MemoryLoadable { base, .. } = proposition else {
@@ -6196,7 +6207,11 @@ impl PureFactContext {
                     value_type,
                 ))
             })
-            .flat_map(crate::persistent::PersistentSet::iter)
+            .flat_map(|facts| {
+                facts
+                    .values()
+                    .flat_map(crate::persistent::PersistentSet::iter)
+            })
             .inspect(|_| crate::instrumentation::record_deterministic_work(1))
             .collect()
     }

@@ -241,11 +241,12 @@ impl PureFactContext {
                 return false;
             };
             let exact = Proposition::MemoryReadDefined {
+                at: None,
                 memory: memory.clone(),
                 pointer: pointer.clone(),
                 value_type,
             };
-            if facts.contains(&exact) {
+            if facts.contains_key(&exact) {
                 return true;
             }
             // Allocation bookkeeping and local cleanup have one adjacent
@@ -263,11 +264,12 @@ impl PureFactContext {
             {
                 let before = step.base();
                 let premise = Proposition::MemoryReadDefined {
+                    at: None,
                     memory: before.as_ref().clone(),
                     pointer: candidate.clone(),
                     value_type,
                 };
-                if facts.contains(&premise)
+                if facts.contains_key(&premise)
                     && !candidate.blocks_proven_distinct(pointer)
                     && self.pointers_known_equal(candidate, pointer)
                     && crate::kernel::memory_history::typed_read_has_same_memory_source(
@@ -287,10 +289,11 @@ impl PureFactContext {
                 return false;
             }
             let Some(Proposition::MemoryReadDefined {
+                at: None,
                 memory: before,
                 pointer: source,
                 ..
-            }) = facts.iter().next()
+            }) = facts.keys().next()
             else {
                 return false;
             };

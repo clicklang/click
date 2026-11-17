@@ -3120,6 +3120,7 @@ fn repeated_read_initialization_work(adjacent: bool, exact: bool) -> Vec<(u32, u
         let initial = Memory::new();
         let defined = |memory: &Memory| {
             PureFactContext::new().assume_proposition(Proposition::MemoryReadDefined {
+                at: None,
                 memory: memory.clone(),
                 pointer: read.clone(),
                 value_type: ProgramType::Int32,

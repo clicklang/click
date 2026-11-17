@@ -249,6 +249,7 @@ impl super::ProofSearch<PureFactContext> {
                 memory,
                 pointer,
                 value_type,
+                ..
             } => context.proves_memory_read_defined(memory, pointer, *value_type),
             Proposition::MemoryLoadable {
                 memory,

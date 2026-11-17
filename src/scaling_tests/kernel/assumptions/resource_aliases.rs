@@ -94,6 +94,7 @@ fn selected_read_validity_and_kept_frames_ignore_large_alias_classes() {
             .unwrap();
         let mut context =
             PureFactContext::new().assume_proposition(Proposition::MemoryReadDefined {
+                at: None,
                 memory: memory.clone(),
                 pointer: field.clone(),
                 value_type: ProgramType::Int32,
@@ -106,6 +107,7 @@ fn selected_read_validity_and_kept_frames_ignore_large_alias_classes() {
                 true,
             );
             context = context.assume_proposition(Proposition::MemoryReadDefined {
+                at: None,
                 memory: memory.clone(),
                 pointer: Pointer::symbolic(Variable(910_000 + index)),
                 value_type: ProgramType::Int32,
@@ -160,6 +162,7 @@ fn read_validity_state_buckets_keep_exact_hits_and_bounded_misses() {
         for index in 0..size {
             memory = memory.store(other.clone(), ProgramValue::Int32((index as u32).into()));
             context = context.assume_proposition(Proposition::MemoryReadDefined {
+                at: None,
                 memory: memory.clone(),
                 pointer: source.clone(),
                 value_type: ProgramType::Int32,

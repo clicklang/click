@@ -16,9 +16,10 @@ use super::{Memory, MemoryDerivation, SharedMemory, intern_memory, intern_memory
 /// The identity of one point an execution path reached.
 ///
 /// Identities are unique within a process and carry no order: no decision
-/// may depend on comparing two of them other than for equality.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub(crate) struct ProgramPointId(u64);
+/// may depend on comparing two of them other than for equality. Ordering is
+/// provided solely for exact fact keys.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct ProgramPointId(u64);
 
 static NEXT_PROGRAM_POINT_ID: AtomicU64 = AtomicU64::new(1);
 

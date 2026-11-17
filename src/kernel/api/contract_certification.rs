@@ -458,6 +458,7 @@ pub fn execution_state_justifies_loadability_obligation(
             memory,
             pointer,
             value_type,
+            ..
         } => {
             if assumptions.proves_exact(obligation) {
                 return true;

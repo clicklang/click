@@ -2594,13 +2594,53 @@ fn synthesize_surface_atomic_proposition(
         });
     }
     if let Proposition::MemoryReadDefined {
+        at,
         memory,
         pointer,
         value_type,
     } = proposition
     {
+        let matches_point = |candidate: &ExecutionState| match at {
+            Some(id) => candidate.program_point().id() == Some(*id),
+            None => candidate.memory() == memory,
+        };
+        let historical = if matches_point(state) {
+            None
+        } else {
+            Some(
+                SYNTHESIS_ENTRY_STATE
+                    .with(|slot| {
+                        let slot = slot.borrow();
+                        let entry = slot.as_ref().filter(|entry| matches_point(entry))?;
+                        Some((
+                            ProgramPointSelector::ProgramPoint(ProgramPointRef {
+                                region: CodeRegionRef::Function,
+                                kind: ProgramPointKind::Entry,
+                            }),
+                            entry.clone(),
+                        ))
+                    })
+                    .or_else(|| {
+                        SYNTHESIS_REFERENCE_STATE.with(|slot| {
+                            let slot = slot.borrow();
+                            let (retained, selector) = slot.as_ref()?;
+                            matches_point(retained).then(|| (selector.clone(), retained.clone()))
+                        })
+                    })
+                    .or_else(|| {
+                        SYNTHESIS_RECORDED_POINTS.with(|slot| {
+                            let slot = slot.borrow();
+                            let points = slot.as_ref()?;
+                            let selector = points.point_name((*at)?)?;
+                            let recorded = points.get_exact(selector)?;
+                            matches_point(recorded).then(|| (selector.clone(), recorded.clone()))
+                        })
+                    })?,
+            )
+        };
+        let read_state = historical.as_ref().map_or(state, |(_, state)| state);
         let pointer =
-            synthesize_surface_pointer(pointer, parameter_binding, state, bound_variables)?;
+            synthesize_surface_pointer(pointer, parameter_binding, read_state, bound_variables)?;
         let validity = ClickProposition::Defined {
             expression: ContractExpression::ProgramExpression(ProgramExpression::TypedLoad {
                 pointer: Box::new(pointer),
@@ -2611,29 +2651,12 @@ fn synthesize_surface_atomic_proposition(
                 source: crate::kernel::ExpressionLoadSource::none(),
             }),
         };
-        if state.memory() == memory {
-            return Some(validity);
-        }
-        let at_entry = SYNTHESIS_ENTRY_STATE.with(|slot| {
-            slot.borrow()
-                .as_ref()
-                .is_some_and(|entry| entry.memory() == memory)
-        });
-        let selector = if at_entry {
-            ProgramPointSelector::ProgramPoint(ProgramPointRef {
-                region: CodeRegionRef::Function,
-                kind: ProgramPointKind::Entry,
-            })
-        } else {
-            SYNTHESIS_REFERENCE_STATE.with(|slot| {
-                let slot = slot.borrow();
-                let (retained_state, selector) = slot.as_ref()?;
-                (retained_state.memory() == memory).then(|| selector.clone())
-            })?
-        };
-        return Some(ClickProposition::At {
-            selector,
-            proposition: Box::new(validity),
+        return Some(match historical {
+            Some((selector, _)) => ClickProposition::At {
+                selector,
+                proposition: Box::new(validity),
+            },
+            None => validity,
         });
     }
     if let Proposition::MemoryLoadable {

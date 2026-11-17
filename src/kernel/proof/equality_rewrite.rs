@@ -2559,10 +2559,12 @@ fn rewrite_atomic_proposition_by_exact_equality(
             child: Box::new(rewrite_resource_term(child)),
         },
         Proposition::MemoryReadDefined {
+            at,
             memory,
             pointer,
             value_type,
         } => Proposition::MemoryReadDefined {
+            at: *at,
             memory: memory.clone(),
             pointer: Pointer {
                 block: pointer.block.clone(),
