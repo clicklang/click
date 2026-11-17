@@ -4661,8 +4661,8 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
         .clone()
         .store(b.clone(), ProgramValue::Pointer(stored.clone()));
     let read = |memory: &SymbolicMemory, address: &Address| {
-        PointerValue::from_read(
-            stored.pointer().clone(),
+        Pointer::from_read(
+            stored.address().clone(),
             ProgramType::Int32Pointer,
             &crate::kernel::intern_memory_ref(memory),
             address,

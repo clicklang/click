@@ -854,7 +854,7 @@ fn stored_pointer_read_definitions_preserve_bounds_and_reject_partial_overwrites
     let memory = intern_memory(
         SymbolicMemory::new().store(slot.clone(), ProgramValue::Pointer(stored.clone())),
     );
-    let read = PointerValue::new(
+    let read = Pointer::new(
         Address::loaded_value(&memory, &slot),
         ProgramType::Int32Pointer,
     );
@@ -927,7 +927,7 @@ fn pointer_domain_queries_register_stored_read_definitions_without_prior_address
     let _session = VerificationSession::enter();
     let slot = Address::symbolic(Variable(989_100));
     let target = Address::symbolic(Variable(989_101));
-    let stored = PointerValue::new(target.clone(), ProgramType::Int32Pointer);
+    let stored = Pointer::new(target.clone(), ProgramType::Int32Pointer);
     let memory = intern_memory(
         SymbolicMemory::new().store(slot.clone(), ProgramValue::Pointer(stored.clone())),
     );

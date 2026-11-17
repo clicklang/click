@@ -6817,7 +6817,7 @@ fn transport_framed_atomic_condition(
 }
 
 fn transport_framed_atomic_pointer_value(
-    value: &PointerValue,
+    value: &Pointer,
     after: &SymbolicMemory,
     assumptions: Option<(&PureFactContext, bool)>,
 ) -> Option<Pointer> {
@@ -8024,8 +8024,8 @@ mod opaque_pointer_frame_tests {
             SubobjectBounds {
                 start: target,
                 width: 4u32.into(),
-            }),
-        );
+            },
+        ));
         let before =
             SymbolicMemory::new().store(field.clone(), ProgramValue::Pointer(stored.clone()));
         let write = buffer.clone().offset_by_bytes(4);

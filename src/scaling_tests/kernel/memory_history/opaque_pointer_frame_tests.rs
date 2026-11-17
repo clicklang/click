@@ -175,8 +175,8 @@ fn copied_pointer_frames_ignore_unrelated_separations() {
             SubobjectBounds {
                 start: target,
                 width: 4u32.into(),
-            }),
-        );
+            },
+        ));
         let before =
             SymbolicMemory::new().store(field.clone(), ProgramValue::Pointer(stored.clone()));
         let write = buffer.clone().offset_by_bytes(4);

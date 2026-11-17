@@ -317,7 +317,7 @@ mod tests {
     fn shared_read_addresses_preserve_call_payloads_ignored_by_logical_identity() {
         let _session = VerificationSession::enter();
         let memory = intern_memory(SymbolicMemory::new());
-        let pointer = PointerValue::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(1017200)),
             ProgramType::Int32Pointer,
         );

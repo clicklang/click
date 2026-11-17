@@ -568,9 +568,10 @@ fn defined_memory_load_retains_typed_validity_after_dropping_registry_metadata()
     };
     let proposition = SpecProposition::Defined(SpecExpression::MemoryLoad {
         memory: SpecPoint::At(ProgramPoint::of_memory(&SymbolicMemory::new())),
-        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-            PointerValue::new(pointer, ProgramType::Int32Pointer),
-        ))),
+        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(Pointer::new(
+            pointer,
+            ProgramType::Int32Pointer,
+        )))),
         value_type: ProgramType::Int32,
     });
 
@@ -782,9 +783,10 @@ fn empty_integer_fold_preserves_shape_without_live_load_obligation() {
     };
     let body = SpecIntegerExpression::FromMachine(Box::new(SpecExpression::MemoryLoad {
         memory: SpecPoint::At(ProgramPoint::of_memory(&SymbolicMemory::new())),
-        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-            PointerValue::new(missing_pointer.clone(), ProgramType::Int32Pointer),
-        ))),
+        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(Pointer::new(
+            missing_pointer.clone(),
+            ProgramType::Int32Pointer,
+        )))),
         value_type: ProgramType::Int32,
     }));
     let expression = SpecIntegerExpression::RangeFold {

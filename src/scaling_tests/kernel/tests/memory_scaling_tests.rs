@@ -2932,7 +2932,7 @@ fn repeated_pointer_frame_work(compare_to_entry: bool, compose: bool) -> Vec<(u3
         let field = Address::symbolic(Variable(998_910));
         let write = Address::symbolic(Variable(998_911));
         let initial = crate::kernel::intern_memory(SymbolicMemory::new());
-        let original = PointerValue::new(
+        let original = Pointer::new(
             Address::loaded_value(&initial, &field),
             ProgramType::Int32Pointer,
         );

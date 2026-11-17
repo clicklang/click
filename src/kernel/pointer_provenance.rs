@@ -347,7 +347,7 @@ mod tests {
         let a = value(825_001);
         let b = value(825_002);
         let retained_state = crate::kernel::intern_memory(SymbolicMemory::new());
-        let x = PointerValue::from_read(
+        let x = Pointer::from_read(
             Address::symbolic(Variable(825_003)),
             ProgramType::Int32Pointer,
             &retained_state,

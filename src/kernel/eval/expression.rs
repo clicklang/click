@@ -976,7 +976,7 @@ pub(in crate::kernel) fn cast_program_value_to_type(
     )
 }
 
-pub(super) fn cast_pointer_value(pointer: PointerValue, target_type: ProgramType) -> PointerValue {
+pub(super) fn cast_pointer_value(pointer: Pointer, target_type: ProgramType) -> Pointer {
     // Character-to-character casts retain the selected byte view.
     // Other casts to bytes, and every void cast, widen that view.
     let byte_to_byte = matches!(

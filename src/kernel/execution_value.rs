@@ -1006,7 +1006,7 @@ mod tests {
     fn pointer_store_history_keeps_the_root_after_cache_forgetting() {
         let _session = crate::kernel::VerificationSession::enter();
         let address = SymbolicMemory::local_pointer("retained_pointer_cell");
-        let pointer = PointerValue::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(1027600)),
             ProgramType::Int32Pointer,
         )

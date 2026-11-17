@@ -1427,7 +1427,7 @@ fn heap_free_requires_separation_from_an_interior_loan_until_it_ends() {
     let Some(ProgramValue::Pointer(pointer)) = local.as_deref() else {
         panic!("allocation should assign a pointer");
     };
-    let base = pointer.pointer().clone();
+    let base = pointer.address().clone();
     let interior = MemoryRange::new(base.offset_by_bytes(4), 0.into(), 1.into());
     let backing = ResourceFact::own_memory(interior.clone());
     let occurrence = ResourceContext::new()

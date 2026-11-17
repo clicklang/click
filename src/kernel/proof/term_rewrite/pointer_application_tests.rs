@@ -210,8 +210,8 @@ fn numeric_pointer_rewrites_preserve_origin_and_selected_bounds() {
 fn full_pointer_rewrite_changes_read_storage_without_inventing_its_origin() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = intern_memory(SymbolicMemory::new());
-    let p = PointerValue::new(Address::symbolic(Variable(421)), ProgramType::Int32Pointer);
-    let q = PointerValue::new(Address::symbolic(Variable(422)), ProgramType::Int32Pointer);
+    let p = Pointer::new(Address::symbolic(Variable(421)), ProgramType::Int32Pointer);
+    let q = Pointer::new(Address::symbolic(Variable(422)), ProgramType::Int32Pointer);
     let other = Address::symbolic(Variable(423));
     let read = Pointer::from_read(
         other.clone(),
@@ -520,7 +520,7 @@ fn displaced_copy_keeps_a_domain_not_named_by_the_full_equality() {
         },
     ));
     let memory = intern_memory(SymbolicMemory::new());
-    let source = PointerValue::from_read(
+    let source = Pointer::from_read(
         numeric.clone(),
         ProgramType::UInt8Pointer,
         &memory,

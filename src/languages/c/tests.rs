@@ -1561,7 +1561,7 @@ fn c_lowers_static_address_initializers_with_pointer_provenance() {
         panic!("file-static address initializer should lower to a pointer value");
     };
     assert_eq!(
-        private_pointer.pointer(),
+        private_pointer.address(),
         &crate::kernel::SymbolicMemory::global_pointer(private_target.kernel_name())
     );
     assert_eq!(
@@ -1622,7 +1622,7 @@ fn c_links_static_address_dependencies_after_later_definitions() {
         panic!("alias should have an address initializer");
     };
     assert_eq!(
-        alias_pointer.pointer(),
+        alias_pointer.address(),
         &crate::kernel::SymbolicMemory::global_pointer("target")
     );
 
@@ -1635,7 +1635,7 @@ fn c_links_static_address_dependencies_after_later_definitions() {
         panic!("alias_ref should have an address initializer");
     };
     assert_eq!(
-        alias_ref_pointer.pointer(),
+        alias_ref_pointer.address(),
         &crate::kernel::SymbolicMemory::global_pointer("alias")
     );
     assert_eq!(
@@ -1701,7 +1701,7 @@ fn c_lowers_static_subobject_address_initializers_with_byte_offsets() {
         panic!("array-element address initializer should lower to a pointer value");
     };
     assert_eq!(
-        table_middle_pointer.pointer(),
+        table_middle_pointer.address(),
         &crate::kernel::SymbolicMemory::global_pointer("table").offset_by_bytes(4)
     );
 
@@ -1727,7 +1727,7 @@ fn c_lowers_static_subobject_address_initializers_with_byte_offsets() {
             panic!("struct-field address initializer should lower to a pointer value");
         };
         assert_eq!(
-            pointer.pointer(),
+            pointer.address(),
             &crate::kernel::SymbolicMemory::global_pointer("shared").offset_by_bytes(offset)
         );
     }
@@ -1741,7 +1741,7 @@ fn c_lowers_static_subobject_address_initializers_with_byte_offsets() {
         panic!("static struct-field address initializer should lower to a pointer value");
     };
     assert_eq!(
-        pointer.pointer(),
+        pointer.address(),
         &crate::kernel::SymbolicMemory::global_pointer("shared").offset_by_bytes(value_offset)
     );
 }

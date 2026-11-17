@@ -8847,8 +8847,8 @@ mod pointer_integer_rewrite_tests {
             ProgramType::Int32PointerPointer,
         );
         let stored = ProgramValue::pointer(Address::symbolic(Variable(996_012)));
-        let memory = SymbolicMemory::new().store(to.pointer().clone(), stored.clone());
-        let read = memory.symbolic_pointer_version_load(from.pointer(), ProgramType::Int32Pointer);
+        let memory = SymbolicMemory::new().store(to.address().clone(), stored.clone());
+        let read = memory.symbolic_pointer_version_load(from.address(), ProgramType::Int32Pointer);
         let expected =
             memory.symbolic_pointer_version_load(to.address(), ProgramType::Int32Pointer);
         assert_ne!(expected, stored, "a rewritten logical read stays a read");

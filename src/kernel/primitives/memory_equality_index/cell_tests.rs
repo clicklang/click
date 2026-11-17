@@ -515,7 +515,7 @@ fn logical_pointer_reads_reach_resource_index_without_equality_warmup() {
             let ExpressionOutcome::Value(ProgramValue::Pointer(value)) = &path.outcome else {
                 panic!("pointer read")
             };
-            value.pointer().clone()
+            value.address().clone()
         };
     let memory = SymbolicMemory::new();
     let a = Address::symbolic(Variable(92_250));

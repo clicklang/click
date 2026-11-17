@@ -636,7 +636,7 @@ mod tests {
 
     #[test]
     fn shared_captured_pointer_certification_preserves_memory_state() {
-        use crate::kernel::{Address, PointerValue, SharedPointerValue, SymbolicMemory};
+        use crate::kernel::{Address, Pointer, SharedPointerValue, SymbolicMemory};
         let _session = VerificationSession::enter();
         let memory = SymbolicMemory::new();
         let changed = memory.clone().store(
@@ -1131,7 +1131,7 @@ mod tests {
     #[test]
     fn retained_syntax_preserves_captured_and_pointer_index_states() {
         use crate::kernel::{
-            Address, AddressOffset, LoadKind, PointerValue, ProgramType, SymbolicMemory, Variable,
+            Address, AddressOffset, LoadKind, Pointer, ProgramType, SymbolicMemory, Variable,
         };
         let _session = VerificationSession::enter();
         let memory = SymbolicMemory::new();
@@ -1140,7 +1140,7 @@ mod tests {
             ProgramValue::Int32(MachineTerm::constant(5)),
         );
         let pointer = |retained_state: &SymbolicMemory| {
-            PointerValue::new(
+            Pointer::new(
                 Address {
                     base: "indexed".into(),
                     offset: AddressOffset::Int32Scaled {

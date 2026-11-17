@@ -5602,7 +5602,7 @@ mod tests {
         let complete_equalities = [false, true].map(|declare_after_store| {
             let _session = crate::kernel::VerificationSession::enter();
             let field = SymbolicMemory::frame_local_pointer(0, "copied_pointer");
-            let stored = PointerValue::new(
+            let stored = Pointer::new(
                 Address::symbolic(Variable(210_399)),
                 ProgramType::Int32Pointer,
             );
@@ -7401,8 +7401,8 @@ mod tests {
             SubobjectBounds {
                 start: address,
                 width: 4u32.into(),
-            }),
-        );
+            },
+        ));
         let memory = SymbolicMemory::new()
             .store(field.clone(), ProgramValue::Pointer(stored.clone()))
             .store(other.clone(), ProgramValue::Pointer(stored.clone()));
@@ -8765,12 +8765,12 @@ mod pointer_comparison_tests {
             SubobjectBounds {
                 start: target.clone(),
                 width: 4u32.into(),
-            }),
-        );
+            },
+        ));
         let memory = intern_memory(
             SymbolicMemory::new().store(slot.clone(), ProgramValue::Pointer(stored.clone())),
         );
-        let read = PointerValue::new(
+        let read = Pointer::new(
             Address::loaded_value(&memory, &slot),
             ProgramType::Int32Pointer,
         );
@@ -8801,12 +8801,12 @@ mod pointer_comparison_tests {
             SubobjectBounds {
                 start: target.clone(),
                 width: 4u32.into(),
-            }),
-        );
+            },
+        ));
         let memory = intern_memory(
             SymbolicMemory::new().store(slot.clone(), ProgramValue::Pointer(stored.clone())),
         );
-        let read = PointerValue::new(
+        let read = Pointer::new(
             Address::loaded_value(&memory, &slot),
             ProgramType::Int32Pointer,
         )

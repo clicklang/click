@@ -1401,7 +1401,7 @@ fn aggregate_return_temporary_copy_requires_its_recorded_size() {
             base: block.clone(),
             offset: AddressOffset::Constant(0),
         };
-        let source = PointerValue::new(pointer, ProgramType::UInt8Pointer);
+        let source = Pointer::new(pointer, ProgramType::UInt8Pointer);
         let state = ExecutionState::new().with_memory(SymbolicMemory::new().with_block(block, 16));
         assert!(
             crate::kernel::eval::missing_aggregate_copy_read_resource(

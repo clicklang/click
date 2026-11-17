@@ -3201,7 +3201,7 @@ mod checked_proposition_index_tests {
         let context = PureFactContext::new().assume_proposition(route.clone());
         let pointer = Address::symbolic(Variable(71_031));
         let equation = ExecutionPureFact::logical_read_equation(
-            PointerValue::new(pointer.clone(), ProgramType::Int32Pointer),
+            Pointer::new(pointer.clone(), ProgramType::Int32Pointer),
             Address::loaded_value(&intern_memory(SymbolicMemory::new()), &pointer),
         );
         let mut paths = vec![

@@ -2942,7 +2942,7 @@ fn execute_program_heap_free_paths(
             let byte_pointer =
                 super::expression::cast_pointer_value(argument, ProgramType::UInt8Pointer);
             let range = bytes
-                .byte_range(byte_pointer.pointer().clone())
+                .byte_range(byte_pointer.address().clone())
                 .with_pointer_carrier(&byte_pointer);
             if let Some(requirement) = ledger.memory_access_requirement(&range) {
                 obligations.push(ProofObligation::verification_condition(requirement));

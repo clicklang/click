@@ -104,7 +104,7 @@ fn framed_pointer_refusals_do_not_scan_same_address_sources() {
                 true,
             );
         }
-        let current = PointerValue::new(
+        let current = Pointer::new(
             Address::loaded_value(&intern_memory_ref(&SymbolicMemory::new()), &field),
             ProgramType::Int32Pointer,
         )

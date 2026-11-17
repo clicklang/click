@@ -1143,9 +1143,9 @@ fn unfolding_a_child_retains_its_checked_pointer_read_in_the_callers_graph() {
     let AlgebraicValue::Program(ProgramValue::Pointer(parent)) = &instance.arguments()[0] else {
         unreachable!()
     };
-    let stored = PointerValue::new(Address::symbolic(Variable(559)), ProgramType::Int32Pointer);
+    let stored = Pointer::new(Address::symbolic(Variable(559)), ProgramType::Int32Pointer);
     let state = state.with_memory(SymbolicMemory::new().store(
-        parent.pointer().clone(),
+        parent.address().clone(),
         ProgramValue::Pointer(stored.clone()),
     ));
     let observed = Address::loaded_value(&intern_memory(state.memory().clone()), parent.address());

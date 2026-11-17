@@ -3534,7 +3534,7 @@ void symbolic(int32* p, const struct callbacks* cb) {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_19")]
 fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_states() {
     use crate::kernel::{
-        Address, AddressBase, AddressOffset, AlgebraicValue, LoadKind, PointerValue, ProgramType,
+        Address, AddressBase, AddressOffset, AlgebraicValue, LoadKind, Pointer, ProgramType,
         ProgramValue, Resource, SymbolicMemory, Variable, intern_memory,
     };
     let _session = crate::kernel::VerificationSession::enter();
@@ -3545,7 +3545,7 @@ fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_states() {
     let before = SymbolicMemory::new();
     let after = before.clone().store(read.clone(), int32(7));
     let argument = |memory: SymbolicMemory| {
-        AlgebraicValue::Program(ProgramValue::Pointer(PointerValue::new(
+        AlgebraicValue::Program(ProgramValue::Pointer(Pointer::new(
             Address {
                 base: AddressBase::Concrete("nodes".into()),
                 offset: AddressOffset::scale_int32(

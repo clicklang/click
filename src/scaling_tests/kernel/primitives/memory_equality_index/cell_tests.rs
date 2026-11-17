@@ -1516,7 +1516,7 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
         let source = read(&PureFactContext::new(), &SymbolicMemory::new());
         let before =
             SymbolicMemory::new().store(field.clone(), ProgramValue::Pointer(source.clone()));
-        let range = |base: PointerValue, start: u32, end: u32| {
+        let range = |base: Pointer, start: u32, end: u32| {
             MemoryRange::from_pointer_value(&base, start.into(), end.into(), 4)
         };
         let separation = Proposition::ResourceSeparate {

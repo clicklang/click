@@ -901,7 +901,7 @@ fn bind_program_function_arguments_impl(
             if pointer.is_null() {
                 return None;
             }
-            let source = pointer.pointer().clone();
+            let source = pointer.address().clone();
             let slot = SymbolicMemory::frame_local_pointer(frame, parameter.binding_name());
             register_block_alignment(&slot.base, layout.alignment_bytes());
             // A proof's input object holds its own entry values: each field
@@ -1077,7 +1077,7 @@ pub(super) fn bind_contract_arguments(
             if pointer.is_null() {
                 return None;
             }
-            let source = pointer.pointer().clone();
+            let source = pointer.address().clone();
             let slot = SymbolicMemory::frame_local_pointer(frame, parameter.binding_name());
             register_block_alignment(&slot.base, layout.alignment_bytes());
             callee_state.set_memory(copy_aggregate_fields(
