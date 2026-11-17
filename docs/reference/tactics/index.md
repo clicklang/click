@@ -345,7 +345,7 @@ the one execution transition that fails.
 | --- | --- | --- | --- | --- |
 | `mark name;` | simple | Specialized | Name the current execution state. | [Reference](#proof-marks) |
 | `step()` | simple | Core | Execute one checked statement transition. | [Reference](#single-statements) |
-| `let { result: name } = step()` | simple | Specialized | Bind the checked value of a scalar assignment. | [Reference](#binding-a-statement-result) |
+| `let { result: name } = step()` | simple | Specialized | Bind the checked value of an assignment or a call. | [Reference](#binding-a-statement-result) |
 | `step_until(statement(i))` | smart | Specialized | Execute up to a selected source point, or to `function.exit`, without splitting. | [Reference](#execution-to-a-point) |
 | `branch [ensuring { ... } then] { ... } else { ... }` | control | Core | Prove and join the arms of source control flow. | [Reference](#source-branches) |
 | `loop [as name] { ... }` | control | Core | Prove a loop from its invariants and ranking obligations. | [Reference](#loop-transitions) |
@@ -545,28 +545,27 @@ separate smart `implicit closer` row at the step.
 
 **Form:** `let { result: name } = step()`
 
-**Specialized.** Write it when a later fact must name an assigned value after
-its local is overwritten or leaves scope. Execute the scalar assignment at the
-current frontier and bind its checked value to an immutable proof name. The name
-continues to denote that value after the source local is overwritten or leaves
-scope.
+**Specialized.** Bind the checked value from the next assignment or call to
+an immutable proof name. The name can refer to the value after C overwrites
+the local, leaves its scope, or uses the result of the call.
 
-**Accepts** a frontier whose next lowered statement assigns a scalar or
-pointer C local without a call: `y = e;`, `x += e;`, `x++;`, or the second
-step of `int32 y = e;` (its initializing assignment). `name` must not be a C
-local in scope or a parameter. A proof name may be bound again, and the newest
-binding wins. The step executes exactly as `step()` does, and `name` then
-denotes the assigned value.
+**Accepts** a scalar or pointer local assignment such as `y = e;`,
+`x += e;`, or the initializing assignment of `int32 y = e;`. It also accepts
+a call whose result is used, including `y = g(x);`, `if (g(x))`, or
+`return g(x);` at the call step. Bare `step()` must be able to resolve the
+call in the current proof context. A proof name may be rebound, and the
+newest binding wins.
 
 **Outside it**, with what to write instead:
 
-- An assignment from a call, `y = g(x);`: use
-  `let { result: name } = step(g, { })`. The empty map is enough for a
-  callee without binders.
+- A call that needs a callee, contract, or binder selection: supply it on
+  the right, for example `let { result: name } = step(g, { input: instance })`.
+  Use the named call form to bind any resources the call produces.
+- A call whose result C discards: use `step()`.
 - A store through a pointer, field, or array element (`p[0] = 3;`,
   `p->v = 3;`): use `step()` and name the cell.
-- A `return`, a declaration's first step, or any other non-assignment: use
-  `step()`. `result` names a returned value.
+- A return step itself or a declaration's first step: use `step()`.
+  In an outcome proof, `result` names the function's return value.
 - A name that is a C variable here is refused with `names a C variable here`.
   Choose another name.
 - An output other than `result`, such as `let { value: v } = step()`, is
@@ -577,7 +576,7 @@ denotes the assigned value.
 The ordinary step checks every access and arithmetic prerequisite, and the
 binding adds no assumption. Expansion retains the binding unchanged.
 
-**Checked examples:** [`step_result_binding_names_checked_values_and_survives_overwrite`](https://github.com/clicklang/click/blob/master/src/surface/tests/project_tests.rs), [`a_step_result_name_can_be_bound_again.md`](https://github.com/clicklang/click/blob/master/mdtests/a_step_result_name_can_be_bound_again.md), [`step_result_binding_refuses_a_store_through_a_pointer.md`](https://github.com/clicklang/click/blob/master/mdtests/step_result_binding_refuses_a_store_through_a_pointer.md)
+**Checked examples:** [`c_static_function.md`](https://github.com/clicklang/click/blob/master/mdtests/c_static_function.md), [`step_binds_call_result_with_default_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/step_binds_call_result_with_default_resource.md), [`step_result_binding_names_checked_values_and_survives_overwrite`](https://github.com/clicklang/click/blob/master/src/surface/tests/project_tests.rs), [`a_step_result_name_can_be_bound_again.md`](https://github.com/clicklang/click/blob/master/mdtests/a_step_result_name_can_be_bound_again.md), [`step_result_binding_refuses_a_store_through_a_pointer.md`](https://github.com/clicklang/click/blob/master/mdtests/step_result_binding_refuses_a_store_through_a_pointer.md)
 
 ### Execution to function exit
 
@@ -920,8 +919,8 @@ the C value.
 - The `let` pattern names every `produces` binder. A produced instance's
   resource arguments are the call's arguments
   ([`c_call_binder_transport_multiple_produces.md`](https://github.com/clicklang/click/blob/master/mdtests/c_call_binder_transport_multiple_produces.md)).
-- A callee without binders takes the empty map `{ }`. Use this to name the
-  result of `y = g(x);` or `return g(x);`
+- An explicitly named callee without binders takes the empty map `{ }`.
+  This form also names a call result when the proof names the callee
   ([`call_result_in_condition.md`](https://github.com/clicklang/click/blob/master/mdtests/call_result_in_condition.md)).
   `name` must not be a C variable. A proof name may be rebound.
 

@@ -449,17 +449,17 @@ impl<'a> Proof<'a> {
             })
     }
 
-    /// The scalar local assigned by the statement at the current frontier.
-    /// Plain `step()` bindings accept assignments; call bindings retain the
-    /// explicit callee and binder-map path.
+    /// The value produced by the current frontier statement. A bare step
+    /// accepts a scalar assignment or a used call result. A step with a
+    /// callee or contract selection accepts only a call result.
     ///
     /// A call whose result the rest of its statement reads is a call step of
     /// its own, and its result is that step's. A call in statement position
     /// discards its result; naming it is an error rather than a silent no-op.
-    fn frontier_result_local(
+    fn frontier_result(
         &self,
         name: &String,
-        assignment: bool,
+        allow_assignment: bool,
     ) -> Result<FrontierResult, ClickError> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("`step` requires an execution-frontier proof"));
@@ -486,13 +486,13 @@ impl<'a> Proof<'a> {
             "step",
         )?;
         match statement {
-            ProgramStatement::Assign { name, .. } if assignment => Ok(FrontierResult::Local(name)),
-            ProgramStatement::CallConstruct { target, .. } if !assignment => {
+            ProgramStatement::Assign { name, .. } if allow_assignment => Ok(FrontierResult::Local(name)),
+            ProgramStatement::CallConstruct { target, .. } => {
                 Ok(FrontierResult::Local(target))
             }
-            ProgramStatement::CallResult { call, .. } if !assignment => Ok(FrontierResult::Call(call)),
-            _ if assignment => Err(self.step_error(format!(
-                "`let {{ result: {name} }} = step()` requires a scalar assignment at the frontier"
+            ProgramStatement::CallResult { call, .. } => Ok(FrontierResult::Call(call)),
+            _ if allow_assignment => Err(self.step_error(format!(
+                "`let {{ result: {name} }} = step()` requires a scalar assignment or a used call result at the frontier"
             ))),
             _ => Err(self.step_error(format!(
                 "`let {{ result: {name} }} = step(...)` names a call result, but this call's result is unused"
@@ -563,17 +563,15 @@ impl<'a> Proof<'a> {
             }
             _ => None,
         };
-        // Resolve this statement's result local before checking the step.
+        // Resolve this statement's result slot before checking the step.
         // Only its checked successor value is bound below. The assignment
         // or call is exactly the current frontier; nothing is searched.
         let result_target = match &step {
-            ProofStep::StepBind(name) => {
-                Some((name.clone(), self.frontier_result_local(name, true)?))
-            }
+            ProofStep::StepBind(name) => Some((name.clone(), self.frontier_result(name, true)?)),
             ProofStep::StepCall(transport) => match transport.result() {
                 Some(name) => {
                     let name = name.to_string();
-                    let target = self.frontier_result_local(&name, false)?;
+                    let target = self.frontier_result(&name, false)?;
                     Some((name, target))
                 }
                 None => None,
@@ -898,9 +896,8 @@ impl<'a> Proof<'a> {
                     .record_lowering(&surface, fact);
             }
         }
-        // The result is the value the checked statement left in its local:
-        // one indexed read of that name,
-        // bound as the proof-local value the surface name denotes from here on.
+        // Bind the result with one indexed read from the checked successor,
+        // using either the assigned local or the call's result slot.
         let result_binding = match &result_target {
             Some((name, target)) => {
                 let state = &checked.execution.core.state;
