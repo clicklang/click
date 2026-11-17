@@ -1461,7 +1461,8 @@ impl PureFactStore {
     }
 
     fn available_as_written(&self, fact: &Proposition) -> bool {
-        self.contains(fact)
+        closed_condition_holds(fact)
+            || self.contains(fact)
             || self.assumptions.contains_known(fact)
             || self.contains_opposite_constant_polarity(fact)
     }
@@ -1508,18 +1509,10 @@ impl PureFactStore {
 
     pub(in crate::kernel) fn with_fact(&self, fact: Proposition) -> Self {
         // A closed comparison that holds, which lowering retains as written
-        // (`3 == 3`), states only `true`: file it as that one fact rather
-        // than index each literal pair. Exact lookups of the written form
-        // reach it through its comparison form.
-        if let Proposition::ConditionIs(condition, value) = &fact
-            && !matches!(condition, ConditionTerm::Constant(_))
-            && crate::kernel::machine_integer::comparison::closed_condition_value(condition)
-                == Some(*value)
-        {
-            return self.with_fact(Proposition::ConditionIs(
-                ConditionTerm::Constant(true),
-                true,
-            ));
+        // (`3 == 3`), carries no information: it is available without being
+        // filed (`available_as_written`), so each literal pair is not indexed.
+        if closed_condition_holds(&fact) {
+            return self.clone();
         }
         if self.top_level_exact.contains(&fact) {
             return self.clone();
@@ -3300,6 +3293,16 @@ pub(crate) fn is_definedness_guard(proposition: &Proposition) -> bool {
         ),
         _ => false,
     }
+}
+
+/// A closed comparison that holds: decided from its literal roots alone
+/// (`machine_integer::comparison::closed_condition_value`). The constant
+/// `true` itself is an ordinary fact and is not included.
+fn closed_condition_holds(fact: &Proposition) -> bool {
+    matches!(fact, Proposition::ConditionIs(condition, value)
+        if !matches!(condition, ConditionTerm::Constant(_))
+            && crate::kernel::machine_integer::comparison::closed_condition_value(condition)
+                == Some(*value))
 }
 
 fn index_guarded_implication_fact(
