@@ -400,13 +400,12 @@ not all unfolding routes or Surface materialization.
 active regression. Fresh measurements at `da5639eb1d` are flat at 228 units
 for adjacent constant intervals and 74 for overlap refusal with 4/16/64
 aliases; its former "still grows" annotation was stale for that shape.
-Early return-group admission is also flat for constant endpoints (261 and
-93 units respectively). The separate diagnostic
-`symbolic_return_group_admission_work` measures two fixed output descriptions
-with a symbolic upper endpoint: work is 337 / 349 / 397 for adjacency and
-382 / 550 / 1222 for overlap refusal at the same alias counts. It retains
-correct-result controls without claiming a fast bound. These are admission
-measurements, not a complete source-call curve. See
+Symbolic return boundaries now use bounded producer-published interval and
+address indexes or an explicit separation premise for the actual frame.
+The automatic ownership-discovery fallback is removed. Active admission
+scaling covers growing owners, aliases, explicit frame proofs, and removed
+owner history; unsupported relationships refuse without discovery. These are
+admission measurements, not a complete source-call curve. See
 [early return-group evidence](../docs/internals/verification-efficiency.md#early-return-group-evidence).
 
 Executed-body returns now construct their group by consuming each output from
@@ -416,9 +415,8 @@ the Boolean custody pass afterward. Folded-head post-memory boundary checks
 remain. Summary application now retains a clause-level rule for unchanged flat
 footprints, including parameter bounds, and binds it to the selected entry
 reservation. Justified outputs and checked entry borrows avoid early group
-admission; unmatched and description-only outputs retain compatibility
-admission. Keep those paths separate when measuring the symbolic
-diagnostic above. The executed-body regressions cover alias/body/frame growth,
+admission; unmatched and description-only outputs require checked
+admission, with an explicit separation obligation for unsupported boundaries. The executed-body regressions cover alias/body/frame growth,
 selected splits and duplicate refusal; this does not close every raw-admission
 or consumption route.
 

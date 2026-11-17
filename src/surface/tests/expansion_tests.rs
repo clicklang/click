@@ -1,6 +1,32 @@
 use super::*;
 
 #[test]
+fn symbolic_return_boundary_expands_and_replays_its_explicit_frame_proof() {
+    let (source, sources) =
+        mdtest_sources("mdtests/a_symbolic_return_boundary_uses_its_explicit_frame_proof.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let start = source.find("    have 0 <= n").unwrap();
+    let end = source.rfind("    step();").unwrap();
+    let mut missing = source.clone();
+    missing.replace_range(start..end, "");
+    let error = without_implicit_solve_for_claim("forward.contract", || {
+        verify_c_sources(&missing, &sources).map_err(|error| error.report())
+    })
+    .expect_err("a raw symbolic output needs its frame relationship");
+    assert!(error.contains("separate("), "{error}");
+    verify_c_sources(&source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "forward.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    without_implicit_solve_for_claim("forward.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 #[ignore = "nightly: unrelated equality refusal and related-premise replay"]
 fn unrelated_equality_is_refused_without_transport() {
     let (source, sources) =

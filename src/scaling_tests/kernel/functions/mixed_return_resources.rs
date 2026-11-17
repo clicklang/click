@@ -1202,7 +1202,7 @@ fn flat_body_admission_ignores_retained_owners_and_aliases_on_hits_refusals_and_
                 if axis == "general" {
                     frame = frame.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                         pointer.clone(),
-                        1000u32.into(),
+                        0u32.into(),
                         MachineTerm::Variable(Variable(8_839_599)),
                     )));
                 }
@@ -1218,8 +1218,8 @@ fn flat_body_admission_ignores_retained_owners_and_aliases_on_hits_refusals_and_
                         "indexed flat composite frontier",
                     );
                     let result = frame.admit_returned_flat_body(body, &facts);
-                    if axis == "cold" || axis == "general" {
-                        assert!(matches!(result, FlatBodyAdmission::Unsupported));
+                    if (axis == "cold" || axis == "general") && !overlap {
+                        assert!(matches!(result, FlatBodyAdmission::Unestablished(_)));
                     } else {
                         assert!(matches!(result, FlatBodyAdmission::Conflict { .. }) == overlap);
                         if !overlap {
@@ -1578,7 +1578,7 @@ fn unsupported_body_boundary_does_not_revalidate_the_retained_frame() {
                 if axis == "general unrelated" {
                     frame = frame.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                         pointer.clone(),
-                        1000u32.into(),
+                        0u32.into(),
                         MachineTerm::Variable(Variable(8_849_001)),
                     )));
                     frame.synchronize_memory_equalities(&facts);
@@ -1597,8 +1597,10 @@ fn unsupported_body_boundary_does_not_revalidate_the_retained_frame() {
                         matches!(admission, FlatBodyAdmission::Conflict { .. }),
                         overlap
                     );
+                } else if overlap {
+                    assert!(matches!(admission, FlatBodyAdmission::Conflict { .. }));
                 } else {
-                    assert!(matches!(admission, FlatBodyAdmission::Unsupported));
+                    assert!(matches!(admission, FlatBodyAdmission::Unestablished(_)));
                 }
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                     let error = produced_composite_frontier_conflict(
@@ -1614,7 +1616,12 @@ fn unsupported_body_boundary_does_not_revalidate_the_retained_frame() {
                         &Memory::new(),
                         &facts,
                     );
-                    if overlap {
+                    if axis != "cold related" && !overlap {
+                        assert!(matches!(
+                            error,
+                            Some(RuntimeError::PendingCallObligations(_))
+                        ));
+                    } else if overlap {
                         let Some(RuntimeError::ProducedCompositeOverlapsHeldResource {
                             piece,
                             held: selected,
@@ -2017,7 +2024,7 @@ fn specialized_return_producers_ignore_retained_state_and_scale_with_their_bodie
                         // geometry miss. This producer test must not invoke their
                         // legacy discovery or call a miss established separation.
                         match frame.admit_returned_flat_body(body, &facts) {
-                            FlatBodyAdmission::Admitted | FlatBodyAdmission::Unsupported => {}
+                            FlatBodyAdmission::Admitted | FlatBodyAdmission::Unestablished(_) => {}
                             FlatBodyAdmission::Conflict { .. } => {
                                 panic!("fixture has no stated overlap")
                             }

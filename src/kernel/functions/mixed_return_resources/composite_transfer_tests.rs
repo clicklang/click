@@ -133,6 +133,17 @@ fn a_consumed_input_cannot_supply_two_composite_children_or_a_flat_sibling() {
             .children
             .contains_key(&vec![0, 0])
     );
+    assert!(
+        returned(
+            &duplicate,
+            &state,
+            &transfer,
+            ReturnResourceComposition::ApplyTransfers(&transfer.consumed_cell_returns),
+            &facts,
+        )
+        .is_err(),
+        "one transferred footprint cannot supply two returned heads"
+    );
     let flat = input
         .clone()
         .with_role(ResourceTransferRole::Produce)
@@ -247,6 +258,6 @@ fn borrowed_parameter_bounded_bodies_keep_entry_footprint_provenance() {
             .unwrap()
             .boundary
             .len(),
-        1
+        0
     );
 }

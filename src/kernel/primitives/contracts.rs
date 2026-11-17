@@ -1447,6 +1447,9 @@ impl ProgramFunction {
         Arc::make_mut(&mut self.contract_interface).contract_claims = claims;
         Arc::make_mut(&mut self.contract_interface).opaque_contract_supported = opaque_supported;
         Arc::make_mut(&mut self.contract_interface).refresh_object_types();
+        let rule =
+            super::super::functions::SummaryResourceTransferRule::compile(&self.contract_interface);
+        Arc::make_mut(&mut self.contract_interface).resource_transfer_rule = Arc::new(rule);
         self
     }
 

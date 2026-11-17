@@ -1789,6 +1789,24 @@ fn unrelated_origin_does_not_disable_owned_interval_neighbors() {
                 (owned(995_500, 0), false),
                 (owned(995_500, 8 * (size - 1) as i64), false),
             ] {
+                // The unrelated symbolic origin could meet the newly added
+                // interval. Establish its actual frame boundary explicitly.
+                let assumptions = if accepted {
+                    match context
+                        .clone()
+                        .try_compose_into_valid_context_delaying_normalization(
+                            [required.clone()],
+                            &assumptions,
+                        ) {
+                        Err(ResourceContextValidityError::UnestablishedOwnedBoundary(required)) => {
+                            assumptions.clone().assume_proposition(*required)
+                        }
+                        Ok(_) => assumptions.clone(),
+                        Err(error) => panic!("unexpected boundary conflict: {error:?}"),
+                    }
+                } else {
+                    assumptions.clone()
+                };
                 for _ in 0..3 {
                     let (result, units) =
                         crate::instrumentation::measure_deterministic_work(|| {

@@ -1,22 +1,9 @@
-//! These probes intentionally demonstrate compatibility discovery, rather than
-//! claiming that every call into a compatibility wrapper searches.
+//! Symbolic boundary checking retains endpoint evidence without discovery.
 use super::*;
 
-fn assert_ownership_discovery(operation: impl FnOnce()) {
-    let failure = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _fast = crate::kernel::search::FastOperationScope::enter("fallback inventory probe");
-        operation();
-    }))
-    .expect_err("this compatibility route must still expose its discovery dependency");
-    let message = failure
-        .downcast_ref::<String>()
-        .map(String::as_str)
-        .or_else(|| failure.downcast_ref::<&str>().copied())
-        .expect("discovery guard panic text");
-    assert!(
-        message.contains("entered discovery ownership_validity_candidates"),
-        "{message}"
-    );
+fn assert_without_discovery(operation: impl FnOnce()) {
+    let _fast = crate::kernel::search::FastOperationScope::enter("symbolic boundary check");
+    operation();
 }
 
 fn partition() -> (PureFactContext, ResourceFact, ResourceFact) {
@@ -43,7 +30,7 @@ fn partition() -> (PureFactContext, ResourceFact, ResourceFact) {
 }
 
 #[test]
-fn fallback_inventory_raw_return_partition_still_discovers() {
+fn fallback_inventory_raw_return_partition_checks_without_discovery() {
     let _session = crate::kernel::VerificationSession::enter();
     let (facts, left, right) = partition();
     let prefix = || {
@@ -51,23 +38,25 @@ fn fallback_inventory_raw_return_partition_still_discovers() {
             .admit(left.clone(), ReturnOwnershipOrigin::Description, &facts)
             .unwrap()
     };
-    // Valid adjacent symbolic ranges work today, through compatibility.
+    // The shared symbolic endpoint directly establishes separation.
     assert!(
         prefix()
             .admit(right.clone(), ReturnOwnershipOrigin::Description, &facts)
             .is_ok()
     );
-    assert_ownership_discovery(|| {
-        let _ = prefix().admit(right, ReturnOwnershipOrigin::Description, &facts);
+    assert_without_discovery(|| {
+        prefix()
+            .admit(right, ReturnOwnershipOrigin::Description, &facts)
+            .unwrap();
     });
 }
 
 #[test]
-fn fallback_inventory_pending_return_against_symbolic_frame_still_discovers() {
+fn fallback_inventory_pending_return_against_symbolic_frame_checks_without_discovery() {
     let _session = crate::kernel::VerificationSession::enter();
     let (facts, left, right) = partition();
     let frame = ResourceContext::new_with_equalities(&facts)
-        .try_compose_with_legacy_discovery_and_occurrences([left], &facts)
+        .try_compose_checked_ownership_and_occurrences([left], &facts)
         .unwrap()
         .0;
     let returned = EvaluatedReturnResources::new(&facts)
@@ -83,8 +72,8 @@ fn fallback_inventory_pending_return_against_symbolic_frame_still_discovers() {
             .unwrap()
     };
     assert!(prepare().finish(&facts).is_ok());
-    assert_ownership_discovery(|| {
-        let _ = prepare().finish(&facts);
+    assert_without_discovery(|| {
+        prepare().finish(&facts).unwrap();
     });
 }
 

@@ -175,6 +175,7 @@ pub(super) struct RangeSupports {
     owned_footprints: Suppliers,
     bases: Suppliers,
     owned_bases: Suppliers,
+    boundary_unknown_bases: Suppliers,
     read_starts: Suppliers,
     // Split owned ranges can share a base while having distinct symbolic starts.
     // Selection at that exact start still leaves quantity and coverage to the checker.
@@ -238,6 +239,10 @@ impl RangeSupports {
             }
             if fact.is_own() {
                 self.owned_bases.update(entry, insert, class, graph);
+                if Self::constant_span(range).is_none() {
+                    self.boundary_unknown_bases
+                        .update(entry, insert, class, graph);
+                }
             }
         }
         if Self::symbolic(range) {
@@ -305,6 +310,44 @@ impl RangeSupports {
         };
         suppliers.classes.get(&class).cloned()
     }
+    pub(super) fn boundary_overlap(
+        &self,
+        class: u64,
+        range: &MemoryRange,
+    ) -> Option<ResourceEntryId> {
+        let (start, end) = Self::constant_span(range)?;
+        self.owned_relative
+            .classes
+            .get(&class)?
+            .first_overlap(&start, &end)
+    }
+
+    pub(super) fn boundary_parts(
+        &self,
+        class: u64,
+        owners: usize,
+    ) -> Option<(ReadIntervals, Option<ResourceEntryId>)> {
+        let members = self.owned_bases.classes.get(&class)?;
+        if members.len() != owners {
+            return None;
+        }
+        let intervals = self
+            .owned_relative
+            .classes
+            .get(&class)
+            .cloned()
+            .unwrap_or_default();
+        let unknown = self.boundary_unknown_bases.classes.get(&class);
+        let count = unknown.map_or(0, ResourceEntryIds::len);
+        if count > 1 || intervals.len() + count != members.len() {
+            return None;
+        }
+        Some((
+            intervals,
+            unknown.and_then(|entries| entries.iter().next().copied()),
+        ))
+    }
+
     pub(super) fn sole_owned_start(&self, class: u64) -> Option<ResourceEntryId> {
         self.owned_starts.sole(class)
     }
@@ -336,6 +379,7 @@ impl RangeSupports {
         self.owned_starts.merge(moved, kept);
         self.bases.merge(moved, kept);
         self.owned_bases.merge(moved, kept);
+        self.boundary_unknown_bases.merge(moved, kept);
         self.footprints.merge(moved, kept);
         self.owned_footprints.merge(moved, kept);
     }

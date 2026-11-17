@@ -4,7 +4,6 @@ use super::*;
 
 pub(super) enum Construction {
     Body(Box<ConstructedReturnBody>),
-    Unsupported,
 }
 
 #[derive(Clone, Copy)]
@@ -258,6 +257,8 @@ pub(super) fn construct(
         .iter()
         .map(ProgramParameter::binding_name)
         .collect::<BTreeSet<_>>();
+    let fixed_guard =
+        summary_transfer::invariant_condition(definition.condition.as_ref(), &parameters);
     let mut context = ResourceContext::new_with_equalities(assumptions);
     let mut transfers = Vec::new();
     let mut viewed_children = Vec::new();
@@ -286,12 +287,6 @@ pub(super) fn construct(
         };
         let origin = if fact.is_view() {
             ReturnOwnershipOrigin::Description
-        } else if borrowed
-            && (fixed_memory_shape(spec, &parameters).is_some()
-                || definition.condition.is_none()
-                    && summary_transfer::invariant_memory_shape(spec, &parameters))
-        {
-            ReturnOwnershipOrigin::EntryBorrow
         } else if definition.matched.is_none()
             && fact.memory_own_range().is_some()
             && let Some(clause) = clause
@@ -299,22 +294,26 @@ pub(super) fn construct(
             && let Some(transfer) = consumed.children.get(&vec![clause, index])
         {
             ReturnOwnershipOrigin::ConsumedCell(*transfer)
-        } else if let Some((creator, events)) = composition.allocation_events() {
-            FreshAllocationReturn::from_created_owner(&fact, creator, events)
-                .map(ReturnOwnershipOrigin::FreshAllocation)
-                .unwrap_or(ReturnOwnershipOrigin::Description)
+        } else if let Some(fresh) = composition
+            .allocation_events()
+            .and_then(|(creator, events)| {
+                FreshAllocationReturn::from_created_owner(&fact, creator, events)
+            })
+        {
+            ReturnOwnershipOrigin::FreshAllocation(fresh)
+        } else if borrowed
+            && (fixed_memory_shape(spec, &parameters).is_some()
+                || fixed_guard
+                    && definition.matched.is_none()
+                    && summary_transfer::invariant_memory_shape(spec, &parameters))
+        {
+            ReturnOwnershipOrigin::EntryBorrow
         } else {
             ReturnOwnershipOrigin::Description
         };
-        let (next, emitted) = match context.admit_without_discovery([fact.clone()], assumptions) {
-            OwnershipAdmission::Admitted { context, inserted } => (context, inserted),
-            OwnershipAdmission::Conflict(_) => {
-                return None;
-            }
-            OwnershipAdmission::Unsupported(_) => {
-                return Some(Construction::Unsupported);
-            }
-        };
+        let (next, emitted) = context
+            .install_established_partition([fact.clone()], assumptions)
+            .ok()?;
         context = next;
         let child = emitted[0].1;
         if fact.is_view() {

@@ -42,6 +42,20 @@ impl ConsumedCellReturns {
                 Some((checked.section_index?, (checked, source)))
             })
             .collect::<BTreeMap<_, _>>();
+        let selected_heads = plan
+            .transferred_ownership
+            .iter()
+            .zip(&plan.transferred_ownership_sources)
+            .filter_map(|(checked, source)| {
+                let source = (*source)?;
+                if checked.role != ResourceTransferRole::Consume
+                    || caller.owned_fact_for_occurrence(source).is_none()
+                {
+                    return None;
+                }
+                Some((checked.section_index?, source))
+            })
+            .collect::<BTreeMap<_, _>>();
         let mut outputs = Self::default();
         let mut used = BTreeSet::new();
         for (&output, &input) in &interface.resource_transfer_rule.inputs_by_output {
@@ -60,6 +74,17 @@ impl ConsumedCellReturns {
                 outputs
                     .children
                     .insert(path.clone(), ConsumedCellReturn { input: *source });
+                used.insert(*input);
+            }
+        }
+        for (path, input) in &interface.resource_transfer_rule.projected_inputs {
+            if let Some(source) = selected_heads.get(input) {
+                let transfer = ConsumedCellReturn { input: *source };
+                if path.len() == 1 {
+                    outputs.direct.insert(path[0], transfer);
+                } else {
+                    outputs.children.insert(path.clone(), transfer);
+                }
                 used.insert(*input);
             }
         }
@@ -413,6 +438,19 @@ pub(in crate::kernel) struct ReturnResourceTransfer {
     pub(in crate::kernel) fresh_allocation: Option<u64>,
 }
 
+/// Issued only when the return producer leaves no arbitrary raw memory
+/// descriptions: every output is transferred custody or has a checked body
+/// frontier beside the call's withheld escrow.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::kernel) struct ReturnedEntryPartition {
+    fully_transferred: bool,
+}
+impl ReturnedEntryPartition {
+    pub(in crate::kernel) fn is_framed_transfer(self) -> bool {
+        self.fully_transferred
+    }
+}
+
 pub(super) struct PreparedReturnComposition {
     pub(super) frame: ResourceContext,
     pub(super) pending: ResourceContext,
@@ -539,7 +577,7 @@ impl EvaluatedReturnResources {
     ) -> Result<Self, ResourceContextValidityError> {
         let (resources, mut inserted) = self
             .resources
-            .try_compose_with_legacy_discovery_and_occurrences([fact], assumptions)?;
+            .try_compose_checked_ownership_and_occurrences([fact], assumptions)?;
         let (_, source) = inserted.pop().expect("one admitted return occurrence");
         self.resources = resources;
         self.occurrences.push(EvaluatedReturnOccurrence {
@@ -701,6 +739,14 @@ impl EvaluatedReturnResources {
 }
 
 impl PreparedReturnComposition {
+    pub(super) fn entry_partition(&self) -> Option<ReturnedEntryPartition> {
+        (self.body.is_some() || self.pending.flat_owned_memory_ranges().is_empty()).then_some(
+            ReturnedEntryPartition {
+                fully_transferred: self.body.is_some() || !self.pending.has_owned_facts(),
+            },
+        )
+    }
+
     pub(super) fn finish(
         self,
         assumptions: &PureFactContext,
@@ -857,7 +903,7 @@ impl ConstructedReturnBodies {
                 continue;
             };
             if let Some(family) = specialized_returns::classify(support, definitions) {
-                match specialized_returns::construct(
+                let specialized_returns::Construction::Body(body) = specialized_returns::construct(
                     family,
                     support,
                     occurrence.source,
@@ -865,17 +911,12 @@ impl ConstructedReturnBodies {
                     definitions,
                     state,
                     composition,
-                    occurrence.origin == ReturnOwnershipOrigin::EntryBorrow
-                        && composition.restores_entry_borrows(),
+                    composition.body_return().is_some()
+                        || occurrence.origin == ReturnOwnershipOrigin::EntryBorrow
+                            && composition.restores_entry_borrows(),
                     assumptions,
-                )? {
-                    specialized_returns::Construction::Body(body) => {
-                        bodies.insert(occurrence.source, *body);
-                    }
-                    specialized_returns::Construction::Unsupported => {
-                        legacy.insert(occurrence.source);
-                    }
-                }
+                )?;
+                bodies.insert(occurrence.source, *body);
                 continue;
             }
             if matches!(support.resource(), Resource::Instance(_)) {
@@ -891,8 +932,9 @@ impl ConstructedReturnBodies {
                 legacy.insert(occurrence.source);
                 continue;
             }
-            let borrowed = composition.restores_entry_borrows()
-                && occurrence.origin == ReturnOwnershipOrigin::EntryBorrow;
+            let borrowed = composition.body_return().is_some()
+                || composition.restores_entry_borrows()
+                    && occurrence.origin == ReturnOwnershipOrigin::EntryBorrow;
             bodies.insert(
                 occurrence.source,
                 Self::build(
@@ -909,6 +951,18 @@ impl ConstructedReturnBodies {
             );
         }
         Some(Self(bodies, legacy))
+    }
+
+    pub(super) fn transferred_memory_frontier(&self) -> impl Iterator<Item = &ResourceFact> {
+        self.0
+            .values()
+            .flat_map(|body| body.transfers.iter())
+            .filter_map(|transfer| {
+                crate::instrumentation::record_deterministic_work(1);
+                (transfer.origin != ReturnOwnershipOrigin::Description
+                    && transfer.fact.memory_own_range().is_some())
+                .then_some(&transfer.fact)
+            })
     }
 
     // Classify definitions before producing any body. Existential migration
@@ -1083,6 +1137,8 @@ impl ConstructedReturnBodies {
             .iter()
             .map(ProgramParameter::binding_name)
             .collect::<BTreeSet<_>>();
+        let fixed_guard =
+            summary_transfer::invariant_condition(definition.condition.as_ref(), &parameters);
         let mut context = body.expanded;
         let mut viewed_children = Vec::new();
         for (index, (fact, child_source)) in body.occurrences.into_iter().enumerate() {
@@ -1094,24 +1150,29 @@ impl ConstructedReturnBodies {
             let fixed_borrow = fact.is_own()
                 && borrowed
                 && (fixed_memory_shape(spec, &parameters).is_some()
-                    || definition.condition.is_none()
+                    || fixed_guard
+                        && definition.matched.is_none()
                         && summary_transfer::invariant_memory_shape(spec, &parameters));
             // A view remains a view even when its definition contains owns.
             // Neither its declaration nor a fresh backing block grants custody.
             let origin = if fact.is_view() {
                 ReturnOwnershipOrigin::Description
-            } else if fixed_borrow {
-                ReturnOwnershipOrigin::EntryBorrow
             } else if let Some(plan) = composition.consumed_children()
                 && planned
                 && fact.memory_own_range().is_some()
                 && let Some(transfer) = plan.children.get(path)
             {
                 ReturnOwnershipOrigin::ConsumedCell(*transfer)
-            } else if let Some((creator, events)) = composition.allocation_events() {
-                FreshAllocationReturn::from_created_owner(&fact, creator, events)
-                    .map(ReturnOwnershipOrigin::FreshAllocation)
-                    .unwrap_or(ReturnOwnershipOrigin::Description)
+            } else if let Some(fresh) =
+                composition
+                    .allocation_events()
+                    .and_then(|(creator, events)| {
+                        FreshAllocationReturn::from_created_owner(&fact, creator, events)
+                    })
+            {
+                ReturnOwnershipOrigin::FreshAllocation(fresh)
+            } else if fixed_borrow {
+                ReturnOwnershipOrigin::EntryBorrow
             } else {
                 ReturnOwnershipOrigin::Description
             };

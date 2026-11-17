@@ -178,6 +178,14 @@ struct AddressBucket {
     // Writes must not enumerate covering views before reaching an owner.
     // Both summaries follow the same persistent updates and class merges.
     write_intervals: ReadIntervals,
+    // A complete partition of owners for bounded boundary checking. The
+    // interval tree contains only constant coordinates in this payload's
+    // origin; everything else has an explicit occurrence in `boundary_unknown`.
+    boundary_origin: AffineOffset,
+    boundary_origin_set: bool,
+    boundary_intervals: ReadIntervals,
+    boundary_entries: ResourceEntryIds,
+    boundary_unknown: ResourceEntryIds,
     // All memory owners, independently of views or representable extents.
     // Cardinality selects a sole supplier; quantity and bounds are checked later.
     owners: ResourceEntryIds,
@@ -257,11 +265,20 @@ impl MemoryAddresses {
     ) {
         let mut bucket = self.classes.get(&block).cloned().unwrap_or_default();
         if owned {
+            bucket.boundary_unknown = if insert && !bucket.boundary_entries.contains(&entry) {
+                bucket.boundary_unknown.with_value(entry)
+            } else {
+                bucket.boundary_unknown.without_value(&entry)
+            };
             bucket.owners = if insert {
                 bucket.owners.with_value(entry)
             } else {
                 bucket.owners.without_value(&entry)
             };
+        }
+        if owned && !insert && bucket.owners.is_empty() {
+            bucket.boundary_origin = AffineOffset::constant(0);
+            bucket.boundary_origin_set = false;
         }
         bucket.suppliers = if insert {
             bucket.suppliers.with_value(entry)
@@ -318,6 +335,37 @@ impl MemoryAddresses {
                 }
             }
         }
+        if key.0 == AddressKind::OwnedStart {
+            if insert && !bucket.boundary_origin_set {
+                if let Some(origin) = AffineOffset::constant(0).checked_sub(&key.1.0) {
+                    bucket.boundary_origin = origin;
+                    bucket.boundary_origin_set = true;
+                }
+            }
+            if let Some(start) = key.1.0.checked_add(&bucket.boundary_origin)
+                && start.is_constant()
+                && let Some(extent) = read_extent
+            {
+                if insert {
+                    if let Some(end) =
+                        start.checked_add(&AffineOffset::constant(i128::from(extent)))
+                        && end.is_constant()
+                    {
+                        bucket.boundary_intervals.insert(
+                            AddressCoordinate(start),
+                            AddressCoordinate(end),
+                            entry,
+                        );
+                        bucket.boundary_entries = bucket.boundary_entries.with_value(entry);
+                    }
+                } else {
+                    bucket
+                        .boundary_intervals
+                        .remove(AddressCoordinate(start), entry);
+                    bucket.boundary_entries = bucket.boundary_entries.without_value(&entry);
+                }
+            }
+        }
         if insert {
             bucket.entries = bucket.entries.with_inserted(key, entries.with_value(entry));
             bucket.weight += 1;
@@ -368,6 +416,15 @@ impl MemoryAddresses {
             moved.origin = origin;
             (moved, kept, shift)
         };
+        if !larger.boundary_origin_set && smaller.boundary_origin_set {
+            if let Some(origin) = smaller.boundary_origin.checked_sub(&shift) {
+                larger.boundary_origin = origin;
+                larger.boundary_origin_set = true;
+            }
+        }
+        let boundary_shift = shift
+            .checked_add(&larger.boundary_origin)
+            .and_then(|offset| offset.checked_sub(&smaller.boundary_origin));
         larger.memory_count += smaller.memory_count;
         for entry in smaller.suppliers.iter() {
             crate::instrumentation::record_deterministic_work(1);
@@ -376,6 +433,26 @@ impl MemoryAddresses {
         for entry in smaller.owners.iter() {
             crate::instrumentation::record_deterministic_work(1);
             larger.owners = larger.owners.with_value(*entry);
+            larger.boundary_unknown = larger.boundary_unknown.with_value(*entry);
+        }
+        for (start, end, entry) in smaller.boundary_intervals.iter() {
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some(boundary_shift) = &boundary_shift
+                && let Some((start, end)) = start
+                    .0
+                    .checked_add(boundary_shift)
+                    .zip(end.0.checked_add(boundary_shift))
+                && start.is_constant()
+                && end.is_constant()
+            {
+                larger.boundary_intervals.insert(
+                    AddressCoordinate(start),
+                    AddressCoordinate(end),
+                    entry,
+                );
+                larger.boundary_entries = larger.boundary_entries.with_value(entry);
+                larger.boundary_unknown = larger.boundary_unknown.without_value(&entry);
+            }
         }
         for (larger_intervals, smaller_intervals) in [
             (&mut larger.read_intervals, &smaller.read_intervals),
@@ -1444,12 +1521,14 @@ impl MemoryQuery<'_> {
     }
 }
 
+mod ownership_boundary;
+
 impl ResourceContext {
     /// The raw producer already maintains interval trees and origin counts.
     /// When every held owner is in this exact block and has this exact origin,
     /// no graph preparation or alias recovery is needed. Other blocks remain
     /// unsupported here: a loaded query can acquire a cross-block definition.
-    fn structural_owned_overlap(
+    pub(super) fn structural_owned_overlap(
         &self,
         fact: &ResourceFact,
         assumptions: &PureFactContext,
@@ -1458,9 +1537,8 @@ impl ResourceContext {
         let Some(range) = fact.memory_own_range() else {
             return Unsupported;
         };
-        if assumptions.has_pointer_block_aliases()
-            || matches!(range.base().block, PointerBlock::StringLiteral { .. })
-        {
+        let aliases = assumptions.has_pointer_block_aliases();
+        if matches!(range.base().block, PointerBlock::StringLiteral { .. }) {
             return Unsupported;
         }
         let Some((origin, start, end)) =
@@ -1472,46 +1550,51 @@ impl ResourceContext {
             return Clear;
         }
         let blocks = &self.storage.index.owned_memory_by_block;
-        if blocks.len() != 1 {
-            return Unsupported;
-        }
-        let Some(members) = blocks.get(&origin.block) else {
-            return Unsupported;
-        };
-        if self
+        // All nominal allocation identities are mutually distinct. The count
+        // is producer-maintained; no differently spelled symbolic pointer is
+        // treated as a distinct allocation by this shortcut.
+        let nominal_frame = self.storage.index.boundary_non_nominal_count == 0
+            && super::resource_algebra::nominal_ownership_block(&origin.block);
+        let block_members = blocks.get(&origin.block).map_or(0, ResourceEntryIds::len);
+        let root_members = self
             .storage
             .index
-            .concrete_memory_by_base
-            .get(&(origin, true))
-            .copied()
-            != Some(members.len())
-        {
-            return Unsupported;
+            .owned_memory_by_root
+            .get(&super::resource_algebra::memory_base_root(range.base()))
+            .map_or(0, ResourceEntryIds::len);
+        let covered =
+            !aliases && (blocks.len() == 1 || nominal_frame) && root_members == block_members;
+        if block_members == 0 {
+            return if nominal_frame && !aliases {
+                Clear
+            } else {
+                Unsupported
+            };
         }
-        let raw = &self.storage.index.memory_addresses;
-        let Some(bucket) = raw.classes.get(&range.base().block) else {
-            return Unsupported;
-        };
-        if raw.incomplete || bucket.write_intervals.len() != members.len() {
-            return Unsupported;
-        }
-        let Some(start) = AffineOffset::of(&range.start_pointer().offset)
-            .and_then(|offset| offset.checked_add(&bucket.origin))
+        let Some(neighbors) = self.constant_owned_neighbors(&origin, start, end, root_members)
         else {
             return Unsupported;
         };
-        let Some(end) = AffineOffset::of(&range.end_pointer().offset)
-            .and_then(|offset| offset.checked_add(&bucket.origin))
-        else {
-            return Unsupported;
-        };
-        match bucket
-            .write_intervals
-            .first_overlap(&AddressCoordinate(start), &AddressCoordinate(end))
-        {
-            Some(entry) => Overlap(entry),
-            None => Clear,
+        for entry in neighbors {
+            crate::instrumentation::record_deterministic_work(1);
+            let held = self.storage.facts.get(&entry).expect("selected neighbor");
+            let Some((_, lo, hi)) = held
+                .memory_own_range()
+                .and_then(super::resource_algebra::constant_memory_coordinates)
+            else {
+                return Unsupported;
+            };
+            if lo < end && start < hi {
+                return if held.owned_quantity_term().is_some_and(|quantity| {
+                    super::resource_algebra::resource_quantity_is_positive(quantity, assumptions)
+                }) {
+                    Overlap(entry)
+                } else {
+                    Unsupported
+                };
+            }
         }
+        if covered { Clear } else { Unsupported }
     }
 
     /// A symbolic query may use an enclosing interval established by direct

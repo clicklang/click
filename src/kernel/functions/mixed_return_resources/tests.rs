@@ -1432,14 +1432,14 @@ fn flat_body_admission_uses_cold_coordinates_but_refuses_general_geometry() {
     ));
     let symbolic = ResourceFact::own_memory(MemoryRange::new(
         pointer,
-        4u32.into(),
+        0u32.into(),
         MachineTerm::Variable(Variable(8_819_103)),
     ));
     let general = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(symbolic);
     general.synchronize_memory_equalities(&facts);
     assert!(matches!(
         general.admit_returned_flat_body(body, &facts),
-        FlatBodyAdmission::Unsupported
+        FlatBodyAdmission::Unestablished(_)
     ));
 }
 

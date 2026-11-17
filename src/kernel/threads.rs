@@ -41,6 +41,7 @@ pub(super) enum JoinRuntimeAssumption {
 /// recovery. The worker's output delta is separate from the caller's frame.
 #[derive(Clone, Debug)]
 pub(super) struct WorkerCompletion {
+    entry_partition: Option<super::functions::ReturnedEntryPartition>,
     plan: StableViewTransferPlan,
     outputs: ResourceContext,
     memory: Memory,
@@ -91,6 +92,7 @@ impl WorkerCompletion {
         creation: Option<WorkerCreation>,
     ) -> Self {
         Self {
+            entry_partition: None,
             plan,
             outputs,
             memory,
@@ -99,6 +101,13 @@ impl WorkerCompletion {
             mutex_ledger,
             creation,
         }
+    }
+    pub(super) fn with_entry_partition(
+        mut self,
+        partition: Option<super::functions::ReturnedEntryPartition>,
+    ) -> Self {
+        self.entry_partition = partition;
+        self
     }
 }
 
@@ -433,12 +442,34 @@ pub(super) struct ThreadLedger {
     storage: Arc<ThreadLedgerStorage>,
 }
 
+/// Issued only after the ledger's current-parent receipt and the worker's
+/// constructed return evidence establish this particular framed output.
+pub(in crate::kernel) struct FramedWorkerOutputs(());
+
+#[derive(Clone)]
+struct ParentOwnershipPartition {
+    revision: Arc<()>,
+    registry: Arc<()>,
+}
+impl ParentOwnershipPartition {
+    fn of(resources: &ResourceContext) -> Self {
+        let (revision, registry) = resources.ownership_frame_revision();
+        Self { revision, registry }
+    }
+    fn matches(&self, resources: &ResourceContext) -> bool {
+        let (revision, registry) = resources.ownership_frame_revision();
+        Arc::ptr_eq(&self.revision, &revision) && Arc::ptr_eq(&self.registry, &registry)
+    }
+}
+
+#[derive(Clone)]
 struct ThreadLedgerStorage {
     state: u64,
     rights: PersistentMap<ThreadHandle, Arc<CompletionRight>>,
     loan_trace: Option<ThreadLoanTrace>,
     local_views: PersistentMap<ResourceFact, LoanViewBinding>,
     mutex_workers: PersistentMap<Pointer, usize>,
+    parent_partition: Option<ParentOwnershipPartition>,
 }
 
 /// The checked loan root before the first outstanding create and the root
@@ -467,8 +498,22 @@ impl ThreadLedger {
                 loan_trace: None,
                 local_views: PersistentMap::default(),
                 mutex_workers: PersistentMap::default(),
+                parent_partition: None,
             }),
         }
+    }
+
+    fn preserves_parent_partition(&self, resources: &ResourceContext) -> bool {
+        self.storage
+            .parent_partition
+            .as_ref()
+            .is_some_and(|partition| partition.matches(resources))
+    }
+    fn with_parent_partition(mut self, resources: &ResourceContext, established: bool) -> Self {
+        let storage = Arc::make_mut(&mut self.storage);
+        storage.state = Self::fresh_state();
+        storage.parent_partition = established.then(|| ParentOwnershipPartition::of(resources));
+        self
     }
 
     fn right(&self, handle: ThreadHandle) -> Option<&Arc<CompletionRight>> {
@@ -591,6 +636,7 @@ impl ThreadLedger {
                 loan_trace: self.advanced_loan_trace(before, after, participant),
                 local_views,
                 mutex_workers,
+                parent_partition: self.storage.parent_partition.clone(),
             }),
         }
     }
@@ -634,6 +680,7 @@ impl ThreadLedger {
                 loan_trace: self.advanced_loan_trace(before, after, participant),
                 local_views,
                 mutex_workers,
+                parent_partition: self.storage.parent_partition.clone(),
             }),
         }
     }
@@ -858,15 +905,21 @@ impl PreparedThreadCreate<'_> {
         let after_loans = next.parent.loan_ledger().expect("spawn ledger").clone();
         let participant = next.parent.loan_participant().expect("parent participant");
         let ledger = next.parent.thread_ledger.as_ref().expect("thread ledger");
-        next.parent.thread_ledger = Some(ledger.with_right(
-            handle,
-            CompletionRight {
-                completion: self.completion,
-            },
-            before_loans,
-            &after_loans,
-            participant,
-        ));
+        let preserved_partition = ledger.storage.rights.is_empty()
+            || ledger.preserves_parent_partition(self.parent.parent.resources());
+        next.parent.thread_ledger = Some(
+            ledger
+                .with_right(
+                    handle,
+                    CompletionRight {
+                        completion: self.completion,
+                    },
+                    before_loans,
+                    &after_loans,
+                    participant,
+                )
+                .with_parent_partition(next.parent.resources(), preserved_partition),
+        );
         (next, handle, effect)
     }
 }
@@ -1033,14 +1086,30 @@ impl ThreadContext {
                 .without_fact_delaying_normalization(fact, assumptions)
                 .ok_or("worker did not return its mutex use")?;
         }
-        // Compose only this worker's checked output delta into today's frame.
-        // No saved parent memory, ledger, bindings or resource frame is restored.
-        let resources = self
-            .parent
-            .resources()
-            .clone()
-            .compose_checked_outputs(&outputs, assumptions)
-            .map_err(|_| "worker outputs conflict with the current parent frame")?;
+        // The parent receipt advances only through checked create/join
+        // construction. A public ownership mutation invalidates it; private
+        // scalar bookkeeping and writes do not change the owned partition.
+        let framed = completion
+            .entry_partition
+            .is_some_and(|partition| partition.is_framed_transfer())
+            && self
+                .parent
+                .thread_ledger
+                .as_ref()
+                .expect("thread ledger")
+                .preserves_parent_partition(self.parent.resources());
+        let resources = if framed {
+            self.parent
+                .resources()
+                .clone()
+                .compose_framed_worker_outputs(&outputs, assumptions, FramedWorkerOutputs(()))
+        } else {
+            self.parent
+                .resources()
+                .clone()
+                .compose_checked_outputs(&outputs, assumptions)
+        }
+        .map_err(|_| "worker outputs conflict with the current parent frame")?;
         let local_bindings = completion
             .plan
             .suspended_local_parents()
@@ -1056,11 +1125,16 @@ impl ThreadContext {
         let recovery = completion
             .plan
             .clone()
-            .recover_suspended_views(
+            .recover_suspended_views_with_entry_partition(
                 ledger.clone(),
                 resources,
                 self.parent.loan_view_bindings().clone(),
                 local_bindings,
+                if framed {
+                    completion.entry_partition
+                } else {
+                    None
+                },
                 assumptions,
             )
             .map_err(|_| "worker loans cannot be recovered in the current parent context")?;
@@ -1156,8 +1230,46 @@ impl ThreadContext {
                     &after_loans,
                     completion.plan.caller_participant(),
                     &recovery.local_view_updates,
-                ),
+                )
+                .with_parent_partition(next.parent.resources(), framed),
         );
         Ok((next, completion.facts.clone()))
+    }
+}
+
+#[cfg(test)]
+mod ownership_partition_tests {
+    use super::*;
+    use crate::kernel::PointerOffsetTerm;
+
+    #[test]
+    fn worker_partition_receipt_survives_private_slots_but_not_public_ownership_or_registry_changes()
+     {
+        crate::kernel::set_never_address_taken_locals(std::collections::BTreeSet::from([
+            "worker_private".into(),
+        ]));
+        let own = |block| {
+            ResourceFact::own_memory(super::super::MemoryRange::new(
+                Pointer {
+                    block,
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                0u32.into(),
+                4u32.into(),
+            ))
+        };
+        let original =
+            ResourceContext::new().unchecked_with_fact(own(PointerBlock::Heap(8_991_810)));
+        let ledger = ThreadLedger::new().with_parent_partition(&original, true);
+        let private = original
+            .clone()
+            .unchecked_with_fact(own(PointerBlock::Concrete("local:worker_private".into())));
+        assert!(ledger.preserves_parent_partition(&private));
+        let public = private
+            .clone()
+            .unchecked_with_fact(own(PointerBlock::Heap(8_991_811)));
+        assert!(!ledger.preserves_parent_partition(&public));
+        crate::kernel::set_never_address_taken_locals(std::collections::BTreeSet::new());
+        assert!(!ledger.preserves_parent_partition(&private));
     }
 }

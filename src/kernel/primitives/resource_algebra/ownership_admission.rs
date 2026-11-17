@@ -4,40 +4,26 @@ use crate::kernel::primitives::memory_equality_index::ConstantOwnedOverlap;
 
 /// A successor is available only after every new resource has been admitted.
 #[must_use]
-pub(crate) enum OwnershipAdmission<'a> {
+pub(crate) enum OwnershipAdmission {
     Admitted {
         context: ResourceContext,
         inserted: Vec<(ResourceFact, ResourceOccurrenceId)>,
     },
     Conflict(ResourceContextValidityError),
-    Unsupported(PendingOwnershipAdmission<'a>),
-}
-
-/// An opaque, incomplete admission. Its candidate context is not a valid
-/// successor yet. Only the legacy operation may finish the deferred checks.
-/// Keep the original assumptions and progress so resumption neither changes
-/// the checked namespace nor retries insertion or completed validity checks.
-pub(crate) struct PendingOwnershipAdmission<'a> {
-    pub(super) context: ResourceContext,
-    pub(super) inserted: Vec<(ResourceFact, ResourceOccurrenceId)>,
-    pub(super) indexed_checked: Vec<bool>,
-    pub(super) first_new: ResourceEntryId,
-    // Exclusive validity has already been checked for this entry; its
-    // overlap check and all later entries remain to be processed.
-    pub(super) first_unresolved: ResourceEntryId,
-    pub(super) assumptions: &'a PureFactContext,
+    /// No successor is published until this explicit boundary is established.
+    Unsupported(Box<Proposition>),
 }
 
 /// The only new obligation for a constructed flat composite body is its
-/// boundary with the retained caller frame. Unsupported geometry stays on
-/// the compatibility path; it never counts as established separation.
+/// boundary with the retained caller frame. Unsupported geometry retains
+/// an explicit separation goal; it never counts as established separation.
 pub(crate) enum FlatBodyAdmission {
     Admitted,
     Conflict {
         piece: Box<ResourceFact>,
         held: Box<ResourceFact>,
     },
-    Unsupported,
+    Unestablished(Box<Proposition>),
 }
 
 impl ResourceContext {
@@ -68,7 +54,7 @@ impl ResourceContext {
             if piece.memory_own_range().is_none() {
                 continue;
             }
-            match self.constant_owned_overlap(piece, assumptions) {
+            match self.owned_boundary_overlap(piece, assumptions) {
                 ConstantOwnedOverlap::Clear => {}
                 ConstantOwnedOverlap::Overlap(entry) => {
                     return FlatBodyAdmission::Conflict {
@@ -76,7 +62,12 @@ impl ResourceContext {
                         held: Box::new(self.fact(entry).clone()),
                     };
                 }
-                ConstantOwnedOverlap::Unsupported => return FlatBodyAdmission::Unsupported,
+                ConstantOwnedOverlap::Unsupported => {
+                    return FlatBodyAdmission::Unestablished(
+                        self.missing_ownership_boundary(piece)
+                            .expect("owned memory boundary"),
+                    );
+                }
             }
         }
         FlatBodyAdmission::Admitted
@@ -102,7 +93,7 @@ impl ResourceContext {
         self,
         facts: impl IntoIterator<Item = ResourceFact>,
         assumptions: &PureFactContext,
-    ) -> OwnershipAdmission<'_> {
+    ) -> OwnershipAdmission {
         #[cfg(test)]
         let _fast = crate::kernel::search::FastOperationScope::enter("admit_without_discovery");
         self.admit_selected_occurrences_without_discovery(
@@ -117,21 +108,22 @@ impl ResourceContext {
         mut self,
         facts: impl IntoIterator<Item = (ResourceFact, Option<ResourceOccurrenceId>)>,
         assumptions: &PureFactContext,
-    ) -> OwnershipAdmission<'_> {
+    ) -> OwnershipAdmission {
         #[cfg(test)]
         let _fast = crate::kernel::search::FastOperationScope::enter("admit_without_discovery");
         if self.storage.facts.is_empty() {
             self.synchronize_memory_equalities(assumptions);
         }
-        let first_new = self.storage.next_entry_id;
         let mut inserted = Vec::new();
-        let mut indexed_checked = Vec::new();
         for (fact, occurrence) in facts {
-            // Check the new footprint against the maintained caller frame
-            // before insertion, so the query never has to skip its own entry.
-            let checked = match self.constant_owned_overlap(&fact, assumptions) {
-                ConstantOwnedOverlap::Unsupported => false,
-                ConstantOwnedOverlap::Clear => true,
+            match self.owned_boundary_overlap(&fact, assumptions) {
+                ConstantOwnedOverlap::Unsupported => {
+                    return OwnershipAdmission::Unsupported(
+                        self.missing_ownership_boundary(&fact)
+                            .expect("only an owned memory boundary can be unsupported"),
+                    );
+                }
+                ConstantOwnedOverlap::Clear => {}
                 ConstantOwnedOverlap::Overlap(entry) => {
                     return OwnershipAdmission::Conflict(
                         ResourceContextValidityError::OverlappingOwnedMemoryResources {
@@ -144,7 +136,7 @@ impl ResourceContext {
                         },
                     );
                 }
-            };
+            }
             let entry = self.storage.next_entry_id;
             self.insert_fact_with_support_occurrence_and_metadata_at(
                 fact.clone(),
@@ -153,38 +145,66 @@ impl ResourceContext {
                 None,
                 occurrence,
             );
-            inserted.push((fact, self.occurrence(entry)));
-            indexed_checked.push(checked);
-        }
-        for right_entry in first_new..self.storage.next_entry_id {
-            let right = self.fact(right_entry);
-            if let Some(error) = self.exclusive_validity_error(right) {
+            if let Some(error) = self.exclusive_validity_error(&fact) {
                 return OwnershipAdmission::Conflict(error);
             }
-            if indexed_checked[(right_entry - first_new) as usize] {
-                continue;
-            }
-            let Some(right_range) = right.memory_own_range() else {
-                continue;
-            };
-            if constant_memory_coordinates(right_range).is_some_and(|(_, start, end)| start >= end)
-            {
-                continue;
-            }
-            return OwnershipAdmission::Unsupported(PendingOwnershipAdmission {
-                context: self,
-                inserted,
-                indexed_checked,
-                first_new,
-                first_unresolved: right_entry,
-                assumptions,
-            });
+            inserted.push((fact, self.occurrence(entry)));
         }
         self.advance_prepared_memory_equalities(assumptions);
         OwnershipAdmission::Admitted {
             context: self,
             inserted,
         }
+    }
+}
+
+impl ResourceContext {
+    /// Construct a valid successor by bounded checks or return the exact
+    /// missing separation premise. There is no automatic discovery fallback.
+    pub(crate) fn try_compose_checked_ownership_and_occurrences(
+        self,
+        facts: impl IntoIterator<Item = ResourceFact>,
+        assumptions: &PureFactContext,
+    ) -> Result<(Self, Vec<(ResourceFact, ResourceOccurrenceId)>), ResourceContextValidityError>
+    {
+        match self.admit_without_discovery(facts, assumptions) {
+            OwnershipAdmission::Admitted { context, inserted } => Ok((context, inserted)),
+            OwnershipAdmission::Conflict(error) => Err(error),
+            OwnershipAdmission::Unsupported(required) => Err(
+                ResourceContextValidityError::UnestablishedOwnedBoundary(required),
+            ),
+        }
+    }
+}
+
+impl ResourceContext {
+    /// Check only the new boundary of an already constructed return body.
+    /// Unsupported geometry returns its explicit separation requirement.
+    pub(in crate::kernel) fn returned_boundary_conflict(
+        &self,
+        frontier: &[ResourceFact],
+        assumptions: &PureFactContext,
+    ) -> Result<Option<(ResourceFact, ResourceFact)>, ResourceContextValidityError> {
+        for piece in frontier {
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some(entry) = self.exclusive_boundary_owner(piece) {
+                return Ok(Some((piece.clone(), self.fact(entry).clone())));
+            }
+            let held = match self.owned_boundary_overlap(piece, assumptions) {
+                ConstantOwnedOverlap::Clear => None,
+                ConstantOwnedOverlap::Overlap(entry) => Some(self.fact(entry).clone()),
+                ConstantOwnedOverlap::Unsupported => {
+                    return Err(ResourceContextValidityError::UnestablishedOwnedBoundary(
+                        self.missing_ownership_boundary(piece)
+                            .expect("owned memory boundary"),
+                    ));
+                }
+            };
+            if let Some(held) = held {
+                return Ok(Some((piece.clone(), held)));
+            }
+        }
+        Ok(None)
     }
 }
 

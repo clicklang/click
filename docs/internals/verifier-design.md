@@ -131,14 +131,22 @@ references, macro tokens, extra diagnostic scans, and capability privacy.
 
 `ResourceContext::admit_without_discovery` admits an explicit resource batch
 through indexed ownership checks and exact exclusive-resource checks. It returns
-a successor, a conflict, or an opaque unsupported admission. Unsupported retains
-the candidate entries, their occurrence IDs, the original assumptions and the
-first unresolved check; it exposes no valid successor. The explicitly named
-`try_compose_with_legacy_discovery_and_occurrences` compatibility wrapper resumes
-the existing discovery operation there without reinserting the batch or
-rechecking completed entries. The fast operation has a required test-build
-discovery guard. This boundary does not remove discovery from compatibility
-callers or extend the indexed geometry fragment.
+a successor, a conflict, or an explicit missing separation proposition, with
+no successor on a miss. `try_compose_checked_ownership_and_occurrences` preserves
+that result while retaining the inserted occurrence IDs. There is no automatic
+ownership-discovery fallback. The fast operation has a required test-build
+discovery guard.
+
+The symbolic boundary checker uses producer-published memory indexes: constant
+intervals plus at most one selected symbolic owner, with direct endpoint bounds
+and equality-class coverage. It never enumerates an owner bucket or alias class.
+A maintained projection of the actual raw-memory frame caches its Surface-
+representable footprint. An unsupported boundary asks for `separate` between the
+new range and that footprint. Admitting an explicit separation proposition
+indexes its written memory leaves; a query selects that retained premise by
+range and canonical frame identity. Adding a different range invalidates the old frame
+match. Footprint preparation belongs to ownership deltas, and explicit-premise
+indexing pays for the written proposition.
 
 Checked call returns retain entry-borrow provenance beside each emitted resource
 occurrence, including after guarded clauses are skipped or dependent clauses

@@ -22,6 +22,7 @@ mod construction_return;
 #[cfg(test)]
 mod literal_objects;
 mod mixed_return_resources;
+pub(in crate::kernel) use mixed_return_resources::ReturnedEntryPartition;
 mod produced_argument_supply;
 mod return_loan_backing;
 mod summary_transfer;
@@ -325,6 +326,7 @@ struct FunctionResourceTransfer {
     /// resources so the provenance routes see each one exactly once even
     /// when composition merges or normalizes it away.
     candidate_output_views: Vec<ResourceFact>,
+    returned_entry_partition: Option<mixed_return_resources::ReturnedEntryPartition>,
     /// Each viewed piece in the one-level frontier of an ensured owned
     /// composite, with that composite's head: the borrows a produced
     /// composite packages, which the caller side binds to exactly one loan of
@@ -1046,8 +1048,19 @@ fn recover_candidate_stable_view_resources(
     // output cores' exact support metadata.
     let mut recovery = plan
         .clone()
-        .recover_returned_views(residual, assumptions, &escaping, &consumed_holds)
+        .recover_returned_views_with_entry_partition(
+            residual,
+            transfer.returned_entry_partition,
+            assumptions,
+            &escaping,
+            &consumed_holds,
+        )
         .map_err(|error| {
+            if let super::loans::StableViewPlanError::UnestablishedOwnedBoundary(required) = error {
+                return resource_context_runtime_error(
+                    ResourceContextValidityError::UnestablishedOwnedBoundary(required),
+                );
+            }
             error
                 .loan_diagnostic(LoanRefusalOperation::Recovery)
                 .map(|refusal| RuntimeError::LoanRefusal(Box::new(refusal)))
@@ -3857,6 +3870,7 @@ fn execute_verified_function_applications_with_suspension(
             return_resources,
             ensured_views: returned_views,
             produced_borrowing_pieces,
+            returned_entry_partition,
         } = match evaluate_contract_return_resources(
             &caller_resources_after_requirements,
             escrowed_owners(&transfer),
@@ -3882,6 +3896,7 @@ fn execute_verified_function_applications_with_suspension(
                 continue;
             }
         };
+        transfer.returned_entry_partition = returned_entry_partition;
         transfer.candidate_output_views = returned_views;
         transfer.produced_borrowing_pieces = produced_borrowing_pieces;
         if helper_effect.is_some()
@@ -4616,7 +4631,8 @@ fn execute_verified_function_applications_with_suspension(
                     facts,
                     post_state.mutex_ledger.clone(),
                     creation,
-                ),
+                )
+                .with_entry_partition(transfer.returned_entry_partition),
                 obligations,
             ));
             // The internal caller checks there is exactly one completion.
@@ -4990,6 +5006,7 @@ fn exceptional_direct_function_path(
         return_resources,
         ensured_views,
         produced_borrowing_pieces,
+        returned_entry_partition,
         ..
     } = match evaluate_contract_return_resources(
         &transfer.caller_resources_after_requirements,
@@ -5016,6 +5033,7 @@ fn exceptional_direct_function_path(
         }
     };
     let mut transfer = transfer.clone();
+    transfer.returned_entry_partition = returned_entry_partition;
     transfer.candidate_output_views = ensured_views;
     transfer.produced_borrowing_pieces = produced_borrowing_pieces;
     post_state.resources = return_resources.clone();
@@ -11317,6 +11335,7 @@ fn prepare_contract_resource_transfer_unexplained(
             resource_effect_bound: None,
             post_outputs: None,
             candidate_output_views: Vec::new(),
+            returned_entry_partition: None,
             produced_borrowing_pieces: Vec::new(),
             stable_view_plan: None,
             checked_view_frontier: Vec::new(),
@@ -12110,6 +12129,11 @@ fn prepare_contract_resource_transfer_unexplained(
                                 resource: Box::new(resource),
                             }
                         }
+                        super::loans::StableViewPlanError::UnestablishedOwnedBoundary(required) => {
+                            resource_context_runtime_error(
+                                ResourceContextValidityError::UnestablishedOwnedBoundary(required),
+                            )
+                        }
                         error => error
                             .loan_diagnostic(LoanRefusalOperation::Plan)
                             .map(|refusal| RuntimeError::LoanRefusal(Box::new(refusal)))
@@ -12150,6 +12174,13 @@ fn prepare_contract_resource_transfer_unexplained(
                         fact: Box::new(fact.proposition),
                         source: fact.source,
                     }));
+                }
+                if let super::loans::StableViewPlanError::UnestablishedOwnedBoundary(required) =
+                    &error
+                {
+                    return Ok(Err(resource_context_runtime_error(
+                        ResourceContextValidityError::UnestablishedOwnedBoundary(required.clone()),
+                    )));
                 }
                 if let Some(diagnostic) = error.loan_diagnostic(LoanRefusalOperation::Plan) {
                     return Ok(Err(RuntimeError::LoanRefusal(Box::new(diagnostic))));
@@ -12520,6 +12551,7 @@ fn prepare_contract_resource_transfer_unexplained(
         resource_effect_bound: None,
         post_outputs: None,
         candidate_output_views: Vec::new(),
+        returned_entry_partition: None,
         produced_borrowing_pieces: Vec::new(),
         stable_view_plan,
         checked_view_frontier,
@@ -13100,7 +13132,14 @@ fn evaluate_contract_return_resource_context(
         .then(|| borrowed_resource_key(resource))
         .and_then(|key| entry_borrows.get_mut(&key))
         .and_then(VecDeque::pop_front);
-        let return_entry_borrow = entry_borrow.is_some();
+        // An instance's fields are post-state observations, so it must be
+        // evaluated rather than copied from the entry fact. Its exclusive
+        // identity nevertheless retains the checked entry borrow's custody.
+        let return_entry_borrow = entry_borrow.is_some()
+            || interface
+                .resource_transfer_rule
+                .borrowed_instance_outputs
+                .contains(&clause_index);
         let resource =
             if let Some(constructed) = composition.constructed_summary_output(clause_index) {
                 constructed.clone()
@@ -13153,7 +13192,14 @@ fn evaluate_contract_return_resource_context(
                 Ok(fact) => {
                     evaluated = match evaluated.construct_clause(
                         fact.clone(),
-                        composition.origin_for_return(clause_index, false, &fact),
+                        composition.origin_for_return(
+                            clause_index,
+                            interface
+                                .resource_transfer_rule
+                                .borrowed_instance_outputs
+                                .contains(&clause_index),
+                            &fact,
+                        ),
                         Some(clause_index),
                         composition,
                         interface,
@@ -13365,7 +13411,8 @@ fn evaluate_contract_return_resources(
                     .unchecked_with_facts(escrowed_owners.iter().cloned())
                     .unchecked_with_facts(
                         prepared.transferred_memory_outputs.facts().iter().cloned(),
-                    );
+                    )
+                    .unchecked_with_facts(return_bodies.transferred_memory_frontier().cloned());
                 if let Some(error) = produced_composite_frontier_conflict(
                     &retained,
                     prepared
@@ -13386,7 +13433,8 @@ fn evaluate_contract_return_resources(
             let destination = prepared
                 .frame
                 .clone()
-                .unchecked_with_facts(escrowed_owners.iter().cloned());
+                .unchecked_with_facts(escrowed_owners.iter().cloned())
+                .unchecked_with_facts(return_bodies.transferred_memory_frontier().cloned());
             produced_composite_frontier_conflict(
                 &destination,
                 prepared
@@ -13415,6 +13463,7 @@ fn evaluate_contract_return_resources(
     // caller happened to hold silently answered a returned view; the
     // provenance routes in `recover_candidate_stable_view_resources` decide
     // that question now, over the declared output delta `candidate_output_views`.
+    let returned_entry_partition = prepared.entry_partition();
     let (return_resources, inserted_ensured_occurrences) =
         match crate::instrumentation::measure_operation(
             interface_name,
@@ -13514,12 +13563,14 @@ fn evaluate_contract_return_resources(
         return_resources,
         ensured_views,
         produced_borrowing_pieces,
+        returned_entry_partition,
     }))
 }
 
 /// The outputs of a contract's return-resource evaluation.
 pub(crate) struct ContractReturnResources {
     /// The explicit output delta, without the caller's unrelated frame.
+    returned_entry_partition: Option<mixed_return_resources::ReturnedEntryPartition>,
     pub(crate) output_resources: ResourceContext,
     pub(crate) return_resources: ResourceContext,
     pub(crate) ensured_views: Vec<ResourceFact>,
@@ -13552,6 +13603,7 @@ fn produced_composite_frontier_conflict<'a>(
     memory: &Memory,
     assumptions: &PureFactContext,
 ) -> Option<RuntimeError> {
+    let mut destination = destination.clone();
     for (produced, body) in ensured {
         let name = match produced.resource() {
             Resource::Composite { name, .. } => name.as_str(),
@@ -13563,7 +13615,10 @@ fn produced_composite_frontier_conflict<'a>(
         }
         if let Some(body) = body {
             match destination.admit_returned_flat_body(body, assumptions) {
-                FlatBodyAdmission::Admitted => continue,
+                FlatBodyAdmission::Admitted => {
+                    destination = destination.unchecked_with_facts(body.boundary().iter().cloned());
+                    continue;
+                }
                 FlatBodyAdmission::Conflict { piece, held } => {
                     return Some(RuntimeError::ProducedCompositeOverlapsHeldResource {
                         produced: Box::new(produced.clone()),
@@ -13571,9 +13626,13 @@ fn produced_composite_frontier_conflict<'a>(
                         held,
                     });
                 }
-                // Cold indexes and symbolic/general coordinates retain the
-                // boundary-only compatibility query below. A miss is not admission.
-                FlatBodyAdmission::Unsupported => {}
+                // Missing geometry retains the actual boundary goal. A miss
+                // never authorizes the returned ownership.
+                FlatBodyAdmission::Unestablished(required) => {
+                    return Some(resource_context_runtime_error(
+                        ResourceContextValidityError::UnestablishedOwnedBoundary(required),
+                    ));
+                }
             }
         }
         let legacy_frontier;
@@ -13628,10 +13687,13 @@ fn produced_composite_frontier_conflict<'a>(
         }
         // Construction established the body's internal partition. Only its
         // boundary with the retained caller frame is new information.
-        let Some((piece, held)) =
-            destination.returned_boundary_conflict_with_legacy_discovery(frontier, assumptions)
-        else {
-            continue;
+        let (piece, held) = match destination.returned_boundary_conflict(frontier, assumptions) {
+            Ok(Some(conflict)) => conflict,
+            Ok(None) => {
+                destination = destination.unchecked_with_facts(frontier.iter().cloned());
+                continue;
+            }
+            Err(error) => return Some(resource_context_runtime_error(error)),
         };
         return Some(RuntimeError::ProducedCompositeOverlapsHeldResource {
             produced: Box::new(produced.clone()),
@@ -15870,7 +15932,10 @@ fn construct_composite_resource_body(
         let Ok(Ok(child)) = child_result else {
             return None;
         };
-        state.resources = state.resources.clone().unchecked_with_fact(child.clone());
+        state.resources = state
+            .resources
+            .clone()
+            .unchecked_with_fact(resource_clause_read_supply(&child, &evaluation_assumptions));
         child_facts.push(child);
     }
     let raw_children = if composite.is_own() {
@@ -15888,7 +15953,7 @@ fn construct_composite_resource_body(
         || {
             if selected.is_some() {
                 ResourceContext::new_with_equalities(assumptions)
-                    .try_compose_with_legacy_discovery_and_occurrences(child_facts, assumptions)
+                    .install_established_partition(child_facts, assumptions)
                     .map(|(context, _)| context.normalized_without_discovery(assumptions))
             } else {
                 ResourceContext::new().try_compose_with_facts(child_facts, assumptions)
@@ -15922,10 +15987,7 @@ fn construct_composite_resource_body(
             .collect::<Vec<_>>()
     };
     let (expanded_context, inserted) = expanded
-        .try_compose_certified_group_into_valid_context_delaying_normalization_with_occurrences(
-            missing,
-            assumptions,
-        )
+        .install_established_partition(missing, assumptions)
         .ok()?;
     expanded = expanded_context;
     if let Some((_, binding)) = borrowed_parent {
@@ -16218,12 +16280,11 @@ pub(super) fn expand_all_composite_resource_facts_with_composites(
                     && !resource_context_contains_exact_owned_fact(&cached, fact, assumptions)
             })
             .collect::<Vec<_>>();
+        // This is the selected held head's already established partition.
         cached = cached
-            .try_compose_certified_group_into_valid_context_delaying_normalization(
-                missing,
-                assumptions,
-            )
-            .ok()?;
+            .install_established_partition(missing, assumptions)
+            .ok()?
+            .0;
     }
     let (resources, composites) =
         expand_composite_resource_context(&cached, definitions, at, assumptions)?;
@@ -16270,8 +16331,9 @@ fn expand_checked_authority_controls(
             })
             .collect::<Vec<_>>();
         expanded = expanded
-            .try_compose_with_facts_delaying_normalization(children, assumptions)
-            .ok()?;
+            .install_established_partition(children, assumptions)
+            .ok()?
+            .0;
         controls.push(fact.clone());
     }
     Some((expanded, controls))
@@ -17152,10 +17214,18 @@ fn evaluate_function_resource_context_with_entry_and_normalization(
                     context
                 }
             })
-    } else if normalize {
-        context.try_compose_with_facts(facts, assumptions)
     } else {
-        context.try_compose_into_valid_context_delaying_normalization(facts, assumptions)
+        // This evaluates a written separating clause list, not new caller
+        // ownership. The actual fold/entry/transfer operation supplies custody.
+        context
+            .install_established_partition(facts, assumptions)
+            .map(|(context, _)| {
+                if normalize {
+                    context.normalized_without_discovery(assumptions)
+                } else {
+                    context
+                }
+            })
     };
     let context = match composed {
         Ok(context) => context,
@@ -17361,8 +17431,8 @@ fn evaluate_resource_clauses_in_section(
                 if !matches!(resource.resource(), Resource::Instance(_))
                     || !evaluation_resources.contains_exact_representation(&resource)
                 {
-                    evaluation_resources =
-                        evaluation_resources.unchecked_with_fact(resource.clone());
+                    evaluation_resources = evaluation_resources
+                        .unchecked_with_fact(resource_clause_read_supply(&resource, assumptions));
                 }
                 supplied.push(resource.clone());
                 evaluated[index] = Some(resource);
@@ -17645,6 +17715,17 @@ fn evaluate_resource_clause_with_dependencies(
     result.map(|result| (result, dependencies))
 }
 
+fn resource_clause_read_supply(fact: &ResourceFact, assumptions: &PureFactContext) -> ResourceFact {
+    match fact.resource() {
+        Resource::Memory(range)
+            if fact.is_own() && fact.has_proven_positive_quantity(assumptions) =>
+        {
+            ResourceFact::view_memory(range.clone())
+        }
+        _ => fact.clone(),
+    }
+}
+
 /// The read authority a section's already-evaluated clauses supply to the
 /// clauses that still need one.
 ///
@@ -17652,6 +17733,7 @@ fn evaluate_resource_clause_with_dependencies(
 /// readable so a later clause's base load denotes, while every owned resource
 /// stays exactly where the clause set put it. This state is a scratch
 /// evaluation frame and is never the section's result.
+
 pub(in crate::kernel) fn resource_clause_section_supply(
     state: &ExecutionState,
     supplied: &[ResourceFact],
@@ -17664,7 +17746,7 @@ pub(in crate::kernel) fn resource_clause_section_supply(
         if !matches!(fact.resource(), Resource::Instance(_))
             || !base.contains_exact_representation(fact)
         {
-            base = base.unchecked_with_fact(fact.clone());
+            base = base.unchecked_with_fact(resource_clause_read_supply(fact, assumptions));
         }
     }
     if definitions.is_empty() {
@@ -18740,6 +18822,10 @@ fn resource_clause_cycle_runtime_error(
 
 fn resource_context_runtime_error(error: ResourceContextValidityError) -> RuntimeError {
     match error {
+        ResourceContextValidityError::UnestablishedOwnedBoundary(required) => {
+            RuntimeError::PendingCallObligations(vec![ProofObligation::verification_condition(*required)
+                .with_context("symbolic ownership boundary".to_string())].into())
+        }
         ResourceContextValidityError::DuplicateOwnedResourceFact(resource) => {
             RuntimeError::DuplicateResource { resource: Box::new(resource) }
         }
@@ -20929,6 +21015,7 @@ fn function_outcome_from_body_with_resource_transfer(
         return_resources,
         ensured_views: returned_views,
         produced_borrowing_pieces,
+        returned_entry_partition,
     } = match crate::instrumentation::measure_operation(
         function.name(),
         "contract resource transition",
@@ -20966,6 +21053,7 @@ fn function_outcome_from_body_with_resource_transfer(
     };
     // Return construction consumed each output from one persistent body
     // context and installed that constructed group. Do not consume it again.
+    transfer.returned_entry_partition = returned_entry_partition;
     transfer.candidate_output_views = returned_views;
     transfer.produced_borrowing_pieces = produced_borrowing_pieces;
     let (return_resources, return_ledger, return_participant, return_view_bindings, loan_evidence) =

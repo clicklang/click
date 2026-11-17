@@ -2196,6 +2196,10 @@ fn program_function_contract_entry_facts(
         .observable_facts(&assumptions)
         .map_err(|error| {
             let detail = match error {
+                ResourceContextValidityError::UnestablishedOwnedBoundary(_) => {
+                    "a symbolic boundary requires explicit separation"
+                }
+
                 ResourceContextValidityError::DuplicateOwnedResourceFact(_) => {
                     "the same resource is owned twice"
                 }

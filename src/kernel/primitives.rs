@@ -10774,6 +10774,9 @@ pub struct ResourceContext {
     /// Derived trusted-kernel index. It never supplies ownership evidence.
     memory_equalities: std::sync::Mutex<memory_equality_index::MemoryPairings>,
     pub(super) storage: std::sync::Arc<ResourceContextStorage>,
+    /// Selected unfold custody, keyed by emitted occurrence. This is producer
+    /// evidence for framing a body's exchange, never a geometric match.
+    pub(super) framed_origins: PersistentMap<ResourceOccurrenceId, ResourceOccurrenceId>,
     /// Disposable projection, never ownership evidence or semantic identity.
     /// Immutable forks share even the cold cache; producers detach it before
     /// advancing only their own delta.
@@ -10794,6 +10797,7 @@ impl Clone for ResourceContext {
         Self {
             instance_consumptions: self.instance_consumptions.clone(),
             storage: self.storage.clone(),
+            framed_origins: self.framed_origins.clone(),
             observable_projection: self.observable_projection.clone(),
             loan_dependencies: self.loan_dependencies.clone(),
             structural_witnesses: self.structural_witnesses.clone(),
@@ -11063,6 +11067,14 @@ pub(super) struct ResourceContextIndex {
     /// The held facts as a canonical multiset: contexts holding the same
     /// facts share its root, so equality never walks them.
     pub(super) canonical: canonical_fact_set::CanonicalFactSet,
+    pub(super) boundary_memory: canonical_fact_set::CanonicalFactSet,
+    pub(super) boundary_memory_count: usize,
+    pub(super) boundary_frame_revision: std::sync::Arc<()>,
+    pub(super) boundary_non_nominal_count: usize,
+    pub(super) boundary_non_argument_or_nominal_count: usize,
+    pub(super) boundary_may_alias_argument_count: usize,
+    pub(super) boundary_private_entries: ResourceEntryIds,
+    pub(super) boundary_private_registry: Option<std::sync::Arc<()>>,
     pub(super) memory_facts: HashedOrdMap<ResourceFact, ()>,
     /// The owned facts of resources other than memory, each once: the
     /// non-memory members a composition is listed under
@@ -11795,6 +11807,8 @@ impl ResourceInstance {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ResourceContextValidityError {
+    /// A raw symbolic boundary needs this explicit separation premise.
+    UnestablishedOwnedBoundary(Box<Proposition>),
     InvalidExclusiveAccess(ResourceFact),
     DuplicateOwnedResourceFact(ResourceFact),
     OverlappingOwnedMemoryResources {
@@ -11806,6 +11820,7 @@ pub enum ResourceContextValidityError {
 impl std::fmt::Display for ResourceContextValidityError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
+            Self::UnestablishedOwnedBoundary(_) => "symbolic ownership boundary requires an explicit separation proof",
             Self::InvalidExclusiveAccess(_) => {
                 "field-bearing resource instances and mutex guards require exclusive ownership with quantity one"
             }
@@ -14799,6 +14814,15 @@ pub struct PureFactContext {
     pub(super) resource_contains_facts: crate::persistent::PersistentMap<
         super::assumptions::ResourceContainsKey,
         crate::persistent::PersistentSet<Proposition>,
+    >,
+    /// Explicit separation from a complete retained raw-memory partition.
+    /// The canonical set in the value keeps the identity key alive.
+    pub(super) explicit_memory_boundaries: crate::persistent::PersistentMap<
+        (MemoryRange, usize),
+        (
+            canonical_fact_set::CanonicalFactSet,
+            std::sync::Arc<Proposition>,
+        ),
     >,
     pub(super) memory_separation_facts: crate::persistent::PersistentMap<
         (PointerBlock, PointerBlock),

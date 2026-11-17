@@ -22,8 +22,9 @@ use super::primitives::{
     memory_ranges_proven_overlapping,
 };
 use super::{
-    MachineTerm, MemoryRange, PureFactContext, Resource, ResourceContext, ResourceDescription,
-    ResourceFact, ResourceOccurrenceId, ResourceStateSource, ResourceTransferRole, Variable,
+    MachineTerm, MemoryRange, Proposition, PureFactContext, Resource, ResourceContext,
+    ResourceDescription, ResourceFact, ResourceOccurrenceId, ResourceStateSource,
+    ResourceTransferRole, Variable,
 };
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::cmp::Ordering;
@@ -2544,6 +2545,7 @@ fn bound_view_covers_requirement(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum StableViewPlanError {
+    UnestablishedOwnedBoundary(Box<Proposition>),
     InvalidRequirement,
     MissingResource(ResourceFact),
     ConflictingRequirement(ResourceFact),
@@ -2566,6 +2568,9 @@ fn composition_conflict(
             StableViewPlanError::ConflictingRequirement(composed.clone())
         }
         Invalid::InvalidExclusiveAccess(_) => StableViewPlanError::InvalidResidual,
+        Invalid::UnestablishedOwnedBoundary(required) => {
+            StableViewPlanError::UnestablishedOwnedBoundary(required)
+        }
     }
 }
 
@@ -2575,6 +2580,7 @@ impl StableViewPlanError {
         operation: LoanRefusalOperation,
     ) -> Option<LoanRefusalDiagnostic> {
         match self {
+            Self::UnestablishedOwnedBoundary(_) => None,
             Self::Loan(refusal) => Some(refusal.diagnostic(operation)),
             Self::MissingResource(resource) => {
                 Some(LoanRefusal::MissingBacking.diagnostic_with_subject(
@@ -3812,6 +3818,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
 enum RecoveryFrame {
     #[cfg(test)]
     Captured,
+    ConstructedReturn,
     Current,
 }
 
@@ -4044,9 +4051,27 @@ impl StableViewTransferPlan {
     /// Recover directly into the constructed call return, preserving its
     /// output occurrences and projections. This establishes only the missing
     /// output/escrow boundary; it does not rebuild the captured entry frame.
+    #[cfg(test)]
     pub(crate) fn recover_returned_views(
+        self,
+        resources: ResourceContext,
+        assumptions: &PureFactContext,
+        escaping: &BTreeMap<LoanId, Vec<EscapingComposite>>,
+        consumed_holds: &[LoanViewBinding],
+    ) -> Result<StableViewRecovery, StableViewPlanError> {
+        self.recover_returned_views_with_entry_partition(
+            resources,
+            None,
+            assumptions,
+            escaping,
+            consumed_holds,
+        )
+    }
+
+    pub(in crate::kernel) fn recover_returned_views_with_entry_partition(
         mut self,
         resources: ResourceContext,
+        partition: Option<super::functions::ReturnedEntryPartition>,
         assumptions: &PureFactContext,
         escaping: &BTreeMap<LoanId, Vec<EscapingComposite>>,
         consumed_holds: &[LoanViewBinding],
@@ -4057,7 +4082,11 @@ impl StableViewTransferPlan {
             escaping,
             consumed_holds,
             false,
-            RecoveryFrame::Current,
+            if partition.is_some() {
+                RecoveryFrame::ConstructedReturn
+            } else {
+                RecoveryFrame::Current
+            },
         )
     }
 
@@ -4070,12 +4099,32 @@ impl StableViewTransferPlan {
     /// Recover only this suspended call's loans against the parent's current
     /// context. Other children may have opened loans since entry, so recovery
     /// must keep the checked terminal ledger, never restore the entry state.
+    #[cfg(test)]
     pub(crate) fn recover_suspended_views(
+        self,
+        ledger: LoanLedger,
+        resources: ResourceContext,
+        bindings: LoanViewBindings,
+        local_bindings: BTreeMap<ResourceFact, LoanViewBinding>,
+        assumptions: &PureFactContext,
+    ) -> Result<StableViewRecovery, StableViewPlanError> {
+        self.recover_suspended_views_with_entry_partition(
+            ledger,
+            resources,
+            bindings,
+            local_bindings,
+            None,
+            assumptions,
+        )
+    }
+
+    pub(in crate::kernel) fn recover_suspended_views_with_entry_partition(
         mut self,
         ledger: LoanLedger,
         resources: ResourceContext,
         bindings: LoanViewBindings,
         local_bindings: BTreeMap<ResourceFact, LoanViewBinding>,
+        partition: Option<super::functions::ReturnedEntryPartition>,
         assumptions: &PureFactContext,
     ) -> Result<StableViewRecovery, StableViewPlanError> {
         self.ledger = ledger;
@@ -4087,7 +4136,11 @@ impl StableViewTransferPlan {
             &BTreeMap::new(),
             &[],
             true,
-            RecoveryFrame::Current,
+            if partition.is_some() {
+                RecoveryFrame::ConstructedReturn
+            } else {
+                RecoveryFrame::Current
+            },
         )
     }
 
@@ -4118,8 +4171,11 @@ impl StableViewTransferPlan {
                 RecoveryFrame::Captured => {
                     resources.unchecked_with_facts_and_occurrences([fact.clone()])
                 }
+                RecoveryFrame::ConstructedReturn => {
+                    resources.unchecked_with_facts_and_occurrences([fact.clone()])
+                }
                 RecoveryFrame::Current => resources
-                    .try_compose_with_legacy_discovery_and_occurrences([fact.clone()], assumptions)
+                    .try_compose_checked_ownership_and_occurrences([fact.clone()], assumptions)
                     .map_err(|error| composition_conflict(error, fact))?,
             };
             Ok::<_, StableViewPlanError>((

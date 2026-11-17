@@ -4350,11 +4350,9 @@ fn interface_join_resources(
         .cloned()
         .collect::<Vec<_>>();
     let expected_resources = common_resources
-        .try_compose_into_valid_context_delaying_normalization(
-            additions.iter().cloned(),
-            successor_facts.assumptions(),
-        )
+        .install_established_partition(additions.iter().cloned(), successor_facts.assumptions())
         .map_err(|_| "the interface resources do not form a valid successor context")?
+        .0
         .normalized_around_facts(&additions, successor_facts.assumptions());
     Ok(InterfaceJoinResources {
         arm_interface_resources,

@@ -2860,6 +2860,11 @@ fn describe_resource_context_validity_error(
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
     match error {
+        ResourceContextValidityError::UnestablishedOwnedBoundary(required) => {
+            let mut labels = crate::surface::proof_diagnostics::render::MemoryStateLabels::naming(parameter_binding);
+            format!("symbolic ownership boundary needs an explicit proof of {}",
+                crate::surface::proof_diagnostics::render::render_proposition_labeled(&required, &mut labels))
+        }
         ResourceContextValidityError::InvalidExclusiveAccess(_) => {
             "field-bearing resource instances and mutex guards require exclusive ownership with quantity one".into()
         }

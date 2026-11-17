@@ -1633,10 +1633,10 @@ permitted stores or a transition that drops the fact:
   owners. A disjoint envelope proves separation; an intersecting envelope is
   unsupported unless both endpoints are exact. Missing bounds stay bounded
   misses, without following order chains. Other
-  symbolic boundary checks retain explicitly named legacy discovery, comparing
-  only each new piece with retained owners. They never install a temporary
-  combined context, revalidate the unchanged frame or the constructed body's
-  internal partition, or scan the frame again to name a conflict. Exclusive
+  symbolic boundary checks use the maintained summaries or retain the exact
+  missing whole-frame separation premise. They never resume discovery, install
+  a temporary combined context, revalidate the unchanged frame or the
+  constructed body's internal partition, or scan the frame to name a conflict. Exclusive
   boundaries select the retained occurrence by resource or instance identity.
   Projections, packaged views and expansion caches reuse the same construction. Flat memory
   and token returns project directly, without generic composite expansion.
@@ -1836,39 +1836,65 @@ full-composition APIs and generic expansion so indirect routes remain visible.
 It is a dependency inventory, not a list of bugs or a complexity proof. An
 invocation of a compatibility wrapper can complete entirely in its fast path.
 
-The automatic call-return checklist is:
+The incremental ownership-admission routes now use
+`try_compose_checked_ownership_and_occurrences` and `returned_boundary_conflict`.
+Raw output clauses, composite child construction, pending descriptions,
+produced composite frontiers, stable-view recovery, worker completion and
+loop-frame exchange do not resume ownership discovery on unsupported geometry.
+Selected instance unfolds retain each emitted child's custody root. Loop-frame
+restoration reuses that rule only when the selected root belongs to the loop's
+original owned body. Removal withdraws the child's receipt; arbitrary additions
+still require their boundary with the withheld frame. Emitted occurrences survive
+restoration, and nested restores retain the same provenance.
+Constructed groups retain their internal partition; admission checks only new
+relationships to the destination frame. An indexed conflict refuses; a miss
+retains a `ResourceSeparate` proposition naming the new range and actual
+raw-memory frame. Function-call obligations expose that proposition for an
+explicit proof. Existing loop/thread refusal wrappers may report the broader
+exchange failure instead.
 
-| Route | Remaining evidence gap | Condition for removing compatibility |
-| --- | --- | --- |
-| `EvaluatedReturnResources::admit_clause` | Independently evaluated raw output clauses lack a checked partition between their new ownership occurrences. | Construct the output partition incrementally from producer evidence; unsupported geometry refuses promptly or requires explicit separation. |
-| `construct_composite_resource_body` | Constructed child IDs and witnesses survive, but child composition still uses incremental legacy admission; the unselected expansion route uses full composition. | Carry the internal partition with the selected body, using bounded checks only for genuinely new child relationships. |
-| `PreparedReturnComposition::finish` | Pending descriptions retain their established internal composition; the constructor now checks only their boundary against the restored frame and keeps that successor. Unsupported geometry still uses compatibility discovery. | Every pending output has an explicit origin and a bounded boundary check, or a bounded refusal. |
-| `produced_composite_frontier_conflict` | Maintained indexes do not cover every symbolic/alias geometry against retained owners. Unsupported checks call `returned_boundary_conflict_with_legacy_discovery`. | Define the supported geometry and evidence; accept via indexed coordinates/separation, otherwise refuse without searching. |
-| `StableViewTransferPlan::recover_returned_views` | Recovery constructs directly into the actual return residual, admitting each escrow once and carrying recovered hold occurrence IDs to publication. Missing output/escrow geometry still uses legacy admission. | Establish unsupported boundaries from a retained transfer rule or explicit separation, or refuse promptly. |
-| Worker completion and loop-frame exchange | Checked output groups and exit occurrences now survive composition without temporary checked contexts or reinsertion. A boundary with today's parent or withheld loop frame can still require compatibility discovery. | Carry the actual destination relationship or perform a bounded boundary check, with no output-group revalidation. |
-| `project_return_resource_cores` and the legacy arm of `produced_composite_frontier_conflict` | Unconstructed families are expanded from descriptions again. The classifier records `legacy`, rather than a reusable checked body. | Each classifier outcome carries a reusable body/frontier, deliberately opaque ownership, or a bounded refusal. Unsupported language shapes do not all need implementation. |
+The bounded symbolic checker uses producer-published address and interval
+summaries, including at most one selected symbolic neighbor. It checks direct
+bounds for ordinary partitions such as `p[0..n]` beside `p[n..16]` with
+`1 <= n <= 8`. Larger symbolic partitions can retain an explicit whole-frame
+separation premise. Its memory leaves are indexed at fact admission; lookup
+uses the selected range and canonical identity of the current frame, so a
+proof about an earlier subset cannot authorize a new held range. The cached
+frame footprint is prepared by ownership deltas, not by queries.
 
-`try_compose_with_legacy_discovery_and_occurrences` first calls
-`admit_without_discovery`. Only `Unsupported` resumes discovery; indexed
-conflicts already refuse. `PendingOwnershipAdmission::resume_legacy_discovery`
-and the returned/certified-group boundary adapters converge on
-`legacy_memory_boundary_conflict`, which can enumerate ownership candidates
-and reason along aliases. These internal dispatch edges are frozen too.
+Contract recipes retain immutable memory leaves from consumed heads as well as
+flat consumed cells. Each selected leaf is used once across all output paths;
+postcondition equalities may connect a returned pointer field to an immutable
+parameter. Model reads do not become parameter-invariant leaves. Typed parameter
+identities and their unambiguous lexical aliases share the declared binder;
+unrelated typed binders are never identified by spelling. Borrowed instances
+reevaluate their model fields while retaining their checked entry custody.
 
-A concrete remaining gap is an ordinary valid partition `p[0..n]` beside
-`p[n..16]`, with direct facts `1 <= n <= 8`: a held symbolic range is outside
-the constant-owner index fragment. The raw-output and pending-return probes in
-`src/kernel/functions/mixed_return_resources/fallback_inventory_tests.rs`
-first check successful compatibility admission, then demonstrate the
-`ownership_validity_candidates` discovery entry under `FastOperationScope`.
-A constant adjacent-range control runs successfully inside that scope. These
-are deliberately dependency probes, to be replaced with no-discovery
-regressions as the routes migrate; they do not authorize new discovery.
+Entry escrow recovery carries the return producer's partition token. Worker
+completion additionally requires the parent ownership revision captured by the
+thread ledger; public ownership changes or compiler-private registry changes
+invalidate that receipt. Private scalar bookkeeping preserves it. Missing
+receipts use ordinary checked admission. Allocation-class counters distinguish
+callee automatic storage from external argument objects without visiting owners.
+
+The old `PendingOwnershipAdmission` resume state and
+`legacy_memory_boundary_conflict` are deleted. Their retired target names stay
+in `ownership_fallback_targets.txt` so new references are rejected. Runtime
+probes in `fallback_inventory_tests.rs` now require successful raw-output and
+pending-return checks under `FastOperationScope`; the ownership-admission
+scaling tests grow owners, aliases, explicit frames and removed-owner history.
+
+The remaining call-return expansion gap is separate: unconstructed families
+in `project_return_resource_cores` and the legacy arm of
+`produced_composite_frontier_conflict` can still expand descriptions. Each
+classifier should retain a reusable body/frontier, deliberately opaque
+ownership, or a bounded refusal. Unsupported language shapes do not all need
+implementation.
 
 The wider dependency perimeter must stay separate from that call-return
 checklist. `ExecutionState::local_scalar_access_resources` and
-`ReservedLocalScalarOwner::restore_into` still admit withheld owners through
-the legacy wrapper. The generic incremental facade also serves exchange
+`ReservedLocalScalarOwner::restore_into` admit withheld owners through
+the checked incremental API. That API also serves exchange
 restoration, certified groups, stable-view recovery, function resource
 context evaluation, instance rewriting, contract refinement, iterated steps,
 loop guards, proof-interface joins and thread joins. The manifest names every
@@ -1882,8 +1908,7 @@ finishing automatic call returns alone does not justify deleting them.
 
 The source tests in `tests/search_boundary.rs` pin the perimeter, including
 new/hidden references and duplicate caller edges. Runtime probes exercise
-raw-output admission and pending-return admission; the other rows are source
-pinned, not independently runtime-probed by this increment. Existing migrated
-fragment tests provide their own no-discovery/scaling evidence. The guard
+raw-output admission and pending-return admission; the broader legacy routes
+remain source pinned. Existing migrated fragment tests provide their own no-discovery/scaling evidence. The guard
 observes registered discovery calls, not arbitrary loops: each future migration
 still needs an operation audit and deterministic scaling checks.
