@@ -1401,17 +1401,61 @@ fn sealed_field_free_returns_keep_their_explicit_memory_frontier() {
     definition.sealed = true;
     let head = ResourceFact::own_composite("sealed_memory".into(), vec![]);
     let outputs = EvaluatedReturnResources::new(&facts)
-        .admit(head.clone(), ReturnOwnershipOrigin::Description, &facts).unwrap();
+        .admit(head.clone(), ReturnOwnershipOrigin::Description, &facts)
+        .unwrap();
     let _fast = crate::kernel::search::FastOperationScope::enter("sealed finite frontier");
-    let bodies = ConstructedReturnBodies::construct(&outputs, &[definition], &ExecutionState::new(), &facts);
+    let bodies =
+        ConstructedReturnBodies::construct(&outputs, &[definition], &ExecutionState::new(), &facts);
     let body = bodies.get(outputs.occurrences[0].source).unwrap();
     assert!(body.folded.is_empty());
-    assert!(body.frontier.iter().any(|piece| piece.memory_own_range().is_some()));
+    assert!(
+        body.frontier
+            .iter()
+            .any(|piece| piece.memory_own_range().is_some())
+    );
     let held = ResourceFact::own_memory(MemoryRange::new(p, 0u32.into(), 1u32.into()));
-    assert!(matches!(produced_composite_frontier_conflict(
-        &ResourceContext::new_with_equalities(&facts).unchecked_with_fact(held),
-        std::iter::once((&head, Some(body))), &facts,
-    ), Some(RuntimeError::ProducedCompositeOverlapsHeldResource { .. })));
+    assert!(matches!(
+        produced_composite_frontier_conflict(
+            &ResourceContext::new_with_equalities(&facts).unchecked_with_fact(held),
+            std::iter::once((&head, Some(body))),
+            &facts,
+        ),
+        Some(RuntimeError::ProducedCompositeOverlapsHeldResource { .. })
+    ));
+}
+
+#[test]
+fn logical_opaque_instances_do_not_invent_hidden_escrow_ownership() {
+    let facts = PureFactContext::new();
+    let (head, mut definition) =
+        super::specialized_return_tests::named(Pointer::symbolic(Variable(8_819_010)), 8_819_011);
+    definition.sealed = true;
+    definition.contains.clear();
+    let outputs = EvaluatedReturnResources::new(&facts)
+        .admit(head.clone(), ReturnOwnershipOrigin::Description, &facts)
+        .unwrap();
+    let _fast = crate::kernel::search::FastOperationScope::enter("logical opaque instance");
+    let bodies =
+        ConstructedReturnBodies::construct(&outputs, &[definition], &ExecutionState::new(), &facts);
+    let body = bodies.get(outputs.occurrences[0].source).unwrap();
+    assert_eq!(body.expansion, vec![head.clone()]);
+    assert!(body.escrow_boundary().is_empty());
+    let mut boundary = EscrowRecoveryBoundary::default();
+    boundary.record(
+        outputs.occurrences[0].source,
+        vec![],
+        body.escrow_boundary(),
+    );
+    // The opaque instance still exists, with its fields, but its empty body
+    // cannot conflict with the independently checked memory/loan partition.
+    boundary
+        .admit(
+            &ResourceContext::new_with_equalities(&facts),
+            true,
+            &outputs.resources,
+            &facts,
+        )
+        .unwrap();
 }
 
 #[test]

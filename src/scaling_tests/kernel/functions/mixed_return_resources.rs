@@ -398,7 +398,8 @@ fn projecting_equal_return_descriptions_uses_selected_occurrences() {
                     &transfers,
                     &ConstructedReturnBodies::default(),
                     &facts,
-                    &destination)
+                    &destination,
+                )
                 .unwrap()
             })
         });
@@ -1140,7 +1141,8 @@ fn flat_return_body_consumers_scale_with_output_and_ignore_ambient_state() {
                     &transfers,
                     &bodies,
                     &facts,
-                    &destination)
+                    &destination,
+                )
                 .unwrap()
             });
             assert_eq!(
@@ -1236,7 +1238,8 @@ fn flat_body_admission_ignores_retained_owners_and_aliases_on_hits_refusals_and_
                                     .unwrap(),
                                 Some(body),
                             )),
-                            &facts);
+                            &facts,
+                        );
                         assert_eq!(error.is_some(), overlap);
                     }
                 });
@@ -1610,7 +1613,8 @@ fn bounded_body_boundary_does_not_revalidate_the_retained_frame() {
                                 .unwrap(),
                             Some(body),
                         )),
-                        &facts);
+                        &facts,
+                    );
                     if axis != "cold related" && !overlap {
                         assert!(
                             matches!(error, Some(RuntimeError::FunctionContract(ref message)) if message.contains("indexed checking fragment"))
@@ -1825,7 +1829,8 @@ fn recursive_return_frontiers_ignore_depth_aliases_and_retained_state() {
                                 .unwrap(),
                             Some(body),
                         )),
-                        &facts);
+                        &facts,
+                    );
                     assert_eq!(error.is_some(), overlap);
                 });
                 samples.push(work);
@@ -2753,36 +2758,65 @@ fn opaque_and_refused_family_dispatch_ignore_ambient_owners_and_aliases() {
                 for index in 0..count {
                     let q = Pointer::symbolic(Variable(8_917_000 + index as u64));
                     match axis {
-                        "owners" => resources = resources.unchecked_with_fact(
-                            ResourceFact::own_memory(MemoryRange::new(q, 0u32.into(), 1u32.into()))),
-                        "aliases" => facts = facts.assume_condition(
-                            ConditionTerm::pointer_equal(p.clone(), q), true),
+                        "owners" => {
+                            resources = resources.unchecked_with_fact(ResourceFact::own_memory(
+                                MemoryRange::new(q, 0u32.into(), 1u32.into()),
+                            ))
+                        }
+                        "aliases" => {
+                            facts = facts
+                                .assume_condition(ConditionTerm::pointer_equal(p.clone(), q), true)
+                        }
                         "definitions" => definitions.push(CompositeResourceDefinition::new(
-                            format!("unused_{index:04}"), vec![], None, false, vec![], vec![])),
+                            format!("unused_{index:04}"),
+                            vec![],
+                            None,
+                            false,
+                            vec![],
+                            vec![],
+                        )),
                         _ => {}
                     }
                 }
                 let (head, mut selected) = if sealed {
-                    let (head, mut definition) = super::specialized_return_tests::named(p.clone(), 8_916_001);
-                    definition.contains = flat_body_definition("unused", &p, if axis == "body" { count } else { 1 }).contains;
+                    let (head, mut definition) =
+                        super::specialized_return_tests::named(p.clone(), 8_916_001);
+                    definition.contains =
+                        flat_body_definition("unused", &p, if axis == "body" { count } else { 1 })
+                            .contains;
                     definition.sealed = true;
                     (head, definition)
                 } else {
-                    (ResourceFact::own_composite("selected".into(), vec![]),
-                     flat_body_definition("selected", &p, if axis == "body" { count } else { 1 }))
+                    (
+                        ResourceFact::own_composite("selected".into(), vec![]),
+                        flat_body_definition(
+                            "selected",
+                            &p,
+                            if axis == "body" { count } else { 1 },
+                        ),
+                    )
                 };
                 if !sealed {
-                    selected.witnesses.push(program_parameter("unsupported", ProgramType::Int32));
+                    selected
+                        .witnesses
+                        .push(program_parameter("unsupported", ProgramType::Int32));
                 }
                 definitions.push(selected);
-                definitions.sort_by(|a,b| a.name().cmp(b.name()));
+                definitions.sort_by(|a, b| a.name().cmp(b.name()));
                 let outputs = EvaluatedReturnResources::new(&facts)
-                    .admit(head, ReturnOwnershipOrigin::Description, &facts).unwrap();
+                    .admit(head, ReturnOwnershipOrigin::Description, &facts)
+                    .unwrap();
                 let state = ExecutionState::new().with_resource_context(resources);
                 let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-                    let _fast = crate::kernel::search::FastOperationScope::enter("bounded family dispatch");
-                    ConstructedReturnBodies::try_construct(&outputs, &definitions, &state,
-                        ReturnResourceComposition::ValidateDescriptions, &facts)
+                    let _fast =
+                        crate::kernel::search::FastOperationScope::enter("bounded family dispatch");
+                    ConstructedReturnBodies::try_construct(
+                        &outputs,
+                        &definitions,
+                        &state,
+                        ReturnResourceComposition::ValidateDescriptions,
+                        &facts,
+                    )
                 });
                 if sealed {
                     let bodies = result.unwrap();
@@ -2795,7 +2829,10 @@ fn opaque_and_refused_family_dispatch_ignore_ambient_owners_and_aliases() {
                 }
                 samples.push(work);
             }
-            assert!(samples.iter().all(|work| *work <= samples[0] + 128), "sealed={sealed}, {axis}: {samples:?}");
+            assert!(
+                samples.iter().all(|work| *work <= samples[0] + 128),
+                "sealed={sealed}, {axis}: {samples:?}"
+            );
         }
     }
 }

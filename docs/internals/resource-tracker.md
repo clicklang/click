@@ -1852,18 +1852,21 @@ The automatic call-return inventory now distinguishes these boundaries:
 
 Family dispatch has no legacy set or downstream expansion route. Supported
 ordinary, existential, recursive, instance and authority families retain their
-producer's children. Instances outside the specialized constructor fragment remain deliberately
-opaque, retaining their exact occurrence and instance bindings without exposing
-child ownership. Generic expansion previously left these
-instances folded too; dispatch now records that outcome directly. Sealed field-free composites keep their certified finite frontier; seal visibility
-does not erase internal memory boundaries. Iterated ownership is carried as one
-finite descriptor leaf, without enumerating its guarded elements. Missing
-definitions and unsupported field-free shapes refuse before publishing a return. Counted
-bodies without exclusive leaves keep their count semantics; a nonunit body that
-exposes exclusive ownership refuses even when its leaves carry input custody.
-Returned views always retain the identities of the children that produced them;
-there is no description-only view receipt. Source guards forbid body production
-inside projection and boundary consumers.
+producer's children. Instances outside the specialized constructor fragment
+remain deliberately opaque, retaining their exact occurrence and bindings.
+Generic expansion previously left these instances folded too. A selected
+instance with only logical fields and no body children introduces no hidden
+memory cut point; its exact head and fields remain in the projection. Other
+opaque instances retain their conservative ownership boundary.
+Sealed field-free composites keep their certified finite frontier; seal
+visibility does not erase internal memory boundaries. Iterated ownership is
+carried as one finite descriptor leaf, without enumerating its guarded elements.
+Missing definitions and unsupported field-free shapes refuse before publishing
+a return. Counted bodies without exclusive leaves keep their count semantics;
+a nonunit body exposing exclusive ownership refuses even when its leaves carry
+input custody. Returned views retain their producer's child identities; there
+is no description-only view receipt. Source guards forbid body production inside
+projection and boundary consumers.
 
 The producer separates selected input ownership from newly described outputs.
 The checked entry projection issues a finite input frontier for read-only tactics

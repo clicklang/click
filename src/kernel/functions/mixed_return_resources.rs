@@ -1150,10 +1150,8 @@ impl ConstructedReturnBodies {
                 continue;
             }
             // Generic composite expansion never opened field-bearing
-            // instances. Preserve that deliberate opacity, with the actual
-            // selected instance and its child/field bindings on the head.
-            // In particular, nested schemas and protocol wrappers do not need
-            // a body reconstruction just to cross the return boundary.
+            // instances. Preserve that opacity with the actual instance and
+            // its bindings, without reconstructing any child descriptions.
             if let Resource::Instance(instance) = support.resource() {
                 if definition
                     .instance_schema
@@ -1162,10 +1160,17 @@ impl ConstructedReturnBodies {
                 {
                     return None;
                 }
-                bodies.insert(
-                    occurrence.source,
-                    ConstructedReturnBody::opaque(support, occurrence.source),
-                );
+                let mut body = ConstructedReturnBody::opaque(support, occurrence.source);
+                if definition.matched.is_none()
+                    && definition.contains().is_empty()
+                    && definition.children.is_empty()
+                {
+                    // Logical fields alone do not hide owned memory. Keep
+                    // their exact head in expansion, but introduce no unknown
+                    // ownership cut point into escrow recovery.
+                    body.folded.clear();
+                }
+                bodies.insert(occurrence.source, body);
                 continue;
             }
             // A family outside the finite constructor fragment is a bounded
