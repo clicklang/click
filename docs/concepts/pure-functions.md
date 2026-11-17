@@ -100,7 +100,7 @@ at the same pointer.
 A body may name its parameters, its own `let`, fold and quantifier bindings,
 and other pure functions. It may not read a C object by name: a file-scope
 variable such as `counter`, or any object by its qualified `unit::counter`
-spelling, is refused:
+form, is refused:
 
 <!-- verified-example: mdtests/a_pure_function_reading_a_global_by_name_is_refused.md -->
 ```click

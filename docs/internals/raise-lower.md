@@ -1,9 +1,15 @@
-# Spellability
+# Raising and lowering
 
-Every fact a proof state holds, and every goal it focuses, has a Click
-spelling: Surface Click source that a person could write in a proof and that
-lowers back to that exact fact. This is a design rule, not a presentation
-goal.
+Three operations move between Click text and the kernel. **Lowering** turns a
+Surface term into a kernel term. **Raising** turns a kernel term into a
+Surface term. **Printing** turns a Surface term into text. What an author
+wrote is the **source text**; it is kept for diagnostics and never justifies
+a fact.
+
+Every fact a proof state holds, and every goal it focuses, raises to a
+Surface term that a person could write in a proof and that lowers back to
+that exact fact: `lower(raise(x)) == x`. This is a design rule, not a
+presentation goal.
 
 ## Why the rule exists
 
@@ -13,28 +19,29 @@ rule](verifier-design.md#the-slow-part-rule) admits a search only when its
 result can be written out that way. A simple step names what it cites and what
 it proves: a `have`, a `using { ... }` premise, a witness, an `instantiate`
 argument. So every fact a smart step relies on, and every goal it leaves, must
-be writable, or the smart step cannot be expanded.
+raise, or the smart step cannot be expanded.
 
-When a fact has no spelling, today's code works around it rather than failing:
+When a term does not raise, today's code works around it rather than failing:
 
 - a smart tactic declines a route whose premise it cannot cite, even though
   the kernel holds the premise (`solve`, its arithmetic bridges, the implicit
   closer), so a provable goal fails as a bounded miss;
-- a recorded spelling that does not check is dropped, so later steps cannot
-  cite the fact;
+- a recorded Surface form that does not lower back is dropped, so later steps
+  cannot cite the fact;
 - a diagnostic prints a placeholder (`<unnamed A>`, `<pointer A>`,
   `<state A>`) or an angle-bracket description in place of the fact;
 - expansion refuses its own output when a placeholder leaks into it.
 
-None of these is unsound, since every cited spelling is lowered again and
+None of these is unsound, since every cited Surface term is lowered again and
 checked. Each one costs completeness, expansion, or a readable report.
 
 ## The rule
 
-- **Spell by construction, not by search.** A fact's spelling follows from
-  the fact and the names in scope. Code must not search a list of strategies
-  for a spelling and fall back to a placeholder, to another renderer, to
-  `None`, or to dropping the fact.
+- **Raise by construction, not by search.** A term's raise follows from the
+  term and the names in scope. Code must not search a list of strategies or
+  candidate states for a raise, re-lower candidates to check them, or fall
+  back to a placeholder, to another renderer, to `None`, or to dropping the
+  fact. Raising is total.
 - **Name a value where it is introduced.** A step that introduces a fresh
   value or memory state (a call result, a havoc, an allocation, a state
   between recorded points) gives it a name from its provenance at that
@@ -51,7 +58,7 @@ checked. Each one costs completeness, expansion, or a readable report.
   number; `SourceExecutionLayout::step_region` maps the number to its step).
   A postfix update's result, the value it replaced, is
   `at(<its region>.entry, x)`.
-  A region is spelled by its statement as written. A C statement carries its
+  A region is named by its statement as written. A C statement carries its
   site. Rust's lowering builds its kernel body itself, so it hands the layout
   the statement each region comes from: `moves::Sited` builds each lowered
   statement with one source site per region, in the layout's own preorder.
@@ -66,8 +73,8 @@ checked. Each one costs completeness, expansion, or a readable report.
   (`kernel::CallParameters`), and the step records it as the region's
   parameter point (`ProgramPointKind::Parameters`). The callee's contract
   reads the copy there, so a step that prepares the call exposes that point at
-  its pre-state while it proves the call's requirements, and the source-backed
-  requirement spelling substitutes `R.parameter(name)` for the parameter.
+  its pre-state while it proves the call's requirements, and raising the
+  source-backed requirement substitutes `R.parameter(name)` for the parameter.
   Reads through it are resolved from the recorded layout when lowered.
   In the function's own proof the parameter is the input itself: the entry
   declares its object holding its own entry values
@@ -82,12 +89,12 @@ checked. Each one costs completeness, expansion, or a readable report.
   or read authority. Its value is constructed from the producer's recorded
   pending allocation, without facts or a history scan. The index is scoped with
   recorded states and removes a name when its exit is replaced or removed.
-  A loop head mints its pass count `K` fresh; the loop's phases spell it
+  A loop head mints its pass count `K` fresh; the loop's phases name it
   `iterations` (kernel placeholder `LOOP_ITERATIONS_VARIABLE`, bound per phase
   by `LoopIterationsScope`), and each path past the loop carries it on its
   correspondence metadata to the exit, which records it by loop in
   `RecordedStates::loop_iterations` with a reverse index from the variable:
-  it is spelled `loop(i).iterations` in one lookup.
+  it raises to `loop(i).iterations` in one lookup.
   Recorded points index each integer value, and each pointer's block, by the
   point and the local it was first given to (`RecordedStates::value_points`
   and `pointer_points`, filled from the locals each recorded state changed),
@@ -95,7 +102,7 @@ checked. Each one costs completeness, expansion, or a readable report.
   resource instance first held it (`field_points`, filled from the instances each state changed), and
   each integer a memory cell came to hold by the point that recorded it there
   (`cell_points`, filled from the cells each memory changed). The structural
-  speller writes `at(point, ...)` from these indexes for a value no nearer
+  raiser writes `at(point, ...)` from these indexes for a value no nearer
   state names. A load or field read made in a memory no point
   records, inside a call or after the last point, is read at the nearest
   recorded memory that reads the same bytes.
@@ -103,24 +110,25 @@ checked. Each one costs completeness, expansion, or a readable report.
   type-parameter local (`AggregateLayout::holding_value`), is named by its
   own name: `o` lowers to the read of its object at the point it was last
   written (`ExecutionState::held_local_value`), never to a value a store left there,
-  and that read spells `o`, or `at(point, o)` at the recorded point whose
+  and that read raises to `o`, or `at(point, o)` at the recorded point whose
   memory reads it.
 - **Every fact kind has syntax.** A kernel fact that a proof state can hold
   has a Surface form. Adding a kernel fact or term form includes adding its
-  Surface form and its spelling, in the same change.
-- **A spelling lowers back to its fact.** The spelling of a fact, lowered in
+  Surface form and its raising, in the same change.
+- **A raised fact lowers back to itself.** A fact's raised term, lowered in
   the same context, is that fact.
-- **A refined goal keeps a spelling.** A step that refines a goal carries the
-  goal's written spelling forward where it can, as `rewrite` rewrites it, and
-  otherwise spells the new kernel goal (`Proof::spelled_goal`). Smart search
-  also retains the refined goal's spelling: it reconstructs from source names,
-  the current and entry states, and indexed recorded points, then checks the
-  exact structural lowering. It does not run premise-spelling search or scan
-  alternative local aliases for this presentation. A named goal remains an
-  outstanding obligation; producing its spelling grants no proof authority.
+- **A refined goal still raises.** A step that refines a goal carries the
+  goal's written form forward where it can, as `rewrite` rewrites it, and
+  otherwise raises the new kernel goal (`Proof::spelled_goal`). Smart search
+  also retains the refined goal's raised form: it reconstructs from source
+  names, the current and entry states, and indexed recorded points, then
+  checks the exact structural lowering. It does not run the premise raiser's
+  search or scan alternative local aliases for this presentation. A named
+  goal remains an outstanding obligation; raising it grants no proof
+  authority.
 
 A fact that exists only inside one kernel step, and never becomes a proof
-state's fact or goal, needs no spelling.
+state's fact or goal, need not raise.
 
 ## Shared term migration
 
@@ -191,7 +199,7 @@ prefix through `value()` would still expand those prefixes repeatedly. Other par
 legacy producers with separate obligations. C execution has not migrated. Shifts use the
 same shared binary nodes: lowering has already converted a count to the
 left operand's carrier width, and the bridge preserves that explicit conversion
-without reinterpreting it from the result's signedness. Widening spellings explicitly retain the source `int32`/`uint32`
+without reinterpreting it from the result's signedness. Raised widenings explicitly retain the source `int32`/`uint32`
 interpretation: zero-extending signed `x` prints as `(x as uint32) as uint64`,
 so lowering cannot replace zero extension with sign extension. Pointer-carrying
 integers retain their complete metadata, even though their C type is numeric.
@@ -200,7 +208,7 @@ shared cast nodes. A transitional encoding tag distinguishes their exact
 legacy constructors from a generic cast with the same formats; import/export
 never silently normalizes one into another. Low-word extraction interprets
 its operand as unsigned bits, independent of the source C signedness.
-Machine raising currently uses one exact export to the existing speller.
+Machine raising currently uses one exact export to the existing raiser.
 Integer bridge shortcuts are memoized per verification session (and reset when
 restoring a reusable session), while the shared term identities remain stable.
 Retaining a converted term across runs must not change a later run's deterministic
@@ -210,7 +218,7 @@ Mathematical observations of machine values (`to_integer`) now have a shared
 `MachineObservation` node with the interpretation format and machine operand.
 Signed and unsigned interpretations remain distinct. Raising retains the observation's interpretation inside any program point selector;
 a local's name must not silently choose a different signedness. Narrow values retain their
-existing load/conversion spelling: adding another narrowing or promotion cast
+existing load/conversion form: adding another narrowing or promotion cast
 changes the structural observation, particularly under quantified binders.
 Observation casts use `SurfaceTerm::CUnary` with the Surface operand retained;
 projecting a resource field or scoped name into a C fragment loses its binding. The checker bridge reconstructs
@@ -221,9 +229,9 @@ existing `to_int32`, `to_uint64`, etc. calls; exporting reconstructs the origina
 conversion without evaluating the operand or consulting range facts.
 Wide symbolic cast chains retain their intermediate nodes. Collapsing
 `(x as int128) as int64` used to create a generic `int32`-to-`int64` cast,
-while its direct spelling lowered to the `Int64From32` spelling of `Cast`. Retaining the chain
+while raising it directly gave a term that lowered to the `Int64From32` kind of `Cast`. Retaining the chain
 restores the round trip. The existing 32-bit word-cast conventions remain.
-The speller now handles explicit wide casts and wide literal payloads.
+The raiser now handles explicit wide casts and wide literal payloads.
 Cast-composition equalities, including 128-bit intermediates, are maintained
 by the equality graph's indexed machine relations. A full-width source's
 conversion through a no-narrower intermediate can be related to its direct
@@ -284,7 +292,7 @@ resource composition (resources held together) and a predicate with no Click
 name, such as subobject coverage or a volatile event. The kernel stores,
 transports, and validates them with every other fact, so a step's delta still
 justifies each one. No surface view presents or cites them: the census,
-proof traces, diagnostics, and premise spelling all skip them, and a closing
+proof traces, diagnostics, and premise raising all skip them, and a closing
 step reads them from its context. One classification,
 `Proposition::is_kernel_authority`, decides membership; code must not
 special-case a composition or a `__click_` name elsewhere.
@@ -294,7 +302,7 @@ kernel names them under `__click_`: `kernel::predicate_source_name` gives the
 Click name that lowers to each, and the printer, synthesis, and authority
 classification all read that one mapping.
 
-The observed value carried by a volatile read event has a public spelling even
+The observed value carried by a volatile read event has a public Surface form even
 though the event predicate remains authority: `R.read_event(i).result`. Execution
 records its exact typed value in the presentation state and indexes that value
 for raising. Lowering retrieves it directly without consulting equalities or
@@ -302,7 +310,7 @@ performing another load. Internal handles therefore raise as event results,
 not anonymous variables.
 
 Making a proposition kind authority is a design decision, never a way to
-avoid spelling a fact a proof could need to cite.
+avoid raising a fact a proof could need to cite.
 
 ## The raise-lower principle
 
@@ -312,7 +320,7 @@ than what the verifier enforces today, and an audit that measures the gap.
 
 | Rule | Target | Enforced today | Audit |
 | --- | --- | --- | --- |
-| Lowering undoes raising | `lower(raise(x)) == x` for every term a proof state holds, so a raised spelling needs no checking | Required, but spellers lower each candidate again and drop a mismatch (`surface_lowers_to`, the premise speller's `matches_kernel`) | `scripts/raise-lower.sh` |
+| Lowering undoes raising | `lower(raise(x)) == x` for every term a proof state holds, so a raised term needs no checking | Required, but raisers lower each candidate again and drop a mismatch (`surface_lowers_to`, the premise raiser's `matches_kernel`) | `scripts/raise-lower.sh` |
 | Lowering is fact-stable | Lowering reads no facts: one text, state and set of resources lower to one term | Facts may refuse the term, discharge its obligations, add side facts, or select one of several paths; they may not change the term | `scripts/fact-stability.sh`, `differs` lines |
 | Definedness is an obligation | Lowering returns the term, its definedness obligations and its side facts; checking discharges the obligations | Ordinary arithmetic returns obligations beside the term, but lowering drops one the facts already prove, and some lowerings are refused instead of owing one | `scripts/fact-stability.sh`, `refused` and `paths:N` lines |
 
@@ -325,10 +333,10 @@ form removes them.
 
 `scripts/raise-lower.sh` raises each fact a checked step adds, and the goal
 it leaves focused, with `synthesize_surface_proposition` at the step's
-fixed state, lowers that spelling again, and records `same`, `polarity`
+fixed state, lowers that term again, and records `same`, `polarity`
 (the same comparison at the other polarity), `differs`, `unlowered`,
 `unraised`, or `no-state`. It measures the raiser alone, not the premise
-speller, which searches recorded spellings first and keeps only one that
+raiser, which searches recorded Surface forms first and keeps only one that
 lowers back. It observes the steps the [census](#measuring-the-gap) does; a
 fact a `have` publishes to its enclosing proof is not among them.
 
@@ -337,13 +345,13 @@ Baseline (2026-11-16, ordinary mdtest corpus, both runs passing):
 - Fact stability: 0 `differs`, 0 `paths:N`, 371 `refused` lines in 19
   fixtures; 338 of them come from
   `mutex_resource_quantity_requires_conservation` (`uint32` comparisons).
-- Round trip: 54,642 records. Of the 11,058 spellings the raiser produced,
+- Round trip: 54,642 records. Of the 11,058 terms the raiser produced,
   9,343 were `same`, 658 `polarity`, 814 `differs` and 243 `unlowered`;
   9,478 terms were `unraised` and 34,106 had `no-state` (mostly termination predicates). Recurring `differs`
   shapes: an entry read raised through a current name (`old(*result) ==
-  7` spelled `result->value == 7`, lowering to `old(*next) == 7`); a
+  7` raised as `result->value == 7`, lowering to `old(*next) == 7`); a
   closed literal comparison lowering folds to a constant
-  (`-2147483648i64 == 2147483648i64` to `false`); casts spelled
+  (`-2147483648i64 == 2147483648i64` to `false`); casts raised
   differently on the two sides of an equality; and `to_integer(...)` terms
   raised as `let` bindings or bare machine arithmetic.
 
@@ -362,7 +370,7 @@ the one the text names.
 - Required: `lower(raise(x)) == x` for every kernel term a proof state
   holds.
 - Allowed: `raise(lower(s))` may normalize surface syntax, collapsing
-  spellings of one structure; the kernel need not produce every surface
+  forms of one structure; the kernel need not produce every surface
   form. In particular `at(point, expression)` can raise at any program point
   whose recorded state selects the same version point for the read. Distinct
   program points may lower to the same read; raising picks one of them.
@@ -392,13 +400,13 @@ selected-arm behavior; literal Boolean and equality guards keep their normal for
 Generated comparison operands that are negative `int64` literals keep an explicit
 `as int64` cast, including under `old` and `at`. Their printed unary minus would
 otherwise reparse as mathematical Integer arithmetic and change the comparison
-family. Authored and diagnostic spellings keep the ordinary negative literal.
+family. Source text and diagnostics keep the ordinary negative literal.
 
-Closed narrow native comparisons spell both operands with explicit `int8`,
+Closed narrow native comparisons raise both operands with explicit `int8`,
 `uint8`, `int16`, or `uint16` casts. This preserves their format after a checked rewrite
 exposes literal operands: converting those literals to mathematical Integer
 observations would erase the width and signedness. Closed narrow logical orders retain that native format. Symbolic comparisons
-keep their existing observation spelling, and mixed-format comparisons and
+keep their existing observation form, and mixed-format comparisons and
 executed C keep their existing integer promotions. Literal order truth is checked without
 changing the retained comparison, including after quantified substitution.
 
@@ -432,7 +440,7 @@ the same up to the names of bound variables. A lowering that rewrites
 through a fact, `f(a)` to `g(b)` because `f(a) == g(b)` is known, yields a
 term that another context's lowering of the same text does not reach: `a ==
 c` then no longer gives `f(a) == f(c)` by rewriting, and the fact holding
-it has no spelling. Equalities belong to the equality graph, which every
+it does not raise. Equalities belong to the equality graph, which every
 check consults; they are not folded into terms.
 
 The rule is about facts, not state. A term may depend on the program point,
@@ -449,7 +457,7 @@ Array indexing observes the completed machine-integer expression exactly.
 A `uint32` index always uses zero extension to the wide unsigned offset;
 proven bounds cannot switch it to a signed offset. Thus `a[i + 1]` preserves
 the index expression's machine arithmetic before observation, including unsigned
-wraparound. The speller structurally removes that implicit widening and writes
+wraparound. The raiser structurally removes that implicit widening and writes
 `a[i]` again; supported native wide indices, including Rust `usize`, also retain
 bracket syntax. Range checking uses the maintained order graph to relate the
 unsigned word to its exact widening, without changing the address term.
@@ -465,15 +473,15 @@ equalities. A table-read branch extends its context with its one new address
 disequality before considering the next cell.
 
 Boolean function applications, equalities, conditionals, and Boolean call
-arguments spell structurally through their existing Surface syntax. Pure-theorem
-premise spelling uses the retained typed source state and looks up names for the
+arguments raise structurally through their existing Surface syntax. Pure-theorem
+premise raising uses the retained typed source state and looks up names for the
 selected fact's variables, rather than rebuilding an int32-only environment.
-Generic calls spell the declared source name rather than the kernel's
+Generic calls raise to the declared source name rather than the kernel's
 `::<...>` instance suffix. Typed arguments (including explicit algebraic
 constructors) reconstruct the same instance when lowered. Name selection must
 include variables inside opaque call arguments and both goal binders and
 proof-local witnesses, respecting `intro` shadowing.
-Algebraic equality inside a Boolean expression spells as an ordinary comparison.
+Algebraic equality inside a Boolean expression raises as an ordinary comparison.
 Match-arm algebraic bindings retain their source names for premise synthesis,
 including list tails and C type-parameter values stored in constructors. These
 names are selected from existing proof bindings; no equality search reconstructs
@@ -482,7 +490,7 @@ A rewrite that introduces an outer Boolean negation retains lowering's truth
 polarity: a false claim of `not p` is stored as a true claim of `p`. This does
 not consult facts or change the Boolean term inside a larger expression.
 
-Arithmetic domains spell as ordinary comparisons and conjunctions, including
+Arithmetic domains raise as ordinary comparisons and conjunctions, including
 the negation of a range conjunction on an overflowing execution branch.
 `defined(expression)` denotes the full evaluation domain, including operand
 domains. It does not stand for a single overflow component of division or shift.
@@ -515,7 +523,7 @@ A Click read of an integer or object-pointer cell lowers to the read at the cell
 never to the value a store left there: after `a[i] = 5`, `a[i]` lowers to the
 read, not to `5` (`logical_read_names_its_version` in
 `kernel::eval::memory_loads`). A read lowered to its stored value has no
-spelling of its own: no Click text lowers back to it there, so `lower(raise(x))
+Surface form of its own: no Click text lowers back to it there, so `lower(raise(x))
 == x` fails for terms that contain it, and a rewrite that moves the read
 (`rewrite(j, i)` on `a[j] == 5`) yields `true` instead of `a[i] == 5`
 (`mdtests/a_read_of_a_stored_cell_stays_a_read.md`). The one exception is a
@@ -550,7 +558,7 @@ retains the exact registered descriptor. A reduced cache state must not
 introduce a second raw-load form into the citable equation. Cache-only records
 share the unchanged-bytes identity, while actual writes still create distinct
 version points. Retaining typed read evidence checks the descriptor's epoch,
-address and kind by indexed lookup, independently of the spelling.
+address and kind by indexed lookup, independently of its Surface form.
 
 The read-over-write authority relates a read to the stored value:
 `kernel::eval::read_over_write_value` returns, for a load variable whose
@@ -577,7 +585,7 @@ same form; they do not add tactic-specific fact searches.
   names, and searches over the reads only when that misses.
 
 Code does not resolve reads anywhere else. A comparison form is a fact like
-any other: a smart step that cites one spells it, and its spelling must lower
+any other: a smart step that cites one raises it, and the raised term must lower
 back to it. The printer casts C arithmetic read at a state,
 `at(p, a - 1) as int32`, because the parser reads arithmetic inside `at(...)`
 and `old(...)` as Integer arithmetic.
@@ -591,7 +599,7 @@ assumption-free load equality proves equal must share a name;
 `kernel::duplicate_read_names::capture` audits that in tests, and the nightly
 `every_mdtest_names_each_read_once` runs it over every C mdtest. Two names
 remain where only facts relate the reads (a call the walk cannot cross without
-a separation premise): a name cannot depend on facts, each read is spelled at
+a separation premise): a name cannot depend on facts, each read is named at
 its own point, and the frame fact relates them. A loop havoc is the same case:
 the naming walk never crosses one, since the loop's checked footprint comes
 from the proof's own annotation, so a read on either side keeps its own name
@@ -599,7 +607,7 @@ and the footprint relates them. The nightly audit lists the mdtests where the
 load equality crosses such a footprint, and fails when one stops reporting. Two writes of one stored value
 are two versions, related by the read-over-write authority.
 
-## When a fact has no spelling
+## When a fact does not raise
 
 Report it as a tooling defect (the `inexpressible-fact` outcome in
 [tracing](../concepts/tracing.md)), and fix it by naming the value at its
@@ -611,13 +619,13 @@ placeholder, a skipped candidate, or a declining route to work around it.
 `scripts/spellability-census.sh` runs the mdtest corpus with
 `CLICK_SPELLABILITY_CENSUS` set (`src/surface/proof/spellability_census.rs`).
 Each checked step records, for every fact it adds and for the goal it leaves
-focused, whether the premise speller finds a checked spelling. The script
+focused, whether the premise raiser finds a checked Surface form. The script
 prints the misses grouped by kind. It separates steps a person wrote from
-steps a smart tactic's search took: a search step needs a spelling only when
-its search succeeds and is expanded, but a written step's facts and goal may
-be cited by the next written step. The census only observes; it does not
+steps a smart tactic's search took: a search step's facts need to raise only
+when its search succeeds and is expanded, but a written step's facts and goal
+may be cited by the next written step. The census only observes; it does not
 change any proof. A unit test can record the same lines in memory with
-`spellability_census::capture` and assert that a step's facts are spelled.
+`spellability_census::capture` and assert that a step's facts raise.
 
 Audit-budget limitation (2026-10-31): enabling both census and fact-stability
 instrumentation together pushes `solve_false_list_position_is_prompt` over
@@ -630,10 +638,10 @@ fact-dependent lowering.
 The census sorts a miss into one of three gaps, each with its own fix:
 
 - **Writable but not found.** The fact has Click syntax and its operands
-  have names, but the premise speller's search misses it: reflexive pointer
+  have names, but the premise raiser's search misses it: reflexive pointer
   equalities such as `p == p`, `viewable(p[0..1])` after an `unfold`, an
   applied theorem's conclusion such as `cd(n - 1) == 0`, and goals with no
-  recorded presentation. The fix is the total speller.
+  recorded presentation. The fix is the total raiser.
 - **A value with no name.** The fact mentions a value or address nothing
   names, printed `<unnamed A>` or `<pointer A>`: a callee's result, a havoc,
   an allocation. The fix is naming at introduction.

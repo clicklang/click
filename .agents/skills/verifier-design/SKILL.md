@@ -15,7 +15,7 @@ A `Memory` or `SharedMemory` value is a **memory state**, which can contain
 partial or abstract information. See the vocabulary in
 `docs/concepts/memory-model.md`.
 Externally defined API symbols and opaque import-profile identifiers retain
-their exact upstream spelling; do not rewrite frozen compiler artifacts.
+their exact upstream names; do not rewrite frozen compiler artifacts.
 
 ## 1. Name the part
 
@@ -50,8 +50,8 @@ For a slow-part change, name:
 - what `click expand` writes in its place;
 - the explicit syntax that lets an author write that result with no search.
   If it doesn't exist, adding it is part of the change.
-- that every fact it cites or proves has a Click spelling
-  (`docs/internals/raise-lower.md`). Never search for a spelling and fall
+- that every fact it cites or proves raises to a Surface term
+  (`docs/internals/raise-lower.md`). Never search for a raised term and fall
   back; name the value where it is introduced or add the syntax.
 
 For a change to lowering or evaluation in either part, name the facts it
@@ -102,11 +102,11 @@ implicit fact per address shape and uses exact membership for stated goals;
 do not recover a missed proof by enumerating an ambiguous bucket. Select its
 source in planning, retain the explicit transport in expansion, and test both
 exact hits and misses as the bucket grows.
-Checked view queries also must not enumerate pointer spellings or exact alias
-lists. Use indexed class/storage coordinates and align a selected source with
-the query; other spellings belong behind `SearchPermission`. Grow both affine
-classes and same-block alias stars in tests, including misses and displaced
-accesses beside unrelated views.
+Checked view queries also must not enumerate pointer representations or exact
+alias lists. Use indexed class/storage coordinates and align a selected source
+with the query; other representations belong behind `SearchPermission`. Grow
+both affine classes and same-block alias stars in tests, including misses and
+displaced accesses beside unrelated views.
 Condition queries use indexed truth or singleton shape/variable buckets, never
 scalar-class enumeration. Read-validity sources retain their type and state
 checks; alternate-source search requires planner permission. Kept-frame raw

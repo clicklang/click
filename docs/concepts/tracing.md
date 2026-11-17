@@ -83,8 +83,8 @@ arm that produced that path, with its steps, instead of `(joined)`.
 
 A goal about memory, such as a `transport` target or any goal that reads
 `read<...>(state#N, pointer=value#M)`, depends on what its labels denote.
-Record the legend line defining each label the goal uses: two spellings of one
-C address, such as a pointer local and the `g + 16 bytes` cell it was loaded
+Record the legend line defining each label the goal uses: two written forms of
+one C address, such as a pointer local and the `g + 16 bytes` cell it was loaded
 from, or a read at entry and the same read inside a loop, are often the whole
 explanation.
 
@@ -141,7 +141,7 @@ named `separation::separate_restrict` law; `contains_refl` supplies reflexivity 
 `separate_star` combines separation of several input resources. This route
 does not unfold recursive resources or normalize a footprint. The older
 memory-range route uses `normalize() using` with listed separations and bounds.
-For a region containing several transitions, spell the individual preservation
+For a region containing several transitions, write the individual preservation
 steps and compose their equalities: simple normalization does not walk a region.
 The observation rule covers complete pointer, byte, 32/64-bit integer and abstract
 typed cells, plus explicitly selected fields of named owned resources. For a
@@ -238,19 +238,19 @@ premises; it does not by itself certify that checking is fast.
    refusal can be `failing-tactic`.
 
 Before each run, say in one line which link is new and why it should hold.
-Changing a tactic, its spelling, or its position without changing the chain is
-not a new attempt. Do not edit `solve` or the implicit closer, raise a budget, or change the C
-to get past a link.
+Changing a tactic, its written form, or its position without changing the chain
+is not a new attempt. Do not edit `solve` or the implicit closer, raise a
+budget, or change the C to get past a link.
 
 Before reporting a refused simple link, shrink the link itself, not only the
 program around it. Drop each `using` premise, alias, and earlier `have` it does
-not need while the refusal stays; spell it with the C local the statement uses
+not need while the refusal stays; write it with the C local the statement uses
 rather than a spec alias; and find the nearest link that passes, such as the
 same transport of another field across the same store, noting what differs
-(the field's type and width, its offset, the address spelling). Then compare
-the refusal with the one-line argument and name the step Click did not take:
-which addresses it did not identify, which read it did not carry, which fact
-it did not read.
+(the field's type and width, its offset, how the address is written). Then
+compare the refusal with the one-line argument and name the step Click did not
+take: which addresses it did not identify, which read it did not carry, which
+fact it did not read.
 
 ## Outcomes
 
@@ -262,9 +262,9 @@ The procedure ends at exactly one of these:
 | `false-goal` | `G` does not hold on some execution the contract admits. Give the counterexample: the claim, the contract, or the C is wrong, not the proof. |
 | `unclear-goal` | You cannot say why `G` holds. Give `G`, the premises, and what you tried. |
 | `missing-rule` | The premises and conclusion are expressible and the inference is justified, but no supported primitive connects them. Record the rule schema, the references checked, and the reduced example for design discussion. This is not established by a search miss alone. |
-| `inexpressible-fact` | The argument needs an intermediate fact Click cannot write, such as a missing predicate, quantifier form, memory spelling, or resource form. Report a bug. |
+| `inexpressible-fact` | The argument needs an intermediate fact Click cannot write, such as a missing predicate, quantifier form, memory syntax, or resource form. Report a bug. |
 | `failing-tactic` | Every link is written, and one link is a single simple tactic that is refused although the link is within what that tactic is documented to do. Report a bug. |
-| `unclear-trace` | The failure has no `goal:` line, the goal cannot be read (for example, it is spelled with placeholders such as `<unnamed A>` that no proof can name), or the refusal is not "goal `G` was not proved". Report a bug. |
+| `unclear-trace` | The failure has no `goal:` line, the goal cannot be read (for example, it prints with placeholders such as `<unnamed A>` that no proof can name), or the refusal is not "goal `G` was not proved". Report a bug. |
 
 A smart tactic that does not prove a link is never `failing-tactic`: smart
 tactics may miss even a primitive link; identify its rule and supply its premises. A search miss is never
@@ -459,7 +459,7 @@ most four such walks are listed per step.
 
 When the implicit tail's store search could not prove that disequality, a
 refusal whose goal reads the dropped cell adds a line naming the statement
-and the fact as the search spelled it (in a trace, a `store search:` line
+and the fact as the search stated it (in a trace, a `store search:` line
 under the memory-history check). A proof `if` is recorded at its own line, so
 `--trace-to` a tactic in either arm selects that arm.
 

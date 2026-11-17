@@ -100,7 +100,7 @@ requires aligned(&holder->mu, 8);
 ```
 
 `owns holder->mu` now supports an opaque union field as byte storage; this is
-an extension of an existing resource spelling, not a new resource kind. Its
+an extension of an existing resource form, not a new resource kind. Its
 extent comes from the C layout, including the field's storage padding, so the
 contract does not hard-code the 40-byte size. It does not provide typed union
 copying. `views` never supplies initialization ownership. A local automatic
@@ -153,7 +153,7 @@ The surface status is:
 | Surface | Status in this proposal | What a reader should understand |
 | --- | --- | --- |
 | `pthread_mutex_init(mu, 0)` with `{ state: s }` | Implemented | Initialization makes `s`'s resource assertion the one this mutex protects. |
-| `owns mutex_guard(mu)` in a resource body | Keep the existing spelling | This resource contains ownership of a current acquisition, not merely knowledge that the mutex is locked. |
+| `owns mutex_guard(mu)` in a resource body | Keep the existing syntax | This resource contains ownership of a current acquisition, not merely knowledge that the mutex is locked. |
 | Direct `owns mutex_guard(mu);` clauses | Implemented for preserving helpers | Receives and returns the entry acquisition; all mutex transitions remain prohibited. |
 | Direct named guard clauses, such as `owns g: mutex_guard(mu);` | Implemented for preserving helpers | The function receives and returns the same guard occurrence. |
 | `consumes` and `produces` for guards | Extend existing clause semantics; not supported today | The function can surrender an acquisition or return a newly established one. |
@@ -163,7 +163,7 @@ The surface status is:
 | A new `uses` clause or general effect language | Do not add initially | Use ordinary `owns`, `views`, `consumes`, and `produces` clauses; preserve their distinctions. |
 
 The examples below are proposed contract sketches. They are not passing Click
-fixtures or promises that the current parser accepts every spelling. In
+fixtures or promises that the current parser accepts every form. In
 particular, consuming/producing primitive clauses and protected-state outputs
 still need the transfer rules described below. Preserving named primitive
 binders are implemented as summarized in [Named runtime binders](#named-runtime-binders).

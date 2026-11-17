@@ -21,7 +21,7 @@ the tactics with their classes, then the topics with their titles.
   class (simple, smart, or control) and what a refusal by that class means,
   followed by the reference sections for those forms. `implicit` prints the
   automation section, which describes the implicit tail that ends every
-  script. A removed spelling prints its replacement: `arithmetic`
+  script. A removed name prints its replacement: `arithmetic`
   prints `solve`, `assumption` prints `known`, `execute_until` prints `step_until`, and `auto` and `execute`
   print `implicit`.
 - A topic prints one page. A page is named by its file name, such as

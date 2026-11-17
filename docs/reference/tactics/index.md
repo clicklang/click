@@ -10,7 +10,7 @@ language. A tactic is either **smart**, **simple**, or **control**:
   the elided forms whose search fills one argument a simple form writes:
   `apply(theorem(args))`, `apply(ih(m))`, and a bare `transport(P, Q)`. They
   are the tactics that `click profile` may recommend expanding. The parser
-  refuses the removed spellings `auto()`, `arithmetic()`,
+  refuses the removed forms `auto()`, `arithmetic()`,
   `execute()` and `execute_until` and names each replacement.
 - Simple tactics request one deterministic checked operation without heuristic
   planning or search. They may use indexed ambient context when that context is
@@ -201,7 +201,7 @@ stated disequality of the two index words, compared as `int32`, or as
 `uint64` or `int64` for two 64-bit indices of that signedness such as
 `size_t` ones (see [Verifier design](../../internals/verifier-design.md));
 otherwise it drops the element. When a statement the implicit tail or
-`step_until` runs drops such an element, the tail spells that disequality
+`step_until` runs drops such an element, the tail writes that disequality
 from the two index words, `((m - 1) as int32) != 0`,
 `((n - 1u64) as uint64) != 0u64` or `j != 0u64` say,
 proves it at the statement's pre-state, retains it as a `have`,
@@ -218,7 +218,7 @@ or the Integer fact `m - 1 != 0` where `m - 1` cannot wrap, suffice. Expansion w
 statement's `step()`. A disequality it misses leaves the statement as it
 ran. The path keeps the miss (at most 32 per path): a later refusal whose
 goal reads the dropped element names the statement and the disequality the
-tail spelled, ``statement(3) may have overwritten `q[0]`; it is kept if you
+tail wrote, ``statement(3) may have overwritten `q[0]`; it is kept if you
 state `have … by { ... };` before statement(3)``, and `--trace-proof` marks
 the store that dropped it
 ([`a_store_search_miss_names_the_store_and_the_fact_for_a_heap_read.md`](https://github.com/clicklang/click/blob/master/mdtests/a_store_search_miss_names_the_store_and_the_fact_for_a_heap_read.md),
@@ -263,7 +263,7 @@ The function may be generic, and `bool`-valued with `true`/`false` ends: the
 fact `list::contains(xs, x)` reads as `== true`, and is refuted by
 `have not list::contains(xs, x)`. An end that applies a defined function, as
 `list::contains(Nil, x)`, is followed into that definition (at most 4 deep)
-and unfolded after the fact's own application. A condition spelled other than
+and unfolded after the fact's own application. A condition written other than
 the goal, `v == x` against a postcondition's `result == x`, matches when it
 lowers to the same goal. So `list::contains(Cons(v, Nil), x)` forces `v == x`
 ([`solve_reads_a_condition_out_of_a_generic_bool_definition.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_reads_a_condition_out_of_a_generic_bool_definition.md),
@@ -283,7 +283,7 @@ and
 
 For a signed `int32` bound, `solve` can use an indexed equality of a goal
 operand to a literal even when that call-derived equality has no recorded
-source spelling. It first proves the equality in a checked nested `have`
+Surface form. It first proves the equality in a checked nested `have`
 using the operand as written in the goal, then rewrites and closes the bound.
 False bounds and equalities invalidated by a later store remain refused; see
 [`post_call_constant_equality_proves_a_bound.md`](https://github.com/clicklang/click/blob/master/mdtests/post_call_constant_equality_proves_a_bound.md).
@@ -301,18 +301,18 @@ smart tactic with an exact explicit proof. The simple forms below are public,
 maintained Surface Click, but long `using` blocks are normally expansion output
 rather than a recommended first draft.
 
-When a call's generated pointer has no source struct layout, expansion spells
+When a call's generated pointer has no source struct layout, expansion writes
 an indexed array field as an explicit typed read at its byte address. This
 retains the field offset and element width when reparsed; it grants no read
 authority. Named struct pointers and library model accessors retain their
-ordinary spelling. The Rust
+ordinary form. The Rust
 assignment-operator audit checks this through an erased local array pointer.
 
 For equality of a 32-bit or 64-bit machine integer with a literal, `solve` and
 the implicit closer stop searching when current facts already decide the opposite truth
 value. An inconsistent context remains eligible for contradiction closure.
 The reference-call scaling regression compares valid results with false
-literal results over four sizes; refusal does not spell every old call fact.
+literal results over four sizes; refusal does not print every old call fact.
 
 Smart tactics are deliberately incomplete heuristics. A prompt failure means
 that this search did not find a proof within its budget, not that Click's
@@ -522,12 +522,12 @@ that statement with that diagnostic. A refusal printed as `refused
 by: the implicit closer that proves this statement's requirements` is a smart
 miss. Prove
 the printed `goal:` with `have` before the step, or prove it with
-`step() by { ... }`. When the implicit closer cannot spell or prove an obligation, the
+`step() by { ... }`. When the implicit closer cannot raise or prove an obligation, the
 step is refused at that obligation. Requirement generation does not invoke
 proof search; the driver runs the implicit closer.
 
 An `assert`'s false-path obligation (as a Rust overflow check lowers to) is
-spelled as the asserted condition at the pre-state, less any disjunct an exact
+written as the asserted condition at the pre-state, less any disjunct an exact
 fact refutes.
 
 Click carries no fact by list. Expansion leaves a step unchanged unless the
@@ -578,7 +578,7 @@ binding adds no assumption. Expansion retains the binding unchanged.
 
 ### Execution to function exit
 
-**Form:** none; the implicit tail. The parser refuses the removed spelling
+**Form:** none; the implicit tail. The parser refuses the removed form
 `execute()` and names the implicit tail and `step_until(function.exit)`.
 
 **Core.** A proof that stops at a live frontier runs to function exit on the
@@ -660,7 +660,7 @@ leaves an open claim to the report that names it
 
 `step_until` repeats `step()` up to the target, walking any loop the facts
 decide, and never splits: an undecided branch before the target refuses it, as
-it refuses `step()`. The parser refuses the removed spelling `execute_until`
+it refuses `step()`. The parser refuses the removed form `execute_until`
 and names `step_until`.
 
 **Specialized.** Write it to stop execution at a chosen statement, loop, or read
@@ -751,7 +751,7 @@ one case proves does not survive that rejoin, so it cannot be exported
 **Failure, checking, and tools:**
 
 A non-`if` frontier, overshot arm, unproved interface item, or nondeterministic
-join fails. Click follows the spelled arms and interface; expansion recurses
+join fails. Click follows the written arms and interface; expansion recurses
 into smart descendants, and profiling classifies those descendants. Exported
 facts retain outer proof-binding names for later `at(...)` rewrites, and reads
 through local pointers keep their declared element types.
@@ -944,7 +944,7 @@ produced instances.
   result is unused`. Use `step(callee, { ... })` without it.
 - An uncontracted `static inline` helper takes no map. Its body runs at the
   call site; use `step()`.
-- The retired spellings `step({ ... })` and `step(callee(args), { ... })`
+- The retired forms `step({ ... })` and `step(callee(args), { ... })`
   are refused with this form
   ([`a_call_step_names_its_callee_not_its_call.md`](https://github.com/clicklang/click/blob/master/mdtests/a_call_step_names_its_callee_not_its_call.md)).
 
@@ -970,7 +970,7 @@ binders in one call step. Select an established named contract for the current C
 call and map its resource binders. The same `let { result: value, output:
 resource }` pattern binds its C value and produced resources.
 
-The two spellings in **Form** are the same form. A handle is a named resource
+The two syntaxes in **Form** are the same form. A handle is a named resource
 clause (`owns model: Ledger();`, `consumes input: Dirty(p);`) of the
 contract.
 
@@ -1028,7 +1028,7 @@ the step then runs with it stated. The body is one tactic call, such as
 **Failure, checking, and tools:**
 
 Refused when the operation generates no obligation (superfluous) or more than
-one; the second refusal spells every open obligation as a `requires` entry to
+one; the second refusal prints every open obligation as a `requires` entry to
 copy. The default `step()` already invokes the implicit closer for open obligations, so
 write `step()` rather than a `by` that only repeats it. Expansion keeps the
 `by` and prints the body's checked steps. The form is checked in a claim's
@@ -1079,7 +1079,7 @@ must establish `P` through its direct `and`/`or` structure and equality-backed
 fact lookup. It selects stated disjunctions indexed by the values or addresses
 `P` names, without scanning unrelated facts, unfolding functions, or searching
 for theorems. It checks every arm and keeps their assumptions local. For example,
-`(A and X) or (B and Y)` supplies `A or B` without spelling `X` and `Y`.
+`(A and X) or (B and Y)` supplies `A or B` without writing `X` and `Y`.
 See [`extract_disjunction_projection.md`](https://github.com/clicklang/click/blob/master/mdtests/extract_disjunction_projection.md)
 and [`loop_exit_disjunction_projection.md`](https://github.com/clicklang/click/blob/master/mdtests/loop_exit_disjunction_projection.md).
 
@@ -1087,7 +1087,7 @@ A simple tactic that adds a fact (`extract`, `instantiate ... using`,
 `apply ... using`, `transport ... using`, and `obtain`) also closes a
 proposition goal that it adds, when it is the last written step or only
 `known`, `solve`, or `normalize` follows it. An added order fact closes
-the goal under either spelling of the same claim: `0 <= e` closes the goal
+the goal under either form of the same claim: `0 <= e` closes the goal
 `e >= 0`, and `a < b` closes `b > a`, for machine and `Integer` operands
 alike. A written theorem application also closes the mirrored goal when
 its checked conclusion was already stated in the context. When other written
@@ -1178,7 +1178,7 @@ field the current arm's pattern bound, of the datatype being inducted on.
 Every other position may name any well-typed term, which is how a proof whose
 recursive case changes another parameter — an accumulator, or a context frame
 that grows the focused subtree — states its hypothesis. Passing only the
-inducted argument remains the spelling for "every other parameter unchanged",
+inducted argument remains the form for "every other parameter unchanged",
 so `ih(tail)` and a complete list that repeats the other parameters are the
 same instance. Each instance carries the theorem's `requires` clauses
 substituted at the arguments given; a `using` block, or the premises the bare
@@ -1202,7 +1202,7 @@ nonnegative, strict-decrease, and substituted-requirement facts.
 
 `enumerate` is how an explicit proof closes a finite case analysis over a
 constant-bounded universal, such as a `sorted(p, 3)` postcondition: the
-expanded proof spells one `have` per non-vacuous instance (typically closed by
+expanded proof writes one `have` per non-vacuous instance (typically closed by
 `intro`, `instantiate ... using`, an explicit transport, and `known`),
 and `enumerate()` checks exactly those instances against the goal's own
 guard-derived ranges. A goal stated as a predicate call is unfolded to the
@@ -1214,7 +1214,7 @@ retained certificate checker use the same lazy range order and still require
 every in-range instance for success. This keeps refusal of a false frame over
 a large constant range from materializing every element. Click never
 instantiates by search: an in-range instance that is neither vacuous nor
-spelled fails.
+written fails.
 
 Proof-level `if` and `cases` answer different questions. `if P` is an
 excluded-middle split: the else case assumes `not P`, so it cannot eliminate a
@@ -1327,7 +1327,7 @@ the goal variables are tried before following relational bounds, so earlier
 postconditions on those variables do not exhaust the arithmetic premise limit.
 
 An equality of two `uint32`, `int64` or `uint64` values closes from the two
-opposite order facts on its operands, `a <= b` and `b <= a` in any spelling
+opposite order facts on its operands, `a <= b` and `b <= a` in any form
 (`a >= b`, `not (a < b)`), looked up exactly and cited by one `solve()
 using` step
 ([`solve_closes_an_equality_from_opposite_bounds_at_every_width.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_closes_an_equality_from_opposite_bounds_at_every_width.md)).
@@ -1347,7 +1347,7 @@ writes `intro(); contradiction(A);`
 ([`an_antecedent_normalization_refutes_closes_its_implication.md`](https://github.com/clicklang/click/blob/master/mdtests/an_antecedent_normalization_refutes_closes_its_implication.md)).
 An implication whose antecedent, or one conjunct of an `a and b` antecedent,
 has its opposite among the facts closes by `contradiction` once `solve`
-introduces it, whichever spelling the facts state the opposite in (`x > 100`
+introduces it, whichever form the facts state the opposite in (`x > 100`
 for `x <= 100` false), so `a and b implies c` closes where the curried
 `a implies b implies c` does
 ([`solve_refutes_a_conjunct_of_an_antecedent.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_refutes_a_conjunct_of_an_antecedent.md),
@@ -1356,7 +1356,7 @@ for `x <= 100` false), so `a and b implies c` closes where the curried
 A goal that is one conjunct of an implication's consequent, `c == 2` from
 `a != 0` and `a != 0 implies (b == 1 and c == 2)`, is closed once the
 antecedent is an available fact: the closer extracts the whole consequent,
-spelled as the implication is written, and the goal is then a proper
+as the implication writes it, and the goal is then a proper
 conjunct; expansion writes the `extract`
 ([`solve_closes_a_conjunct_of_a_discharged_consequent.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_closes_a_conjunct_of_a_discharged_consequent.md)).
 
@@ -1555,7 +1555,7 @@ the rule gap, and profiling reports the restricted site.
 
 **Form:** `known()`
 
-The former spelling `assumption()` is refused with a diagnostic naming
+The former form `assumption()` is refused with a diagnostic naming
 `known()`. It reuses available facts and also checks the computational leaves
 described below.
 
@@ -1573,7 +1573,7 @@ available when one of these holds:
 
 - It is a fact, or a leaf conjunct of a fact. An implication or quantified
   goal must be such a fact up to renaming of its bound variables.
-- It is another spelling of an available order claim, in every order family
+- It is another form of an available order claim, in every order family
   (C machine integers and `Integer`): `0 <= x` for `x >= 0`, and `not(y <= x)`,
   `y > x` and `x < y` for one another. `x != y`, `not(x == y)`, and
   `y != x` are one claim.
@@ -1676,7 +1676,7 @@ simple leaf.
 **Form:** `extract(P)`
 
 **Expansion output.** `click expand` writes it; by hand, write it to state one
-conjunct or consequent of a fact before a step that needs it spelled. It adds
+conjunct or consequent of a fact before a step that needs it stated. It adds
 `P` as a fact and closes the goal when the goal is then a fact. Written steps
 after a closing `extract` are still checked, and they see all of `P`
 ([`extract_before_more_steps_keeps_the_whole_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/extract_before_more_steps_keeps_the_whole_fact.md)).
@@ -1719,7 +1719,7 @@ the current state exactly as `have P by { extract(P); }` does.
   ([`extract_takes_an_implication_consequent_whole.md`](https://github.com/clicklang/click/blob/master/mdtests/extract_takes_an_implication_consequent_whole.md)).
 - A consequent whose antecedent is not available, including a conjunction
   antecedent that is not itself a fact: prove it with `have` first.
-- A consequent written in another spelling than the implication's: extract
+- A consequent written in another form than the implication's: extract
   it as written, then close with `known()`.
 - A consequence an arm establishes only by arithmetic or evaluation (`x != 3`
   or `x < 3` from `x == 1 or x == 2`): `cases { x == 1 => { ... } x == 2 =>
@@ -1858,7 +1858,7 @@ cited premise is accepted:
 - Each condition in the goal, at any depth outside binders, including the goal
   itself, a conditional-expression guard, and a condition inside a
   pure-function argument, becomes `true` or `false` when a cited premise
-  states it in any spelling: as written, at the other polarity (`x >= y` is
+  states it in any form: as written, at the other polarity (`x >= y` is
   `false` for a cited `x < y`), or mirrored (`y > x` for a cited `x < y`,
   `y != x` for a cited `x != y`), in every family (`int32`, the 64-bit
   machine types, and `Integer`).
@@ -1915,7 +1915,7 @@ cited premise is accepted:
   `x * 2 < 15` from `x == 7`: `rewrite(x, 7)` then `normalize()`
   ([`normalize_using_decides_conditions_without_substituting.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_decides_conditions_without_substituting.md)).
 - A goal between two symbolic terms that follows from a cited premise without
-  being one of its spellings, such as `x <= y` from `x < y`:
+  being one of its forms, such as `x <= y` from `x < y`:
   `solve() using`.
 - An unlisted ambient order condition, or an ambient `Integer` or algebraic
   equality: cite it.
@@ -1966,7 +1966,7 @@ follows the selected expression and premises.
 
 ### Arithmetic search
 
-**Form:** `solve() using {}`. The parser refuses the removed spelling
+**Form:** `solve() using {}`. The parser refuses the removed form
 `arithmetic()` and names `solve() using {}`.
 
 **Specialized.** Write it only for a bound that follows from the goal's own
@@ -1978,7 +1978,7 @@ plans expand into ordinary `have` steps, normalization, and Integer law
 applications, with explicit operation domains and observation identities.
 
 The family is decided by the goal's own checked terms, never guessed from its
-spelling, and the two never coerce into each other. For `int32`, affine terms
+written form, and the two never coerce into each other. For `int32`, affine terms
 plus bounded products and constant remainder, shift, and bit-mask terms are
 supported. A `uint32` order goal is checked in the same family from its
 operands' signed intervals, so explicit signed bounds `0 <= n` and
@@ -2006,7 +2006,7 @@ plan. All supported arithmetic families expand to ordinary proof steps.
 
 ### Arithmetic with selected premises
 
-**Form:** `solve() using { P; ... }`. The parser refuses the removed spelling
+**Form:** `solve() using { P; ... }`. The parser refuses the removed form
 `arithmetic() using { P; ... }` and names `solve() using { P; ... }`.
 
 **Specialized.** Write it when `solve` misses an integer bound or equality,
@@ -2036,7 +2036,7 @@ listed pointer equality, including `p + 1 == arr + (i + 1)` from `p == arr + i`
 and `i < n`.
 
 Signed index sums are distributed only when the listed scalar bounds exclude
-overflow. A goal spelled `>` or `>=` is read from the other side, so a bound
+overflow. A goal written with `>` or `>=` is read from the other side, so a bound
 over a machine operation is planned in either orientation. A listed non-strict
 bound and a disequality on the same two sides give the strict bound, which the
 certificate records as `less_than_from_not_equal`.
@@ -2053,7 +2053,7 @@ closes; the certificate adds up the cited premises and the negated goal to a
 constant contradiction.
 When that refutation needs a value's type range, as `k < x` with `x == 0u64`
 needs `0 <= to_integer(k)`, it retries with the type range of each machine
-value the goal and listed premises observe, spelled from the written operand,
+value the goal and listed premises observe, stated over the written operand,
 and the certificate cites each one it uses as a `type_range` bound. A `false`
 goal is proved the same way, from the listed premises alone
 ([`arithmetic_using_reads_unsigned_type_ranges.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_using_reads_unsigned_type_ranges.md));
@@ -2119,7 +2119,7 @@ the two `known()` steps.
 After that, a pointer disequality between two element addresses of one
 base, `&q[j] != &q[0]`, whose indices have one width and format (`int32`, or
 64-bit of one signedness), is reduced to its indices: `solve` states
-`have j != 0` (spelled from the index words, as the store search spells its
+`have j != 0` (written from the index words, as the store search writes its
 fact: `((m - 1) as int32) != 0`, `j != 0u64`), proves it by `solve`, and
 closes the goal with
 `apply(click::separation::distinct_elements(q, j, 0)) using { j != 0; }`.
@@ -2352,7 +2352,7 @@ fact. Write `rewrite(x, y)`; the old `rewrite(x == y)` form is refused.
   first.
 - A goal without an occurrence of `L`, including a different association or
   a constant that lowering folded away: rewrite by the equality as the goal
-  spells it, or in the other direction.
+  writes it, or in the other direction.
 - A quantifier that binds a variable of `P`: that subtree is left unchanged,
   and if nothing else changes the step is refused; `intro` first.
 - An `Integer` equality under an internal fold or match binder, and an
@@ -2481,7 +2481,7 @@ with constant `lo` and `hi` is one), when:
 - `B` is an implication, or a conjunction of implications, and each one's
   antecedent bounds every binder it mentions to constants through its own
   conjuncts: `0 <= k`, `k < 4`, `k <= 1`, and the mirrored and negated
-  spellings (`k >= 0`, `3 > k`, `not (k >= 3)`); a `uint64` binder with no
+  forms (`k >= 0`, `3 > k`, `not (k >= 3)`); a `uint64` binder with no
   lower bound starts at zero. The range of each binder is the hull over the
   implications that mention it.
 - Each instance, at every point of that range in order, is discharged
@@ -2503,7 +2503,7 @@ with constant `lo` and `hi` is one), when:
 - An antecedent conjunct that does not fold to a constant, such as `n > 0`
   beside the bounds: each instance must then be held whole, as written; or
   `intro` and prove the body.
-- An instance held only in another spelling (`0 == f(0)` for `f(0) == 0`) or
+- An instance held only in another form (`0 == f(0)` for `f(0) == 0`) or
   only derivable from facts: state it first with `have`.
 - An instance that is a disjunction or is itself quantified, from an `or`
   between guarded bodies or a `forall` after an implication: hold each such
@@ -2530,14 +2530,14 @@ one context-free normalization.
 
 **Accepts** `P` when both halves hold:
 
-- `P` is held: it is an available fact in any of its spellings (written,
+- `P` is held: it is an available fact in any of its forms (written,
   mirrored, such as `0 > x` for `x < 0` or `3 == x` for `x == 3`, or at the
   other polarity), possibly as a conjunct of a held conjunction; or `P` is a
   conjunction whose conjuncts are each available.
 - Its negation is held: `not P` is an available fact; or `P` is a comparison
   and the opposite comparison of the same operands is (`x != 3` for
   `x == 3`, `x >= 0` for `x < 0`, `x <= 5` for `x > 5`); or one of the fixed
-  equivalent spellings of its negation is, including the mirrored one
+  equivalent forms of its negation is, including the mirrored one
   (`0 <= x` for `x < 0`, `5 >= x` for `x > 5`, `3 != x` for `x == 3`), in
   every family: `int32`, the 64-bit machine types such as `x < 32u64` beside
   `x >= 32u64`, and `Integer`; or `not P` evaluates to true by
@@ -2590,7 +2590,7 @@ availability lookup per guard conjunct; nothing is unfolded or searched.
   quantifier's guard is `lo <= value and value < hi`). A guard conjunct that
   evaluates to true needs nothing. Every other conjunct is available through
   the shared equality-backed lookup: as written, in an equivalent operand
-  spelling (`x >= 0` for `0 <= x`, `n > x` for `x < n`), or through an
+  form (`x >= 0` for `0 <= x`, `n > x` for `x < n`), or through an
   equality fact (`0 <= y` and `x == y` give `0 <= x`).
 - The conclusion is the rest of the body, which may itself be a universal,
   so a nested `forall` is instantiated one binder per step. An unguarded `F`
@@ -2603,7 +2603,7 @@ availability lookup per guard conjunct; nothing is unfolded or searched.
   those facts with `instantiate(F, value) using { 1 <= x; ... }`, or prove
   the guard first with `have`.
 - An `int32` literal for a `uint64` binder (`3`): write `3u64`.
-- `F` not available, or available only in a different spelling of its body:
+- `F` not available, or available only in a different form of its body:
   state it first with `have`.
 
 **Failure, checking, and tools:**
@@ -2631,9 +2631,9 @@ the conclusion.
 with the guards discharged differently:
 
 - Each listed `P` is an available fact, as written, in an equivalent operand
-  spelling, or as a conjunct of a held conjunction.
+  form, or as a conjunct of a held conjunction.
 - Each guard conjunct evaluates to true, equals a listed premise or a
-  conjunct of one, is a polarity or operand respelling of one, or is derived
+  conjunct of one, is a polarity or operand variant of one, or is derived
   from the listed premises alone by the checker's order and equality rules:
   `1 <= x` gives `0 <= x`; `x < y` and `y <= n` give `x < n`; `x == y` and
   `0 <= y` give `0 <= x`.
@@ -2702,7 +2702,7 @@ guarantees.
 types, when:
 
 - Each listed `P` is an available fact, as written, in an equivalent operand
-  spelling (`y > x` for `x < y`, `0 == f(x)` for `f(x) == 0`), or as a
+  form (`y > x` for `x < y`, `0 == f(x)` for `f(x) == 0`), or as a
   conjunct of a held conjunction.
 - Each `requires` of the theorem, with the arguments substituted
   simultaneously, either evaluates to true or matches a listed premise: as
@@ -2813,7 +2813,7 @@ the existing `induct(hi)`.
 **Accepts** an `Integer`-valued pure function whose body is exactly
 `(lo..hi).fold(initial, |acc, k| { ... })`, a call of it, and a `using` list
 whose every premise is an available fact (as written or in an equivalent
-operand spelling). The listed premises select the law, empty first:
+operand form). The listed premises select the law, empty first:
 
 - Empty range: listed `hi <= lo` (or `lo >= hi`), at the call's arguments,
   gives `f(args) == initial`.
@@ -2855,7 +2855,7 @@ searched. A list that selects neither law is refused with what each form still
 wants ("The empty-range equation needs `hi <= lo`; the append-last-cell
 equation needs `to_integer(hi - 1) < 2147483647`"). A guard over machine `+`,
 `-` or `*` is named by its observation, which lowers to the native guard;
-the spelling `hi - 1 < 2147483647` is exact Integer arithmetic, a different
+the form `hi - 1 < 2147483647` is exact Integer arithmetic, a different
 proposition. Expansion is unchanged, and profiling charges one law instance.
 
 **Checked examples:** [`unfold_fold_function_empty_range.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_fold_function_empty_range.md), [`unfold_fold_function_appends_last_cell.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_fold_function_appends_last_cell.md), [`fold_function_is_nonnegative_by_induction.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_function_is_nonnegative_by_induction.md), [`unfold_fold_function_requires_a_range_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_fold_function_requires_a_range_guard.md), [`peel_at_a_constant_range_gives_the_defining_equation.md`](https://github.com/clicklang/click/blob/master/mdtests/peel_at_a_constant_range_gives_the_defining_equation.md), [`peel_requires_its_using_list.md`](https://github.com/clicklang/click/blob/master/mdtests/peel_requires_its_using_list.md)
@@ -3027,7 +3027,7 @@ the arm certificates.
 `m`, and `0 <= m` for a signed measure, then instantiate the local induction
 hypothesis. None is proved: state a missing one first with `have`. Under a
 structural `induct` the obligations are instead the theorem's requirements at
-the spelled parameter list, and the descent is the inducted argument naming a
+the written parameter list, and the descent is the inducted argument naming a
 field of the current arm.
 
 **Failure, checking, and tools:**
@@ -3052,13 +3052,13 @@ obligations, including nonnegativity for a signed measure.
 type (any expression, such as `n - 1` or `n - 1u64`), when:
 
 - Every listed `P` is an available fact, read as `using` lists read premises:
-  exactly, under another spelling of the same order claim (`0 <= m` for
+  exactly, under another form of the same order claim (`0 <= m` for
   `m >= 0`, `n > m` for `m < n`), or true without facts. Listing a range a
   clause stated also cites its two extent halves where they are available.
   Extra or repeated premises are allowed.
 - Every guard of the hypothesis at `m`, split into its `and` conjuncts, is
   true by context-free evaluation or is one listed premise under one of those
-  spellings. The guards are `m >= 0` (signed only), `m < n`, each requirement
+  forms. The guards are `m >= 0` (signed only), `m < n`, each requirement
   at `m`, and the extent halves of every range a requirement names at `m`.
 
 It adds the theorem's goal at `m` as a fact and closes the current goal when
@@ -3154,7 +3154,7 @@ connected component fails promptly
 ([`solve_rewrites_a_constructor_term_to_its_model.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_rewrites_a_constructor_term_to_its_model.md),
 [`solve_refuses_a_constructor_rewrite_that_does_not_close.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_refuses_a_constructor_rewrite_that_does_not_close.md)).
 
-The search cites only equalities with a source spelling at that point; a fact
+The search cites only equalities that raise at that point; a fact
 from an earlier `have` or a proof `if` condition inside a pure theorem has none
 and is not offered. In a pure theorem, an omitted proof of `ensures P` is the
 same `solve`. `have name: P` also names the fact: until the end of
@@ -3225,7 +3225,7 @@ Write those tactics inside the arms instead
 
 **Failure, checking, and tools:**
 
-Either unfinished arm fails. Click checks both spelled branches; expansion
+Either unfinished arm fails. Click checks both written branches; expansion
 recurses into smart descendants, and profiling reports them.
 
 **Checked examples:** [`proof_if_cases.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_if_cases.md), [`proof_if_arms_rejoin.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_if_arms_rejoin.md), [`proof_if_arms_rejoin_after_c_steps.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_if_arms_rejoin_after_c_steps.md), [`proof_if_ensuring_rejoins.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_if_ensuring_rejoins.md), [`proof_if_ensuring_named_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_if_ensuring_named_resource.md), [`proof_if_ensuring_named_resource_needs_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_if_ensuring_named_resource_needs_fact.md)
@@ -3370,12 +3370,12 @@ available fact up to the binders' names, held alone or as a leaf conjunct of a
 fact (`requires n > 0 and exists (k: int32) { k < n };`), when:
 
 - The fact is a requirement, a `have` conclusion, or another opened body, and
-  `P` is spelled as the fact states it, with each binder type the same.
+  `P` is written as the fact states it, with each binder type the same.
 - Binder types are C integers, pointers, `Integer`, or algebraic types.
 - Fewer names than the fact's binders open the outer ones, when `P` is written
   as the remaining existential: `obtain (a: int32) { exists (y: int32) { a < y } }`
   opens `exists (x: int32, y: int32) { x < y }` one binder at a time.
-- A `(0..n).any(|k| { B })` fact opens with its bounds spelled in the body:
+- A `(0..n).any(|k| { B })` fact opens with its bounds written in the body:
   `obtain (m: int32) { 0 <= m and m < n and B' }`, `B'` being `B` at `m`.
 - No name is a parameter, `result`, a local, or an earlier `obtain` name.
 
@@ -3386,7 +3386,7 @@ fact.
 
 - An existential held only under a disjunction or implication: `cases` or
   `extract` it first.
-- A body spelled differently from the fact (`n > m` for `m < n`), or a
+- A body written differently from the fact (`n > m` for `m < n`), or a
   different binder type: write it as the fact states it.
 - More names than the fact's binders: name only those it has.
 
@@ -3512,7 +3512,7 @@ pure theorem too, where the listed premises are all there is to read.
 **Accepts**, in a C proof or a pure theorem, when:
 
 - Every listed `R` is an available fact, read as every `using` list reads
-  premises: exactly, under another spelling of the same order claim, or true
+  premises: exactly, under another form of the same order claim, or true
   without facts. A quantified premise may name its own binder: a call's
   postcondition held under the binder its lowering chose is cited by a written
   form with another, as in `apply using`. Listing a stated range also cites
@@ -3608,15 +3608,15 @@ while `transport(at(statement(0).entry, *q == 7 and (*p == 8 and *r == 8)), *r =
 keeps two in a different order. The target may regroup or repeat selected
 leaves in a conjunction tree.
 The driver indexes the written source's `at(...)` comparison leaves once and
-selects each target leaf by exact spelling. It emits a `have` for each selected
+selects each target leaf by exact source text. It emits a `have` for each selected
 historical leaf using `known()`, followed by its ordinary preservation/rewrite
 proof, and combines the results with `both` in the target's written shape.
 Discarded conjuncts need not remain true; only the selected reads need footprint
 separations. The supplied separations are indexed once and must all be used and
-checked. Whole-tree and subtree `at(...)` wrappers are supported. An exact
-leaf spelling selects one point; this route does not retry other points
+checked. Whole-tree and subtree `at(...)` wrappers are supported. The exact
+source text of a leaf selects one point; this route does not retry other points
 or discover additional evidence. Non-comparison leaves and operand-level
-`at(...)` spellings remain outside this selection route.
+`at(...)` forms remain outside this selection route.
 See `mdtests/conjunction_projection_transport_expansion.md` and
 `mdtests/conjunction_selection_transport_expansion.md`.
 
@@ -3694,7 +3694,7 @@ names the order fact it needs, as the two segments were written. A refused
 frame prints the source and target, as written and as checked, and the cell
 walks it performed; a refused fold frame names the step it could not place,
 or why the function has no checked read summary; a refused quantified frame
-prints the leaf it had and the leaf it wanted. A pure-theorem refusal spells
+prints the leaf it had and the leaf it wanted. A pure-theorem refusal prints
 its propositions with the theorem's parameter names and the names the script
 introduced.
 
@@ -3753,7 +3753,7 @@ whose count is zero. `let { slot: name, ... } = unfold(resource)` names the
 opened children and C-typed fields; it is the one binding form.
 
 On a declared resource the slots are the body's `let ... where` witnesses, bound
-to the values the body binds them to, so a later `fold` spells a body fact over
+to the values the body binds them to, so a later `fold` writes a body fact over
 a witness with its name
 ([`unfold_names_a_witness_for_a_fold_body_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_names_a_witness_for_a_fold_body_fact.md));
 this form needs an execution frontier before function exit.
@@ -3855,11 +3855,12 @@ Every body fact is an obligation, including exactly available and trivially
 true facts. The driver uses its written proof or ordinary `solve()`, and
 expansion retains that proof. A failed proof names the body fact.
 
-A body fact over a witness the proof cannot name has no requirement spelling, so
-the fold is refused at it; the fold never searches. A missing body member, false
-body fact, or undecided guard fails. A slot is taken by name only for the arm
-the model selects, only from an owned, folded resource of the slot's family, and
-never from the fold's own result; otherwise the fold names the missing child.
+A body fact over a witness the proof cannot name cannot be written as a
+requirement, so the fold is refused at it; the fold never searches. A missing
+body member, false body fact, or undecided guard fails. A slot is taken by name
+only for the arm the model selects, only from an owned, folded resource of the
+slot's family, and never from the fold's own result; otherwise the fold names
+the missing child.
 
 Click folds exactly the named resource, completing the child map before the
 kernel checks it; expansion keeps a bare fold unless the implicit closer proved
@@ -3882,7 +3883,7 @@ The body is one tactic call, such as `solve();`, or a block.
 **Failure, checking, and tools:**
 
 Refused when the selected body has no fact obligation (superfluous) or more than
-one; the second refusal spells each as a `requires` entry to copy. `fold(...) by
+one; the second refusal prints each as a `requires` entry to copy. `fold(...) by
 auto` is a syntax error: it means `fold(...)`. Expansion keeps the `by` and
 prints the body's checked steps.
 
@@ -3931,7 +3932,7 @@ It adds the token; nothing is consumed.
 - A composite resource (one with a body): `fold` it from its body.
 - A member of an `authorized` family: `fold` it with the family's authority.
 - A token whose arguments are equal to a clause's only by arithmetic, such as
-  `tok(1 + n)` for `constructs tok(n + 1);`: spell the arguments as the clause
+  `tok(1 + n)` for `constructs tok(n + 1);`: write the arguments as the clause
   does.
 - A token no `constructs` clause names: add the clause to the contract.
 
@@ -3961,8 +3962,8 @@ one element of the one held iterated ownership fact whose elements live at
 - The range is the clause's element at some index `i`: for
   `owns data[k..k + 1]` write `data[i..i + 1]`; for an offset clause
   `data[k + 1..k + 2]` write `data[i + 1..i + 2]`; for a stride `s > 1`
-  write `data[s * i + a..s * i + b]`, with the offset in any spelling of the
-  same affine form (`i * s`, `s * i`, or `i + i` for `s = 2`). `i` may be any
+  write `data[s * i + a..s * i + b]`, with the offset in any arrangement of
+  the same affine form (`i * s`, `s * i`, or `i + i` for `s = 2`). `i` may be any
   `int32` term, constants included.
 - `lo <= i` and `i < hi` are settled by the kernel's condition decision from
   current facts: stated bounds, equalities (`j == index`), and chains of
@@ -4004,7 +4005,7 @@ taken-out element back into its iterated ownership fact. Its guard must be known
 true.
 
 **Accepts**, at a C function's execution frontier before exit, a range that is
-one element of the one held iterated ownership fact at `base`, spelled as for
+one element of the one held iterated ownership fact at `base`, written as for
 `take`, when:
 
 - Its index is settled equal to an index taken out of the fact, by `take` or
@@ -4020,7 +4021,7 @@ Only the base expression selects an earlier state. Bounds outside that selector
 refer to the current state, and guard checking and ownership transfer occur in
 the current state. This selects the recorded base directly when a fresh read
 of a descriptor field does not find its iterated ownership fact; it does not
-search for equivalent pointer spellings.
+search for equivalent pointer forms.
 
 **Outside it**, with what to write instead:
 

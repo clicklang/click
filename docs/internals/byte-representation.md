@@ -67,7 +67,7 @@ things stay separate:
 After the external `memcpy` contract havocs the destination range, the kernel
 plants each source cell whose complete representation lies in the copied
 range at the mapped destination offset. The effect is attached to the exact
-standard-library declaration, never to the name: a user function spelled
+standard-library declaration, never to the name: a user function named
 `memcpy` with a different declaration keeps only its plain external contract
 (`is_recognized_representation_copy_block` in `src/surface/verification.rs`).
 The transfer is `transfer_representation_copy_cells` in

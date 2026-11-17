@@ -354,15 +354,15 @@ requires separate(memory(dst[0..n]), memory(src[0..n]));
 This is intentionally C-like. C functions can be called with aliased pointers
 unless their contract rules that out.
 
-Ownership is located by the address it names, not by the spelling that
-introduced it. A memory resource is held at a pointer, and two pointers an
+Ownership is located by the address it names, not by the written form
+that introduced it. A memory resource is held at a pointer, and two pointers an
 *exact* equality proves equal are one address, so where a proof has introduced
 ownership through a name the C program does not use — the pointer payload of a
 matched resource arm is the case that matters, since it is a fresh symbolic
 pointer at any frontier — the arm's clauses are instantiated at the equal
 pointer instead. The read, the write, the cell's load identity, the child
 resources' arguments, and the body a later `fold` requires then all name the
-one address under the program's own spelling. Only an assumed pointer equality
+one address as the program writes it. Only an assumed pointer equality
 between two blocks does this, read from the index those facts are filed in: a
 disequality or a disjunction is not an alias, an equality inside one block is a
 `PointerOffsetEqual` that cannot exchange a block at all, and the exchange
@@ -385,7 +385,7 @@ requires viewable((p + 1)[0..n - 1]);
 
 Segment forms are half-open `int32` element ranges. For `int32 p[]`,
 `viewable(p[0..n])` means cells `p[0]` through `p[n - 1]` are available for
-four-byte `int32` access. For `uint8 p[]`, the same spelling covers `n`
+four-byte `int32` access. For `uint8 p[]`, the same form covers `n`
 one-byte elements.
 
 Native `uint64` element ranges preserve their full counts.
@@ -493,7 +493,7 @@ load is still rejected as use-after-free.
 
 Caller-owned ranges retained across a checked call use the shared address-class
 owner selector. A transitive equality between native model pointers can select
-a retained field even when the pointer spellings have different symbolic
+a retained field even when the pointer representations have different symbolic
 blocks. Coverage still checks the complete byte extent; borrowed views do not
 become owned frames, and a context without the alias has no lookup support.
 Recorded call states can outlive the equality-input lineage that first

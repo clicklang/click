@@ -140,7 +140,7 @@ effect of an opaque call all obey the same rule.
 A contract cannot own and view the same memory. Click refuses such a contract
 when the function is entered and again when a call to it is planned, naming the
 clauses that overlap. Reading through a second pointer needs no second clause:
-ownership already authorizes the read, however the address is spelled.
+ownership already authorizes the read, however the address is written.
 
 Borrowing is partial. `owns a[0..8]` can supply a helper's `views a[2..4]`, and
 the caller keeps `a[0..2]` and `a[4..8]` writable for the call; the lent middle
@@ -216,7 +216,7 @@ the state at that call's entry.
 Public postconditions remain usable when a call result is assigned to a C
 local and that local is passed to later verified calls. Click can compose the
 result equality with those later calls' postconditions, including across
-explicit `at(...)` points. Expansion spells the chain with source C
+explicit `at(...)` points. Expansion writes the chain with source C
 locals and fields; symbolic call identities, havoc markers, and other
 execution-only facts remain kernel details rather than Surface Click premises.
 
@@ -298,7 +298,7 @@ footprint the callee's clauses denote, and what the call returns. Where a
 proof binds the callee's instance binders, by a call map or by a named
 contract's proof arguments, one kernel check binds them: an instance the
 caller does not own, or one instance supplying two binders, is refused the
-same way in either spelling.
+same way in either form.
 
 A held instance supplies a required one when their arguments are proved
 equal. A pointer argument of a declared resource is compared by address and
@@ -322,7 +322,7 @@ used as a conservative write footprint.
 Loads outside that footprint are preserved across the opaque call. This
 includes adjacent struct fields and composes across several calls, so callers
 do not need to save and restore unchanged metadata merely to give it a stable
-proof spelling. Expansion exposes only ordinary source-level premises such as
+name in the proof. Expansion exposes only ordinary source-level premises such as
 the relevant `viewable(...)` range; call-havoc identities remain internal.
 Preserving a dependent load such as `owner->data[i]` additionally requires the
 address inputs (`owner->data` and `i`) and the target range to remain stable.
@@ -1001,7 +1001,7 @@ guard (for example, `node != 0` or the equivalent nonnull arm of
 ordinary contract proof checks resource transfer,
 so the traversal may consume and deallocate nodes after descending.
 
-A child named through a `let` witness has no C spelling, so the checker
+A child named through a `let` witness has no C name, so the checker
 cannot compare it with the call's argument syntactically. It instead
 instantiates the exact definition over a symbolic entry state: the guard and
 the witness's `where` facts are assumed, the call's argument is evaluated in
@@ -1582,10 +1582,10 @@ regressions are `mdtests/fold_pointer_argument_body_fact.md` with its negative
 statable in the body.
 
 A checked pointer equality also lets a fold use an available body fact under
-an equal pointer spelling. This includes C pointers represented by a symbolic
+an equal pointer form. This includes C pointers represented by a symbolic
 base plus a scaled offset, both in pointer comparisons and inside pure-function
 arguments. The checker looks up exact aliases only for pointers in the requested
-fact, substitutes one spelling, and still requires exact evidence for the
+fact, substitutes one alias, and still requires exact evidence for the
 result. It neither derives a missing nonnull fact nor grants ownership through
 an equality. Null itself is not used to enumerate unrelated empty links.
 
@@ -1614,7 +1614,7 @@ its arguments. A binding is a proof name: at an arbitrary frontier it is a
 fresh symbolic pointer, and no C statement is written through it. Its clauses
 are instantiated at the binding itself, so the cells it owns, the facts it
 states and its child resources' arguments are filed under the binding's own
-value, whatever equalities happen to be known. An access the program spells
+value, whatever equalities happen to be known. An access the program writes
 another way reaches them through the equality instead: memory resolution places
 an address in the owning block when the graph knows the two name one
 coordinate, and store separation looks an owned member up under every base that
@@ -1640,7 +1640,7 @@ a store to the field still blocks that transport
 (`mdtests/a_store_to_a_retained_child_read_is_not_framed.md`).
 
 Neither route renames a value, so lowering a clause gives the same term with or
-without the equality, and every fact it produces is spellable from source. Only
+without the equality, and every fact it produces raises. Only
 recorded equalities propose a base, and the access is proved equal before it is
 used, so a disequality, a disjunction, or an unproved equality changes nothing
 (`mdtests/binding_cell_read_rejects_an_unproved_equality.md`), and a read at an

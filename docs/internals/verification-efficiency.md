@@ -259,7 +259,7 @@ Other operations follow the same shape:
   a recorded state.
 - Logical reads through opaque pointers select an admitted footprint through
   the composition's class and interval indexes, without enumerating pointer
-  spellings or scanning composition frames.
+  forms or scanning composition frames.
 
 ## Output-sensitive exceptions
 
@@ -296,9 +296,9 @@ charged to visible semantic output rather than hidden ambient state:
   quantifier (`quantified_frame_is_near_linear_in_unrelated_facts`).
 - Typed range membership of an unsigned 64-bit index in a range with
   constant bounds (`PointerInRangeEvidence::UnsignedIndexed`) builds at most
-  four spellings of the bound and looks each up exactly.
+  four forms of the bound and looks each up exactly.
 - A premise that is one conjunct of a recorded source fact's lowering is
-  spelled through the surface proposition map's conjunct index.
+  raised through the surface proposition map's conjunct index.
 - A store keeps every earlier cell of its block that it proves it misses.
   Constant byte gaps are decided by offset arithmetic over an anchor-ordered
   key range (`src/kernel/reasoning/store_gap.rs`), recorded strict signed
@@ -488,7 +488,7 @@ A separation query (range and pointer disjointness, subrange inheritance, a
 store crossing a cached cell, two distinct range anchors) asks each held
 composition for two distinct owned members of the query's block, one holding
 each side (`ResourceContext::separated_owned_members_in_block`). Members filed
-under the roots the two sides are spelled at are asked first; when they hold
+under the roots the two sides are expressed at are asked first; when they hold
 no pair, the conservative candidate index above selects the members. The
 answers are exactly those the former pairwise projection gave. A consumer that
 needs a separation proposition asks the prover, which serves it from the
@@ -603,12 +603,12 @@ separation or a pointer disequality to the congruence closure. Those
 contradictions are left to proof steps.
 
 A condition-fact query (`PureFactContext::has_condition_fact`) reads the
-facts filed under the keys it spells: its kind and the canonical forms of its
+facts filed under the keys it forms: its kind and the canonical forms of its
 two sides and their recorded-equality classes. A fact of two atoms is never
-visited by a query that does not spell its key
+visited by a query that does not form its key
 (`condition_fact_queries_ignore_unrelated_facts`). A fact with a non-atom side
 (a load, a sum, a conditional) can match through reasoning its key does not
-spell. When the keys miss, the query reads the facts filed under its own
+express. When the keys miss, the query reads the facts filed under its own
 variables and the members of their recorded-equality classes
 (`condition_facts_by_variable`), never every fact of its kind
 (`open_sided_condition_queries_read_only_their_variables_facts`). A ground
@@ -813,13 +813,13 @@ suffix at the prefix's endpoint, including an exactly addressed materialized
 cell or dense run span ending at its next hole, instead of pairing ambient
 ranges or enumerating memory cells and runs.
 Candidate states, extents and pointer equality still pass the kernel checks.
-Read-defined goals use typed evidence, exact aliases and equality spellings;
+Read-defined goals use typed evidence, exact aliases and equality forms;
 memory separation uses the unordered block-pair bucket. Large buckets at the
 same address and long alias components still need separate growth audits.
 
 Atom memory-condition matching uses exact/canonical condition keys and keys
-from equality spellings. A miss does not consult the family's entire open-fact
-bucket. A condition requiring a different spelling can be established explicitly
+from equality forms. A miss does not consult the family's entire open-fact
+bucket. A condition requiring a different form can be established explicitly
 before the checked operation. Compound-query and carrier/state controls remain.
 
 Atomic certificate planning keeps persistent syntax adjacency for condition
@@ -832,14 +832,14 @@ goal and source. Wider smart fallbacks belong to the slow part and are charged
 to its budget; every successful selection still establishes the goal in the
 restricted kernel context.
 
-Before spelling a typed equality, `solve` retains only the sources its
+Before forming a typed equality, `solve` retains only the sources its
 evidence named, and the kernel rebuilds the selected context from them.
 Compatibility evidence that retains a whole connected component can be
 reduced by bounded chunk-deletion trials (at most 255 restricted queries,
 charged to the smart budget). Theorem application retrieves the latest
 recorded source form of its exact matched premise from `SurfacePropositionMap`,
 following one selected fact. A read of a held native range uses the address
-graph's retained wide-index producer rather than a narrow alias's spelling.
+graph's retained wide-index producer rather than a narrow alias's form.
 
 ## Regression policy
 
@@ -857,7 +857,7 @@ The scaling suite covers independent axes:
 - number of unrelated functions and verified rules;
 - straight-line statements and program-point states in one function;
 - ambient pure and condition facts;
-- surface-to-kernel proposition spellings;
+- surface-to-kernel proposition mappings;
 - resource facts and resource-definition members;
 - global and imported theorem declarations;
 - number of claims sharing one function execution; and
