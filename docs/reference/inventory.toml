@@ -342,6 +342,10 @@ id = "c.expression.statement-expression"
 path = "reference/language/c.md#supported-expressions-and-statements"
 
 [[item]]
+id = "c.expression.struct-compound-literal"
+path = "reference/language/c.md#block-scope-struct-compound-literals"
+
+[[item]]
 id = "c.expression.builtin-types-compatible"
 path = "reference/language/c.md#supported-expressions-and-statements"
 
