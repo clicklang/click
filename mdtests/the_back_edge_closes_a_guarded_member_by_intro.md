@@ -12,7 +12,7 @@ and both ranking inequalities with `solve() using`. The member compares exact
 observations, `to_integer(2 + run) == to_integer(i)`, which name `2 + run` only
 where it is defined, so the `else` arm first derives `defined(2 + run)` from the
 Integer bounds of the incremented `run`. The closing proof is
-`both { intro(); known(); } and { known(); }`, and the back edge's closer
+`both { left => { intro(); known(); } right => { known(); } }`, and the back edge's closer
 must find it by splitting the bundle and closing each conjunct with the
 direct logical steps, before the premise-selecting and rewriting strategies
 run over the whole bundle. Before that, this arm fell through to the indexed

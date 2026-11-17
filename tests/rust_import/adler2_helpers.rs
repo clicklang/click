@@ -2183,9 +2183,12 @@ theorem adler_outer_remaining_step(total: int32, remaining: int32) {
  ensures defined(remaining - 22208);
  ensures 0 <= remaining - 22208 and remaining - 22208 <= total by {
   both {
-   solve() using { 22208 <= remaining; };
-  } and {
-   solve() using { remaining <= total; 22208 <= remaining; };
+      left => {
+       solve() using { 22208 <= remaining; };
+      }
+      right => {
+       solve() using { remaining <= total; 22208 <= remaining; };
+      }
   }
  }
  ensures remaining - 22208 < remaining by {

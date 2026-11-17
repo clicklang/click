@@ -31,23 +31,38 @@ uint64 read_terminator(uint8 bytes[]) {
                     forall (k: uint64) { to_integer(k) < to_integer(found_len + 1u64) implies defined(bytes[k]) }
             }));
             witness(found_len);
-            both { solve(); } and {
-                both {
+            both {
+                left => { solve(); }
+                right => {
                     both {
-                        both {
+                        left => {
                             both {
-                                solve();
-                            } and {
-                                have viewable(bytes[0..found_len + 1u64]) by { solve(); }
+                                left => {
+                                    both {
+                                        left => {
+                                            both {
+                                                left => {
+                                                    solve();
+                                                }
+                                                right => {
+                                                    have viewable(bytes[0..found_len + 1u64]) by { solve(); }
+                                                }
+                                            }
+                                        }
+                                        right => {
+                                            solve();
+                                        }
+                                    }
+                                }
+                                right => {
+                                    solve();
+                                }
                             }
-                        } and {
+                        }
+                        right => {
                             solve();
                         }
-                    } and {
-                        solve();
                     }
-                } and {
-                    solve();
                 }
             }
         }
