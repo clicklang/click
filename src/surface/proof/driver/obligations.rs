@@ -838,143 +838,51 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         Ok(result)
     }
 
-    /// Closes an `open(resource)` scope by `close`, its closing fold, with a
-    /// proof of the one body fact the fold leaves open: `written`, from the
-    /// source's `open(r) { ... } by { ... }`, or else the implicit `solve`,
-    /// returned so that expansion prints it as that `by`. This Proof is
-    /// where the scope closes; `close` closes it from this Proof or from one
-    /// that has proved the fact. A close that leaves several facts open, or
-    /// one that cannot be spelled or that `solve` does not prove, is refused
-    /// with the fold's own diagnostic. Without a written `by`, a close that
-    /// leaves several facts open has the implicit `solve` prove each as a
-    /// `have` at the end of the block, the form a written proof uses.
+    /// Close an open resource, retaining any proofs of its restoration facts
+    /// as ordinary `have` steps at the end of the block.
     pub(in crate::surface::proof) fn close_scope_with_body_fact_proof<T>(
         &self,
         resource: &ResourceClause,
-        written: Option<&[ProofTactic]>,
         close: &dyn Fn(&Proof<'a>) -> Result<T, ClickError>,
-    ) -> Result<(T, Option<crate::surface::proof::ScopeCloseProof>), ClickError> {
+    ) -> Result<(T, Option<ProofCertificate>), ClickError> {
         let driver_proof = self.proof;
-        if written.is_none() && implicit_solve_disabled() {
+        if implicit_solve_disabled() {
             return Ok((close(driver_proof)?, None));
         }
-        let scope = format!(
-            "closing `open({})`",
-            crate::surface::printing::format_resource_call(resource)
-        );
         let (probe, recorded) = probe_open_obligations(|| close(driver_proof));
         if recorded.recorded.is_empty() {
-            let closed = probe?;
-            if written.is_some() {
-                return Err(driver_proof.step_error(format!(
-                    "the `by` after `open` is superfluous: {scope} leaves no body fact open; write the `open` without it"
-                )));
-            }
-            return Ok((closed, None));
+            return Ok((probe?, None));
         }
-        let refusals = recorded.refusals;
-        let recorded = recorded.recorded;
-        let open = distinct_requirements(recorded.clone());
+        let open = distinct_requirements(recorded.recorded.clone());
+        let open = open.iter().collect::<Vec<_>>();
         let step = ProofStep::FoldResource(resource.clone());
-        // The fold's own diagnostic for an open fact.
-        let refused = |requirement: &UnresolvedRequirement| {
-            let position = recorded
-                .iter()
-                .position(|recorded| {
-                    crate::kernel::proof::propositions_are_alpha_equal(
-                        &recorded.proposition,
-                        &requirement.proposition,
-                    )
-                })
-                .unwrap_or(0);
-            refusals[position].clone()
-        };
-        // Without a written proof, the implicit `solve` proves each open fact
-        // or the close is refused at the first it misses.
-        let proved_by_solve = match written {
-            Some(_) => None,
-            None => {
-                let open = open.iter().collect::<Vec<_>>();
-                match driver_proof
-                    .driver()
-                    .prove_obligations_by_solve_or_name_the_first_missed(&step, &open)?
-                {
-                    Ok(proved) => Some(proved),
-                    Err(missed) => return Err(refused(open[missed])),
-                }
-            }
-        };
-        // The implicit `solve` proved every open fact; with several, each is
-        // a `have` at the end of the block, the form the refusal below asks
-        // a written proof for, and the scope closes after them.
-        if let Some((proved, entries)) = &proved_by_solve
-            && entries.len() > 1
+        let (proved, entries) = match driver_proof
+            .driver()
+            .prove_obligations_by_solve_or_name_the_first_missed(&step, &open)?
         {
-            let haves = entries
-                .iter()
-                .map(|entry| ProofStep::Have {
-                    proposition: entry.proposition.clone(),
-                    proof: Box::new(entry.proof.clone()),
-                })
-                .collect();
-            return Ok((
-                close(proved)?,
-                Some(crate::surface::proof::ScopeCloseProof::BlockTail(Box::new(
-                    ProofCertificate::from_steps(haves)?,
-                ))),
-            ));
-        }
-        let [requirement] = open.as_slice() else {
-            let facts = open
-                .iter()
-                .map(|requirement| {
-                    Ok(
-                        match driver_proof.requirement_surface(requirement, &step)? {
-                            Some(spelling) => format!(
-                                "`{}`",
-                                crate::surface::printing::source_click_proposition(
-                                    &spelling.surface
-                                )
-                            ),
-                            None => format!("{:?}", requirement.proposition),
-                        },
-                    )
-                })
-                .collect::<Result<Vec<_>, ClickError>>()?
-                .join(", ");
-            return Err(driver_proof.step_error(format!(
-                "{scope} leaves {} body facts open ({facts}), but its `by` proves one; prove the others with `have` in the block",
-                open.len()
-            )));
-        };
-        let (proved, body) = match written {
-            Some(body) => {
-                let Some(spelling) = driver_proof.requirement_surface(requirement, &step)? else {
-                    return Err(refused(requirement));
-                };
-                let checkpoint = driver_proof.checkpoint();
-                let proved = driver_proof
-                    .driver().open_have(spelling.surface.clone())?.driver().try_authoritative_linear_script(body)?
-                    .ok_or_else(|| {
-                        driver_proof.step_error(format!(
-                            "the `by` after `open` does not prove `{}`, the body fact {scope} leaves open",
-                            crate::surface::printing::source_click_proposition(&spelling.surface)
-                        ))
-                    })?
-                    .join()?;
-                let body = retained_have_body(&proved.certificate_since(&checkpoint)?)?;
-                (proved, body)
-            }
-            None => {
-                let (proved, mut entries) =
-                    proved_by_solve.expect("the implicit closer proved every open fact");
-                (proved, entries.pop().expect("one entry").proof)
+            Ok(proved) => proved,
+            Err(missed) => {
+                let position = recorded
+                    .recorded
+                    .iter()
+                    .position(|requirement| {
+                        crate::kernel::proof::propositions_are_alpha_equal(
+                            &requirement.proposition,
+                            &open[missed].proposition,
+                        )
+                    })
+                    .unwrap_or(0);
+                return Err(recorded.refusals[position].clone());
             }
         };
-        Ok((
-            close(&proved)?,
-            Some(crate::surface::proof::ScopeCloseProof::By(Box::new(body))),
-        ))
+        let haves = entries
+            .into_iter()
+            .map(|entry| ProofStep::Have {
+                proposition: entry.proposition,
+                proof: Box::new(entry.proof),
+            })
+            .collect();
+        Ok((close(&proved)?, Some(ProofCertificate::from_steps(haves)?)))
     }
 
     /// Discharge a theorem's retained entry requirements before its main

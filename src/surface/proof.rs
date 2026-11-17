@@ -929,9 +929,6 @@ enum InternalProofNode {
         index: usize,
         source_index: usize,
         resource: ResourceClause,
-        /// `open(r) { ... } by { ... }`: the proof of the body fact the
-        /// closing fold leaves open.
-        close_proof: Option<Vec<ProofTactic>>,
         body: Box<InternalProofNode>,
         continuation: Box<InternalProofNode>,
     },
@@ -1228,7 +1225,6 @@ impl Clone for InternalProofNode {
                     index,
                     source_index,
                     resource,
-                    close_proof,
                     body,
                     continuation,
                 } => (
@@ -1236,7 +1232,6 @@ impl Clone for InternalProofNode {
                         index: *index,
                         source_index: *source_index,
                         resource: resource.clone(),
-                        close_proof: close_proof.clone(),
                         body: body.clone(),
                         continuation: Box::new(InternalProofNode::Done),
                     },
@@ -1491,7 +1486,6 @@ fn build_internal_proof_at(
                 index,
                 source_index,
                 resource: proof_open.resource.clone(),
-                close_proof: proof_open.close_proof.clone(),
                 body: Box::new(build_internal_proof_at(
                     &proof_open.tactics,
                     index + 1,
@@ -3186,11 +3180,3 @@ pub(in crate::surface) use proof_object::take_outcome_fact_reads;
 pub(in crate::surface) use proof_object::take_terminal_join_materialized_facts;
 #[cfg(test)]
 pub(in crate::surface) use proof_object::take_terminal_publication_visits;
-
-/// What closing an `open` scope adds to its source form: the `by` proving
-/// the one body fact its closing fold leaves open, or `have`s proving
-/// several at the end of its block.
-pub(in crate::surface::proof) enum ScopeCloseProof {
-    By(Box<crate::surface::ProofCertificate>),
-    BlockTail(Box<crate::surface::ProofCertificate>),
-}

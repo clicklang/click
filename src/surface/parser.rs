@@ -10620,19 +10620,16 @@ impl Parser {
             let resource = self.parse_declared_resource_call()?;
             self.expect(Token::RParen)?;
             let tactics = self.parse_possibly_empty_tactic_block()?;
-            // `open(r) { ... } by ...`: the proof of the one body fact the
-            // closing fold leaves open, as after `fold(r) by`.
-            let close_proof = if self.peek_ident() == Some("by") {
-                self.position += 1;
-                Some(self.parse_step_proof_body()?)
-            } else {
-                None
-            };
+            if self.peek_ident() == Some("by") {
+                return Err(self.error(
+                    "`open` takes no trailing `by`; prove the closing fact with `have` inside the block",
+                ));
+            }
             self.skip_redundant_semicolon();
             return Ok(ProofTactic::Open(ProofOpen {
                 resource,
                 tactics,
-                close_proof,
+                deferred_tail: false,
             }));
         }
         if name == "cases" {

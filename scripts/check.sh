@@ -25,6 +25,7 @@ run_quality_checks() {
     find src/scaling_tests -name '*.rs' -print0 | xargs -0 rustfmt --edition 2024 --check
     scripts/test-setup-environment.sh
     python3 -I scripts/test-check-nightly.py
+    python3 -I scripts/test-nightly-report.py
     scripts/mdbook-build.sh
     scripts/docs-lint.sh
 }
@@ -180,11 +181,29 @@ fi
 # per-test thread stack on otherwise healthy runners.
 export RUST_MIN_STACK="${RUST_MIN_STACK:-8388608}"
 
+# With `CLICK_NIGHTLY_REPORT_DIR` set, the nightly records each phase's time
+# and exit status, and keeps nextest's JUnit results, for
+# `scripts/nightly-report.py` (`docs/internals/testing.md`, "Nightly report").
+report_dir="${CLICK_NIGHTLY_REPORT_DIR:-}"
+record_phase() {
+    [[ -n "$report_dir" ]] || return 0
+    mkdir -p "$report_dir"
+    printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$report_dir/phases.tsv"
+}
+keep_junit() {
+    local junit="${CARGO_TARGET_DIR:-target}/nextest/nightly/junit.xml"
+    [[ -n "$report_dir" && -f "$junit" ]] || return 0
+    mkdir -p "$report_dir"
+    mv "$junit" "$report_dir/junit-$1.xml"
+}
+
 clippy_status=0
 if [[ -z "$ci_artifacts" ]]; then
     run_quality_checks
     if [[ -n "$nightly" ]]; then
+        phase_started=$SECONDS
         cargo clippy --all-targets -- -D warnings || clippy_status=$?
+        record_phase clippy $((SECONDS - phase_started)) "$clippy_status"
         if [[ "$clippy_status" -ne 0 ]]; then
             echo "warning: Clippy failed; continuing with nightly tests" >&2
         fi
@@ -292,10 +311,20 @@ fi
 suite_status=$clippy_status
 if [[ -n "$nightly" ]]; then
     # Report both nightly selections even when the first one fails.
+    phase_started=$SECONDS
+    phase_status=0
     cargo nextest run "${unit_targets[@]}" --filterset "$unit_filter" "${nextest_args[@]}" \
-        || suite_status=$?
+        || phase_status=$?
+    record_phase tests $((SECONDS - phase_started)) "$phase_status"
+    keep_junit tests
+    [[ "$phase_status" -eq 0 ]] || suite_status=$phase_status
+    phase_started=$SECONDS
+    phase_status=0
     cargo nextest run "${fixture_targets[@]}" --filterset "$fixture_filter" \
-        --test-threads 1 --no-capture "${nextest_args[@]}" || suite_status=$?
+        --test-threads 1 --no-capture "${nextest_args[@]}" || phase_status=$?
+    record_phase fixtures $((SECONDS - phase_started)) "$phase_status"
+    keep_junit fixtures
+    [[ "$phase_status" -eq 0 ]] || suite_status=$phase_status
 else
     # Keep this file for both runs. nextest uses the executable directly;
     # it does not ask Cargo to compile it again for each selected suite.

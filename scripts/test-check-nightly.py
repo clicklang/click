@@ -20,6 +20,7 @@ with tempfile.TemporaryDirectory(prefix="click-check-nightly-") as directory:
     binaries.mkdir()
     (root / "src/scaling_tests").mkdir(parents=True)
     shutil.copyfile(Path(__file__).with_name("check.sh"), scripts / "check.sh")
+    (scripts / "test-nightly-report.py").write_text("")
     for name in ["test-setup-environment.sh", "mdbook-build.sh", "docs-lint.sh"]:
         executable(scripts / name, "exit 0\n")
     # The copied driver runs this regression too during quality checks.
@@ -45,9 +46,12 @@ esac
     ]:
         log = root / "commands.log"
         log.write_text("")
+        report = root / "report"
+        shutil.rmtree(report, ignore_errors=True)
         env = dict(os.environ, PATH=f"{binaries}:{os.environ['PATH']}",
                    CHECK_TEST_LOG=str(log), CHECK_TEST_CLIPPY=str(clippy),
-                   CHECK_TEST_UNITS=str(units), CHECK_TEST_FIXTURES=str(fixtures))
+                   CHECK_TEST_UNITS=str(units), CHECK_TEST_FIXTURES=str(fixtures),
+                   CLICK_NIGHTLY_REPORT_DIR=str(report))
         result = subprocess.run(
             ["bash", str(scripts / "check.sh"), "--nightly", "--no-fail-fast"],
             env=env, capture_output=True, text=True,
@@ -57,4 +61,9 @@ esac
         assert len(runs) == 2, log.read_text()
         assert "--no-capture" not in runs[0] and "--no-capture" in runs[1], runs
         assert all("--run-ignored all --profile nightly" in line for line in runs), runs
-print("nightly driver: all four failure-aggregation checks passed")
+        # Each phase is recorded for the nightly report with its own status.
+        phases = [line.split("\t") for line in (report / "phases.tsv").read_text().splitlines()]
+        assert [(name, status) for name, _, status in phases] == [
+            ("clippy", str(clippy)), ("tests", str(units)), ("fixtures", str(fixtures))
+        ], phases
+print("nightly driver: all four failure-aggregation and phase-record checks passed")

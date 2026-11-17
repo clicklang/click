@@ -1895,7 +1895,6 @@ fn try_check_structural_function_proof_inner<'a>(
                 index,
                 source_index,
                 resource,
-                close_proof,
                 body,
                 continuation,
             } => {
@@ -1904,8 +1903,7 @@ fn try_check_structural_function_proof_inner<'a>(
                 }
                 saw_structure = true;
                 proof = proof.with_execution_tactic_index(*index)?;
-                let scope =
-                    proof.begin_open(resource.clone(), *source_index, close_proof.clone())?;
+                let scope = proof.begin_open(resource.clone(), *source_index)?;
                 let scope = driven!(advance_checked_open_scope(
                     scope,
                     body,
@@ -3123,13 +3121,11 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                 index,
                 source_index,
                 resource,
-                close_proof,
                 body,
                 continuation,
             } => {
                 proof = proof.with_execution_tactic_index(*index)?;
-                let scope =
-                    proof.begin_open(resource.clone(), *source_index, close_proof.clone())?;
+                let scope = proof.begin_open(resource.clone(), *source_index)?;
                 let Ok(scope) = advance_checked_open_scope(
                     scope,
                     body,
@@ -4058,14 +4054,12 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                 index,
                 source_index,
                 resource,
-                close_proof,
                 body,
                 continuation,
             } => {
                 let owner = proof.clone();
                 let opened = proof.with_execution_tactic_index(*index)?;
-                let scope =
-                    opened.begin_open(resource.clone(), *source_index, close_proof.clone())?;
+                let scope = opened.begin_open(resource.clone(), *source_index)?;
                 let scope = driven!(advance_checked_open_scope(
                     scope,
                     body,
@@ -5157,13 +5151,12 @@ fn advance_checked_open_scope<'a>(
         index,
         source_index,
         resource,
-        close_proof,
         body: nested_body,
         continuation,
     } = body
     {
         let scope = scope.with_execution_tactic_index(*index)?;
-        let nested = scope.begin_open(resource.clone(), *source_index, close_proof.clone())?;
+        let nested = scope.begin_open(resource.clone(), *source_index)?;
         let nested = driven!(advance_checked_open_scope(
             nested,
             nested_body,
