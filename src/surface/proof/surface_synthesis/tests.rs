@@ -400,6 +400,63 @@ fn spelling_validation_cannot_defer_its_debts_to_a_statement_probe() {
 }
 
 #[test]
+fn definedness_round_trips_at_a_distinct_point_with_equal_memory() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = Address::symbolic(Variable(981_301));
+    let historical = ExecutionState::new()
+        .with_memory(SymbolicMemory::new())
+        .with_local(
+            "p",
+            ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
+        );
+    let current = historical.clone().with_memory(historical.memory().clone());
+    let selector = ProgramPointSelector::Mark("observed".into());
+    let mut points = RecordedStates::new();
+    points.insert(selector.clone(), historical.clone());
+    let _points = SynthesisRecordedPointsScope::enter(&points);
+    let fact = Proposition::MemoryReadDefined {
+        at: historical.program_point().id(),
+        memory: historical.memory().clone(),
+        pointer,
+        value_type: ProgramType::Int32,
+    };
+    let spelled = synthesize_surface_proposition(&fact, ParameterBinding::default(), &current)
+        .expect("the recorded observation has a source selector");
+    assert!(
+        matches!(&spelled, ClickProposition::At { selector: selected, .. } if selected == &selector)
+    );
+    let lowered = crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
+        &spelled,
+        &PureFactContext::new(),
+        ContractEnvironment::new(&BTreeMap::new(), &ClickArrayRefs::new()),
+        FixedStateFrame::new(&current, &current, None, &points),
+        SpecDefinitions::new(
+            &PredicateEnvironment::new(&[]),
+            &ClickFunctionEnvironment::new(&[]),
+        ),
+        FixedStateLoweringOptions::default(),
+    ).map(|(proposition, _, _, _)| proposition);
+    assert_eq!(lowered, Ok(fact));
+}
+
+#[test]
+fn old_read_shortcut_identifies_points_instead_of_equal_snapshots() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let entry = ExecutionState::new().with_memory(SymbolicMemory::new());
+    let frame = ExecutionState::at_state(&entry);
+    assert!(synthesis_states_share_program_point(&entry, &frame));
+    let later = entry.clone().with_memory(entry.memory().clone());
+    assert_eq!(entry.memory(), later.memory());
+    assert!(!synthesis_states_share_program_point(&entry, &later));
+    assert!(!synthesis_states_share_program_point(
+        &ExecutionState::new(),
+        &ExecutionState::new()
+    ));
+    let unnamed = ExecutionState::new();
+    assert!(synthesis_states_share_program_point(&unnamed, &unnamed));
+}
+
+#[test]
 fn qualified_static_read_spellings_retain_entry_and_current_epochs() {
     let _session = crate::kernel::VerificationSession::enter();
     let (entry, sources, loads) =
@@ -7606,63 +7663,6 @@ fn closed_word32_equality_guards_with_selected_literal_arms_round_trip() {
             }
         }
     }
-}
-
-#[test]
-fn definedness_round_trips_at_a_distinct_point_with_equal_memory() {
-    let _session = crate::kernel::VerificationSession::enter();
-    let pointer = Address::symbolic(Variable(981_301));
-    let historical = ExecutionState::new()
-        .with_memory(SymbolicMemory::new())
-        .with_local(
-            "p",
-            ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
-        );
-    let current = historical.clone().with_memory(historical.memory().clone());
-    let selector = ProgramPointSelector::Mark("observed".into());
-    let mut points = RecordedStates::new();
-    points.insert(selector.clone(), historical.clone());
-    let _points = SynthesisRecordedPointsScope::enter(&points);
-    let fact = Proposition::MemoryReadDefined {
-        at: historical.program_point().id(),
-        memory: historical.memory().clone(),
-        pointer,
-        value_type: ProgramType::Int32,
-    };
-    let spelled = synthesize_surface_proposition(&fact, ParameterBinding::default(), &current)
-        .expect("the recorded observation has a source selector");
-    assert!(
-        matches!(&spelled, ClickProposition::At { selector: selected, .. } if selected == &selector)
-    );
-    let lowered = crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
-        &spelled,
-        &PureFactContext::new(),
-        ContractEnvironment::new(&BTreeMap::new(), &ClickArrayRefs::new()),
-        FixedStateFrame::new(&current, &current, None, &points),
-        SpecDefinitions::new(
-            &PredicateEnvironment::new(&[]),
-            &ClickFunctionEnvironment::new(&[]),
-        ),
-        FixedStateLoweringOptions::default(),
-    ).map(|(proposition, _, _, _)| proposition);
-    assert_eq!(lowered, Ok(fact));
-}
-
-#[test]
-fn old_read_shortcut_identifies_points_instead_of_equal_snapshots() {
-    let _session = crate::kernel::VerificationSession::enter();
-    let entry = ExecutionState::new().with_memory(SymbolicMemory::new());
-    let frame = ExecutionState::at_state(&entry);
-    assert!(synthesis_states_share_program_point(&entry, &frame));
-    let later = entry.clone().with_memory(entry.memory().clone());
-    assert_eq!(entry.memory(), later.memory());
-    assert!(!synthesis_states_share_program_point(&entry, &later));
-    assert!(!synthesis_states_share_program_point(
-        &ExecutionState::new(),
-        &ExecutionState::new()
-    ));
-    let unnamed = ExecutionState::new();
-    assert!(synthesis_states_share_program_point(&unnamed, &unnamed));
 }
 
 #[test]
