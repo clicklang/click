@@ -123,7 +123,7 @@ fn member_coverage_does_not_follow_numeric_aliases() {
     assert!(!permits(&p, 8, &uncovered, &empty));
     let member = p
         .clone()
-        .with_extent(Some(SubobjectExtent::constant(p.pointer().clone(), 4)));
+        .with_bounds(Some(SubobjectBounds::constant(p.pointer().clone(), 4)));
     assert!(!permits(&member, 8, &full, &empty));
 }
 
@@ -136,7 +136,8 @@ mod scaling_tests {
 fn allocation_bounds_require_positive_ownership_and_grant_no_read_permission() {
     let _session = crate::kernel::VerificationSession::enter();
     let p = pointer(930_400);
-    let allocation = ResourceFact::own_designated_allocation(p.clone(), &HeapExtent::int32(12u32));
+    let allocation =
+        ResourceFact::own_designated_allocation(p.clone(), &AllocationSize::int32(12u32));
     let root = PureFactContext::new();
     let coverage = allocation.allocation_bounds_fact(&root).unwrap();
     let context = root.clone().assume_proposition(coverage);
@@ -202,7 +203,7 @@ fn fixed_array_reference_bounds_allow_formation_without_read_authority() {
             "array_metadata",
             vec![
                 program_parameter("p", ProgramType::Int32Pointer)
-                    .with_fixed_reference_extent(bytes),
+                    .with_fixed_reference_bounds(bytes),
             ],
             program_skip(),
         );
@@ -237,9 +238,9 @@ fn well_formed_range_terms_do_not_establish_an_opaque_domain() {
                 context.assume_proposition(fact)
             })
     };
-    let numeric = state(crate::kernel::memory_range_extent_guard_spellings(&range));
+    let numeric = state(crate::kernel::memory_range_span_guard_spellings(&range));
     assert!(!permits(&p, 4, &numeric, &ResourceContext::new()));
-    let admitted = state(crate::kernel::admitted_memory_range_extent_facts(&range));
+    let admitted = state(crate::kernel::admitted_memory_range_span_facts(&range));
     assert!(permits(&p, 12, &admitted, &ResourceContext::new()));
     assert!(!permits(&p, 16, &admitted, &ResourceContext::new()));
 }

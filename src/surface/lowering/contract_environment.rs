@@ -250,9 +250,9 @@ pub(in crate::surface) fn program_value_matches_allocation_pointer(value: &Progr
     )
 }
 
-/// An `allocation` byte count: an `int32` or a `uint64` heap extent
-/// (`design/heap-extents.md`, D4).
-pub(in crate::surface) fn program_value_matches_allocation_extent(value: &ProgramValue) -> bool {
+/// An `allocation` byte count: an `int32` or a `uint64` allocation size
+/// (`design/heap-allocation-sizes.md`, D4).
+pub(in crate::surface) fn program_value_matches_allocation_size(value: &ProgramValue) -> bool {
     matches!(
         value.numeric_value(),
         ProgramValue::Int32(_) | ProgramValue::UInt64(_)

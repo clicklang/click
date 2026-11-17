@@ -3575,9 +3575,9 @@ fn stores_beside_many_owned_size_t_ranges_scale_near_linearly() {
 }
 
 /// [`stores_beside_many_owned_size_t_ranges`] with the stored array a heap
-/// block of 64-bit extent: the function also owns
+/// block of 64-bit size: the function also owns
 /// `allocation(value, length * 4u64)`, so its range is the block's wide
-/// range beside its `uint64` token (`design/heap-extents.md`, stage 3).
+/// range beside its `uint64` token (`design/heap-allocation-sizes.md`, stage 3).
 fn stores_beside_many_owned_64_bit_blocks(size: usize) -> (String, String) {
     let (c_source, click_source) = stores_beside_many_owned_size_t_ranges(size);
     let click_source = click_source.replace(
@@ -3610,10 +3610,10 @@ fn stores_beside_many_owned_64_bit_blocks_scale_near_linearly() {
     assert_near_linear_scaling("stores beside many owned 64-bit blocks", &samples);
 }
 
-/// One function that allocates a block of 64-bit extent, lends it to
+/// One function that allocates a block of 64-bit size, lends it to
 /// `calls` calls that each borrow and return its `uint64` token
 /// (`owns allocation(p, n * 4u64)`), and frees it: every call decides the
-/// token's extent and the allocation's continuity.
+/// token's size and the allocation's continuity.
 fn calls_borrowing_a_64_bit_block(calls: usize) -> (String, String) {
     let mut c_source = String::from(
         "void *malloc(unsigned long size);\nvoid free(void *ptr);\n\nvoid keep(int *p, unsigned long n) {\n}\n\nint f(unsigned long n) {\n    int *p = malloc(n * sizeof(int));\n    if (p == 0) {\n        return 0;\n    }\n",
@@ -5822,7 +5822,7 @@ fn bounded_size_t_index_stores(stores: usize) -> (String, String) {
 
 /// [`stores_to_bounded_unordered_indices_are_near_linear`] over a range with
 /// 64-bit bounds. Each store is placed in `a[0..n]` by the wide membership
-/// rule, which decides `ck < n` and the range's extent limit by keyed
+/// rule, which decides `ck < n` and the range's span limit by keyed
 /// lookups, and drops the earlier cells it may alias, none of which is
 /// ordered against it. Neither may scan the other indices' bounds.
 #[test]

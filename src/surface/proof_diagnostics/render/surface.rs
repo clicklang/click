@@ -585,7 +585,7 @@ impl Printer<'_> {
                     body?.text
                 )))
             }
-            // Viewability is about an object's extent and lifetime, and a
+            // Viewability is about an object's size and lifetime, and a
             // lifetime can end between two points, so a fact checked in an
             // earlier memory keeps its point: `at(point, viewable(..))`, as a
             // proof writes it to carry the fact forward.

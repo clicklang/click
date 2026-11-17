@@ -771,7 +771,7 @@ fn pointer_fact_source_order_queries_ignore_unrelated_admissions() {
             ));
             graph.adjust_pointer_fact(&fact, true);
             if id == 0 {
-                target = Some((domain.opaque_extent().unwrap().clone(), fact));
+                target = Some((domain.bounds_owner().unwrap().clone(), fact));
             }
         }
         let (origin, fact) = target.unwrap();

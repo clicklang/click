@@ -42,7 +42,10 @@ fn allocating_call_does_not_expand_the_callers_kept_objects() {
             for index in 0..size {
                 let object = heap(931_000 + index as u64);
                 memory = memory
-                    .with_heap_allocation_claim(object.clone(), HeapExtent::int32(bytes.clone()))
+                    .with_heap_allocation_claim(
+                        object.clone(),
+                        AllocationSize::int32(bytes.clone()),
+                    )
                     .expect("a fresh live object");
                 kept = kept.unchecked_with_fact(ResourceFact::own_composite(
                     "boxed".into(),
@@ -73,7 +76,7 @@ fn allocating_call_does_not_expand_the_callers_kept_objects() {
                 ..
             } = result.expect("an allocating call");
             assert!(retired.is_empty());
-            assert!(after.live_heap_block_extent(&created).is_some());
+            assert!(after.live_heap_block_size(&created).is_some());
             (size, work)
         })
         .collect::<Vec<_>>();
@@ -106,9 +109,9 @@ fn allocation_size_graph_queries_scale_without_fact_index() {
                 assert_eq!(
                     allocation_continuity(
                         &base,
-                        &HeapExtent::int32(input_size.clone()),
+                        &AllocationSize::int32(input_size.clone()),
                         &base,
-                        &HeapExtent::int32(output_size),
+                        &AllocationSize::int32(output_size),
                         &context,
                     ),
                     AllocationContinuity::Same,
@@ -121,7 +124,7 @@ fn allocation_size_graph_queries_scale_without_fact_index() {
 }
 
 /// [`allocation_size_graph_queries_scale_without_fact_index`] with 64-bit
-/// extents: continuity of two `uint64` byte counts made equal by a chain of
+/// sizes: continuity of two `uint64` byte counts made equal by a chain of
 /// `size` facts is answered by the 64-bit equality graph, without visiting
 /// the fact index, in work linear in the queries.
 #[test]
@@ -129,14 +132,14 @@ fn uint64_allocation_size_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = crate::kernel::VerificationSession::enter();
         let var = |id| MachineTerm::Variable(Variable(id));
-        let extent = |value| {
-            HeapExtent::new(
+        let allocation_size = |value| {
+            AllocationSize::new(
                 MachineTerm::uint64_add(value, MachineTerm::uint64_constant(1)),
-                HeapExtentKind::UInt64,
+                AllocationSizeKind::UInt64,
             )
         };
         let base = external_pointer(930_030);
-        let input_size = extent(var(0));
+        let input_size = allocation_size(var(0));
         let mut context = PureFactContext::new();
         for index in 0..size {
             context = context.assume_condition(
@@ -148,7 +151,7 @@ fn uint64_allocation_size_graph_queries_scale_without_fact_index() {
         PureFactContext::reset_bitvector_equality_index_fact_visits();
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 1..=size {
-                let output_size = extent(var(index));
+                let output_size = allocation_size(var(index));
                 assert_eq!(
                     allocation_continuity(&base, &input_size, &base, &output_size, &context,),
                     AllocationContinuity::Same,

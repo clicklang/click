@@ -3158,7 +3158,7 @@ fn contract_effect_claim_rejects_interior_entry_live_heap_pointer_as_fresh() {
     let caller_state = ExecutionState::new()
         .with_memory(
             Memory::new()
-                .with_heap_allocation_claim(allocation_base.clone(), HeapExtent::int32(16))
+                .with_heap_allocation_claim(allocation_base.clone(), AllocationSize::int32(16))
                 .expect("the entry allocation should be live"),
         )
         .with_resource_context(own_memory_context(interior, 0, 1));
@@ -3934,7 +3934,7 @@ fn effect_endpoint_allows_resource_allocation_bookkeeping() {
     let before = Memory::new();
     let after = before
         .clone()
-        .with_heap_allocation_claim(allocation, HeapExtent::int32(16))
+        .with_heap_allocation_claim(allocation, AllocationSize::int32(16))
         .expect("a fresh symbolic allocation claim should be registerable");
 
     assert!(
@@ -5543,7 +5543,7 @@ fn a_recursion_anchor_is_part_of_the_environment_identity() {
 /// kernel sites read two equal blocks as one object. A called frame runs on
 /// the caller's memory with its own locals map, so it cannot see the caller's
 /// objects; if it minted the plain `local:<name>` anyway, the callee's object
-/// and the caller's would be one block, one extent and one cell map.
+/// and the caller's would be one block, one size and one cell map.
 #[test]
 fn a_called_frames_declaration_does_not_take_the_callers_block() {
     let callers = Pointer {
@@ -6778,7 +6778,7 @@ fn construction_parameter_summary_initializes_only_checked_fields() {
 // parent's allocation or initializing a sibling. Its proof entry describes
 // only that footprint, so it does not assume a complete allocation of that size.
 #[test]
-fn subobject_constructor_summary_preserves_parent_extent_and_siblings() {
+fn subobject_constructor_summary_preserves_parent_size_and_siblings() {
     let _session = crate::kernel::VerificationSession::enter();
     let child = AggregateLayout::new(
         8,
@@ -6935,7 +6935,7 @@ fn subobject_constructor_summary_preserves_parent_extent_and_siblings() {
     }
 }
 
-// Allocation grants only its exact byte extent, never initialization; taking
+// Allocation grants only its exact byte span, never initialization; taking
 // that owner away must block both named and pointer-mediated local accesses.
 #[test]
 fn automatic_scalar_ownership_is_exact_and_required_for_all_accesses() {

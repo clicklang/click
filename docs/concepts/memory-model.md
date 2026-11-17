@@ -49,7 +49,7 @@ Pointer { block, offset }
 ```
 
 These coordinates describe the raw address. A complete C pointer separately
-carries its provenance and selected subobject extent. Numeric address equality
+carries its provenance and selected subobject bounds. Numeric address equality
 does not equate those bounds. C pointer arithmetic is scaled by the pointee
 type: `int32*` adds four bytes per element, while `uint8*` adds one byte per
 element.
@@ -88,7 +88,7 @@ the full relationship using existing cast syntax:
 requires ((word & ~1) as (struct node *)) == p;
 ```
 
-This equality includes provenance and selected extent. It lets a copied word
+This equality includes provenance and selected bounds. It lets a copied word
 reconstruct `p` with those bounds. A modular callee must explicitly preserve
 such a relationship when callers need it; `ensures result == word` preserves
 only the number. Mathematical integers, integer model fields and pure numeric
@@ -133,13 +133,13 @@ is unavailable uses explicitly identified byte units.
 
 Pointer arithmetic stays inside the pointed-to object (C11 6.5.6p8): the
 result must designate an element of the object or the position one past its
-end. For a block whose extent the kernel records, a local array or a heap
-allocation, the displacement is checked against that extent. For a block
-whose extent it does not record, which is every pointer parameter and every
+end. For a block whose size the kernel records, a local array or a heap
+allocation, the displacement is checked against that size. For a block
+whose size it does not record, which is every pointer parameter and every
 symbolic or loaded pointer, the ranges the state holds in that block are the
-extent it knows: forming `p + k` owes that the result lies within an `owns`
+only bounds it knows: forming `p + k` owes that the result lies within an `owns`
 or `views` range of the object, one-past end included, or inside a `viewable`
-extent. A range the facts exclude the result from drops out; when they
+span. A range the facts exclude the result from drops out; when they
 exclude it from every held range the formation is refused as pointer
 arithmetic that left the object, and when one range is left undecided its
 bounds are owed as an obligation on the path where they fail; the normal path
@@ -215,9 +215,9 @@ reinterpretations that stay refused is
 
 The supported `malloc`, `calloc`, and `realloc` forms have a null outcome and a
 successful outcome. Success creates a fresh block identity at offset zero, with either
-the exact LP64 size of `struct T`, a verified typed extent such as
+the exact LP64 size of `struct T`, a verified typed size such as
 `count * 4`, `count * sizeof(uint8)`, or `count * sizeof(struct T)`, or an
-arbitrary positive byte extent. Heap identities are not reused within a proof.
+arbitrary positive byte size. Heap identities are not reused within a proof.
 Fresh `malloc` bytes are
 uninitialized, so ownership permits stores but does not make an unstored cell
 readable; successful `calloc` cells read as zero or null until overwritten.
@@ -281,19 +281,19 @@ connects the two points. See `mdtests/call_checked_input_facts_keep_prestate.md`
 
 Heap arrays of structs are byte-backed allocations whose indexed member
 addresses add `i * sizeof(struct T)` before applying the field offset. This
-keeps the allocation extent and field access aligned with the declared ABI,
+keeps the allocation size and field access aligned with the declared ABI,
 including structs whose size is not a multiple of four.
 
 A pending `realloc` keeps its old live block and resources in place until the
 result is refined. Failure removes only the pending result. Success records a
 free edge for the old block, allocates a fresh block, copies the initialized
-cells whose complete byte ranges fit in the new extent, and transfers the
+cells whose complete byte ranges fit in the new size, and transfers the
 complete allocation and memory resources to the fresh block. The old and new
-resources use typed logical units when the extents are exactly divisible by
+resources use typed logical units when the sizes are exactly divisible by
 the pointer's element width and byte units otherwise. This applies to every
 pointer type `realloc` accepts, listed in
 [Heap allocation](../reference/language/c.md#heap-allocation), including raw
-byte extents. A partial cell is conservatively not
+byte sizes. A partial cell is conservatively not
 reintroduced as initialized. For a bounded zeroed `calloc`
 source, the successful result also records the preserved zeroed prefix; any
 grown tail is uninitialized and is not treated as zero.
@@ -302,7 +302,7 @@ Click tracks two different facts on the successful branch:
 
 - owned memory for the complete object permits reads and writes;
 - `allocation(p, bytes)` is the exclusive authority and obligation to end that
-  allocation's lifetime; `bytes` may be a supported symbolic runtime extent.
+  allocation's lifetime; `bytes` may be a supported symbolic runtime size.
 
 `free(p)` requires both facts for the complete allocation and consumes them.
 `free(NULL)` changes nothing. An interior, stack, opaque, or already-freed
@@ -323,7 +323,7 @@ pre-allocation memory identity without producing allocation authority.
 Successful allocation starts from the pending memory but introduces only
 its fresh, uninitialized block. A successful `free` also emits a checked heap
 `HeapAllocationFreed` effect connecting the memory before and after it,
-exact base, and possibly symbolic byte extent. This is deliberately distinct
+exact base, and possibly symbolic byte size. This is deliberately distinct
 from an owned byte range: deallocation changes which allocation identities
 are live, while an owned range bounds ordinary stores. Exact contract
 checking and modular call verification therefore use the same allocation
@@ -390,7 +390,7 @@ one-byte elements.
 
 Native `uint64` element ranges preserve their full counts.
 A prefix of the suffix at `p + (whole - remaining)` retains read authority
-when `remaining <= whole` and the requested extent is at most `remaining`.
+when `remaining <= whole` and the requested span is at most `remaining`.
 The first-byte read additionally requires a positive remaining count; the
 native bounds are not replaced by their low words. See
 [`native_nonempty_suffix_first_byte.md`](https://github.com/clicklang/click/blob/master/mdtests/native_nonempty_suffix_first_byte.md).
@@ -398,11 +398,11 @@ native bounds are not replaced by their low words. See
 A same-base prefix
 can be proved from a held view and an explicitly selected unsigned coverage
 bound. For byte elements, `requested <= held` covers the prefix; for wider
-elements, compare the complete nonwrapping byte extents as well. The source
+elements, compare the complete nonwrapping byte spans as well. The source
 view must remain live at the destination point. A low-word bound
 supplies no full-width coverage.
 A shifted byte subrange additionally needs its exact nonnegative offset to
-fit the source extent, and the requested count to fit the source extent
+fit the source span, and the requested count to fit the source span
 minus that offset. This subtraction guard prevents unsigned wrap from
 creating coverage. The query uses structural parent addresses or an explicitly
 selected source; it does not scan other ranges in the block.
@@ -494,7 +494,7 @@ load is still rejected as use-after-free.
 Caller-owned ranges retained across a checked call use the shared address-class
 owner selector. A transitive equality between native model pointers can select
 a retained field even when the pointer representations have different symbolic
-blocks. Coverage still checks the complete byte extent; borrowed views do not
+blocks. Coverage still checks the complete byte span; borrowed views do not
 become owned frames, and a context without the alias has no lookup support.
 Recorded call states can outlive the equality-input lineage that first
 prepared their frame index. During recheck that index may identify a candidate

@@ -911,7 +911,7 @@ fn symbolic_construction_initialization_survives_havoc_and_intersects_at_join() 
 // Substitution retains the byte footprint even at a nonzero offset. This
 // metadata does not authorize resizing the caller object or subobject construction.
 #[test]
-fn symbolic_construction_initialization_substitution_preserves_extent() {
+fn symbolic_construction_initialization_substitution_preserves_size() {
     let _session = crate::kernel::VerificationSession::enter();
     let variable = Variable(870_012);
     let source = Pointer::symbolic(variable);
@@ -1361,7 +1361,7 @@ mod scaling_tests {
 }
 
 #[test]
-fn aggregate_return_temporary_copy_requires_its_recorded_extent() {
+fn aggregate_return_temporary_copy_requires_its_recorded_size() {
     let layout = node_layout();
     let temporary = Pointer::verifier_temporary(Variable(870_101));
     let source = PointerValue::new(temporary.clone(), ProgramType::UInt8Pointer);

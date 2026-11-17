@@ -137,7 +137,7 @@ impl ContractClosingContext {
                             &state,
                             self.function.resource_requires(),
                             self.function.composite_resource_definitions(),
-                            &self.entry_assumptions.clone().assume_entry_clause_extents(),
+                            &self.entry_assumptions.clone().assume_entry_clause_spans(),
                             &mut budget,
                         )
                         .map_err(|limit| limit.describe().to_string())?

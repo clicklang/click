@@ -790,7 +790,7 @@ the widths a rule supports; it asks the module
 | Promoted comparison reading | `comparison::integer_readings_with_promotions`, `integer_comparisons_of_widenings`; `integer_affine_claims` | a signed `int32` comparison whose sides are narrow widenings or constants is the Integer comparison of the sides' values (`0 <= widen(x)` is `0 <= to_integer(x)`); a native 8- or 16-bit comparison has the readings of its promoted spelling |
 | Native narrow comparison (one fact, K8) | `ConditionTerm::comparison_fact`, `as_fact_comparison`, `ComparisonSide`; `comparison::narrow_comparison_as_int32`, `narrow_fact_widening`, `native_narrow_comparison`; `condition_match_key`; the `adjust_*` wrappers of `PureFactContext` and `EqualityGraph::add_condition` | a specification or Rust comparison `a R b` of two values of one 8- or 16-bit format `S` is native at `S`, and is the same fact as the `int32` comparison of the operands' widenings (a constant side in `S`'s range reads as its value): identity, hashing, order and every structural fact key read both as one, in O(1) per side; the 32-bit indexes also file a native fact under its `int32` spelling. Terms are built and printed as written; C comparisons and a written `x as int32 R c` stay promoted |
 | Sign cast σ (K1 deleted) | `MachineTerm::sign_cast32`, `sign_cast32_operand`; the e-graph's `intern_conversion` and `convert_like` (σ an `Int32Unary::Cast` node); the difference graph's `link_parts` and `structural_interval`; `into_index_word32` (G1) | σ(x) between `int32` and `uint32` is a node of its own wherever a term is built: no constructor, observation, e-graph or difference-graph reader peels it. The e-graph relates it to `x` by R0 and R-dist (σ of a sign-free operator is the operator at the other format over σ of its operands; σ of a low word is that low word), the difference graph links either 32-bit reading of σ(x) to the same reading of `x` with offset 0, and an element index alone reads σ's operand in `int32` index coordinates. The constructor folds a constant and keeps σ of σ as written; R0 puts σ(σ(x)) in `x`'s class. Two smart-search readers see through one σ at a side's root: `σ(x) == x` is a vacuous rewrite and no rewrite candidate (`is_sign_cast32_of`, `equality_is_vacuous`, `connected_equalities`), and `σ(y) <=u c` below the sign bit is the signed range of `y` (`unsigned_upper_bound_below_sign_bit`) |
-| R-mem at 32 bits (K5's naming deleted) | `ProgramType::read_cell`, `LoadKind::read_cell`, `LoadKind::reads_value`; the checked stored-value evidence (`CheckedLoadEqualityEvidence::OriginStoredValue`), `is_store_fact` | the `uint32` read of a cell is σ of its `int32` read; a read of a cell stored at the other 32-bit signedness, wherever a load term is answered from a cell or a store, is σ of the stored word, and only a read of the stored kind is the stored term itself. A range's `fits` guard is `σ(end - start) <=u limit` (`memory_range_byte_count_extent`), σ of the `int32` element count as written |
+| R-mem at 32 bits (K5's naming deleted) | `ProgramType::read_cell`, `LoadKind::read_cell`, `LoadKind::reads_value`; the checked stored-value evidence (`CheckedLoadEqualityEvidence::OriginStoredValue`), `is_store_fact` | the `uint32` read of a cell is σ of its `int32` read; a read of a cell stored at the other 32-bit signedness, wherever a load term is answered from a cell or a store, is σ of the stored word, and only a read of the stored kind is the stored term itself. A range's `fits` guard is `σ(end - start) <=u limit` (`memory_range_byte_count_span`), σ of the `int32` element count as written |
 | Observation of σ (K2 deleted) | rule W: `machine_value_reading` | `to_integer` of σ(x) at `int32` or `uint32` keeps σ as written and reads as `x` at that format, through every σ of a written chain: `to_integer((a as uint32) as int32)` reads as `to_integer(a)` (`machine_view::shared_value_reading` takes one cached step per σ node) |
 | 32-to-64-bit extension, one representation | `conversion::extension_encoding`, `conversion::reads_as_operand`; `MachineTerm::machine_integer_cast`, `SharedMachineIntegerTerm::cast_operand`, `KernelTerm::checking_machine_cast`; rule W: `machine_value_reading`, `machine_view::shared_value_reading` | a conversion from `int32` or `uint32` to `int64` or `uint64` is the legacy-kind `Cast` C lowering builds (`Int64From32`, `Int64FromUInt32`, `UInt64From32`, `UInt64FromInt32`) wherever it is built, never the generic kind; `to_integer` of the three value-preserving ones at their destination reads as their operand, one match on the root. A cast-identity certificate checks an extension's bounds at its destination format |
 | 32-bit equality one fact (K6, lookup-level) | `comparison_identity` (`ConditionTerm::comparison_fact`, `as_fact_comparison`, `fact_format`), `MachineTerm::sign_cast32_bits`; `condition_match_key` | a 32-bit equality is a term of the format it is written at, `u == v` at `uint32` over `uint32` operands; identity, hashing, order and every structural fact key read it at `int32`, each side through one σ and a constant of either format as its bits, so `u == v` at `uint32` and `u as int32 == v as int32` are one fact. One match per side, no clone; no term is re-filed |
@@ -1074,10 +1074,10 @@ soundness bug rather than an imprecision.
 
 Before either of them: **`MachineTerm::as_const` answers `u32`, and every
 `int32` quantity the kernel orders is a signed number held in those bits.**
-An element index, a range endpoint, a block extent, an owned quantity — read
+An element index, a range endpoint, a block size, an owned quantity — read
 any of them through `as_const` and compare the result, and `-1` becomes the
 largest number there is. That single confusion is what `e219bbc8` (range
-endpoints), `a98a05e4` (a block extent and a fold quantity) and the commits
+endpoints), `a98a05e4` (a block size and a fold quantity) and the commits
 beside them each found admitting a false theorem.
 
 So a rule that wants a *number* asks `signed_bitvector_constant`, which is the
@@ -1176,19 +1176,19 @@ residue, read as `int32`, which `affine_range_element_count` returns. A range
 is therefore not "the elements from `start` to `end`": `p[i32::MAX..i32::MIN]`
 is a forward range of exactly one element. A rule that compares one range's
 `end` against another's, rather than comparing counts, is reading `end` as
-`start + count` and owes that the forward half of the valid-extent condition,
+`start + count` and owes that the forward half of the valid-span condition,
 `0 <= end - start`.
 
-The valid-byte-extent condition itself is `memory_range_element_count_guards`,
+The valid-byte-span condition itself is `memory_range_element_count_guards`,
 and it is the one definition: `0 <= count` plus, where the element width
 constrains an `int32` count at all, `count <= u32::MAX / width`. A stated
 `owns` or `views` range brings it, through
-`stated_loadable_extent_guards`. A range the kernel synthesizes — a loop
+`stated_loadable_span_guards`. A range the kernel synthesizes — a loop
 `modifies` frame, a havoc-derived range — does not, so a rule that needs it
 must ask rather than assume.
 
 A stated `separate(memory(...), ...)` lowers structurally to `ResourceSeparate`.
-It neither adds extent facts nor generates extent obligations. Ordinary operand
+It neither adds span facts nor generates span obligations. Ordinary operand
 expressions retain their evaluation prerequisites, such as signed overflow.
 Physical access and ownership admission still require their own bounds.
 
@@ -1608,14 +1608,14 @@ Freshening a binder is a renaming, so it must not change what the proposition
 says *or its form*: a proof state matches a goal against a fact
 syntactically, and a goal that quietly moves to another canonical form stops
 matching the surface's re-lowering of the same written range. That is why a
-range's byte extent has exactly one constructor — `memory_range_byte_count`
+range's byte span has exactly one constructor — `memory_range_byte_count`
 folds through `MachineTerm::subtract`, the same one substitution rebuilds
 terms with — rather than a private near-copy that cancels a little less.
 
 ### Automatic object identity
 
 A `local:` block is an automatic object's identity, and around seventy kernel
-sites read two equal blocks as one object: the same extent, the same cells, the
+sites read two equal blocks as one object: the same size, the same cells, the
 same answer from every distinctness rule. Each execution of a declaration must
 therefore get a block no other automatic object in that memory has, live or
 ended.
@@ -1711,7 +1711,7 @@ Specification addresses such as `&p->field` lower to
 saved-state pointer read stays in the selected memory. Typed, outside-in
 `SpecAddressStep` projections retain C byte offsets and subobject selection;
 the evaluated base feeds the ordinary C address operation, preserving its
-member provenance, extent, qualifiers, and checked-address obligations.
+member provenance, bounds, qualifiers, and checked-address obligations.
 Evaluation introduces no execution local or lexical binder. The Surface form
 remains the original address expression, including `old(...)`/`at(...)` state
 selectors; no generated operand name or replacement syntax is required.
@@ -1885,7 +1885,7 @@ possible release without claiming that a C `free` occurred. Exact execution
 records every successful
 free as `HeapAllocationFreed(before, after, base, bytes)`. Effect
 certification checks that executing `free(base)` from `before` with the stated
-extent produces `after`, and chains that transition separately from ordinary
+size produces `after`, and chains that transition separately from ordinary
 `MemoryMutatesOnly` and ranged call-havoc effects. This lets a function free
 owned storage directly even when its surface `owns` clause names only
 unrelated surviving memory.
@@ -2092,7 +2092,7 @@ carriers. Scalar algebraic fields and read addresses keep selected compatibility
 descriptors; memory keys and exact refresh remain separate consumers.
 Projection memos belong to one verification, with iterative construction,
 comparison and disposal for shared or deep algebraic structure.
-Pointer keys preserve the native address/provenance/type/volatility/extent
+Pointer keys preserve the native address/provenance/type/volatility/bounds
 identity tuple. Offset DAGs use shared child keys and the existing native offset
 index handles, with iterative construction/comparison/disposal and per-session
 memos. Subobject widths retain their selected native structural descriptor;

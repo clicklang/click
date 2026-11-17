@@ -1582,11 +1582,11 @@ impl<'a> Proof<'a> {
             .map(|premise| self.lower_surface_proposition(premise, "induction premise"))
             .collect::<Result<Vec<_>, _>>()?;
         // The hypothesis is the theorem's own statement, so a range premise
-        // owes its extent halves beside it. Citing a stated range cites both
+        // owes its span halves beside it. Citing a stated range cites both
         // halves, by the one rule every `apply using` shares.
         let mut explicit_premises = Vec::with_capacity(lowered_premises.len());
         for premise in lowered_premises {
-            crate::surface::proof::theorem_application::cite_range_extent_guards(
+            crate::surface::proof::theorem_application::cite_range_span_guards(
                 &premise,
                 &mut explicit_premises,
                 |guard| self.facts().exact_available_across_effects(guard, &[]),

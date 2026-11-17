@@ -882,7 +882,7 @@ fn checks_population_authority_exchange(
     if !imported_retirement
         && (anchor.offset != crate::kernel::PointerOffsetTerm::Constant(0)
             || !(matches!(&anchor.block, crate::kernel::PointerBlock::Heap(_))
-                && before.memory.live_heap_block_extent(anchor).is_some()
+                && before.memory.live_heap_block_size(anchor).is_some()
                 || anchor.block.is_local_block() && before.memory.has_block(&anchor.block)))
     {
         return Err("population authority rewrite requires live base storage".into());
@@ -1097,7 +1097,7 @@ fn checks_population_member_exchange(
     if !imported_member_exchange
         && (anchor.offset != crate::kernel::PointerOffsetTerm::Constant(0)
             || !(matches!(&anchor.block, crate::kernel::PointerBlock::Heap(_))
-                && before.memory.live_heap_block_extent(anchor).is_some()
+                && before.memory.live_heap_block_size(anchor).is_some()
                 || anchor.block.is_local_block() && before.memory.has_block(&anchor.block)))
     {
         return Err("population member rewrite requires live base storage".into());
@@ -1406,7 +1406,7 @@ fn describe_changed_state_field(
 /// Whether a materialized cell's value is exactly the given load of its own
 /// cell, in one of the representations resource projection writes: the scalar
 /// term itself, the `_Bool` normalization of it, or the complete typed pointer
-/// read (including its provenance and extent).
+/// read (including its provenance and bounds).
 fn cell_value_is_exactly_load(value: &ProgramValue, load: &MachineTerm) -> bool {
     match value {
         ProgramValue::Int8(term) => term == load,
@@ -1464,7 +1464,7 @@ impl From<&str> for ResourceRewriteCheckError {
 
 /// A checked body's identical readability range at a state differing only
 /// by caches of unchanged reads. This transports neither values nor ownership,
-/// and admits no different address, extent, or wide/narrow representation.
+/// and admits no different address, bounds, or wide/narrow representation.
 fn cached_body_loadability(
     fact: &Proposition,
     body_memory: &Memory,
@@ -3188,12 +3188,12 @@ impl CheckedFunctionEntry {
         let boundary_transfer = {
             Some(
                 // The function's own entry clauses; the proof keeps the
-                // unflagged assumptions (`assume_entry_clause_extents`).
+                // unflagged assumptions (`assume_entry_clause_spans`).
                 crate::kernel::functions::capture_checked_boundary_resource_transfer(
                     caller_state,
                     function.clone(),
                     arguments,
-                    &assumptions.clone().assume_entry_clause_extents(),
+                    &assumptions.clone().assume_entry_clause_spans(),
                     &mut ExecutionBudget::beside_live_state(),
                 )
                 .map_err(|limit| {
@@ -4336,7 +4336,7 @@ fn interface_join_resources(
         }
         if let Some(range) = fact.memory_range() {
             successor_interface_resource_facts
-                .extend(crate::kernel::admitted_memory_range_extent_facts(range));
+                .extend(crate::kernel::admitted_memory_range_span_facts(range));
         }
         successor_interface_resources.push(fact);
     }
@@ -5394,7 +5394,7 @@ fn checked_interface_effect_facts_along(
 
 fn conditional_heap_frees(
     arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
-) -> [Vec<(Pointer, crate::kernel::HeapExtent)>; 2] {
+) -> [Vec<(Pointer, crate::kernel::AllocationSize)>; 2] {
     std::array::from_fn(|arm_index| {
         arm_effect_facts[arm_index]
             .fact_iter()
@@ -5415,12 +5415,14 @@ fn interface_resources_guard_heap_frees(
     arm_resources: &[Vec<ResourceFact>; 2],
     arm_states: [&ExecutionState; 2],
     arm_facts: [&PureFactStore; 2],
-    heap_frees: &[Vec<(Pointer, crate::kernel::HeapExtent)>; 2],
+    heap_frees: &[Vec<(Pointer, crate::kernel::AllocationSize)>; 2],
 ) -> bool {
-    let has_allocation = |arm_index: usize, base: &Pointer, bytes: &crate::kernel::HeapExtent| {
+    let has_allocation = |arm_index: usize,
+                          base: &Pointer,
+                          bytes: &crate::kernel::AllocationSize| {
         arm_resources[arm_index].iter().any(|resource| {
             if resource
-                .allocation_extent()
+                .allocation_size()
                 .is_some_and(|(candidate_base, candidate_bytes)| {
                     candidate_base.pointer() == base && &candidate_bytes == bytes
                 })
@@ -5440,7 +5442,7 @@ fn interface_resources_guard_heap_frees(
             )
             .is_some_and(|expanded| {
                 expanded.facts().iter().any(|fact| {
-                    fact.allocation_extent()
+                    fact.allocation_size()
                         .is_some_and(|(candidate_base, candidate_bytes)| {
                             candidate_base.pointer() == base && &candidate_bytes == bytes
                         })
@@ -5729,7 +5731,7 @@ impl CheckedInterfaceLowering {
 
 /// An index over the explicitly exported, already ownership-checked resource
 /// clauses. Building it is output-sized; no ambient resource/fact scan occurs
-/// per interface judgment. Equal bases retain the largest constant extent.
+/// per interface judgment. Equal bases retain the largest constant span.
 #[derive(Default)]
 struct InterfaceReadPremises {
     by_base: std::collections::BTreeMap<

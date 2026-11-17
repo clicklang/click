@@ -3384,7 +3384,7 @@ fn separation_bridged_available(
 }
 
 /// Whether two separations denote the same fact after canonicalization and
-/// proven state comparison: each range's base offset and extent terms
+/// proven state comparison: each range's base offset and span terms
 /// compare with load variables resolved shallowly and load atoms bridged
 /// across proven states — the relation the condition arm uses, applied
 /// to the terms a separation is made of. Separation is symmetric, so both pairings are

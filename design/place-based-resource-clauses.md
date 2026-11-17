@@ -18,7 +18,7 @@ struct-pointer range counts structs, rather than the historical four-byte
 cells. `&place`, `object(p)` and ranges on scalar fields were retired and
 are refused with their replacements. Use a field, `*p`, or a typed range.
 Wide symbolic struct ranges have since gained the bounded support described in
-[Heap extents](heap-extents.md); the original migration's blanket refusal is
+[Allocation sizes](heap-allocation-sizes.md); the original migration's blanket refusal is
 not a current support statement.
 
 C++ reference parameters name the referent directly; Rust references use `*r`

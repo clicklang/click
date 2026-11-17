@@ -1233,7 +1233,7 @@ pub(super) fn project_initial_composite_resource_cores(
             &substitutions,
             parameter_binding,
             state.memory().clone(),
-            &assumptions.clone().assume_entry_clause_extents().assume_held_resource_domains(),
+            &assumptions.clone().assume_entry_clause_spans().assume_held_resource_domains(),
     )
         .map_err(|message| {
             ClickError::new(format!(
@@ -1329,7 +1329,7 @@ fn project_selected_instance_arm_cells(
         state.memory().clone(),
         &assumptions
             .clone()
-            .assume_entry_clause_extents()
+            .assume_entry_clause_spans()
             .assume_held_resource_domains(),
     ) else {
         return state;
@@ -2571,7 +2571,7 @@ fn apply_composite_observation_law_with_facts<F: ResourcePureFacts>(
         &available_pure_facts
             .assumptions()
             .clone()
-            .assume_entry_clause_extents()
+            .assume_entry_clause_spans()
             .assume_held_resource_domains(),
     )?;
     let owned_body_resources = contained_resources
@@ -2757,7 +2757,7 @@ fn append_resource_clause_loadable_fact_with_store<F: ResourcePureFacts>(
         return Ok(());
     };
     for range in ranges {
-        for guard in crate::kernel::admitted_memory_range_extent_facts(&range) {
+        for guard in crate::kernel::admitted_memory_range_span_facts(&range) {
             propositions.insert(guard);
         }
     }
@@ -3613,7 +3613,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
     } else {
         assumptions
             .clone()
-            .assume_entry_clause_extents()
+            .assume_entry_clause_spans()
             .assume_held_resource_domains()
     };
     let mut unfolded_facts = Vec::new();
@@ -6050,7 +6050,7 @@ void child_release(struct child* obj) {
         } else {
             Proposition::ConditionIs(condition, true)
         };
-        let extent = if symbolic_range {
+        let span = if symbolic_range {
             MachineTerm::Variable(Variable(2_000_017))
         } else {
             MachineTerm::constant(1)
@@ -6059,12 +6059,12 @@ void child_release(struct child* obj) {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(extent.clone()),
+                left: Box::new(span.clone()),
                 right: Box::new(MachineTerm::constant(1)),
             },
             true,
         ));
-        let range = MemoryRange::new(pointer, MachineTerm::constant(0), extent);
+        let range = MemoryRange::new(pointer, MachineTerm::constant(0), span);
         let own = ResourceFact::own_memory(range.clone());
         let view = ResourceFact::view_memory(range.clone());
         let support_resources = ResourceContext::new().unchecked_with_fact(own.clone());

@@ -1391,10 +1391,7 @@ pub(in crate::surface) fn annotated_loop_function_extending(
         match crate::kernel::establish_resource_derived_loop_frames(
             previous.function.clone().with_body(lowered),
             &checked_entry,
-            &frame_entry
-                .assumptions
-                .clone()
-                .assume_entry_clause_extents(),
+            &frame_entry.assumptions.clone().assume_entry_clause_spans(),
             &mut budget,
         ) {
             Ok(Ok(function)) => function.body().clone(),
@@ -2074,10 +2071,7 @@ fn annotate_function(
             match crate::kernel::establish_resource_derived_loop_frames(
                 function,
                 &checked_entry,
-                &frame_entry
-                    .assumptions
-                    .clone()
-                    .assume_entry_clause_extents(),
+                &frame_entry.assumptions.clone().assume_entry_clause_spans(),
                 &mut budget,
             ) {
                 Ok(Ok(function)) => function,
@@ -6768,7 +6762,7 @@ impl AnnotationLowerer<'_> {
                     | ProgramExpression::CheckedObjectAddress(_) => {
                         // Rebuild from the authoritative surface operand,
                         // including values already bound into a postcondition.
-                        // Keep the address operation and selected member extent.
+                        // Keep the address operation and selected member bounds.
                         let values = if environment.contract_result_in_scope {
                             BTreeMap::from([(
                                 "result".to_string(),
@@ -8585,7 +8579,7 @@ impl AnnotationLowerer<'_> {
             return Ok(width);
         }
         // Whole-object and field syntax has already lowered its storage
-        // extent to the carrier's coordinates. Only an element range still
+        // size to the carrier's coordinates. Only an element range still
         // needs the instantiated generic pointee's physical stride.
         if !matches!(segment.surface, ContractSegmentSurface::Range { .. }) {
             return Ok(self
@@ -9580,7 +9574,7 @@ impl AnnotationLowerer<'_> {
             } = target.as_ref()
         {
             // Evaluate only the base through the selected specification state.
-            // Retain the C place steps for provenance, extent and qualification.
+            // Retain the C place steps for provenance, bounds and qualification.
             let mut base = pointer.as_ref();
             let mut steps = Vec::new();
             loop {

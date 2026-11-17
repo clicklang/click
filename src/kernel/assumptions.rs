@@ -3905,27 +3905,27 @@ impl PureFactContext {
                 })
     }
 
-    pub(in crate::kernel) fn opaque_extents_equal(&self, a: &Pointer, b: &Pointer) -> bool {
-        self.equality_graph.admitted.extent_graph.equal(a, b)
-            || self.equality_graph.opaque_extents_equal(a, b)
-            || crate::kernel::memory_history::pointer_read_extents_equal(a, b, self)
+    pub(in crate::kernel) fn bounds_owners_equal(&self, a: &Pointer, b: &Pointer) -> bool {
+        self.equality_graph.admitted.bounds_graph.equal(a, b)
+            || self.equality_graph.bounds_owners_equal(a, b)
+            || crate::kernel::memory_history::pointer_read_bounds_equal(a, b, self)
             || self
                 .equality_graph
                 .admitted
-                .extent_graph
+                .bounds_graph
                 .unique_direct_alias(b)
                 .is_some_and(|alias| {
                     crate::instrumentation::record_deterministic_work(1);
-                    crate::kernel::memory_history::pointer_read_extents_equal(a, alias, self)
+                    crate::kernel::memory_history::pointer_read_bounds_equal(a, alias, self)
                 })
             || self
                 .equality_graph
                 .admitted
-                .extent_graph
+                .bounds_graph
                 .unique_direct_alias(a)
                 .is_some_and(|alias| {
                     crate::instrumentation::record_deterministic_work(1);
-                    crate::kernel::memory_history::pointer_read_extents_equal(alias, b, self)
+                    crate::kernel::memory_history::pointer_read_bounds_equal(alias, b, self)
                 })
     }
 
@@ -3938,8 +3938,8 @@ impl PureFactContext {
             required,
             (
                 &available.provenance,
-                available.opaque_extent.as_deref(),
-                available.carrier_extent_known,
+                available.bounds_owner.as_deref(),
+                available.carrier_bounds_known,
             ),
             self,
         )
@@ -3956,9 +3956,9 @@ impl PureFactContext {
         let stored_value = |value: &PointerValue| {
             // A cast or member selection has already chosen its own view.
             // Recover only the untouched opaque value of a complete read.
-            if value.extent_is_known()
-                || value.extent().is_some()
-                || value.opaque_extent() != Some(value.provenance())
+            if value.bounds_are_known()
+                || value.bounds().is_some()
+                || value.bounds_owner() != Some(value.provenance())
             {
                 return None;
             }
@@ -3998,7 +3998,7 @@ impl PureFactContext {
     }
 
     pub(in crate::kernel) fn pointer_value_at_entry(&self, value: &PointerValue) -> PointerValue {
-        if value.extent_is_known() {
+        if value.bounds_are_known() {
             return value.clone();
         }
         let representative = self
@@ -4011,9 +4011,9 @@ impl PureFactContext {
             &self.equality_graph.pointer_value_representative(value),
         );
         let mut framed_address = None;
-        let representative = if !representative.extent_is_known()
+        let representative = if !representative.bounds_are_known()
             && value.provenance().as_loaded_value().is_some()
-            && value.opaque_extent() == Some(value.provenance())
+            && value.bounds_owner() == Some(value.provenance())
         {
             self.known_value_of_framed_pointer_read(value)
                 .inspect(|known| {
@@ -4023,7 +4023,7 @@ impl PureFactContext {
         } else {
             representative
         };
-        if !representative.extent_is_known() {
+        if !representative.bounds_are_known() {
             // Typed loads already return the complete stored pointer when one
             // exists. Normalizing their result must not repeat that history
             // search, including for opaque pointers reconstructed from words.
@@ -4033,10 +4033,10 @@ impl PureFactContext {
         let adopted = value
             .clone()
             .with_provenance(std::sync::Arc::new(representative.provenance().clone()))
-            .with_extent(representative.extent().cloned())
-            .with_opaque_extent(
+            .with_bounds(representative.bounds().cloned())
+            .with_bounds_owner(
                 representative
-                    .opaque_extent()
+                    .bounds_owner()
                     .cloned()
                     .map(std::sync::Arc::new),
             );
@@ -4044,8 +4044,8 @@ impl PureFactContext {
             Some(address) => adopted.with_address(address),
             None => adopted,
         };
-        if representative.extent().is_none() {
-            adopted.with_root_extent()
+        if representative.bounds().is_none() {
+            adopted.with_root_bounds()
         } else {
             adopted
         }
@@ -4086,9 +4086,9 @@ impl PureFactContext {
         };
         for read in [left.as_ref(), right.as_ref()] {
             if read.pointer() != value.pointer()
-                || read.extent_is_known()
-                || read.extent().is_some()
-                || read.opaque_extent() != Some(read.provenance())
+                || read.bounds_are_known()
+                || read.bounds().is_some()
+                || read.bounds_owner() != Some(read.provenance())
             {
                 continue;
             }
@@ -4101,14 +4101,14 @@ impl PureFactContext {
                 &representative,
                 &self.equality_graph.pointer_value_representative(read),
             );
-            if !representative.extent_is_known() {
+            if !representative.bounds_are_known() {
                 continue;
             }
             if crate::kernel::memory_history::pointer_read_provenance_equal(
                 value.provenance(),
                 read.provenance(),
                 self,
-            ) && crate::kernel::memory_history::pointer_read_extents_equal(
+            ) && crate::kernel::memory_history::pointer_read_bounds_equal(
                 value.provenance(),
                 read.provenance(),
                 self,
@@ -4141,15 +4141,15 @@ impl PureFactContext {
             right.provenance(),
             |a, _| a.clone(),
         );
-        if left.extent().is_none()
-            && right.extent().is_none()
-            && !left.extent_is_known()
-            && !right.extent_is_known()
-            && let Some((a, b)) = left.opaque_extent().zip(right.opaque_extent())
+        if left.bounds().is_none()
+            && right.bounds().is_none()
+            && !left.bounds_are_known()
+            && !right.bounds_are_known()
+            && let Some((a, b)) = left.bounds_owner().zip(right.bounds_owner())
         {
             self.equality_graph
                 .admitted
-                .extent_graph
+                .bounds_graph
                 .insert(a, b, |a, _| a.clone());
         }
         self.equality_graph.admitted.pointer_value_classes.insert(
@@ -4940,7 +4940,7 @@ impl PureFactContext {
             crate::persistent::PersistentMap::default();
         self.equality_graph.admitted.pointer_address_sources = Default::default();
         self.equality_graph.admitted.provenance_graph = Default::default();
-        self.equality_graph.admitted.extent_graph = Default::default();
+        self.equality_graph.admitted.bounds_graph = Default::default();
         self.equality_graph.admitted.pointer_value_classes = Default::default();
         self.equality_graph.admitted.pointer_value_equalities = Default::default();
         let conditions = self.condition_facts.clone();
@@ -7015,15 +7015,15 @@ impl PureFactContext {
     }
 
     /// Evaluate a contract entry's own resource clauses. Each states what the
-    /// opaque extent of its pointer covers, so it is assumed, not checked;
+    /// opaque bounds of its pointer covers, so it is assumed, not checked;
     /// the entry builder then records the coverage it states.
-    pub(crate) fn assume_entry_clause_extents(self) -> Self {
-        self.with_reasoning_policy(ReasoningPolicy::ASSUME_ENTRY_CLAUSE_EXTENTS)
+    pub(crate) fn assume_entry_clause_spans(self) -> Self {
+        self.with_reasoning_policy(ReasoningPolicy::ASSUME_ENTRY_CLAUSE_SPANS)
     }
 
-    pub(crate) fn should_assume_entry_clause_extents(&self) -> bool {
+    pub(crate) fn should_assume_entry_clause_spans(&self) -> bool {
         self.reasoning_policy
-            .contains(ReasoningPolicy::ASSUME_ENTRY_CLAUSE_EXTENTS)
+            .contains(ReasoningPolicy::ASSUME_ENTRY_CLAUSE_SPANS)
     }
 
     /// Project a held resource's body using the domains its fold established.
@@ -7372,7 +7372,7 @@ impl PureFactContext {
                     .pointer_value_classes
                     .equal(left, right)
                     || (self.provenance_equal(left.provenance(), right.provenance())
-                        && left.extent() == right.extent()
+                        && left.bounds() == right.bounds()
                         && self.pointers_known_equal(left.pointer(), right.pointer()))
             }
             Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => {
@@ -8972,7 +8972,7 @@ pub(in crate::kernel) fn memory_range_shallowly_contained(
 /// [`memory_range_shallowly_contained`] for a caller that holds a fact context.
 ///
 /// This is `memory_range_covers`'s structural arm, so it gates every `owns` and
-/// `views` entailment, contract-effect coverage and `free` extent. It concluded
+/// `views` entailment, contract-effect coverage and `free` span. It concluded
 /// containment from two affine differences of modular terms read as signed
 /// orders, and that is the same misreading `bitvector_index_outside_range_shallow`
 /// carried, in the direction where it is unsound: a difference of `2^32` is not
@@ -9004,7 +9004,7 @@ pub(in crate::kernel) fn memory_range_shallowly_contained(
 /// A parent whose endpoints have no constant difference has no count, and then
 /// the only route left compares the two ranges' *ends* — `p[3..n]` inside
 /// `p[0..n]`. That reads `end` as `start + count`, so it additionally asks
-/// [`range_count_is_nonnegative`] of the parent, which a stated extent guard
+/// [`range_count_is_nonnegative`] of the parent, which a stated span guard
 /// supplies and a context-free caller cannot.
 pub(in crate::kernel) fn memory_range_shallowly_contained_with_facts(
     range: &MemoryRange,
@@ -9900,7 +9900,7 @@ pub(in crate::kernel) fn element_delta_in_range_by_affine_arithmetic_views(
 /// Two sources, in order of cost. A constant affine element count *is* the
 /// count when it sits in `0..=i32::MAX`, so the ordinary shapes — `p[i..i + 1]`,
 /// `p[0..3]` — carry their own bound and consult nothing. Otherwise the range's
-/// own valid-byte-extent facts supply it, which is the condition a stated
+/// own valid-byte-span facts supply it, which is the condition a stated
 /// `owns`/`views` range already brings. A range with neither is refused:
 /// default-deny, since an unbounded span admits a residue that wrapped all the
 /// way around.
@@ -9928,11 +9928,11 @@ pub(in crate::kernel) fn affine_range_element_count_bound(
 /// difference read as `int32` — exactly, with nothing assumed: the affine walk
 /// is faithful modulo `2^32`, and modulo `2^32` is all the count is. A residue
 /// in the upper half is a negative count, a reversed range that holds no cells
-/// and fails its own valid-extent guard, and this answers `None` for it rather
+/// and fails its own valid-span guard, and this answers `None` for it rather
 /// than a count no conclusion should use.
 ///
 /// Contrast [`affine_range_element_count_bound`], which answers for a range
-/// whose endpoints have *no* constant difference by consulting its extent
+/// whose endpoints have *no* constant difference by consulting its span
 /// facts. A bound is all an "outside" conclusion needs; a membership
 /// conclusion needs the count.
 pub(in crate::kernel) fn affine_range_element_count(
@@ -9945,7 +9945,7 @@ pub(in crate::kernel) fn affine_range_element_count(
 
 /// Whether a range's element count is a real count and not a residue standing
 /// for a negative span — `0 <= end - start`, the forward half of the one
-/// valid-byte-extent condition, which is all this needs and the width limit is
+/// valid-byte-span condition, which is all this needs and the width limit is
 /// not part of.
 ///
 /// This is the premise for comparing two ranges' *ends* rather than their
@@ -10073,7 +10073,7 @@ fn pointer_in_range_shallow(
     };
     // A zero-based symbolic range needs no affine constant count: its
     // signed endpoint is its count. Exact bounds put the unshifted index
-    // inside it, and the extent guard prevents byte scaling from wrapping.
+    // inside it, and the span guard prevents byte scaling from wrapping.
     // Keep nonzero starts and displacements on the exact-affine route below;
     // turning their modular sums into signed offsets would need more evidence.
     if start == &MachineTerm::constant(0)
@@ -13189,7 +13189,7 @@ mod context_restriction_scaling_tests {
 }
 
 #[cfg(test)]
-mod root_extent_tests;
+mod root_bounds_tests;
 
 #[cfg(test)]
 mod view_alias_scaling_tests {
@@ -14144,7 +14144,7 @@ pub(in crate::kernel) fn affine_bitvector_difference_constant_views(
 }
 
 /// Whether an element-index term is known nonnegative, by exact routes only:
-/// its own constant value, or the same order routes a stated extent guard is
+/// its own constant value, or the same order routes a stated span guard is
 /// checked by. This is the premise that keeps a 32-bit subtraction of two
 /// indices inside `int32`, which several conclusions below need and none may
 /// assume.
@@ -14187,7 +14187,7 @@ pub(in crate::kernel) fn element_index_is_nonnegative_view(
 ///   at a range's own start — with no context at all.
 /// * `r` in the upper half is refused. `D = r >= 2^31` would need the index
 ///   `2^31` elements above the start, and a range that reaches that far fails
-///   its valid-extent guard, so a membership caller cannot want it; refusing
+///   its valid-span guard, so a membership caller cannot want it; refusing
 ///   costs nothing and keeps the argument below to the low half.
 /// * Otherwise `D = r - 2^32 <= -2^31 - 1`, which forces `sext(index) < 0` and
 ///   `sext(start) > 0` together: with `sext(index) >= 0` the difference is at
@@ -14196,7 +14196,7 @@ pub(in crate::kernel) fn element_index_is_nonnegative_view(
 ///   excludes it. A constant endpoint settles its own side without consulting
 ///   anything, which is why a range over `p[0..n]` and a constant index need no
 ///   facts; otherwise the order comes from the same exact routes a stated
-///   extent guard is checked by.
+///   span guard is checked by.
 ///
 /// Default-deny: a caller with no context gets the fact-free routes only.
 /// Two constant endpoints also determine a negative difference directly.

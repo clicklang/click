@@ -9,7 +9,7 @@ fn specification_pointer_values_do_not_adopt_fact_supplied_bounds() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Pointer::symbolic(Variable(989_900));
     let value = PointerValue::new(pointer.clone(), ProgramType::Int32Pointer);
-    let bounded = value.clone().with_extent(Some(SubobjectExtent {
+    let bounded = value.clone().with_bounds(Some(SubobjectBounds {
         start: pointer,
         width: 4u32.into(),
     }));
@@ -4450,7 +4450,7 @@ fn unsigned_narrowing_distributes_constant_subtraction_modulo_the_low_word() {
     }
 }
 
-/// A pointer at `pair + offset` whose subobject extent is `[pair + start,
+/// A pointer at `pair + offset` whose subobject bounds are `[pair + start,
 /// pair + start + width)`, as `&pair.first` would carry.
 fn subobject_pointer(offset: i64, start: i64, width: u32) -> PointerValue {
     PointerValue::new(
@@ -4460,7 +4460,7 @@ fn subobject_pointer(offset: i64, start: i64, width: u32) -> PointerValue {
         },
         ProgramType::Int32Pointer,
     )
-    .with_extent(Some(SubobjectExtent {
+    .with_bounds(Some(SubobjectBounds {
         start: Pointer {
             block: "pair".into(),
             offset: PointerOffsetTerm::Constant(start),
@@ -4483,11 +4483,11 @@ fn evaluated_pointer(state: &ExecutionState, expression: ProgramExpression) -> P
 }
 
 #[test]
-fn pointer_arithmetic_and_casts_keep_the_subobject_extent() {
+fn pointer_arithmetic_and_casts_keep_the_subobject_bounds() {
     let first = subobject_pointer(0, 0, 4);
     let state = ExecutionState::new().with_local("p", ProgramValue::Pointer(first.clone()));
 
-    // One past `first` is still `first`'s pointer: the extent does not move
+    // One past `first` is still `first`'s pointer: the bounds do not move
     // with the address, so the address it now shares with `second` does not
     // make it designate `second`.
     let next = evaluated_pointer(
@@ -4498,7 +4498,7 @@ fn pointer_arithmetic_and_casts_keep_the_subobject_extent() {
         ),
     );
     assert_eq!(next.pointer().offset, PointerOffsetTerm::Constant(4));
-    assert_eq!(next.extent(), first.extent());
+    assert_eq!(next.bounds(), first.bounds());
     let back = evaluated_pointer(
         &state,
         crate::kernel::program_expression::subtract(
@@ -4509,7 +4509,7 @@ fn pointer_arithmetic_and_casts_keep_the_subobject_extent() {
             crate::kernel::program_expression::int32_literal(1),
         ),
     );
-    assert_eq!(back.extent(), first.extent());
+    assert_eq!(back.bounds(), first.bounds());
 
     let cast = evaluated_pointer(
         &state,
@@ -4519,11 +4519,11 @@ fn pointer_arithmetic_and_casts_keep_the_subobject_extent() {
         ),
     );
     assert_eq!(cast.program_type(), ProgramType::Int64Pointer);
-    assert_eq!(cast.extent(), first.extent());
+    assert_eq!(cast.bounds(), first.bounds());
 }
 
 #[test]
-fn equal_addresses_with_different_extents_are_different_values() {
+fn equal_addresses_with_different_bounds_are_different_values() {
     let one_past_first = subobject_pointer(4, 0, 4);
     let second = subobject_pointer(4, 4, 4);
     assert_eq!(one_past_first.pointer(), second.pointer());
@@ -4535,7 +4535,7 @@ fn equal_addresses_with_different_extents_are_different_values() {
 }
 
 #[test]
-fn substitution_maps_the_extent_start_with_the_address() {
+fn substitution_maps_the_bounds_start_with_the_address() {
     let base = Variable(98_101);
     let address = |delta: i64| Pointer {
         block: PointerBlock::ExternalArgument,
@@ -4545,8 +4545,8 @@ fn substitution_maps_the_extent_start_with_the_address() {
         ),
     };
     let value = ProgramValue::Pointer(
-        PointerValue::new(address(4), ProgramType::Int32Pointer).with_extent(Some(
-            SubobjectExtent {
+        PointerValue::new(address(4), ProgramType::Int32Pointer).with_bounds(Some(
+            SubobjectBounds {
                 start: address(0),
                 width: MachineTerm::constant(4),
             },
@@ -4562,8 +4562,8 @@ fn substitution_maps_the_extent_start_with_the_address() {
         |delta: i64| substitute_bitvector_variable_in_pointer(&address(delta), base, &replacement);
     assert_eq!(substituted.pointer(), &expected(4));
     assert_eq!(
-        substituted.extent(),
-        Some(&SubobjectExtent {
+        substituted.bounds(),
+        Some(&SubobjectBounds {
             start: expected(0),
             width: MachineTerm::constant(4),
         })
@@ -4576,10 +4576,10 @@ mod scaling_tests {
 }
 
 #[test]
-fn implicit_byte_pointer_coercion_retains_the_selected_extent() {
+fn implicit_byte_pointer_coercion_retains_the_selected_bounds() {
     let address = Pointer::symbolic(Variable(22_102));
-    let pointer = PointerValue::new(address.clone(), ProgramType::Int8Pointer).with_extent(Some(
-        SubobjectExtent {
+    let pointer = PointerValue::new(address.clone(), ProgramType::Int8Pointer).with_bounds(Some(
+        SubobjectBounds {
             start: address,
             width: 4u32.into(),
         },
@@ -4601,8 +4601,8 @@ fn implicit_byte_pointer_coercion_retains_the_selected_extent() {
     };
     assert_eq!(coerced.program_type(), ProgramType::UInt8Pointer);
     assert_eq!(coerced.provenance(), pointer.provenance());
-    assert_eq!(coerced.opaque_extent(), pointer.opaque_extent());
-    assert_eq!(coerced.extent(), pointer.extent());
+    assert_eq!(coerced.bounds_owner(), pointer.bounds_owner());
+    assert_eq!(coerced.bounds(), pointer.bounds());
     for source in [ProgramType::Int8Pointer, ProgramType::UInt8Pointer] {
         for target in [ProgramType::Int8Pointer, ProgramType::UInt8Pointer] {
             let (value, _) = program_evaluate_speprogram_expression_at_state(
@@ -4622,8 +4622,8 @@ fn implicit_byte_pointer_coercion_retains_the_selected_extent() {
             };
             assert_eq!(explicit.program_type(), target);
             assert_eq!(explicit.provenance(), pointer.provenance());
-            assert_eq!(explicit.opaque_extent(), pointer.opaque_extent());
-            assert_eq!(explicit.extent(), pointer.extent());
+            assert_eq!(explicit.bounds_owner(), pointer.bounds_owner());
+            assert_eq!(explicit.bounds(), pointer.bounds());
         }
     }
     for (source, target) in [
@@ -4647,8 +4647,8 @@ fn implicit_byte_pointer_coercion_retains_the_selected_extent() {
         let ProgramValue::Pointer(explicit) = value else {
             panic!("a pointer cast must yield a pointer")
         };
-        assert!(explicit.extent_is_known());
-        assert!(explicit.extent().is_none());
+        assert!(explicit.bounds_are_known());
+        assert!(explicit.bounds().is_none());
     }
 }
 
@@ -4699,9 +4699,9 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
     let second = read(&memory, &b);
     assert!(context.pointer_provenance_match(&first, &stored));
     assert!(context.pointer_provenance_match(&first, &second));
-    assert!(!context.pointer_provenance_match(&first.clone().with_root_extent(), &stored));
+    assert!(!context.pointer_provenance_match(&first.clone().with_root_bounds(), &stored));
     assert!(!context.pointer_provenance_match(
-        &first.clone().with_extent(Some(SubobjectExtent {
+        &first.clone().with_bounds(Some(SubobjectBounds {
             start: stored.pointer().clone(),
             width: 2u32.into(),
         })),
@@ -4740,7 +4740,7 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
     .expect("the selected write preserves the copied pointer's source");
     let framed = framed.assume_proposition(equality);
     assert!(framed.pointer_provenance_match(&read(&copied, &a), &original));
-    assert!(!context.pointer_provenance_match(&first, &stored.clone().with_root_extent()));
+    assert!(!context.pointer_provenance_match(&first, &stored.clone().with_root_bounds()));
     let partial = memory.store(a.clone().offset_by_bytes(4), int32(0));
     assert!(!context.pointer_provenance_match(&read(&partial, &a), &stored));
     let numeric = Memory::new().store(

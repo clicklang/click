@@ -122,7 +122,7 @@ pub(in crate::kernel) fn frame_composite_definitions()
     FRAME_COMPOSITE_DEFINITIONS.with(|definitions| definitions.borrow().last().cloned())
 }
 
-use crate::kernel::scaled_extent_element_width;
+use crate::kernel::scaled_span_element_width;
 
 /// A term as a base plus a constant shift, peeling the additive and
 /// subtractive constants a range endpoint is written with. `hi - 1` is `hi`
@@ -145,7 +145,7 @@ fn endpoint_base_and_shift(term: &MachineTerm) -> (&MachineTerm, i64) {
 
 /// The two element endpoints an element-count term names.
 ///
-/// `p[a..b]` lowers its extent to `(b - a) * w`, so dividing that extent by
+/// `p[a..b]` lowers its span to `(b - a) * w`, so dividing that span by
 /// the width gives back `b - a` and the endpoints read straight off the
 /// subtraction. A range that starts at `0` is the same term with the start
 /// already folded away — the subtraction constructor returns `b` for `b - 0` —
@@ -155,7 +155,7 @@ fn endpoint_base_and_shift(term: &MachineTerm) -> (&MachineTerm, i64) {
 /// This is a reading of the term, not an assumption about it: `count - 0` and
 /// `count` are the same term, so the fact's byte count is `(end - start) * w`
 /// in either spelling and every reader below is asking about the same bytes.
-/// [`PureFactContext::assumed_extent_covers_its_element_count`] already restores
+/// [`PureFactContext::assumed_span_covers_its_element_count`] already restores
 /// the same start for the same reason; sharing one reading keeps a range
 /// written from `0` — which is how a C contract usually writes one — from
 /// being a different kind of range to the rules than `p[a..b]` is.
@@ -171,7 +171,7 @@ fn element_count_endpoints(element_count: &MachineTerm) -> (&MachineTerm, &Machi
 /// structural case where the two endpoints are the same term shifted by
 /// constants: `hi - (hi - 1)` counts one element whatever `hi` is.
 ///
-/// This decides the extent of a single-cell range written from a symbolic
+/// This decides the span of a single-cell range written from a symbolic
 /// endpoint, which the byte-count canonicalizer leaves as a subtraction. It
 /// reads the term and consults no facts, and the difference it reports is the
 /// term's own modular value: for a shared base the base cancels, so the count
@@ -188,11 +188,11 @@ fn constant_element_count(element_count: &MachineTerm) -> Option<i64> {
     (end_base == start_base).then_some(end_shift - start_shift)
 }
 
-/// A constant byte extent still written as an endpoint difference, possibly
+/// A constant byte span still written as an endpoint difference, possibly
 /// scaled once by an element width. Read only this expression, without facts
 /// or rewriting away the endpoints other range rules need. The cast and
-/// product use the extent's own modular 32-bit arithmetic.
-fn structural_constant_byte_extent(bytes: &MachineTerm) -> Option<u32> {
+/// product use the span's own modular 32-bit arithmetic.
+fn structural_constant_byte_span(bytes: &MachineTerm) -> Option<u32> {
     crate::instrumentation::record_deterministic_work(1);
     match bytes {
         binary_term!(Int32, Multiply, left, right) => match (left.as_ref(), right.as_ref()) {
@@ -945,7 +945,7 @@ impl PureFactContext {
                     let Proposition::MemoryLoadable {
                         memory: before,
                         base: address,
-                        bytes: extent,
+                        bytes: span,
                         wide: false,
                     } = fact
                     else {
@@ -955,7 +955,7 @@ impl PureFactContext {
                         (
                             Some(fact),
                             crate::kernel::api::canonicalize_pointer_loads(address),
-                            extent.clone(),
+                            span.clone(),
                             before == memory
                                 || crate::kernel::api::memories_canonically_equal(before, memory),
                         )
@@ -978,9 +978,9 @@ impl PureFactContext {
                     continue;
                 }
                 let byte_adjacent = if let Some(width) = prefix_bytes.as_const() {
-                    // A concrete byte extent is an unsigned mathematical
+                    // A concrete byte span is an unsigned mathematical
                     // distance, not its signed 32-bit residue. Match the
-                    // actual pointer, including extents above INT32_MAX.
+                    // actual pointer, including spans above INT32_MAX.
                     let expected = base.offset_by_bytes(width);
                     suffix_base == &expected
                         || crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
@@ -1007,8 +1007,8 @@ impl PureFactContext {
                     .zip(int32_element_count_from_bytes(suffix_bytes))
                     .zip(int32_element_count_from_bytes(bytes))
                     .is_some_and(|((prefix_count, suffix_count), goal_count)| {
-                        if !self.assumed_extent_covers_its_element_count(&prefix_count, 4)
-                            || !self.assumed_extent_covers_its_element_count(&suffix_count, 4)
+                        if !self.assumed_span_covers_its_element_count(&prefix_count, 4)
+                            || !self.assumed_span_covers_its_element_count(&suffix_count, 4)
                         {
                             return false;
                         }
@@ -1083,7 +1083,7 @@ impl PureFactContext {
                 if !memory_range_still_available(range_memory, memory, range_base, self) {
                     return false;
                 }
-                if self.same_base_and_loadable_extent_match(range_base, range_bytes, base, bytes) {
+                if self.same_base_and_loadable_span_match(range_base, range_bytes, base, bytes) {
                     return true;
                 }
                 let Some(byte_width) = bytes.as_const() else {
@@ -1092,7 +1092,7 @@ impl PureFactContext {
                 let Some(element_count) = element_count_from_bytes(range_bytes, byte_width) else {
                     return false;
                 };
-                if !self.assumed_extent_covers_its_element_count(&element_count, byte_width) {
+                if !self.assumed_span_covers_its_element_count(&element_count, byte_width) {
                     return false;
                 }
                 pointer_in_range_for_memory_resolution(
@@ -1154,8 +1154,8 @@ impl PureFactContext {
     }
 
     /// Callers establish that the source range is available in the relevant
-    /// state before comparing its base and 32-bit byte extent.
-    fn same_base_and_loadable_extent_match(
+    /// state before comparing its base and 32-bit byte span.
+    fn same_base_and_loadable_span_match(
         &self,
         range_base: &Pointer,
         range_bytes: &MachineTerm,
@@ -1163,8 +1163,8 @@ impl PureFactContext {
         bytes: &MachineTerm,
     ) -> bool {
         range_base == base
-            && (structural_constant_byte_extent(range_bytes)
-                .zip(structural_constant_byte_extent(bytes))
+            && (structural_constant_byte_span(range_bytes)
+                .zip(structural_constant_byte_span(bytes))
                 .is_some_and(|(left, right)| left == right)
                 || crate::kernel::reasoning::int32_values_proven_equal_for_memory_resolution(
                     range_bytes,
@@ -1186,7 +1186,7 @@ impl PureFactContext {
         let aligned = self.loadable_query_at_source(base, range_base);
         let base = &aligned;
 
-        if self.same_base_and_loadable_extent_match(range_base, range_bytes, base, bytes) {
+        if self.same_base_and_loadable_span_match(range_base, range_bytes, base, bytes) {
             return true;
         }
         if let Some(byte_width) = bytes.as_const()
@@ -1202,12 +1202,12 @@ impl PureFactContext {
                     )
                 })
             && let Some(element_count) = element_count_from_bytes(range_bytes, byte_width)
-            // Every branch below reads the assumed extent as `element_count`
+            // Every branch below reads the assumed span as `element_count`
             // elements and compares an index against it in signed arithmetic.
-            // That reading is the fact's meaning only while the extent is a
-            // valid byte extent; a wrapped one covers fewer bytes than its
+            // That reading is the fact's meaning only while the span is a
+            // valid byte span; a wrapped one covers fewer bytes than its
             // count claims, and the cell would come from nothing.
-            && self.assumed_extent_covers_its_element_count(&element_count, byte_width)
+            && self.assumed_span_covers_its_element_count(&element_count, byte_width)
         {
             let lower = index_comparison(
                 CompareRelation::LessEqual,
@@ -1284,14 +1284,14 @@ impl PureFactContext {
     /// Range narrowing: a goal range the stated order facts place inside an
     /// assumed loadable range is loadable.
     ///
-    /// This is the one rule here whose goal extent may stay symbolic. Every
+    /// This is the one rule here whose goal span may stay symbolic. Every
     /// other route needs a constant byte width, which is why a single cell
     /// inside `loadable(p[a..b])` is found while the range `p[c..d]` inside
     /// the same fact is not: a segment `p[x..y]` lowers to the base
     /// `p + x * w` and the byte count `(y - x) * w`, so a symbolic upper
     /// endpoint leaves a symbolic product behind.
     ///
-    /// Read both extents at element granularity — the granularity the cell
+    /// Read both spans at element granularity — the granularity the cell
     /// rules above already use — and the endpoints come back exactly: the
     /// fact covers elements `a..b`, the goal names elements `c..d`, and the
     /// pointer offset says where `c` sits relative to `a`. The rule then
@@ -1309,14 +1309,14 @@ impl PureFactContext {
     /// another rather than between two term shapes.
     ///
     /// Soundness, in the arithmetic the terms are actually written in. An
-    /// extent is a `MachineTerm`: `(b - a) * w` is modular, so reading the
+    /// span is a `MachineTerm`: `(b - a) * w` is modular, so reading the
     /// fact as "the elements `a..b`" is only legitimate while that product is
     /// the true count of bytes. The rule therefore requires the assumed fact's
     /// own byte-count guards —
-    /// [`crate::kernel::memory_range_byte_count_extent`], the one definition
-    /// of "this element range is a valid 32-bit byte extent": `a <= b` signed,
+    /// [`crate::kernel::memory_range_byte_count_span`], the one definition
+    /// of "this element range is a valid 32-bit byte span": `a <= b` signed,
     /// and `(b - a) <= u32::MAX / w` unsigned. With those established,
-    /// `0 <= b - a` and `(b - a) * w` does not wrap, so the fact's extent is
+    /// `0 <= b - a` and `(b - a) * w` does not wrap, so the fact's span is
     /// exactly `(b - a) * w` bytes from `p + a * w`.
     ///
     /// The goal's guards then follow rather than being asked for again.
@@ -1330,20 +1330,20 @@ impl PureFactContext {
     /// already covers.
     ///
     /// `c <= d` is required rather than assumed, so a reversed goal range is
-    /// refused instead of being read as a negative extent. An empty goal range
+    /// refused instead of being read as a negative span. An empty goal range
     /// (`c == d`) is accepted and claims nothing, matching the empty-range case
     /// in `proves_memory_loadable_inner`. No product is rescaled and no new
-    /// byte count is formed: `(d - c) * w` is the goal's own lowered extent.
+    /// byte count is formed: `(d - c) * w` is the goal's own lowered span.
     /// The state side condition stays with the caller, which has already
     /// established that the assumed range is still available in the goal's
     /// memory.
     ///
     /// The fits guard is what makes this rule self-contained. Without it a
-    /// wrapped assumed extent — `loadable(v[0..n])` at `n == 1 << 30`, whose
+    /// wrapped assumed span — `loadable(v[0..n])` at `n == 1 << 30`, whose
     /// `n * 4` is `0` — would be a vacuously true premise that narrowing could
     /// turn into a real one. The sibling cell rules above still read a wrapped
-    /// extent as its element count, and a witness for that is
-    /// `mdtests/wrapped_viewable_extent_is_not_a_cell.md`, quarantined.
+    /// span as its element count, and a witness for that is
+    /// `mdtests/wrapped_viewable_span_is_not_a_cell.md`, quarantined.
     fn proves_loadable_subrange_by_element_endpoints(
         &self,
         range_base: &Pointer,
@@ -1357,13 +1357,13 @@ impl PureFactContext {
         if range_base.block != base.block {
             return false;
         }
-        // A range of one-byte elements lowers its extent unscaled — the byte
-        // count of `p[a..b]` over `uint8` is `b - a` itself — so an extent
+        // A range of one-byte elements lowers its span unscaled — the byte
+        // count of `p[a..b]` over `uint8` is `b - a` itself — so a span
         // with no width factor is read at byte granularity. The argument
         // below holds at `w = 1` unchanged, and
-        // `assumed_range_is_a_valid_byte_extent` already answers for it.
-        let element_width = scaled_extent_element_width(bytes).unwrap_or(1);
-        if scaled_extent_element_width(range_bytes).unwrap_or(1) != element_width {
+        // `assumed_range_is_a_valid_byte_span` already answers for it.
+        let element_width = scaled_span_element_width(bytes).unwrap_or(1);
+        if scaled_span_element_width(range_bytes).unwrap_or(1) != element_width {
             return false;
         }
         let (Some(goal_count), Some(range_count)) = (
@@ -1396,12 +1396,12 @@ impl PureFactContext {
             && self.proves_element_endpoint_order(range_start, goal_start)
             && self.proves_element_endpoint_order(goal_start, goal_end)
             && self.proves_element_endpoint_order(goal_end, range_end)
-            && self.assumed_range_is_a_valid_byte_extent(range_start, range_end, element_width)
+            && self.assumed_range_is_a_valid_byte_span(range_start, range_end, element_width)
     }
 
     /// Whether the assumed range is established here to be a valid 32-bit byte
-    /// extent — the side condition
-    /// [`crate::kernel::memory_range_byte_count_extent`] states wherever a
+    /// span — the side condition
+    /// [`crate::kernel::memory_range_byte_count_span`] states wherever a
     /// contract supplies a range.
     ///
     /// Constant endpoints are decided by that shared definition, so a constant
@@ -1417,29 +1417,26 @@ impl PureFactContext {
     /// [`crate::kernel::memory_range_element_count_guards`] states them in.
     /// `0 <= b - a` is the load-bearing one: without it `a = INT_MIN`,
     /// `b = INT_MAX` satisfies `a <= b` and `b - a <= limit` while `b - a` is
-    /// really `-1` and the extent has wrapped.
-    fn assumed_range_is_a_valid_byte_extent(
+    /// really `-1` and the span has wrapped.
+    fn assumed_range_is_a_valid_byte_span(
         &self,
         start: &MachineTerm,
         end: &MachineTerm,
         element_width: u32,
     ) -> bool {
         crate::instrumentation::record_deterministic_work(1);
-        // One-byte elements: the extent is the count, unscaled, so no product
+        // One-byte elements: the span is the count, unscaled, so no product
         // can wrap and the fact's byte count is already exact. There is
         // nothing for a proof to establish, and the signed index comparison
         // the readers make handles a count whose bit pattern is negative.
         if element_width == 1 {
             return true;
         }
-        match crate::kernel::memory_range_byte_count_extent(
-            start.clone(),
-            end.clone(),
-            element_width,
-        ) {
-            crate::kernel::MemoryRangeExtent::ConstantValid => true,
-            crate::kernel::MemoryRangeExtent::ConstantInvalid { .. } => false,
-            crate::kernel::MemoryRangeExtent::Guards(guards) => {
+        match crate::kernel::memory_range_byte_count_span(start.clone(), end.clone(), element_width)
+        {
+            crate::kernel::MemoryRangeSpan::ConstantValid => true,
+            crate::kernel::MemoryRangeSpan::ConstantInvalid { .. } => false,
+            crate::kernel::MemoryRangeSpan::Guards(guards) => {
                 // The shared guards themselves, where the range was stated and
                 // so carries them: a contract's own `a <= b` and the unsigned
                 // `b - a <= limit` are the definition, and an assumed range
@@ -1480,11 +1477,11 @@ impl PureFactContext {
         }
     }
 
-    /// [`Self::assumed_range_is_a_valid_byte_extent`] for an extent recovered
+    /// [`Self::assumed_range_is_a_valid_byte_span`] for a span recovered
     /// as an element count rather than as a pair of endpoints.
     ///
-    /// A rule that divides an assumed extent by an element width has the count
-    /// but not always the endpoints: `loadable(p[0..n])` lowers its extent to
+    /// A rule that divides an assumed span by an element width has the count
+    /// but not always the endpoints: `loadable(p[0..n])` lowers its span to
     /// `n * w`, whose count term is `n` with the zero start already folded
     /// away. The condition is the same one, and it is a condition on the count:
     /// `0 <= count` signed and `count <= u32::MAX / w` unsigned make `count * w`
@@ -1492,7 +1489,7 @@ impl PureFactContext {
     /// elements of `w` bytes is exact. Restoring the start as `0` states it in
     /// the shared definition's own terms, and `count - 0` is `count`, so the
     /// facts a proof must supply are spelled over the count the user wrote.
-    fn assumed_extent_covers_its_element_count(
+    fn assumed_span_covers_its_element_count(
         &self,
         element_count: &MachineTerm,
         element_width: u32,
@@ -1501,11 +1498,11 @@ impl PureFactContext {
         // guards a contract states for `p[a..b]` are written over `a` and `b`,
         // and asking in the same spelling finds them.
         if let binary_term!(Int32, Subtract, end, start) = element_count
-            && self.assumed_range_is_a_valid_byte_extent(start, end, element_width)
+            && self.assumed_range_is_a_valid_byte_span(start, end, element_width)
         {
             return true;
         }
-        self.assumed_range_is_a_valid_byte_extent(
+        self.assumed_range_is_a_valid_byte_span(
             &MachineTerm::constant(0),
             element_count,
             element_width,
@@ -1513,7 +1510,7 @@ impl PureFactContext {
     }
 
     /// An upper bound on the number of elements a range can really span, from
-    /// the range's own established extent facts, or `None` when it has none.
+    /// the range's own established span facts, or `None` when it has none.
     ///
     /// This is what an affine constant difference needs before it may be read
     /// as an order. [`crate::kernel::assumptions::affine_bitvector_difference_constant`]
@@ -1523,7 +1520,7 @@ impl PureFactContext {
     /// count, and that comparison needs the count bounded.
     ///
     /// The bound comes from the one shared definition of a valid 32-bit byte
-    /// extent, [`crate::kernel::memory_range_element_count_guards`]. Its
+    /// span, [`crate::kernel::memory_range_element_count_guards`]. Its
     /// signed `0 <= count` half is the load-bearing one here: it pins the
     /// count below `2^31`, whatever the element width. The width's own
     /// element-count limit tightens it where that limit constrains an `int32`
@@ -1600,7 +1597,7 @@ impl PureFactContext {
         // constants and their sum fit `int32`: `x - d` is then the number it
         // looks like, since `c + d <= x` puts it at or above `c`. This is the
         // shape a range carved one element short leaves — `p[0..n - 1]`, whose
-        // own extent guard is `0 <= n - 1` while what the contract states is
+        // own span guard is `0 <= n - 1` while what the contract states is
         // `1 <= n` — and without it such a range has no established count.
         let Some((MachineIntegerType::Int32, MachineBinaryOp::Subtract, [base, decrement])) =
             upper.binary()
@@ -1637,7 +1634,7 @@ impl PureFactContext {
         base: &Pointer,
         bytes: &MachineTerm,
     ) -> bool {
-        if self.same_base_and_loadable_extent_match(range_base, range_bytes, base, bytes) {
+        if self.same_base_and_loadable_span_match(range_base, range_bytes, base, bytes) {
             return true;
         }
 
@@ -1669,11 +1666,11 @@ impl PureFactContext {
         pointer: &Pointer,
         byte_width: u32,
     ) -> bool {
-        // The region proof compares 32-bit extents.
+        // The region proof compares 32-bit sizes.
         let Some(bytes) = memory
             .blocks
             .get(&pointer.block)
-            .and_then(|block| block.extent().int32_bytes())
+            .and_then(|block| block.allocation_size().int32_bytes())
         else {
             return false;
         };
@@ -1684,7 +1681,7 @@ impl PureFactContext {
         self.proves_loadable_cell_from_region(&base, bytes, pointer, byte_width)
     }
 
-    /// Coverage through an element count whose byte extent has its validity
+    /// Coverage through an element count whose byte span has its validity
     /// guards. Unlike the general cell resolver, this does not compare a
     /// potentially wrapped byte-offset sum.
     pub(in crate::kernel) fn proves_loadable_cell_from_region_elements(
@@ -1708,7 +1705,7 @@ impl PureFactContext {
         if let Some(index) =
             self.pointer_element_index_from_base_with_width(pointer, base, byte_width)
             && let Some(element_count) = element_count_from_bytes(bytes, byte_width)
-            && self.assumed_extent_covers_its_element_count(&element_count, byte_width)
+            && self.assumed_span_covers_its_element_count(&element_count, byte_width)
         {
             let lower_condition = index_comparison(
                 CompareRelation::LessEqual,
@@ -1819,7 +1816,7 @@ impl PureFactContext {
         let Some(element_count) = element_count_from_bytes(bytes, stride) else {
             return false;
         };
-        if !self.assumed_extent_covers_its_element_count(&element_count, stride) {
+        if !self.assumed_span_covers_its_element_count(&element_count, stride) {
             return false;
         }
         if !holds(
@@ -2236,7 +2233,7 @@ impl PureFactContext {
         // A kept call frame must use that same selection: one-hop aliases
         // and a block-local fallback miss transitive model-pointer aliases
         // crossing symbolic blocks. Coverage remains the selected access's
-        // whole byte extent. A kept view preserves values without granting writes.
+        // whole byte span. A kept view preserves values without granting writes.
         if let Some(range) =
             ranges.kept_range_via_address_class(pointer, bytes, self, include_views)
         {
@@ -3704,7 +3701,7 @@ impl PureFactContext {
         }
 
         // Exact physical spans keep stated separation across pointer copies.
-        // The address-class/extent index constructs this selected authority;
+        // The address-class/span index constructs this selected authority;
         // no alias enumeration or unrelated separation bucket is consulted.
         if let (Resource::Memory(left), Resource::Memory(right)) = (left, right)
             && let Some(fact) =
@@ -4508,7 +4505,7 @@ impl PureFactContext {
     }
 
     /// A complete aligned access lies outside a native range. Both byte
-    /// extents remain non-wrapping; a low-word index supplies no separation.
+    /// spans remain non-wrapping; a low-word index supplies no separation.
     fn pointer_access_outside_wide_range(
         &self,
         pointer: &Pointer,
@@ -4598,8 +4595,8 @@ impl PureFactContext {
     /// comparisons are equivalent once `m <= i64::MAX / k` is decided, which
     /// this rule decides itself: then `m * k` is the mathematical byte count
     /// and at most `i64::MAX`, the object-size limit the whole-element rule
-    /// asks of its end. (A heap block's range ends at its extent, which was
-    /// admitted with that bound decided; an element range's own extent guard
+    /// asks of its end. (A heap block's range ends at its size, which was
+    /// admitted with that bound decided; an element range's own span guard
     /// is the same bound.)
     ///
     /// [`scaled_element_offset`]: crate::kernel::reasoning::scaled_element_offset
@@ -4615,7 +4612,7 @@ impl PureFactContext {
 
     /// Whether `pointer` is a position in a wide struct array
     /// ([`wide_struct_array_count`]) that may be formed: the formation rule
-    /// a heap block's 64-bit extent uses (`wide_element_block_bounds` in
+    /// a heap block's 64-bit size uses (`wide_element_block_bounds` in
     /// `eval/operators.rs`), over a held range's own struct count. A constant
     /// byte offset `c` is `ceil(c / k) <= m`, and `i * k + c` with
     /// `0 <= c < k` is `i <= m` when `c == 0` (the one-past position), else
@@ -4815,14 +4812,14 @@ impl PureFactContext {
     }
 
     /// Coverage of a complete pointer's opaque domain. Numeric address
-    /// classes select candidates; only full extent identity admits evidence.
+    /// classes select candidates; only full bounds identity admits evidence.
     pub(in crate::kernel) fn opaque_pointer_covers(
         &self,
         value: &PointerValue,
         position: &Pointer,
         bytes: u32,
     ) -> bool {
-        let Some(origin) = value.opaque_extent() else {
+        let Some(origin) = value.bounds_owner() else {
             return false;
         };
         self.equality_graph
@@ -4836,10 +4833,10 @@ impl PureFactContext {
                 else {
                     return false;
                 };
-                if !self.opaque_extents_equal(origin, source.pointer()) {
+                if !self.bounds_owners_equal(origin, source.pointer()) {
                     return false;
                 }
-                let covered = if let Some(range) = SubobjectExtent::covered_wide_range(fact) {
+                let covered = if let Some(range) = SubobjectBounds::covered_wide_range(fact) {
                     let contains = |pointer| {
                         crate::kernel::primitives::pointer_formation_in_range(
                             pointer,
@@ -4850,7 +4847,7 @@ impl PureFactContext {
                     };
                     contains(position) && (bytes == 0 || contains(&position.offset_by_bytes(bytes)))
                 } else {
-                    SubobjectExtent::covered_range(fact).is_some_and(|(from, count, width)| {
+                    SubobjectBounds::covered_range(fact).is_some_and(|(from, count, width)| {
                         let contains = |position: &Pointer, bytes| {
                             self.pointer_access_in_range(
                                 position,

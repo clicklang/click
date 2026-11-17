@@ -47,7 +47,7 @@ pub(super) fn native_name(value: &ProgramValue) -> Option<SurfaceBinder> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{KernelTermExport, PointerValue, SubobjectExtent, VerificationSession};
+    use crate::kernel::{KernelTermExport, PointerValue, SubobjectBounds, VerificationSession};
 
     fn check_names(values: Vec<(&str, PointerValue)>) {
         let state = ExecutionState::new();
@@ -237,7 +237,7 @@ mod tests {
     }
 
     #[test]
-    fn pointer_proof_names_keep_historical_extent_reads() {
+    fn pointer_proof_names_keep_historical_bounds_reads() {
         let _session = VerificationSession::enter();
         let address = crate::kernel::Memory::global_pointer("pointer-name-width");
         let before = Memory::new().with_block("pointer-name-width", 4);
@@ -247,8 +247,8 @@ mod tests {
         );
         let pointer = Pointer::symbolic(Variable(1015010));
         let make = |memory| {
-            PointerValue::new(pointer.clone(), ProgramType::Int32Pointer).with_extent(Some(
-                SubobjectExtent {
+            PointerValue::new(pointer.clone(), ProgramType::Int32Pointer).with_bounds(Some(
+                SubobjectBounds {
                     start: pointer.clone(),
                     width: MachineTerm::MemoryLoad(
                         crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),

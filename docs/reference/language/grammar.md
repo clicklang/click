@@ -333,7 +333,7 @@ position and says whether it had no reading there or contradicted the
 invariants before it.
 
 A `malloc` or `calloc` result bound directly to a complete struct pointer
-establishes that struct's class when the checked allocation extent contains
+establishes that struct's class when the checked allocation size contains
 the object and the allocator guarantees its alignment. The success branch
 records the class on both the pointer and its storage; the failure branch is
 null. Insufficient storage establishes no class. Casting an existing object,

@@ -3815,7 +3815,7 @@ impl ConditionTerm {
             Self::PointerValueEqual(a, b)
                 if a.block == b.block
                     && a.provenance() == b.provenance()
-                    && a.extent() == b.extent() =>
+                    && a.bounds() == b.bounds() =>
             {
                 Some((&a.offset, &b.offset))
             }
@@ -3825,9 +3825,9 @@ impl ConditionTerm {
 
     pub(crate) fn pointer_value_equal(left: PointerValue, right: PointerValue) -> Self {
         if (left.provenance() == right.provenance()
-            && left.extent() == right.extent()
-            && left.extent_is_known() == right.extent_is_known()
-            && (left.extent_is_known() || left.opaque_extent() == right.opaque_extent()))
+            && left.bounds() == right.bounds()
+            && left.bounds_are_known() == right.bounds_are_known()
+            && (left.bounds_are_known() || left.bounds_owner() == right.bounds_owner()))
             || (matches!(left.program_type(), ProgramType::FunctionPointer(_))
                 && matches!(right.program_type(), ProgramType::FunctionPointer(_)))
         {
@@ -4681,10 +4681,10 @@ impl LValue {
             pointee_volatile,
             constant: false,
             pointee_constant: false,
-            extent: None,
+            bounds: None,
             provenance: None,
-            extent_known: false,
-            opaque_extent: None,
+            bounds_known: false,
+            bounds_owner: None,
             access_class: None,
             object_class: None,
         }
@@ -4711,10 +4711,10 @@ impl LValue {
             pointee_volatile,
             constant: false,
             pointee_constant: false,
-            extent: None,
+            bounds: None,
             provenance: None,
-            extent_known: false,
-            opaque_extent: None,
+            bounds_known: false,
+            bounds_owner: None,
             access_class: None,
             object_class: None,
         }
@@ -4730,13 +4730,13 @@ impl LValue {
         self
     }
 
-    /// The lvalue reached through `pointer`, which keeps its extent and the
+    /// The lvalue reached through `pointer`, which keeps its bounds and the
     /// class of the object it designates.
-    pub(in crate::kernel) fn with_extent_of(mut self, pointer: &PointerValue) -> Self {
-        self.extent = pointer.extent().cloned().map(std::sync::Arc::new);
+    pub(in crate::kernel) fn with_bounds_of(mut self, pointer: &PointerValue) -> Self {
+        self.bounds = pointer.bounds().cloned().map(std::sync::Arc::new);
         self.provenance = Some(std::sync::Arc::new(pointer.provenance().clone()));
-        self.extent_known = pointer.extent_is_known();
-        self.opaque_extent = pointer.opaque_extent.clone();
+        self.bounds_known = pointer.bounds_are_known();
+        self.bounds_owner = pointer.bounds_owner.clone();
         self.object_class = pointer.object_class();
         self
     }
@@ -4745,10 +4745,10 @@ impl LValue {
         self.provenance.as_deref().map(|root| {
             (
                 root,
-                if self.extent_known {
+                if self.bounds_known {
                     None
                 } else {
-                    self.opaque_extent.as_deref()
+                    self.bounds_owner.as_deref()
                 },
             )
         })
@@ -4775,8 +4775,8 @@ impl LValue {
         self.object_class.clone()
     }
 
-    pub(in crate::kernel) fn extent(&self) -> Option<&SubobjectExtent> {
-        self.extent.as_deref()
+    pub(in crate::kernel) fn bounds(&self) -> Option<&SubobjectBounds> {
+        self.bounds.as_deref()
     }
 
     pub fn value_type(&self) -> ProgramType {
@@ -5025,7 +5025,7 @@ impl Pointer {
     /// A logical read with the whole pointer value when the read is a
     /// value the memory already holds for the cell (its own materialized
     /// read, or static storage's symbolic initial contents), provenance and
-    /// extent included; otherwise the named read, as `Err`.
+    /// bounds included; otherwise the named read, as `Err`.
     pub(crate) fn version_read_value(
         memory: &SharedMemory,
         address: &Pointer,

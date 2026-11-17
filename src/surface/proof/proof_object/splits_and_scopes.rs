@@ -974,7 +974,7 @@ impl<'a> Proof<'a> {
             .introductions()
             .map(|record| record.get(stripped..).unwrap_or_default().to_vec());
         let mut body_surface = proposition.clone();
-        // A range declaration also owes its native extent bound. That goal
+        // A range declaration also owes its native span bound. That goal
         // is the count comparison, not the loadability predicate; retaining
         // a theorem application must use a source spelling of the judgment
         // it actually checked. Build it from this declaration's endpoints
@@ -992,7 +992,7 @@ impl<'a> Proof<'a> {
             ) = kernel
             && let uint64_constant!(limit) = limit.as_ref()
         {
-            // A zero-based extent is stored as its end. Its spelling must
+            // A zero-based span is stored as its end. Its spelling must
             // name that term, rather than introduce a new subtraction node.
             let starts_at_zero = matches!(
                 start,
@@ -1015,7 +1015,7 @@ impl<'a> Proof<'a> {
                 )),
             };
             if self
-                .lower_surface_proposition(&candidate, "loop extent bound")
+                .lower_surface_proposition(&candidate, "loop span bound")
                 .is_ok_and(|lowered| {
                     crate::kernel::proof::propositions_are_alpha_equal(&lowered, kernel)
                 })

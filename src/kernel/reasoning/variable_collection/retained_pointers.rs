@@ -82,7 +82,7 @@ pub(crate) fn collect_pointer_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     // The native ProgramValue Integer-free reader treats pointers as opaque.
-    // Its expression/capture/binder readers visit address roles, not extent widths.
+    // Its expression/capture/binder readers visit address roles, not bounds widths.
     if mode != FoldVariableRead::IntegerFree {
         collect_addresses(pointer.addresses(), mode, variables);
     }
@@ -334,8 +334,8 @@ mod tests {
             ProgramType::VoidPointer,
         )
         .with_provenance(Arc::new(Pointer::symbolic(Variable(1001011))))
-        .with_opaque_extent(Some(Arc::new(Pointer::symbolic(Variable(1001012)))))
-        .with_extent(Some(SubobjectExtent {
+        .with_bounds_owner(Some(Arc::new(Pointer::symbolic(Variable(1001012)))))
+        .with_bounds(Some(SubobjectBounds {
             start: Pointer::symbolic(Variable(1001013)),
             width: MachineTerm::Variable(Variable(1001014)),
         }));

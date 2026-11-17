@@ -2780,7 +2780,7 @@ fn comparison_form_uncached(proposition: &Proposition) -> Option<Proposition> {
             resolved = Proposition::ConditionIs(condition, *value);
         }
     }
-    // A pointer value carries a provenance and an extent beside its address,
+    // A pointer value carries a provenance and bounds beside its address,
     // so each read side resolves to the whole stored value, and the
     // comparison is rebuilt from the two values: equal addresses alone never
     // make two pointer values equal.
@@ -7115,7 +7115,7 @@ mod tests {
         let before = context.fact_counts();
         assert!(context.proves_memory_read_defined(&memory, &field, ProgramType::Int32Pointer));
         assert_eq!(context.fact_counts(), before);
-        // Recovering a value and its equation grants no missing read extent.
+        // Recovering a value and its equation grants no missing read span.
         assert!(!PureFactContext::new().proves_memory_read_defined(
             &memory,
             &field,
@@ -7136,7 +7136,7 @@ mod tests {
             crate::kernel::effective_type::CScalarClass::Int,
         );
         let stored = PointerValue::new(target.clone(), ProgramType::Int32Pointer)
-            .with_extent(Some(SubobjectExtent {
+            .with_bounds(Some(SubobjectBounds {
                 start: target,
                 width: 4u32.into(),
             }))
@@ -7212,7 +7212,7 @@ mod tests {
         };
         let target = Pointer::symbolic(Variable(210_199));
         let pointer = PointerValue::new(target.clone(), ProgramType::Int32Pointer)
-            .with_extent(Some(SubobjectExtent::constant(target.clone(), 4)));
+            .with_bounds(Some(SubobjectBounds::constant(target.clone(), 4)));
         let stored = ProgramValue::PointerInteger(PointerIntegerValue {
             numeric: Box::new(ProgramValue::UInt64(MachineTerm::pointer_address(target))),
             pointer: Box::new(pointer.clone()),
@@ -7261,8 +7261,8 @@ mod tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let target = Pointer::symbolic(Variable(210_192));
-        let pointer = PointerValue::new(target.clone(), ProgramType::Int32Pointer).with_extent(
-            Some(SubobjectExtent {
+        let pointer = PointerValue::new(target.clone(), ProgramType::Int32Pointer).with_bounds(
+            Some(SubobjectBounds {
                 start: target.clone(),
                 width: 4u32.into(),
             }),
@@ -7319,7 +7319,7 @@ mod tests {
                 fresh.kind,
                 PointerIntegerKind::Word { changed_bits: 0 }
             ));
-            assert!(fresh.pointer.extent().is_none());
+            assert!(fresh.pointer.bounds().is_none());
         }
         assert!(context.pure_facts().is_empty());
     }
@@ -7329,8 +7329,8 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Pointer::symbolic(Variable(210_194));
         let target = Pointer::symbolic(Variable(210_195));
-        let pointer = PointerValue::new(target.clone(), ProgramType::Int32Pointer).with_extent(
-            Some(SubobjectExtent {
+        let pointer = PointerValue::new(target.clone(), ProgramType::Int32Pointer).with_bounds(
+            Some(SubobjectBounds {
                 start: target.clone(),
                 width: 4u32.into(),
             }),
@@ -7393,8 +7393,8 @@ mod tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let address = Pointer::symbolic(Variable(210_172));
-        let stored = PointerValue::new(address.clone(), ProgramType::Int32Pointer).with_extent(
-            Some(SubobjectExtent {
+        let stored = PointerValue::new(address.clone(), ProgramType::Int32Pointer).with_bounds(
+            Some(SubobjectBounds {
                 start: address,
                 width: 4u32.into(),
             }),
@@ -7439,7 +7439,7 @@ mod tests {
             ProgramValue::UInt32(0u32.into()),
         );
         let changed = read(&overwritten, &field);
-        assert!(changed.extent().is_none());
+        assert!(changed.bounds().is_none());
         assert!(!context.pointer_provenance_match(&changed, &stored));
     }
 
@@ -7653,7 +7653,7 @@ mod tests {
         };
         let empty = PureFactContext::new();
         let value = evaluate(&empty);
-        let bounded = value.clone().with_extent(Some(SubobjectExtent {
+        let bounded = value.clone().with_bounds(Some(SubobjectBounds {
             start: value.pointer().clone(),
             width: 4u32.into(),
         }));
@@ -7672,7 +7672,7 @@ mod tests {
         let write = Pointer::symbolic(Variable(989_931));
         let target = Pointer::symbolic(Variable(989_932));
         let stored = PointerValue::new(target.clone(), ProgramType::Int32Pointer)
-            .with_extent(Some(SubobjectExtent::constant(target, 4)));
+            .with_bounds(Some(SubobjectBounds::constant(target, 4)));
         let memory = Memory::new()
             .store(slot.clone(), ProgramValue::Pointer(stored.clone()))
             .without_possible_aliasing_cells(&write, 4, &PureFactContext::new())
@@ -8210,8 +8210,8 @@ mod tests {
             block: PointerBlock::Heap(92_312),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let bounded = PointerValue::new(base.clone(), ProgramType::Int32Pointer).with_extent(Some(
-            SubobjectExtent {
+        let bounded = PointerValue::new(base.clone(), ProgramType::Int32Pointer).with_bounds(Some(
+            SubobjectBounds {
                 start: base,
                 width: 4u32.into(),
             },
@@ -8223,7 +8223,7 @@ mod tests {
         assert_eq!(
             context
                 .pointer_value_at_entry(&original)
-                .extent()
+                .bounds()
                 .unwrap()
                 .width,
             MachineTerm::constant(4)
@@ -8232,7 +8232,7 @@ mod tests {
         assert_eq!(
             context
                 .pointer_value_at_entry(&read(&unchanged, &context))
-                .extent()
+                .bounds()
                 .unwrap()
                 .width,
             MachineTerm::constant(4)
@@ -8247,7 +8247,7 @@ mod tests {
         assert_eq!(
             context
                 .pointer_value_at_entry(&observed_read)
-                .extent()
+                .bounds()
                 .unwrap()
                 .width,
             MachineTerm::constant(4)
@@ -8263,7 +8263,7 @@ mod tests {
             "the cached numeric prefix is unchanged; it cannot supply bounds"
         );
         assert!(!context.pointer_provenance_match(&changed, &bounded));
-        assert!(context.pointer_value_at_entry(&changed).extent().is_none());
+        assert!(context.pointer_value_at_entry(&changed).bounds().is_none());
     }
 
     #[test]
@@ -8756,12 +8756,12 @@ mod pointer_comparison_tests {
     use crate::kernel::VerificationSession;
 
     #[test]
-    fn pointer_read_comparison_preserves_the_complete_stored_extent() {
+    fn pointer_read_comparison_preserves_the_complete_stored_bounds() {
         let _session = VerificationSession::enter();
         let slot = Pointer::symbolic(Variable(989_001));
         let target = Pointer::symbolic(Variable(989_002));
-        let stored = PointerValue::new(target.clone(), ProgramType::Int32Pointer).with_extent(
-            Some(SubobjectExtent {
+        let stored = PointerValue::new(target.clone(), ProgramType::Int32Pointer).with_bounds(
+            Some(SubobjectBounds {
                 start: target.clone(),
                 width: 4u32.into(),
             }),
@@ -8777,8 +8777,8 @@ mod pointer_comparison_tests {
             true,
         );
         assert!(holds_by_read_over_write(&equal));
-        let larger = PointerValue::new(target.clone(), ProgramType::Int32Pointer).with_extent(
-            Some(SubobjectExtent {
+        let larger = PointerValue::new(target.clone(), ProgramType::Int32Pointer).with_bounds(
+            Some(SubobjectBounds {
                 start: target,
                 width: 8u32.into(),
             }),
@@ -8795,8 +8795,8 @@ mod pointer_comparison_tests {
         let _session = VerificationSession::enter();
         let slot = Pointer::symbolic(Variable(989_020));
         let target = Pointer::symbolic(Variable(989_021));
-        let stored = PointerValue::new(target.clone(), ProgramType::Int32Pointer).with_extent(
-            Some(SubobjectExtent {
+        let stored = PointerValue::new(target.clone(), ProgramType::Int32Pointer).with_bounds(
+            Some(SubobjectBounds {
                 start: target.clone(),
                 width: 4u32.into(),
             }),
@@ -8807,7 +8807,7 @@ mod pointer_comparison_tests {
             Pointer::loaded_value(&memory, &slot),
             ProgramType::Int32Pointer,
         )
-        .with_extent(Some(SubobjectExtent {
+        .with_bounds(Some(SubobjectBounds {
             start: target,
             width: 8u32.into(),
         }));
@@ -8948,8 +8948,8 @@ mod pointer_read_value_definition_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let slot = Pointer::symbolic(Variable(981_301));
         let target = Pointer::symbolic(Variable(981_302));
-        let stored = PointerValue::new(target.clone(), ProgramType::Int32Pointer).with_extent(
-            Some(SubobjectExtent {
+        let stored = PointerValue::new(target.clone(), ProgramType::Int32Pointer).with_bounds(
+            Some(SubobjectBounds {
                 start: target.clone(),
                 width: 4u32.into(),
             }),
@@ -8968,12 +8968,12 @@ mod pointer_read_value_definition_tests {
             &ConditionTerm::PointerValueEqual(Box::new(named.clone()), Box::new(stored.clone())),
             true,
         ));
-        let other_extent = stored.clone().with_extent(Some(SubobjectExtent {
+        let other_bounds = stored.clone().with_bounds(Some(SubobjectBounds {
             start: target,
             width: 8u32.into(),
         }));
         assert!(!context.equality_graph.knows_condition(
-            &ConditionTerm::PointerValueEqual(Box::new(named), Box::new(other_extent)),
+            &ConditionTerm::PointerValueEqual(Box::new(named), Box::new(other_bounds)),
             true,
         ));
     }

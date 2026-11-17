@@ -322,9 +322,9 @@ mod tests {
         assert!(after.supports_object_class(&class()));
         assert_eq!(after.pointer(), before.pointer());
         assert_eq!(after.provenance(), before.provenance());
-        assert_eq!(after.extent(), before.extent());
-        assert_eq!(after.extent_is_known(), before.extent_is_known());
-        assert_eq!(after.opaque_extent(), before.opaque_extent());
+        assert_eq!(after.bounds(), before.bounds());
+        assert_eq!(after.bounds_are_known(), before.bounds_are_known());
+        assert_eq!(after.bounds_owner(), before.bounds_owner());
 
         let other = CAccessClass::Struct(CStructClass::opaque("other"));
         for (mut value, declared) in [

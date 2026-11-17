@@ -1,8 +1,8 @@
 # A member pointer returned by a call fills a clause of its member
 
 The control for `a_member_pointer_returned_by_a_call_keeps_its_subobject.md`.
-The result adopts `&p->first`'s extent through the contract's equality, and
-a reader's one-element clause lies exactly inside it. The extent's start is
+The result adopts `&p->first`'s bounds through the contract's equality, and
+a reader's one-element clause lies exactly inside it. The bounds' start is
 spelled through `p`, not through the fresh result, so the clause check
 respells the result at that start before measuring it.
 

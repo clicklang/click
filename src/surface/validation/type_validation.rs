@@ -3767,7 +3767,7 @@ pub(in crate::surface) fn click_types_compatible(
 /// A resource argument follows the predicate rule,
 /// [`click_argument_types_compatible`]: a character pointer is passed as
 /// `uint8` bytes, so `cstr_at(s, n)` takes a C `char *s`.
-/// A resource argument of the wrong type. The heap `allocation` extent
+/// A resource argument of the wrong type. The heap `allocation` size
 /// names the two byte-count formats it takes.
 fn resource_argument_type_message(
     name: &str,
@@ -3779,7 +3779,7 @@ fn resource_argument_type_message(
     if name == ResourceFact::ALLOCATION_RESOURCE_NAME && index == 1 {
         return format!(
             "resource `{name}` argument {index} expects int32 or uint64, got {} in {context}: \
-             the byte count is a heap block's extent, a 32-bit `int32` or a 64-bit `uint64` \
+             the byte count is a heap block's size, a 32-bit `int32` or a 64-bit `uint64` \
              (`size_t`) one; a signed 64-bit size is stated through its `size_t` conversion, \
              such as `allocation(result, bytes as uint64)`",
             describe_interface_type(actual)
@@ -3792,9 +3792,9 @@ fn resource_argument_type_message(
     )
 }
 
-/// Argument 1 of `allocation` is the heap block's extent: declared `int32`,
-/// it also takes a 64-bit `uint64` (`size_t`) byte count, the extent of a
-/// block whose size is a symbolic `size_t` (`design/heap-extents.md`, D4).
+/// Argument 1 of `allocation` is the heap block's size: declared `int32`,
+/// it also takes a 64-bit `uint64` (`size_t`) byte count, the size of a
+/// block whose size is a symbolic `size_t` (`design/heap-allocation-sizes.md`, D4).
 fn resource_types_compatible(
     name: &str,
     index: usize,

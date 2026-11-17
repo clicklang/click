@@ -70,11 +70,11 @@ fn ambiguous_address_enumeration_requires_search_and_charges_candidates() {
         let memory = crate::kernel::ExecutionState::new().memory().clone();
         let base = Pointer::symbolic(Variable(795_000));
         let mut context = PureFactContext::new();
-        for extent in 1..=size {
+        for span in 1..=size {
             context = context.assume_proposition(Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: base.clone(),
-                bytes: extent.into(),
+                bytes: span.into(),
                 wide: false,
             });
         }

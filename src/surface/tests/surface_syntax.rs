@@ -3650,7 +3650,7 @@ fn parses_built_in_expressions_on_either_comparison_side() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_27")]
-fn resource_array_extent_excludes_struct_padding() {
+fn resource_array_size_excludes_struct_padding() {
     let c_source = "struct packet { uint8 bytes[3]; int64 aligned; }; uint8 read(struct packet* p) { return p->bytes[2]; }";
     let click_source = r#"
         verifying "array.c";
@@ -5371,7 +5371,7 @@ test_batches! {
     ],
     surface_syntax_batch_27: [
         parses_built_in_expressions_on_either_comparison_side,
-        resource_array_extent_excludes_struct_padding,
+        resource_array_size_excludes_struct_padding,
         a_child_resource_is_owned_like_any_other,
         an_invariant_label_names_it_in_a_failure,
     ],

@@ -1,7 +1,7 @@
-# A refused prefix does not infer a missing extent from a held range
+# A refused prefix does not infer a missing span from a held range
 
 The proof holds `a[0..n]`, and requests the larger `a[0..n + 1]`. The claim must
-fail without asserting that no range was stated or inventing an extent cause
+fail without asserting that no range was stated or inventing a span cause
 from the failure to construct a checked source proof.
 
 ```c filename=unnarrowable_range_names_held_range.c

@@ -8,9 +8,9 @@ struct PointerIdentity {
     provenance: SharedPointerAddress,
     program_type: ProgramType,
     volatile: bool,
-    extent_known: bool,
-    opaque_extent: Option<SharedPointerAddress>,
-    extent: Option<(SharedPointerAddress, KernelTerm)>,
+    bounds_known: bool,
+    bounds_owner: Option<SharedPointerAddress>,
+    bounds: Option<(SharedPointerAddress, KernelTerm)>,
 }
 
 #[derive(Clone, Debug)]
@@ -50,20 +50,20 @@ impl KernelPointerEquality {
         let observation = self.arguments.each_ref().map(|value| {
             let p = value.node();
             let q = p.qualifiers.as_ref();
-            let known = q.is_some_and(|q| q.extent_known);
+            let known = q.is_some_and(|q| q.bounds_known);
             PointerIdentity {
                 address: address(&p.address),
                 provenance: address(&p.provenance),
                 program_type: p.program_type,
                 volatile: q.is_some_and(|q| q.volatile),
-                extent_known: known,
-                opaque_extent: if known {
+                bounds_known: known,
+                bounds_owner: if known {
                     None
                 } else {
-                    p.opaque_extent.as_ref().map(&mut address)
+                    p.bounds_owner.as_ref().map(&mut address)
                 },
-                extent: q
-                    .and_then(|q| q.extent.as_ref())
+                bounds: q
+                    .and_then(|q| q.bounds.as_ref())
                     .map(|e| (address(&e.start), numeric(&e.width))),
             }
         });
@@ -81,31 +81,31 @@ impl SharedPointerValue {
         }
         let (a, b) = (self.node(), other.node());
         let (aq, bq) = (a.qualifiers.as_ref(), b.qualifiers.as_ref());
-        let known = aq.is_some_and(|q| q.extent_known);
+        let known = aq.is_some_and(|q| q.bounds_known);
         a.program_type == b.program_type
             && aq.is_some_and(|q| q.volatile) == bq.is_some_and(|q| q.volatile)
-            && known == bq.is_some_and(|q| q.extent_known)
+            && known == bq.is_some_and(|q| q.bounds_known)
             && a.address.syntax_equal(&b.address)
             && a.provenance.syntax_equal(&b.provenance)
             && (known
-                || match (&a.opaque_extent, &b.opaque_extent) {
+                || match (&a.bounds_owner, &b.bounds_owner) {
                     (None, None) => true,
                     (Some(a), Some(b)) => a.syntax_equal(b),
                     _ => false,
                 })
-            && self.condition_extent_equal(other)
+            && self.condition_bounds_equal(other)
     }
-    pub(crate) fn condition_extent_equal(&self, other: &Self) -> bool {
+    pub(crate) fn condition_bounds_equal(&self, other: &Self) -> bool {
         match (
             self.node()
                 .qualifiers
                 .as_ref()
-                .and_then(|q| q.extent.as_ref()),
+                .and_then(|q| q.bounds.as_ref()),
             other
                 .node()
                 .qualifiers
                 .as_ref()
-                .and_then(|q| q.extent.as_ref()),
+                .and_then(|q| q.bounds.as_ref()),
         ) {
             (None, None) => true,
             (Some(a), Some(b)) => {
@@ -119,7 +119,7 @@ impl SharedPointerValue {
             _ => false,
         }
     }
-    /// Native map_pointers policy: addresses change, extent width does not.
+    /// Native map_pointers policy: addresses change, bounds width does not.
     pub(crate) fn map_condition_addresses<E>(
         &self,
         mut map: impl FnMut(&SharedPointerAddress) -> Result<SharedPointerAddress, E>,
@@ -127,12 +127,12 @@ impl SharedPointerValue {
         let mut p = self.node().clone();
         p.address = map(&p.address)?;
         p.provenance = map(&p.provenance)?;
-        p.opaque_extent = p.opaque_extent.as_ref().map(&mut map).transpose()?;
+        p.bounds_owner = p.bounds_owner.as_ref().map(&mut map).transpose()?;
         if let Some(q) = &mut p.qualifiers
-            && let Some(e) = &q.extent
+            && let Some(e) = &q.bounds
         {
             let start = map(&e.start)?;
-            Arc::make_mut(q).extent.as_mut().unwrap().start = start;
+            Arc::make_mut(q).bounds.as_mut().unwrap().start = start;
         }
         let result = Self::new(p);
         Ok(if self.same_source_payload(&result) {
@@ -159,12 +159,12 @@ impl KernelTerm {
         let [left, right] = arguments.each_ref();
         let (a, b) = (left.node(), right.node());
         let (aq, bq) = (a.qualifiers.as_ref(), b.qualifiers.as_ref());
-        let known = aq.is_some_and(|q| q.extent_known);
+        let known = aq.is_some_and(|q| q.bounds_known);
         let same_domain = a.provenance.syntax_equal(&b.provenance)
-            && left.condition_extent_equal(right)
-            && known == bq.is_some_and(|q| q.extent_known)
+            && left.condition_bounds_equal(right)
+            && known == bq.is_some_and(|q| q.bounds_known)
             && (known
-                || match (&a.opaque_extent, &b.opaque_extent) {
+                || match (&a.bounds_owner, &b.bounds_owner) {
                     (None, None) => true,
                     (Some(a), Some(b)) => a.syntax_equal(b),
                     _ => false,
@@ -238,8 +238,8 @@ mod tests {
             values.push(raw.clone());
             values.push(raw.clone().with_pointee_constant(true));
             values.push(raw.clone().with_pointee_volatile(true));
-            values.push(raw.clone().with_root_extent());
-            values.push(raw.clone().with_extent(Some(SubobjectExtent {
+            values.push(raw.clone().with_root_bounds());
+            values.push(raw.clone().with_bounds(Some(SubobjectBounds {
                 start: Pointer::symbolic(Variable(999101)),
                 width: MachineTerm::Variable(Variable(999102)),
             })));

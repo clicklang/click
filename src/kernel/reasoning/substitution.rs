@@ -1735,12 +1735,12 @@ fn walk_memory_range<S: VariableSubstitution + ?Sized>(range: &MemoryRange, s: &
             s.bitvector(range.bound_terms().1),
         )
         .with_provenance(std::sync::Arc::new(s.pointer(&range.provenance)))
-        .with_opaque_extent(
+        .with_bounds_owner(
             range
-                .opaque_extent
+                .bounds_owner
                 .as_deref()
                 .map(|origin| std::sync::Arc::new(s.pointer(origin))),
-            range.carrier_extent_known,
+            range.carrier_bounds_known,
         );
     if !range.formation_coverage.is_empty() {
         result.formation_coverage = range
@@ -6414,7 +6414,7 @@ fn state_size_substitution_preserves_declared_types_and_write_protection() {
     let mut memory =
         Memory::new().with_declared_scalar_block("local:word".into(), 4, ProgramType::UInt32);
     let mut read_only = MemoryBlock::read_only(4);
-    read_only.size = HeapExtent::int32(MachineTerm::Variable(from));
+    read_only.size = AllocationSize::int32(MachineTerm::Variable(from));
     std::sync::Arc::make_mut(&mut memory.blocks).insert("global:protected".into(), read_only);
     let rewritten =
         substitute_bitvector_variable_in_memory_contents(&memory, from, &MachineTerm::constant(16));
@@ -6427,7 +6427,7 @@ fn state_size_substitution_preserves_declared_types_and_write_protection() {
         .get(&PointerBlock::from("global:protected"))
         .unwrap();
     assert!(protected.read_only);
-    assert_eq!(protected.size, HeapExtent::int32(16));
+    assert_eq!(protected.size, AllocationSize::int32(16));
 }
 
 fn substitute_bitvector_variable_in_memory_contents(
@@ -6455,12 +6455,12 @@ fn substitute_bitvector_variable_in_memory_contents(
                 .blocks
                 .iter()
                 .map(|(block, contents)| {
-                    // Substitution changes the extent term, not the storage
+                    // Substitution changes the size term, not the storage
                     // declaration or its write protection. Rebuilding a bare
                     // block erased these properties, even for a constant size.
                     let mut rewritten = contents.clone();
                     rewritten.size = contents
-                        .extent()
+                        .allocation_size()
                         .map_bytes(|bytes| substitute_bitvector_variable(bytes, from, to));
                     (block.clone(), rewritten)
                 })

@@ -1499,32 +1499,32 @@ impl ExecutionBudget {
     }
 
     /// The first constant element range this budget's lowering refused as a
-    /// 32-bit byte extent, for the message a caller writes when the lowering
+    /// 32-bit byte span, for the message a caller writes when the lowering
     /// produced no path at all.
-    pub fn dropped_range_extent(&self) -> Option<&super::DroppedRangeExtent> {
-        self.dropped_range_extent.as_ref()
+    pub fn dropped_range_span(&self) -> Option<&super::DroppedRangeSpan> {
+        self.dropped_range_span.as_ref()
     }
 
     /// Whether a stated memory range was dropped because this context
-    /// refutes one of its extent guards, and whether that guard ordered the
+    /// refutes one of its span guards, and whether that guard ordered the
     /// range's endpoints (`true`) or bounded its byte count (`false`).
-    pub fn dropped_refuted_range_extent(&self) -> Option<bool> {
-        self.dropped_refuted_range_extent
+    pub fn dropped_refuted_range_span(&self) -> Option<bool> {
+        self.dropped_refuted_range_span
     }
 
     /// Records such a refusal. Diagnostic only; it decides nothing.
-    pub(in crate::kernel) fn record_dropped_refuted_range_extent(&mut self, reversed: bool) {
-        self.dropped_refuted_range_extent.get_or_insert(reversed);
+    pub(in crate::kernel) fn record_dropped_refuted_range_span(&mut self, reversed: bool) {
+        self.dropped_refuted_range_span.get_or_insert(reversed);
     }
 
-    pub(in crate::kernel) fn record_dropped_range_extent(
+    pub(in crate::kernel) fn record_dropped_range_span(
         &mut self,
         element_count: i64,
         element_width: u32,
         byte_limit: u32,
     ) {
-        self.dropped_range_extent
-            .get_or_insert(super::DroppedRangeExtent {
+        self.dropped_range_span
+            .get_or_insert(super::DroppedRangeSpan {
                 element_count,
                 element_width,
                 byte_limit,
@@ -1570,8 +1570,8 @@ impl ExecutionBudget {
             next_match_binder_variable: Self::MATCH_BINDER_VARIABLE_BASE,
             refuses_execution_identities: false,
             dropped_runtime_error: None,
-            dropped_range_extent: None,
-            dropped_refuted_range_extent: None,
+            dropped_range_span: None,
+            dropped_refuted_range_span: None,
             dropped_fold_body: None,
             dropped_comparison: None,
             program_byte_order: None,

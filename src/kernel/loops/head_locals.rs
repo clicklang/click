@@ -36,7 +36,7 @@ impl<'a> LoopHeadLocals<'a> {
             };
             // These are loop-interface requirements: the back edge checks
             // that a pointer returns to this subobject and object class.
-            let value = with_retained_extent(value, entry.locals.get(&name));
+            let value = with_retained_bounds(value, entry.locals.get(&name));
             let value = with_retained_object_class(value, entry.locals.get(&name));
             let slot = entry
                 .locals

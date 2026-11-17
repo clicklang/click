@@ -221,7 +221,7 @@ fn displaced_full_pointer_rewrite_scales_with_the_selected_offset() {
                 ))
             );
             assert_eq!(result.provenance(), target.provenance());
-            assert_eq!(result.opaque_extent(), target.opaque_extent());
+            assert_eq!(result.bounds_owner(), target.bounds_owner());
             assert!(
                 work >= usize::try_from(size).unwrap(),
                 "{symbolic}: {size}: {work}"
@@ -253,8 +253,8 @@ fn integer_address_rewrite_visits_a_shared_pointer_dag_once() {
             assert_eq!(rewrite.refusal(), None);
             output
         });
-        // Rewriting retains each C pointer's extent metadata; constructing
-        // a fresh typed null would instead introduce a known null extent.
+        // Rewriting retains each C pointer's bounds metadata; constructing
+        // a fresh typed null would instead introduce a known null bounds.
         // Check the shared application's shape and selected numeric leaf.
         let mut leaf = &output;
         for _ in 0..depth {

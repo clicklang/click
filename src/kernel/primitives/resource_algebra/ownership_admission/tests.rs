@@ -70,7 +70,7 @@ fn unsupported_admission_resumes_once_and_retains_occurrences() {
     let OwnershipAdmission::Unsupported(pending) =
         parent.clone().admit_without_discovery(input, &facts)
     else {
-        panic!("a symbolic extent must remain unsupported");
+        panic!("a symbolic span must remain unsupported");
     };
     assert_eq!(yielded.get(), outputs.len());
     assert_eq!(pending.first_unresolved, pending.first_new + 1);

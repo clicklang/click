@@ -1,9 +1,9 @@
 # A 64-bit `allocation` spelling of a 32-bit block is refused
 
-`malloc(m * 4)` with an `int` count holds a 32-bit extent,
+`malloc(m * 4)` with an `int` count holds a 32-bit size,
 `allocation(p, m * 4)`. A callee that states the block with a `size_t` count,
-`allocation(p, n * 4u64)`, names a 64-bit extent, which does not match it
-(`design/heap-extents.md`, D5); the refusal names both formats.
+`allocation(p, n * 4u64)`, names a 64-bit size, which does not match it
+(`design/heap-allocation-sizes.md`, D5); the refusal names both formats.
 
 ```c filename=a_64_bit_allocation_spelling_of_a_32_bit_block_is_refused.c
 #include <stdint.h>

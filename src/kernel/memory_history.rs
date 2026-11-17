@@ -2430,7 +2430,7 @@ pub(in crate::kernel) fn typed_range_disjoint_from_pointer_evidence(
         return Some(RangeDisjointFromPointerEvidence::DistinctBlocks);
     }
     // The checked borrowed descriptor and backing owner are indexed by the
-    // two selected addresses. Retain their complete extents, just as the
+    // two selected addresses. Retain their complete bounds, just as the
     // single-store frame does, before considering ambient separation facts.
     if let Some((resources, range_member, access_member)) = assumptions
         .borrow_partition_separated_members(
@@ -2503,7 +2503,7 @@ pub(in crate::kernel) fn typed_range_disjoint_from_pointer_evidence(
     }
     // Native footprints need native separation evidence, never a signed
     // forward-offset certificate. Distinct blocks and exact facts above
-    // already retain their complete typed extents.
+    // already retain their complete typed spans.
     if range.wide_bounds().is_some() {
         return None;
     }
@@ -3123,7 +3123,7 @@ pub(in crate::kernel) fn pointer_read_provenance_equal(
     pointer_read_domains_equal(left, right, assumptions, false)
 }
 
-pub(in crate::kernel) fn pointer_read_extents_equal(
+pub(in crate::kernel) fn pointer_read_bounds_equal(
     left: &Pointer,
     right: &Pointer,
     assumptions: &PureFactContext,
@@ -3135,7 +3135,7 @@ fn pointer_read_domains_equal(
     left: &Pointer,
     right: &Pointer,
     assumptions: &PureFactContext,
-    extent: bool,
+    bounds: bool,
 ) -> bool {
     let left_origin = left;
     let right_origin = right;
@@ -3173,8 +3173,8 @@ fn pointer_read_domains_equal(
     }
     let a_value = a.resolved_value(&left.defining_address, LoadKind::Int32);
     let b_value = b.resolved_value(&left.defining_address, LoadKind::Int32);
-    if matches!(&a_value, Some(ProgramValue::Pointer(stored)) if if extent { stored.extent().is_none() && !stored.extent_is_known() && stored.opaque_extent() == Some(right_origin) } else { stored.provenance() == right_origin })
-        || matches!(&b_value, Some(ProgramValue::Pointer(stored)) if if extent { stored.extent().is_none() && !stored.extent_is_known() && stored.opaque_extent() == Some(left_origin) } else { stored.provenance() == left_origin })
+    if matches!(&a_value, Some(ProgramValue::Pointer(stored)) if if bounds { stored.bounds().is_none() && !stored.bounds_are_known() && stored.bounds_owner() == Some(right_origin) } else { stored.provenance() == right_origin })
+        || matches!(&b_value, Some(ProgramValue::Pointer(stored)) if if bounds { stored.bounds().is_none() && !stored.bounds_are_known() && stored.bounds_owner() == Some(left_origin) } else { stored.provenance() == left_origin })
     {
         return true;
     }
@@ -3570,7 +3570,7 @@ fn stored_write_reaching(
 
 pub(super) fn heap_allocation_proven_separate_from_pointer(
     allocation_base: &Pointer,
-    bytes: &HeapExtent,
+    bytes: &AllocationSize,
     pointer: &Pointer,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -3586,7 +3586,7 @@ pub(super) fn heap_allocation_proven_separate_from_pointer(
         MachineTerm::constant(1),
     ));
     // The allocation's memory in its own index kind, read through the
-    // extent's element count as the heap reads its blocks.
+    // size's element count as the heap reads its blocks.
     bytes.element_count(4).is_some_and(|count| {
         let allocation_memory = Resource::Memory(bytes.range(allocation_base.clone(), count, 4));
         assumptions.proves_resource_separate(&allocation_memory, &cell)
@@ -7853,7 +7853,7 @@ mod opaque_pointer_frame_tests {
             same_storage = same_storage.assume_condition(address_equality(a, b), true);
         }
         assert!(pointer_read_provenance_equal(&left, &right, &same_storage));
-        assert!(pointer_read_extents_equal(&left, &right, &same_storage));
+        assert!(pointer_read_bounds_equal(&left, &right, &same_storage));
         let overwritten = intern_memory(
             memory
                 .memory()
@@ -7866,7 +7866,7 @@ mod opaque_pointer_frame_tests {
             &changed,
             &same_storage
         ));
-        assert!(!pointer_read_extents_equal(&left, &changed, &same_storage));
+        assert!(!pointer_read_bounds_equal(&left, &changed, &same_storage));
     }
 
     #[test]
@@ -7886,7 +7886,7 @@ mod opaque_pointer_frame_tests {
         let b = Pointer::loaded_value(&right, &field);
         let context = PureFactContext::new();
         assert!(pointer_read_provenance_equal(&a, &b, &context));
-        assert!(pointer_read_extents_equal(&a, &b, &context));
+        assert!(pointer_read_bounds_equal(&a, &b, &context));
         assert!(complete_pointer_reads_equal_across_frame(&a, &b, &context));
         let changed = intern_memory(
             base.memory()
@@ -7991,7 +7991,7 @@ mod opaque_pointer_frame_tests {
             &read(&after),
             &context
         ));
-        assert!(pointer_read_extents_equal(
+        assert!(pointer_read_bounds_equal(
             &read(&before),
             &read(&after),
             &context
@@ -8011,7 +8011,7 @@ mod opaque_pointer_frame_tests {
             &read(&overwritten),
             &context
         ));
-        assert!(!pointer_read_extents_equal(
+        assert!(!pointer_read_bounds_equal(
             &read(&before),
             &read(&overwritten),
             &context
@@ -8026,8 +8026,8 @@ mod opaque_pointer_frame_tests {
         let field = header.clone().offset_by_bytes(8);
         let buffer = Pointer::symbolic(Variable(9_880_421));
         let target = Pointer::symbolic(Variable(9_880_422));
-        let stored = PointerValue::new(target.clone(), ProgramType::Int32Pointer).with_extent(
-            Some(SubobjectExtent {
+        let stored = PointerValue::new(target.clone(), ProgramType::Int32Pointer).with_bounds(
+            Some(SubobjectBounds {
                 start: target,
                 width: 4u32.into(),
             }),
@@ -8068,7 +8068,7 @@ mod opaque_pointer_frame_tests {
                 .unwrap();
         let context = context.assume_proposition(equality);
         assert!(context.pointer_provenance_match(&observed, &stored));
-        // Provenance matching includes the complete pointer's subobject extent.
+        // Provenance matching includes the complete pointer's subobject bounds.
         let too_short = empty.assume_proposition(separation(1));
         assert!(
             explicit_pointer_store_frame(&before, memory.memory(), &field, &write, &too_short)

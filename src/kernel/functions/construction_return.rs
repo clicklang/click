@@ -86,7 +86,7 @@ fn destination<'a>(
         .heap
         .uninitialized_objects
         .get(&base)
-        .is_some_and(|extent| end <= *extent);
+        .is_some_and(|size| end <= *size);
     let storage_matches = match state.memory.block_size(&selected.pointer.block) {
         Some(size) => {
             let size = size.as_const()?;
@@ -100,7 +100,7 @@ fn destination<'a>(
         }
         // A constructor entry describes only its object's footprint. Its
         // containing allocation can be larger, so source proof setup supplies
-        // field liveness through the contract instead of fixing a block extent.
+        // field liveness through the contract instead of fixing a block size.
         None => constructor && (exact_raw_object || within_raw_parent),
     };
     if !interface.exceptional_signature().is_empty()

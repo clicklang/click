@@ -857,7 +857,7 @@ fn execution_effect_diagnostics_omit_raw_memory_states() {
             before,
             after,
             allocation_base: pointer,
-            bytes: crate::kernel::HeapExtent::int32(MachineTerm::constant(4)),
+            bytes: crate::kernel::AllocationSize::int32(MachineTerm::constant(4)),
         }),
     ];
 
@@ -3393,7 +3393,7 @@ fn native_view_solve_distinguishes_a_rejected_kernel_query() {
         "{report}"
     );
     assert!(!report.contains("accepted by the kernel"), "{report}");
-    assert!(!report.contains("valid 32-bit byte extent"), "{report}");
+    assert!(!report.contains("valid 32-bit byte span"), "{report}");
 }
 
 #[test]

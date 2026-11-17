@@ -645,7 +645,7 @@ fn forall_integer_instantiation_charges_shared_replacement_only_once() {
 }
 
 #[test]
-fn loadability_same_base_extent_graph_queries_scale_without_fact_index() {
+fn loadability_same_base_span_graph_queries_scale_without_fact_index() {
     let memory = Memory::new();
     let base = Pointer::symbolic(Variable(90_310));
     let var = |id| MachineTerm::Variable(Variable(id));

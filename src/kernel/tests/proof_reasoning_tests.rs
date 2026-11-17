@@ -2337,10 +2337,10 @@ fn builtin_obligation_solver_proves_trivial_props() {
 }
 
 /// Range narrowing at element granularity: the one loadability route whose
-/// goal extent may stay symbolic.
+/// goal span may stay symbolic.
 ///
 /// A segment `p[x..y]` of four-byte elements lowers to the base `p + x * 4`
-/// and the extent `(y - x) * 4`, so these helpers build exactly the shape the
+/// and the span `(y - x) * 4`, so these helpers build exactly the shape the
 /// surface produces. Each test then asks `proves`, which is the same decision
 /// the implicit check and the explicit `transport ... using` step both reach.
 mod loadable_range_narrowing {
@@ -2373,11 +2373,11 @@ mod loadable_range_narrowing {
         )
     }
 
-    /// The assumed range must also be a valid 32-bit byte extent: its element
+    /// The assumed range must also be a valid 32-bit byte span: its element
     /// count pinned to `0..=u32::MAX / 4` for four-byte elements. These are the
-    /// two facts a proof states for that; without them the extent term is
+    /// two facts a proof states for that; without them the span term is
     /// modular and nothing follows from comparing endpoints.
-    fn extent_is_valid(a: &MachineTerm, b: &MachineTerm) -> Vec<(ConditionTerm, bool)> {
+    fn span_is_valid(a: &MachineTerm, b: &MachineTerm) -> Vec<(ConditionTerm, bool)> {
         let count = MachineTerm::subtract(b.clone(), a.clone());
         let limit = MachineTerm::constant(crate::kernel::memory_range_element_count_limit(4));
         vec![
@@ -2393,7 +2393,7 @@ mod loadable_range_narrowing {
         d: &MachineTerm,
     ) -> Vec<(ConditionTerm, bool)> {
         let mut orders = vec![order(a, c), order(c, d), order(d, b)];
-        orders.extend(extent_is_valid(a, b));
+        orders.extend(span_is_valid(a, b));
         orders
     }
 
@@ -2442,14 +2442,14 @@ mod loadable_range_narrowing {
         ));
     }
 
-    /// A reversed goal range lowers to a negative extent. Both ends sit inside
+    /// A reversed goal range lowers to a negative span. Both ends sit inside
     /// the assumed range, so only the required `c <= d` refuses it.
     #[test]
     fn a_reversed_goal_range_is_refused() {
         let memory = Memory::new().with_block("data", 4096);
         let [a, b, c, d] = endpoints();
         let mut orders = vec![order(&a, &c), order(&d, &c), order(&c, &b)];
-        orders.extend(extent_is_valid(&a, &b));
+        orders.extend(span_is_valid(&a, &b));
         let assumptions = assume_orders(segment(&memory, &a, &b), &orders);
 
         assert!(!crate::kernel::search::ProofSearch::proves(
@@ -2477,16 +2477,16 @@ mod loadable_range_narrowing {
     /// The wrapped corner, and the reason the rule asks for the assumed range's
     /// byte-count guards at all.
     ///
-    /// An extent is a `MachineTerm`, so `(b - a) * 4` is modular. At
+    /// A span is a `MachineTerm`, so `(b - a) * 4` is modular. At
     /// `b - a == 1 << 30` it is `1 << 32`, which is `0`: the assumed fact then
-    /// claims an empty extent and is vacuously true, while a sub-range of it is
+    /// claims an empty span and is vacuously true, while a sub-range of it is
     /// a real claim. Order facts alone cannot tell those apart, so the rule
     /// refuses unless the count is pinned to `0..=u32::MAX / 4`.
     #[test]
-    fn a_wrapped_assumed_extent_is_refused() {
+    fn a_wrapped_assumed_span_is_refused() {
         let memory = Memory::new().with_block("data", 4096);
         let [a, b, c, d] = endpoints();
-        // Everything the narrowing rule reads except the extent bound: the goal
+        // Everything the narrowing rule reads except the span bound: the goal
         // sits inside the assumed range, and the count is known nonnegative.
         let count = MachineTerm::subtract(b.clone(), a.clone());
         let orders = vec![
@@ -2527,9 +2527,9 @@ mod loadable_range_narrowing {
     }
 
     /// A count bounded past the limit is refused even though it is nonnegative:
-    /// scaling it by the element width is what leaves the 32-bit extent.
+    /// scaling it by the element width is what leaves the 32-bit span.
     #[test]
-    fn a_count_past_the_extent_limit_is_refused() {
+    fn a_count_past_the_span_limit_is_refused() {
         let memory = Memory::new().with_block("data", 4096);
         let [a, b, c, d] = endpoints();
         let count = MachineTerm::subtract(b.clone(), a.clone());
@@ -2549,7 +2549,7 @@ mod loadable_range_narrowing {
         ));
     }
 
-    /// The two extents must be scaled by one element width. A goal counting
+    /// The two spans must be scaled by one element width. A goal counting
     /// one-byte elements is not a sub-range of a four-byte-element fact just
     /// because its endpoints compare, so the rule declines rather than
     /// rescaling a product it would then have to bound against overflow.
@@ -2742,7 +2742,7 @@ fn loadable_symbolic_subrange_proves_an_indexed_cell() {
         wide: false,
     };
     // Reading `[split..len]` as its element count needs that count to be a
-    // valid byte extent once scaled by four; a stated range carries this.
+    // valid byte span once scaled by four; a stated range carries this.
     let count = MachineTerm::subtract(len.clone(), split.clone());
     let assumptions = PureFactContext::new()
         .assume_proposition(range)
@@ -2916,7 +2916,7 @@ fn field_derived_capacity_range_covers_a_shorter_live_prefix() {
         )
         .assume_condition(ConditionTerm::signed_less_equal(len, cap.clone()), true)
         // The capacity range is read as `cap` elements, so `cap` has to be a
-        // count whose four-byte extent does not wrap; the clause that states
+        // count whose four-byte span does not wrap; the clause that states
         // the range carries this.
         .assume_condition(
             ConditionTerm::signed_less_equal(MachineTerm::constant(0), cap.clone()),
@@ -3714,7 +3714,7 @@ fn upper_bound_extends_to_a_nonoverflowing_successor() {
 /// `i <= n` and `n <= 1073741823`. A signed upper bound alone does not decide
 /// it: a negative count is a huge unsigned one.
 #[test]
-fn unsigned_extent_bound_below_the_sign_bit_is_decided_by_signed_order() {
+fn unsigned_span_bound_below_the_sign_bit_is_decided_by_signed_order() {
     let count = MachineTerm::Variable(Variable(89_200));
     let end = MachineTerm::Variable(Variable(89_201));
     let limit = MachineTerm::constant(1_073_741_823);
@@ -4762,7 +4762,7 @@ fn symbolic_int32_range_directly_proves_constant_element_loadable() {
             ConditionTerm::signed_less_equal(MachineTerm::constant(2), length.clone()),
             true,
         )
-        // The range's element count has to be one whose four-byte extent does
+        // The range's element count has to be one whose four-byte span does
         // not wrap before it can be read as `length` elements.
         .assume_condition(
             ConditionTerm::signed_less_equal(
@@ -4884,7 +4884,7 @@ fn loadability_transports_to_state_with_symbolic_index_bounds() {
 }
 
 #[test]
-fn loadability_same_base_extent_uses_graph_for_byte_count() {
+fn loadability_same_base_span_uses_graph_for_byte_count() {
     let before = Memory::new().with_block("effect-side", 4);
     let written = Pointer {
         block: "effect-side".into(),
@@ -7348,7 +7348,7 @@ fn pointer_association_rejects_wrapping_and_incompatible_displacements() {
 }
 
 #[test]
-fn native_loadability_transport_pins_extent_domain_and_lifetime() {
+fn native_loadability_transport_pins_span_domain_and_lifetime() {
     let base = Pointer {
         block: "native-region".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -7403,14 +7403,14 @@ fn native_loadability_transport_pins_extent_domain_and_lifetime() {
             &fact(Memory::new(), native_count, true,)
         )
         .is_none(),
-        "a low-word extent cannot establish the full native extent"
+        "a low-word span cannot establish the full native span"
     );
     let external = Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
     };
     let live = Memory::new()
-        .with_heap_allocation_claim(external.clone(), HeapExtent::int32(16))
+        .with_heap_allocation_claim(external.clone(), AllocationSize::int32(16))
         .unwrap();
     let dead = live
         .clone()
@@ -7545,7 +7545,7 @@ fn native_loadability_prefix_coverage_preserves_lifetime_and_base() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let allocated = Memory::new()
-        .with_heap_allocation_claim(external.clone(), HeapExtent::int32(16))
+        .with_heap_allocation_claim(external.clone(), AllocationSize::int32(16))
         .unwrap();
     let retired = allocated
         .clone()
@@ -7628,7 +7628,7 @@ fn native_loadability_window_checks_offset_end_and_retirement() {
         .is_none()
     );
     let live = Memory::new()
-        .with_heap_allocation_claim(root.clone(), HeapExtent::int32(16))
+        .with_heap_allocation_claim(root.clone(), AllocationSize::int32(16))
         .unwrap();
     let dead = live
         .clone()
