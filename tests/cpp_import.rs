@@ -16243,19 +16243,36 @@ fn check_converted_wide_call_results(initializer: bool) {
                 assert!(error.message().len() < 8000);
             }
         }
-        for missing in [
-            format!("requires {lo} <= to_integer(value);"),
-            format!("requires to_integer(value) <= {hi};"),
+        // Each bound the narrowing needs is a requirement: without it the
+        // value may not fit the result type. An unsigned source's lower
+        // bound, `0 <= to_integer(value)`, is instead its type's own range,
+        // so the proof holds without that requirement.
+        let lower_is_the_type_range = source.starts_with('u');
+        for (missing, needed) in [
+            (
+                format!("requires {lo} <= to_integer(value);"),
+                !lower_is_the_type_range,
+            ),
+            (format!("requires to_integer(value) <= {hi};"), true),
         ] {
             let hostile = proof.replace(&missing, "");
             let path = project.directory.join("hostile.click");
             fs::write(&path, &hostile).unwrap();
-            let error = verify_program_prepared_project(
+            let verified = verify_program_prepared_project(
                 &read_click_project(&path, &hostile).unwrap(),
                 &import,
-            )
-            .unwrap_err();
-            assert!(error.message().len() < 8000);
+            );
+            if needed {
+                let error = verified.unwrap_err();
+                assert!(error.message().len() < 8000);
+            } else {
+                verified.unwrap_or_else(|error| {
+                    panic!(
+                        "{source} -> {result}: `{missing}` is the source type's range: {}",
+                        error.message()
+                    )
+                });
+            }
         }
     }
 }
