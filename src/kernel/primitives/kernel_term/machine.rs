@@ -822,10 +822,10 @@ impl KernelTermExport {
             Node::MachineLiteral(value) => value.legacy_term(),
             Node::Variable(variable) => Old::Variable(*variable),
             Node::MemoryLoad {
-                memory,
+                point,
                 address,
                 kind,
-            } => Old::MemoryLoad(ProgramPoint::at(memory), Box::new(address.export()?), *kind),
+            } => Old::MemoryLoad(point.clone(), Box::new(address.export()?), *kind),
             Node::BoolCast {
                 destination,
                 operand,

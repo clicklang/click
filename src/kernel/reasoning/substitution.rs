@@ -5491,9 +5491,13 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
                 }
             };
             if let crate::kernel::KernelTermNode::BoolRead(read) = leaf.node() {
-                let (memory, address) = read.parts();
+                let (point, address) = read.parts();
                 return Ok(KernelTerm::boolean_read(
-                    substitute_bitvector_variable_in_shared_memory(memory, from, to),
+                    point.with_renamed_memory(substitute_bitvector_variable_in_shared_memory(
+                        point.shared_memory(),
+                        from,
+                        to,
+                    )),
                     map_address(address)?,
                 ));
             }
@@ -7311,9 +7315,11 @@ fn substitute_pointer_variable_in_spec_point(
         SpecPoint::Current => SpecPoint::Current,
         SpecPoint::FunctionEntry => SpecPoint::FunctionEntry,
         SpecPoint::LoopEntry => SpecPoint::LoopEntry,
-        SpecPoint::At(point) => SpecPoint::At(point.with_renamed_memory(
-            substitute_pointer_variable_in_memory(point.memory(), from, to),
-        )),
+        SpecPoint::At(point) => {
+            SpecPoint::At(point.with_renamed_memory(crate::kernel::intern_memory(
+                substitute_pointer_variable_in_memory(point.memory(), from, to),
+            )))
+        }
     }
 }
 

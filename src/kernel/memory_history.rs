@@ -6360,7 +6360,8 @@ fn collect_condition_operand_memories(
             return;
         }
 
-        if let Some((memory, address)) = leaf.read() {
+        if let Some((point, address)) = leaf.read() {
+            let memory = point.into_shared_memory();
             if !memories.contains(&memory) {
                 memories.push(memory);
             }

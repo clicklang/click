@@ -3055,7 +3055,7 @@ pub(crate) fn registered_scalar_read_term(
                 read.address.as_ref().map(|address| {
                     crate::kernel::KernelTerm::shared_scalar_read_descriptor(
                         format,
-                        &read.memory,
+                        &ProgramPoint::at(&read.memory),
                         address,
                         read.kind,
                     )

@@ -8216,7 +8216,7 @@ fn evaluate_spec_pure_function_argument_paths_in(
                     })
                 } else {
                     SpecCallArgument::Shared(KernelTerm::shared_array_reference(
-                        crate::kernel::intern_memory_ref(&memory),
+                        ProgramPoint::at(&crate::kernel::intern_memory_ref(&memory)),
                         path.value.common_operand(),
                         *element_type,
                     ))
