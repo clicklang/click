@@ -4,14 +4,14 @@ fn constructed_normalization_bounds_neighbours_and_ignores_alias_classes() {
         let mut samples = Vec::new();
         for count in [4_u32, 16, 64] {
             let _session = crate::kernel::VerificationSession::enter();
-            let pointer = Pointer::symbolic(Variable(8_853_000));
+            let pointer = Address::symbolic(Variable(8_853_000));
             let mut facts = PureFactContext::new();
             if axis == "aliases" {
                 for index in 0..count {
                     facts = facts.assume_condition(
                         ConditionTerm::pointer_equal(
                             pointer.clone(),
-                            Pointer::symbolic(Variable(8_853_100 + u64::from(index))),
+                            Address::symbolic(Variable(8_853_100 + u64::from(index))),
                         ),
                         true,
                     );

@@ -15208,9 +15208,9 @@ impl Parser {
             self.expect(Token::RParen)?;
             return Ok(ContractExpression::ProgramExpression(
                 ProgramExpression::Value(ProgramValue::typed_pointer(
-                    crate::kernel::Pointer {
-                        block: crate::kernel::PointerBlock::StaticObject { binding: id },
-                        offset: crate::kernel::PointerOffsetTerm::Constant(0),
+                    crate::kernel::Address {
+                        base: crate::kernel::AddressBase::StaticObject { binding: id },
+                        offset: crate::kernel::AddressOffset::Constant(0),
                     },
                     ProgramType::UInt8Pointer,
                 )),
@@ -15437,12 +15437,12 @@ impl Parser {
             self.expect(Token::RParen)?;
             return Ok(Some(ContractExpression::ProgramExpression(
                 ProgramExpression::Value(ProgramValue::typed_pointer(
-                    crate::kernel::Pointer {
-                        block: crate::kernel::PointerBlock::AutomaticLocal {
+                    crate::kernel::Address {
+                        base: crate::kernel::AddressBase::AutomaticLocal {
                             binding: id,
                             instance,
                         },
-                        offset: crate::kernel::PointerOffsetTerm::Constant(0),
+                        offset: crate::kernel::AddressOffset::Constant(0),
                     },
                     ProgramType::UInt8Pointer,
                 )),
@@ -15589,9 +15589,9 @@ impl Parser {
             let exceptional = self.peek_ident() == Some("exception");
             self.position += 4;
             let block = if exceptional {
-                crate::kernel::PointerBlock::ContractException
+                crate::kernel::AddressBase::ContractException
             } else if self.peek() == Some(&Token::RParen) {
-                crate::kernel::PointerBlock::ContractResult
+                crate::kernel::AddressBase::ContractResult
             } else {
                 let kind = self.expect_ident("return storage kind `frame`")?;
                 if kind != "frame" {
@@ -15599,14 +15599,14 @@ impl Parser {
                 }
                 self.expect(Token::Comma)?;
                 let frame = self.expect_u64("return storage frame")?;
-                crate::kernel::PointerBlock::AggregateReturn { frame }
+                crate::kernel::AddressBase::AggregateReturn { frame }
             };
             self.expect(Token::RParen)?;
             return Ok(ContractExpression::ProgramExpression(
                 ProgramExpression::Value(ProgramValue::typed_pointer(
-                    crate::kernel::Pointer {
-                        block,
-                        offset: crate::kernel::PointerOffsetTerm::Constant(0),
+                    crate::kernel::Address {
+                        base: block,
+                        offset: crate::kernel::AddressOffset::Constant(0),
                     },
                     ProgramType::UInt8Pointer,
                 )),

@@ -57,8 +57,8 @@
 //! depend on the order its runs were added in.
 use super::alias_candidates::BlockKeyed;
 use super::{
-    AliasCandidates, HashedOrdMap, HashedOrdMapChange, HashedOrdSet, Pointer, PointerBlock,
-    PointerOffsetTerm, ProgramType, ProgramValue, SharedMemory,
+    Address, AddressBase, AddressOffset, AliasCandidates, HashedOrdMap, HashedOrdMapChange,
+    HashedOrdSet, ProgramType, ProgramValue, SharedMemory,
 };
 use crate::kernel::primitives::LoadKind;
 use crate::kernel::primitives::MachineTerm;
@@ -69,12 +69,12 @@ use std::ops::Bound;
 use std::sync::OnceLock;
 
 type NativeCellIter<'a> = std::iter::Map<
-    imbl::ordmap::Iter<'a, Pointer, StoredMemoryValue, imbl::shared_ptr::DefaultSharedPtr>,
-    fn((&'a Pointer, &'a StoredMemoryValue)) -> (&'a Pointer, &'a ProgramValue),
+    imbl::ordmap::Iter<'a, Address, StoredMemoryValue, imbl::shared_ptr::DefaultSharedPtr>,
+    fn((&'a Address, &'a StoredMemoryValue)) -> (&'a Address, &'a ProgramValue),
 >;
 fn native_cell<'a>(
-    (pointer, value): (&'a Pointer, &'a StoredMemoryValue),
-) -> (&'a Pointer, &'a ProgramValue) {
+    (pointer, value): (&'a Address, &'a StoredMemoryValue),
+) -> (&'a Address, &'a ProgramValue) {
     (pointer, value.native())
 }
 
@@ -271,7 +271,7 @@ pub(crate) enum RunValueMode {
     Constant(ProgramValue),
     /// An immutable state copy. Slot i reads source_base + i * stride,
     /// rather than its destination address. Used only for scalar elements.
-    Copy { source_base: Pointer },
+    Copy { source_base: Address },
 }
 
 /// `count` seeded cells at `base`, `base + width`, …: the cell at element `i`
@@ -280,7 +280,7 @@ pub(crate) enum RunValueMode {
 /// it.
 #[derive(Clone)]
 pub struct CellRun {
-    base: Pointer,
+    base: Address,
     element_width: u32,
     element_type: ProgramType,
     count: u32,
@@ -291,7 +291,7 @@ pub struct CellRun {
 
 impl CellRun {
     pub(crate) fn new(
-        base: Pointer,
+        base: Address,
         element_width: u32,
         element_type: ProgramType,
         count: u32,
@@ -311,7 +311,7 @@ impl CellRun {
 
     /// [`Self::new`] for a run whose values `mode` spells.
     pub(crate) fn new_with_mode(
-        base: Pointer,
+        base: Address,
         element_width: u32,
         element_type: ProgramType,
         count: u32,
@@ -342,7 +342,7 @@ impl CellRun {
     /// Exact source of an entire footprint supplied by this materialization
     /// edge. This says nothing about subsequent writes or other retained runs.
     /// The egraph is trusted kernel state; admission checks only these slots.
-    pub(crate) fn read_source(&self, pointer: &Pointer, bytes: u32) -> Option<SharedMemory> {
+    pub(crate) fn read_source(&self, pointer: &Address, bytes: u32) -> Option<SharedMemory> {
         let width = self.element_width();
         if bytes == 0
             || width == 0
@@ -370,7 +370,7 @@ impl CellRun {
     /// The run's place in a store's index: see [`RunKey`].
     pub(crate) fn key(&self) -> RunKey {
         RunKey {
-            block: self.base.block.clone(),
+            block: self.base.base.clone(),
             anchor: RunAnchor::of(&self.base.offset),
             shape: RunShape::Of {
                 element_width: self.element_width,
@@ -394,7 +394,7 @@ impl CellRun {
 
     /// Bound all live slots with two hole-index lookups. Internal holes stay
     /// inside this conservative footprint; neither holes nor slots are walked.
-    pub(crate) fn live_byte_footprint(&self) -> Option<(Pointer, u32)> {
+    pub(crate) fn live_byte_footprint(&self) -> Option<(Address, u32)> {
         let last = self.count.checked_sub(1)?;
         crate::instrumentation::record_deterministic_work(2);
         let first = self.holes.interval_of(0).map_or(0, |(_, end)| end);
@@ -409,7 +409,7 @@ impl CellRun {
         Some((self.slot_pointer(first), bytes))
     }
 
-    pub(crate) fn base(&self) -> &Pointer {
+    pub(crate) fn base(&self) -> &Address {
         &self.base
     }
 
@@ -452,18 +452,15 @@ impl CellRun {
 
     /// The pointer of element `index`, spelled as a load of that address
     /// spells it: the base's offset plus a constant byte shift through
-    /// [`PointerOffsetTerm::add`], which folds the shift into a constant the
+    /// [`AddressOffset::add`], which folds the shift into a constant the
     /// base already ends in. So element 1 of a run based at `p + 16` with
     /// stride 4 is `p + 20`, not `(p + 16) + 4`, and a question about a load
     /// of `p + 20` is the same question whether a run or a cell answers it.
-    pub(crate) fn slot_pointer(&self, index: u32) -> Pointer {
+    pub(crate) fn slot_pointer(&self, index: u32) -> Address {
         let shift = i64::from(index) * i64::from(self.element_width);
-        Pointer {
-            block: self.base.block.clone(),
-            offset: PointerOffsetTerm::add(
-                self.base.offset.clone(),
-                PointerOffsetTerm::Constant(shift),
-            ),
+        Address {
+            base: self.base.base.clone(),
+            offset: AddressOffset::add(self.base.offset.clone(), AddressOffset::Constant(shift)),
         }
     }
 
@@ -475,7 +472,7 @@ impl CellRun {
         let span = i64::try_from(self.span()).unwrap_or(i64::MAX);
         (
             CoverLine {
-                block: self.base.block.clone(),
+                block: self.base.base.clone(),
                 stem: stem.cloned(),
             },
             start,
@@ -484,8 +481,8 @@ impl CellRun {
     }
 
     /// The element whose slot is spelled exactly `pointer`, hole or not.
-    pub(crate) fn slot_index(&self, pointer: &Pointer) -> Option<u32> {
-        if pointer.block != self.base.block {
+    pub(crate) fn slot_index(&self, pointer: &Address) -> Option<u32> {
+        if pointer.base != self.base.base {
             return None;
         }
         let width = i64::from(self.element_width);
@@ -503,7 +500,7 @@ impl CellRun {
     }
 
     /// The element whose slot is `pointer` and is live.
-    pub(crate) fn live_slot_index(&self, pointer: &Pointer) -> Option<u32> {
+    pub(crate) fn live_slot_index(&self, pointer: &Address) -> Option<u32> {
         self.slot_index(pointer)
             .filter(|index| !self.holes.contains(*index))
     }
@@ -601,7 +598,7 @@ impl CellRun {
     fn descriptor(
         &self,
     ) -> (
-        &Pointer,
+        &Address,
         u32,
         ProgramType,
         u32,
@@ -701,14 +698,14 @@ impl Ord for RunSource {
 pub(crate) enum RunAnchor {
     Least,
     Constant(i64),
-    Symbolic(PointerOffsetTerm),
+    Symbolic(AddressOffset),
     Greatest,
 }
 
 impl RunAnchor {
-    fn of(offset: &PointerOffsetTerm) -> Self {
+    fn of(offset: &AddressOffset) -> Self {
         match offset {
-            PointerOffsetTerm::Constant(constant) => Self::Constant(*constant),
+            AddressOffset::Constant(constant) => Self::Constant(*constant),
             offset => Self::Symbolic(offset.clone()),
         }
     }
@@ -735,13 +732,13 @@ pub(crate) enum RunShape {
 /// ([`CellRun::same_slots_as`]).
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct RunKey {
-    block: PointerBlock,
+    block: AddressBase,
     anchor: RunAnchor,
     shape: RunShape,
 }
 
 impl RunKey {
-    fn bound(block: &PointerBlock, anchor: RunAnchor, shape: RunShape) -> Self {
+    fn bound(block: &AddressBase, anchor: RunAnchor, shape: RunShape) -> Self {
         Self {
             block: block.clone(),
             anchor,
@@ -751,11 +748,11 @@ impl RunKey {
 }
 
 impl BlockKeyed for RunKey {
-    fn key_block(&self) -> &PointerBlock {
+    fn key_block(&self) -> &AddressBase {
         &self.block
     }
 
-    fn first_key_of(block: &PointerBlock) -> Self {
+    fn first_key_of(block: &AddressBase) -> Self {
         Self::bound(block, RunAnchor::Least, RunShape::Least)
     }
 }
@@ -790,7 +787,7 @@ pub(crate) fn cell_run_value(element_type: ProgramType, load: MachineTerm) -> Pr
                 }
                 _ => None,
             };
-            let value = Pointer::loaded(&load).expect("a pointer cell's canonical read is a load");
+            let value = Address::loaded(&load).expect("a pointer cell's canonical read is a load");
             if let Some(MachineTerm::MemoryLoad(retained_state, address, LoadKind::Int32)) =
                 definition
             {
@@ -816,7 +813,7 @@ pub(crate) fn cell_run_value(element_type: ProgramType, load: MachineTerm) -> Pr
 /// Where two cell stores differ: concrete pointers, and slot intervals of
 /// runs whose pointers are left unspelled.
 pub(crate) struct DifferingCells {
-    pub(crate) pointers: Vec<Pointer>,
+    pub(crate) pointers: Vec<Address>,
     pub(crate) run_slots: Vec<(CellRun, IndexIntervals)>,
 }
 
@@ -896,7 +893,7 @@ impl SlotSet {
     }
 
     #[cfg(debug_assertions)]
-    fn check_against(&self, run: &CellRun, rule: &mut impl FnMut(&Pointer, &ProgramValue) -> bool) {
+    fn check_against(&self, run: &CellRun, rule: &mut impl FnMut(&Address, &ProgramValue) -> bool) {
         if matches!(self, Self::PerSlot) || run.count > CHECKED_RUN_SLOTS {
             return;
         }
@@ -922,7 +919,7 @@ impl CellRun {
     fn keep_only(
         &mut self,
         decision: SlotSet,
-        keep: &mut impl FnMut(&Pointer, &ProgramValue) -> bool,
+        keep: &mut impl FnMut(&Address, &ProgramValue) -> bool,
         visited: &mut usize,
     ) {
         match decision {
@@ -967,7 +964,7 @@ pub(crate) struct DroppedRunSlots {
 /// form, the runs indexed by [`RunKey`] (see the module comment).
 #[derive(Default)]
 pub(crate) struct CellStore {
-    concrete: HashedOrdMap<Pointer, StoredMemoryValue>,
+    concrete: HashedOrdMap<Address, StoredMemoryValue>,
     runs: HashedOrdMap<RunKey, CellRun>,
     /// The held runs, by the bytes from their first slot to their last on
     /// their line ([`CoverLine`]): each line's covered bytes cut into
@@ -981,7 +978,7 @@ pub(crate) struct CellStore {
     /// The logical cell map, built on first need when there are runs. A
     /// single-cell mutation updates it in place; any other resets it. A
     /// function of the two maps above.
-    logical: OnceLock<HashedOrdMap<Pointer, StoredMemoryValue>>,
+    logical: OnceLock<HashedOrdMap<Address, StoredMemoryValue>>,
     ordered_index: std::sync::Mutex<Option<OrderedIndexCache>>,
     pointer_reachable_index: std::sync::Mutex<Option<PointerReachableIndex>>,
     parameter_partition_index: std::sync::Mutex<Option<ParameterPartitionIndex>>,
@@ -989,15 +986,15 @@ pub(crate) struct CellStore {
 
 #[derive(Clone)]
 struct ParameterPartitionIndex {
-    cells: HashedOrdMap<Pointer, StoredMemoryValue>,
+    cells: HashedOrdMap<Address, StoredMemoryValue>,
     runs: HashedOrdMap<RunKey, CellRun>,
-    known_runs: crate::persistent::PersistentMap<Pointer, std::sync::Arc<Vec<RunKey>>>,
+    known_runs: crate::persistent::PersistentMap<Address, std::sync::Arc<Vec<RunKey>>>,
     unknown_runs: HashedOrdMap<RunKey, ()>,
-    run_bases: HashedOrdMap<RunKey, Pointer>,
+    run_bases: HashedOrdMap<RunKey, Address>,
     resources: crate::kernel::ResourceContext,
-    known: HashedOrdMap<(Pointer, Pointer), ()>,
-    unknown: HashedOrdMap<Pointer, ()>,
-    bases: HashedOrdMap<Pointer, Pointer>,
+    known: HashedOrdMap<(Address, Address), ()>,
+    unknown: HashedOrdMap<Address, ()>,
+    bases: HashedOrdMap<Address, Address>,
 }
 
 /// The concrete cells a pointer value can reach, with their values: every
@@ -1008,22 +1005,22 @@ struct ParameterPartitionIndex {
 /// rebuilds it.
 #[derive(Clone)]
 struct PointerReachableIndex {
-    cells: HashedOrdMap<Pointer, StoredMemoryValue>,
+    cells: HashedOrdMap<Address, StoredMemoryValue>,
     generation: u64,
-    reachable: HashedOrdMap<Pointer, StoredMemoryValue>,
-    external: HashedOrdMap<Pointer, StoredMemoryValue>,
+    reachable: HashedOrdMap<Address, StoredMemoryValue>,
+    external: HashedOrdMap<Address, StoredMemoryValue>,
 }
 
 #[derive(Clone)]
 struct OrderedIndexCache {
-    cells: HashedOrdMap<Pointer, StoredMemoryValue>,
+    cells: HashedOrdMap<Address, StoredMemoryValue>,
     chains: crate::kernel::assumptions::variable_chains::VariableChains,
-    block: PointerBlock,
-    base: PointerOffsetTerm,
+    block: AddressBase,
+    base: AddressOffset,
     stride: i64,
     root: Variable,
-    known: HashedOrdMap<usize, Pointer>,
-    unknown: HashedOrdMap<Pointer, ()>,
+    known: HashedOrdMap<usize, Address>,
+    unknown: HashedOrdMap<Address, ()>,
 }
 
 impl Clone for CellStore {
@@ -1066,26 +1063,24 @@ struct CoverSegment {
 /// [`offset_stem_and_constant`].
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct CoverLine {
-    block: PointerBlock,
-    stem: Option<PointerOffsetTerm>,
+    block: AddressBase,
+    stem: Option<AddressOffset>,
 }
 
-/// An offset as the stem [`PointerOffsetTerm::add`] shifts by a constant, and
+/// An offset as the stem [`AddressOffset::add`] shifts by a constant, and
 /// that constant: `(None, c)` for a constant offset, `(Some(stem), c)` for
 /// `stem + c` (with every trailing constant `add` folds into one peeled
 /// off), and `(Some(offset), 0)` for any other offset. `add` of a constant
 /// to an offset moves only the constant, so every slot of a run, and every
 /// load spelling one of its addresses, lies on its base's line.
-pub(crate) fn offset_stem_and_constant(
-    offset: &PointerOffsetTerm,
-) -> (Option<&PointerOffsetTerm>, i64) {
+pub(crate) fn offset_stem_and_constant(offset: &AddressOffset) -> (Option<&AddressOffset>, i64) {
     let mut stem = offset;
     let mut constant = 0i64;
     loop {
         if let Some(value) = stem.as_const() {
             return (None, constant.saturating_add(value));
         }
-        let PointerOffsetTerm::Add(left, right) = stem else {
+        let AddressOffset::Add(left, right) = stem else {
             return (Some(stem), constant);
         };
         let Some(value) = right.as_const() else {
@@ -1108,12 +1103,12 @@ impl CellStore {
     /// every store. Runs and union views retain their ordinary rules.
     pub(in crate::kernel) fn parameter_store_candidates(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         bytes: u32,
         candidates: &AliasCandidates,
-        gap_kept: &[(Pointer, Pointer)],
+        gap_kept: &[(Address, Address)],
         assumptions: &PureFactContext,
-    ) -> Option<Vec<Pointer>> {
+    ) -> Option<Vec<Address>> {
         if crate::kernel::reasoning::store_gap::store_gap_skip_disabled()
             || crate::kernel::assumptions::implicit_consulted_premises_capturing()
             || crate::kernel::assumptions::reasoning_interrupted()
@@ -1130,7 +1125,7 @@ impl CellStore {
             .map(|(key, _)| key.clone())
             .collect::<Vec<_>>();
         for base in alias_bases {
-            let mut start = Bound::Included((base.clone(), Pointer::null()));
+            let mut start = Bound::Included((base.clone(), Address::null()));
             for (low, high) in gap_kept {
                 selected.extend(
                     index
@@ -1165,7 +1160,7 @@ impl CellStore {
                 index
                     .runs
                     .diff(&self.runs)
-                    .filter(|change| change.key().block == PointerBlock::ExternalArgument)
+                    .filter(|change| change.key().block == AddressBase::ExternalArgument)
                     .map(|change| change.key().clone()),
             );
             for change in index.cells.diff(&self.concrete) {
@@ -1174,7 +1169,7 @@ impl CellStore {
                     | HashedOrdMapChange::Changed(key)
                     | HashedOrdMapChange::Removed(key) => key,
                 };
-                if key.block == PointerBlock::ExternalArgument {
+                if key.base == AddressBase::ExternalArgument {
                     changes.insert(key.clone(), self.concrete.contains_key(key));
                 }
             }
@@ -1199,7 +1194,7 @@ impl CellStore {
                     for ((_, key), _) in index
                         .known
                         .range((
-                            Bound::Included((base.clone(), Pointer::null())),
+                            Bound::Included((base.clone(), Address::null())),
                             Bound::Unbounded,
                         ))
                         .take_while(|((root, _), _)| *root == base)
@@ -1217,7 +1212,7 @@ impl CellStore {
                 }
             }
         } else {
-            let parameters = AliasCandidates::only_block(&PointerBlock::ExternalArgument);
+            let parameters = AliasCandidates::only_block(&AddressBase::ExternalArgument);
             changes.extend(
                 parameters
                     .entries(&self.concrete)
@@ -1308,7 +1303,7 @@ impl CellStore {
         &self,
         resources: &crate::kernel::ResourceContext,
         candidates: &AliasCandidates,
-    ) -> (Vec<Pointer>, Vec<RunKey>) {
+    ) -> (Vec<Address>, Vec<RunKey>) {
         self.prepare_parameter_partition(resources);
         let guard = self.parameter_partition_index.lock().unwrap();
         let index = guard.as_ref().expect("prepared partition");
@@ -1334,27 +1329,27 @@ impl CellStore {
     /// other parameter bases that share the external-argument block.
     pub(crate) fn concrete_region_candidates<'a>(
         &'a self,
-        base: &Pointer,
+        base: &Address,
         bytes: u32,
-    ) -> Vec<(&'a Pointer, &'a ProgramValue)> {
+    ) -> Vec<(&'a Address, &'a ProgramValue)> {
         let (stem, start) = offset_stem_and_constant(&base.offset);
         let low = start.saturating_sub(7);
         let high = start.saturating_add(i64::from(bytes));
-        let at = |offset| Pointer {
-            block: base.block.clone(),
+        let at = |offset| Address {
+            base: base.base.clone(),
             offset,
         };
         match stem {
             None => self
                 .concrete
-                .range(at(PointerOffsetTerm::Constant(low))..at(PointerOffsetTerm::Constant(high)))
+                .range(at(AddressOffset::Constant(low))..at(AddressOffset::Constant(high)))
                 .map(native_cell)
                 .collect(),
             Some(stem) => {
                 let shifted = |shift| {
-                    at(PointerOffsetTerm::Add(
+                    at(AddressOffset::Add(
                         Box::new(stem.clone()),
-                        Box::new(PointerOffsetTerm::Constant(shift)),
+                        Box::new(AddressOffset::Constant(shift)),
                     ))
                 };
                 let mut result: Vec<_> = self
@@ -1383,7 +1378,7 @@ impl CellStore {
     /// except those in the slot of a local whose address is never taken,
     /// which no pointer value designates. Costs the cells changed since this
     /// store's lineage last asked, plus the cells returned.
-    pub(in crate::kernel) fn pointer_reachable_cells(&self) -> Vec<Pointer> {
+    pub(in crate::kernel) fn pointer_reachable_cells(&self) -> Vec<Address> {
         self.caught_up_pointer_reachable()
             .keys()
             .inspect(|_| crate::instrumentation::record_deterministic_work(1))
@@ -1396,7 +1391,7 @@ impl CellStore {
     /// lineage. Costs the cells changed since that lineage last asked.
     pub(in crate::kernel) fn caught_up_pointer_reachable(
         &self,
-    ) -> HashedOrdMap<Pointer, StoredMemoryValue> {
+    ) -> HashedOrdMap<Address, StoredMemoryValue> {
         self.caught_up_load_reachable(false)
     }
 
@@ -1404,11 +1399,11 @@ impl CellStore {
     /// Maintain that projection beside the general reachable map by delta.
     pub(in crate::kernel) fn caught_up_external_reachable(
         &self,
-    ) -> HashedOrdMap<Pointer, StoredMemoryValue> {
+    ) -> HashedOrdMap<Address, StoredMemoryValue> {
         self.caught_up_load_reachable(true)
     }
 
-    fn caught_up_load_reachable(&self, external: bool) -> HashedOrdMap<Pointer, StoredMemoryValue> {
+    fn caught_up_load_reachable(&self, external: bool) -> HashedOrdMap<Address, StoredMemoryValue> {
         let generation = super::memory_state::never_address_taken_generation();
         let mut guard = self.pointer_reachable_index.lock().unwrap();
         let mut index = guard
@@ -1430,13 +1425,10 @@ impl CellStore {
             })
             .collect::<Vec<_>>();
         for key in changes {
-            if super::block_is_never_address_taken_local(&key.block) {
+            if super::block_is_never_address_taken_local(&key.base) {
                 continue;
             }
-            if key
-                .block
-                .observable_by_load(&PointerBlock::ExternalArgument)
-            {
+            if key.base.observable_by_load(&AddressBase::ExternalArgument) {
                 match self.concrete.get(&key) {
                     Some(value) => {
                         index.external.insert(key.clone(), value.clone());
@@ -1479,47 +1471,47 @@ impl CellStore {
     /// `None` when the store holds runs, which the general projection handles.
     pub(in crate::kernel) fn retain_for_unresolved_load(
         &mut self,
-        load: &Pointer,
-        mut keep: impl FnMut(&Pointer, &ProgramValue) -> bool,
+        load: &Address,
+        mut keep: impl FnMut(&Address, &ProgramValue) -> bool,
     ) -> Option<usize> {
         if !self.runs.is_empty() {
             return None;
         }
         let mut reachable = if matches!(
-            load.block,
-            PointerBlock::ExternalArgument | PointerBlock::ExternalObject(_)
+            load.base,
+            AddressBase::ExternalArgument | AddressBase::ExternalObject(_)
         ) {
             self.caught_up_external_reachable()
         } else {
             self.caught_up_pointer_reachable()
         };
-        let locals = PointerBlock::Concrete("local:".to_string());
+        let locals = AddressBase::Concrete("local:".to_string());
         let own_block = reachable
-            .range::<_, Pointer>((
-                Bound::Included(Pointer::first_key_of(&load.block)),
+            .range::<_, Address>((
+                Bound::Included(Address::first_key_of(&load.base)),
                 Bound::Unbounded,
             ))
-            .take_while(|(key, _)| key.block == load.block);
+            .take_while(|(key, _)| key.base == load.base);
         let local_cells = reachable
-            .range::<_, Pointer>((
-                Bound::Included(Pointer::first_key_of(&locals)),
+            .range::<_, Address>((
+                Bound::Included(Address::first_key_of(&locals)),
                 Bound::Unbounded,
             ))
-            .take_while(|(key, _)| key.block.starts_with("local:"));
-        // Typed automatic storage follows Temporary in PointerBlock order.
+            .take_while(|(key, _)| key.base.starts_with("local:"));
+        // Typed automatic storage follows Temporary in AddressBase order.
         // Seek its interval directly, just as for the legacy local interval.
         let automatic_cells = reachable
-            .range::<_, Pointer>((
-                Bound::Excluded(Pointer {
-                    block: PointerBlock::Temporary(u64::MAX),
-                    offset: PointerOffsetTerm::Constant(i64::MAX),
+            .range::<_, Address>((
+                Bound::Excluded(Address {
+                    base: AddressBase::Temporary(u64::MAX),
+                    offset: AddressOffset::Constant(i64::MAX),
                 }),
                 Bound::Unbounded,
             ))
             .take_while(|(key, _)| {
                 matches!(
-                    key.block,
-                    PointerBlock::AutomaticLocal { .. } | PointerBlock::ReferenceCarrier { .. }
+                    key.base,
+                    AddressBase::AutomaticLocal { .. } | AddressBase::ReferenceCarrier { .. }
                 )
             });
         let mut visited = 0usize;
@@ -1555,8 +1547,8 @@ impl CellStore {
         index.cells = self.concrete.clone();
         index.reachable = self.concrete.clone();
         if matches!(
-            load.block,
-            PointerBlock::ExternalArgument | PointerBlock::ExternalObject(_)
+            load.base,
+            AddressBase::ExternalArgument | AddressBase::ExternalObject(_)
         ) {
             index.external = self.concrete.clone();
         } else {
@@ -1569,11 +1561,11 @@ impl CellStore {
 
     pub(in crate::kernel) fn ordered_store_candidates(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         bytes: u32,
         candidates: &AliasCandidates,
         assumptions: &PureFactContext,
-    ) -> Option<Vec<Pointer>> {
+    ) -> Option<Vec<Address>> {
         use crate::kernel::assumptions::variable_chains::array_index;
         if bytes == 0
             || crate::kernel::reasoning::store_gap::store_gap_skip_disabled()
@@ -1591,7 +1583,7 @@ impl CellStore {
         let span = assumptions.signed_variable_chains.span(variable)?;
         let mut guard = self.ordered_index.lock().unwrap();
         let mut index = guard.take().filter(|index| {
-            index.block == pointer.block
+            index.block == pointer.base
                 && index.base == *base
                 && index.stride == stride
                 && index.root == span.root
@@ -1617,7 +1609,7 @@ impl CellStore {
             index = Some(OrderedIndexCache {
                 cells: self.concrete.clone(),
                 chains: assumptions.signed_variable_chains.clone(),
-                block: pointer.block.clone(),
+                block: pointer.base.clone(),
                 base: base.clone(),
                 stride,
                 root: span.root,
@@ -1630,7 +1622,7 @@ impl CellStore {
             crate::instrumentation::record_deterministic_work(1);
             let rank =
                 array_index(&key.offset).and_then(|(cell_base, cell_variable, cell_stride)| {
-                    if key.block != pointer.block || cell_base != base || cell_stride != stride {
+                    if key.base != pointer.base || cell_base != base || cell_stride != stride {
                         return None;
                     }
                     let cell_span = assumptions.signed_variable_chains.span(cell_variable)?;
@@ -1665,10 +1657,10 @@ impl CellStore {
 
     pub(super) fn retain_selected_concrete_by(
         &mut self,
-        selected: &[Pointer],
+        selected: &[Address],
         candidates: &AliasCandidates,
         selected_runs: Option<&[RunKey]>,
-        mut keep: impl FnMut(&Pointer, &ProgramValue) -> bool,
+        mut keep: impl FnMut(&Address, &ProgramValue) -> bool,
         mut run_rule: impl FnMut(&CellRun) -> (SlotSet, RuleAnswer),
     ) -> Vec<DroppedRunSlots> {
         self.reset();
@@ -1694,7 +1686,7 @@ impl CellStore {
 
     /// The concrete cells alone, without any run: what a caller that only
     /// ever asks about cells outside every run may read directly.
-    pub(crate) fn concrete(&self) -> &HashedOrdMap<Pointer, StoredMemoryValue> {
+    pub(crate) fn concrete(&self) -> &HashedOrdMap<Address, StoredMemoryValue> {
         &self.concrete
     }
 
@@ -1733,7 +1725,7 @@ impl CellStore {
     /// block's.
     pub(crate) fn runs_in_block<'a>(
         &'a self,
-        block: &PointerBlock,
+        block: &AddressBase,
     ) -> impl Iterator<Item = &'a CellRun> + 'a {
         let lower = RunKey::first_key_of(block);
         let upper = RunKey::bound(block, RunAnchor::Greatest, RunShape::Greatest);
@@ -1784,8 +1776,8 @@ impl CellStore {
     /// visiting another run.
     pub(crate) fn runs_based_at<'a>(
         &'a self,
-        block: &PointerBlock,
-        offset: &PointerOffsetTerm,
+        block: &AddressBase,
+        offset: &AddressOffset,
     ) -> impl Iterator<Item = &'a CellRun> + 'a {
         let anchor = RunAnchor::of(offset);
         self.runs_anchored(block, anchor.clone(), anchor)
@@ -1794,7 +1786,7 @@ impl CellStore {
     /// The runs of `block` anchored from `low` through `high`, in key order.
     fn runs_anchored<'a>(
         &'a self,
-        block: &PointerBlock,
+        block: &AddressBase,
         low: RunAnchor,
         high: RunAnchor,
     ) -> impl Iterator<Item = &'a CellRun> + 'a {
@@ -1810,10 +1802,10 @@ impl CellStore {
     /// ([`CoverLine`]) holds it are visited, which the span cover names
     /// exactly: a slot's offset is its run's base plus a constant, so it lies
     /// on the base's line.
-    fn slots_at<'a>(&'a self, pointer: &'a Pointer) -> impl Iterator<Item = SlotAt<'a>> + 'a {
+    fn slots_at<'a>(&'a self, pointer: &'a Address) -> impl Iterator<Item = SlotAt<'a>> + 'a {
         let (stem, offset) = offset_stem_and_constant(&pointer.offset);
         let line = CoverLine {
-            block: pointer.block.clone(),
+            block: pointer.base.clone(),
             stem: stem.cloned(),
         };
         self.runs_covering(&line, offset)
@@ -1833,7 +1825,7 @@ impl CellStore {
     }
 
     /// The run holding a live slot at `pointer`, and the slot's element.
-    fn live_run_slot<'a>(&'a self, pointer: &'a Pointer) -> Option<SlotAt<'a>> {
+    fn live_run_slot<'a>(&'a self, pointer: &'a Address) -> Option<SlotAt<'a>> {
         if self.runs.is_empty() {
             return None;
         }
@@ -2018,7 +2010,7 @@ impl CellStore {
     /// The whole cell map, exactly as per-cell seeding would have stored it.
     /// O(1) without runs; with runs it is built once per store, at a cost of
     /// every live slot, and kept up to date through single-cell mutations.
-    pub(crate) fn logical(&self) -> &HashedOrdMap<Pointer, StoredMemoryValue> {
+    pub(crate) fn logical(&self) -> &HashedOrdMap<Address, StoredMemoryValue> {
         if self.runs.is_empty() {
             return &self.concrete;
         }
@@ -2049,13 +2041,13 @@ impl CellStore {
     /// Dependency selection must not introduce a run's generated load atoms.
     pub(in crate::kernel) fn explicitly_stored_value(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
     ) -> Option<&ProgramValue> {
         self.concrete.get(pointer).map(StoredMemoryValue::native)
     }
 
     /// Inspect a scalar atom without copying an unrelated symbolic expression.
-    pub(crate) fn bitvector_variable_at(&self, pointer: &Pointer) -> Option<Variable> {
+    pub(crate) fn bitvector_variable_at(&self, pointer: &Address) -> Option<Variable> {
         fn variable(value: &ProgramValue) -> Option<Variable> {
             match value {
                 crate::kernel::integer_c_value!(term) => match term {
@@ -2077,17 +2069,17 @@ impl CellStore {
 
     /// The cell at `pointer`, read from a run slot without building the
     /// logical map.
-    pub(crate) fn get(&self, pointer: &Pointer) -> Option<ProgramValue> {
+    pub(crate) fn get(&self, pointer: &Address) -> Option<ProgramValue> {
         self.get_retained(pointer).map(ExecutionValue::into_native)
     }
 
-    pub(crate) fn retained_iter(&self) -> impl Iterator<Item = (&Pointer, &ExecutionValue)> {
+    pub(crate) fn retained_iter(&self) -> impl Iterator<Item = (&Address, &ExecutionValue)> {
         self.logical()
             .iter()
             .map(|(pointer, value)| (pointer, value.value()))
     }
 
-    pub(crate) fn get_retained(&self, pointer: &Pointer) -> Option<ExecutionValue> {
+    pub(crate) fn get_retained(&self, pointer: &Address) -> Option<ExecutionValue> {
         if let Some(value) = self.concrete.get(pointer) {
             return Some(value.clone().into_value());
         }
@@ -2095,14 +2087,14 @@ impl CellStore {
             .map(|slot| slot.run.value(slot.index).into())
     }
 
-    pub(crate) fn contains_key(&self, pointer: &Pointer) -> bool {
+    pub(crate) fn contains_key(&self, pointer: &Address) -> bool {
         self.concrete.contains_key(pointer) || self.live_run_slot(pointer).is_some()
     }
 
     /// How many bytes the cell at `pointer` holds, read from a run slot's
     /// element type without naming the slot's value: [`Self::get`]'s
     /// `byte_width`, at the cost of the lookup alone.
-    pub(crate) fn value_width_at(&self, pointer: &Pointer) -> Option<u32> {
+    pub(crate) fn value_width_at(&self, pointer: &Address) -> Option<u32> {
         if let Some(value) = self.concrete.get(pointer) {
             return Some(value.byte_width());
         }
@@ -2113,7 +2105,7 @@ impl CellStore {
     /// Initialized bytes starting at one addressed cell. Dense runs stop at
     /// their next hole, found by an ordered lookup rather than enumerating
     /// live intervals. A strided run authorizes only the selected cell.
-    pub(crate) fn contiguous_bytes_at(&self, pointer: &Pointer) -> Option<u32> {
+    pub(crate) fn contiguous_bytes_at(&self, pointer: &Address) -> Option<u32> {
         crate::instrumentation::record_deterministic_work(1);
         if let Some(value) = self.concrete.get(pointer) {
             return Some(value.byte_width());
@@ -2184,17 +2176,17 @@ impl CellStore {
     pub(crate) fn candidate_logical_entries<'a>(
         &'a self,
         candidates: &'a AliasCandidates,
-    ) -> impl Iterator<Item = (Pointer, ProgramValue)> + 'a {
+    ) -> impl Iterator<Item = (Address, ProgramValue)> + 'a {
         self.candidate_logical_entries_selected(candidates, None, None)
     }
 
     pub(crate) fn candidate_logical_entries_selected<'a>(
         &'a self,
         candidates: &'a AliasCandidates,
-        selected: Option<&'a [Pointer]>,
+        selected: Option<&'a [Address]>,
         selected_runs: Option<&'a [RunKey]>,
-    ) -> impl Iterator<Item = (Pointer, ProgramValue)> + 'a {
-        type Sequence<'a> = Box<dyn Iterator<Item = (Pointer, ProgramValue)> + 'a>;
+    ) -> impl Iterator<Item = (Address, ProgramValue)> + 'a {
+        type Sequence<'a> = Box<dyn Iterator<Item = (Address, ProgramValue)> + 'a>;
         let concrete: Sequence<'a> = match selected {
             Some(selected) => Box::new(selected.iter().filter_map(|pointer| {
                 self.concrete
@@ -2268,7 +2260,7 @@ impl CellStore {
 
     pub(crate) fn keys(
         &self,
-    ) -> imbl::ordmap::Keys<'_, Pointer, StoredMemoryValue, imbl::shared_ptr::DefaultSharedPtr>
+    ) -> imbl::ordmap::Keys<'_, Address, StoredMemoryValue, imbl::shared_ptr::DefaultSharedPtr>
     {
         self.logical().keys()
     }
@@ -2276,9 +2268,9 @@ impl CellStore {
     pub(crate) fn range<R>(
         &self,
         range: R,
-    ) -> impl DoubleEndedIterator<Item = (&Pointer, &ProgramValue)>
+    ) -> impl DoubleEndedIterator<Item = (&Address, &ProgramValue)>
     where
-        R: std::ops::RangeBounds<Pointer>,
+        R: std::ops::RangeBounds<Address>,
     {
         self.logical().range(range).map(native_cell)
     }
@@ -2289,7 +2281,7 @@ impl CellStore {
     pub(crate) fn diff<'a>(
         &'a self,
         other: &'a Self,
-    ) -> impl Iterator<Item = HashedOrdMapChange<'a, Pointer>> + 'a {
+    ) -> impl Iterator<Item = HashedOrdMapChange<'a, Address>> + 'a {
         if self.runs == other.runs {
             self.concrete.diff(&other.concrete)
         } else {
@@ -2304,7 +2296,7 @@ impl CellStore {
     pub(crate) fn changed_concrete_cells<'a>(
         &'a self,
         earlier: Option<&'a Self>,
-    ) -> Vec<(&'a Pointer, &'a ProgramValue)> {
+    ) -> Vec<(&'a Address, &'a ProgramValue)> {
         match earlier {
             Some(earlier) => earlier
                 .concrete
@@ -2325,7 +2317,7 @@ impl CellStore {
     /// The pointers at which the two stores' logical maps differ, ascending,
     /// without laying out a run the other store shares; see
     /// [`Self::differing_cells`].
-    pub(crate) fn differing_pointers(&self, other: &Self) -> Vec<Pointer> {
+    pub(crate) fn differing_pointers(&self, other: &Self) -> Vec<Address> {
         let differing = self.differing_cells(other);
         let mut pointers = differing
             .pointers
@@ -2371,8 +2363,7 @@ impl CellStore {
             };
         }
         let mut differing_runs: Vec<(CellRun, IndexIntervals)> = Vec::new();
-        let mut differing_runs_per_block =
-            std::collections::BTreeMap::<&PointerBlock, usize>::new();
+        let mut differing_runs_per_block = std::collections::BTreeMap::<&AddressBase, usize>::new();
         for change in self.runs.diff(&other.runs) {
             let (run, slots) = match change {
                 HashedOrdMapChange::Removed(key) => {
@@ -2393,7 +2384,7 @@ impl CellStore {
                     (left, slots)
                 }
             };
-            *differing_runs_per_block.entry(&run.base.block).or_default() += 1;
+            *differing_runs_per_block.entry(&run.base.base).or_default() += 1;
             differing_runs.push((run.clone(), slots));
         }
         crate::instrumentation::record_deterministic_work(differing_runs.len());
@@ -2407,7 +2398,7 @@ impl CellStore {
         }
         let mut run_slots = Vec::new();
         for (run, mut slots) in differing_runs {
-            if differing_runs_per_block[&run.base.block] > 1 {
+            if differing_runs_per_block[&run.base.base] > 1 {
                 crate::instrumentation::record_deterministic_work(
                     usize::try_from(slots.count()).unwrap_or(usize::MAX),
                 );
@@ -2422,7 +2413,7 @@ impl CellStore {
                 continue;
             }
             for pointer in run_slot_candidates_in(&run, |low, high| {
-                concrete_changes.range::<Pointer, _>((low, high))
+                concrete_changes.range::<Address, _>((low, high))
             }) {
                 crate::instrumentation::record_deterministic_work(1);
                 if let Some(index) = run.slot_index(pointer) {
@@ -2471,7 +2462,7 @@ impl CellStore {
     /// See [`HashedOrdMap::is_without`], over the logical maps: `self` is
     /// `before` with exactly the cells at `removed` gone, which is what the
     /// two stores' differing pointers say when each of them is absent here.
-    pub(crate) fn is_without(&self, before: &Self, removed: &[&Pointer]) -> bool {
+    pub(crate) fn is_without(&self, before: &Self, removed: &[&Address]) -> bool {
         if self.runs.is_empty() && before.runs.is_empty() {
             return self.concrete.is_without(&before.concrete, removed);
         }
@@ -2487,11 +2478,11 @@ impl CellStore {
     }
 
     /// Stores `value` at `pointer`, in canonical form.
-    pub(crate) fn insert(&mut self, pointer: Pointer, value: ProgramValue) {
+    pub(crate) fn insert(&mut self, pointer: Address, value: ProgramValue) {
         self.insert_retained(pointer, value.into());
     }
 
-    pub(crate) fn insert_retained(&mut self, pointer: Pointer, value: StoredMemoryValue) {
+    pub(crate) fn insert_retained(&mut self, pointer: Address, value: StoredMemoryValue) {
         if let Some(logical) = self.logical.get_mut() {
             logical.insert(pointer.clone(), value.clone());
         }
@@ -2525,7 +2516,7 @@ impl CellStore {
     }
 
     /// Removes the cell at `pointer`, returning what it held.
-    pub(crate) fn remove(&mut self, pointer: &Pointer) -> Option<ProgramValue> {
+    pub(crate) fn remove(&mut self, pointer: &Address) -> Option<ProgramValue> {
         if let Some(logical) = self.logical.get_mut() {
             logical.remove(pointer);
         }
@@ -2552,13 +2543,13 @@ impl CellStore {
     ) -> bool {
         self.concrete
             .diff(&other.concrete)
-            .all(|change| blocks.contains_block(&change.key().block))
+            .all(|change| blocks.contains_block(&change.key().base))
             && self.runs.diff(&other.runs).all(|change| {
                 let key = change.key();
                 self.runs
                     .get(key)
                     .or_else(|| other.runs.get(key))
-                    .is_some_and(|run| blocks.contains_block(&run.base().block))
+                    .is_some_and(|run| blocks.contains_block(&run.base().base))
             })
     }
 
@@ -2576,9 +2567,9 @@ impl CellStore {
     pub(crate) fn retain_agreed_with(
         &mut self,
         others: &[&Self],
-        mut keeps_cell: impl FnMut(&Pointer, &ProgramValue) -> bool,
+        mut keeps_cell: impl FnMut(&Address, &ProgramValue) -> bool,
         mut run_rule: impl FnMut(&CellRun) -> (SlotSet, RuleAnswer),
-    ) -> BTreeSet<PointerBlock> {
+    ) -> BTreeSet<AddressBase> {
         let held = self.clone();
         let mut blocks = BTreeSet::new();
         let mut cells = BTreeSet::new();
@@ -2588,7 +2579,7 @@ impl CellStore {
             for change in held.concrete.diff(&other.concrete) {
                 match change {
                     HashedOrdMapChange::Added(pointer) => {
-                        blocks.insert(pointer.block.clone());
+                        blocks.insert(pointer.base.clone());
                     }
                     HashedOrdMapChange::Removed(pointer) | HashedOrdMapChange::Changed(pointer) => {
                         cells.insert(pointer.clone());
@@ -2603,7 +2594,7 @@ impl CellStore {
                     }
                     None => {
                         if let Some(run) = other.runs.get(key) {
-                            blocks.insert(run.base().block.clone());
+                            blocks.insert(run.base().base.clone());
                         }
                     }
                 }
@@ -2620,7 +2611,7 @@ impl CellStore {
             };
             if !keeps_cell(&pointer, value.native()) {
                 self.concrete.remove(&pointer);
-                blocks.insert(pointer.block.clone());
+                blocks.insert(pointer.base.clone());
             }
         }
         for (key, mut run) in runs {
@@ -2629,7 +2620,7 @@ impl CellStore {
             let before = run.holes.clone();
             run.keep_only(decision, &mut keeps_cell, &mut visited);
             if run.holes != before {
-                blocks.insert(run.base().block.clone());
+                blocks.insert(run.base().base.clone());
                 self.set_run(&key, Some(run));
             }
         }
@@ -2638,7 +2629,7 @@ impl CellStore {
     }
 
     /// Keeps only the cells `keep` accepts, visiting every cell.
-    pub(crate) fn retain(&mut self, mut keep: impl FnMut(&Pointer, &ProgramValue) -> bool) {
+    pub(crate) fn retain(&mut self, mut keep: impl FnMut(&Address, &ProgramValue) -> bool) {
         self.reset();
         self.concrete
             .retain(|pointer, value| keep(pointer, value.native()));
@@ -2649,7 +2640,7 @@ impl CellStore {
     /// [`Self::retain_only_candidates_by`]. Returns the run slots it dropped.
     pub(crate) fn retain_by(
         &mut self,
-        mut keep: impl FnMut(&Pointer, &ProgramValue) -> bool,
+        mut keep: impl FnMut(&Address, &ProgramValue) -> bool,
         mut run_rule: impl FnMut(&CellRun) -> (SlotSet, RuleAnswer),
     ) -> Vec<DroppedRunSlots> {
         self.reset();
@@ -2669,8 +2660,8 @@ impl CellStore {
     pub(crate) fn retain_candidates_outside_by(
         &mut self,
         candidates: &AliasCandidates,
-        kept: &[(Pointer, Pointer)],
-        mut keep: impl FnMut(&Pointer, &ProgramValue) -> bool,
+        kept: &[(Address, Address)],
+        mut keep: impl FnMut(&Address, &ProgramValue) -> bool,
         mut run_rule: impl FnMut(&CellRun) -> (SlotSet, RuleAnswer),
     ) -> Vec<DroppedRunSlots> {
         self.reset();
@@ -2698,7 +2689,7 @@ impl CellStore {
     fn retain_runs_by(
         &mut self,
         candidates: Option<&AliasCandidates>,
-        keep: impl FnMut(&Pointer, &ProgramValue) -> bool,
+        keep: impl FnMut(&Address, &ProgramValue) -> bool,
         run_rule: &mut impl FnMut(&CellRun) -> (SlotSet, RuleAnswer),
     ) -> Vec<DroppedRunSlots> {
         self.retain_runs_from(self.visited_runs(candidates), keep, run_rule)
@@ -2707,7 +2698,7 @@ impl CellStore {
     fn retain_runs_from(
         &mut self,
         runs: Vec<(RunKey, CellRun)>,
-        mut keep: impl FnMut(&Pointer, &ProgramValue) -> bool,
+        mut keep: impl FnMut(&Address, &ProgramValue) -> bool,
         run_rule: &mut impl FnMut(&CellRun) -> (SlotSet, RuleAnswer),
     ) -> Vec<DroppedRunSlots> {
         let mut visited = 0usize;
@@ -2750,7 +2741,7 @@ impl CellStore {
     pub(crate) fn retain_only_candidates_by(
         &mut self,
         candidates: &AliasCandidates,
-        mut keep: impl FnMut(&Pointer, &ProgramValue) -> bool,
+        mut keep: impl FnMut(&Address, &ProgramValue) -> bool,
         mut run_rule: impl FnMut(&CellRun) -> (SlotSet, RuleAnswer),
     ) -> usize {
         self.reset();
@@ -2801,11 +2792,11 @@ impl CellStore {
     pub(crate) fn find_retained_candidate_by(
         &self,
         candidates: &AliasCandidates,
-        mut found: impl FnMut(&Pointer, &ProgramValue) -> bool,
+        mut found: impl FnMut(&Address, &ProgramValue) -> bool,
         mut run_rule: impl FnMut(&CellRun) -> (SlotSet, RuleAnswer),
     ) -> (Option<ExecutionValue>, usize) {
         let mut visited = 0usize;
-        let mut best: Option<(Pointer, ExecutionValue)> = candidates
+        let mut best: Option<(Address, ExecutionValue)> = candidates
             .entries(&self.concrete)
             .find(|(pointer, value)| {
                 visited += 1;
@@ -2843,7 +2834,7 @@ impl CellStore {
         &mut self,
         only_candidates: bool,
         candidates: Option<&AliasCandidates>,
-        mut keep: impl FnMut(&Pointer, &ProgramValue) -> bool,
+        mut keep: impl FnMut(&Address, &ProgramValue) -> bool,
     ) {
         if self.runs.is_empty() {
             return;
@@ -2885,7 +2876,7 @@ impl CellStore {
     /// itself and the rest of the run is asked as a whole.
     pub(crate) fn map_cells(
         &self,
-        mut map: impl FnMut(&Pointer, &ProgramValue) -> (Pointer, ProgramValue),
+        mut map: impl FnMut(&Address, &ProgramValue) -> (Address, ProgramValue),
         mut singled_out: impl FnMut(&CellRun) -> Option<u32>,
     ) -> Self {
         self.map_cells_preserving_runs(&mut map, &mut singled_out, |_| false)
@@ -2897,7 +2888,7 @@ impl CellStore {
     /// Small runs audit that argument against every represented slot.
     pub(crate) fn map_cells_preserving_runs(
         &self,
-        mut map: impl FnMut(&Pointer, &ProgramValue) -> (Pointer, ProgramValue),
+        mut map: impl FnMut(&Address, &ProgramValue) -> (Address, ProgramValue),
         mut singled_out: impl FnMut(&CellRun) -> Option<u32>,
         mut unchanged: impl FnMut(&CellRun) -> bool,
     ) -> Self {
@@ -2982,7 +2973,7 @@ impl CellStore {
     pub(crate) fn install_run(&mut self, run: &CellRun) -> bool {
         let key = run.key();
         let mut block_runs = 0usize;
-        let other_live = self.runs_in_block(&run.base.block).any(|held| {
+        let other_live = self.runs_in_block(&run.base.base).any(|held| {
             block_runs += 1;
             !held.same_slots_as(run)
         });
@@ -3017,7 +3008,7 @@ impl CellStore {
         } else {
             run_slot_candidates_in(run, |low, high| {
                 self.concrete
-                    .range::<_, Pointer>((low, high))
+                    .range::<_, Address>((low, high))
                     .map(|(pointer, _)| pointer)
             })
             .filter(|pointer| {
@@ -3062,22 +3053,22 @@ impl CellStore {
 /// to the last's. Visits only entries in those intervals.
 fn run_slot_candidates_in<'a, I>(
     run: &CellRun,
-    mut range: impl FnMut(Bound<Pointer>, Bound<Pointer>) -> I,
-) -> impl Iterator<Item = &'a Pointer> + 'a
+    mut range: impl FnMut(Bound<Address>, Bound<Address>) -> I,
+) -> impl Iterator<Item = &'a Address> + 'a
 where
-    I: Iterator<Item = &'a Pointer> + 'a,
+    I: Iterator<Item = &'a Address> + 'a,
 {
     let (line, first, last) = run.slot_line_span();
-    let at = |offset: PointerOffsetTerm| Pointer {
-        block: line.block.clone(),
+    let at = |offset: AddressOffset| Address {
+        base: line.block.clone(),
         offset,
     };
     let mut intervals = Vec::new();
     match &line.stem {
         None => {
             intervals.push(range(
-                Bound::Included(at(PointerOffsetTerm::Constant(first))),
-                Bound::Included(at(PointerOffsetTerm::Constant(last))),
+                Bound::Included(at(AddressOffset::Constant(first))),
+                Bound::Included(at(AddressOffset::Constant(last))),
             ));
         }
         Some(stem) => {
@@ -3088,9 +3079,9 @@ where
                 ));
             }
             let shifted = |shift: i64| {
-                at(PointerOffsetTerm::Add(
+                at(AddressOffset::Add(
                     Box::new(stem.clone()),
-                    Box::new(PointerOffsetTerm::Constant(shift)),
+                    Box::new(AddressOffset::Constant(shift)),
                 ))
             };
             intervals.push(range(
@@ -3119,7 +3110,7 @@ where
 /// [`run_shape_representatives`]: crate::kernel::reasoning::memory_resolution::run_shape_representatives
 fn run_unchanged_by_uniform_map(
     run: &CellRun,
-    map: &mut impl FnMut(&Pointer, &ProgramValue) -> (Pointer, ProgramValue),
+    map: &mut impl FnMut(&Address, &ProgramValue) -> (Address, ProgramValue),
 ) -> bool {
     let Some(representatives) =
         crate::kernel::reasoning::memory_resolution::run_shape_representatives(run)
@@ -3128,7 +3119,7 @@ fn run_unchanged_by_uniform_map(
     };
     crate::instrumentation::record_deterministic_work(representatives.len());
     let unchanged_at =
-        |index: u32, map: &mut dyn FnMut(&Pointer, &ProgramValue) -> (Pointer, ProgramValue)| {
+        |index: u32, map: &mut dyn FnMut(&Address, &ProgramValue) -> (Address, ProgramValue)| {
             let pointer = run.slot_pointer(index);
             let value = run.value(index);
             let (mapped_pointer, mapped_value) = map(&pointer, &value);
@@ -3154,11 +3145,11 @@ fn run_unchanged_by_uniform_map(
     true
 }
 
-impl FromIterator<(Pointer, ProgramValue)> for CellStore {
+impl FromIterator<(Address, ProgramValue)> for CellStore {
     /// A store of exactly these cells and no run. A caller rebuilding a
     /// store cell by cell from another's logical map gets the same logical
     /// cells, all concrete.
-    fn from_iter<I: IntoIterator<Item = (Pointer, ProgramValue)>>(iter: I) -> Self {
+    fn from_iter<I: IntoIterator<Item = (Address, ProgramValue)>>(iter: I) -> Self {
         Self {
             concrete: iter
                 .into_iter()
@@ -3214,7 +3205,7 @@ impl Ord for CellStore {
 }
 
 impl<'a> IntoIterator for &'a CellStore {
-    type Item = (&'a Pointer, &'a ProgramValue);
+    type Item = (&'a Address, &'a ProgramValue);
     type IntoIter = NativeCellIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -3236,8 +3227,8 @@ mod tests {
         for copy in [false, true] {
             let _session = crate::kernel::VerificationSession::enter();
             let source = crate::kernel::intern_memory(Memory::new());
-            let base = Pointer::symbolic(Variable(993_140)).offset_by_bytes(8);
-            let destination = Pointer::symbolic(Variable(993_141));
+            let base = Address::symbolic(Variable(993_140)).offset_by_bytes(8);
+            let destination = Address::symbolic(Variable(993_141));
             let run = CellRun::new_with_mode(
                 if copy { destination } else { base.clone() },
                 8,
@@ -3280,18 +3271,18 @@ mod tests {
         )
     }
 
-    fn at(block: &PointerBlock, offset: PointerOffsetTerm) -> Pointer {
-        Pointer {
-            block: block.clone(),
+    fn at(block: &AddressBase, offset: AddressOffset) -> Address {
+        Address {
+            base: block.clone(),
             offset,
         }
     }
 
-    fn constant(block: &PointerBlock, offset: i64) -> Pointer {
-        at(block, PointerOffsetTerm::Constant(offset))
+    fn constant(block: &AddressBase, offset: i64) -> Address {
+        at(block, AddressOffset::Constant(offset))
     }
 
-    fn run(base: Pointer, element_width: u32, count: u32, source: &SharedMemory) -> CellRun {
+    fn run(base: Address, element_width: u32, count: u32, source: &SharedMemory) -> CellRun {
         let element_type = if element_width == 1 {
             ProgramType::UInt8
         } else {
@@ -3310,7 +3301,7 @@ mod tests {
     /// Seeds `run` as `Memory::with_seeded_cells` does: every slot that
     /// already holds a cell is a hole of the new run. The model stores each
     /// seeded slot one by one.
-    fn seed(store: &mut CellStore, model: &mut BTreeMap<Pointer, ProgramValue>, mut run: CellRun) {
+    fn seed(store: &mut CellStore, model: &mut BTreeMap<Address, ProgramValue>, mut run: CellRun) {
         for index in 0..run.count() {
             let pointer = run.slot_pointer(index);
             assert_eq!(store.contains_key(&pointer), model.contains_key(&pointer));
@@ -3324,7 +3315,7 @@ mod tests {
         store.add_run(run);
     }
 
-    fn logical_model(store: &CellStore) -> BTreeMap<Pointer, ProgramValue> {
+    fn logical_model(store: &CellStore) -> BTreeMap<Address, ProgramValue> {
         store
             .logical()
             .iter()
@@ -3333,9 +3324,9 @@ mod tests {
     }
 
     fn model_diff(
-        left: &BTreeMap<Pointer, ProgramValue>,
-        right: &BTreeMap<Pointer, ProgramValue>,
-    ) -> Vec<Pointer> {
+        left: &BTreeMap<Address, ProgramValue>,
+        right: &BTreeMap<Address, ProgramValue>,
+    ) -> Vec<Address> {
         left.keys()
             .chain(right.keys())
             .filter(|pointer| left.get(*pointer) != right.get(*pointer))
@@ -3369,12 +3360,12 @@ mod tests {
     /// at `p - 4` has a slot at bare `p`.
     #[test]
     fn slots_are_spelled_as_loads_spell_their_addresses() {
-        let block = PointerBlock::Symbolic(Variable(9_310_101));
-        let stem = PointerOffsetTerm::Variable(Variable(9_310_102));
+        let block = AddressBase::Symbolic(Variable(9_310_101));
+        let stem = AddressOffset::Variable(Variable(9_310_102));
         let shifted = |shift: i64| {
             at(
                 &block,
-                PointerOffsetTerm::add(stem.clone(), PointerOffsetTerm::Constant(shift)),
+                AddressOffset::add(stem.clone(), AddressOffset::Constant(shift)),
             )
         };
         let seeded = run(shifted(16), 4, 3, &source(1));
@@ -3406,21 +3397,21 @@ mod tests {
     #[test]
     #[ignore = "nightly: model-based mutation and retained-history regression"]
     fn the_run_index_agrees_with_a_per_cell_model() {
-        let global = PointerBlock::Concrete("cell-store-global".to_string());
-        let other = PointerBlock::Concrete("cell-store-other".to_string());
-        let symbolic = PointerBlock::Symbolic(Variable(9_310_001));
-        let anchor = PointerOffsetTerm::Variable(Variable(9_310_002));
+        let global = AddressBase::Concrete("cell-store-global".to_string());
+        let other = AddressBase::Concrete("cell-store-other".to_string());
+        let symbolic = AddressBase::Symbolic(Variable(9_310_001));
+        let anchor = AddressOffset::Variable(Variable(9_310_002));
         let symbolic_bases = [
             anchor.clone(),
-            PointerOffsetTerm::add(anchor.clone(), PointerOffsetTerm::Constant(8)),
-            PointerOffsetTerm::add(anchor.clone(), PointerOffsetTerm::Constant(-8)),
+            AddressOffset::add(anchor.clone(), AddressOffset::Constant(8)),
+            AddressOffset::add(anchor.clone(), AddressOffset::Constant(-8)),
         ];
         let sources = [source(1), source(2)];
         for seed_value in 1..=24u64 {
             let mut stream = Stream(seed_value);
             let mut store = CellStore::new();
             let mut model = BTreeMap::new();
-            let mut history: Vec<(CellStore, BTreeMap<Pointer, ProgramValue>)> = Vec::new();
+            let mut history: Vec<(CellStore, BTreeMap<Address, ProgramValue>)> = Vec::new();
             let mut pointers = Vec::new();
             for offset in 0..48 {
                 pointers.push(constant(&global, offset));
@@ -3436,7 +3427,7 @@ mod tests {
             for shift in (-8..32).filter(|shift| *shift != 0) {
                 pointers.push(at(
                     &symbolic,
-                    PointerOffsetTerm::add(anchor.clone(), PointerOffsetTerm::Constant(shift)),
+                    AddressOffset::add(anchor.clone(), AddressOffset::Constant(shift)),
                 ));
             }
             let mut runs_seen = Vec::<CellRun>::new();
@@ -3505,18 +3496,18 @@ mod tests {
                     }
                     8 => {
                         let modulus = 2 + stream.next(3) as i64;
-                        let keep = |pointer: &Pointer, _: &ProgramValue| !matches!(pointer.offset, PointerOffsetTerm::Constant(offset) if offset % (4 * modulus) == 0);
+                        let keep = |pointer: &Address, _: &ProgramValue| !matches!(pointer.offset, AddressOffset::Constant(offset) if offset % (4 * modulus) == 0);
                         store.retain(keep);
                         model.retain(|pointer, value| keep(pointer, value));
                     }
                     _ => {
                         let only = AliasCandidates::only_block(&global);
-                        let keep = |pointer: &Pointer, _: &ProgramValue| !matches!(pointer.offset, PointerOffsetTerm::Constant(offset) if offset % 8 == 4);
+                        let keep = |pointer: &Address, _: &ProgramValue| !matches!(pointer.offset, AddressOffset::Constant(offset) if offset % 8 == 4);
                         store.retain_candidates_outside_by(&only, &[], keep, |_| {
                             (SlotSet::PerSlot, RuleAnswer::Exact)
                         });
                         model.retain(|pointer, value| {
-                            pointer.block != global || keep(pointer, value)
+                            pointer.base != global || keep(pointer, value)
                         });
                     }
                 }
@@ -3577,7 +3568,7 @@ mod tests {
     /// alike.
     #[test]
     fn runs_added_in_different_orders_make_one_store() {
-        let global = PointerBlock::Concrete("cell-store-order".to_string());
+        let global = AddressBase::Concrete("cell-store-order".to_string());
         let sources = [source(3), source(4)];
         let runs = (0..12)
             .map(|index| {
@@ -3629,7 +3620,7 @@ mod tests {
     /// cell one store has extra.
     #[test]
     fn same_cells_as_compares_cells_and_not_their_representation() {
-        let global = PointerBlock::Concrete("cell-store-same-cells".to_string());
+        let global = AddressBase::Concrete("cell-store-same-cells".to_string());
         let seeded = run(constant(&global, 0), 4, 3, &source(6));
         let mut store = CellStore::new();
         let mut model = BTreeMap::new();
@@ -3680,7 +3671,7 @@ mod tests {
     #[test]
     fn same_contents_as_keeps_every_other_component_exact() {
         let block = "cell-store-same-contents";
-        let global = PointerBlock::Concrete(block.to_string());
+        let global = AddressBase::Concrete(block.to_string());
         let seeded = run(constant(&global, 0), 4, 2, &source(7));
         let mut cells = CellStore::new();
         let mut model = BTreeMap::new();
@@ -3719,7 +3710,7 @@ mod tests {
         let mut ended = as_cells.clone();
         std::sync::Arc::make_mut(&mut ended.forgotten)
             .ended_local_blocks
-            .insert(PointerBlock::Concrete("local:lifetime:0:x".to_string()));
+            .insert(AddressBase::Concrete("local:lifetime:0:x".to_string()));
         assert!(!as_run.same_contents_as(&ended));
 
         let mut forgot = as_cells.clone();
@@ -3733,7 +3724,7 @@ mod tests {
     /// in the run: equal cell maps, and no difference between the two.
     #[test]
     fn a_run_whose_every_slot_is_written_is_retired() {
-        let global = PointerBlock::Concrete("cell-store-retire".to_string());
+        let global = AddressBase::Concrete("cell-store-retire".to_string());
         let seeded = run(constant(&global, 0), 4, 3, &source(5));
         let mut store = CellStore::new();
         let mut model = BTreeMap::new();
@@ -3776,7 +3767,7 @@ mod tests {
     /// held alike by different runs on the two sides is no difference.
     #[test]
     fn runs_covering_one_slot_differ_only_where_their_values_do() {
-        let global = PointerBlock::Concrete("cell-store-cover".to_string());
+        let global = AddressBase::Concrete("cell-store-cover".to_string());
         let source = source(6);
         let words = run(constant(&global, 0), 4, 4, &source);
         let bytes = run(constant(&global, 0), 1, 16, &source);
@@ -3828,7 +3819,7 @@ mod tests {
     /// which the one long run made every small run beneath the probe.
     #[test]
     fn a_long_run_does_not_widen_constant_lookups() {
-        let block = PointerBlock::Concrete("cell-store-long-run".to_string());
+        let block = AddressBase::Concrete("cell-store-long-run".to_string());
         let samples = [1usize, 10, 100, 1000].map(|small| {
             // Each size starts with cold version caches; otherwise the first
             // sample alone pays for the shared block-version prefix.
@@ -3877,7 +3868,7 @@ mod tests {
 
     /// A store of `runs` one-slot runs laid out by `layout`, each in canonical
     /// form, and the pointers of its slots.
-    fn many_runs(runs: usize, layout: &dyn Fn(usize) -> Pointer) -> (CellStore, Vec<Pointer>) {
+    fn many_runs(runs: usize, layout: &dyn Fn(usize) -> Address) -> (CellStore, Vec<Address>) {
         let source = source(7);
         let mut store = CellStore::new();
         let mut model = BTreeMap::new();
@@ -3898,9 +3889,9 @@ mod tests {
     /// pair up were compared by laying out both logical maps.
     #[test]
     fn run_operations_cost_the_same_whatever_the_number_of_runs() {
-        let one_block = PointerBlock::Concrete("cell-store-scaling".to_string());
-        let symbolic = PointerBlock::Symbolic(Variable(9_320_000));
-        let layouts: [(&str, Box<dyn Fn(usize) -> Pointer>); 3] = [
+        let one_block = AddressBase::Concrete("cell-store-scaling".to_string());
+        let symbolic = AddressBase::Symbolic(Variable(9_320_000));
+        let layouts: [(&str, Box<dyn Fn(usize) -> Address>); 3] = [
             (
                 "adjacent constant ranges of one block",
                 Box::new(|index| constant(&one_block, 4 * index as i64)),
@@ -3909,7 +3900,7 @@ mod tests {
                 "one block per run",
                 Box::new(|index| {
                     constant(
-                        &PointerBlock::Symbolic(Variable(9_330_000 + index as u64)),
+                        &AddressBase::Symbolic(Variable(9_330_000 + index as u64)),
                         0,
                     )
                 }),
@@ -3919,7 +3910,7 @@ mod tests {
                 Box::new(|index| {
                     at(
                         &symbolic,
-                        PointerOffsetTerm::Variable(Variable(9_340_000 + index as u64)),
+                        AddressOffset::Variable(Variable(9_340_000 + index as u64)),
                     )
                 }),
             ),

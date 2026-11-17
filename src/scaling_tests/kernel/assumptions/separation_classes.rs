@@ -5,15 +5,12 @@ fn separation_class_lookup_visits_only_the_selected_payload() {
     for aliases in [false, true] {
         for size in [16u64, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
-            let pointer = |id| Pointer::symbolic(Variable(id));
+            let pointer = |id| Address::symbolic(Variable(id));
             let model = pointer(9_884_001);
             let node = pointer(9_884_002);
-            let program = Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::scale_int32(
-                    MachineTerm::Variable(Variable(9_884_003)),
-                    4,
-                ),
+            let program = Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(9_884_003)), 4),
             };
             let separation = |left, right| Proposition::ResourceSeparate {
                 left: Box::new(Resource::Memory(MemoryRange::new_with_element_width(
@@ -71,7 +68,7 @@ fn exact_separation_lookup_ignores_related_widths_and_alias_history() {
     let mut samples = Vec::new();
     for size in [8u64, 32, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = |id| Pointer::symbolic(Variable(id));
+        let pointer = |id| Address::symbolic(Variable(id));
         let model = pointer(9_940_001);
         let source = pointer(9_940_002);
         let copied = pointer(9_940_003);

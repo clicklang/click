@@ -13,7 +13,7 @@ fn aggregate_step_results_cost_their_fields_instead_of_unrelated_state() {
                         state
                             .memory
                             .clone()
-                            .with_block(pointer.block.clone(), 4)
+                            .with_block(pointer.base.clone(), 4)
                             .store(pointer, int32(i)),
                     );
                 }
@@ -57,7 +57,7 @@ fn opaque_exception_creation_ignores_unrelated_memory_and_types() {
                 state
                     .memory
                     .clone()
-                    .with_block(pointer.block.clone(), 4)
+                    .with_block(pointer.base.clone(), 4)
                     .store(pointer, int32(index)),
             );
         }
@@ -113,7 +113,7 @@ fn aggregate_copy_builds_one_loan_obligation_without_visiting_aliases_or_loans()
         state
             .memory
             .clone()
-            .with_block(target.block.clone(), layout.size_bytes()),
+            .with_block(target.base.clone(), layout.size_bytes()),
     );
     let target_expression = ProgramExpression::Value(ProgramValue::typed_pointer(
         target.clone(),
@@ -131,7 +131,7 @@ fn aggregate_copy_builds_one_loan_obligation_without_visiting_aliases_or_loans()
                     assumptions = assumptions.assume_condition(
                         ConditionTerm::pointer_equal(
                             target.clone(),
-                            Pointer::symbolic(Variable(9_831_000 + i)),
+                            Address::symbolic(Variable(9_831_000 + i)),
                         ),
                         true,
                     );
@@ -140,7 +140,7 @@ fn aggregate_copy_builds_one_loan_obligation_without_visiting_aliases_or_loans()
             let mut last = None;
             for i in 0..if grow_aliases { 1 } else { size } {
                 let owner = ResourceFact::own_memory(MemoryRange::new(
-                    Pointer::symbolic(Variable(9_832_000 + i)),
+                    Address::symbolic(Variable(9_832_000 + i)),
                     0u32.into(),
                     1u32.into(),
                 ));

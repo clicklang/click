@@ -14,7 +14,7 @@ use super::*;
 pub(super) struct ScalarReadDescriptor<'a> {
     term: &'a MachineTerm,
     memory: &'a SharedMemory,
-    pointer: &'a Pointer,
+    pointer: &'a Address,
     kind: LoadKind,
     narrow_bytes: Option<u32>,
 }
@@ -24,7 +24,7 @@ impl<'a> ScalarReadDescriptor<'a> {
         self.memory
     }
 
-    pub(super) fn pointer(&self) -> &'a Pointer {
+    pub(super) fn pointer(&self) -> &'a Address {
         self.pointer
     }
 

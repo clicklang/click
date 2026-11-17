@@ -105,7 +105,7 @@ fn read_type(result: &Proposition) -> Option<ReadType> {
 /// wrap to the width of a scalar. Use the actual signed endpoint difference
 /// and checked scaling instead. Symbolic spans need an explicit reduction
 /// to a complete cell before this primitive can use them.
-fn observation_footprint(range: &MemoryRange) -> Option<(Pointer, u32)> {
+fn observation_footprint(range: &MemoryRange) -> Option<(Address, u32)> {
     let start = range.signed_constant_start()?;
     let end = range.signed_constant_end()?;
     let elements = u32::try_from(end.checked_sub(start)?).ok()?;
@@ -253,7 +253,7 @@ fn observation_type(comparison: ReadType, bytes: u32) -> Option<ReadType> {
 fn observation_equality(
     before: &Memory,
     after: &Memory,
-    address: Pointer,
+    address: Address,
     kind: ReadType,
     comparison: ReadType,
 ) -> Option<Proposition> {
@@ -368,7 +368,7 @@ mod tests {
         history: u64,
         ty: ProgramType,
     ) -> (Preservation, Proposition, Proposition, Proposition) {
-        let pointer = Pointer::symbolic(Variable(8_410_000));
+        let pointer = Address::symbolic(Variable(8_410_000));
         let mut memory = Memory::new();
         for i in 0..history {
             // Grow both related history and unrelated memory.
@@ -377,13 +377,13 @@ mod tests {
                 ProgramValue::Int32(MachineTerm::constant(i as u32)),
             );
             memory = memory.store(
-                Pointer::symbolic(Variable(8_420_000 + i)),
+                Address::symbolic(Variable(8_420_000 + i)),
                 ProgramValue::Int32(MachineTerm::constant(i as u32)),
             );
         }
         let before = ExecutionState::new().with_memory(memory.clone());
         let after = ExecutionState::new().with_memory(memory.store(
-            Pointer::symbolic(Variable(8_430_000)),
+            Address::symbolic(Variable(8_430_000)),
             ProgramValue::Int32(1u32.into()),
         ));
         let footprint = crate::kernel::RegionFootprint::transition(
@@ -436,7 +436,7 @@ mod tests {
             (i32::MIN, i32::MAX, 4, None),
         ] {
             let range = MemoryRange::new_with_element_width(
-                Pointer::symbolic(Variable(8_499_100)),
+                Address::symbolic(Variable(8_499_100)),
                 MachineTerm::constant(start as u32),
                 MachineTerm::constant(end as u32),
                 width,
@@ -479,7 +479,7 @@ mod tests {
                 };
                 match corruption {
                     0 => *memory = Memory::new(),
-                    1 => *pointer = Pointer::symbolic(Variable(8_499_000)),
+                    1 => *pointer = Address::symbolic(Variable(8_499_000)),
                     _ => {
                         *value_type = if ty == ProgramType::UInt8 {
                             ProgramType::Int32
@@ -687,7 +687,7 @@ mod tests {
         );
     }
 
-    pub(super) fn observe(memory: &Memory, address: &Pointer, ty: ProgramType) -> ProgramValue {
+    pub(super) fn observe(memory: &Memory, address: &Address, ty: ProgramType) -> ProgramValue {
         let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
             memory,
             address.clone(),
@@ -706,12 +706,12 @@ mod tests {
     }
 
     pub(super) fn fixture(history: u64, cached: bool) -> (Preservation, Proposition) {
-        let address = Pointer::symbolic(Variable(8_310_000));
-        let changed = Pointer::symbolic(Variable(8_310_001));
+        let address = Address::symbolic(Variable(8_310_000));
+        let changed = Address::symbolic(Variable(8_310_001));
         let mut before = Memory::new();
         for i in 0..history {
             before = before.store(
-                Pointer::symbolic(Variable(8_320_000 + i)),
+                Address::symbolic(Variable(8_320_000 + i)),
                 ProgramValue::Int32(MachineTerm::constant(i as u32)),
             );
         }
@@ -719,7 +719,7 @@ mod tests {
             before = before.store(
                 address.clone(),
                 ProgramValue::typed_pointer(
-                    Pointer::symbolic(Variable(8_310_002)),
+                    Address::symbolic(Variable(8_310_002)),
                     ProgramType::Int32Pointer,
                 ),
             );
@@ -779,7 +779,7 @@ mod tests {
     pub(super) fn abstract_fixture(history: u64) -> (Preservation, Proposition) {
         let (mut preservation, _) = fixture(history, false);
         let (before, after) = preservation.memories();
-        let address = Pointer::symbolic(Variable(8_310_000));
+        let address = Address::symbolic(Variable(8_310_000));
         let ty = ProgramType::Parameter(TypeParameterName::intern("TransportValue"));
         let ProgramValue::Parameter(a) = observe(after, &address, ty) else {
             unreachable!()
@@ -833,7 +833,7 @@ mod tests {
         };
         **left = (**left)
             .clone()
-            .with_provenance(std::sync::Arc::new(Pointer::symbolic(Variable(8_399_099))));
+            .with_provenance(std::sync::Arc::new(Address::symbolic(Variable(8_399_099))));
         assert!(
             wrong_domain
                 .apply(|_| true)
@@ -843,8 +843,8 @@ mod tests {
         let result = &mut preservation.result;
         *result = Proposition::ConditionIs(
             ConditionTerm::PointerEqual(
-                Box::new(Pointer::symbolic(Variable(8_399_000))),
-                Box::new(Pointer::symbolic(Variable(8_399_001))),
+                Box::new(Address::symbolic(Variable(8_399_000))),
+                Box::new(Address::symbolic(Variable(8_399_001))),
             ),
             true,
         );
@@ -860,7 +860,7 @@ mod tests {
     fn typed_read_observations_are_scoped_and_keep_the_selected_width() {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = Memory::new();
-        let address = Pointer::symbolic(Variable(8_399_010));
+        let address = Address::symbolic(Variable(8_399_010));
         let kind = ReadType::Integer(MachineIntegerType::Int64);
         observe(&memory, &address, ProgramType::UInt64);
         assert!(typed_reads::get(&memory, &address, kind).is_none());
@@ -931,7 +931,7 @@ mod tests {
                 };
                 if corruption == 0 {
                     **right = Resource::Memory(MemoryRange::new_with_element_width(
-                        Pointer::symbolic(Variable(8_310_099)),
+                        Address::symbolic(Variable(8_310_099)),
                         0u32.into(),
                         1u32.into(),
                         C_POINTER_BYTE_WIDTH,

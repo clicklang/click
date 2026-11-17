@@ -431,7 +431,7 @@ fn overflowing_operation(condition: &ConditionTerm) -> Option<MachineTerm> {
 
 /// The cell read by the equation naming one memory read, when this condition
 /// is such an equation.
-fn load_definition_cell(condition: &Proposition) -> Option<&Pointer> {
+fn load_definition_cell(condition: &Proposition) -> Option<&Address> {
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
@@ -500,7 +500,7 @@ fn loadability_explanation(
                 base: range_base,
                 bytes: range_bytes,
                 ..
-            } => range_base.block == base.block && range_bytes != bytes,
+            } => range_base.base == base.base && range_bytes != bytes,
             _ => false,
         })?;
     let spelled = site.spell_proposition(covering).map_or_else(

@@ -3,12 +3,12 @@ use super::*;
 
 fn partition() -> (
     PureFactContext,
-    Pointer,
+    Address,
     MachineTerm,
     ResourceFact,
     ResourceFact,
 ) {
-    let p = Pointer::symbolic(Variable(8_915_000));
+    let p = Address::symbolic(Variable(8_915_000));
     let n = MachineTerm::Variable(Variable(8_915_001));
     let facts = PureFactContext::new()
         .assume_condition(
@@ -204,15 +204,15 @@ fn body_returns_use_actual_joint_custody_for_their_output_partition() {
     use crate::kernel::program_expression::{int32_literal, variable};
     let _session = crate::kernel::VerificationSession::enter();
     let facts = PureFactContext::new();
-    let p = Pointer::symbolic(Variable(8_915_601));
-    let q = Pointer::symbolic(Variable(8_915_602));
+    let p = Address::symbolic(Variable(8_915_601));
+    let q = Address::symbolic(Variable(8_915_602));
     let actual = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(p.clone()))
         .with_local("q", ProgramValue::pointer(q.clone()))
         .with_memory(
             Memory::new()
-                .with_block(p.block.clone(), 4)
-                .with_block(q.block.clone(), 4),
+                .with_block(p.base.clone(), 4)
+                .with_block(q.base.clone(), 4),
         )
         .with_resource_context(
             ResourceContext::new_with_equalities(&facts).unchecked_with_facts([
@@ -262,9 +262,9 @@ fn body_returns_use_actual_joint_custody_for_their_output_partition() {
 #[test]
 fn selected_frontier_returns_keep_output_carriers_and_refuse_reuse() {
     let _session = crate::kernel::VerificationSession::enter();
-    let p = Pointer::symbolic(Variable(8_915_100));
-    let q = Pointer::symbolic(Variable(8_915_101));
-    let alias = Pointer::symbolic(Variable(8_915_102));
+    let p = Address::symbolic(Variable(8_915_100));
+    let q = Address::symbolic(Variable(8_915_101));
+    let alias = Address::symbolic(Variable(8_915_102));
     let facts = PureFactContext::new()
         .assume_condition(ConditionTerm::pointer_equal(p.clone(), alias.clone()), true);
     let range = |base| MemoryRange::new(base, 0u32.into(), 2u32.into());
@@ -272,7 +272,7 @@ fn selected_frontier_returns_keep_output_carriers_and_refuse_reuse() {
     plan.retain_frontier([range(p.clone()), range(q.clone())], &facts);
     let output = ResourceFact::own_memory(
         range(alias)
-            .with_provenance(Arc::new(Pointer::symbolic(Variable(8_915_103))))
+            .with_provenance(Arc::new(Address::symbolic(Variable(8_915_103))))
             .with_typed_carrier(),
     );
     let composition = ReturnResourceComposition::ApplyTransfers(&plan);
@@ -334,7 +334,7 @@ fn selected_frontier_returns_keep_output_carriers_and_refuse_reuse() {
 fn static_and_dynamic_flat_selections_share_one_input_supply() {
     let _session = crate::kernel::VerificationSession::enter();
     let facts = PureFactContext::new();
-    let p = Pointer::symbolic(Variable(8_915_200));
+    let p = Address::symbolic(Variable(8_915_200));
     let owner = ResourceFact::own_memory(MemoryRange::new(p, 0u32.into(), 2u32.into()));
     let (_, original) = ResourceContext::new_with_equalities(&facts)
         .unchecked_with_facts_and_occurrences([owner.clone()]);

@@ -1351,7 +1351,7 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
     let first = base.clone();
     let second = offset_pointer_by_int32_elements(base.clone(), MachineTerm::constant(1));
     let third = offset_pointer_by_int32_elements(base.clone(), MachineTerm::constant(2));
-    let local_i_block = crate::kernel::PointerBlock::AutomaticLocal {
+    let local_i_block = crate::kernel::AddressBase::AutomaticLocal {
         binding: crate::kernel::LocalBindingId::new(
             crate::kernel::LocalFunctionId::new(Some("fill3.c".into()), "fill3".into()),
             false,
@@ -1360,9 +1360,9 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
         ),
         instance: crate::kernel::LocalStorageInstance::Implicit,
     };
-    let local_i = Pointer {
-        block: local_i_block.clone(),
-        offset: PointerOffsetTerm::Constant(0),
+    let local_i = Address {
+        base: local_i_block.clone(),
+        offset: AddressOffset::Constant(0),
     };
     let initial_memory = memory_with_symbolic_loadable_cells(
         Memory::new(),

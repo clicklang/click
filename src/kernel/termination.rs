@@ -774,9 +774,9 @@ fn call_passes_witness_child(
         let variable = Variable(PARAMETER_VARIABLE_BASE + index as u64);
         let value = if parameter.program_type().is_pointer() {
             ProgramValue::typed_pointer(
-                Pointer {
-                    block: PointerBlock::ExternalArgument,
-                    offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(variable), 1),
+                Address {
+                    base: AddressBase::ExternalArgument,
+                    offset: AddressOffset::scale_int32(MachineTerm::Variable(variable), 1),
                 },
                 parameter.program_type(),
             )
@@ -815,7 +815,7 @@ fn call_passes_witness_child(
             );
         }
         for (index, witness) in definition.witnesses().iter().enumerate() {
-            let pointer = Pointer::symbolic(Variable(WITNESS_VARIABLE_BASE + index as u64));
+            let pointer = Address::symbolic(Variable(WITNESS_VARIABLE_BASE + index as u64));
             body_state.locals.set_typed(
                 witness.name().to_string(),
                 ProgramValue::typed_pointer(pointer, witness.program_type()),
@@ -4335,8 +4335,8 @@ fn value_function_address(value: &ProgramValue) -> Option<&str> {
     let ProgramValue::Pointer(pointer) = value else {
         return None;
     };
-    match &pointer.pointer().block {
-        PointerBlock::Function(name) => Some(name),
+    match &pointer.pointer().base {
+        AddressBase::Function(name) => Some(name),
         _ => None,
     }
 }
@@ -5326,16 +5326,16 @@ mod ranking_member_tests {
         );
     }
 
-    fn int32_cell(name: &str) -> Pointer {
-        Pointer {
-            block: PointerBlock::Concrete(name.to_string()),
-            offset: PointerOffsetTerm::Constant(0),
+    fn int32_cell(name: &str) -> Address {
+        Address {
+            base: AddressBase::Concrete(name.to_string()),
+            offset: AddressOffset::Constant(0),
         }
     }
 
     /// A pure component that reads memory: the load is against the state the
     /// component is read at, not a state the surface named.
-    fn current_load(cell: &Pointer) -> SpecExpression {
+    fn current_load(cell: &Address) -> SpecExpression {
         SpecExpression::MemoryLoad {
             memory: SpecPoint::Current,
             pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(

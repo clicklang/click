@@ -9,8 +9,8 @@ const MAX_TRACE_STATES: usize = 32;
 impl Proof<'_> {
     pub(super) fn trace_pointer_pair(
         &self,
-        left: &Pointer,
-        right: &Pointer,
+        left: &Address,
+        right: &Address,
     ) -> Option<[crate::surface::proof_trace::PointerTraceView; 2]> {
         let view = self.execution_fixed_state_view()?;
         let locals = self.proof_local_values();
@@ -58,9 +58,9 @@ impl Proof<'_> {
             ProofContext::Execution(context) => Some(context.parsed_function),
             _ => None,
         };
-        let name = |pointer: &Pointer| {
+        let name = |pointer: &Address| {
             use crate::surface::proof_trace::{PointerTraceView, pointer_definition};
-            if pointer == &Pointer::null() {
+            if pointer == &Address::null() {
                 return Some(PointerTraceView {
                     text: "0".into(),
                     retained_state: None,
@@ -166,7 +166,7 @@ impl Proof<'_> {
 
 fn immutable_field_hint(
     expression: &ContractExpression,
-    address: &Pointer,
+    address: &Address,
     locals: &BinderMap<ContractExpression>,
 ) -> Option<String> {
     let mut expression = expression;
@@ -219,7 +219,7 @@ fn immutable_field_hint(
         _ => return None,
     };
     let expected = base.pointer().offset_by_bytes(*offset_bytes);
-    (expected.block == address.block
+    (expected.base == address.base
         && crate::kernel::offsets_have_same_canonical_form(&expected.offset, &address.offset))
     .then(|| crate::surface::diagnostics::describe_field_place(&name.to_string(), field))
 }
@@ -230,7 +230,7 @@ mod pointer_trace_tests {
 
     #[test]
     fn field_hint_recovers_substituted_immutable_binders_only_at_their_exact_address() {
-        let base = Pointer::symbolic(Variable(990001));
+        let base = Address::symbolic(Variable(990001));
         let value = ProgramValue::typed_pointer(base.clone(), ProgramType::Int32Pointer);
         let local = ContractExpression::ProgramExpression(ProgramExpression::Value(value.clone()));
         let locals: BinderMap<_> = (BTreeMap::from([("zid".to_string(), local.clone())])).into();
@@ -270,7 +270,7 @@ mod pointer_trace_tests {
             "zid".to_string(),
             ContractExpression::ProgramExpression(ProgramExpression::Value(
                 ProgramValue::typed_pointer(
-                    Pointer::symbolic(Variable(990002)),
+                    Address::symbolic(Variable(990002)),
                     ProgramType::Int32Pointer,
                 ),
             )),

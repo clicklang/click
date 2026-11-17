@@ -50,9 +50,9 @@ fn loop_head_havoc_work_over_cells_and_symbolic_loans() {
         // Before the removal, every cell searched the whole loan bucket.
         for index in 0..count {
             assert!(
-                !havoced.has_known_cell_at(&Pointer {
-                    block: PointerBlock::ExternalArgument,
-                    offset: PointerOffsetTerm::Constant(4 * index as i64),
+                !havoced.has_known_cell_at(&Address {
+                    base: AddressBase::ExternalArgument,
+                    offset: AddressOffset::Constant(4 * index as i64),
                 }),
                 "a cell no loan protects must not survive the havoc"
             );

@@ -15,7 +15,7 @@ fn subrange_law_does_not_enumerate_the_interval() {
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 crate::kernel::prove_separation_subrange(
                     PointerValue::new(
-                        Pointer::symbolic(Variable(8_390_000)),
+                        Address::symbolic(Variable(8_390_000)),
                         ProgramType::Int64Pointer,
                     ),
                     8,
@@ -51,7 +51,7 @@ fn elements_laws_do_not_walk_the_index_distance() {
                     _ => MachineTerm::int64_constant(i64::from(n)),
                 };
                 let base = PointerValue::new(
-                    Pointer::symbolic(Variable(8_390_001)),
+                    Address::symbolic(Variable(8_390_001)),
                     ProgramType::Int64Pointer,
                 );
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -118,7 +118,7 @@ fn conjunction_lowering_visits_written_operands_not_ambient_facts() {
         for i in 0..n {
             let leaf = SpecResource::Value(if memory {
                 Resource::Memory(MemoryRange::new_with_element_width(
-                    Pointer::symbolic(Variable(8_391_000)),
+                    Address::symbolic(Variable(8_391_000)),
                     0u32.into(),
                     MachineTerm::Variable(Variable(8_392_000 + i as u64)),
                     4,
@@ -179,7 +179,7 @@ fn viewable_restrict_does_not_walk_compositions_or_enumerate_memory() {
         }
         let memory = Memory::new();
         let range = Resource::Memory(MemoryRange::new_with_element_width(
-            Pointer::symbolic(Variable(8_390_100)),
+            Address::symbolic(Variable(8_390_100)),
             0u32.into(),
             size.into(),
             4,
@@ -209,7 +209,7 @@ fn element_containment_does_not_enumerate_its_interval() {
             crate::instrumentation::measure_deterministic_work(|| {
                 crate::kernel::prove_separation_contains_element(
                     PointerValue::new(
-                        Pointer::symbolic(Variable(8_390_002)),
+                        Address::symbolic(Variable(8_390_002)),
                         ProgramType::Int64Pointer,
                     ),
                     8,
@@ -244,7 +244,7 @@ fn rebase_law_does_not_enumerate_its_interval() {
             crate::instrumentation::measure_deterministic_work(|| {
                 crate::kernel::prove_separation_rebase(
                     PointerValue::new(
-                        Pointer::symbolic(Variable(8_390_003)),
+                        Address::symbolic(Variable(8_390_003)),
                         ProgramType::Int64Pointer,
                     ),
                     8,

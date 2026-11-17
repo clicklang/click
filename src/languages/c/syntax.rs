@@ -147,7 +147,7 @@ pub const C_PUBLIC_FORMS: &[&str] = &[
 
 #[derive(Clone, Debug)]
 struct StaticAddress {
-    pointer: crate::kernel::Pointer,
+    pointer: crate::kernel::Address,
     interface_type: InterfaceType,
     constant: bool,
     /// The member subobject the address selects, if any.
@@ -1092,7 +1092,7 @@ fn kernel_integer_literal_value(
             if matches!(initializer, CExpression::Int32Literal(0)) =>
         {
             crate::kernel::ProgramValue::typed_pointer(
-                crate::kernel::Pointer::null(),
+                crate::kernel::Address::null(),
                 interface_type.to_kernel_type(),
             )
         }
@@ -1123,7 +1123,7 @@ fn kernel_integer_literal_value(
             if matches!(initializer, CExpression::Int32Literal(0)) =>
         {
             crate::kernel::ProgramValue::typed_pointer(
-                crate::kernel::Pointer::null(),
+                crate::kernel::Address::null(),
                 interface_type.to_kernel_type(),
             )
         }
@@ -1149,7 +1149,7 @@ fn kernel_aggregate_initializer_value(
             if matches!(initializer, CExpression::Int32Literal(0)) =>
         {
             Some(crate::kernel::ProgramValue::typed_pointer(
-                crate::kernel::Pointer::null(),
+                crate::kernel::Address::null(),
                 interface_type.to_kernel_type(),
             ))
         }
@@ -1159,11 +1159,11 @@ fn kernel_aggregate_initializer_value(
         // writing the cell, so a later load dispatches to the concrete target.
         InterfaceType::FunctionPointer(_) => match initializer {
             CExpression::Int32Literal(0) => Some(crate::kernel::ProgramValue::typed_pointer(
-                crate::kernel::Pointer::null(),
+                crate::kernel::Address::null(),
                 interface_type.to_kernel_type(),
             )),
             CExpression::FunctionAddress(name) => Some(crate::kernel::ProgramValue::typed_pointer(
-                crate::kernel::Pointer::function(name.clone()),
+                crate::kernel::Address::function(name.clone()),
                 interface_type.to_kernel_type(),
             )),
             _ => None,

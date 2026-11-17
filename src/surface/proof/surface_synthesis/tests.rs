@@ -13,11 +13,11 @@ fn separation_names_loaded_pointer_fields_at_their_declared_type() {
         ))
         .unwrap();
         let parameters = [function.parameters()[0].clone()];
-        let base = Pointer::symbolic(Variable(997101));
+        let base = Address::symbolic(Variable(997101));
         let memory = Memory::new();
         let loaded =
-            Pointer::canonical_loaded_value(&crate::kernel::intern_memory_ref(&memory), &base);
-        let other = Pointer::symbolic(Variable(997102));
+            Address::canonical_loaded_value(&crate::kernel::intern_memory_ref(&memory), &base);
+        let other = Address::symbolic(Variable(997102));
         let arguments = [ProgramExpression::Value(ProgramValue::pointer(
             base.clone(),
         ))];
@@ -60,7 +60,7 @@ fn separate_round_trips_without_generating_span_obligations() {
     use crate::kernel::{MemoryRange, PointerValue, Resource};
     for wide in [false, true] {
         let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(997001)),
+            Address::symbolic(Variable(997001)),
             ProgramType::Int32Pointer,
         );
         let end = MachineTerm::Variable(Variable(997002));
@@ -232,9 +232,9 @@ fn recorded_qualified_cells(
     let state = ExecutionState::new()
         .with_memory(Memory::new().with_block(block, 4 * u32::try_from(cells).unwrap()));
     let base = ProgramValue::typed_pointer(
-        Pointer {
-            block: PointerBlock::Concrete(block.into()),
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: AddressBase::Concrete(block.into()),
+            offset: AddressOffset::Constant(0),
         },
         ProgramType::Int32Pointer,
     );
@@ -404,9 +404,9 @@ fn qualified_static_read_spellings_retain_entry_and_current_epochs() {
     let _session = crate::kernel::VerificationSession::enter();
     let (entry, sources, loads) =
         recorded_qualified_cells("file-static:alpha.c:calls", "alpha::calls", 1);
-    let address = Pointer {
-        block: PointerBlock::Concrete("file-static:alpha.c:calls".into()),
-        offset: PointerOffsetTerm::Constant(0),
+    let address = Address {
+        base: AddressBase::Concrete("file-static:alpha.c:calls".into()),
+        offset: AddressOffset::Constant(0),
     };
     let post = entry
         .clone()
@@ -509,9 +509,9 @@ fn qualified_multidimensional_cell_recovery_preserves_its_source_rank() {
     let block = "static:increment_twice:values#static0";
     let state = ExecutionState::new().with_memory(Memory::new().with_block(block, 12));
     let base = ProgramValue::typed_pointer(
-        Pointer {
-            block: PointerBlock::Concrete(block.into()),
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: AddressBase::Concrete(block.into()),
+            offset: AddressOffset::Constant(0),
         },
         ProgramType::Int32Pointer,
     );
@@ -640,9 +640,9 @@ fn external_byte_range_caller() -> (
     Vec<ProgramExpression>,
     ExecutionState,
 ) {
-    let pointer = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(100_000)), 1),
+    let pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(100_000)), 1),
     };
     let pointer = ProgramValue::typed_pointer(pointer, ProgramType::UInt8Pointer);
     let length = ProgramValue::Int32(MachineTerm::Variable(Variable(1)));
@@ -794,14 +794,14 @@ fn external_byte_range_requirement(binder: Variable, length: &MachineTerm) -> Pr
             )),
             Box::new(Proposition::MemoryLoadable {
                 memory: Memory::new(),
-                base: Pointer {
-                    block: PointerBlock::ExternalArgument,
-                    offset: PointerOffsetTerm::Add(
-                        Box::new(PointerOffsetTerm::scaled_int32_node(
+                base: Address {
+                    base: AddressBase::ExternalArgument,
+                    offset: AddressOffset::Add(
+                        Box::new(AddressOffset::scaled_int32_node(
                             MachineTerm::Variable(Variable(100_000)),
                             1,
                         )),
-                        Box::new(PointerOffsetTerm::scaled_int32_node(index.clone(), 1)),
+                        Box::new(AddressOffset::scaled_int32_node(index.clone(), 1)),
                     ),
                 },
                 bytes: binary_node!(
@@ -828,9 +828,9 @@ fn external_symbolic_element_context(
     Vec<ProgramExpression>,
     ExecutionState,
 ) {
-    let pointer = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(100_000)), 1),
+    let pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(100_000)), 1),
     };
     let pointer = ProgramValue::typed_pointer(pointer, ProgramType::UInt8Pointer);
     let index = ProgramValue::Int32(MachineTerm::Variable(Variable(100_001)));
@@ -864,14 +864,14 @@ fn external_symbolic_element_requirement(memory: Memory, index: Variable) -> Pro
 fn external_symbolic_element_requirement_term(memory: Memory, index: MachineTerm) -> Proposition {
     Proposition::MemoryLoadable {
         memory,
-        base: Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Add(
-                Box::new(PointerOffsetTerm::scaled_int32_node(
+        base: Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Add(
+                Box::new(AddressOffset::scaled_int32_node(
                     MachineTerm::Variable(Variable(100_000)),
                     1,
                 )),
-                Box::new(PointerOffsetTerm::scaled_int32_node(index.clone(), 1)),
+                Box::new(AddressOffset::scaled_int32_node(index.clone(), 1)),
             ),
         },
         bytes: binary_node!(
@@ -1161,14 +1161,14 @@ fn strlen_symbolic_element_range_rejects_wrong_identity() {
 
     let wrong_base = Proposition::MemoryLoadable {
         memory: memory.clone(),
-        base: Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Add(
-                Box::new(PointerOffsetTerm::scaled_int32_node(
+        base: Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Add(
+                Box::new(AddressOffset::scaled_int32_node(
                     MachineTerm::Variable(Variable(100_002)),
                     1,
                 )),
-                Box::new(PointerOffsetTerm::scaled_int32_node(
+                Box::new(AddressOffset::scaled_int32_node(
                     MachineTerm::Variable(Variable(100_001)),
                     1,
                 )),
@@ -1213,12 +1213,12 @@ fn strlen_symbolic_element_range_rejects_wrong_identity() {
         let Proposition::MemoryLoadable { base, .. } = &mut requirement else {
             unreachable!();
         };
-        base.offset = PointerOffsetTerm::Add(
-            Box::new(PointerOffsetTerm::scaled_int32_node(
+        base.offset = AddressOffset::Add(
+            Box::new(AddressOffset::scaled_int32_node(
                 MachineTerm::Variable(Variable(100_000)),
                 2,
             )),
-            Box::new(PointerOffsetTerm::scaled_int32_node(
+            Box::new(AddressOffset::scaled_int32_node(
                 MachineTerm::Variable(Variable(100_001)),
                 2,
             )),
@@ -1268,12 +1268,12 @@ fn strlen_constant_element_range_falls_back_to_general_synthesis() {
     assert_eq!(bytes, MachineTerm::constant(1));
     assert_eq!(
         base.offset,
-        PointerOffsetTerm::Add(
-            Box::new(PointerOffsetTerm::scaled_int32_node(
+        AddressOffset::Add(
+            Box::new(AddressOffset::scaled_int32_node(
                 MachineTerm::Variable(Variable(100_000)),
                 1
             )),
-            Box::new(PointerOffsetTerm::Constant(3)),
+            Box::new(AddressOffset::Constant(3)),
         )
     );
 }
@@ -1283,9 +1283,9 @@ fn strlen_zero_based_element_range_round_trips_exactly() {
     let memory = Memory::new().with_block("strlen:zero-based-bytes", 16);
     let (parameters, mut arguments, state) = external_symbolic_element_context(memory.clone());
     let pointer = ProgramValue::typed_pointer(
-        Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
         },
         ProgramType::UInt8Pointer,
     );
@@ -1295,7 +1295,7 @@ fn strlen_zero_based_element_range_round_trips_exactly() {
     let Proposition::MemoryLoadable { base, .. } = &mut requirement else {
         unreachable!();
     };
-    base.offset = PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(100_001)), 1);
+    base.offset = AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(100_001)), 1);
     let synthesized = synthesize_surface_proposition(
         &requirement,
         ParameterBinding::new(&parameters, &arguments),
@@ -1324,9 +1324,9 @@ fn strlen_zero_based_element_range_round_trips_exactly() {
 fn non_external_named_range_still_uses_general_synthesis() {
     let memory = Memory::new().with_block("local:elements", 8);
     let pointer = ProgramValue::typed_pointer(
-        Pointer {
-            block: PointerBlock::Concrete("local:elements".into()),
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: AddressBase::Concrete("local:elements".into()),
+            offset: AddressOffset::Constant(0),
         },
         ProgramType::UInt8Pointer,
     );
@@ -1337,12 +1337,9 @@ fn non_external_named_range_still_uses_general_synthesis() {
         .with_local("start", start);
     let requirement = Proposition::MemoryLoadable {
         memory,
-        base: Pointer {
-            block: PointerBlock::Concrete("local:elements".into()),
-            offset: PointerOffsetTerm::scaled_int32_node(
-                MachineTerm::Variable(Variable(100_001)),
-                1,
-            ),
+        base: Address {
+            base: AddressBase::Concrete("local:elements".into()),
+            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(100_001)), 1),
         },
         bytes: binary_node!(
             Int32,
@@ -1436,9 +1433,9 @@ fn external_element_range_context(
     Vec<ProgramExpression>,
     ExecutionState,
 ) {
-    let pointer = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scaled_int32_node(
+    let pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scaled_int32_node(
             MachineTerm::Variable(Variable(100_000)),
             i64::from(width),
         ),
@@ -1492,14 +1489,14 @@ fn external_element_range_requirement(
 ) -> Proposition {
     Proposition::MemoryLoadable {
         memory: Memory::new(),
-        base: Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Add(
-                Box::new(PointerOffsetTerm::scaled_int32_node(
+        base: Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Add(
+                Box::new(AddressOffset::scaled_int32_node(
                     MachineTerm::Variable(Variable(100_000)),
                     i64::from(width),
                 )),
-                Box::new(PointerOffsetTerm::scaled_int32_node(
+                Box::new(AddressOffset::scaled_int32_node(
                     start.clone(),
                     i64::from(width),
                 )),
@@ -1704,12 +1701,12 @@ fn named_element_ranges_preserve_nonzero_starts_and_folded_byte_counts() {
     assert_eq!(bytes, MachineTerm::constant(20));
     assert_eq!(
         base.offset,
-        PointerOffsetTerm::Add(
-            Box::new(PointerOffsetTerm::scaled_int32_node(
+        AddressOffset::Add(
+            Box::new(AddressOffset::scaled_int32_node(
                 MachineTerm::Variable(Variable(100_000)),
                 4
             )),
-            Box::new(PointerOffsetTerm::Constant(12)),
+            Box::new(AddressOffset::Constant(12)),
         )
     );
 }
@@ -1729,12 +1726,12 @@ fn named_element_range_does_not_infer_start_from_an_unrelated_index() {
     let Proposition::MemoryLoadable { base, .. } = &mut requirement else {
         unreachable!();
     };
-    base.offset = PointerOffsetTerm::Add(
-        Box::new(PointerOffsetTerm::scaled_int32_node(
+    base.offset = AddressOffset::Add(
+        Box::new(AddressOffset::scaled_int32_node(
             MachineTerm::Variable(Variable(100_000)),
             4,
         )),
-        Box::new(PointerOffsetTerm::scaled_int32_node(
+        Box::new(AddressOffset::scaled_int32_node(
             MachineTerm::Variable(Variable(100_003)),
             4,
         )),
@@ -1832,9 +1829,9 @@ fn function_call_synthesis_scales_with_named_arguments() {
 
 #[test]
 fn function_array_synthesis_requires_the_exact_named_state() {
-    let pointer = ProgramValue::pointer(Pointer {
-        block: PointerBlock::Concrete("array".into()),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = ProgramValue::pointer(Address {
+        base: AddressBase::Concrete("array".into()),
+        offset: AddressOffset::Constant(0),
     });
     let entry = ExecutionState::new().with_local("p", pointer.clone());
     let post = entry
@@ -1874,7 +1871,7 @@ fn function_array_synthesis_requires_the_exact_named_state() {
     // entry slot must be free for that nested scope to clear and restore it.
     let unnamed = [crate::kernel::PureFunctionArgument::ArrayRef {
         memory: entry.memory().clone(),
-        pointer: ProgramValue::pointer(Pointer::symbolic(Variable(9_830_001))),
+        pointer: ProgramValue::pointer(Address::symbolic(Variable(9_830_001))),
         element_type: ProgramType::Int32,
     }];
     assert!(
@@ -1902,7 +1899,7 @@ fn function_array_synthesis_requires_the_exact_named_state() {
 #[test]
 fn function_array_argument_keeps_its_recorded_memory_after_other_writes() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = ProgramValue::pointer(Pointer::symbolic(Variable(981_300)));
+    let pointer = ProgramValue::pointer(Address::symbolic(Variable(981_300)));
     let historical = ExecutionState::new()
         .with_local("p", pointer.clone())
         .with_memory(Memory::new().with_block("historical-array", 4));
@@ -2016,9 +2013,9 @@ fn nested_propositions_synthesize_with_small_frames_and_linear_work() {
 
 #[test]
 fn load_defining_equation_round_trips() {
-    let pointer = Pointer {
-        block: PointerBlock::Concrete("load-definition".into()),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::Concrete("load-definition".into()),
+        offset: AddressOffset::Constant(0),
     };
     let memory = Memory::new().with_block("load-definition", 4);
     let state = ExecutionState::new().with_memory(memory).with_local(
@@ -2055,9 +2052,9 @@ fn load_defining_equation_round_trips() {
 
 #[test]
 fn load_defining_equation_uses_entry_state() {
-    let pointer = Pointer {
-        block: PointerBlock::Concrete("load-definition-entry".into()),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::Concrete("load-definition-entry".into()),
+        offset: AddressOffset::Constant(0),
     };
     let entry = ExecutionState::new()
         .with_memory(Memory::new().with_block("load-definition-entry", 4))
@@ -2118,9 +2115,9 @@ fn load_defining_equation_uses_entry_state() {
 
 #[test]
 fn load_defining_equation_uses_saved_state() {
-    let pointer = Pointer {
-        block: PointerBlock::Concrete("load-definition-saved".into()),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::Concrete("load-definition-saved".into()),
+        offset: AddressOffset::Constant(0),
     };
     let base = ExecutionState::new()
         .with_memory(Memory::new().with_block("load-definition-saved", 4))
@@ -2197,18 +2194,18 @@ fn example_load_defining_requirement(
     local: &str,
     offset: i64,
 ) -> (ExecutionState, Proposition, Variable) {
-    let pointer = Pointer {
-        block: PointerBlock::Concrete(block.into()),
-        offset: PointerOffsetTerm::Constant(offset),
+    let pointer = Address {
+        base: AddressBase::Concrete(block.into()),
+        offset: AddressOffset::Constant(offset),
     };
     let state = ExecutionState::new()
         .with_memory(Memory::new().with_block(block, 16))
         .with_local(
             local,
             ProgramValue::typed_pointer(
-                Pointer {
-                    block: PointerBlock::Concrete(block.into()),
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: AddressBase::Concrete(block.into()),
+                    offset: AddressOffset::Constant(0),
                 },
                 ProgramType::Int32Pointer,
             ),
@@ -2283,9 +2280,9 @@ fn load_equation_rejects_wrong_state_and_unresolvable_variable() {
     let (state, requirement, variable) =
         example_load_defining_requirement("owned-string:wrong-retained_state", "owner", 0);
     let wrong_memory = Memory::new().with_block("owned-string:other-epoch", 16);
-    let wrong_pointer = Pointer {
-        block: PointerBlock::Concrete("owned-string:wrong-retained_state".into()),
-        offset: PointerOffsetTerm::Constant(4),
+    let wrong_pointer = Address {
+        base: AddressBase::Concrete("owned-string:wrong-retained_state".into()),
+        offset: AddressOffset::Constant(4),
     };
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
@@ -2330,9 +2327,9 @@ fn load_equation_rejects_wrong_state_and_unresolvable_variable() {
             left: left.clone(),
             right: Box::new(MachineTerm::MemoryLoad(
                 crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&wrong_memory))),
-                Box::new(Pointer {
-                    block: PointerBlock::Concrete("owned-string:wrong-retained_state".into()),
-                    offset: PointerOffsetTerm::Constant(0),
+                Box::new(Address {
+                    base: AddressBase::Concrete("owned-string:wrong-retained_state".into()),
+                    offset: AddressOffset::Constant(0),
                 }),
                 crate::kernel::LoadKind::Int32,
             )),
@@ -2370,9 +2367,9 @@ fn actual_struct_field_load_equation(
         .first()
         .expect("the example function has a struct pointer parameter")
         .clone();
-    let base = Pointer {
-        block: PointerBlock::Concrete(block.into()),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: AddressBase::Concrete(block.into()),
+        offset: AddressOffset::Constant(0),
     };
     let pointer = base.offset_by_bytes(field_offset as u32);
     let memory = Memory::new().with_block(block, 16);
@@ -2725,18 +2722,18 @@ fn pointer_field_synthesis_through_cast_and_local_selects_current_value() {
     )
     .unwrap();
     let layout = function.structs().get("job").unwrap().clone();
-    let base = Pointer {
-        block: PointerBlock::Concrete("job".into()),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: AddressBase::Concrete("job".into()),
+        offset: AddressOffset::Constant(0),
     };
     let owner = ProgramValue::typed_pointer(base.clone(), ProgramType::VoidPointer);
     let field_pointer = base.offset_by_bytes(layout.fields()["selected"].offset_bytes());
-    let selected = PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(711)), 4);
-    let decoy = PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(712)), 4);
+    let selected = AddressOffset::scale_int32(MachineTerm::Variable(Variable(711)), 4);
+    let decoy = AddressOffset::scale_int32(MachineTerm::Variable(Variable(712)), 4);
     let value = |offset| {
         ProgramValue::typed_pointer(
-            Pointer {
-                block: PointerBlock::ExternalArgument,
+            Address {
+                base: AddressBase::ExternalArgument,
                 offset,
             },
             ProgramType::Int32Pointer,
@@ -2811,10 +2808,10 @@ fn pointer_field_synthesis_through_cast_and_local_selects_current_value() {
 #[test]
 fn a_local_indexes_only_addresses_formed_from_it() {
     let scaled = |variable: u64| {
-        PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4)
+        AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4)
     };
-    let external = |offset: PointerOffsetTerm| Pointer {
-        block: PointerBlock::ExternalArgument,
+    let external = |offset: AddressOffset| Address {
+        base: AddressBase::ExternalArgument,
         offset,
     };
     let (arena, occupied, index) = (200_000, 200_001, 200_002);
@@ -2822,7 +2819,7 @@ fn a_local_indexes_only_addresses_formed_from_it() {
         "arena",
         ProgramValue::typed_pointer(external(scaled(arena)), ProgramType::Int32Pointer),
     );
-    let unrelated_cell = external(PointerOffsetTerm::Add(
+    let unrelated_cell = external(AddressOffset::Add(
         Box::new(scaled(occupied)),
         Box::new(scaled(index)),
     ));
@@ -2837,7 +2834,7 @@ fn a_local_indexes_only_addresses_formed_from_it() {
         None,
         "a cell addressed from another pointer is not an index of the local"
     );
-    let own_cell = external(PointerOffsetTerm::Add(
+    let own_cell = external(AddressOffset::Add(
         Box::new(scaled(arena)),
         Box::new(scaled(index)),
     ));
@@ -3039,9 +3036,9 @@ fn wide_memory_selectors_preserve_width_and_signedness() {
         ),
     ] {
         let function = syntax::parse_function(&format!("void read({spelling} *p) {{ }}")).unwrap();
-        let base = Pointer {
-            block: PointerBlock::Concrete("wide".into()),
-            offset: PointerOffsetTerm::Constant(0),
+        let base = Address {
+            base: AddressBase::Concrete("wide".into()),
+            offset: AddressOffset::Constant(0),
         };
         let argument = ProgramValue::typed_pointer(base.clone(), pointer_type);
         let state = ExecutionState::new()
@@ -3094,9 +3091,9 @@ fn struct_loadable_spans_relower_without_widening_over_padding() {
     )
     .unwrap();
     let parameter = function.parameters()[0].clone();
-    let pointer = Pointer {
-        block: PointerBlock::Concrete("item".into()),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::Concrete("item".into()),
+        offset: AddressOffset::Constant(0),
     };
     let value = ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer);
     let state = ExecutionState::new().with_local("p", value.clone());
@@ -3162,13 +3159,13 @@ fn a_pointer_a_local_no_longer_holds_is_spelled_where_it_was_introduced() {
     // the current state cannot name it; the point after the first call held
     // it in `q`, so `at(that point, q) != NULL` spells the fact `view`'s
     // contract gave about it.
-    let returned = Pointer {
-        block: PointerBlock::Symbolic(Variable(910_001)),
-        offset: PointerOffsetTerm::Constant(0),
+    let returned = Address {
+        base: AddressBase::Symbolic(Variable(910_001)),
+        offset: AddressOffset::Constant(0),
     };
-    let other = Pointer {
-        block: PointerBlock::Concrete("pointer-introduced-other".into()),
-        offset: PointerOffsetTerm::Constant(0),
+    let other = Address {
+        base: AddressBase::Concrete("pointer-introduced-other".into()),
+        offset: AddressOffset::Constant(0),
     };
     let memory = Memory::new().with_block("pointer-introduced-other", 4);
     let entry = ExecutionState::new()
@@ -3206,7 +3203,7 @@ fn a_pointer_a_local_no_longer_holds_is_spelled_where_it_was_introduced() {
         now.clone(),
     );
     let fact = Proposition::ConditionIs(
-        ConditionTerm::PointerEqual(Box::new(returned), Box::new(Pointer::null())),
+        ConditionTerm::PointerEqual(Box::new(returned), Box::new(Address::null())),
         false,
     );
     let spelled = {
@@ -3327,9 +3324,9 @@ fn recorded_cells_offer_the_points_that_held_a_value_newest_first() {
     // A value two stores put in a cell, between which a store overwrote
     // it, is offered at both points that recorded it there, newest first;
     // a value no cell held is offered nowhere.
-    let cell = Pointer {
-        block: PointerBlock::Concrete("cell-introduced".into()),
-        offset: PointerOffsetTerm::Constant(0),
+    let cell = Address {
+        base: AddressBase::Concrete("cell-introduced".into()),
+        offset: AddressOffset::Constant(0),
     };
     let value = MachineTerm::Variable(Variable(940_001));
     let point = |index| {
@@ -3375,15 +3372,15 @@ fn allocation_result_names_survive_reassignment_and_follow_state_scope() {
         region: CodeRegionRef::Region(region),
         kind: ProgramPointKind::Exit,
     };
-    let first = Pointer {
-        block: PointerBlock::Heap(989_030),
-        offset: PointerOffsetTerm::Constant(0),
+    let first = Address {
+        base: AddressBase::Heap(989_030),
+        offset: AddressOffset::Constant(0),
     };
-    let second = Pointer {
-        block: PointerBlock::Heap(989_031),
-        offset: PointerOffsetTerm::Constant(0),
+    let second = Address {
+        base: AddressBase::Heap(989_031),
+        offset: AddressOffset::Constant(0),
     };
-    let state = |pointer: &Pointer| {
+    let state = |pointer: &Address| {
         ExecutionState::new().with_local(
             crate::kernel::BindingName::Local(crate::kernel::LocalBindingId::new(
                 crate::kernel::LocalFunctionId::new(None, "f".into()),
@@ -3402,7 +3399,7 @@ fn allocation_result_names_survive_reassignment_and_follow_state_scope() {
         retained_states.allocation_result(&first),
         Some(point.region.clone())
     );
-    let current = state(&Pointer::null());
+    let current = state(&Address::null());
     let raised = {
         let _points = SynthesisRecordedPointsScope::enter(&retained_states);
         synthesize_surface_pointer_expression(
@@ -3548,9 +3545,9 @@ fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
                     MachineIntegerType::UInt64 => ProgramValue::UInt64(i.clone()),
                     _ => unreachable!(),
                 };
-                let base = Pointer {
-                    block: PointerBlock::Concrete("indexed-array".into()),
-                    offset: PointerOffsetTerm::Constant(0),
+                let base = Address {
+                    base: AddressBase::Concrete("indexed-array".into()),
+                    offset: AddressOffset::Constant(0),
                 };
                 let state = ExecutionState::new()
                     .with_memory(Memory::new().with_block("indexed-array", 128))
@@ -3572,8 +3569,8 @@ fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
                     i.clone()
                 };
                 let offset = match format {
-                    MachineIntegerType::Int32 => PointerOffsetTerm::scaled_int32_node(index, width),
-                    MachineIntegerType::UInt32 => PointerOffsetTerm::scaled_int64_node(
+                    MachineIntegerType::Int32 => AddressOffset::scaled_int32_node(index, width),
+                    MachineIntegerType::UInt32 => AddressOffset::scaled_int64_node(
                         MachineTerm::legacy_cast(
                             MachineCastSpelling::UInt64From32,
                             Box::new(index),
@@ -3581,14 +3578,14 @@ fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
                         width,
                         true,
                     ),
-                    _ => PointerOffsetTerm::scaled_int64_node(index, width, true),
+                    _ => AddressOffset::scaled_int64_node(index, width, true),
                 };
                 let load = MachineTerm::MemoryLoad(
                     crate::kernel::ProgramPoint::at(
                         &(crate::kernel::intern_memory_ref(state.memory())),
                     ),
-                    Box::new(Pointer {
-                        block: base.block.clone(),
+                    Box::new(Address {
+                        base: base.base.clone(),
                         offset,
                     }),
                     load_kind,
@@ -3796,9 +3793,9 @@ fn pointee_layout_spells_a_field_load_at_its_byte_offset() {
     )
     .with_pointee_struct_layout("Square".into(), layout);
     assert!(parameter.struct_layout().is_none());
-    let pointer = Pointer {
-        block: PointerBlock::Concrete("square".into()),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::Concrete("square".into()),
+        offset: AddressOffset::Constant(0),
     };
     let value = ProgramValue::typed_pointer(pointer.clone(), ProgramType::UInt8Pointer);
     let state = ExecutionState::new().with_local("p", value.clone());
@@ -4034,9 +4031,9 @@ fn unified_certificate_terms_raise_and_lower_by_identity() {
 #[test]
 fn shared_scalar_load_raises_and_relowers_to_the_same_read_node() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = Pointer {
-        block: PointerBlock::Concrete("shared-read-round-trip".into()),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::Concrete("shared-read-round-trip".into()),
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_memory(Memory::new().with_block("shared-read-round-trip", 4))
@@ -4087,7 +4084,7 @@ fn volatile_read_event_results_raise_and_lower_exactly() {
     let values = [
         ProgramValue::Int32(MachineTerm::Variable(Variable(762001))),
         ProgramValue::typed_pointer(
-            Pointer::symbolic(Variable(762002)),
+            Address::symbolic(Variable(762002)),
             ProgramType::Int32Pointer,
         ),
     ];
@@ -4595,14 +4592,14 @@ fn common_match_surface_preserves_typed_binders_and_relowers_nested_results() {
 #[test]
 fn common_pointer_calls_round_trip_nested_source_calls() {
     use crate::kernel::{
-        KernelTerm, KernelTermImport, PointerBlock, PointerValue, PureFunctionArgument,
+        AddressBase, KernelTerm, KernelTermImport, PointerValue, PureFunctionArgument,
         SharedPointerValue,
     };
     let _session = crate::kernel::VerificationSession::enter();
     let declarations = "function select(p: int32*) -> int32* { p }";
     let file = parser::parse(declarations).unwrap();
     let input = ProgramValue::Pointer(PointerValue::new(
-        Pointer::symbolic(Variable(1025900)),
+        Address::symbolic(Variable(1025900)),
         ProgramType::Int32Pointer,
     ));
     let state = ExecutionState::new().with_local("p", input.clone());
@@ -4652,7 +4649,7 @@ fn common_pointer_calls_round_trip_nested_source_calls() {
         // checks, keeping inner calls as children rather than exporting them.
         fn common(pointer: &PointerValue) -> KernelTerm {
             let value = SharedPointerValue::import(pointer);
-            let PointerBlock::PureFunctionApplication(application) = &pointer.block else {
+            let AddressBase::PureFunctionApplication(application) = &pointer.base else {
                 return KernelTerm::shared_pointer_value(value);
             };
             let arguments = application
@@ -4724,7 +4721,7 @@ fn typed_word_reads_round_trip_their_observation_without_a_sign_cast() {
         (MachineIntegerType::UInt64, "load_uint64"),
     ] {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer::symbolic(Variable(981_200));
+        let pointer = Address::symbolic(Variable(981_200));
         let memory = Memory::new().with_block("word-read-source", 8);
         let state = ExecutionState::new()
             .with_memory(memory.clone())
@@ -4967,9 +4964,9 @@ fn float_pointer_casts_round_trip_native_load_spelling() {
         ),
     ] {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer {
-            block: PointerBlock::Concrete("float-cast-read".into()),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: AddressBase::Concrete("float-cast-read".into()),
+            offset: AddressOffset::Constant(0),
         };
         let state = ExecutionState::new()
             .with_memory(Memory::new().with_block("float-cast-read", 8))
@@ -5056,9 +5053,9 @@ fn common_float_reads_round_trip_existing_cast_dereference_syntax() {
         (crate::kernel::KernelFloatType::Float64, "double"),
     ] {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer {
-            block: PointerBlock::Concrete("float-source-read".into()),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: AddressBase::Concrete("float-source-read".into()),
+            offset: AddressOffset::Constant(0),
         };
         let state = ExecutionState::new()
             .with_memory(Memory::new().with_block("float-source-read", 8))
@@ -5120,9 +5117,9 @@ fn common_float_reads_retain_old_and_recorded_states() {
         crate::kernel::KernelFloatType::Float64,
     ] {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer {
-            block: PointerBlock::Concrete("float-retained_state".into()),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: AddressBase::Concrete("float-retained_state".into()),
+            offset: AddressOffset::Constant(0),
         };
         let selected = ExecutionState::new()
             .with_memory(Memory::new().with_block("float-retained_state", 8))
@@ -5448,7 +5445,7 @@ fn numeric_float_cast_spellings_match_native_conversions_and_round_trip() {
     let sources = [
         (
             "uint8*",
-            ProgramValue::typed_pointer(Pointer::null(), ProgramType::UInt8Pointer),
+            ProgramValue::typed_pointer(Address::null(), ProgramType::UInt8Pointer),
         ),
         (
             "int128",
@@ -6031,7 +6028,7 @@ fn mixed_float_boolean_calls_round_trip_existing_surface_syntax() {
 fn shared_pointer_call_arguments_keep_exact_native_name_policy() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = crate::kernel::PointerValue::new(
-        Pointer::symbolic(Variable(1008590)),
+        Address::symbolic(Variable(1008590)),
         ProgramType::Int32Pointer,
     );
     let value = ProgramValue::Pointer(pointer);
@@ -6239,7 +6236,7 @@ fn shared_algebraic_reads_and_variables_raise_without_tree_exports() {
     let _session = crate::kernel::VerificationSession::enter();
     let ty = TypeParameterName::intern("ReadBoundary");
     let state = ExecutionState::new();
-    let pointer = Pointer::symbolic(Variable(999983));
+    let pointer = Address::symbolic(Variable(999983));
     let parameters = vec![crate::languages::interface::ImportedParameter::new(
         InterfaceType::ParameterPointer(ty),
         "p".into(),
@@ -6342,11 +6339,11 @@ fn shared_pointer_comparisons_preserve_native_spelling() {
     use crate::kernel::{KernelTermImport, PointerValue};
     let _session = crate::kernel::VerificationSession::enter();
     let left = PointerValue::new(
-        Pointer::symbolic(Variable(999988)),
+        Address::symbolic(Variable(999988)),
         ProgramType::Int32Pointer,
     );
     let right = PointerValue::new(
-        Pointer::symbolic(Variable(999989)),
+        Address::symbolic(Variable(999989)),
         ProgramType::Int32Pointer,
     );
     let parameters = ["p", "q"].map(|name| {
@@ -6367,7 +6364,7 @@ fn shared_pointer_comparisons_preserve_native_spelling() {
             Box::new(left.pointer().clone()),
             Box::new(right.pointer().clone()),
         ),
-        ConditionTerm::PointerEqual(Box::new(left.pointer().clone()), Box::new(Pointer::null())),
+        ConditionTerm::PointerEqual(Box::new(left.pointer().clone()), Box::new(Address::null())),
     ] {
         let expected = synthesize_surface_bool(&native, binding, &state, &names).unwrap();
         let root = KernelTermImport::default().condition(&native);

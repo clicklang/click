@@ -684,11 +684,11 @@ pub(in crate::surface::proof) struct StoreSeparationMiss {
     /// The statement that ran, as a proof names it (`statement(5)`).
     pub(in crate::surface::proof) statement: String,
     /// The cached cell the store dropped.
-    pub(in crate::surface::proof) cell: crate::kernel::Pointer,
+    pub(in crate::surface::proof) cell: crate::kernel::Address,
     /// The dropped cell as the statement's C locals spell it, `q[0]`.
     pub(in crate::surface::proof) cell_text: Option<String>,
     /// The cell the store wrote.
-    pub(in crate::surface::proof) store: crate::kernel::Pointer,
+    pub(in crate::surface::proof) store: crate::kernel::Address,
     /// The spelled disequality the search tried at the statement's pre-state.
     pub(in crate::surface::proof) fact: ClickProposition,
 }
@@ -1532,10 +1532,10 @@ impl Proof<'_> {
                     Some(*variable)
                 }
                 ProgramValue::Pointer(pointer) => {
-                    match (&pointer.pointer().block, &pointer.pointer().offset) {
+                    match (&pointer.pointer().base, &pointer.pointer().offset) {
                         (
-                            crate::kernel::PointerBlock::Symbolic(variable),
-                            PointerOffsetTerm::Constant(0),
+                            crate::kernel::AddressBase::Symbolic(variable),
+                            AddressOffset::Constant(0),
                         ) => Some(*variable),
                         _ => None,
                     }
@@ -1611,12 +1611,11 @@ fn diagnostic_value_variable(value: &ProgramValue) -> Option<Variable> {
             _ => None,
         },
         ProgramValue::Pointer(pointer) => match &pointer.pointer().offset {
-            PointerOffsetTerm::Variable(variable) => Some(*variable),
+            AddressOffset::Variable(variable) => Some(*variable),
             // C pointers to sized elements keep their direct symbolic offset
             // in element units. An added displacement is composite and does
             // not identify the pointer local itself.
-            PointerOffsetTerm::Int32Scaled { value, .. }
-            | PointerOffsetTerm::Int64Scaled { value, .. } => {
+            AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
                 value.operand_view().variable().copied()
             }
             _ => None,

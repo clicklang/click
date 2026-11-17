@@ -282,10 +282,10 @@ mod cached_read_completion_tests {
     use crate::kernel::proof::ProofObligation;
     use crate::kernel::proof::*;
 
-    fn pointer(block: &str, offset: i32) -> Pointer {
-        Pointer {
-            block: block.into(),
-            offset: PointerOffsetTerm::Constant(i64::from(offset)),
+    fn pointer(block: &str, offset: i32) -> Address {
+        Address {
+            base: block.into(),
+            offset: AddressOffset::Constant(i64::from(offset)),
         }
     }
 
@@ -618,7 +618,7 @@ fn memories_equal_by_derivation(
                 &left.pointer,
                 &right.pointer,
                 assumptions,
-            ) || (left.pointer.block == right.pointer.block
+            ) || (left.pointer.base == right.pointer.base
                 && program_pointer_offsets_proven_equal_for_effect(
                     &left.pointer.offset,
                     &right.pointer.offset,
@@ -661,7 +661,7 @@ pub(crate) fn matching_recomputed_call_havoc_views(
                 pointer,
                 value,
                 ..
-            } if pointer.block.is_local_block()
+            } if pointer.base.is_local_block()
                 || store_is_self_materialization(base, pointer, value.native()) =>
             {
                 Some(base)
@@ -681,7 +681,7 @@ pub(crate) fn matching_recomputed_call_havoc_views(
     /// must be the base itself (by interned identity), no proving.
     fn store_is_self_materialization(
         base: &SharedMemory,
-        pointer: &Pointer,
+        pointer: &Address,
         value: &ProgramValue,
     ) -> bool {
         let (ProgramValue::Int8(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))
@@ -876,9 +876,9 @@ mod range_list_equality_graph_tests {
     fn certified_range_list_endpoints_use_graph_with_state_scope() {
         let _session = crate::kernel::VerificationSession::enter();
         let before = crate::kernel::intern_memory(Memory::new().with_block("range-list", 8));
-        let pointer = |index| Pointer {
-            block: "range-list".into(),
-            offset: PointerOffsetTerm::scale_int32(index, 4),
+        let pointer = |index| Address {
+            base: "range-list".into(),
+            offset: AddressOffset::scale_int32(index, 4),
         };
         let load = |memory: &SharedMemory, index| {
             MachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
@@ -894,7 +894,7 @@ mod range_list_equality_graph_tests {
             pointer(b.clone()),
             ProgramValue::Int32(MachineTerm::constant(9)),
         ));
-        let base = Pointer::symbolic(Variable(9100));
+        let base = Address::symbolic(Variable(9100));
         let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
         let range = |start| MemoryRange::new(base.clone(), start, MachineTerm::constant(16));
         let left = range(sum(load(&before, a.clone())));
@@ -980,7 +980,7 @@ fn memory_cells_definitionally_contained(
     for (source_pointer, source_value) in source
         .cells
         .iter()
-        .filter(|(pointer, _)| !local_block_no_pointer_can_reach(&pointer.block))
+        .filter(|(pointer, _)| !local_block_no_pointer_can_reach(&pointer.base))
     {
         // A cell the target holds under the same spelling is the match. One
         // it does not hold is most often a read of the target that only the
@@ -1022,7 +1022,7 @@ fn memory_cells_definitionally_contained(
     for ((source_pointer, source_type), source_value) in source
         .union_cells
         .iter()
-        .filter(|((pointer, _), _)| !local_block_no_pointer_can_reach(&pointer.block))
+        .filter(|((pointer, _), _)| !local_block_no_pointer_can_reach(&pointer.base))
     {
         let matching = target
             .union_cells
@@ -1059,7 +1059,7 @@ fn memory_cells_definitionally_contained(
 fn materialized_load_is_unchanged(
     value: &ProgramValue,
     symbolic_memory: &Memory,
-    pointer: &Pointer,
+    pointer: &Address,
     assumptions: &PureFactContext,
 ) -> bool {
     // Materialized cells retain their structural read. Legacy scalar names
@@ -1081,9 +1081,9 @@ fn materialized_load_is_unchanged(
             crate::kernel::equality_graph::logical_pointer_read_term(pointer_value.pointer())
         }
         ProgramValue::Pointer(pointer_value) => match pointer_value.pointer() {
-            Pointer {
-                block: PointerBlock::FunctionSymbolic(variable),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: AddressBase::FunctionSymbolic(variable),
+                offset: AddressOffset::Constant(0),
             } if matches!(
                 pointer_value.program_type(),
                 ProgramType::FunctionPointer(_)
@@ -1091,8 +1091,8 @@ fn materialized_load_is_unchanged(
             {
                 load_of(&MachineTerm::Variable(*variable))
             }
-            Pointer {
-                offset: PointerOffsetTerm::Int32Scaled { value: bits, .. },
+            Address {
+                offset: AddressOffset::Int32Scaled { value: bits, .. },
                 ..
             } => bits
                 .operand_view()
@@ -2141,14 +2141,14 @@ fn function_claim_holds_on_prepared_path(
                 .any(crate::kernel::MemoryRange::is_unnamed_footprint);
             let mut effect_memory = caller_state.memory().clone();
             let mut seen_transitions = Vec::<(Memory, Memory)>::new();
-            let is_function_fresh_heap_pointer = |pointer: &Pointer, current: &Memory| {
+            let is_function_fresh_heap_pointer = |pointer: &Address, current: &Memory| {
                 let matches_allocation = |memory: &Memory| {
                     memory.heap.live_allocations.keys().any(|base| {
                         // Freshness is a property of the allocation, not of
                         // the particular address selected within it. An
                         // interior pointer into a block live at entry must
                         // still be covered by the function's mutable frame.
-                        base.block == pointer.block
+                        base.base == pointer.base
                             || base == pointer
                             || crate::kernel::assumptions::pointers_equal_ignoring_memories(
                                 base, pointer,
@@ -2161,8 +2161,7 @@ fn function_claim_holds_on_prepared_path(
                     })
                 };
                 !matches_allocation(entry_state.memory())
-                    && (matches!(pointer.block, PointerBlock::Heap(_))
-                        || matches_allocation(current))
+                    && (matches!(pointer.base, AddressBase::Heap(_)) || matches_allocation(current))
             };
             let effects_are_bounded = effect_facts.iter().all(|fact| match fact.proposition() {
                 Proposition::MemoryMutatesOnly {
@@ -2203,7 +2202,7 @@ fn function_claim_holds_on_prepared_path(
                     }
                     writes
                         .iter()
-                        .filter(|(pointer, _)| !pointer.block.is_local_block())
+                        .filter(|(pointer, _)| !pointer.base.is_local_block())
                         .all(|(pointer, bytes)| {
                             covers_everything
                                 || is_function_fresh_heap_pointer(pointer, before)
@@ -2327,7 +2326,7 @@ pub(in crate::kernel) fn program_effect_memories_definitionally_equal(
         let mut external = memory.clone();
         std::sync::Arc::make_mut(&mut external.blocks).retain(|block, _| !block.is_local_block());
         std::sync::Arc::make_mut(&mut external.cells)
-            .retain(|pointer, _| !pointer.block.is_local_block());
+            .retain(|pointer, _| !pointer.base.is_local_block());
         std::sync::Arc::make_mut(&mut external.forgotten)
             .ended_local_blocks
             .clear();
@@ -2357,7 +2356,7 @@ pub(in crate::kernel) fn program_effect_memory_advances_over_internal_heap_state
         .blocks
         .keys()
         .filter(|block| {
-            matches!(block, PointerBlock::Heap(_))
+            matches!(block, AddressBase::Heap(_))
                 && !before.blocks.contains_key(*block)
                 && !function_entry.blocks.contains_key(*block)
         })
@@ -2376,30 +2375,30 @@ pub(in crate::kernel) fn program_effect_memory_advances_over_internal_heap_state
     let mut stripped = after.clone();
     std::sync::Arc::make_mut(&mut stripped.blocks).retain(|block, _| !fresh_blocks.contains(block));
     std::sync::Arc::make_mut(&mut stripped.cells)
-        .retain(|pointer, _| !fresh_blocks.contains(&pointer.block));
+        .retain(|pointer, _| !fresh_blocks.contains(&pointer.base));
     std::sync::Arc::make_mut(&mut stripped.heap)
         .live_allocations
         .retain(|pointer, _| {
-            !fresh_blocks.contains(&pointer.block) && !added_allocation_claims.contains(pointer)
+            !fresh_blocks.contains(&pointer.base) && !added_allocation_claims.contains(pointer)
         });
     std::sync::Arc::make_mut(&mut stripped.heap)
         .deallocated_allocations
-        .retain(|pointer, _| !fresh_blocks.contains(&pointer.block));
+        .retain(|pointer, _| !fresh_blocks.contains(&pointer.base));
     std::sync::Arc::make_mut(&mut stripped.heap)
         .pending_allocations
-        .retain(|pointer, _| !fresh_blocks.contains(&pointer.block));
+        .retain(|pointer, _| !fresh_blocks.contains(&pointer.base));
     std::sync::Arc::make_mut(&mut stripped.heap)
         .uninitialized_allocations
-        .retain(|pointer| !fresh_blocks.contains(&pointer.block));
+        .retain(|pointer| !fresh_blocks.contains(&pointer.base));
     std::sync::Arc::make_mut(&mut stripped.heap)
         .zeroed_allocations
-        .retain(|pointer| !fresh_blocks.contains(&pointer.block));
+        .retain(|pointer| !fresh_blocks.contains(&pointer.base));
     std::sync::Arc::make_mut(&mut stripped.heap)
         .zeroed_prefix_allocations
-        .retain(|pointer, _| !fresh_blocks.contains(&pointer.block));
+        .retain(|pointer, _| !fresh_blocks.contains(&pointer.base));
     std::sync::Arc::make_mut(&mut stripped.heap)
         .zeroed_pending_allocations
-        .retain(|pointer| !fresh_blocks.contains(&pointer.block));
+        .retain(|pointer| !fresh_blocks.contains(&pointer.base));
     stripped.record_diagnostic_transform(
         "remove internal heap bookkeeping",
         vec![after.clone(), before.clone(), function_entry.clone()],
@@ -2411,7 +2410,7 @@ pub(in crate::kernel) fn program_effect_memory_advances_over_internal_heap_state
 fn heap_free_effect_is_valid(
     before: &Memory,
     after: &Memory,
-    allocation_base: &Pointer,
+    allocation_base: &Address,
     bytes: &AllocationSize,
 ) -> bool {
     // The effect states the freed size with its format, so the claim it
@@ -3122,9 +3121,9 @@ mod heap_free_effect_tests {
     /// a 32-bit reading of the same byte term is not that block's free.
     #[test]
     fn a_free_effect_reinstates_a_64_bit_claim_in_its_format() {
-        let base = Pointer {
-            block: PointerBlock::Heap(940_100),
-            offset: PointerOffsetTerm::Constant(0),
+        let base = Address {
+            base: AddressBase::Heap(940_100),
+            offset: AddressOffset::Constant(0),
         };
         let bytes = MachineTerm::uint64_multiply(
             MachineTerm::Variable(Variable(940_101)),
@@ -3191,10 +3190,10 @@ mod checked_proposition_index_tests {
     fn read_equations_follow_a_selected_route_without_selecting_one() {
         let route = route(71_030, true);
         let context = PureFactContext::new().assume_proposition(route.clone());
-        let pointer = Pointer::symbolic(Variable(71_031));
+        let pointer = Address::symbolic(Variable(71_031));
         let equation = ExecutionPureFact::logical_read_equation(
             PointerValue::new(pointer.clone(), ProgramType::Int32Pointer),
-            Pointer::loaded_value(&intern_memory(Memory::new()), &pointer),
+            Address::loaded_value(&intern_memory(Memory::new()), &pointer),
         );
         let mut paths = vec![
             lowering_candidate(false, vec![]),
@@ -3366,11 +3365,11 @@ mod heap_status_equality_tests {
     /// initialization state changes what a later load can return.
     #[test]
     fn outcome_equality_distinguishes_heap_statuses() {
-        let block = Pointer {
-            block: PointerBlock::Heap(424_242),
-            offset: PointerOffsetTerm::Constant(0),
+        let block = Address {
+            base: AddressBase::Heap(424_242),
+            offset: AddressOffset::Constant(0),
         };
-        let mut base = Memory::new().with_block(block.block.clone(), 4);
+        let mut base = Memory::new().with_block(block.base.clone(), 4);
         std::sync::Arc::make_mut(&mut base.heap)
             .live_allocations
             .insert(block.clone(), AllocationSize::int32(4));
@@ -3447,7 +3446,7 @@ mod wide_range_reader_tests {
     // Claim framing compares the declared domain as well as endpoint bits.
     #[test]
     fn wide_claim_range_lists_do_not_use_signed_equalities() {
-        let base = Pointer::symbolic(Variable(984_400));
+        let base = Address::symbolic(Variable(984_400));
         let wide = MemoryRange::new_wide(
             base.clone(),
             MachineTerm::uint64_constant(0),
@@ -3473,7 +3472,7 @@ mod wide_range_reader_tests {
 mod materialized_function_load_tests {
     use super::*;
 
-    fn callback_load(memory: &Memory, address: &Pointer, kind: LoadKind) -> ProgramValue {
+    fn callback_load(memory: &Memory, address: &Address, kind: LoadKind) -> ProgramValue {
         let load = MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
             Box::new(address.clone()),
@@ -3481,16 +3480,16 @@ mod materialized_function_load_tests {
         );
         let (variable, _) = crate::kernel::load_variable_for_term(&load).unwrap();
         ProgramValue::typed_pointer(
-            Pointer::symbolic_function(variable),
+            Address::symbolic_function(variable),
             ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
         )
     }
 
     #[test]
     fn canonical_function_pointer_cache_preserves_memory() {
-        let address = Pointer {
-            block: "callback-cache".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let address = Address {
+            base: "callback-cache".into(),
+            offset: AddressOffset::Constant(0),
         };
         let memory = Memory::new().with_block("callback-cache", 16);
         let value = callback_load(
@@ -3510,9 +3509,9 @@ mod materialized_function_load_tests {
 
     #[test]
     fn function_pointer_cache_requires_the_exact_cell_and_pointer_load() {
-        let address = Pointer {
-            block: "callback-cache-controls".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let address = Address {
+            base: "callback-cache-controls".into(),
+            offset: AddressOffset::Constant(0),
         };
         let memory = Memory::new().with_block("callback-cache-controls", 16);
         let facts = PureFactContext::new();
@@ -3533,7 +3532,7 @@ mod materialized_function_load_tests {
             &narrow, &memory, &address, &facts
         ));
         let arbitrary = ProgramValue::typed_pointer(
-            Pointer::symbolic_function(Variable(97_555_001)),
+            Address::symbolic_function(Variable(97_555_001)),
             ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
         );
         assert!(!materialized_load_is_unchanged(
@@ -3765,7 +3764,7 @@ mod retained_contract_input_tests {
     fn contract_input_preparation_preserves_roots_and_native_binding_rules() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(996801)),
+            Address::symbolic(Variable(996801)),
             ProgramType::Int32Pointer,
         );
         let roots = vec![

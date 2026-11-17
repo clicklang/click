@@ -571,9 +571,9 @@ mod tests {
 
     #[test]
     fn common_pointer_address_registration_matches_native_classes() {
-        use crate::kernel::{KernelTermExport, Pointer};
+        use crate::kernel::{Address, KernelTermExport};
         let _session = crate::kernel::VerificationSession::enter();
-        let native = T::object_pointer_address(Pointer::symbolic(Variable(999460)), None);
+        let native = T::object_pointer_address(Address::symbolic(Variable(999460)), None);
         for format in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
             let root = KernelTermImport::default().machine(format, &native);
             assert!(matches!(root.node(), N::PointerAddress { .. }));

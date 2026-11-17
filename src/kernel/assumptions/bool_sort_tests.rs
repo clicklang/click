@@ -223,8 +223,8 @@ fn an_unfolded_application_has_its_body_s_truth() {
 fn a_bool_read_is_one_value_per_cell() {
     let _session = VerificationSession::enter();
     let memory = crate::kernel::intern_memory(Memory::new());
-    let read = ConditionTerm::bool_load(memory.clone(), Pointer::symbolic(Variable(70)));
-    let same = ConditionTerm::bool_load(memory, Pointer::symbolic(Variable(70)));
+    let read = ConditionTerm::bool_load(memory.clone(), Address::symbolic(Variable(70)));
+    let same = ConditionTerm::bool_load(memory, Address::symbolic(Variable(70)));
     let context = PureFactContext::new()
         .assume_condition(bool_equal(read, binder(71)), true)
         .assume_condition(binder(71), true);

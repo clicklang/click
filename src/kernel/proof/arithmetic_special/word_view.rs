@@ -10,7 +10,7 @@ pub(super) enum Key {
     Shared(u64),
 }
 pub(super) enum Node<'a> {
-    PointerAddress(&'a Pointer),
+    PointerAddress(&'a Address),
     Binary {
         format: MachineIntegerType,
         op: MachineBinaryOp,

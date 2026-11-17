@@ -114,12 +114,12 @@ fn external_array_source_selection_skips_unrelated_parameter_cells() {
     for siblings in [1, 64, 2048] {
         let _session = crate::kernel::VerificationSession::enter();
         let source = external(935_000);
-        let target = Pointer {
-            block: "local:indexed-copy".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let target = Address {
+            base: "local:indexed-copy".into(),
+            offset: AddressOffset::Constant(0),
         };
         let mut memory = Memory::new()
-            .with_block(target.block.clone(), 16)
+            .with_block(target.base.clone(), 16)
             .store(source.clone(), ProgramValue::UInt32(9u32.into()));
         for index in 0..siblings {
             memory = memory.store(

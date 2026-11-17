@@ -23,7 +23,7 @@ enum Atom {
     Argument(PureFunctionArgument),
     Condition(ConditionStorageKey),
     Memory(SharedMemory),
-    Address(Pointer),
+    Address(Address),
 }
 impl AlgebraicStorageKey {
     fn new(node: Node) -> Self {

@@ -440,7 +440,7 @@ fn unbound_modeled_pthread_call(
 /// otherwise joining immediately after a parent write could preserve it.
 fn freshen_shared_mutex_payload(
     state: &ExecutionState,
-    mutex: &Pointer,
+    mutex: &Address,
     assumptions: &PureFactContext,
     environment: &ExecutionEnvironment,
     budget: &mut ExecutionBudget,
@@ -927,7 +927,7 @@ fn modeled_pthread_handle_store(
 
 fn modeled_pthread_indeterminate_handle(
     mut state: ExecutionState,
-    slot: &Pointer,
+    slot: &Address,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<ExecutionState> {
@@ -1038,7 +1038,7 @@ fn execute_modeled_pthread_create_paths(
                 "modeled-pthread create requires a writable pthread_t slot, null attributes, and a pointer argument",
             )
         } else if let ProgramValue::Pointer(callback) = &path.values[2] {
-            if let PointerBlock::Function(worker_name) = &callback.block {
+            if let AddressBase::Function(worker_name) = &callback.base {
                 let Some(worker) = environment.get_verified_function_rule(worker_name) else {
                     paths.push(StatementExecutionPath::new(
                         refusal(
@@ -1340,10 +1340,10 @@ fn execute_program_indirect_call_paths(
         } = target_path;
         let target_names = match outcome {
             ExpressionOutcome::Value(ProgramValue::Pointer(pointer))
-                if pointer.offset == PointerOffsetTerm::Constant(0) =>
+                if pointer.offset == AddressOffset::Constant(0) =>
             {
-                match &pointer.block {
-                    PointerBlock::Function(name)
+                match &pointer.base {
+                    AddressBase::Function(name)
                         if execution_context
                             .environment
                             .selected_call_contract
@@ -1351,9 +1351,9 @@ fn execute_program_indirect_call_paths(
                     {
                         vec![Ok(name.clone())]
                     }
-                    PointerBlock::FunctionSymbolic(_)
-                    | PointerBlock::Function(_)
-                    | PointerBlock::LoadedPointer(_)
+                    AddressBase::FunctionSymbolic(_)
+                    | AddressBase::Function(_)
+                    | AddressBase::LoadedPointer(_)
                         if matches!(pointer.program_type(), ProgramType::FunctionPointer(_)) =>
                     {
                         let target_assumptions =
@@ -1673,7 +1673,7 @@ pub(crate) fn loop_binder_state_components_match_at_back_edge(
 
 fn check_loop_guard_custody(
     state: &ExecutionState,
-    mutex: &Pointer,
+    mutex: &Address,
     held: &ConditionTerm,
     assumptions: &PureFactContext,
 ) -> Result<(), String> {
@@ -1859,7 +1859,7 @@ fn loop_state_components_match_at_back_edge_inner(
     next_state: &ExecutionState,
     composite_resource_definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
-    checked_mutexes: &[Pointer],
+    checked_mutexes: &[Address],
 ) -> Result<(), String> {
     let mut changed = Vec::new();
     if !top_state
@@ -1924,7 +1924,7 @@ fn loop_state_components_match_at_back_edge_inner(
                 || next
                     .and_then(|value| value.pointer())
                     .is_some_and(|pointer| {
-                        assumptions.pointers_known_equal(pointer.pointer(), &Pointer::null())
+                        assumptions.pointers_known_equal(pointer.pointer(), &Address::null())
                     })
             {
                 return None;
@@ -2791,7 +2791,7 @@ fn retain_proven_loop_exit_cells(
                 if no_binders && equality == Some(false) {
                     return Err(format!(
                         "the cell in `{}` that the exits write differently is owned by no loop binder",
-                        pointer.block
+                        pointer.base
                     ));
                 }
             }
@@ -2870,7 +2870,7 @@ fn indexed_loop_exit_load_equality(
     }
 }
 
-fn is_loop_exit_state_marker(block: &PointerBlock) -> bool {
+fn is_loop_exit_state_marker(block: &AddressBase) -> bool {
     block.is_havoc_block() || block.is_call_havoc_block() || block.starts_with("call-write-set:")
 }
 
@@ -3390,7 +3390,7 @@ fn resource_value_term(value: &AlgebraicValue) -> Term {
 struct LoopExitAbstraction<'a> {
     locals: &'a [(BindingName, ProgramType)],
     uninitialized: &'a [BindingName],
-    cells: &'a BTreeSet<Pointer>,
+    cells: &'a BTreeSet<Address>,
     bookkeeping: bool,
 }
 
@@ -3538,7 +3538,7 @@ fn join_loop_exit_storage_bookkeeping(
                 "havoc"
             };
             std::sync::Arc::make_mut(&mut memory.blocks).insert(
-                PointerBlock::Concrete(format!("{prefix}:{}", marker.0)),
+                AddressBase::Concrete(format!("{prefix}:{}", marker.0)),
                 MemoryBlock::new(0),
             );
         }
@@ -3658,7 +3658,7 @@ fn abstract_loop_exit_locals(
 fn abstract_loop_exit_memory(
     successor: &mut ExecutionState,
     exits: &[ExecutionState],
-    resynced: &BTreeSet<Pointer>,
+    resynced: &BTreeSet<Address>,
     no_binders: bool,
     declared_memory: &[MemoryRange],
     assumptions: &PureFactContext,
@@ -3666,7 +3666,7 @@ fn abstract_loop_exit_memory(
     restatements: &mut [LoopExitRestatement],
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
-) -> Result<BTreeSet<Pointer>, String> {
+) -> Result<BTreeSet<Address>, String> {
     let mut memory = successor.memory().clone();
     if exits.iter().any(|state| {
         !state
@@ -3707,7 +3707,7 @@ fn abstract_loop_exit_memory(
         {
             return Err(format!(
                 "the cell in `{}` that the exits write differently is owned by no loop binder",
-                pointer.block
+                pointer.base
             ));
         }
         let Some(fresh) = fresh_loop_local_value(held[0].program_type(), variables, budget)
@@ -3715,7 +3715,7 @@ fn abstract_loop_exit_memory(
         else {
             return Err(format!(
                 "the cell in `{}` has no abstract value of its type",
-                pointer.block
+                pointer.base
             ));
         };
         for (index, (restatement, held)) in restatements.iter_mut().zip(held).enumerate() {
@@ -3750,7 +3750,7 @@ fn abstract_loop_exit_memory(
             {
                 return Err(format!(
                     "the cell in `{}` that the exits abstract is under an active stable-view loan",
-                    pointer.block
+                    pointer.base
                 ));
             }
         }
@@ -3861,13 +3861,13 @@ fn fresh_loop_local_value(
         ProgramType::UInt16 => uint16(MachineTerm::Variable(variable)),
         ProgramType::UInt32 => uint32(MachineTerm::Variable(variable)),
         ProgramType::Int64 => ProgramValue::Int64(MachineTerm::Variable(variable))
-            .complete_word(Pointer::symbolic(variable)),
+            .complete_word(Address::symbolic(variable)),
         ProgramType::UInt64 => ProgramValue::UInt64(MachineTerm::Variable(variable))
-            .complete_word(Pointer::symbolic(variable)),
+            .complete_word(Address::symbolic(variable)),
         ProgramType::Float32 => ProgramValue::Float32(MachineTerm::Variable(variable)),
         ProgramType::Float64 => ProgramValue::Float64(MachineTerm::Variable(variable)),
         ProgramType::FunctionPointer(_) => {
-            ProgramValue::typed_pointer(Pointer::symbolic_function(variable), program_type)
+            ProgramValue::typed_pointer(Address::symbolic_function(variable), program_type)
         }
         // A local holding a spec value, a Rust enum, a `Vec` or a library
         // iterator, takes a fresh value of its own type.
@@ -3878,7 +3878,7 @@ fn fresh_loop_local_value(
         // A pointer local reassigned in the body (`p = p + 1`) must not keep
         // its entry value across the abstract iteration, exactly as the join
         // abstraction treats it; an invariant must relate it.
-        _ => ProgramValue::typed_pointer(Pointer::symbolic(variable), program_type),
+        _ => ProgramValue::typed_pointer(Address::symbolic(variable), program_type),
     }))
 }
 
@@ -5564,9 +5564,9 @@ pub(super) fn collect_loop_preservation_summary(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct EvaluatedMemorySegment {
-    pub(super) base: Pointer,
-    pub(super) provenance: std::sync::Arc<Pointer>,
-    pub(super) bounds_owner: Option<std::sync::Arc<Pointer>>,
+    pub(super) base: Address,
+    pub(super) provenance: std::sync::Arc<Address>,
+    pub(super) bounds_owner: Option<std::sync::Arc<Address>>,
     pub(super) bounds_known: bool,
     pub(super) start: MachineTerm,
     pub(super) end: MachineTerm,
@@ -6042,7 +6042,7 @@ pub(super) fn prepare_loop_top_state(
     // iterated fact counts every element it could ever hold), so a cell the
     // function owns can sit inside it without being writable; the partition
     // at entry is what keeps it apart.
-    let kept_by_function = |pointer: &Pointer, bytes: u32| {
+    let kept_by_function = |pointer: &Address, bytes: u32| {
         withheld.as_ref().is_some_and(|withheld| {
             assumptions.access_held_by_owned_member(withheld, pointer, bytes)
         })
@@ -6054,7 +6054,7 @@ pub(super) fn prepare_loop_top_state(
     let mut runs_by_slot = Vec::new();
     for run in entry_state.memory().cells.runs() {
         crate::instrumentation::record_deterministic_work(1);
-        if run.base().block.is_local_block() || run.live_count() == 0 {
+        if run.base().base.is_local_block() || run.live_count() == 0 {
             continue;
         }
         if summaries.is_empty() && withheld.is_none() {
@@ -6133,7 +6133,7 @@ pub(super) fn prepare_loop_top_state(
     {
         let pointer = &pointer;
         let value = &value;
-        if pointer.block.is_local_block() {
+        if pointer.base.is_local_block() {
             continue;
         }
         let is_stable = summaries.iter().any(|summary| {
@@ -6151,7 +6151,7 @@ pub(super) fn prepare_loop_top_state(
         }
     }
     for ((pointer, program_type), value) in entry_state.memory().union_cells.iter() {
-        if pointer.block.is_local_block() {
+        if pointer.base.is_local_block() {
             continue;
         }
         let is_stable = summaries.iter().any(|summary| {
@@ -8012,7 +8012,7 @@ fn evaluate_loop_effect_segment_value_capturing(
 
 pub(super) fn loop_effect_segment_contains_pointer(
     segment: &EvaluatedMemorySegment,
-    pointer: &Pointer,
+    pointer: &Address,
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -8075,8 +8075,8 @@ pub(super) fn loop_effect_segment_contains_range(
     )
 }
 
-pub(super) fn is_loop_effect_relevant_pointer(pointer: &Pointer) -> bool {
-    !pointer.block.is_local_block() && !pointer.block.is_havoc_block()
+pub(super) fn is_loop_effect_relevant_pointer(pointer: &Address) -> bool {
+    !pointer.base.is_local_block() && !pointer.base.is_havoc_block()
 }
 
 /// A footprint range for a loop-effect refusal, without the kernel's
@@ -8644,12 +8644,12 @@ pub(super) fn havoc_loop_modified_locals(
         // overwritten by the loop body through a pointer. Address-escaped
         // locals were havoced above, so their preserved cells now hold fresh
         // symbolic values rather than stale ones.
-        let preserved_blocks: BTreeSet<PointerBlock> = state
+        let preserved_blocks: BTreeSet<AddressBase> = state
             .locals
             .bindings
             .keys()
             .filter(|name| state.locals.get(*name).is_some())
-            .filter_map(|name| state.locals.slot(name).map(|slot| slot.block.clone()))
+            .filter_map(|name| state.locals.slot(name).map(|slot| slot.base.clone()))
             .collect();
         // Cells under an active stable-view loan are stable across the loop
         // by the loan itself; erasing them would only lose loan-supported

@@ -106,7 +106,7 @@ pub(super) fn execute(
             }
             if bytes != 0
                 && (target_pointer.pointee_constant()
-                    || state.memory.is_read_only_block(&target.block))
+                    || state.memory.is_read_only_block(&target.base))
             {
                 paths.push(path(
                     StatementOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),

@@ -4,10 +4,10 @@
 
 use super::*;
 
-fn object_slot(name: &str) -> Pointer {
-    Pointer {
-        block: PointerBlock::Concrete(format!("local:{name}")),
-        offset: crate::kernel::PointerOffsetTerm::Constant(0),
+fn object_slot(name: &str) -> Address {
+    Address {
+        base: AddressBase::Concrete(format!("local:{name}")),
+        offset: crate::kernel::AddressOffset::Constant(0),
     }
 }
 

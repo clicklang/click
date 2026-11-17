@@ -354,11 +354,11 @@ impl FreshAllocationReturn {
             .memory_own_range()
             .map(MemoryRange::base)
             .or_else(|| fact.allocation().map(|(base, _)| base))?;
-        let PointerBlock::Heap(allocation) = base.block else {
+        let AddressBase::Heap(allocation) = base.base else {
             return None;
         };
         events
-            .storage_created_by(creator, &base.block)
+            .storage_created_by(creator, &base.base)
             .then_some(Self { allocation })
     }
 }

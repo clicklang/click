@@ -2,9 +2,9 @@ use super::*;
 
 fn bounds_work(steps: u64, unrelated: u64) -> usize {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Pointer {
-        block: PointerBlock::Heap(982_000),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: AddressBase::Heap(982_000),
+        offset: AddressOffset::Constant(0),
     };
     let held = MemoryRange::new(base.clone(), 0u32.into(), 8u32.into());
     let mut previous = PointerValue::new(base, ProgramType::Int32Pointer);
