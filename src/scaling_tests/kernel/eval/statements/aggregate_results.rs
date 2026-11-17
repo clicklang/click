@@ -71,7 +71,7 @@ fn opaque_exception_creation_ignores_unrelated_memory_and_types() {
                 &state,
                 &statement,
                 &assumptions,
-                ExecutionContext::execute_bodies(&environment),
+                ExecutionContext::verify_loops(&environment),
                 &mut budget,
             )
             .unwrap()
@@ -89,7 +89,7 @@ fn opaque_exception_creation_ignores_unrelated_memory_and_types() {
             &state,
             &statement,
             &assumptions,
-            ExecutionContext::execute_bodies(&environment),
+            ExecutionContext::verify_loops(&environment),
             &mut budget,
         )
         .unwrap();

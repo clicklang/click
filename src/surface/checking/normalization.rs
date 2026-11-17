@@ -210,11 +210,8 @@ pub(in crate::surface) fn solve_proposition(
         | Proposition::Predicate { .. }
         | Proposition::ProgramExpressionEvaluates { .. }
         | Proposition::ProgramConditionEvaluates { .. }
-        | Proposition::ProgramStatementExecutes { .. }
         | Proposition::ProgramStatementVerifies { .. }
-        | Proposition::ProgramFunctionExecutes { .. }
         | Proposition::ProgramFunctionVerifies { .. }
-        | Proposition::ProgramFunctionSatisfiesSpecification { .. }
         | Proposition::ProgramFunctionPartiallySatisfiesSpecification { .. }
         | Proposition::MemoryLoads { .. }
         | Proposition::MemoryReadDefined { .. }

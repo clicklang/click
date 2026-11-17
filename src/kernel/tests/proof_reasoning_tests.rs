@@ -5358,7 +5358,7 @@ fn builtin_obligation_solver_discharges_concrete_invariant() {
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::ProgramStatementExecutes {
+        &Proposition::ProgramStatementVerifies {
             state: Box::new(state.clone()),
             statement: Box::new(statement),
             outcome: StatementOutcome::Normal(Box::new(state)),
@@ -5413,7 +5413,7 @@ fn symbolic_max_lt_branch_is_native_theorem() {
                 b,
                 Proposition::Implies(
                     Box::new(Proposition::ConditionIs(condition, true)),
-                    Box::new(Proposition::ProgramStatementExecutes {
+                    Box::new(Proposition::ProgramStatementVerifies {
                         state: Box::new(state.clone()),
                         statement: Box::new(program_max_body()),
                         outcome: StatementOutcome::Return {
@@ -5451,7 +5451,7 @@ fn symbolic_max_not_lt_branch_is_native_theorem() {
                 b,
                 Proposition::Implies(
                     Box::new(Proposition::ConditionIs(condition, false)),
-                    Box::new(Proposition::ProgramStatementExecutes {
+                    Box::new(Proposition::ProgramStatementVerifies {
                         state: Box::new(state.clone()),
                         statement: Box::new(program_max_body()),
                         outcome: StatementOutcome::Return {

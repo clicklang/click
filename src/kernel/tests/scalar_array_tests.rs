@@ -177,7 +177,7 @@ fn compact_scalar_array_operations_require_complete_read_and_write_authority() {
                 copy,
             );
             let theorem = prove_execution_statement_execution(state, statement).unwrap();
-            let Proposition::ProgramStatementExecutes { outcome, .. } = theorem.proposition()
+            let Proposition::ProgramStatementVerifies { outcome, .. } = theorem.proposition()
             else {
                 panic!()
             };
@@ -216,7 +216,7 @@ fn compact_scalar_array_operations_require_complete_read_and_write_authority() {
     .unwrap();
     assert!(matches!(
         theorem.proposition(),
-        Proposition::ProgramStatementExecutes {
+        Proposition::ProgramStatementVerifies {
             outcome: StatementOutcome::RuntimeError(RuntimeError::MissingResource { .. }),
             ..
         }
@@ -245,7 +245,7 @@ fn compact_scalar_array_zero_length_needs_no_byte_authority() {
     let theorem = prove_execution_statement_execution(state, statement).unwrap();
     assert!(matches!(
         theorem.proposition(),
-        Proposition::ProgramStatementExecutes {
+        Proposition::ProgramStatementVerifies {
             outcome: StatementOutcome::Normal(_),
             ..
         }
@@ -276,7 +276,7 @@ fn compact_scalar_array_initialization_rejects_readonly_storage_and_pointer_qual
         .unwrap();
         assert!(matches!(
             theorem.proposition(),
-            Proposition::ProgramStatementExecutes {
+            Proposition::ProgramStatementVerifies {
                 outcome: StatementOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
                 ..
             }
@@ -295,7 +295,7 @@ fn compact_scalar_array_initialization_rejects_readonly_storage_and_pointer_qual
     .unwrap();
     assert!(matches!(
         theorem.proposition(),
-        Proposition::ProgramStatementExecutes {
+        Proposition::ProgramStatementVerifies {
             outcome: StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
             ..
         }
@@ -353,7 +353,7 @@ fn compact_scalar_array_initialization_cannot_bypass_an_active_view_loan() {
         let theorem = prove_execution_statement_execution(state.clone(), statement).unwrap();
         assert!(matches!(
             theorem.proposition(),
-            Proposition::ProgramStatementExecutes {
+            Proposition::ProgramStatementVerifies {
                 outcome: StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(_)),
                 ..
             }
@@ -481,7 +481,7 @@ fn compact_array_region_execution_requires_full_authority_and_mutable_storage() 
             false,
         );
         let theorem = prove_execution_statement_execution(state, statement).unwrap();
-        let Proposition::ProgramStatementExecutes { outcome, .. } = theorem.proposition() else {
+        let Proposition::ProgramStatementVerifies { outcome, .. } = theorem.proposition() else {
             panic!()
         };
         assert_eq!(
@@ -504,7 +504,7 @@ fn compact_array_region_write_refreshes_an_addressed_scalar_local() {
         ),
     )
     .unwrap();
-    let Proposition::ProgramStatementExecutes {
+    let Proposition::ProgramStatementVerifies {
         outcome: StatementOutcome::Normal(state),
         ..
     } = declaration.proposition()
@@ -526,7 +526,7 @@ fn compact_array_region_write_refreshes_an_addressed_scalar_local() {
         ),
     )
     .unwrap();
-    let Proposition::ProgramStatementExecutes {
+    let Proposition::ProgramStatementVerifies {
         outcome: StatementOutcome::Normal(state),
         ..
     } = theorem.proposition()

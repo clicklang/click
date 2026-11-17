@@ -74,7 +74,7 @@ fn store_byte(memory: Memory, offset: i64, byte: ProgramValue, byte_order: ByteO
         &state,
         &statement,
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new().with_byte_order(byte_order)),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new().with_byte_order(byte_order)),
         &mut ExecutionBudget::new(),
     )
     .unwrap();

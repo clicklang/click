@@ -13080,7 +13080,7 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
         helper_arguments.clone(),
         PureFactContext::new(),
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         FunctionContractExecutionMode::VerifyLoops,
     );
     let certified = prove_program_function_contract_execution_paths_with_checked_artifacts(
@@ -13088,7 +13088,7 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
         helper.clone(),
         helper_arguments,
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         FunctionContractExecutionMode::VerifyLoops,
         &[artifacts],
     );
