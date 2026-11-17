@@ -1,6 +1,6 @@
 # `let { result: name } = step()` refuses a store through a pointer
 
-The result binding names the value a statement assigns to a scalar C local.
+An assignment result binding names the value assigned to a scalar C local.
 A store through a pointer, `p[0] = 3`, assigns no local, so the binding is
 refused; a plain `step()` executes the store, and a later fact names the cell
 itself, `p[0]`.
@@ -24,5 +24,5 @@ int32 store_three(int32* p) {
 ```
 
 ```expect
-fail: `let { result: stored } = step()` requires a scalar assignment at the frontier
+fail: `let { result: stored } = step()` requires a scalar assignment or a used call result at the frontier
 ```
