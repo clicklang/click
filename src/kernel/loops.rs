@@ -1221,6 +1221,11 @@ fn execute_modeled_pthread_join_paths(
         budget,
         Some(environment),
     )? {
+        let current = super::reasoning::path_facts::assumptions_with_path_context(
+            assumptions,
+            &path.facts,
+            &path.obligations,
+        );
         let outcome = if let Some(outcome) = path.outcome {
             match outcome {
                 FunctionOutcome::UndefinedBehavior(error) => {
@@ -1232,13 +1237,8 @@ fn execute_modeled_pthread_join_paths(
         } else if !matches!(&path.values[1], ProgramValue::Pointer(pointer) if pointer.is_null()) {
             refusal("modeled-pthread join requires a null result slot")
         } else if let Some(handle) =
-            super::threads::ThreadHandle::from_program_value(&path.values[0])
+            super::threads::ThreadHandle::resolve_program_value(&path.values[0], &current)
         {
-            let current = super::reasoning::path_facts::assumptions_with_path_context(
-                assumptions,
-                &path.facts,
-                &path.obligations,
-            );
             let joined = super::threads::ThreadContext::new(state.clone()).and_then(|context| {
                 context
                     .join(
@@ -6188,8 +6188,8 @@ pub(super) fn prepare_loop_top_state(
             rebound_failures.push(message);
         }
     }
-    // A direct conditional clause uses the same ordinary folded ownership
-    // internally; its field captures the head expression, not a mutable local.
+    // A direct conditional clause owns a typed occurrence whose condition
+    // captures the head expression, independently of later local mutations.
     let mut ordinary_specs = Vec::new();
     let mut direct_carriers = Vec::new();
     let mut direct_mutexes = Vec::new();
@@ -6203,12 +6203,8 @@ pub(super) fn prepare_loop_top_state(
                 identity,
                 assumptions,
             ) {
-                Ok((updated, mutex)) => {
-                    let instance = updated
-                        .resources()
-                        .owned_instance(identity)
-                        .expect("checked direct loop preparation installs its carrier");
-                    direct_carriers.push(ResourceFact::own(Resource::Instance(instance.clone())));
+                Ok((updated, mutex, carrier)) => {
+                    direct_carriers.push(carrier);
                     direct_mutexes.push(mutex);
                     top_state = updated;
                 }
@@ -7386,6 +7382,7 @@ fn viewed_form_of_resource_fact(fact: &ResourceFact) -> Option<ResourceFact> {
             Resource::Token { .. }
             | Resource::PopulationAuthority(_)
             | Resource::Instance(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_)

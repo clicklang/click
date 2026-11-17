@@ -21,10 +21,11 @@ use super::{
     CppInitializer, CppPlace, CppPlaceReference, CppStatement, CppType, PreparedCppImport,
 };
 use crate::kernel::{
-    AggregateLayout, LoadSourceId, LoadSourceOwnerId, ProgramExpression, ProgramFunction,
-    ProgramStatement, ProgramType, int32, program_allocate_aggregate_destination, program_assign,
-    program_call, program_call_construct, program_copy_aggregate, program_declare,
-    program_declare_aggregate, program_declare_initialized, program_declare_with_all_qualifiers,
+    AggregateLayout, BindingName, LoadSourceId, LoadSourceOwnerId, LocalBindingId, LocalFunctionId,
+    ProgramExpression, ProgramFunction, ProgramStatement, ProgramType, int32,
+    program_allocate_aggregate_destination, program_assign, program_call, program_call_construct,
+    program_copy_aggregate, program_declare, program_declare_aggregate,
+    program_declare_initialized, program_declare_with_all_qualifiers,
     program_end_automatic_lifetimes, program_function, program_if, program_parameter,
     program_return, program_seq, program_skip, program_try_catch_int32,
     program_try_catch_int32_with_cleanup, program_typed_store,
@@ -256,17 +257,17 @@ fn lower_function(
         source_unit: import.logical_source(),
         function_name: names.require(&source.declaration_id)?,
         names,
-        source_names: places.values().map(|place| place.name.as_str()).collect(),
-        next_call_capture: 0,
+        temporary_owner: LocalFunctionId::new(
+            Some(import.logical_source().to_owned()),
+            names.require(&source.declaration_id)?.to_owned(),
+        ),
+        next_temporary: 0,
         next_call_result: std::cell::Cell::new(0),
         places,
         records,
         constants,
         layouts,
         next_load_occurrence: 0,
-        return_capture_name: return_capture_name(source),
-        nested_capture_name: fresh_internal_name(source, "__click_cpp_nested_value"),
-        unwind_exception_name: fresh_internal_name(source, "__click_cpp_unwind_exception"),
         unwind_cleanups: matches!(
             import.export().exception_behavior,
             CppExceptionBehavior::ScalarInt32
@@ -470,12 +471,9 @@ struct LoweringContext<'a> {
     constants: &'a BTreeMap<&'a str, &'a CppConstant>,
     layouts: &'a BTreeMap<String, crate::languages::interface::RecordLayout>,
     next_load_occurrence: u32,
-    return_capture_name: String,
-    nested_capture_name: String,
-    source_names: std::collections::BTreeSet<&'a str>,
-    next_call_capture: u64,
+    temporary_owner: LocalFunctionId,
+    next_temporary: u32,
     next_call_result: std::cell::Cell<u32>,
-    unwind_exception_name: String,
     unwind_cleanups: bool,
     /// The packs the call being lowered needs, with their unpacks and the
     /// derived class's address: one for each reference argument that
@@ -554,7 +552,7 @@ impl<'a> Polymorphism<'a> {
 impl LoweringContext<'_> {
     fn call_then_assign(
         &self,
-        target: impl Into<String>,
+        target: impl Into<BindingName>,
         function: impl Into<String>,
         arguments: Vec<ProgramExpression>,
     ) -> ProgramStatement {
@@ -562,7 +560,7 @@ impl LoweringContext<'_> {
         self.next_call_result
             .set(id.checked_add(1).expect("too many calls in one function"));
         let (call, value) = crate::kernel::program_call_value(id, function, arguments);
-        program_seq(call, program_assign(Into::<String>::into(target), value))
+        program_seq(call, program_assign(target, value))
     }
 
     /// `call`, after the packs its arguments need and before their unpacks:
@@ -1106,7 +1104,7 @@ impl LoweringContext<'_> {
                     });
                 // The allocation comes first and each field's value after it,
                 // as C++17 sequences a new-expression.
-                let object = self.fresh_call_capture()?;
+                let object = self.fresh_temporary(ProgramType::Int32Pointer)?;
                 let mut result = program_seq(
                     program_declare(object.clone(), ProgramType::Int32Pointer),
                     ProgramStatement::HeapAllocate {
@@ -1353,14 +1351,14 @@ impl LoweringContext<'_> {
                 let element_type = element.kind.kernel_type();
                 // The right operand is read first; the call then yields the
                 // referent's address.
-                let stored = self.fresh_call_capture()?;
+                let stored = self.fresh_temporary(element_type)?;
                 let read = program_seq(
                     program_declare(stored.clone(), element_type),
                     program_assign(stored.clone(), self.lower_expression(value)?),
                 );
                 let target = self.call_name(callee, arguments)?;
                 let (prefix, arguments) = self.normalize_arguments(arguments)?;
-                let address = self.fresh_call_capture()?;
+                let address = self.fresh_temporary(element_pointer_type(element)?)?;
                 Ok(program_seq(
                     read,
                     evaluate_then(
@@ -1391,14 +1389,14 @@ impl LoweringContext<'_> {
     fn lower_captured_return(
         &mut self,
         mut evaluation: ProgramStatement,
+        capture: BindingName,
         value_type: ProgramType,
         cleanups: &[&CppCleanup],
         unwind_cleanups: &[&CppCleanup],
         can_throw: bool,
     ) -> Result<ProgramStatement, String> {
-        let capture = self.return_capture_name.clone();
         if can_throw && self.unwind_cleanups && !unwind_cleanups.is_empty() {
-            let binding = self.unwind_exception_name.clone();
+            let binding = self.fresh_temporary(ProgramType::Int32)?;
             let mut handler = program_skip();
             for cleanup in unwind_cleanups {
                 handler = program_seq(handler, self.lower_cleanup(cleanup)?);
@@ -1466,7 +1464,7 @@ impl LoweringContext<'_> {
                 };
                 let layout = self.record_layout(name)?;
                 let (prefix, actual) = self.normalize_arguments(arguments)?;
-                let temporary = self.fresh_aggregate_capture()?;
+                let temporary = self.fresh_aggregate_capture(name)?;
                 // The RHS is a separate object: the live LHS may be read by
                 // the factory and cannot serve as unwritten construction storage.
                 Ok(evaluate_then(
@@ -1535,7 +1533,7 @@ impl LoweringContext<'_> {
                     return Err("C++ record return has no nominal record type".into());
                 };
                 let layout = self.record_layout(name)?;
-                let capture = self.return_capture_name.clone();
+                let capture = self.fresh_aggregate_capture(name)?;
                 let mut result = program_seq(
                     program_declare_aggregate(capture.clone(), layout.clone()),
                     program_copy_aggregate(
@@ -1608,10 +1606,10 @@ impl LoweringContext<'_> {
                 Ok(operation)
             }
             CppStatement::ThrowIosFailure { .. } => {
-                let capture = self.fresh_call_capture()?;
                 let payload = ProgramType::Parameter(crate::kernel::TypeParameterName::intern(
                     "std::ios_base::failure",
                 ));
+                let capture = self.fresh_temporary(payload)?;
                 let construction = program_seq(
                     program_declare(capture.clone(), payload),
                     self.call_then_assign(
@@ -1730,7 +1728,7 @@ impl LoweringContext<'_> {
         let Some(first) = cleanups.next() else {
             return Ok(statement);
         };
-        let binding = self.unwind_exception_name.clone();
+        let binding = self.fresh_temporary(ProgramType::Int32)?;
         let mut handler = program_seq(program_skip(), self.lower_cleanup(first)?);
         for cleanup in cleanups {
             handler = program_seq(handler, self.lower_cleanup(cleanup)?);
@@ -1775,11 +1773,11 @@ impl LoweringContext<'_> {
                 let target = self.call_name(callee, arguments)?;
                 let (prefix, arguments) = self.normalize_arguments(arguments)?;
                 // A converted result always has a callee-typed temporary.
-                let capture = match destination.filter(|_| conversions.is_empty()) {
-                    Some(name) => name.to_owned(),
-                    None => self.fresh_call_capture()?,
-                };
                 let capture_type = cpp_return_scalar_type(value_type)?;
+                let capture = match destination.filter(|_| conversions.is_empty()) {
+                    Some(name) => name.into(),
+                    None => self.fresh_temporary(capture_type)?,
+                };
                 let mut value = crate::kernel::program_expression::variable(capture.clone());
                 let mut result_type = capture_type;
                 for conversion in conversions {
@@ -1842,7 +1840,7 @@ impl LoweringContext<'_> {
         &mut self,
         arguments: &[CppCallArgument],
         allow_temporaries: bool,
-    ) -> Result<(ProgramStatement, Vec<ProgramExpression>, Vec<String>), String> {
+    ) -> Result<(ProgramStatement, Vec<ProgramExpression>, Vec<BindingName>), String> {
         let mut temporaries = Vec::new();
         let mut evaluation = program_skip();
         let has_nested = arguments
@@ -1854,7 +1852,8 @@ impl LoweringContext<'_> {
         for argument in arguments {
             let retained_state = if let CppCallArgument::Value { value } = argument {
                 if has_nested && super::schema::field_scalar_argument(value) {
-                    let capture = self.fresh_call_capture()?;
+                    let capture =
+                        self.fresh_temporary(cpp_return_scalar_type(value.value_type())?)?;
                     let expression = self.lower_expression(value)?;
                     evaluation = evaluate_then(
                         evaluation,
@@ -1892,7 +1891,11 @@ impl LoweringContext<'_> {
             {
                 // A lambda made for a `std::function` argument is the value
                 // its instance function returns for the captured values.
-                let capture = self.fresh_call_capture()?;
+                let capture = self.fresh_temporary(
+                    super::interface::function_pointer_signature(value_type)?
+                        .pointer_type()
+                        .to_kernel_type(),
+                )?;
                 let mut values = Vec::with_capacity(captures.len());
                 for value in captures {
                     values.push(self.lower_expression(value)?);
@@ -1947,7 +1950,7 @@ impl LoweringContext<'_> {
                     unreachable!()
                 };
                 let layout = self.record_layout(name)?;
-                let capture = self.fresh_aggregate_capture()?;
+                let capture = self.fresh_aggregate_capture(name)?;
                 let (prefix, mut actual, inner_temporaries) =
                     self.normalize_temporary_arguments(arguments, true)?;
                 temporaries.extend(inner_temporaries);
@@ -2018,9 +2021,13 @@ impl LoweringContext<'_> {
                 program_return(evaluation.value),
             ));
         }
-        let capture = self.return_capture_name.clone();
+        let capture = self.fresh_temporary(evaluation.value_type)?;
         self.lower_captured_return(
-            evaluate_then(evaluation.prefix, program_assign(capture, evaluation.value)),
+            evaluate_then(
+                evaluation.prefix,
+                program_assign(capture.clone(), evaluation.value),
+            ),
+            capture,
             evaluation.value_type,
             cleanups,
             unwind_cleanups,
@@ -2138,7 +2145,7 @@ impl LoweringContext<'_> {
                 let lhs = self.normalize_expression(left)?;
                 let rhs = self.normalize_expression(right)?;
                 if *operator == CppBinaryOperator::LogicalAnd {
-                    let capture = self.fresh_call_capture()?;
+                    let capture = self.fresh_temporary(ProgramType::Bool)?;
                     let prefix = evaluate_then(
                         lhs.prefix,
                         program_seq(
@@ -2183,32 +2190,24 @@ impl LoweringContext<'_> {
         })
     }
 
-    fn fresh_call_capture(&mut self) -> Result<String, String> {
-        self.fresh_capture(self.nested_capture_name.clone())
-    }
-
-    fn fresh_aggregate_capture(&mut self) -> Result<String, String> {
-        // Materialized objects have addressable storage. Keep their names
-        // separate from scalar call captures: addressability is summarized
-        // across functions by name, so an aggregate temporary in one function
-        // must not obscure a scalar capture's nonescaping storage in another.
-        self.fresh_capture(format!("{}_aggregate", self.nested_capture_name))
-    }
-
-    fn fresh_capture(&mut self, prefix: String) -> Result<String, String> {
-        let mut capture = format!("{prefix}_{}", self.next_call_capture);
-        self.next_call_capture = self
-            .next_call_capture
+    fn fresh_temporary(&mut self, program_type: ProgramType) -> Result<BindingName, String> {
+        let ordinal = self.next_temporary;
+        self.next_temporary = ordinal
             .checked_add(1)
-            .ok_or("C++ nested call capture counter overflow")?;
-        loop {
-            crate::instrumentation::record_deterministic_work(1);
-            if !self.source_names.contains(capture.as_str()) {
-                break;
-            }
-            capture.push('_');
-        }
-        Ok(capture)
+            .ok_or("C++ temporary ordinal overflow")?;
+        crate::instrumentation::record_deterministic_work(1);
+        let id = LocalBindingId::temporary(self.temporary_owner.clone(), ordinal);
+        id.initialize_program_type(program_type);
+        Ok(id.into())
+    }
+
+    fn fresh_aggregate_capture(&mut self, record: &str) -> Result<BindingName, String> {
+        let binding = self.fresh_temporary(ProgramType::Int32Pointer)?;
+        binding
+            .local_id()
+            .expect("temporary identity")
+            .initialize_struct_name(record);
+        Ok(binding)
     }
 
     fn lower_call_arguments(
@@ -2754,31 +2753,6 @@ impl LoweringContext<'_> {
         Ok(parameter)
     }
 }
-fn return_capture_name(function: &CppFunction) -> String {
-    fresh_internal_name(function, "__click_cpp_return_value")
-}
-
-fn fresh_internal_name(function: &CppFunction, base: &str) -> String {
-    let mut declared_places = Vec::new();
-    collect_declared_places(&function.body, &mut declared_places);
-    let names = function
-        .parameters
-        .iter()
-        .chain(declared_places)
-        .map(|place| place.name.as_str())
-        .collect::<std::collections::BTreeSet<_>>();
-    if !names.contains(base) {
-        return base.to_string();
-    }
-    for suffix in 1u64.. {
-        let candidate = format!("{base}_{suffix}");
-        if !names.contains(candidate.as_str()) {
-            return candidate;
-        }
-    }
-    unreachable!("an unbounded suffix space contains an unused internal name")
-}
-
 fn collect_declared_places<'a>(statements: &'a [CppStatement], places: &mut Vec<&'a CppPlace>) {
     for statement in statements {
         match statement {

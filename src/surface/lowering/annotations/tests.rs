@@ -414,7 +414,7 @@ fn ordinary_integer_arithmetic_retains_structure_and_deferred_domain_checks() {
     let x = Int::Variable(crate::kernel::Variable(914002));
     context.integer_values = context
         .integer_values
-        .with_inserted("x".into(), Spec::Term(x.clone()));
+        .with_inserted("x", Spec::Term(x.clone()));
     let binding = || Box::new(ContractExpression::Binding("x".into()));
     let one = || Box::new(ContractExpression::IntegerLiteral("1".into()));
     for (expression, expected) in [
@@ -522,8 +522,8 @@ fn common_integer_comparisons_keep_operands_and_native_fact_shape() {
     use crate::kernel::{ConditionTerm, IntegerTerm, KernelTermNode, SpecIntegerExpression};
     let _session = crate::kernel::VerificationSession::enter();
     let variable = Variable(999995);
-    let bindings = crate::persistent::PersistentMap::default().with_inserted(
-        "x".into(),
+    let bindings = PersistentBinderMap::default().with_inserted(
+        "x",
         SpecIntegerExpression::Term(IntegerTerm::Variable(variable)),
     );
     let left = SurfaceTerm::Add(

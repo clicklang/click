@@ -27,7 +27,7 @@ fn nested_loop_clauses_bound(current_loop_clauses: &[StructuralClause]) -> bool 
 pub(in crate::surface::proof) fn execute_frontier_local_loop(
     expansion_capture: Option<&mut ExpansionCapture>,
     loop_template: &StructuralClause,
-    proof_locals: &BTreeMap<String, ContractExpression>,
+    proof_locals: &BinderMap<ContractExpression>,
     entry_facts: &ProofFacts,
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,

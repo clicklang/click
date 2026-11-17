@@ -761,6 +761,9 @@ pub(super) struct TermClasses {
     weights: PersistentMap<u64, usize>,
     int32_constants: PersistentMap<u64, i32>,
     uint64_constants: PersistentMap<u64, u64>,
+    /// A typed creation identity witnessed in a word class. `None` records
+    /// multiple identities: numeric equality alone cannot choose between them.
+    thread_handles: PersistentMap<u64, Option<crate::kernel::ThreadHandleId>>,
     /// The bits of the constant an 8- or 16-bit class holds. A class has
     /// one width, so its bits name its value at either signedness.
     pub(super) narrow_constants: PersistentMap<u64, u32>,
@@ -1844,6 +1847,18 @@ impl TermClasses {
                 None
             }
             Node::UInt64(value) => {
+                use crate::kernel::{KernelTermNode, MachineOperandView, MachineTerm};
+                let handle = match value.operand_view() {
+                    MachineOperandView::Legacy(MachineTerm::ThreadHandle(id)) => Some(*id),
+                    MachineOperandView::Shared(root) => match root.node() {
+                        KernelTermNode::ThreadHandle(id) => Some(*id),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                if let Some(handle) = handle {
+                    self.thread_handles.insert(id, Some(handle));
+                }
                 let literal = match value.operand_view().literal() {
                     Some(uint64_constant!(value)) => Some(constant_u64(value)),
                     Some(int64_constant!(value)) => Some(constant_i64(value) as u64),
@@ -2282,6 +2297,19 @@ impl TermClasses {
 
     fn intern_uint64(&mut self, term: &crate::kernel::MachineTerm) -> u64 {
         self.intern_machine(term, true)
+    }
+
+    pub(super) fn thread_handle(
+        &mut self,
+        term: &crate::kernel::MachineTerm,
+    ) -> Option<crate::kernel::ThreadHandleId> {
+        let id = self.intern_uint64(term);
+        self.register_pending_loads();
+        let root = self.root(id);
+        if self.scalar_conflicts.contains(&root) {
+            return None;
+        }
+        self.thread_handles.get(&root).copied().flatten()
     }
 
     pub(super) fn uint64_constant(&mut self, term: &crate::kernel::MachineTerm) -> Option<u64> {
@@ -3320,6 +3348,15 @@ impl TermClasses {
                         self.mark_scalar_conflict(*id);
                     }
                 }
+            }
+            if let Some(moved_handle) = self.thread_handles.get(&moved).copied() {
+                let joined = match self.thread_handles.get(&kept).copied() {
+                    None => moved_handle,
+                    Some(kept_handle) if kept_handle == moved_handle => kept_handle,
+                    Some(_) => None,
+                };
+                self.thread_handles.insert(kept, joined);
+                self.thread_handles.remove(&moved);
             }
             if let Some(value) = self.uint64_constants.get(&moved).copied() {
                 if let Some(previous) = self.uint64_constants.get(&kept) {

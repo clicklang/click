@@ -17,8 +17,8 @@ pub(in crate::surface::proof) struct ExecutionMatchPlan {
     arm_case_source: Arc<ProofMatch>,
     case_indices: Vec<usize>,
     matched_instance: Option<crate::kernel::ResourceInstance>,
-    bindings: Vec<PersistentMap<String, ContractExpression>>,
-    integer_bindings: Vec<PersistentMap<String, crate::kernel::SpecIntegerExpression>>,
+    bindings: Vec<PersistentBinderMap<ContractExpression>>,
+    integer_bindings: Vec<PersistentBinderMap<crate::kernel::SpecIntegerExpression>>,
     parent_locals: ProofLocals,
     deferred_base: PersistentSequence<DeferredPostExecutionTactic>,
     excluded: Vec<Option<ProofCertificate>>,
@@ -75,7 +75,12 @@ impl ExecutionMatchPlan {
                     .map(|(index, arm)| AlgebraicMatchArm {
                         type_name: arm.type_name.clone(),
                         variant: arm.variant.clone(),
-                        bindings: arm.bindings.clone(),
+                        bindings: arm
+                            .bindings
+                            .iter()
+                            .cloned()
+                            .map(SurfaceBinder::from)
+                            .collect(),
                         body: ContractExpression::ProgramExpression(ProgramExpression::Value(
                             ProgramValue::Int32(MachineTerm::constant(u32::from(
                                 left.contains(&index),
@@ -101,7 +106,7 @@ impl ExecutionMatchPlan {
 /// tactic without the arm's field bindings.
 fn attach_arm_lexical_scope(
     tactic: &mut DeferredPostExecutionTactic,
-    scope: &PersistentMap<String, ContractExpression>,
+    scope: &PersistentBinderMap<ContractExpression>,
 ) {
     if tactic.lexical_bindings.is_none() {
         tactic.lexical_bindings = Some(scope.clone());
@@ -126,7 +131,7 @@ fn attach_arm_lexical_scope(
 /// and each written arm's case and field bindings.
 pub(in crate::surface::proof) struct OutcomeMatchCases {
     pub(in crate::surface::proof) partition: Arc<CheckedProofCasePartition>,
-    pub(in crate::surface::proof) arms: Vec<(usize, PersistentMap<String, ContractExpression>)>,
+    pub(in crate::surface::proof) arms: Vec<(usize, PersistentBinderMap<ContractExpression>)>,
     /// The first choice variable after this partition's witnesses.
     pub(in crate::surface::proof) next_variable: u64,
 }
@@ -191,7 +196,7 @@ impl<'a> Proof<'a> {
 
     pub(in crate::surface::proof) fn with_surface_local_scope(
         &self,
-        bindings: &PersistentMap<String, ContractExpression>,
+        bindings: &PersistentBinderMap<ContractExpression>,
     ) -> Self {
         let mut locals = self.state.locals().clone();
         locals.set_values(bindings.clone());
@@ -264,8 +269,8 @@ impl<'a> Proof<'a> {
         value: &crate::kernel::AlgebraicTerm,
     ) -> Result<
         (
-            Vec<PersistentMap<String, ContractExpression>>,
-            Vec<PersistentMap<String, crate::kernel::SpecIntegerExpression>>,
+            Vec<PersistentBinderMap<ContractExpression>>,
+            Vec<PersistentBinderMap<crate::kernel::SpecIntegerExpression>>,
         ),
         ClickError,
     > {
@@ -303,7 +308,7 @@ impl<'a> Proof<'a> {
                             unreachable!()
                         };
                         ContractExpression::AlgebraicVariable {
-                            name: name.clone(), binder_index: ((variable.0 - 4_000_000) / 65_536) as usize,
+                            name: name.clone().into(), binder_index: ((variable.0 - 4_000_000) / 65_536) as usize,
                             algebraic_type: AlgebraicTypeApplication {
                                 rigid: value.algebraic_type.rigid, name: value.algebraic_type.name.clone(),
                                 arguments: value.algebraic_type.arguments.iter().map(super::super::pure_theorems::click_type_from_algebraic_value_type).collect::<Result<_,_>>()?,
@@ -736,7 +741,7 @@ impl<'a> Proof<'a> {
             .filter_map(|name| match plan.bindings[index].get(name)? {
                 ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
                     crate::kernel::single_variable_of_program_value(value)
-                        .map(|variable| (variable, name.clone()))
+                        .map(|variable| (variable, SurfaceBinder::from(name)))
                 }
                 _ => None,
             })

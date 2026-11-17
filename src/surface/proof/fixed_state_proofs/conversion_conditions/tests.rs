@@ -321,8 +321,8 @@ fn fold_defining_equation() -> ClickProposition {
                 ProgramExpression::Variable(("index".to_string()).into()),
             )),
             initial: Box::new(ContractExpression::IntegerLiteral("0".to_string())),
-            accumulator: "acc".to_string(),
-            item: "k".to_string(),
+            accumulator: "acc".to_string().into(),
+            item: "k".to_string().into(),
             body: Box::new(ContractExpression::Add(
                 Box::new(ContractExpression::Binding("acc".to_string())),
                 Box::new(ContractExpression::Call {

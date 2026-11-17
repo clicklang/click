@@ -38,5 +38,5 @@ theorem adds_three_shifts_two(f: int32 (*)(int32)) {
 ```
 
 ```expect
-fail: could not establish `0 <= x and x <= 1000 and (0 <= 2 and 2 <= 1000) implies 0 <= x and x <= 1000 and (0 <= 3 and 3 <= 1000) and ((let integer_value: Integer = to_integer((x as int32)) + 3; integer_value) <= 2147483647 and (let integer_value: Integer = to_integer((x as int32)) + 3; integer_value) >= -2147483648 and result == (x + 3) implies (let integer_value: Integer = to_integer((x as int32)) + 2; integer_value) <= 2147483647 and (let integer_value: Integer = to_integer((x as int32)) + 2; integer_value) >= -2147483648 and result == (x + 2))`
+fail: could not establish `0 <= x and x <= 1000 and (0 <= 2 and 2 <= 1000) implies 0 <= x and x <= 1000 and (0 <= 3 and 3 <= 1000) and (((to_integer((x as int32)) + 3) : Integer) <= 2147483647 and ((to_integer((x as int32)) + 3) : Integer) >= -2147483648 and result == (x + 3) implies ((to_integer((x as int32)) + 2) : Integer) <= 2147483647 and ((to_integer((x as int32)) + 2) : Integer) >= -2147483648 and result == (x + 2))`
 ```

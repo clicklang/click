@@ -1696,6 +1696,19 @@ Evaluation introduces no execution local or lexical binder. The Surface form
 remains the original address expression, including `old(...)`/`at(...)` state
 selectors; no generated operand name or replacement syntax is required.
 
+C++ evaluation and cleanup temporaries use a separate `LocalBindingId`
+namespace, owned by the source unit and function with a deterministic temporary
+ordinal. They have type/layout metadata and no lexical C spelling. Surface
+references use `f.temporary(N)` (source-qualified when necessary), independently
+of `f.local(N)` and `f.parameter(N)`. Exact storage uses the existing
+`.storage(implicit)`, `.storage(lifetime, N)`, or `.storage(frame, N)` selectors;
+aggregate temporaries materialize distinct objects with ordinary automatic
+lifetimes. The parser indexes their declarations in the prelowered body once.
+Return capture, intermediate call values, and cleanup exception payloads all
+use these identities, and `TryCatchInt32` carries a `BindingName` through
+execution and evidence checking. No generated variable spelling or collision
+probe participates in identity or lookup.
+
 A contract's return value is `BindingName::ContractResult`, with Surface spelling
 `result`. It is distinct from all `Named`, automatic, and static bindings,
 including source C variables named `result`. Fixed-state elaboration carries its

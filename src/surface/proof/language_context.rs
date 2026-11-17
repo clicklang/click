@@ -22,7 +22,7 @@ pub(in crate::surface::proof) struct PureProofContext<'a> {
     /// Indexed parameter values for reconstructing a refined source goal.
     /// Built once at the root and shared by every proof successor.
     pub(in crate::surface::proof) source_state: ExecutionState,
-    pub(in crate::surface::proof) source_names: BTreeMap<Variable, String>,
+    pub(in crate::surface::proof) source_names: BTreeMap<Variable, SurfaceBinder>,
     pub(in crate::surface::proof) spec_definitions: SpecDefinitions<'a>,
     pub(in crate::surface::proof) theorem_environment: &'a TheoremEnvironment,
     pub(in crate::surface::proof) induction_setup: Option<PureInductionSetup>,
@@ -163,7 +163,8 @@ pub(in crate::surface::proof) struct InvariantBodyContext {
     /// to. A bundle member synthesized from such an invariant, such as the
     /// extent guard a quantified `viewable` invariant owes, spells its binder
     /// with the written name, so a proof focused on it can name it.
-    pub(in crate::surface::proof) binder_names: Arc<BTreeMap<crate::kernel::Variable, String>>,
+    pub(in crate::surface::proof) binder_names:
+        Arc<BTreeMap<crate::kernel::Variable, SurfaceBinder>>,
 }
 
 /// The written `int32` quantifier binders of `checks`, keyed by the kernel
@@ -172,7 +173,7 @@ pub(in crate::surface::proof) struct InvariantBodyContext {
 /// invariants.
 pub(in crate::surface::proof) fn written_invariant_binder_names(
     checks: &[LoopInvariantCheck],
-) -> BTreeMap<crate::kernel::Variable, String> {
+) -> BTreeMap<crate::kernel::Variable, SurfaceBinder> {
     use crate::kernel::SpecProposition;
     let mut names = BTreeMap::new();
     let mut pending = checks
@@ -203,7 +204,7 @@ pub(in crate::surface::proof) fn written_invariant_binder_names(
                 variable,
                 body,
             } => {
-                names.entry(*variable).or_insert_with(|| name.clone());
+                names.entry(*variable).or_insert_with(|| name.into());
                 pending.push(body);
             }
             SpecProposition::And(left, right)
