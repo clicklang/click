@@ -254,6 +254,25 @@ mod tests {
         );
     }
 
+    /// A read in a 64-bit equality raises as the read as written, not as a
+    /// typed word read at the equality's signedness (`load_int64(..)`),
+    /// which lowers to a different read: `left()`'s result equals the
+    /// counter it read after the call.
+    #[test]
+    fn a_wide_read_equality_round_trips_as_the_written_read() {
+        let lines = round_trips(
+            "private_state_mutation_reset.md",
+            include_str!("../../../mdtests/private_state_mutation_reset.md"),
+        );
+        let fact = "statement(4).call(left, 0).result == at(<state A>, state[0])";
+        assert!(
+            lines
+                .iter()
+                .any(|(outcome, original)| outcome == "same" && original.starts_with(fact)),
+            "{lines:#?}"
+        );
+    }
+
     #[test]
     fn a_checked_step_records_how_each_added_fact_round_trips() {
         let fixture = crate::cli::parse_mdtest(
