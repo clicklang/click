@@ -346,6 +346,21 @@ fn struct_owners(
     found
 }
 
+/// A program parameter or local raised as a Surface operand: `program::name`
+/// where its name is also a Click value (`result`, `iterations`), so it
+/// lowers to the program's binding rather than that value; otherwise the
+/// C expression itself. Only a caller that knows `expression` names a
+/// program binding uses this: the same name can also carry the contract
+/// result.
+fn program_operand(expression: ProgramExpression) -> ContractExpression {
+    match &expression {
+        ProgramExpression::Variable(name) if crate::surface::is_click_value_name(name.clone()) => {
+            ContractExpression::ProgramBinding(name.to_string())
+        }
+        _ => ContractExpression::ProgramExpression(expression),
+    }
+}
+
 fn owner_field_pointer(base: &ProgramExpression, offset_bytes: u32) -> ProgramExpression {
     if offset_bytes == 0 {
         base.clone()
@@ -4507,7 +4522,7 @@ fn synthesize_parameter_field_pointer_value(
             };
             return Some(ContractExpression::Field {
                 pointee_struct: None,
-                base: Box::new(ContractExpression::ProgramExpression(base_expression)),
+                base: Box::new(program_operand(base_expression)),
                 field: field_name.clone(),
                 lowered: ProgramExpression::TypedLoad {
                     pointer: Box::new(lowered_pointer),
@@ -6098,7 +6113,7 @@ fn synthesize_parameter_field_load_matching(
         };
         return Some(ContractExpression::Field {
             pointee_struct: None,
-            base: Box::new(ContractExpression::ProgramExpression(base)),
+            base: Box::new(program_operand(base)),
             field: field_name.clone(),
             lowered: ProgramExpression::TypedLoad {
                 pointer: Box::new(field_pointer),
@@ -7133,11 +7148,9 @@ fn synthesize_surface_algebraic(
                         if value.as_ref() == term)
                 })
             {
-                return Some(ContractExpression::ProgramExpression(
-                    ProgramExpression::Variable(crate::surface::surface_parameter_binding(
-                        parameter.binding_name(),
-                    )),
-                ));
+                return Some(program_operand(ProgramExpression::Variable(
+                    crate::surface::surface_parameter_binding(parameter.binding_name()),
+                )));
             }
             // A value a call returned is spelled by its call.
             if let Some(result) = state_call_result(
