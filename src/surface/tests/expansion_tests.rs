@@ -1,6 +1,37 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: unrelated equality refusal and related-premise replay"]
+fn unrelated_equality_is_refused_without_transport() {
+    let (source, sources) =
+        mdtest_sources("mdtests/transport_using_names_its_source_and_target.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    assert!(!source.contains("transport("), "{source}");
+    let error = verify_c_sources(&source, &sources).unwrap_err();
+    let report = error.report();
+    assert!(
+        error
+            .message()
+            .contains("`known` requires the current goal as an available semantic fact"),
+        "{report}"
+    );
+    assert!(report.contains("a == 1"), "{report}");
+    assert!(report.contains("goal: b == 1"), "{report}");
+    let control = source.replace("requires a == 1;", "requires a == 1;\n    requires b == a;");
+    assert_ne!(control, source);
+    verify_c_sources(&control, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_c_claim_source_by_label(&control, &sources, "t.ensures_0").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("t.ensures_0", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 #[ignore = "nightly: guarded child ownership release and preservation replay"]
 fn guarded_child_preservation_keeps_the_consumed_read_refusal() {
     let (source, sources) =
