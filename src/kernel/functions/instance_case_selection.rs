@@ -408,7 +408,7 @@ pub(super) fn selected_instance_resource_load_values(
                     return None;
                 }
                 evaluation.locals.set_typed(
-                    parameter.name().to_owned(),
+                    parameter.binding_name().clone(),
                     value.clone(),
                     parameter.program_type(),
                 );

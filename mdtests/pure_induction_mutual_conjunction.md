@@ -19,7 +19,7 @@ function parity_odd(n: int32) -> int32
 theorem parity_is_complementary(n: int32) {
     requires n >= 0;
     ensures parity_even(n) + parity_odd(n) == 1 by {
-        induct(n) as ih;
+        let ih = induct(n);
         if n <= 0 {
             unfold(parity_even(n));
             unfold(parity_odd(n));

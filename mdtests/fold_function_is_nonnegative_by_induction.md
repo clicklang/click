@@ -24,7 +24,7 @@ theorem marks_nonnegative(lo: int32, hi: int32) {
     requires 0 <= lo;
     requires 0 <= hi;
     ensures 0 <= marks(lo, hi) by {
-        induct(hi) as ih;
+        let ih = induct(hi);
         if hi <= lo {
             unfold(marks(lo, hi));
             solve();

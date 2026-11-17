@@ -254,8 +254,8 @@ one, as in Rust, and chains left to right:
 | `(a + b) as uint32` | the cast of the sum |
 
 The C form `(T) e` is refused in Click text, with the suggestion to write
-`e as T` (`e as (T *)` for a pointer); C source keeps C's casts. A name an
-`as` clause binds, `induct(x) as ih`, `intro() as n`, `verifying "f.c" as
+`e as T` (`e as (T *)` for a pointer); C source keeps C's casts. A name bound by
+`let ih = induct(x)`, `let n = intro()`, `verifying "f.c" as
 f` or a loop label, may not be a cast's type name. Diagnostics, expansions
 and synthesized proofs print casts in this form, parenthesized only where
 precedence requires (`design/machine-integers.md`, Decisions, 2026-10-26). The
@@ -1347,7 +1347,7 @@ Pure theorems can use explicit strong induction on an `int32` or `uint64` parame
 theorem countdown_is_zero(n: int32) {
     requires n >= 0;
     ensures countdown(n) == 0 by {
-        induct(n) as ih;
+        let ih = induct(n);
         if n <= 0 {
             unfold(countdown(n));
             normalize() using { n <= 0; };
@@ -4215,7 +4215,7 @@ depth. This total value semantics is intentionally stricter than C recursion,
 which a `diverges` marker may opt out of; a pure function has no such marker.
 
 General properties of symbolic recursive calls use theorem-level
-`induct(parameter) as hypothesis`. Scalar induction is explicit and strong:
+`let hypothesis = induct(parameter)`. Scalar induction is explicit and strong:
 applying the local hypothesis checks a strictly smaller argument of the
 measure's type and the theorem's substituted requirements. An `int32` measure
 also requires nonnegativity; a `uint64` measure uses unsigned order over its

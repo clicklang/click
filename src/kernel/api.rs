@@ -2269,7 +2269,7 @@ pub fn composite_resource_witness_values(
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
         let argument = argument.as_program_value()?;
         state.locals.set_typed(
-            parameter.name().to_string(),
+            parameter.binding_name().clone(),
             argument.clone(),
             parameter.program_type(),
         );
@@ -3741,10 +3741,10 @@ pub(crate) fn bind_contract_value_parameters(
 ) {
     for (parameter, value) in parameters.iter().zip(values) {
         entry.locals.set_typed_qualified_with_all_qualifiers(
-            parameter.name().to_string(),
+            parameter.binding_name().clone(),
             value.clone(),
             parameter.program_type(),
-            Memory::value_parameter_pointer(parameter.name()),
+            Memory::value_parameter_pointer(parameter.binding_name()),
             false,
             false,
             false,
@@ -8643,7 +8643,7 @@ fn pop_executed_value_pins(function: &mut ProgramFunction, values: &[ProgramValu
     for (parameter, value) in parameters.iter().zip(values).rev() {
         let pin = SpecProposition::Comparison {
             left: SpecExpression::ProgramExpression(ProgramExpression::Variable(
-                (parameter.name().to_string()).into(),
+                parameter.binding_name().clone(),
             )),
             operator: ComparisonOperator::Equal,
             right: SpecExpression::Value(value.clone()),
@@ -8665,7 +8665,7 @@ fn executed_call_arguments(
     Some(
         function.parameters()[..call_count]
             .iter()
-            .map(|parameter| ProgramExpression::Variable((parameter.name().to_string()).into()))
+            .map(|parameter| ProgramExpression::Variable(parameter.binding_name().clone()))
             .collect(),
     )
 }

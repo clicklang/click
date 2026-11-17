@@ -3,7 +3,7 @@
 ```click
 theorem same_measure(n: uint64) {
     ensures n == n by {
-        induct(n) as ih;
+        let ih = induct(n);
         apply(ih(n));
         solve();
     }

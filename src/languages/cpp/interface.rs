@@ -65,7 +65,7 @@ pub(super) fn prepare(
             crate::languages::cpp::names::object_const_unpack_name(derived, base),
         ] {
             crate::instrumentation::record_deterministic_work(1);
-            let object = crate::languages::interface::ImportedParameter::new(
+            let object = crate::languages::interface::ImportedParameter::from_binding(
                 InterfaceType::Int32Pointer,
                 "object".to_string(),
                 Some(derived.clone()),
@@ -299,7 +299,7 @@ fn prepare_functions(
                                     super::scalar::record_referent(&local.value_type)
                                 {
                                     let carrier =
-                                        super::lowering::reference_carrier_name(&local.name).into();
+                                        crate::kernel::BindingName::reference_carrier(local.name.as_str());
                                     if record_references
                                         .get(&carrier)
                                         .is_some_and(|known| known != name)
@@ -342,14 +342,14 @@ fn prepare_functions(
             for name in ambiguous {
                 locals.remove(&name);
                 let carrier: crate::kernel::BindingName =
-                    super::lowering::reference_carrier_name(&name).into();
+                    crate::kernel::BindingName::reference_carrier(name.as_str());
                 if record_references.contains_key(&carrier) {
                     return Err(format!("C++ record-reference local `{name}` has ambiguous record layouts across scopes"));
                 }
             }
             for name in &objects {
                 let carrier: crate::kernel::BindingName =
-                    super::lowering::reference_carrier_name(name).into();
+                    crate::kernel::BindingName::reference_carrier(name.as_str());
                 if record_references.contains_key(&carrier) {
                     return Err(format!("C++ record-reference local `{name}` shares its name with an object in another scope"));
                 }
@@ -451,27 +451,27 @@ fn function_interface(
         .map(|(index, parameter)| {
             crate::instrumentation::record_deterministic_work(1);
             let is_reference = super::lowering::is_reference_parameter(index, parameter);
-            let carried_name = if super::lowering::is_receiver(index, parameter) {
-                super::lowering::RECEIVER_NAME.to_string()
+            let carried_name: crate::kernel::BindingName = if super::lowering::is_receiver(index, parameter) {
+                super::lowering::RECEIVER_NAME.into()
             } else if is_reference {
-                super::lowering::reference_carrier_name(&parameter.name)
+                crate::kernel::BindingName::reference_carrier(parameter.name.as_str())
             } else {
-                parameter.name.clone()
+                parameter.name.clone().into()
             };
             if let Some(kind) = Scalar::mutable_kind(&parameter.value_type) {
-                return Ok(crate::languages::interface::ImportedParameter::new(kind.proof_type(), carried_name.clone(), None));
+                return Ok(crate::languages::interface::ImportedParameter::from_binding(kind.proof_type(), carried_name.clone(), None));
             }
             match &parameter.value_type {
             CppType::Record { name, is_const: false, .. } => {
                 let layout = layouts.get(name).ok_or("C++ record parameter has no checked layout")?;
-                Ok(crate::languages::interface::ImportedParameter::new(InterfaceType::UInt8Pointer, carried_name.clone(), None)
+                Ok(crate::languages::interface::ImportedParameter::from_binding(InterfaceType::UInt8Pointer, carried_name.clone(), None)
                     .with_struct_value(name.clone(), layout.clone()))
             }
             reference @ CppType::LvalueReference { .. }
                 if super::scalar::reference_element(reference).is_some() =>
             {
                 let element = super::scalar::reference_element(reference).unwrap();
-                Ok(crate::languages::interface::ImportedParameter::new(
+                Ok(crate::languages::interface::ImportedParameter::from_binding(
                     element
                         .kind
                         .pointer_proof_type()
@@ -485,7 +485,7 @@ fn function_interface(
             CppType::LvalueReference { pointee }
                 if Scalar::is(pointee, ScalarKind::Int64, true) =>
             {
-                Ok(crate::languages::interface::ImportedParameter::new(
+                Ok(crate::languages::interface::ImportedParameter::from_binding(
                     InterfaceType::Int64Pointer(LongRank::Long),
                     carried_name.clone(),
                     None,
@@ -500,7 +500,7 @@ fn function_interface(
                         source.declaration_id, parameter.name
                     ));
                 };
-                let carrier = crate::languages::interface::ImportedParameter::new(
+                let carrier = crate::languages::interface::ImportedParameter::from_binding(
                     InterfaceType::Int32Pointer,
                     carried_name.clone(),
                     Some(name.clone()),
@@ -517,7 +517,7 @@ fn function_interface(
             }
             pointer @ CppType::Pointer { .. } if super::scalar::record_pointee(pointer).is_some() => {
                 let (_, name) = super::scalar::record_pointee(pointer).unwrap();
-                let carrier = crate::languages::interface::ImportedParameter::new(
+                let carrier = crate::languages::interface::ImportedParameter::from_binding(
                     InterfaceType::Int32Pointer,
                     carried_name.clone(),
                     Some(name.to_owned()),
@@ -528,12 +528,12 @@ fn function_interface(
                 })
             }
             CppType::FunctionPointer { .. } => Ok(crate::languages::interface::ImportedParameter::function_pointer(
-                carried_name.clone(),
+                parameter.name.clone(),
                 function_pointer_signature(&parameter.value_type)?,
             )),
             CppType::Pointer { pointee } if Scalar::pointer_element(pointee, true).is_some() =>
             {
-                Ok(crate::languages::interface::ImportedParameter::new(
+                Ok(crate::languages::interface::ImportedParameter::from_binding(
                     Scalar::pointer_element(pointee, true).unwrap().kind.pointer_proof_type().unwrap(),
                     carried_name.clone(),
                     None,

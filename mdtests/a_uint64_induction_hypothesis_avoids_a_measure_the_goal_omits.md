@@ -16,7 +16,7 @@ function k(x: uint64) -> uint64 { x }
 
 theorem with_using(n: uint64) {
     ensures k(3u64) == 3u64 by {
-        induct(n) as ih;
+        let ih = induct(n);
         if n <= 0u64 {
             unfold(k(3u64));
             normalize();
@@ -30,7 +30,7 @@ theorem with_using(n: uint64) {
 
 theorem bare(n: uint64) {
     ensures k(3u64) == 3u64 by {
-        induct(n) as ih;
+        let ih = induct(n);
         if n <= 0u64 {
             unfold(k(3u64));
             normalize();

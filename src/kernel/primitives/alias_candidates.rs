@@ -282,7 +282,8 @@ impl AliasCandidates {
             PointerBlock::ContractResult
             | PointerBlock::ContractException
             | PointerBlock::AggregateReturn { .. }
-            | PointerBlock::AutomaticLocal { .. } => vec![
+            | PointerBlock::AutomaticLocal { .. }
+            | PointerBlock::ReferenceCarrier { .. } => vec![
                 own(),
                 BlockInterval {
                     start: Some(first_function()),

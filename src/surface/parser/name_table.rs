@@ -532,7 +532,7 @@ impl NameTable {
 
     /// Hides the fact, and for a binder of a value the resource instance,
     /// that `name` names, until the block that binds it
-    /// ends. `intro() as` uses
+    /// ends. `let name = intro()` uses
     /// this directly: an introduced binder may hide a C parameter, which
     /// `outer.name` still reaches.
     pub(super) fn hide_for_proof_binder(

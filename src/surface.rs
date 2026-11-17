@@ -2534,6 +2534,8 @@ pub(crate) fn proposition_bool_value(
             operator: ComparisonOperator::Equal,
             right,
         } if bool_literal_value(&right) == Some(true) => Ok(left),
+        // A written `true` or `false` is that literal value.
+        ClickProposition::Value(literal) if bool_literal_value(&literal).is_some() => Ok(literal),
         proposition => branch(proposition, bool_literal(true), bool_literal(false), &mut 0),
     }
 }
@@ -3456,7 +3458,29 @@ impl<'a> ContractEnvironment<'a> {
     /// Ordinal lookup is checked against the exact prepared declaration: another
     /// function's parameter with the same spelling never acquires this value.
     fn parameter_value(self, binding: &crate::kernel::BindingName) -> Option<&'a ProgramValue> {
-        let id = binding.local_id()?;
+        if let Some(referent) = binding.reference_referent() {
+            if let Some(index) = self.parameters.index {
+                let position = index.position(referent.source_name())?;
+                let parameter = self.parameters.parameters.get(position)?;
+                if !parameter.matches_binding(binding) {
+                    return None;
+                }
+                let ProgramExpression::Value(value) = self.parameters.arguments.get(position)?
+                else {
+                    return None;
+                };
+                return Some(value);
+            }
+            // An unresolved carrier uses the explicit source-parameter value
+            // table, just as an unresolved ordinary parameter does. This is
+            // a source name lookup, never decoding a fabricated identifier.
+            if let Some(name) = referent.named() {
+                return self.values.get(name);
+            }
+        }
+        let id = binding
+            .local_id()
+            .or_else(|| binding.reference_referent()?.local_id())?;
         if !id.is_parameter() {
             return None;
         }
@@ -3472,6 +3496,17 @@ impl<'a> ContractEnvironment<'a> {
         Some(value)
     }
 }
+/// Ordinary parameters are written by their source identifier in the current
+/// function scope. A reference's pointer has no lexical identifier: its Surface
+/// expression retains the structural carrier and prints as `&x`.
+fn surface_parameter_binding(binding: &crate::kernel::BindingName) -> crate::kernel::BindingName {
+    if binding.reference_referent().is_some() {
+        binding.clone()
+    } else {
+        binding.source_name().into()
+    }
+}
+
 /// How many recorded memories on each side of a load's own the raiser
 /// checks for it.
 const MEMORY_POINTS_NEAR: usize = 4;
@@ -5872,7 +5907,7 @@ pub enum ProofTactic {
     NormalizeUsing(Vec<ClickProposition>),
     ArithmeticUsing(Vec<ClickProposition>),
     Intro,
-    /// `intro() as name`: introduce a universal goal's variable under a
+    /// `let name = intro()`: introduce a universal goal's variable under a
     /// name the proof chooses instead of the one the proposition wrote.
     IntroAs(String),
     IntroBinder(SurfaceBinder),
@@ -6186,7 +6221,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "induct",
-        syntax: "induct(n) as ih",
+        syntax: "let ih = induct(n)",
         class: "simple",
     },
     PublicTacticForm {
@@ -6311,7 +6346,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "intro-as",
-        syntax: "intro() as name",
+        syntax: "let name = intro()",
         class: "simple",
     },
     PublicTacticForm {
@@ -9701,6 +9736,14 @@ impl FunctionSignature {
 }
 
 impl FunctionParameter {
+    pub fn binding_name(&self) -> crate::kernel::BindingName {
+        if self.reference {
+            crate::kernel::BindingName::reference_carrier(self.name.as_str())
+        } else {
+            self.name.clone().into()
+        }
+    }
+
     pub fn interface_type(&self) -> InterfaceType {
         match &self.click_type {
             ClickType::Resource => panic!("a Resource parameter has no C type"),

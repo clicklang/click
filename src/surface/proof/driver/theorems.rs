@@ -102,7 +102,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     },
                 )?
                 .ok_or_else(|| {
-                    current.step_error("theorem application obligation has no Surface spelling")
+                    current.step_error("theorem application obligation has no Surface form")
                 })?
                 .surface;
             if implicit_solve_disabled() {

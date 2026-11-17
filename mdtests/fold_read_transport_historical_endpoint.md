@@ -26,7 +26,7 @@ theorem same_zeros(p: int32[], q: int32[], lo: int32, n: int32, hi: int32) {
     requires viewable(q[0..n]);
     requires forall (k: int32) { lo <= k and k < n implies p[k] == q[k] };
     ensures zeros(p, lo, hi) == zeros(q, lo, hi) by {
-        induct(hi) as ih;
+        let ih = induct(hi);
         if hi <= lo {
             unfold(zeros(p, lo, hi));
             unfold(zeros(q, lo, hi));

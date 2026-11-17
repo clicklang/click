@@ -3484,7 +3484,7 @@ impl<'a> Proof<'a> {
         };
         if let Some(surface) = non_execution_surface {
             let surface = surface.ok_or_else(|| self.step_error(
-                "a generated prerequisite has no Surface spelling; this is a raise-lower principle defect",
+                "a generated prerequisite has no Surface form; this is a raise-lower principle defect",
             ).with_unresolved_requirement(&ProofObligation::verification_condition(requirement.proposition.clone())))?;
             let lowered = self.lower_surface_goal(&surface, "proof definedness requirement")?;
             if !lowered_states_requirement(&lowered, requirement) {
@@ -3962,15 +3962,14 @@ fn literal_requirement_spelling(
     if requirement.assertion_condition.is_some() {
         return None;
     }
+    // The `bool` literal lowers to exactly this constant condition; a closed
+    // comparison such as `0 == 1` is retained by lowering instead.
+    let literal = ClickProposition::Value(crate::surface::bool_literal(*value));
     Some(RequirementSpelling {
-        surface: ClickProposition::Comparison {
-            left: ContractExpression::ProgramExpression(ProgramExpression::Value(
-                crate::kernel::int32(0),
-            )),
-            operator: ComparisonOperator::Equal,
-            right: ContractExpression::ProgramExpression(ProgramExpression::Value(
-                crate::kernel::int32(u32::from(value != polarity)),
-            )),
+        surface: if *polarity {
+            literal
+        } else {
+            ClickProposition::Not(Box::new(literal))
         },
     })
 }
@@ -4078,11 +4077,15 @@ pub(super) fn propositions_match_after_canonical_loads(
             (Proposition::Not(body), Proposition::Not(other_body)) => {
                 work.push((body, other_body));
             }
-            (
-                Proposition::ConditionIs(ConditionTerm::Constant(value), expected),
-                Proposition::ConditionIs(ConditionTerm::Constant(other), other_expected),
-            ) => {
-                if (value == expected) != (other == other_expected) {
+            // A constant condition and a closed literal comparison, which
+            // lowering retains as written, match by the truth they state.
+            (Proposition::ConditionIs(left, expected), Proposition::ConditionIs(right, other))
+                if closed_condition_value(left).is_some()
+                    && closed_condition_value(right).is_some() =>
+            {
+                if (closed_condition_value(left) == Some(*expected))
+                    != (closed_condition_value(right) == Some(*other))
+                {
                     return false;
                 }
             }
@@ -4128,6 +4131,8 @@ pub(super) fn propositions_match_after_canonical_loads(
     }
     true
 }
+
+use crate::kernel::machine_integer::comparison::closed_condition_value;
 
 #[test]
 fn literal_requirement_matching_respects_both_truth_and_polarity() {
@@ -4320,7 +4325,9 @@ fn source_backed_call_requirement_surface(
             (
                 parameters
                     .iter()
-                    .map(|parameter| parameter.name().to_string())
+                    .map(|parameter| {
+                        crate::surface::surface_parameter_binding(&parameter.binding_name())
+                    })
                     .collect::<Vec<_>>(),
                 parameters
                     .iter()
@@ -4355,7 +4362,9 @@ fn source_backed_call_requirement_surface(
                 function
                     .parameters()
                     .iter()
-                    .map(|parameter| parameter.name().to_string())
+                    .map(|parameter| {
+                        crate::surface::surface_parameter_binding(&parameter.binding_name())
+                    })
                     .collect::<Vec<_>>(),
                 function
                     .parameters()
@@ -4413,7 +4422,7 @@ fn source_backed_call_requirement_surface(
         for parameter in &aggregate_parameters {
             bound.locals().aggregate_layout(parameter)?;
             substitutions.insert(
-                parameter.clone(),
+                parameter.clone().into(),
                 ContractExpression::RegionParameter {
                     region: point.region.clone(),
                     name: parameter.clone(),
@@ -4455,7 +4464,7 @@ fn source_backed_call_requirement_surface(
                 crate::kernel::program_local_source_name(local).to_owned(),
             ))
         };
-        substitutions.insert(name.clone(), expression);
+        substitutions.insert(name.clone().into(), expression);
     }
     // Match contract lowering: adapt a signed character argument to the
     // predicate's byte parameter before substituting the call arguments.
@@ -4466,7 +4475,7 @@ fn source_backed_call_requirement_surface(
         &|name| {
             let slot = source_parameter_names
                 .iter()
-                .position(|parameter| parameter == name)?;
+                .position(|parameter| parameter.source_name() == name)?;
             match source_parameter_types[slot]? {
                 crate::kernel::ProgramType::Int8Pointer => Some(InterfaceType::Int8Pointer),
                 crate::kernel::ProgramType::Int8Array(size) => Some(InterfaceType::Int8Array(size)),
@@ -4716,10 +4725,12 @@ fn caller_parameter_as_argument(
                 expected,
             ) =>
         {
-            crate::surface::lowering::character_byte_view(parameter.name())
+            crate::surface::lowering::character_byte_view(
+                crate::surface::surface_parameter_binding(parameter.binding_name()),
+            )
         }
         _ => ContractExpression::ProgramExpression(ProgramExpression::Variable(
-            (parameter.name().to_string()).into(),
+            crate::surface::surface_parameter_binding(parameter.binding_name()),
         )),
     }
 }
