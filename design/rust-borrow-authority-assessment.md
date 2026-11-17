@@ -2,13 +2,17 @@
 
 This assessment records the production borrow-authority boundary beyond the
 [completed Linux frontend milestone](rust-charon-assessment.md#completed-linux-frontend-delivery). The independently checked checksum
-proofs are complete within their published contracts. Borrow authority remains
-an architecture requirement. The initial call-scoped evidence below predates
-the implemented local scalar leases described under
-[Source-bound scalar lease execution](#source-bound-scalar-lease-execution).
-Use [Remaining local-reference work](#remaining-local-reference-work) for the
-current residual scope, rather than the older statements that all local
-reference identities are absent.
+proofs are complete within their published contracts.
+
+**Ruling (2026-11):** Click trusts rustc's borrow checking. Click verifies the
+application under test and trusts everything outside it, the pinned compiler
+included. The importer admits only safe Rust, so every imported body's borrows
+are already legal. Local borrows are therefore not re-checked: the scalar
+lease protocol that did so is removed (see
+[Local references are trusted to rustc](#local-references-are-trusted-to-rustc)).
+Call-site lending stays, because it is how a caller learns that a callee
+writes nothing else it holds; a reference parameter's type supplies that
+authority (`docs/reference/rust.md`, "Signatures in Rust syntax").
 
 ## Initial evidence after call-scoped integration
 
@@ -214,157 +218,26 @@ the selected operation's membership in the locked source plan. Private
 receipt deltas retain each producer occurrence without scanning ambient facts;
 the existing 16/64/256/1024 regression now also checks borrow receipts.
 
-## Private scalar-memory lease adapter
+## Local references are trusted to rustc
 
-The kernel now connects local-reference custody to ordinary scalar memory
-execution through a private `CState` adapter. Birth selects a direct owned
-occurrence for one external or declared automatic scalar, checks existing
-mutex/shared-loan write
-restrictions, and removes that owner and its derived memory views from the
-ordinary resource context. A private reservation in the ledger retains the exact original occurrence.
-A fresh child lease identity travels in the pointer value and through
-lvalue evaluation; copying the pointer does not copy its authority into the
-public resource frame.
+The private scalar lease adapter and its source-bound execution checked, for
+loop-free scalar functions, that each local reborrow was born from a live
+parent, that it ended at its source frontier, and that the parent was not
+reused meanwhile. That is rustc's borrow check repeated. It also refused every
+call, return, loop, aggregate copy and allocation while a lease was live.
 
-Each child load/store validates the ledger, holder, live child identity, exact
-pointer/type and reserved occurrence. It temporarily supplies the selected
-owner to the existing memory producer, which still performs its ordinary
-checks. A successful store withholds that temporary owner again before
-publishing its successor. Recovery retires the child exactly once; nested
-recovery restores parent custody, and outer recovery returns the original scalar
-owned occurrence, preserving the support identity needed by call receipts.
-Only authority changes: the memory after the child's writes remains current.
-Expired copies keep their lease and fail even after ordinary ownership returns.
+The adapter is removed: Rust lowering emits no births, endings or scopes, and
+the kernel's `source_loans` and `loans::local_references` modules and their
+`EndScalarReference`/`ScalarReferenceScope` statements are gone. A reference is
+the address of the place it borrows, and the ordinary memory producers and
+their authority checks apply. The semantic profile entry
+`checked-closed-arm-scalar-reference-scopes-v6` became
+`rustc-checked-local-references-v1`, and every Rust lock was rebound.
 
-Lease identity participates in pointer value equality/hash/ordering using a
-fresh id; language pointer comparison still compares addresses. Local copies,
-identity-preserving pointer casts, pointer displacement and `&*child` retain
-custody. Displaced or differently typed dereferences fail the exact access
-check. Pointer-to-integer escape and storing a leased pointer outside a private
-local are refused. Pointer qualifiers, bounds and lease identities share optional metadata so
-ordinary unqualified pointers allocate nothing and the pure-fact representation
-size limit stays unchanged.
-
-While a lease is active, untagged memory loads require an ordinary owner;
-view-only and symbolic-contract-load bypasses cannot read the reserved scalar.
-Disjoint owned neighbors remain usable. Calls, aggregate operations, allocation
-changes, loop summarization and explicit lifetime retirement are refused until
-they have a custody protocol; returning with an outstanding lease is refused.
-A maintained holder/root index avoids ledger scans. Kernel execution regressions
-cover parent denial, child writes, nested recovery, copied stale aliases, wrong
-holders/branches/types/addresses, cast/address preservation and bypass refusal.
-Selected adapter operations have a deterministic 16/64/256/1024-owner scaling
-regression.
-
-## Source-bound scalar lease execution
-
-Locked lowering now supports exclusive scalar borrow forests on a shared path
-through straight-line code and structured acyclic branches. Roots reborrow
-reference parameters; nested children
-reborrow an existing local lease. Scalar assignments, direct reference copies
-and storage events are followed. Unsupported reference escapes, opaque effects,
-aggregates, calls, loops and early returns retain their previous lowering and
-do not acquire local lease coverage.
-
-A source alias names one borrow node. A reborrow adds a dependency edge; copies
-keep the same node, and replacement definitions change only the assigned alias.
-The checker records direct uses while traversing the selected function once.
-A reverse birth-order pass propagates each subtree's last use to its ancestors.
-A single region projection follows the existing checked CFG postdominator
-structure. Lexical arm paths and ancestor jumps locate each use's continuation
-relative to its borrow definition. Definitions in one arm cannot be used in a
-sibling or its enclosing continuation, and an arm cannot overwrite an existing
-outer reference binding. Scalar writes, condition reads and local copies are
-followed without enumerating paths or cloning alias maps per branch.
-
-For arm-local definitions, lowering emits a sealed scope checkpoint before the
-conditional and a checked close on each arm. Nested conditionals use nested
-checkpoints. The kernel permits only local-reference registration, borrowing,
-recovery and retirement while a checkpoint is open. It records only newly
-issued IDs and their checked active count; an entry reference cannot be ended.
-At close, every new reference must be inactive and every newly borrowed root's
-original owned occurrence must be present. The current holder and exact sealed
-scope identity must match. Nonlocal ledger transitions, transport and return
-with an open scope are refused.
-
-The scope then marks its statically certified, private arm-local reference slots
-uninitialized, including their memory footprints, and restores the exact entry
-ledger. This prevents a later abstraction from turning a dead reference into
-a fresh ordinary pointer. Local reference IDs use a global fresh counter,
-which reconciliation never rewinds; captured stale values still fail lookup.
-Memory is not rolled back. Existing live entry references and unrelated loan
-state survive exactly. The ordinary join retains its exact-ledger check.
-No ambient ledger history is scanned: validation follows the scope's selected
-transition delta, new roots and cleanup slots.
-
-Every computed ending follows all uses of the node and its descendants, including
-copies and scalar expressions. Frontier identity includes both the block and
-statement position; a join-frontier end runs before that block's first statement. Independent regressions compare the resulting
-frontiers with the existing single-borrow checker. StorageDead alone grants
-no recovery; an unused borrow can end immediately after its checked birth.
-
-Each actual successful borrow assignment reserves the selected owned scalar or
-borrows an existing lease. Its semantic birth plan binds exact lowered operands
-and checked source membership. Observation labels cannot issue a birth. Nested
-leases share one original reservation, rather than multiplying memory authority.
-The source key belongs to the individual lease node, not the shared backing.
-
-Lowering emits an explicit `CStatement::EndScalarReference` after the complete
-source statement at each checked frontier. Several endings at one frontier are
-emitted innermost first. Normal statement sequencing prevents an ending from
-running after a failed load, assignment or store. Reads and stores now carry
-only read-only observations; recovery is an explicit semantic operation.
-
-An ending's opaque source identity selects a fresh live reference through the
-indexed `(holder, source plan)` map in the current invocation. The kernel still
-checks the exact holder, active identity, backing occurrence, type and child
-dependencies. A parent cannot recover while its child is live. A successful
-ending consumes its index entry exactly once. Parent custody returns first;
-closing the outermost root restores the original owned occurrence. Current
-memory is preserved throughout, and stale copies remain expired. Endings do
-not depend on an original child variable or guessed observation history.
-
-Source labels are shared in one immutable family; its precomputed fixed-width
-identity and frontier positions form the hot semantic key. Preparation and
-execution inspect selected statements and indexed state deltas. Deterministic
-16/64/256/1024 regressions cover ordinary source length, alias chains, read
-endings, nested depth and repeated shared diamonds, including arm-local scopes. A selected-end regression also bounds execution work
-across growing live-handle indexes. Selected scope work is also bounded at
-16/64/256/1024 ambient-history sizes (954/1044/1134/1224 map-work units).
-No per-borrow whole-function scan is used.
-
-The unchanged native `set_seven`, alias-move and read-ending witnesses activate
-explicit end operations. A new native fixture covers shared and separate
-nested frontiers, parent reuse, and a modular caller. Kernel tests cover ordered
-recovery, missing/foreign/duplicate handles, alias replacement, unsupported
-parent access and failed operations. Native proofs include expansion/recheck
-and false-value/authority negatives. A native branch fixture covers conditional
-writes, nested leases across both arms, parent reuse and a modular caller,
-with expansion/rechecking and value/authority negatives. Kernel tests check
-an actual join with live custody and refusal of premature parent access,
-expired aliases and duplicate ends. Condition reads, later join reads and nested
-regions pin common frontier placement.
-
-A pinned arm-scope fixture verifies independent and nested arm-local reborrows,
-a local alias and a modular caller, including expansion and value/authority
-negatives. Kernel tests check live-close refusal, wrong holders/source scope,
-entry-reference preservation, original support, missing ownership, duplicate
-close, stale IDs after reconciliation, cleared slots and escaped/cross-arm
-reference refusal.
-
-The Rust semantic profile versions this source coverage and the resource
-semantics version covers the new kernel operation. Matching existing locks are
-rebound without changing source, compiler or artifact hashes.
-
-## Remaining local-reference work
-
-Shared borrow graphs, aggregate fields and reference storage, call transfer,
-memory havoc, escaping or conditionally live arm references, writes to outer
-reference bindings, early returns and loops still need checked source/runtime
-protocols. Functions outside the activated subset retain their existing
-lowering. Pinned rustc establishes source borrow legality and does not replace
-submitted-sidecar authority checks. Neither observations nor a submitted alias
-list grants a recovery right.
+The source certificates and executed receipts above
+(`certify_scalar_reference_end`, `ReferenceBorrowSourceId`,
+`ReferenceAccessSourceId`) grant and refuse nothing, but they exist only to
+re-derive the same frontiers; they are left for a separate removal.
 
 ## Reproduce the assessment
 
@@ -374,9 +247,6 @@ With the pinned tools activated and `CLICK_CHARON` set to the pinned exporter:
 cargo test --lib rust_correspondence_
 cargo test --lib correspondence_calls_production_
 cargo test --lib exclusive_call_
-cargo test --lib local_reference_
-cargo test --lib scalar_reference_
-cargo test --lib source_scalar_
 cargo test --test rust_import rust_arm_local_borrows_close_without_escaping_before_the_join -- --ignored
 cargo test --test rust_import rust_scalar_borrow_stays_live_through_both_branch_arms_and_ends_at_join -- --ignored
 cargo test --test rust_import rust_nested_scalar_borrows_end_explicitly_at_shared_and_separate_frontiers -- --ignored

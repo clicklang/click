@@ -28,13 +28,13 @@ int32 read_after_write(int32** slot, int32* target, int32* other) {
         normalize() using { separate(memory(*other), memory(*target)); };
     }
     have *slot == at(before, *slot) by {
-        preserve(separate(statement(0).footprint, memory(*slot)));
+        preserve(memory(*slot), statement(0));
     }
     have *slot == target by {
         normalize() using { *slot == at(before, *slot); at(before, *slot) == target; };
     }
     have *target == at(before, *target) by {
-        preserve(separate(statement(0).footprint, memory(*target)));
+        preserve(memory(*target), statement(0));
     }
     have *target == 7 by {
         normalize() using { *target == at(before, *target); at(before, *target) == 7; };

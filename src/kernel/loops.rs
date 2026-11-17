@@ -1221,6 +1221,11 @@ fn execute_modeled_pthread_join_paths(
         budget,
         Some(environment),
     )? {
+        let current = super::reasoning::path_facts::assumptions_with_path_context(
+            assumptions,
+            &path.facts,
+            &path.obligations,
+        );
         let outcome = if let Some(outcome) = path.outcome {
             match outcome {
                 FunctionOutcome::UndefinedBehavior(error) => {
@@ -1232,13 +1237,8 @@ fn execute_modeled_pthread_join_paths(
         } else if !matches!(&path.values[1], ProgramValue::Pointer(pointer) if pointer.is_null()) {
             refusal("modeled-pthread join requires a null result slot")
         } else if let Some(handle) =
-            super::threads::ThreadHandle::from_program_value(&path.values[0])
+            super::threads::ThreadHandle::resolve_program_value(&path.values[0], &current)
         {
-            let current = super::reasoning::path_facts::assumptions_with_path_context(
-                assumptions,
-                &path.facts,
-                &path.obligations,
-            );
             let joined = super::threads::ThreadContext::new(state.clone()).and_then(|context| {
                 context
                     .join(
@@ -2629,6 +2629,7 @@ fn abstract_loop_exit_states(
         binders.is_empty(),
         &declared_memory,
         assumptions,
+        &contexts,
         &mut restatements,
         variables,
         budget,
@@ -2871,6 +2872,10 @@ struct LoopExitRestatement {
     /// The held value is a term, not only a symbol: one exit may hold the
     /// head's own model variable and another a constructor it folded.
     replacements: Vec<(AlgebraicTerm, AlgebraicTerm)>,
+    /// The first successor name for a selected symbolic resource value.
+    /// Further fields holding that same value pin to this name directly,
+    /// without exporting the private exit variable or walking other pins.
+    symbolic_resource_pins: BTreeMap<Variable, AlgebraicTerm>,
 }
 
 impl LoopExitRestatement {
@@ -2903,13 +2908,26 @@ impl LoopExitRestatement {
             self.pin(fresh, held);
             return;
         }
+        if let (AlgebraicValue::Algebraic(fresh), AlgebraicValue::Algebraic(held)) = (fresh, held) {
+            self.replacements.push((held.clone(), fresh.clone()));
+            if let AlgebraicTermNode::Variable(variable) = held.node {
+                let representative = self
+                    .symbolic_resource_pins
+                    .entry(variable)
+                    .or_insert_with(|| fresh.clone());
+                if representative != fresh {
+                    self.equations.push(Proposition::Equal(
+                        Term::Algebraic(fresh.clone()),
+                        Term::Algebraic(representative.clone()),
+                    ));
+                }
+                return;
+            }
+        }
         self.equations.push(Proposition::Equal(
             resource_value_term(fresh),
             resource_value_term(held),
         ));
-        if let (AlgebraicValue::Algebraic(fresh), AlgebraicValue::Algebraic(held)) = (fresh, held) {
-            self.replacements.push((held.clone(), fresh.clone()));
-        }
     }
 
     /// One stated fact with this exit's value for each renamed binder
@@ -2959,7 +2977,7 @@ impl LoopExitRestatement {
         obligations: Vec<ProofObligation>,
         loan_evidence: CheckedLoanCallEvidenceSequence,
     ) -> LoopExitFacts {
-        if self.renamings.is_empty() && self.equations.is_empty() {
+        if self.renamings.is_empty() && self.equations.is_empty() && self.replacements.is_empty() {
             return LoopExitFacts::unabstracted(facts, obligations, loan_evidence);
         }
         let rename = |proposition: &Proposition| {
@@ -3102,6 +3120,31 @@ fn abstract_loop_exit_binders(
                 binder.name
             ));
         };
+        // Joined fields are fresh values just as call-return fields are.
+        // Retain their declared names at the mint so explicit branch proofs
+        // can cite the exported disjunction through this binder.
+        for (field_index, ((name, _), value)) in joined
+            .schema()
+            .fields()
+            .iter()
+            .zip(joined.fields())
+            .enumerate()
+        {
+            if base.fields().get(field_index) == Some(value) {
+                continue;
+            }
+            if let Some(variable) = crate::kernel::model_fields::algebraic_value_variable(value) {
+                crate::kernel::model_fields::register_model_field_variable(
+                    variable,
+                    crate::kernel::model_fields::ModelFieldOrigin {
+                        identity: binder.identity,
+                        field: std::sync::Arc::from(name.as_str()),
+                        field_index,
+                        minted_by: crate::kernel::model_fields::ModelMint::Join,
+                    },
+                );
+            }
+        }
         let Some(resources) = successor.resources().clone().without_fact_incrementally(
             &ResourceFact::own(Resource::Instance(base)),
             &PureFactContext::new(),
@@ -3590,6 +3633,7 @@ fn abstract_loop_exit_memory(
     no_binders: bool,
     declared_memory: &[MemoryRange],
     assumptions: &PureFactContext,
+    contexts: &[PureFactContext],
     restatements: &mut [LoopExitRestatement],
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
@@ -3645,8 +3689,10 @@ fn abstract_loop_exit_memory(
                 pointer.block
             ));
         };
-        for (restatement, held) in restatements.iter_mut().zip(held) {
-            restatement.pin(&fresh, &held);
+        for (index, (restatement, held)) in restatements.iter_mut().zip(held).enumerate() {
+            let context = contexts.get(index).unwrap_or(assumptions);
+            let named = loop_exit_cell_pin_value(&held, context);
+            restatement.pin(&fresh, &named);
         }
         havoced.push((pointer, fresh));
     }
@@ -3717,6 +3763,24 @@ fn abstract_loop_exit_memory(
         *successor = successor.clone().with_memory(memory);
     }
     Ok(abstracted)
+}
+
+/// Export a proved scalar constant instead of a private loop-body read.
+/// The selected cell supplies the literal index key; no fact or equality class is
+/// enumerated, and this changes a produced equation rather than lowering.
+fn loop_exit_cell_pin_value(value: &ProgramValue, context: &PureFactContext) -> ProgramValue {
+    match value {
+        ProgramValue::Int32(term) | ProgramValue::UInt32(term) => {
+            match crate::kernel::assumptions::exact_signed_constant(term, context) {
+                Some(constant) => match value {
+                    ProgramValue::Int32(_) => int32(MachineTerm::constant(constant as u32)),
+                    _ => uint32(MachineTerm::constant(constant as u32)),
+                },
+                None => value.clone(),
+            }
+        }
+        _ => value.clone(),
+    }
 }
 
 /// The memory ranges a loop's own header declared, rather than folded into one
@@ -4862,12 +4926,16 @@ fn collect_invariant_check_obligations_with_mode(
                     );
                 }
                 if obligations.len() > before {
-                    guards.push(ProofObligation::new(path.proposition));
+                    guards.push(ProofObligation::new(path.proposition.clone()));
                     changed_obligations.push(before);
                     if without_search && obligations[before].is_assumable() {
                         crate::kernel::reasoning::path_facts::count_context_rebuild_entries(1);
-                        obligation_assumptions = obligation_assumptions
-                            .assume_proposition(obligations[before].proposition().clone());
+                        // All preceding members are hypotheses of this prepared
+                        // path. Admit the new bare member, as the guard list
+                        // above does, rather than regenerating its implication
+                        // prefix and every partially discharged suffix.
+                        obligation_assumptions =
+                            obligation_assumptions.assume_proposition(path.proposition);
                     }
                 }
                 if without_search {
@@ -6188,8 +6256,8 @@ pub(super) fn prepare_loop_top_state(
             rebound_failures.push(message);
         }
     }
-    // A direct conditional clause uses the same ordinary folded ownership
-    // internally; its field captures the head expression, not a mutable local.
+    // A direct conditional clause owns a typed occurrence whose condition
+    // captures the head expression, independently of later local mutations.
     let mut ordinary_specs = Vec::new();
     let mut direct_carriers = Vec::new();
     let mut direct_mutexes = Vec::new();
@@ -6203,12 +6271,8 @@ pub(super) fn prepare_loop_top_state(
                 identity,
                 assumptions,
             ) {
-                Ok((updated, mutex)) => {
-                    let instance = updated
-                        .resources()
-                        .owned_instance(identity)
-                        .expect("checked direct loop preparation installs its carrier");
-                    direct_carriers.push(ResourceFact::own(Resource::Instance(instance.clone())));
+                Ok((updated, mutex, carrier)) => {
+                    direct_carriers.push(carrier);
                     direct_mutexes.push(mutex);
                     top_state = updated;
                 }
@@ -7386,6 +7450,7 @@ fn viewed_form_of_resource_fact(fact: &ResourceFact) -> Option<ResourceFact> {
             Resource::Token { .. }
             | Resource::PopulationAuthority(_)
             | Resource::Instance(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_)
@@ -8639,10 +8704,8 @@ pub(super) fn statement_may_write_memory(
     statement: &ProgramStatement,
 ) -> bool {
     match statement {
-        ProgramStatement::ScalarReferenceScope(scope) => !scope.cleared_locals().is_empty(),
         ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }
@@ -8725,18 +8788,11 @@ pub(super) fn collect_loop_modified_locals(
     names: &mut BTreeSet<BindingName>,
 ) {
     match statement {
-        ProgramStatement::ScalarReferenceScope(scope) => names.extend(
-            scope
-                .cleared_locals()
-                .iter()
-                .map(|(name, _)| name.clone().into()),
-        ),
         ProgramStatement::EndAutomaticLifetimes { names: retired, .. } => {
             names.extend(retired.iter().cloned())
         }
         ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }
@@ -8978,8 +9034,6 @@ fn for_each_statement_expression<'a>(
         ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }
@@ -9089,8 +9143,6 @@ pub(crate) fn collect_address_taken_locals(
         ProgramStatement::EndAutomaticLifetimes { .. } => {}
         ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }

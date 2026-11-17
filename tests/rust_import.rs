@@ -1322,38 +1322,6 @@ fn charon_refused_panic_check_names_its_condition() {
 }
 
 #[cfg(not(feature = "fast-gate"))]
-/// Under Integer specification arithmetic a native guard written `a - b < c` is an
-/// exact Integer comparison, so a `peel` refusal names each guard by its
-/// Integer reading of the machine operands, which lowers to the guard itself.
-#[test]
-fn peel_refusal_names_a_guard_spelling_integer_arithmetic_reads_as_native() {
-    let source = include_str!("../examples/rust-iter-references/sum.rs");
-    let sidecar = include_str!("../examples/rust-iter-references/sum.click")
-        .replace("sum.rs", "borrow.rs")
-        .replace(
-            "                    to_integer(bytes.len() - iter.len()) < to_integer(18446744073709551615u64);\n",
-            "                    (bytes.len() - iter.len()) < 18446744073709551615u64;\n",
-        );
-    assert!(sidecar.contains("(bytes.len() - iter.len()) < 18446744073709551615u64;"));
-    let p = Project::new(source);
-    fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
-    p.refresh().unwrap();
-    let output = p.cli(&["verify"]);
-    assert!(!output.status.success());
-    let error = String::from_utf8(output.stderr).unwrap();
-    assert!(
-        error.contains("found no listed guard that decides the range"),
-        "{error}"
-    );
-    assert!(
-        error.contains(
-            "the append-last-cell equation needs `to_integer(bytes.len() - iter.len()) < 18446744073709551615`"
-        ),
-        "{error}"
-    );
-}
-
-#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn charon_slice_failure_has_a_focused_trace() {
@@ -1669,8 +1637,8 @@ fn charon_slice_iter_sums_bytes_by_its_library_contract() {
         ),
         // The iterator stands where the count says, not one element on.
         (
-            "invariant iter.as_slice().as_ptr() == bytes + (bytes.len() - iter.len());",
-            "invariant iter.as_slice().as_ptr() == bytes + ((bytes.len() - iter.len()) + 1u64);",
+            "invariant iter.as_slice() == bytes + (bytes.len() - iter.len());",
+            "invariant iter.as_slice() == bytes + ((bytes.len() - iter.len()) + 1u64);",
         ),
         // Each `next()` yields one element.
         (
@@ -6268,10 +6236,36 @@ fn loops_gate_fixture_tools_recheck_certificates() {
 #[path = "rust_import/gate_fixtures.rs"]
 mod gate_fixtures;
 
+/// A reborrow stays live across a call. Click trusts rustc's borrow check,
+/// so the call needs only the authority the callee's contract names, and the
+/// caller sees the callee's write through both the child and the parent.
+#[test]
+fn rust_reborrow_stays_live_across_a_call() {
+    let source =
+        include_str!("../design/charon-trial/gate-fixtures/reference-across-call/borrow.rs");
+    let p = gate_fixtures::project("reference-across-call", source);
+    let prepared = p.prepared().unwrap();
+    let proof = "verifying \"borrow.rs\";\nfn bump(value: &mut i32) { requires *value < 2147483647; ensures *value == old(*value) + 1; }\nfn bump_through_child(parent: &mut i32) { requires *parent < 2147483645; ensures *parent == old(*parent) + 3; }\n";
+    ProgramVerificationSession::new_program_prepared(proof, &prepared)
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    for invalid in [
+        proof.replace("old(*parent) + 3", "old(*parent) + 2"),
+        // A contract that grants no authority over the referent cannot lend
+        // it to the call.
+        proof.replace(
+            "fn bump_through_child(parent: &mut i32) {",
+            "fn bump_through_child(parent: &mut i32) { views parent[0..0];",
+        ),
+    ] {
+        assert_ne!(invalid, proof);
+        assert!(ProgramVerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+    }
+}
+
 #[cfg(not(feature = "fast-gate"))]
 #[test]
-#[ignore = "nightly: scalar local-alias leases with checked proof expansion"]
-fn rust_scalar_lease_aliases_preserve_updates_and_parent_reuse() {
+#[ignore = "nightly: scalar local aliases with checked proof expansion"]
+fn rust_scalar_reference_aliases_preserve_updates_and_parent_reuse() {
     let source = include_str!("../design/charon-trial/gate-fixtures/scalar-aliases/borrow.rs");
     let p = gate_fixtures::project("scalar-aliases", source);
     let proof = "verifying \"borrow.rs\";\nfn alias_update(parent: &mut i32) { owns *parent; ensures *parent == 8; }\nfn alias_caller(value: &mut i32) { owns *value; ensures *value == 8; }\n";
@@ -6302,8 +6296,8 @@ fn rust_scalar_lease_aliases_preserve_updates_and_parent_reuse() {
 
 #[cfg(not(feature = "fast-gate"))]
 #[test]
-#[ignore = "nightly: scalar read-ending leases with checked proof expansion"]
-fn rust_scalar_lease_read_ending_preserves_read_value_and_parent_reuse() {
+#[ignore = "nightly: scalar read-ending borrows with checked proof expansion"]
+fn rust_scalar_reference_read_ending_preserves_read_value_and_parent_reuse() {
     let source = include_str!("../design/charon-trial/gate-fixtures/scalar-read-end/borrow.rs");
     let p = gate_fixtures::project("scalar-read-end", source);
     let proof = "verifying \"borrow.rs\";\nfn read_before_reuse(parent: &mut i32) -> i32 { owns *parent; requires *parent == 4; ensures result == 4; ensures *parent == 8; }\nfn read_caller(parent: &mut i32) -> i32 { owns *parent; requires *parent == 4; ensures result == 4; ensures *parent == 8; }\n";
@@ -6370,7 +6364,7 @@ fn rust_nested_scalar_borrows_end_explicitly_at_shared_and_separate_frontiers() 
 
 #[cfg(not(feature = "fast-gate"))]
 #[test]
-#[ignore = "nightly: scalar leases across branches with checked expansion"]
+#[ignore = "nightly: scalar borrows across branches with checked expansion"]
 fn rust_scalar_borrow_stays_live_through_both_branch_arms_and_ends_at_join() {
     let source = include_str!("../design/charon-trial/gate-fixtures/scalar-branches/borrow.rs");
     let p = gate_fixtures::project("scalar-branches", source);

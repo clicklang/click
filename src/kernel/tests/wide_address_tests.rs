@@ -640,3 +640,61 @@ fn wide_pointer_subtraction_preserves_unsigned_magnitude_and_bounds() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/tests/wide_address_tests.rs");
 }
+
+#[test]
+fn checked_byte_array_address_checks_the_complete_uninitialized_object() {
+    let state = normal(
+        ExecutionState::new(),
+        program_declare("bytes", ProgramType::UInt8Array(16)),
+    );
+    let checked = |width| {
+        crate::kernel::program_expression::checked_object_address(
+            crate::kernel::program_expression::typed_load(
+                crate::kernel::program_expression::variable("bytes"),
+                ProgramType::UInt8Array(width),
+            ),
+        )
+    };
+    let address = value(&state, checked(16));
+    assert!(matches!(address, ProgramValue::Pointer(_)));
+    assert!(matches!(
+        outcome(&state, checked(17)),
+        ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory)
+    ));
+    assert!(matches!(
+        outcome(
+            &state,
+            crate::kernel::program_expression::typed_load(
+                ProgramExpression::Value(address),
+                ProgramType::UInt8
+            )
+        ),
+        ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::UninitializedRead)
+    ));
+}
+
+#[test]
+fn checked_byte_array_address_cast_preserves_retirement_checks() {
+    let state = normal(
+        ExecutionState::new(),
+        program_declare("bytes", ProgramType::UInt8Array(16)),
+    );
+    let address = value(&state, crate::kernel::program_expression::variable("bytes"));
+    let ProgramValue::Pointer(pointer) = &address else {
+        unreachable!()
+    };
+    let retired = state
+        .clone()
+        .with_memory(state.memory().without_local_block(&pointer.pointer().block));
+    let checked = crate::kernel::program_expression::checked_object_address(
+        crate::kernel::program_expression::typed_load(
+            ProgramExpression::Value(address),
+            ProgramType::UInt8Array(16),
+        ),
+    );
+    let cast = crate::kernel::program_expression::cast(checked, ProgramType::Int32Pointer);
+    assert!(matches!(
+        outcome(&retired, cast),
+        ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory)
+    ));
+}

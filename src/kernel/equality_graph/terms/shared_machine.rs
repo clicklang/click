@@ -474,7 +474,8 @@ impl TermClasses {
                         }
                     }
                 }
-                N::IntegerToMachine { .. }
+                N::ThreadHandle(_)
+                | N::IntegerToMachine { .. }
                 | N::BoolCast { .. }
                 | N::PointerAddress { .. }
                 | N::Legacy(_)

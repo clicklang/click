@@ -39,8 +39,12 @@ still need byte offsets; it must not be mislabeled as a single field.
 
 Scalar C++ reference locals use a carrying pointer named `&r`, so a proof
 reads the referent as `r` and its address as `&r`. Binding a reference is not
-an assignment; `assignment(r, N)` is refused. Record reference locals remain
-an importer coverage question in [C++ support](../roadmap/cpp-support.md).
+an assignment; `assignment(r, N)` is refused. Struct/class reference locals
+carry the same address and retain their nominal layout: `r.field` reads a
+field of the referent and `&r` names its address. They introduce no ownership,
+copy, or destruction of that object; reads and writes use the caller's held
+permissions. Pointer-based bindings check the entire record's live storage
+without loading fields. See [supported C++](../docs/reference/cli/import.md).
 
 ## Decisions and history
 

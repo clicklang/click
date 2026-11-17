@@ -86,18 +86,18 @@ void inspect(struct node* parent) {
                     step();
                     have separate(loop(0).statement(0).footprint, memory(parent->right)) by { normalize() using {}; }
                     have defined(parent->right) by {
-                        preserve(separate(loop(0).statement(0).footprint, memory(parent->right)));
+                        preserve(memory(parent->right), loop(0).statement(0));
                     }
                     have parent->right == at(before_sibling, parent->right) by {
-                        preserve(separate(loop(0).statement(0).footprint, memory(parent->right)));
+                        preserve(memory(parent->right), loop(0).statement(0));
                     }
                     have separate(loop(0).statement(0).footprint, memory(parent->left)) by { normalize() using {}; }
                     have parent->left == at(before_sibling, parent->left) by {
-                        preserve(separate(loop(0).statement(0).footprint, memory(parent->left)));
+                        preserve(memory(parent->left), loop(0).statement(0));
                     }
                     have separate(loop(0).statement(0).footprint, memory(parent->left->left)) by { normalize() using {}; }
                     have parent->left->left == at(before_sibling, parent->left->left) by {
-                        preserve(separate(loop(0).statement(0).footprint, memory(parent->left->left)));
+                        preserve(memory(parent->left->left), loop(0).statement(0));
                     }
                     have sibling == model by { known(); }
                     mark split;

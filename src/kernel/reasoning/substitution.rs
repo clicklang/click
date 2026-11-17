@@ -450,6 +450,9 @@ fn walk_program_function<S: VariableSubstitution + ?Sized>(
         .iter()
         .map(|resource| walk_resource_spec(resource, s))
         .collect();
+    interface.resource_transfer_rule = std::sync::Arc::new(
+        crate::kernel::functions::SummaryResourceTransferRule::compile(&interface),
+    );
     interface.resource_constructors = function
         .resource_constructors()
         .iter()
@@ -579,6 +582,7 @@ fn walk_program_function<S: VariableSubstitution + ?Sized>(
         .predicate_unfoldings()
         .iter()
         .map(|unfolding| PredicateUnfolding {
+            requirement_source: unfolding.requirement_source.clone(),
             predicate: s.spec_proposition(&unfolding.predicate),
             body: s.spec_proposition(&unfolding.body),
         })
@@ -728,6 +732,11 @@ fn walk_resource<S: VariableSubstitution + ?Sized>(resource: &Resource, s: &S) -
                 identity.mutex.clone()
             },
         }),
+        Resource::ConditionalMutexGuard(carrier) => {
+            let mut mapped = (**carrier).clone();
+            mapped.held = s.condition(&carrier.held);
+            Resource::ConditionalMutexGuard(std::sync::Arc::new(mapped))
+        }
         Resource::MutexGuard(identity) => Resource::MutexGuard(MutexIdentity {
             epoch: identity.epoch,
             mutex: if identity.epoch.is_none() {
@@ -940,8 +949,6 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
     match statement {
         ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -2746,8 +2753,6 @@ pub(in crate::kernel) fn collect_execution_statement_bound_variables(
     match statement {
         ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -3288,6 +3293,9 @@ fn collect_resource_bound_variables(resource: &Resource, variables: &mut BTreeSe
                 collect_pointer_bound_variables(&identity.mutex, variables);
             }
         }
+        Resource::ConditionalMutexGuard(carrier) => {
+            collect_condition_bound_variables(&carrier.held, variables)
+        }
         Resource::MutexGuard(identity) | Resource::MutexLive(identity) => {
             if identity.epoch.is_none() {
                 let pointer = &identity.mutex;
@@ -3399,6 +3407,7 @@ fn collect_scoped_leaf_bound_variables(
 
 fn collect_bitvector_bound_variables(term: &MachineTerm, variables: &mut BTreeSet<Variable>) {
     match term {
+        MachineTerm::ThreadHandle(_) => {}
         bits32_constant!(_) | MachineTerm::Variable(_) => {}
         crate::kernel::binary_bitvector32_term!(left, right) => {
             collect_bitvector_bound_variables(left, variables);
@@ -5899,6 +5908,7 @@ pub(crate) fn substitute_bitvector_variable(
     to: &MachineTerm,
 ) -> MachineTerm {
     match term {
+        MachineTerm::ThreadHandle(_) => term.clone(),
         MachineTerm::Constant { .. } => term.clone(),
         MachineTerm::Variable(variable) if *variable == from => to.clone(),
         MachineTerm::Variable(variable) => {
@@ -8135,6 +8145,9 @@ fn substitute_pointer_variable_in_spec_proposition(
             end: substitute_pointer_variable_in_spec_expression(end, from, to),
             element_width: *element_width,
         },
+        SpecProposition::MutexHeld(expression) => SpecProposition::MutexHeld(Box::new(
+            substitute_pointer_variable_in_spec_expression(expression, from, to),
+        )),
         SpecProposition::Defined(expression) => SpecProposition::Defined(
             substitute_pointer_variable_in_spec_expression(expression, from, to),
         ),
@@ -9429,9 +9442,6 @@ mod integer_range_fold_substitution_tests {
             &pointer,
             crate::kernel::LoadKind::Int32,
         );
-        let (source_memory_state, _) =
-            crate::kernel::eval::registered_load_for_variable(&load_variable)
-                .expect("the source load must be registered");
         let body = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
             MachineTerm::Variable(load_variable),
@@ -9457,7 +9467,9 @@ mod integer_range_fold_substitution_tests {
                 .unwrap()
                 .1
         );
-        assert_eq!(retained_state, &source_memory_state);
+        // A new address retains the producer's live memory, rather than
+        // reusing the original address's empty version point.
+        assert_eq!(retained_state, &memory);
         assert_eq!(pointer.offset, PointerOffsetTerm::Constant(0));
     }
 
@@ -9480,9 +9492,6 @@ mod integer_range_fold_substitution_tests {
             &pointer,
             crate::kernel::LoadKind::Int32,
         );
-        let (source_memory_state, _) =
-            crate::kernel::eval::registered_load_for_variable(&load_variable)
-                .expect("the source load must be registered");
         let body = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
             MachineTerm::Variable(load_variable),
@@ -9508,7 +9517,9 @@ mod integer_range_fold_substitution_tests {
                 .unwrap()
                 .1
         );
-        assert_eq!(retained_state, &source_memory_state);
+        // A new address retains the producer's live memory, rather than
+        // reusing the original address's empty version point.
+        assert_eq!(retained_state, &memory);
         assert_eq!(pointer.offset, PointerOffsetTerm::Constant(4));
     }
 

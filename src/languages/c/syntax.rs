@@ -12411,6 +12411,7 @@ impl Parser {
                 if matches!(
                     interface_type,
                     InterfaceType::Int32Array(_)
+                        | InterfaceType::UInt32Array(_)
                         | InterfaceType::CharArray(_, _)
                         | InterfaceType::UInt8Array(_)
                         | InterfaceType::Float32Array(_)

@@ -170,8 +170,8 @@ expansion output.
   loop's invariant bundle with `solve()`, as a function's exit closes each
   `ensures`; prove a member `solve()` misses with `have` before the back edge.
   The retired `close_invariants` tactic is rejected.
-- `unfold(name);`: make the predicate `name` transparent for the rest of the
-  branch, in its facts, the current goal, and later goals.
+- `unfold(predicate(args));`: open one selected application in the current
+  facts and goal.
 - `unfold(resource);`: consume one owned composite resource fact and expose its
   immediate body facts.
 - `fold(resource);`: require every declared pure body fact exactly, by
@@ -219,7 +219,7 @@ expansion output.
 - `witness { k: expression };`: prove the current existential goal by substituting
   the given int32 expression for binder `k`.
 - `known();`: close a goal already present as the same semantic fact; it
-  does not normalize, extract, or transport a new fact.
+  does not normalize or transport a new fact.
 - `normalize();`: close a pure goal by context-free computation.
 - `rewrite(from, to);`: rewrite the current proposition once using an exact
   available equality; the [tactic reference](../reference/tactics/index.md)
@@ -328,7 +328,7 @@ theorem int32_sign_split(x: int32) {
 }
 ```
 
-`unfold(predicate)`, `apply(theorem)`, `have`, and `fold(resource)` update the
+`unfold(predicate(args))`, `apply(theorem)`, `have`, and `fold(resource)` update the
 current proof context immediately. They can therefore prepare the exact pure
 fact or resource fact required by the following `step()` or `fold(resource)`.
 Applications after function exit remain path-local, so `result` and post-state
@@ -420,7 +420,7 @@ first:
 requires bytes::contains(p, 0, n as uint64, 'x');
 ensures opened_contains: bytes::contains(p, 0, n as uint64, 'x') by {
     step_until(function.exit);
-    unfold(bytes::contains);
+    unfold(bytes::contains(p, 0, n as uint64, 'x'));
     obtain (found: uint64) {
         0u64 <= found and found < n as uint64 and p[found] == 'x'
     }
@@ -636,7 +636,7 @@ Practical approach:
 
 1. Find the failing mdtest and the exact guarantee label.
 2. Read pure facts to learn which branch/path failed.
-3. If a predicate is still opaque, add `unfold(predicate_name);`.
+3. If a predicate is still opaque, add `unfold(predicate(args));`.
 4. If memory preservation is missing, check `viewable`, `separate(memory(...))`,
    the contract's `owns`/`views` clauses, and the loop's owned resources.
 5. If arithmetic overflow appears, add numeric requirements or invariants.

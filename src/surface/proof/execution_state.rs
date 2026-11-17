@@ -1502,8 +1502,7 @@ pub(super) struct LoopReturnProof {
 
 #[derive(Clone)]
 pub(super) struct DeferredPostExecutionTactic {
-    pub(super) lexical_bindings:
-        Option<crate::persistent::PersistentMap<String, ContractExpression>>,
+    pub(super) lexical_bindings: Option<PersistentBinderMap<ContractExpression>>,
     pub(super) tactic_index: usize,
     pub(super) source_index: usize,
     pub(super) tactic: PostExecutionTactic,
@@ -1777,7 +1776,7 @@ mod proof_fact_store_tests {
 
     #[test]
     fn shared_vec_suffix_since_reports_the_appended_entries() {
-        let mut history = SharedVec::from(vec![1u32, 2]);
+        let mut history = crate::kernel::proof::SharedVec::from(vec![1u32, 2]);
         let ancestor = history.clone();
         history.push(3);
         history.push(4);
@@ -1796,7 +1795,7 @@ pub(super) fn post_execution_tactic_timing(
         PostExecutionTactic::Apply(_) => ("apply", "smart"),
         PostExecutionTactic::Have(have) => (
             "have",
-            if smart_solve_unfold_prefix(&have.proof).is_some() {
+            if super::surface_construction::have_proof_is_smart_solve(&have.proof) {
                 "smart"
             } else {
                 "control"
@@ -1832,7 +1831,7 @@ pub(super) struct ExecutionView<'a> {
     function_entry_state: Option<&'a ExecutionState>,
     /// Lexical names available where this certificate is emitted. They are
     /// presentation hints, never proof authority.
-    pub(super) proof_bindings: Option<&'a PersistentMap<String, ContractExpression>>,
+    pub(super) proof_bindings: Option<&'a PersistentBinderMap<ContractExpression>>,
 }
 
 impl<'a> ExecutionView<'a> {

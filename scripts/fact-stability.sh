@@ -7,7 +7,7 @@
 #
 #   scripts/fact-stability.sh [MDTEST_FILTER] [OUTPUT]
 #
-# See docs/internals/spellability.md#lowering-is-fact-stable.
+# See docs/internals/raise-lower-principle.md#lowering-is-fact-stable.
 set -euo pipefail
 
 filter="${1:-}"

@@ -116,7 +116,7 @@ pub(in crate::kernel) struct MachineAtom(crate::kernel::SharedMachineIntegerTerm
 ///
 /// Both offsets sign-extend before scaling, so they differ only where the
 /// `int32` product wraps. `(char *)p + i * 4` keeps that byte offset when it
-/// is formed (`docs/internals/spellability.md#lowering-is-fact-stable`); this
+/// is formed (`docs/internals/raise-lower-principle.md#lowering-is-fact-stable`); this
 /// is the relation that names it as element `i`. The terms are imported as
 /// shared terms, so naming them attaches no spelling to an operand another
 /// check holds in shared form. A constant-size match on the condition;
@@ -1936,7 +1936,7 @@ impl EqualityGraph {
                             };
                             pointers.push(address.as_ref().clone());
                         }
-                        N::MachineLiteral(_) => {}
+                        N::MachineLiteral(_) | N::ThreadHandle(_) => {}
                         // Native pointer discovery treats conditionals, Boolean
                         // casts and folds as opaque; do not inspect their children.
                         N::MachineIf { .. }
@@ -2006,6 +2006,18 @@ impl EqualityGraph {
             state.register_pointer_address(&pointer);
         }
         state.close(Vec::new());
+    }
+
+    /// Recover one typed handle witness from the selected word's equality
+    /// class. This is a value identity lookup; the thread ledger grants rights.
+    pub(in crate::kernel) fn thread_handle_for_word(
+        &self,
+        term: &MachineTerm,
+    ) -> Option<crate::kernel::ThreadHandleId> {
+        let term = exact_read_comparison_input(term);
+        let mut state = self.state.lock().expect("equality graph");
+        self.register_machine_operands(&mut state, &term, &term);
+        state.terms.thread_handle(&term)
     }
 
     pub(in crate::kernel) fn are_uint64_equal(
@@ -3747,9 +3759,9 @@ mod tests {
         assert!(other_spelling.are_equal(&left, &right));
         assert!(other_spelling.are_equal(&right, &left));
 
-        let mut unspellable = EqualityGraph::default();
-        unspellable.add_equality(&at(a, 0), &at(b, i64::MIN));
-        unspellable.add_offset_equality(
+        let mut unraisable = EqualityGraph::default();
+        unraisable.add_equality(&at(a, 0), &at(b, i64::MIN));
+        unraisable.add_offset_equality(
             &PointerOffsetTerm::Add(
                 Box::new(x.clone()),
                 Box::new(PointerOffsetTerm::Constant(i64::MIN)),
@@ -3758,9 +3770,9 @@ mod tests {
         );
         // The raw address applications can use the stated MIN translation
         // directly, without constructing its unrepresentable opposite sign.
-        assert!(unspellable.are_equal(&left, &right));
-        assert!(unspellable.are_equal(&right, &left));
-        assert!(!unspellable.are_equal(&left, &right.offset_by_bytes(1)));
+        assert!(unraisable.are_equal(&left, &right));
+        assert!(unraisable.are_equal(&right, &left));
+        assert!(!unraisable.are_equal(&left, &right.offset_by_bytes(1)));
     }
 
     #[test]

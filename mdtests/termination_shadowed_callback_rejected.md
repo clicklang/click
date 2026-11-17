@@ -59,7 +59,7 @@ int32 f(int32 (*helper)(int32), int32 n) {
 }
 
 theorem spin_has_One() {
-    ensures One(&spin) by { unfold(One); solve(); }
+    ensures One(&spin) by { unfold(One(&spin)); solve(); }
 }
 
 int32 caller(int32 n) {

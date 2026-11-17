@@ -350,6 +350,7 @@ impl MachineTerm {
 
     pub(crate) fn as_const(&self) -> Option<u32> {
         match self {
+            Self::ThreadHandle(_) => None,
             Self::Cast {
                 spelling: MachineCastSpelling::Generic,
                 ..
@@ -4674,7 +4675,6 @@ impl LValue {
         pointee_volatile: bool,
     ) -> Self {
         Self {
-            local_reference: None,
             storage: LValueStorage::Local { name: name.into() },
             value_type,
             volatile,
@@ -4705,7 +4705,6 @@ impl LValue {
         pointee_volatile: bool,
     ) -> Self {
         Self {
-            local_reference: None,
             storage: LValueStorage::Memory { pointer },
             value_type,
             volatile,
@@ -4719,14 +4718,6 @@ impl LValue {
             access_class: None,
             object_class: None,
         }
-    }
-
-    pub(in crate::kernel) fn with_local_reference(
-        mut self,
-        reference: Option<super::super::loans::LocalScalarReference>,
-    ) -> Self {
-        self.local_reference = reference;
-        self
     }
 
     pub(in crate::kernel) fn with_constant(mut self, constant: bool) -> Self {
@@ -5020,7 +5011,7 @@ impl Pointer {
 
     /// The pointer a logical read of `address` in `memory` reads, named by
     /// the cell's version as every logical read is
-    /// (`docs/internals/spellability.md`): never by a pointer the cell
+    /// (`docs/internals/raise-lower-principle.md`): never by a pointer the cell
     /// holds, which the read-over-write authority relates to the read
     /// (`eval::pointer_read_over_write_value`). A cell holding its own read
     /// is that read.

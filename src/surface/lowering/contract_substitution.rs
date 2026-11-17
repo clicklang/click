@@ -1,46 +1,44 @@
 use super::*;
 use crate::kernel::{bits32_constant, constant_u32};
 use std::borrow::Cow;
+use std::sync::Arc;
 
-pub(in crate::surface) fn unfold_structural_invariant_proposition(
+pub(in crate::surface) fn unfold_surface_predicates(
     predicate_environment: &PredicateEnvironment,
     proposition: &ClickProposition,
-    unfolded_predicates: &[String],
+    selected_definitions: &[String],
 ) -> Result<ClickProposition, String> {
-    if unfolded_predicates.is_empty() {
-        return Ok(proposition.clone());
-    }
-
-    for name in unfolded_predicates {
+    for name in selected_definitions {
         if predicate_environment.get(name).is_none() {
             return Err(format!("unknown predicate `{name}`"));
         }
     }
 
-    let mut active = BTreeSet::new();
-    unfold_click_predicates_in_proposition_with_active(
+    unfold_selected_predicates_in_proposition(
         predicate_environment,
-        unfolded_predicates,
+        &|name| selected_definitions.contains(name),
         proposition,
-        &mut active,
+        &mut BTreeSet::new(),
+        false,
     )
 }
 
 pub(in crate::surface) fn unfold_click_predicates_in_proposition_with_active(
     predicate_environment: &PredicateEnvironment,
-    unfolded_predicates: &[String],
+    selected_definitions: &[String],
     proposition: &ClickProposition,
     active: &mut BTreeSet<String>,
 ) -> Result<ClickProposition, String> {
     unfold_selected_predicates_in_proposition(
         predicate_environment,
         &|name| {
-            unfolded_predicates
+            selected_definitions
                 .iter()
                 .any(|predicate| predicate == name)
         },
         proposition,
         active,
+        true,
     )
 }
 
@@ -50,6 +48,7 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
     selected: &impl Fn(&String) -> bool,
     proposition: &ClickProposition,
     active: &mut BTreeSet<String>,
+    recursive: bool,
 ) -> Result<ClickProposition, String> {
     match proposition {
         ClickProposition::Value(expression) => {
@@ -60,6 +59,7 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                     selected,
                     body,
                     active,
+                    recursive,
                 )
             } else {
                 Ok(ClickProposition::Value(reduced.into_owned()))
@@ -74,12 +74,17 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 .get(name)
                 .ok_or_else(|| format!("unknown predicate `{name}`"))?;
             let unfolded = instantiate_click_predicate_definition(definition, arguments)?;
-            let unfolded = unfold_selected_predicates_in_proposition(
-                predicate_environment,
-                selected,
-                &unfolded,
-                active,
-            )?;
+            let unfolded = if recursive {
+                unfold_selected_predicates_in_proposition(
+                    predicate_environment,
+                    selected,
+                    &unfolded,
+                    active,
+                    true,
+                )?
+            } else {
+                unfolded
+            };
             active.remove(name);
             Ok(unfolded)
         }
@@ -126,6 +131,7 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 selected,
                 proposition,
                 active,
+                recursive,
             )?),
         }),
         ClickProposition::And(left, right) => Ok(ClickProposition::And(
@@ -134,12 +140,14 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 selected,
                 left,
                 active,
+                recursive,
             )?),
             Box::new(unfold_selected_predicates_in_proposition(
                 predicate_environment,
                 selected,
                 right,
                 active,
+                recursive,
             )?),
         )),
         ClickProposition::Or(left, right) => Ok(ClickProposition::Or(
@@ -148,12 +156,14 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 selected,
                 left,
                 active,
+                recursive,
             )?),
             Box::new(unfold_selected_predicates_in_proposition(
                 predicate_environment,
                 selected,
                 right,
                 active,
+                recursive,
             )?),
         )),
         ClickProposition::Not(body) => Ok(ClickProposition::Not(Box::new(
@@ -162,6 +172,7 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 selected,
                 body,
                 active,
+                recursive,
             )?,
         ))),
         ClickProposition::Implies(left, right) => Ok(ClickProposition::Implies(
@@ -170,12 +181,14 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 selected,
                 left,
                 active,
+                recursive,
             )?),
             Box::new(unfold_selected_predicates_in_proposition(
                 predicate_environment,
                 selected,
                 right,
                 active,
+                recursive,
             )?),
         )),
         ClickProposition::ForAll {
@@ -192,6 +205,7 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 selected,
                 body,
                 active,
+                recursive,
             )?),
         }),
         ClickProposition::Exists {
@@ -208,6 +222,7 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 selected,
                 body,
                 active,
+                recursive,
             )?),
         }),
         ClickProposition::RangeAll {
@@ -226,6 +241,7 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 selected,
                 body,
                 active,
+                recursive,
             )?),
         }),
         ClickProposition::RangeAny {
@@ -244,6 +260,7 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 selected,
                 body,
                 active,
+                recursive,
             )?),
         }),
         ClickProposition::PredicateCall { name, arguments } => {
@@ -321,6 +338,13 @@ pub(in crate::surface) fn substitute_click_proposition_in(
     proposition: &ClickProposition,
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<ClickProposition, String> {
+    if substitutions.source.is_some() {
+        let mut names = BTreeSet::<crate::kernel::BindingName>::new();
+        collect_click_proposition_referenced_bindings(proposition, &mut names);
+        let selected = substitutions.selected(names);
+        return substitute_click_proposition_in(proposition, &selected);
+    }
+
     match proposition {
         proposition @ (ClickProposition::At { .. }
         | ClickProposition::And(..)
@@ -457,9 +481,11 @@ fn substitute_click_proposition_nonlogical(
             let (name, body) = prepare_click_proposition_binding_body(name, body, &scoped)?;
             Ok(ClickProposition::ForAll {
                 click_type: interface_type.clone(),
-                written_name: written_name
-                    .clone()
-                    .or_else(|| (name != original_name).then_some(original_name)),
+                written_name: written_name.clone().or_else(|| {
+                    (name != original_name)
+                        .then(|| original_name.written().map(str::to_owned))
+                        .flatten()
+                }),
                 name,
                 body: Box::new(body),
             })
@@ -475,9 +501,11 @@ fn substitute_click_proposition_nonlogical(
             let (name, body) = prepare_click_proposition_binding_body(name, body, &scoped)?;
             Ok(ClickProposition::Exists {
                 click_type: interface_type.clone(),
-                written_name: written_name
-                    .clone()
-                    .or_else(|| (name != original_name).then_some(original_name)),
+                written_name: written_name.clone().or_else(|| {
+                    (name != original_name)
+                        .then(|| original_name.written().map(str::to_owned))
+                        .flatten()
+                }),
                 name,
                 body: Box::new(body),
             })
@@ -492,9 +520,11 @@ fn substitute_click_proposition_nonlogical(
             let scoped = substitutions.without_binding(item);
             let original_item = item.clone();
             let (item, body) = prepare_click_proposition_binding_body(item, body, &scoped)?;
-            let written_item = written_item
-                .clone()
-                .or_else(|| (item != original_item).then_some(original_item));
+            let written_item = written_item.clone().or_else(|| {
+                (item != original_item)
+                    .then(|| original_item.written().map(str::to_owned))
+                    .flatten()
+            });
             Ok(ClickProposition::RangeAll {
                 start: substitute_contract_expression_in(start, substitutions)?,
                 end: substitute_contract_expression_in(end, substitutions)?,
@@ -513,9 +543,11 @@ fn substitute_click_proposition_nonlogical(
             let scoped = substitutions.without_binding(item);
             let original_item = item.clone();
             let (item, body) = prepare_click_proposition_binding_body(item, body, &scoped)?;
-            let written_item = written_item
-                .clone()
-                .or_else(|| (item != original_item).then_some(original_item));
+            let written_item = written_item.clone().or_else(|| {
+                (item != original_item)
+                    .then(|| original_item.written().map(str::to_owned))
+                    .flatten()
+            });
             Ok(ClickProposition::RangeAny {
                 start: substitute_contract_expression_in(start, substitutions)?,
                 end: substitute_contract_expression_in(end, substitutions)?,
@@ -543,596 +575,111 @@ fn substitute_click_proposition_nonlogical(
 }
 
 fn prepare_click_proposition_binding_body(
-    binder: &str,
+    binder: &SurfaceBinder,
     body: &ClickProposition,
     substitutions: &ContractSubstitutions<'_>,
-) -> Result<(String, ClickProposition), String> {
+) -> Result<(SurfaceBinder, ClickProposition), String> {
     if !substitutions_reference_name(substitutions, binder) {
         return Ok((
-            binder.to_string(),
+            binder.clone(),
             substitute_click_proposition_in(body, substitutions)?,
         ));
     }
-
-    let fresh = fresh_click_binding_name_for_proposition(binder, body, substitutions);
-    let renaming = BTreeMap::from([(
-        binder.to_string(),
-        ContractExpression::CBinding(fresh.clone()),
-    )]);
-    let renamed = substitute_click_proposition(body, &renaming)?;
-    Ok((
-        fresh,
-        substitute_click_proposition_in(&renamed, substitutions)?,
-    ))
+    let fresh = SurfaceBinder::fresh();
+    let mut scoped = substitutions.clone();
+    scoped.insert_value(binder.clone(), fresh.reference());
+    Ok((fresh, substitute_click_proposition_in(body, &scoped)?))
 }
-
 fn prepare_contract_expression_binding_body(
-    binder: &str,
+    binder: &SurfaceBinder,
     body: &ContractExpression,
     substitutions: &ContractSubstitutions<'_>,
-) -> Result<(String, ContractExpression), String> {
-    if substitutions.fresh_synthesis_binders {
-        let name = match substitutions.value(binder) {
-            Some(ContractExpression::Binding(name)) => name.clone(),
-            _ => binder.to_string(),
-        };
-        return Ok((
-            name,
-            substitute_contract_expression_in(body, substitutions)?,
-        ));
-    }
+) -> Result<(SurfaceBinder, ContractExpression), String> {
     if !substitutions_reference_name(substitutions, binder) {
         return Ok((
-            binder.to_string(),
+            binder.clone(),
             substitute_contract_expression_in(body, substitutions)?,
         ));
     }
-
-    let fresh = fresh_click_binding_name_for_expression(binder, body, substitutions);
-    let renaming = BTreeMap::from([(
-        binder.to_string(),
-        ContractExpression::CBinding(fresh.clone()),
-    )]);
-    let renamed = substitute_contract_expression(body, &renaming)?;
-    Ok((
-        fresh,
-        substitute_contract_expression_in(&renamed, substitutions)?,
-    ))
+    let fresh = SurfaceBinder::fresh();
+    let mut scoped = substitutions.clone();
+    scoped.insert_value(binder.clone(), fresh.reference());
+    Ok((fresh, substitute_contract_expression_in(body, &scoped)?))
 }
-
 fn prepare_contract_range_fold_body(
-    accumulator: &str,
-    item: &str,
+    accumulator: &SurfaceBinder,
+    item: &SurfaceBinder,
     body: &ContractExpression,
     substitutions: &ContractSubstitutions<'_>,
-) -> Result<(String, String, ContractExpression), String> {
-    let mut used = substitutions
-        .replaced_names()
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    collect_contract_expression_referenced_names(body, &mut used);
-    collect_contract_expression_binding_names(body, &mut used);
-    for expression in substitutions.substituted_expressions() {
-        collect_contract_expression_referenced_names(expression, &mut used);
-        collect_contract_expression_binding_names(expression, &mut used);
-    }
-    used.insert(accumulator.to_string());
-    used.insert(item.to_string());
-
-    let original_accumulator = accumulator.to_string();
-    let original_item = item.to_string();
-    let mut accumulator = original_accumulator.clone();
-    let mut item = original_item.clone();
-    let mut renamed_body = body.clone();
-
-    if substitutions_reference_name(substitutions, &original_accumulator) {
-        let fresh = fresh_click_binding_name(used.clone());
-        used.insert(fresh.clone());
-        let renaming = BTreeMap::from([(
-            original_accumulator.clone(),
-            ContractExpression::CBinding(fresh.clone()),
-        )]);
-        renamed_body = substitute_contract_expression(&renamed_body, &renaming)?;
-        accumulator = fresh;
-    }
-    if original_item != original_accumulator
-        && substitutions_reference_name(substitutions, &original_item)
-    {
-        let fresh = fresh_click_binding_name(used);
-        let renaming = BTreeMap::from([(
-            original_item.clone(),
-            ContractExpression::CBinding(fresh.clone()),
-        )]);
-        renamed_body = substitute_contract_expression(&renamed_body, &renaming)?;
-        item = fresh;
-    } else if original_item == original_accumulator {
-        item = accumulator.clone();
-    }
-
+) -> Result<(SurfaceBinder, SurfaceBinder, ContractExpression), String> {
+    let mut scoped = substitutions.clone();
+    let fresh_acc = if substitutions_reference_name(substitutions, accumulator) {
+        let fresh = SurfaceBinder::fresh();
+        scoped.insert_value(accumulator.clone(), fresh.reference());
+        fresh
+    } else {
+        accumulator.clone()
+    };
+    let fresh_item = if item == accumulator {
+        fresh_acc.clone()
+    } else if substitutions_reference_name(substitutions, item) {
+        let fresh = SurfaceBinder::fresh();
+        scoped.insert_value(item.clone(), fresh.reference());
+        fresh
+    } else {
+        item.clone()
+    };
     Ok((
-        accumulator,
-        item,
-        substitute_contract_expression_in(&renamed_body, substitutions)?,
+        fresh_acc,
+        fresh_item,
+        substitute_contract_expression_in(body, &scoped)?,
     ))
 }
 
-/// A `match` arm binds its payload names inside its body, so a replacement that
-/// still applies there must not itself mention one of them: substituting it
-/// under the binder would silently rebind the caller's name to this arm's
-/// payload and make the instantiated body say something other than the
-/// definition. Quantifier and range-fold binders avoid that by renaming
-/// themselves out of the way first; a match arm now follows the same rule, and
-/// a binding a live replacement mentions is renamed before the substitution
-/// reaches the body. Renaming a binding also un-shadows a replacement keyed by
-/// its old name, so the surviving arm bindings decide the final substitutions,
-/// and anything a rename could not separate is refused rather than captured.
+/// Only live replacements in this arm can capture its payload binders.
 fn prepare_contract_match_arm(
     arm: &AlgebraicMatchArm,
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<AlgebraicMatchArm, String> {
-    if substitutions.fresh_synthesis_binders {
-        return Ok(AlgebraicMatchArm {
-            body: substitute_contract_expression_in(&arm.body, substitutions)?,
-            type_name: arm.type_name.clone(),
-            variant: arm.variant.clone(),
-            bindings: arm
-                .bindings
-                .iter()
-                .map(|name| match substitutions.value(name) {
-                    Some(ContractExpression::Binding(name)) => name.clone(),
-                    _ => name.clone(),
-                })
-                .collect(),
-        });
+    let mut scoped = substitutions.clone();
+    for name in &arm.bindings {
+        scoped = scoped.without_binding(name);
     }
-    let mut shadowed = substitutions.clone();
-    for binding in &arm.bindings {
-        shadowed = shadowed.without_binding(binding);
-    }
-
-    let mut bindings = arm.bindings.clone();
-    let mut body = arm.body.clone();
-    for binding in &mut bindings {
-        if !match_arm_replacements_reference_name(&body, &shadowed, binding) {
-            continue;
+    let mut captures = BTreeSet::new();
+    for name in contract_expression_referenced_bindings(&arm.body) {
+        if let Some(references) = scoped.references.get(&name) {
+            captures.extend(references.iter().cloned());
         }
-        let fresh = fresh_click_binding_name_for_expression(binding, &body, &shadowed);
-        let renaming =
-            BTreeMap::from([(binding.clone(), ContractExpression::Binding(fresh.clone()))]);
-        body = substitute_contract_expression(&body, &renaming)?;
-        *binding = fresh;
     }
-
-    let mut arm_substitutions = substitutions.clone();
-    for binding in &bindings {
-        arm_substitutions = arm_substitutions.without_binding(binding);
-    }
-    let renamed = AlgebraicMatchArm {
+    let bindings = arm
+        .bindings
+        .iter()
+        .map(|name| {
+            if !captures.contains(&name.kernel_name()) {
+                return name.clone();
+            }
+            let fresh = SurfaceBinder::fresh();
+            scoped.insert_value(name.clone(), fresh.reference());
+            fresh
+        })
+        .collect();
+    Ok(AlgebraicMatchArm {
+        bindings,
+        body: substitute_contract_expression_in(&arm.body, &scoped)?,
         type_name: arm.type_name.clone(),
         variant: arm.variant.clone(),
-        bindings,
-        body,
-    };
-    refuse_captured_match_arm_substitution(&renamed, &arm_substitutions)?;
-    Ok(AlgebraicMatchArm {
-        body: substitute_contract_expression_in(&renamed.body, &arm_substitutions)?,
-        ..renamed
     })
 }
 
-/// Whether a replacement that actually reaches `body` mentions `name`. Only a
-/// replacement keyed by a name the arm body still refers to can be substituted
-/// under this arm's binders, so a replacement that lands elsewhere — the match
-/// scrutinee, say, which is outside them — is not a reason to rename anything.
-/// Renaming a binding no substitution reaches would change the instantiated
-/// body for nothing and lose the spelling a later exact check compares against.
-fn match_arm_replacements_reference_name(
-    body: &ContractExpression,
+fn substitutions_reference_name(
     substitutions: &ContractSubstitutions<'_>,
-    name: &str,
+    name: &SurfaceBinder,
 ) -> bool {
-    let mut body_names = BTreeSet::new();
-    collect_contract_expression_referenced_names(body, &mut body_names);
     substitutions
-        .values
-        .iter()
-        .filter(|(key, _)| body_names.contains(*key))
-        .any(|(_, replacement)| {
-            let mut names = BTreeSet::new();
-            collect_contract_expression_referenced_names(replacement, &mut names);
-            names.contains(name)
-        })
+        .free_references
+        .contains_key(&name.kernel_name())
 }
 
-/// The residual check for [`prepare_contract_match_arm`]: after renaming, no
-/// replacement that still reaches this arm's body may mention a name the arm
-/// binds. The scan is bounded by the arm's own free names and the replacements
-/// that actually reach it.
-fn refuse_captured_match_arm_substitution(
-    arm: &AlgebraicMatchArm,
-    arm_substitutions: &ContractSubstitutions<'_>,
-) -> Result<(), String> {
-    if arm.bindings.is_empty() {
-        return Ok(());
-    }
-    let mut body_names = BTreeSet::new();
-    collect_contract_expression_referenced_names(&arm.body, &mut body_names);
-    for (name, replacement) in arm_substitutions.values.iter() {
-        if !body_names.contains(name) {
-            continue;
-        }
-        let mut replacement_names = BTreeSet::new();
-        collect_contract_expression_referenced_names(replacement, &mut replacement_names);
-        for binding in &arm.bindings {
-            if replacement_names.contains(binding) {
-                return Err(format!(
-                    "substituting `{name}` into the `{}::{}` arm would capture `{binding}`, \
-                     which that arm binds; rename the arm binding or the substituted name",
-                    arm.type_name, arm.variant
-                ));
-            }
-        }
-    }
-    Ok(())
-}
-
-fn substitutions_reference_name(substitutions: &ContractSubstitutions<'_>, name: &str) -> bool {
-    if substitutions.fresh_synthesis_binders {
-        return false;
-    }
-    substitutions.substituted_expressions().any(|expression| {
-        let mut names = BTreeSet::new();
-        collect_contract_expression_referenced_names(expression, &mut names);
-        names.contains(name)
-    })
-}
-
-fn fresh_click_binding_name_for_proposition(
-    binder: &str,
-    body: &ClickProposition,
-    substitutions: &ContractSubstitutions<'_>,
-) -> String {
-    let mut used = substitutions
-        .replaced_names()
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    collect_click_proposition_referenced_names(body, &mut used);
-    collect_click_proposition_binding_names(body, &mut used);
-    for expression in substitutions.substituted_expressions() {
-        collect_contract_expression_referenced_names(expression, &mut used);
-        collect_contract_expression_binding_names(expression, &mut used);
-    }
-    used.insert(binder.to_string());
-    fresh_click_binding_name(used)
-}
-
-fn fresh_click_binding_name_for_expression(
-    binder: &str,
-    body: &ContractExpression,
-    substitutions: &ContractSubstitutions<'_>,
-) -> String {
-    let mut used = substitutions
-        .replaced_names()
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    collect_contract_expression_referenced_names(body, &mut used);
-    collect_contract_expression_binding_names(body, &mut used);
-    for expression in substitutions.substituted_expressions() {
-        collect_contract_expression_referenced_names(expression, &mut used);
-        collect_contract_expression_binding_names(expression, &mut used);
-    }
-    used.insert(binder.to_string());
-    fresh_click_binding_name(used)
-}
-
-fn fresh_click_binding_name(used: BTreeSet<String>) -> String {
-    let mut index = 0usize;
-    loop {
-        let candidate = format!("__click_binder_{index}");
-        if !used.contains(&candidate) {
-            return candidate;
-        }
-        index += 1;
-    }
-}
-
-fn collect_click_proposition_binding_names(
-    proposition: &ClickProposition,
-    names: &mut BTreeSet<String>,
-) {
-    match proposition {
-        ClickProposition::Value(expression) => {
-            collect_contract_expression_binding_names(expression, names)
-        }
-
-        ClickProposition::Comparison { left, right, .. } => {
-            collect_contract_expression_binding_names(left, names);
-            collect_contract_expression_binding_names(right, names);
-        }
-        ClickProposition::FloatClassification { expression, .. } => {
-            collect_contract_expression_binding_names(expression, names);
-        }
-        ClickProposition::Separate { left, right } => {
-            collect_resource_subject_binding_names(left, names);
-            collect_resource_subject_binding_names(right, names);
-        }
-        ClickProposition::Contains { parent, child } => {
-            collect_resource_subject_binding_names(parent, names);
-            collect_resource_subject_binding_names(child, names);
-        }
-        ClickProposition::ResourceViewable { resource } => {
-            collect_resource_subject_binding_names(resource, names);
-        }
-        ClickProposition::Loadable { segment } => {
-            collect_contract_segment_binding_names(segment, names);
-        }
-        ClickProposition::Defined { expression } => {
-            collect_contract_expression_binding_names(expression, names);
-        }
-        ClickProposition::At { proposition, .. } | ClickProposition::Not(proposition) => {
-            collect_click_proposition_binding_names(proposition, names);
-        }
-        ClickProposition::And(left, right)
-        | ClickProposition::Or(left, right)
-        | ClickProposition::Implies(left, right) => {
-            collect_click_proposition_binding_names(left, names);
-            collect_click_proposition_binding_names(right, names);
-        }
-        ClickProposition::ForAll { name, body, .. }
-        | ClickProposition::Exists { name, body, .. } => {
-            names.insert(name.clone());
-            collect_click_proposition_binding_names(body, names);
-        }
-        ClickProposition::RangeAll {
-            start,
-            end,
-            item,
-            body,
-            ..
-        }
-        | ClickProposition::RangeAny {
-            start,
-            end,
-            item,
-            body,
-            ..
-        } => {
-            collect_contract_expression_binding_names(start, names);
-            collect_contract_expression_binding_names(end, names);
-            names.insert(item.clone());
-            collect_click_proposition_binding_names(body, names);
-        }
-        ClickProposition::PredicateCall { arguments, .. } => {
-            for argument in arguments {
-                collect_contract_expression_binding_names(argument, names);
-            }
-        }
-    }
-}
-
-pub(in crate::surface) fn collect_contract_expression_binding_names(
-    expression: &ContractExpression,
-    names: &mut BTreeSet<String>,
-) {
-    match expression {
-        ContractExpression::Proposition(proposition) => {
-            collect_click_proposition_binding_names(proposition, names)
-        }
-        ContractExpression::Resource(subject) => {
-            collect_resource_subject_binding_names(subject, names)
-        }
-        ContractExpression::RegionResult(_)
-        | ContractExpression::RegionAllocation(_)
-        | ContractExpression::RegionParameter { .. } => {}
-        ContractExpression::Lambda {
-            parameters, body, ..
-        } => {
-            names.extend(parameters.iter().map(|(name, _)| name.clone()));
-            collect_contract_expression_binding_names(body, names);
-        }
-        ContractExpression::Apply {
-            function,
-            arguments,
-        } => {
-            collect_contract_expression_binding_names(function, names);
-            for argument in arguments {
-                collect_contract_expression_binding_names(argument, names);
-            }
-        }
-
-        ContractExpression::ResourceField(_)
-        | ContractExpression::AlgebraicVariable { .. }
-        | ContractExpression::Binding(_)
-        | ContractExpression::IntegerLiteral(_) => {}
-        ContractExpression::AlgebraicConstructor { arguments, .. } => {
-            for argument in arguments {
-                collect_contract_expression_binding_names(argument, names);
-            }
-        }
-        ContractExpression::AlgebraicMatch { scrutinee, arms } => {
-            collect_contract_expression_binding_names(scrutinee, names);
-            for arm in arms {
-                names.extend(arm.bindings.iter().cloned());
-                collect_contract_expression_binding_names(&arm.body, names);
-            }
-        }
-        ContractExpression::SequenceLiteral(elements) => {
-            for element in elements {
-                collect_contract_expression_binding_names(element, names);
-            }
-        }
-        ContractExpression::SequenceConcat(left, right) => {
-            collect_contract_expression_binding_names(left, names);
-            collect_contract_expression_binding_names(right, names);
-        }
-        ContractExpression::QualifiedC { .. }
-        | ContractExpression::ProgramExpression(_)
-        | ContractExpression::CBinding(_)
-        | ContractExpression::ResourceWildcard => {}
-        ContractExpression::ArrayIndex { .. } => {}
-        ContractExpression::Field { base, .. }
-        | ContractExpression::Old(base)
-        | ContractExpression::At {
-            expression: base, ..
-        }
-        | ContractExpression::CUnary { operand: base, .. }
-        | ContractExpression::Negate(base)
-        | ContractExpression::BitwiseNot(base) => {
-            collect_contract_expression_binding_names(base, names);
-        }
-        ContractExpression::ResourceCount(resource) => {
-            collect_resource_clause_binding_names(resource, names);
-        }
-        crate::surface::binary_contract_expression!(left, right) => {
-            collect_contract_expression_binding_names(left, names);
-            collect_contract_expression_binding_names(right, names);
-        }
-        ContractExpression::If {
-            condition,
-            then_branch,
-            else_branch,
-        } => {
-            collect_click_proposition_binding_names(condition, names);
-            collect_contract_expression_binding_names(then_branch, names);
-            collect_contract_expression_binding_names(else_branch, names);
-        }
-        ContractExpression::RangeFold {
-            start,
-            end,
-            initial,
-            accumulator,
-            item,
-            body,
-        } => {
-            collect_contract_expression_binding_names(start, names);
-            collect_contract_expression_binding_names(end, names);
-            collect_contract_expression_binding_names(initial, names);
-            names.insert(accumulator.clone());
-            names.insert(item.clone());
-            collect_contract_expression_binding_names(body, names);
-        }
-        ContractExpression::Let {
-            name, value, body, ..
-        } => {
-            names.insert(name.clone());
-            collect_contract_expression_binding_names(value, names);
-            collect_contract_expression_binding_names(body, names);
-        }
-        ContractExpression::MethodCall {
-            receiver,
-            arguments,
-            ..
-        } => {
-            collect_contract_expression_binding_names(receiver, names);
-            for argument in arguments {
-                collect_contract_expression_binding_names(argument, names);
-            }
-        }
-        ContractExpression::Call { arguments, .. } => {
-            for argument in arguments {
-                collect_contract_expression_binding_names(argument, names);
-            }
-        }
-    }
-}
-
-fn collect_resource_subject_binding_names(
-    resource: &ResourceSubject,
-    names: &mut BTreeSet<String>,
-) {
-    match resource {
-        ResourceSubject::Emp => (),
-        ResourceSubject::Star(left, right) => {
-            collect_resource_subject_binding_names(left, names);
-            collect_resource_subject_binding_names(right, names);
-        }
-        ResourceSubject::Footprint(_) => {}
-        ResourceSubject::Parameter { name, .. } | ResourceSubject::Instance { name, .. } => {
-            names.insert(name.clone());
-        }
-        ResourceSubject::Captured { .. } => {}
-        ResourceSubject::Memory(segment) => collect_contract_segment_binding_names(segment, names),
-        ResourceSubject::SavedMemory { base, start, end } => {
-            for argument in [base, start].into_iter().chain(end.iter()) {
-                collect_contract_expression_binding_names(argument, names);
-            }
-        }
-        ResourceSubject::Declared { arguments, .. } => {
-            for argument in arguments {
-                collect_contract_expression_binding_names(argument, names);
-            }
-        }
-    }
-}
-
-fn collect_resource_clause_binding_names(resource: &ResourceClause, names: &mut BTreeSet<String>) {
-    match resource {
-        ResourceClause::Conditional {
-            condition,
-            resource,
-        } => {
-            collect_click_proposition_binding_names(condition, names);
-            collect_resource_clause_binding_names(resource, names);
-        }
-        ResourceClause::Named { binding, resource } => {
-            names.insert(binding.name.clone());
-            collect_resource_clause_binding_names(resource, names);
-        }
-        ResourceClause::ViewMemory(segment) | ResourceClause::OwnMemory(segment) => {
-            collect_contract_segment_binding_names(segment, names)
-        }
-        ResourceClause::MemoryAggregate { segments, .. } => {
-            for segment in segments {
-                collect_contract_segment_binding_names(segment, names);
-            }
-        }
-        ResourceClause::Quantified { quantity, resource } => {
-            collect_contract_expression_binding_names(quantity, names);
-            collect_resource_clause_binding_names(resource, names);
-        }
-        ResourceClause::Declared {
-            arguments,
-            type_schema: _,
-            resource_type_arguments,
-            resource_arguments,
-            ..
-        } => {
-            names.extend(
-                resource_arguments
-                    .iter()
-                    .map(|binding| binding.name.clone()),
-            );
-            for argument in arguments {
-                collect_contract_expression_binding_names(argument, names);
-            }
-            for resource in resource_type_arguments {
-                collect_resource_clause_binding_names(resource, names);
-            }
-        }
-        ResourceClause::Iterated(clause) => {
-            collect_contract_segment_binding_names(&clause.element, names);
-        }
-    }
-}
-
-fn collect_contract_segment_binding_names(segment: &ContractSegment, names: &mut BTreeSet<String>) {
-    if let ContractSegmentSurface::Range { base, start, end }
-    | ContractSegmentSurface::StructRange {
-        base, start, end, ..
-    } = &segment.surface
-    {
-        collect_contract_expression_binding_names(base, names);
-        collect_contract_expression_binding_names(start, names);
-        collect_contract_expression_binding_names(end, names);
-    }
-}
-
-/// Applies one exact Surface equality as an untrusted form transform.
-///
-/// The checked kernel rewrite remains authoritative. Callers must lower the
-/// returned candidate and compare it with the kernel successor before
-/// retaining it as a goal view. This helper only preserves source structure
-/// for later certificate search; it never establishes a proposition.
 pub(in crate::surface) fn rewrite_click_proposition_by_surface_equality(
     proposition: &ClickProposition,
     equality: &ClickProposition,
@@ -1440,6 +987,38 @@ fn rewrite_resource_subject_exact(
     preserve_states: bool,
 ) -> (ResourceSubject, bool) {
     match subject {
+        ResourceSubject::At { selector, resource } => {
+            let (source, target) = if preserve_states {
+                let (
+                    ContractExpression::At {
+                        selector: from,
+                        expression: source,
+                    },
+                    ContractExpression::At {
+                        selector: to,
+                        expression: target,
+                    },
+                ) = (source, target)
+                else {
+                    return (subject.clone(), false);
+                };
+                if from != selector || to != selector {
+                    return (subject.clone(), false);
+                }
+                (source.as_ref(), target.as_ref())
+            } else {
+                (source, target)
+            };
+            let (resource, changed) =
+                rewrite_resource_subject_exact(resource, source, target, preserve_states);
+            (
+                ResourceSubject::At {
+                    selector: selector.clone(),
+                    resource: Box::new(resource),
+                },
+                changed,
+            )
+        }
         ResourceSubject::Emp => (ResourceSubject::Emp, false),
         ResourceSubject::Star(left, right) => {
             let (a, x) = rewrite_resource_subject_exact(left, source, target, preserve_states);
@@ -1627,6 +1206,11 @@ fn rewrite_contract_expression_exact(
         (left, right, left_changed || right_changed)
     };
     match expression {
+        ContractExpression::IntegerContext(value) => {
+            let (value, changed) = unary(value);
+            (ContractExpression::IntegerContext(Box::new(value)), changed)
+        }
+
         ContractExpression::Proposition(proposition) => {
             let (proposition, changed) =
                 rewrite_click_proposition_expression(proposition, source, target, preserve_states);
@@ -2126,7 +1710,18 @@ fn substitute_resource_subject(
     resource: &ResourceSubject,
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<ResourceSubject, String> {
+    if substitutions.source.is_some() {
+        let mut names = BTreeSet::<crate::kernel::BindingName>::new();
+        collect_resource_subject_referenced_bindings(resource, &mut names);
+        let selected = substitutions.selected(names);
+        return substitute_resource_subject(resource, &selected);
+    }
+
     match resource {
+        ResourceSubject::At { selector, resource } => Ok(ResourceSubject::At {
+            selector: selector.clone(),
+            resource: Box::new(substitute_resource_subject(resource, substitutions)?),
+        }),
         ResourceSubject::Emp => Ok(ResourceSubject::Emp),
         ResourceSubject::Star(left, right) => Ok(ResourceSubject::Star(
             Box::new(substitute_resource_subject(left, substitutions)?),
@@ -2323,6 +1918,12 @@ fn apply_contract_lets_to_resource_subject(
     bindings: &[ContractLetBinding],
 ) -> Result<ResourceSubject, String> {
     match resource {
+        ResourceSubject::At { selector, resource } => Ok(ResourceSubject::At {
+            selector,
+            resource: Box::new(apply_contract_lets_to_resource_subject(
+                *resource, bindings,
+            )?),
+        }),
         ResourceSubject::Emp => Ok(ResourceSubject::Emp),
         ResourceSubject::Star(left, right) => Ok(ResourceSubject::Star(
             Box::new(apply_contract_lets_to_resource_subject(*left, bindings)?),
@@ -2448,7 +2049,7 @@ pub(in crate::surface) fn apply_contract_let_expressions_to_proposition(
     let mut capture_names = BTreeSet::new();
     for binding in bindings {
         if let Some(value) = binding.value() {
-            collect_contract_expression_referenced_names(value, &mut capture_names);
+            collect_contract_expression_referenced_bindings(value, &mut capture_names);
         }
     }
     apply_contract_let_expressions_inner(proposition, bindings, &capture_names)
@@ -2457,7 +2058,7 @@ pub(in crate::surface) fn apply_contract_let_expressions_to_proposition(
 fn apply_contract_let_expressions_inner(
     proposition: ClickProposition,
     bindings: &[ContractLetBinding],
-    capture_names: &BTreeSet<String>,
+    capture_names: &BTreeSet<crate::kernel::BindingName>,
 ) -> Result<ClickProposition, String> {
     match proposition {
         ClickProposition::Value(expression) => Ok(ClickProposition::Value(
@@ -2562,8 +2163,11 @@ fn apply_contract_let_expressions_inner(
                 capture_names,
                 interface_type == ClickType::Integer,
             )?;
-            let written_name =
-                written_name.or_else(|| (name != original_name).then_some(original_name));
+            let written_name = written_name.or_else(|| {
+                (name != original_name)
+                    .then(|| original_name.written().map(str::to_owned))
+                    .flatten()
+            });
             Ok(ClickProposition::ForAll {
                 click_type: interface_type,
                 name,
@@ -2590,8 +2194,11 @@ fn apply_contract_let_expressions_inner(
                 capture_names,
                 interface_type == ClickType::Integer,
             )?;
-            let written_name =
-                written_name.or_else(|| (name != original_name).then_some(original_name));
+            let written_name = written_name.or_else(|| {
+                (name != original_name)
+                    .then(|| original_name.written().map(str::to_owned))
+                    .flatten()
+            });
             Ok(ClickProposition::Exists {
                 click_type: interface_type,
                 name,
@@ -2614,8 +2221,11 @@ fn apply_contract_let_expressions_inner(
             let original_item = item.clone();
             let (item, body) =
                 prepare_contract_let_binding_body(&item, *body, &scoped, capture_names, false)?;
-            let written_item =
-                written_item.or_else(|| (item != original_item).then_some(original_item));
+            let written_item = written_item.or_else(|| {
+                (item != original_item)
+                    .then(|| original_item.written().map(str::to_owned))
+                    .flatten()
+            });
             Ok(ClickProposition::RangeAll {
                 start: apply_contract_lets_to_expression(start, bindings)?,
                 end: apply_contract_lets_to_expression(end, bindings)?,
@@ -2639,8 +2249,11 @@ fn apply_contract_let_expressions_inner(
             let original_item = item.clone();
             let (item, body) =
                 prepare_contract_let_binding_body(&item, *body, &scoped, capture_names, false)?;
-            let written_item =
-                written_item.or_else(|| (item != original_item).then_some(original_item));
+            let written_item = written_item.or_else(|| {
+                (item != original_item)
+                    .then(|| original_item.written().map(str::to_owned))
+                    .flatten()
+            });
             Ok(ClickProposition::RangeAny {
                 start: apply_contract_lets_to_expression(start, bindings)?,
                 end: apply_contract_lets_to_expression(end, bindings)?,
@@ -2670,14 +2283,14 @@ fn apply_contract_let_expressions_inner(
 /// proposition, so performing the rename first preserves its declaration
 /// meaning without expanding the initializer merely to detect capture.
 fn prepare_contract_let_binding_body(
-    binder: &str,
+    binder: &SurfaceBinder,
     body: ClickProposition,
     bindings: &[ContractLetBinding],
-    capture_names: &BTreeSet<String>,
+    capture_names: &BTreeSet<crate::kernel::BindingName>,
     integer: bool,
-) -> Result<(String, ClickProposition), String> {
-    if !capture_names.contains(binder) {
-        return Ok((binder.to_string(), body));
+) -> Result<(SurfaceBinder, ClickProposition), String> {
+    if !capture_names.contains(&binder.kernel_name()) {
+        return Ok((binder.clone(), body));
     }
     let mut referenced_names = BTreeSet::new();
     collect_click_proposition_referenced_names(&body, &mut referenced_names);
@@ -2690,18 +2303,18 @@ fn prepare_contract_let_binding_body(
                 .map(|value| (binding.name.clone(), value.clone()))
         })
         .collect::<BTreeMap<_, _>>();
-    let substitutions = ContractSubstitutions::new(&values);
+    let substitutions = ContractSubstitutions::indexed(
+        values
+            .iter()
+            .map(|(name, value)| (SurfaceBinder::from(name), value.clone())),
+    );
     if !substitutions_reference_name(&substitutions, binder) {
-        return Ok((binder.to_string(), body));
+        return Ok((binder.clone(), body));
     }
 
-    let fresh = fresh_click_binding_name_for_proposition(binder, &body, &substitutions);
-    let replacement = if integer {
-        ContractExpression::Binding(fresh.clone())
-    } else {
-        ContractExpression::CBinding(fresh.clone())
-    };
-    let renaming = BTreeMap::from([(binder.to_string(), replacement)]);
+    let fresh = SurfaceBinder::fresh();
+    let _ = integer;
+    let renaming = BTreeMap::from([(binder.clone(), fresh.reference())]);
     Ok((fresh, substitute_click_proposition(&body, &renaming)?))
 }
 
@@ -2729,7 +2342,7 @@ pub(in crate::surface) fn wrap_contract_where_lets_proposition(
         };
         proposition = ClickProposition::Exists {
             click_type: ClickType::Program(*interface_type),
-            name: binding.name.clone(),
+            name: binding.name.clone().into(),
             written_name: None,
             body: Box::new(ClickProposition::And(
                 Box::new(condition),
@@ -2801,7 +2414,7 @@ pub(in crate::surface) fn wrap_contract_lets_expression(
             continue;
         };
         expression = ContractExpression::Let {
-            name: binding.name.clone(),
+            name: binding.name.clone().into(),
             click_type: binding.click_type.clone(),
             value: Box::new(value.clone()),
             body: Box::new(expression),
@@ -2812,11 +2425,11 @@ pub(in crate::surface) fn wrap_contract_lets_expression(
 
 pub(in crate::surface) fn contract_lets_without_name(
     bindings: &[ContractLetBinding],
-    name: &str,
+    name: &SurfaceBinder,
 ) -> Vec<ContractLetBinding> {
     bindings
         .iter()
-        .filter(|binding| binding.name != name)
+        .filter(|binding| name != &binding.name)
         .cloned()
         .collect()
 }
@@ -2829,6 +2442,32 @@ pub(in crate::surface) fn contract_expression_referenced_names(
     names
 }
 
+pub(in crate::surface) fn collect_contract_expression_referenced_binders(
+    expression: &ContractExpression,
+    names: &mut BinderSet,
+) {
+    names.extend(
+        contract_expression_referenced_bindings(expression)
+            .into_iter()
+            .filter_map(|name| match name {
+                crate::kernel::BindingName::Named(name) => Some(SurfaceBinder::from(name)),
+                crate::kernel::BindingName::Generated(id) => Some(SurfaceBinder::from(id)),
+                _ => None,
+            }),
+    );
+}
+pub(in crate::surface) fn collect_click_proposition_referenced_binders(
+    proposition: &ClickProposition,
+    names: &mut BinderSet,
+) {
+    let mut bindings = BTreeSet::<crate::kernel::BindingName>::new();
+    collect_click_proposition_referenced_bindings(proposition, &mut bindings);
+    names.extend(bindings.into_iter().filter_map(|name| match name {
+        crate::kernel::BindingName::Named(name) => Some(SurfaceBinder::from(name)),
+        crate::kernel::BindingName::Generated(id) => Some(SurfaceBinder::from(id)),
+        _ => None,
+    }));
+}
 pub(in crate::surface) fn collect_contract_expression_referenced_names(
     expression: &ContractExpression,
     names: &mut BTreeSet<String>,
@@ -2847,6 +2486,15 @@ pub(in crate::surface) fn collect_click_proposition_referenced_names(
 /// Lexical binders remove only named dependencies, never physical declarations.
 pub(in crate::surface) trait ReferencedBinding: Ord + From<String> {
     fn program(binding: &crate::kernel::BindingName) -> Option<Self>;
+    fn leave_scope(names: &mut BTreeSet<Self>, binder: &Self) -> bool
+    where
+        Self: Sized,
+    {
+        names.remove(binder)
+    }
+    fn binder(binding: &SurfaceBinder) -> Option<Self> {
+        Self::program(&binding.kernel_name())
+    }
 }
 impl ReferencedBinding for String {
     fn program(binding: &crate::kernel::BindingName) -> Option<Self> {
@@ -2856,6 +2504,28 @@ impl ReferencedBinding for String {
 impl ReferencedBinding for crate::kernel::BindingName {
     fn program(binding: &crate::kernel::BindingName) -> Option<Self> {
         Some(binding.clone())
+    }
+}
+
+/// All referenced lexical identities, including references under their binder.
+/// Used to choose deterministic capture-free local slots for beta elaboration.
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
+pub(in crate::surface) struct LexicalBinding(pub crate::kernel::BindingName);
+impl From<String> for LexicalBinding {
+    fn from(name: String) -> Self {
+        Self(name.into())
+    }
+}
+impl ReferencedBinding for LexicalBinding {
+    fn program(binding: &crate::kernel::BindingName) -> Option<Self> {
+        Some(Self(binding.clone()))
+    }
+    fn leave_scope(names: &mut BTreeSet<Self>, binder: &Self) -> bool {
+        // Unused declarations can capture inserted references too. Retain
+        // every binder, so deterministic slots never trigger fresh renaming.
+        crate::instrumentation::record_deterministic_work(1);
+        names.insert(binder.clone());
+        false
     }
 }
 
@@ -2871,6 +2541,31 @@ pub(in crate::surface) fn collect_contract_expression_referenced_bindings<N: Ref
     expression: &ContractExpression,
     names: &mut BTreeSet<N>,
 ) {
+    // A lexical let chain is a sequence of scopes, not recursive syntax work.
+    // Save each entry dependency so shadowing restores exactly its former set.
+    if matches!(expression, ContractExpression::Let { .. }) {
+        let mut current = expression;
+        let mut scopes = Vec::new();
+        while let ContractExpression::Let {
+            name, value, body, ..
+        } = current
+        {
+            collect_contract_expression_referenced_bindings(value, names);
+            let previous = N::binder(name).is_some_and(|name| N::leave_scope(names, &name));
+            scopes.push((name, previous));
+            current = body;
+        }
+        collect_contract_expression_referenced_bindings(current, names);
+        for (name, previous) in scopes.into_iter().rev() {
+            if let Some(name) = N::binder(name) {
+                N::leave_scope(names, &name);
+                if previous {
+                    names.insert(name);
+                }
+            }
+        }
+        return;
+    }
     let mut depth = 0;
     let mut current = expression;
     while let ContractExpression::Add(left, _) = current {
@@ -2907,6 +2602,10 @@ fn collect_contract_expression_referenced_bindings_one<N: ReferencedBinding>(
     names: &mut BTreeSet<N>,
 ) {
     match expression {
+        ContractExpression::IntegerContext(value) => {
+            collect_contract_expression_referenced_bindings(value, names)
+        }
+
         ContractExpression::Proposition(proposition) => {
             collect_click_proposition_referenced_bindings(proposition, names)
         }
@@ -2922,7 +2621,7 @@ fn collect_contract_expression_referenced_bindings_one<N: ReferencedBinding>(
             let mut captures = BTreeSet::new();
             collect_contract_expression_referenced_bindings(body, &mut captures);
             for (name, _) in parameters {
-                captures.remove(&N::from(name.clone()));
+                let _ = N::binder(name).is_some_and(|name| N::leave_scope(&mut captures, &name));
             }
             names.extend(captures);
         }
@@ -2941,7 +2640,9 @@ fn collect_contract_expression_referenced_bindings_one<N: ReferencedBinding>(
             collect_contract_expression_referenced_bindings(inner, names);
         }
         ContractExpression::AlgebraicVariable { name, .. } => {
-            names.insert(name.clone().into());
+            if let Some(name) = N::binder(name) {
+                names.insert(name);
+            }
         }
         ContractExpression::AlgebraicConstructor { arguments, .. } => {
             for argument in arguments {
@@ -2954,7 +2655,8 @@ fn collect_contract_expression_referenced_bindings_one<N: ReferencedBinding>(
                 let mut arm_names = BTreeSet::new();
                 collect_contract_expression_referenced_bindings(&arm.body, &mut arm_names);
                 for binding in &arm.bindings {
-                    arm_names.remove(&N::from(binding.clone()));
+                    let _ = N::binder(binding)
+                        .is_some_and(|name| N::leave_scope(&mut arm_names, &name));
                 }
                 names.extend(arm_names);
             }
@@ -3033,19 +2735,22 @@ fn collect_contract_expression_referenced_bindings_one<N: ReferencedBinding>(
             collect_contract_expression_referenced_bindings(initial, names);
             let mut body_names = BTreeSet::new();
             collect_contract_expression_referenced_bindings(body, &mut body_names);
-            body_names.remove(&N::from(accumulator.clone()));
-            body_names.remove(&N::from(item.clone()));
+            let _ =
+                N::binder(accumulator).is_some_and(|name| N::leave_scope(&mut body_names, &name));
+            let _ = N::binder(item).is_some_and(|name| N::leave_scope(&mut body_names, &name));
             names.extend(body_names);
         }
         ContractExpression::Let {
             name, value, body, ..
         } => {
             collect_contract_expression_referenced_bindings(value, names);
-            let previous = names.remove(&N::from(name.clone()));
+            let previous = N::binder(name).is_some_and(|name| N::leave_scope(names, &name));
             collect_contract_expression_referenced_bindings(body, names);
-            names.remove(&N::from(name.clone()));
+            let _ = N::binder(name).is_some_and(|name| N::leave_scope(names, &name));
             if previous {
-                names.insert(name.clone().into());
+                if let Some(name) = N::binder(name) {
+                    names.insert(name);
+                }
             }
         }
         ContractExpression::MethodCall {
@@ -3071,14 +2776,19 @@ fn collect_resource_subject_referenced_bindings<N: ReferencedBinding>(
     names: &mut BTreeSet<N>,
 ) {
     match subject {
+        ResourceSubject::At { resource, .. } => {
+            collect_resource_subject_referenced_bindings(resource, names)
+        }
         ResourceSubject::Emp => (),
         ResourceSubject::Star(left, right) => {
             collect_resource_subject_referenced_bindings(left, names);
             collect_resource_subject_referenced_bindings(right, names);
         }
+        ResourceSubject::Parameter { name, .. } => {
+            names.insert(N::from(name.clone()));
+        }
         ResourceSubject::Instance { .. }
         | ResourceSubject::Footprint(_)
-        | ResourceSubject::Parameter { .. }
         | ResourceSubject::Captured { .. } => {}
         ResourceSubject::SavedMemory { base, start, end } => {
             for argument in [base, start].into_iter().chain(end.iter()) {
@@ -3179,11 +2889,13 @@ fn collect_click_proposition_referenced_bindings_one<N: ReferencedBinding>(
         ClickProposition::Not(body) => collect_click_proposition_referenced_bindings(body, names),
         ClickProposition::ForAll { name, body, .. }
         | ClickProposition::Exists { name, body, .. } => {
-            let previous = names.remove(&N::from(name.clone()));
+            let previous = N::binder(name).is_some_and(|name| N::leave_scope(names, &name));
             collect_click_proposition_referenced_bindings(body, names);
-            names.remove(&N::from(name.clone()));
+            let _ = N::binder(name).is_some_and(|name| N::leave_scope(names, &name));
             if previous {
-                names.insert(name.clone().into());
+                if let Some(name) = N::binder(name) {
+                    names.insert(name);
+                }
             }
         }
         ClickProposition::RangeAll {
@@ -3202,11 +2914,13 @@ fn collect_click_proposition_referenced_bindings_one<N: ReferencedBinding>(
         } => {
             collect_contract_expression_referenced_bindings(start, names);
             collect_contract_expression_referenced_bindings(end, names);
-            let previous = names.remove(&N::from(item.clone()));
+            let previous = N::binder(item).is_some_and(|name| N::leave_scope(names, &name));
             collect_click_proposition_referenced_bindings(body, names);
-            names.remove(&N::from(item.clone()));
+            let _ = N::binder(item).is_some_and(|name| N::leave_scope(names, &name));
             if previous {
-                names.insert(item.clone().into());
+                if let Some(name) = N::binder(item) {
+                    names.insert(name);
+                }
             }
         }
         ClickProposition::PredicateCall { name, .. }
@@ -3296,6 +3010,38 @@ pub(in crate::surface) struct InstanceRename {
 /// an empty map.
 static NO_INSTANCE_RENAMES: BTreeMap<String, InstanceRename> = BTreeMap::new();
 
+/// Borrow ambient maps until the selected term tells us which replacements
+/// it actually reads. Preparing a substitution never enumerates unrelated keys.
+pub(in crate::surface) trait SubstitutionSourceMap: std::fmt::Debug {
+    fn replacement(&self, name: &crate::kernel::BindingName) -> Option<&ContractExpression>;
+}
+impl SubstitutionSourceMap for BTreeMap<String, ContractExpression> {
+    fn replacement(&self, name: &crate::kernel::BindingName) -> Option<&ContractExpression> {
+        name.named().and_then(|name| self.get(name))
+    }
+}
+impl SubstitutionSourceMap for BTreeMap<SurfaceBinder, ContractExpression> {
+    fn replacement(&self, name: &crate::kernel::BindingName) -> Option<&ContractExpression> {
+        match name {
+            crate::kernel::BindingName::Named(name) => {
+                self.get(&SurfaceBinder::Written(name.clone()))
+            }
+            crate::kernel::BindingName::Generated(id) => self.get(&SurfaceBinder::Generated(*id)),
+            _ => None,
+        }
+    }
+}
+impl SubstitutionSourceMap for BinderMap<ContractExpression> {
+    fn replacement(&self, name: &crate::kernel::BindingName) -> Option<&ContractExpression> {
+        self.get(name)
+    }
+}
+impl SubstitutionSourceMap for BTreeMap<&str, ContractExpression> {
+    fn replacement(&self, name: &crate::kernel::BindingName) -> Option<&ContractExpression> {
+        name.named().and_then(|name| self.get(name))
+    }
+}
+
 /// What one substitution pass replaces: values keyed by the name they replace,
 /// and instance renames keyed by the declared instance name.
 ///
@@ -3307,7 +3053,10 @@ static NO_INSTANCE_RENAMES: BTreeMap<String, InstanceRename> = BTreeMap::new();
 /// shape, which every other reader of the map would then have to know about.
 #[derive(Clone, Debug)]
 pub(in crate::surface) struct ContractSubstitutions<'a> {
-    values: Cow<'a, BTreeMap<String, ContractExpression>>,
+    source: Option<&'a dyn SubstitutionSourceMap>,
+    values: PersistentBinderMap<ContractExpression>,
+    references: PersistentBinderMap<Arc<[crate::kernel::BindingName]>>,
+    free_references: PersistentMap<crate::kernel::BindingName, usize>,
     instance_renames: Cow<'a, BTreeMap<String, InstanceRename>>,
     /// Whether a scalar field of the resource body being defined is replaced
     /// by the C name the kernel binds it to (see `resource_body_program_expression`).
@@ -3315,10 +3064,6 @@ pub(in crate::surface) struct ContractSubstitutions<'a> {
     body_field_values: Option<&'a BTreeMap<String, ContractExpression>>,
     contract_result_only: bool,
     current_program_values: bool,
-    // Only the marker finalizer enables this. Its globally fresh targets
-    // cannot capture existing names; markers deliberately remain in scope
-    // while their binder declarations and occurrences are renamed together.
-    fresh_synthesis_binders: bool,
     /// When set, a C declaration is written by its source name wherever that
     /// name resolves to it in these locals and no binder here shadows it, as
     /// the parser reads a proof that writes the name.
@@ -3330,17 +3075,84 @@ pub(in crate::surface) struct ContractSubstitutions<'a> {
 
 impl<'a> ContractSubstitutions<'a> {
     /// Value substitutions with no instance renamed.
-    pub(in crate::surface) fn new(values: &'a BTreeMap<String, ContractExpression>) -> Self {
-        Self {
-            values: Cow::Borrowed(values),
+    pub(in crate::surface) fn new<M: SubstitutionSourceMap>(values: &'a M) -> Self {
+        let mut result = Self::indexed(std::iter::empty());
+        result.source = Some(values);
+        result
+    }
+    fn selected(&self, names: impl IntoIterator<Item = crate::kernel::BindingName>) -> Self {
+        let Some(source) = self.source else {
+            return self.clone();
+        };
+        let mut selected = self.clone();
+        selected.source = None;
+        for name in names {
+            if let Some(value) = source.replacement(&name) {
+                selected.insert_value(name.clone().into(), value.clone());
+            }
+            if name.named().is_none()
+                && let Some(spelling) = name.source_spelling()
+            {
+                let spelling = crate::kernel::BindingName::from(spelling);
+                if let Some(value) = source.replacement(&spelling) {
+                    selected.insert_value(spelling.into(), value.clone());
+                }
+            }
+        }
+        if self.contract_result_only {
+            let name = crate::kernel::BindingName::from("result");
+            if let Some(value) = source.replacement(&name) {
+                selected.insert_value(name.into(), value.clone());
+            }
+        }
+        selected
+    }
+    fn indexed(values: impl Iterator<Item = (SurfaceBinder, ContractExpression)>) -> Self {
+        let mut result = Self {
+            source: None,
+            values: PersistentBinderMap::default(),
+            references: PersistentBinderMap::default(),
+            free_references: PersistentMap::default(),
             instance_renames: Cow::Borrowed(&NO_INSTANCE_RENAMES),
             body_fields_as_program_names: false,
             body_field_values: None,
             contract_result_only: false,
             current_program_values: false,
-            fresh_synthesis_binders: false,
             source_names: None,
+        };
+        for (name, value) in values {
+            result.insert_value(name, value);
         }
+        result
+    }
+    fn remove_value(&mut self, name: &SurfaceBinder) {
+        if let Some(references) = self.references.get(name) {
+            for binding in references.iter() {
+                let count = *self
+                    .free_references
+                    .get(binding)
+                    .expect("indexed replacement reference");
+                if count == 1 {
+                    self.free_references.remove(binding);
+                } else {
+                    self.free_references.insert(binding.clone(), count - 1);
+                }
+            }
+        }
+        self.values.remove(name);
+        self.references.remove(name);
+    }
+    fn insert_value(&mut self, name: SurfaceBinder, value: ContractExpression) {
+        self.remove_value(&name);
+        let references: Arc<[_]> = contract_expression_referenced_bindings(&value)
+            .into_iter()
+            .collect();
+        for binding in references.iter() {
+            let count = self.free_references.get(binding).copied().unwrap_or(0);
+            self.free_references.insert(binding.clone(), count + 1);
+        }
+        self.references.insert(name.clone(), references);
+        self.values.insert(name, value);
     }
 
     /// No value substitutions; each C declaration is written by its source
@@ -3408,14 +3220,8 @@ impl<'a> ContractSubstitutions<'a> {
         instance_renames: &'a BTreeMap<String, InstanceRename>,
     ) -> Self {
         Self {
-            values: Cow::Borrowed(values),
             instance_renames: Cow::Borrowed(instance_renames),
-            body_fields_as_program_names: false,
-            body_field_values: None,
-            contract_result_only: false,
-            current_program_values: false,
-            fresh_synthesis_binders: false,
-            source_names: None,
+            ..Self::new(values)
         }
     }
 
@@ -3432,14 +3238,8 @@ impl<'a> ContractSubstitutions<'a> {
         }
     }
 
-    fn value(&self, name: &str) -> Option<&ContractExpression> {
+    fn value<Q: binders::BinderKey + ?Sized>(&self, name: &Q) -> Option<&ContractExpression> {
         self.values.get(name)
-    }
-
-    /// The expressions this pass substitutes in. A rename carries no
-    /// expression, so it contributes nothing here.
-    fn substituted_expressions(&self) -> impl Iterator<Item = &ContractExpression> {
-        self.values.values()
     }
 
     /// The new surface name for the instance `owner`, when a rename was
@@ -3473,45 +3273,34 @@ impl<'a> ContractSubstitutions<'a> {
             })
     }
 
-    /// Every name this pass replaces, values and renames alike. A fresh
-    /// binding name has to avoid all of them.
-    fn replaced_names(&self) -> impl Iterator<Item = &String> {
-        self.values.keys().chain(self.instance_renames.keys())
-    }
-
     /// The same pass under a binder that shadows `name`: inside that body the
     /// name is a binding, not something this pass replaces.
-    fn without_binding(&self, name: &str) -> ContractSubstitutions<'a> {
-        if self.fresh_synthesis_binders {
-            return self.clone();
+    fn without_binding(&self, name: &SurfaceBinder) -> Self {
+        let mut result = self.clone();
+        result.remove_value(name);
+        if let Some(name) = name.written() {
+            if result.instance_renames.contains_key(name) {
+                result.instance_renames.to_mut().remove(name);
+            }
+            if let Some((_, bound)) = &mut result.source_names {
+                bound.to_mut().insert(name.to_owned());
+            }
         }
-        let mut values = self.values.as_ref().clone();
-        values.remove(name);
-        let mut instance_renames = self.instance_renames.clone();
-        if instance_renames.contains_key(name) {
-            instance_renames.to_mut().remove(name);
-        }
-        let source_names = self.source_names.as_ref().map(|(locals, bound)| {
-            let mut bound = bound.clone();
-            bound.to_mut().insert(name.to_owned());
-            (*locals, bound)
-        });
-        ContractSubstitutions {
-            values: Cow::Owned(values),
-            instance_renames,
-            body_fields_as_program_names: self.body_fields_as_program_names,
-            body_field_values: self.body_field_values,
-            contract_result_only: self.contract_result_only,
-            current_program_values: self.current_program_values,
-            fresh_synthesis_binders: self.fresh_synthesis_binders,
-            source_names,
-        }
+        result
     }
 }
 
-impl<'a> From<&'a BTreeMap<String, ContractExpression>> for ContractSubstitutions<'a> {
-    fn from(values: &'a BTreeMap<String, ContractExpression>) -> Self {
-        ContractSubstitutions::new(values)
+impl<'a> From<&'a BinderMap<ContractExpression>> for ContractSubstitutions<'a> {
+    fn from(values: &'a BinderMap<ContractExpression>) -> Self {
+        Self::new(values)
+    }
+}
+impl<'a, N> From<&'a BTreeMap<N, ContractExpression>> for ContractSubstitutions<'a>
+where
+    BTreeMap<N, ContractExpression>: SubstitutionSourceMap,
+{
+    fn from(values: &'a BTreeMap<N, ContractExpression>) -> Self {
+        Self::new(values)
     }
 }
 
@@ -3596,13 +3385,7 @@ pub(in crate::surface) fn pure_function_result_value(
         // The declaration supplies the carrier even when the body consists
         // only of contextual numerals (for example, `if P { 1 } else { 0 }`).
         // Keep that context in the defining equation used by `unfold`.
-        let name = "__click_integer_result".to_string();
-        return ContractExpression::Let {
-            name: name.clone(),
-            click_type: Some(ClickType::Integer),
-            value: Box::new(value),
-            body: Box::new(ContractExpression::Binding(name)),
-        };
+        return ContractExpression::IntegerContext(Box::new(value));
     }
     let Some(target_type) = pure_function_result_scalar_type(definition) else {
         return value;
@@ -3905,10 +3688,59 @@ pub(in crate::surface) fn substitute_contract_expression_in(
     expression: &ContractExpression,
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<ContractExpression, String> {
-    if substitutions.fresh_synthesis_binders {
-        return substitute_fresh_synthesis_expression(expression, substitutions);
+    if substitutions.source.is_some() {
+        let mut names = BTreeSet::<crate::kernel::BindingName>::new();
+        collect_contract_expression_referenced_bindings(expression, &mut names);
+        let selected = substitutions.selected(names);
+        return substitute_contract_expression_in(expression, &selected);
+    }
+
+    if matches!(expression, ContractExpression::Let { .. }) {
+        return substitute_contract_let_chain(expression, substitutions);
     }
     substitute_contract_expression_node(expression, substitutions)
+}
+
+/// Retain scope snapshots and rebuild from the tail, preserving the original
+/// order of capture renaming and initializer substitution without recursive
+/// frames for every declaration. Persistent binding maps share each prefix.
+fn substitute_contract_let_chain(
+    expression: &ContractExpression,
+    substitutions: &ContractSubstitutions<'_>,
+) -> Result<ContractExpression, String> {
+    let mut current = expression;
+    let mut scoped = substitutions.clone();
+    let mut frames = Vec::new();
+    while let ContractExpression::Let {
+        name,
+        click_type,
+        value,
+        body,
+    } = current
+    {
+        let mut inside = scoped.without_binding(name);
+        let renamed = if substitutions_reference_name(&inside, name) {
+            let fresh = SurfaceBinder::fresh();
+            inside.insert_value(name.clone(), fresh.reference());
+            fresh
+        } else {
+            name.clone()
+        };
+        frames.push((renamed, click_type.clone(), value.as_ref(), scoped));
+        scoped = inside;
+        current = body;
+    }
+    let mut result = substitute_contract_expression_in(current, &scoped)?;
+    for (name, click_type, value, before) in frames.into_iter().rev() {
+        let value = substitute_contract_expression_in(value, &before)?;
+        result = ContractExpression::Let {
+            name,
+            click_type,
+            value: Box::new(value),
+            body: Box::new(result),
+        };
+    }
+    Ok(result)
 }
 
 // Keep the large ordinary expression match out of the frame of each fold.
@@ -3916,7 +3748,16 @@ fn substitute_contract_expression_node(
     expression: &ContractExpression,
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<ContractExpression, String> {
+    if let ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) = expression {
+        if let Some(value) = substitutions.value(name) {
+            return Ok(value.clone());
+        }
+    }
     match expression {
+        ContractExpression::IntegerContext(value) => Ok(ContractExpression::IntegerContext(
+            Box::new(substitute_contract_expression_in(value, substitutions)?),
+        )),
+
         ContractExpression::Proposition(proposition) => Ok(ContractExpression::Proposition(
             Box::new(substitute_click_proposition_in(proposition, substitutions)?),
         )),
@@ -3931,54 +3772,22 @@ fn substitute_contract_expression_node(
             result,
             body,
         } => {
-            let bound = parameters
-                .iter()
-                .map(|(name, _)| name.as_str())
-                .collect::<BTreeSet<_>>();
             let mut scoped = substitutions.clone();
-            scoped.values = Cow::Owned(
-                substitutions
-                    .values
-                    .iter()
-                    .filter(|(name, _)| !bound.contains(name.as_str()))
-                    .map(|(name, value)| (name.clone(), value.clone()))
-                    .collect(),
-            );
-            let mut replacement_names = BTreeSet::new();
-            for replacement in scoped.substituted_expressions() {
-                collect_contract_expression_referenced_names(replacement, &mut replacement_names);
+            for (name, _) in parameters {
+                scoped = scoped.without_binding(name);
             }
-            let mut used = replacement_names.clone();
-            used.extend(parameters.iter().map(|(name, _)| name.clone()));
-            used.extend(scoped.replaced_names().cloned());
-            collect_contract_expression_binding_names(body, &mut used);
-            collect_contract_expression_referenced_names(body, &mut used);
-            let mut next = 0;
-            let mut renaming = BTreeMap::new();
             let parameters = parameters
                 .iter()
                 .map(|(name, ty)| {
-                    if !replacement_names.contains(name) {
+                    if !substitutions_reference_name(&scoped, name) {
                         return (name.clone(), ty.clone());
                     }
-                    let fresh = loop {
-                        let candidate = format!("__click_lambda_{next}");
-                        next += 1;
-                        if used.insert(candidate.clone()) {
-                            break candidate;
-                        }
-                    };
-                    renaming.insert(name.clone(), ContractExpression::Binding(fresh.clone()));
+                    let fresh = SurfaceBinder::fresh();
+                    scoped.insert_value(name.clone(), fresh.reference());
                     (fresh, ty.clone())
                 })
                 .collect();
-            let renamed = if renaming.is_empty() {
-                None
-            } else {
-                Some(substitute_contract_expression(body, &renaming)?)
-            };
-            let body =
-                substitute_contract_expression_in(renamed.as_ref().unwrap_or(body), &scoped)?;
+            let body = substitute_contract_expression_in(body, &scoped)?;
             Ok(ContractExpression::Lambda {
                 parameters,
                 result: result.clone(),
@@ -4173,11 +3982,12 @@ fn substitute_contract_expression_node(
                 },
             )))
         }
-        ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => Ok(name
-            .named()
-            .and_then(|name| substitutions.value(name))
-            .cloned()
-            .unwrap_or_else(|| expression.clone())),
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+            Ok(substitutions
+                .value(name)
+                .cloned()
+                .unwrap_or_else(|| expression.clone()))
+        }
         ContractExpression::ProgramExpression(expression) => {
             substitute_program_expression_as_contract_in(expression, substitutions)
         }
@@ -4389,6 +4199,17 @@ fn substitute_program_expression_as_contract_with_numerals_in(
     substitutions: &ContractSubstitutions<'_>,
     contextual_numerals: bool,
 ) -> Result<ContractExpression, String> {
+    if substitutions.source.is_some() {
+        let mut names = BTreeSet::<crate::kernel::BindingName>::new();
+        collect_program_expression_referenced_bindings(expression, &mut names);
+        let selected = substitutions.selected(names);
+        return substitute_program_expression_as_contract_with_numerals_in(
+            expression,
+            &selected,
+            contextual_numerals,
+        );
+    }
+
     match expression {
         ProgramExpression::Value(ProgramValue::Int32(bits32_constant!(value)))
             if contextual_numerals =>
@@ -4444,9 +4265,8 @@ fn substitute_program_expression_as_contract_with_numerals_in(
                 ),
             })
         }
-        ProgramExpression::Variable(name) => Ok(name
-            .named()
-            .and_then(|name| substitutions.value(name))
+        ProgramExpression::Variable(name) => Ok(substitutions
+            .value(name)
             .cloned()
             .or_else(|| {
                 substitutions.source_name(name).map(|source| {
@@ -4649,11 +4469,12 @@ fn substituted_index(
     current_read: bool,
 ) -> ContractExpression {
     let base = if current_read && substitutions.body_field_values.is_some() {
+        let binder = SurfaceBinder::fresh();
         ContractExpression::Let {
-            name: "read_pointer".to_owned(),
+            name: binder.clone(),
             click_type: None,
             value: Box::new(base),
-            body: Box::new(ContractExpression::Binding("read_pointer".to_owned())),
+            body: Box::new(binder.reference()),
         }
     } else {
         base
@@ -4672,13 +4493,20 @@ pub(in crate::surface) fn substitute_program_expression_in(
     expression: &ProgramExpression,
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<ProgramExpression, String> {
+    if substitutions.source.is_some() {
+        let mut names = BTreeSet::<crate::kernel::BindingName>::new();
+        collect_program_expression_referenced_bindings(expression, &mut names);
+        let selected = substitutions.selected(names);
+        return substitute_program_expression_in(expression, &selected);
+    }
+
     match expression {
         ProgramExpression::StringLiteral(_)
         | ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => Ok(expression.clone()),
         ProgramExpression::Variable(name) => {
-            let Some(substitution) = name.named().and_then(|name| substitutions.value(name)) else {
+            let Some(substitution) = substitutions.value(name) else {
                 return Ok(substitutions.source_name(name).map_or_else(
                     || expression.clone(),
                     |source| ProgramExpression::Variable(source.into()),
@@ -4915,6 +4743,8 @@ pub(in crate::surface) fn contract_expression_as_program_expression_resolving_fi
         contract_expression_as_program_expression_resolving_fields(expression, field)
     };
     match expression {
+        ContractExpression::IntegerContext(_) => None,
+
         ContractExpression::Proposition(_) => None,
         ContractExpression::Resource(_) => None,
         ContractExpression::RegionResult(_)
@@ -5071,6 +4901,8 @@ pub(in crate::surface) fn contract_expression_to_program_expression(
     expression: &ContractExpression,
 ) -> Option<ProgramExpression> {
     match expression {
+        ContractExpression::IntegerContext(_) => None,
+
         ContractExpression::Proposition(_) => None,
         ContractExpression::Resource(_) => None,
         ContractExpression::RegionResult(_)
@@ -5167,146 +4999,33 @@ pub(in crate::surface) fn contract_expression_to_program_expression(
     }
 }
 
-/// Resolve private synthesis markers in one pass over the selected output.
-/// Targets avoid every referenced and declared name, so this pass cannot
-/// capture a user binding and need not rescan each nested binder's body.
-pub(in crate::surface) fn name_synthesized_binders(
-    expression: &ContractExpression,
-    markers: &[(String, Option<String>)],
-) -> Result<ContractExpression, String> {
-    let mut used = BTreeSet::new();
-    collect_contract_expression_referenced_names(expression, &mut used);
-    collect_contract_expression_binding_names(expression, &mut used);
-    let mut values = BTreeMap::new();
-    let mut next = 0usize;
-    for (marker, preferred) in markers {
-        let preferred = preferred
-            .as_ref()
-            .filter(|name| !name.is_empty() && !used.contains(*name));
-        let name = if let Some(name) = preferred {
-            used.insert(name.clone());
-            name.clone()
-        } else {
-            loop {
-                let candidate = format!("__click_binder_{next}");
-                next += 1;
-                if used.insert(candidate.clone()) {
-                    break candidate;
-                }
-            }
-        };
-        values.insert(marker.clone(), ContractExpression::Binding(name));
-    }
-    let mut substitutions = ContractSubstitutions::new(&values);
-    substitutions.fresh_synthesis_binders = true;
-    substitute_contract_expression_in(expression, &substitutions)
-}
-
-fn substitute_fresh_synthesis_expression(
-    expression: &ContractExpression,
-    substitutions: &ContractSubstitutions<'_>,
-) -> Result<ContractExpression, String> {
-    enum Task<'a> {
-        Visit(&'a ContractExpression),
-        Fold(&'a str, &'a str),
-        Binary(fn(Box<ContractExpression>, Box<ContractExpression>) -> ContractExpression),
-    }
-    let mut pending = vec![Task::Visit(expression)];
-    let mut values = Vec::new();
-    while let Some(task) = pending.pop() {
-        match task {
-            Task::Visit(ContractExpression::RangeFold {
-                start,
-                end,
-                initial,
-                accumulator,
-                item,
-                body,
-            }) => {
-                crate::instrumentation::record_deterministic_work(1);
-                pending.push(Task::Fold(accumulator, item));
-                pending.extend(
-                    [
-                        body.as_ref(),
-                        initial.as_ref(),
-                        end.as_ref(),
-                        start.as_ref(),
-                    ]
-                    .map(Task::Visit),
-                );
-            }
-            Task::Visit(expression @ ContractExpression::Add(left, right))
-            | Task::Visit(expression @ ContractExpression::Subtract(left, right))
-            | Task::Visit(expression @ ContractExpression::Multiply(left, right))
-            | Task::Visit(expression @ ContractExpression::Divide(left, right))
-            | Task::Visit(expression @ ContractExpression::Remainder(left, right))
-            | Task::Visit(expression @ ContractExpression::ShiftLeft(left, right))
-            | Task::Visit(expression @ ContractExpression::RustShiftLeft(left, right))
-            | Task::Visit(expression @ ContractExpression::ShiftRight(left, right))
-            | Task::Visit(expression @ ContractExpression::RustShiftRight(left, right))
-            | Task::Visit(expression @ ContractExpression::BitwiseAnd(left, right))
-            | Task::Visit(expression @ ContractExpression::BitwiseOr(left, right))
-            | Task::Visit(expression @ ContractExpression::BitwiseXor(left, right)) => {
-                crate::instrumentation::record_deterministic_work(1);
-                let construct: fn(
-                    Box<ContractExpression>,
-                    Box<ContractExpression>,
-                ) -> ContractExpression = match expression {
-                    ContractExpression::Add(..) => ContractExpression::Add,
-                    ContractExpression::Subtract(..) => ContractExpression::Subtract,
-                    ContractExpression::Multiply(..) => ContractExpression::Multiply,
-                    ContractExpression::Divide(..) => ContractExpression::Divide,
-                    ContractExpression::Remainder(..) => ContractExpression::Remainder,
-                    ContractExpression::ShiftLeft(..) => ContractExpression::ShiftLeft,
-                    ContractExpression::RustShiftLeft(..) => ContractExpression::RustShiftLeft,
-                    ContractExpression::ShiftRight(..) => ContractExpression::ShiftRight,
-                    ContractExpression::RustShiftRight(..) => ContractExpression::RustShiftRight,
-                    ContractExpression::BitwiseAnd(..) => ContractExpression::BitwiseAnd,
-                    ContractExpression::BitwiseOr(..) => ContractExpression::BitwiseOr,
-                    ContractExpression::BitwiseXor(..) => ContractExpression::BitwiseXor,
-                    _ => unreachable!(),
-                };
-                pending.push(Task::Binary(construct));
-                pending.push(Task::Visit(right));
-                pending.push(Task::Visit(left));
-            }
-            Task::Binary(construct) => {
-                let right = values.pop().unwrap();
-                let left = values.pop().unwrap();
-                values.push(construct(Box::new(left), Box::new(right)));
-            }
-            Task::Visit(expression) => {
-                crate::instrumentation::record_deterministic_work(1);
-                values.push(substitute_contract_expression_node(
-                    expression,
-                    substitutions,
-                )?);
-            }
-            Task::Fold(accumulator, item) => {
-                let body = values.pop().unwrap();
-                let initial = values.pop().unwrap();
-                let end = values.pop().unwrap();
-                let start = values.pop().unwrap();
-                let rename = |name: &str| match substitutions.value(name) {
-                    Some(ContractExpression::Binding(name)) => name.clone(),
-                    _ => name.to_string(),
-                };
-                values.push(ContractExpression::RangeFold {
-                    start: Box::new(start),
-                    end: Box::new(end),
-                    initial: Box::new(initial),
-                    accumulator: rename(accumulator),
-                    item: rename(item),
-                    body: Box::new(body),
-                });
-            }
-        }
-    }
-    Ok(values.pop().expect("selected synthesis expression"))
-}
-
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn integer_result_context_does_not_create_a_binding() {
+        let source = "function constant() -> Integer { 4294967296 } function choose(x: Integer) -> Integer { if x == 0 { 1 } else { 2 } } theorem check() { ensures constant() == 4294967296 by { unfold(constant()); solve(); } ensures choose(0) == 1 by { unfold(choose(0)); solve(); } }";
+        crate::surface::verify_c_sources(source, &[]).unwrap();
+        let annotated = "theorem check(__click_integer_result: Integer) { ensures ((__click_integer_result + 1) : Integer) == __click_integer_result + 1 by solve(); }";
+        crate::surface::verify_c_sources(annotated, &[]).unwrap();
+    }
+
+    #[test]
+    fn integer_context_preserves_unbounded_arithmetic_and_rejects_machine_claims() {
+        for source in [
+            "theorem check() { ensures (4294967296 + 4294967296 : Integer) == 8589934592 by solve(); }",
+            "theorem check() { ensures (1 : Integer) == 1 by solve(); }",
+        ] {
+            crate::surface::verify_c_sources(source, &[]).unwrap();
+        }
+        assert!(
+            crate::surface::verify_c_sources(
+                "theorem bad() { ensures (1 : Integer) == 2 by solve(); }",
+                &[]
+            )
+            .is_err()
+        );
+    }
+
     use super::*;
 
     #[test]
@@ -5345,7 +5064,7 @@ mod tests {
         let replacement = ContractExpression::ProgramExpression(ProgramExpression::Value(int32(7)));
         let actual = substitute_click_proposition(
             &build(variable("x")),
-            &BTreeMap::from([("x".into(), replacement.clone())]),
+            &BTreeMap::from([("x".to_owned(), replacement.clone())]),
         )
         .unwrap();
         assert_eq!(actual, build(replacement));

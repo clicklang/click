@@ -73,11 +73,10 @@ is a constant; negating a bound expression retains a negation node.
 
 A rewrite can remove the last operand that supplied `Integer` context.
 Structural comparison synthesis therefore gives its left operand an explicit
-typed local expression, for example
-`(let integer_value: Integer = 1 + 1; integer_value) == 2`.
-The local's value is outside its binding scope, so this spelling cannot capture
-names inside the value. The right operand inherits mathematical context.
-Negation nodes similarly give their operands a typed local expression to
+type context, for example `((1 + 1) : Integer) == 2`.
+`SurfaceTerm::IntegerContext` supplies mathematical arithmetic context without
+introducing a variable or changing the kernel term. The right operand inherits
+mathematical context. Negation nodes similarly annotate their operands to
 distinguish an operator over a constant from a signed numeral. Source printing
 and reparsing must preserve the exact kernel nodes and comparison polarity.
 
@@ -1394,7 +1393,7 @@ the caller's fast paths remain separate obligations. See the
 [checked fixture](https://github.com/clicklang/click/blob/master/mdtests/integer_multiply_order.md).
 
 
-When `peel` removes the final Integer fold application from a goal, ordinary
+When `unfold` removes the final Integer fold application from a goal, ordinary
 source lowering may reduce its spelling to `true` while the kernel retains
 an Integer comparison such as `0 - 0 == 0` or `0 <= 0`.
 Ordinary normalization checks that retained constant comparison directly,

@@ -271,7 +271,10 @@ pub(crate) fn canonical_value_load_memory(
     named
 }
 
-fn canonical_projected_load_memory(source: &SharedMemory, pointer: &Pointer) -> SharedMemory {
+pub(crate) fn canonical_projected_load_memory(
+    source: &SharedMemory,
+    pointer: &Pointer,
+) -> SharedMemory {
     let projected =
         crate::kernel::intern_memory(canonical_program_memory_for_pointer_load(source, pointer));
     record_canonical_load_projection(source, &projected, pointer);
@@ -5000,6 +5003,7 @@ pub(crate) fn term_is_shallow_structural_cache_key(term: &MachineTerm) -> bool {
         }
         match node {
             Node::Term(term, depth) => match term {
+                MachineTerm::ThreadHandle(_) => {}
                 bits32_constant!(_)
                 | MachineTerm::Variable(_)
                 | int64_constant!(_)
@@ -5553,6 +5557,7 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &MachineTerm) -> MachineTerm 
                 #[cfg(test)]
                 ATOMIC_CANONICALIZATION_TERM_VISITS.with(|visits| visits.set(visits.get() + 1));
                 match term {
+                    MachineTerm::ThreadHandle(_) => results.push(term.clone()),
                     bits32_constant!(_)
                     | MachineTerm::Variable(_)
                     | int64_constant!(_)
@@ -6566,6 +6571,7 @@ fn collect_operand_memories(
 
 fn collect_bitvector_memories(term: &MachineTerm, memories: &mut Vec<SharedMemory>) {
     match term {
+        MachineTerm::ThreadHandle(_) => {}
         MachineTerm::Constant { .. } | MachineTerm::Variable(_) => {}
         MachineTerm::PointerAddress(_, _) => {}
         MachineTerm::MemoryLoad(memory, _, _) => {
@@ -6916,6 +6922,7 @@ fn transport_framed_atomic_bitvector(
         return None;
     }
     Some(match term {
+        MachineTerm::ThreadHandle(_) => term.clone(),
         MachineTerm::Constant { .. } => term.clone(),
         MachineTerm::PointerAddress(_, _) => term.clone(),
         MachineTerm::Variable(variable) => {
@@ -7212,6 +7219,7 @@ fn normalize_exact_memory_loads_in_bitvector_iterative(
                     continue;
                 }
                 match term {
+                    MachineTerm::ThreadHandle(_) => results.push(term),
                     MachineTerm::Cast {
                         spelling: MachineCastSpelling::Generic,
                         value,

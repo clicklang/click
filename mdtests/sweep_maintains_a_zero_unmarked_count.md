@@ -16,7 +16,7 @@ The prefix is preserved by ordinary proof steps. For each `k < i`,
 `preserve` establishes its equality with the iteration-entry read. The existing
 `unmarked_frame` lemma turns these cell equalities into equality of the prefix
 counts. Rewriting then reuses the entry invariant. The enlarged prefix after
-`i++` still needs the fold's append law, which `peel` opens. The omitted-proof
+`i++` still needs the fold's append law, which `unfold` opens. The omitted-proof
 companion remains `sweep_prefix_survives_its_endpoint_store_by_solve.md`.
 
 ```c filename=sweep_maintains_a_zero_unmarked_count.c
@@ -41,7 +41,7 @@ void sweep(int32 visited[], int32 n) {
     step();
     have 0 <= 0;
     have unmarked(visited, 0, 0) == 0 by {
-        peel(unmarked(visited, 0, 0)) using { 0 <= 0; };
+        unfold(unmarked(visited, 0, 0));
         normalize();
     }
     loop {
@@ -71,7 +71,7 @@ void sweep(int32 visited[], int32 n) {
                     have separate(loop(0).statement(0).footprint, memory(visited[k])) by {
                         normalize() using { separate(memory(visited[i]), memory(visited[k])); };
                     }
-                    preserve(separate(loop(0).statement(0).footprint, memory(visited[k])));
+                    preserve(memory(visited[k]), loop(0).statement(0));
                 }
                 have viewable(visited[0..n]) by { observe(visited[0..n]); known(); }
                 have 0 <= 0 by { normalize(); }
@@ -90,10 +90,7 @@ void sweep(int32 visited[], int32 n) {
                 known();
             }
             have unmarked(visited, 0, i + 1) == 0 by {
-                peel(unmarked(visited, 0, i + 1)) using {
-                    0 <= to_integer((i + 1) - 1);
-                    to_integer((i + 1) - 1) < 2147483647;
-                };
+                unfold(unmarked(visited, 0, i + 1));
                 solve();
             }
             step();

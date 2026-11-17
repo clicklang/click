@@ -8,7 +8,7 @@ invariant covers, as its own bundle member
 The kernel builds that member, so nothing written spells it; the closer
 synthesizes its source form. The synthesized binder used to be a generated
 `__click_q0`, so a proof that focused the member with `both` and introduced
-it could not write `extract(0 <= k)`: `k` was unbound. The binder now takes
+it could not write `have 0 <= k;`: `k` was unbound. The binder now takes
 the name the invariant gave it, and the explicit proof below names `k` the
 way the invariant does.
 
@@ -43,8 +43,8 @@ int32 count_up(int32 *a, int32 n) {
             have forall (k: int32) { 0 <= k and k <= n implies viewable(a[0..k]) } by {
                 intro();
                 intro();
-                extract(0 <= k);
-                extract(k <= n);
+                have 0 <= k;
+                have k <= n;
                 solve();
             }
             solve();
@@ -55,8 +55,8 @@ int32 count_up(int32 *a, int32 n) {
             have forall (k: int32) { 0 <= k and k <= n implies viewable(a[0..k]) } by {
                 intro();
                 intro();
-                extract(0 <= k);
-                extract(k <= n);
+                have 0 <= k;
+                have k <= n;
                 solve();
             }
         }

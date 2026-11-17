@@ -53,7 +53,7 @@ void pool_destroy(struct pool* pool) {
     step();
     unfold(authority(pool_slot(pool)));
     unfold(authority(pool_object(pool, _)));
-    step_until(function.exit); unfold(valid_pool); solve();
+    step_until(function.exit); unfold(valid_pool(pool)); solve();
 }
 ```
 

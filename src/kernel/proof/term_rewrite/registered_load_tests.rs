@@ -461,3 +461,54 @@ fn resource_comparison_forms_reach_structural_scalar_read_arguments() {
         Some(expected)
     );
 }
+
+#[test]
+fn fold_index_substitution_keeps_call_havoc_source() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let base = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let before = Memory::new().store(base.clone(), ProgramValue::Int32(MachineTerm::constant(5)));
+    let count = MachineTerm::Variable(Variable(3_229_001));
+    let facts = crate::kernel::PureFactContext::new().assume_condition(
+        ConditionTerm::signed_less_equal(MachineTerm::constant(1), count.clone()),
+        true,
+    );
+    let range =
+        crate::kernel::MemoryRange::new_with_element_width(base.clone(), 0u32.into(), count, 4);
+    let after = crate::kernel::intern_memory(before.clone().with_call_memory_havoc(
+        Variable(3_229_002),
+        &[range],
+        &facts,
+        None,
+    ));
+    assert_eq!(after.memory().known_value(&base), None);
+    let item = Variable(3_229_003);
+    let indexed = Pointer {
+        block: base.block.clone(),
+        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(item), 4),
+    };
+    let read =
+        crate::kernel::eval::load_variable_for_exact_cell(&after, &indexed, LoadKind::Int32, 4);
+    let from = MachineTerm::Variable(item);
+    let to = MachineTerm::constant(0);
+    let mut rewrite = TermRewrite::for_bits_checked(&from, &to);
+    rewrite.enable_registered_load_resolution();
+    let actual = rewrite.bits(&MachineTerm::Variable(read));
+    assert_eq!(rewrite.refusal(), None);
+    let expected =
+        crate::kernel::eval::load_variable_for_exact_cell(&after, &base, LoadKind::Int32, 4);
+    assert_eq!(actual, MachineTerm::Variable(expected));
+    let old = crate::kernel::eval::load_variable_for_exact_cell(
+        &crate::kernel::intern_memory(before),
+        &base,
+        LoadKind::Int32,
+        4,
+    );
+    assert_ne!(
+        actual,
+        MachineTerm::Variable(old),
+        "a call can change the selected cell"
+    );
+}

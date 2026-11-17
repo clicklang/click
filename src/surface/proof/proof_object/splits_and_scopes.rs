@@ -796,7 +796,6 @@ impl<'a> Proof<'a> {
             base_executions: [then_execution, else_execution],
             path_facts,
             common_facts: branch_state.facts.clone(),
-            parent_unfolds: branch_state.unfolded_predicates.clone(),
             parent_locals: self.state.locals().clone(),
             parent_execution: parent_execution.clone(),
             execution_start_state: parent_execution
@@ -974,30 +973,7 @@ impl<'a> Proof<'a> {
         let introductions = obligation
             .introductions()
             .map(|record| record.get(stripped..).unwrap_or_default().to_vec());
-        // Entry lowering already used the phase's predicate unfolds. Give the
-        // checked body that same Surface view for binder names and connective
-        // selection, while retaining the producer's exact kernel judgment.
-        let context = match self.context.as_ref() {
-            ProofContext::FixedState(context) => context,
-            _ => return Err(self.step_error("loop entry requires a fixed-state phase")),
-        };
-        // Initialization owns its unfolds on this branch, so selection uses
-        // the persistent index. Preserve borrowed history for other fixed-state
-        // callers without exporting or cloning the branch's history.
-        let selected = |name: &String| {
-            self.focused_branch_unfolds().contains(name)
-                || context
-                    .unfolded_predicates
-                    .iter()
-                    .any(|inherited| inherited == name)
-        };
-        let mut body_surface = unfold_selected_predicates_in_proposition(
-            context.spec_definitions.predicates,
-            &selected,
-            &proposition,
-            &mut BTreeSet::new(),
-        )
-        .map_err(|message| self.step_error(message))?;
+        let mut body_surface = proposition.clone();
         // A range declaration also owes its native extent bound. That goal
         // is the count comparison, not the loadability predicate; retaining
         // a theorem application must use a source spelling of the judgment
@@ -1053,7 +1029,6 @@ impl<'a> Proof<'a> {
             structure: Box::new(ProofScopeStructure::Have {
                 proposition,
                 kernel: kernel.clone(),
-                retained_body: None,
             }),
             body,
             introduced_facts: Vec::new(),
@@ -1097,34 +1072,7 @@ impl<'a> Proof<'a> {
         } else {
             proposition
         };
-        // A post-execution unfold lets a predicate-call `have` prove the
-        // predicate through its structural body. Pair that body kernel with
-        // the same unfolded Surface view so `intro` retains binder names and
-        // subsequent proof steps serialize an independently checkable
-        // proof. Joining still publishes the opaque `kernel` named by the
-        // enclosing Have step.
-        let structural_proposition = if let ClickProposition::PredicateCall { name, .. } =
-            &proposition
-            && self.focused_branch_unfolds().contains(name)
-        {
-            let predicate_environment = match self.context.as_ref() {
-                ProofContext::Pure(context) => context.spec_definitions.predicates,
-                ProofContext::FixedState(context) => context.spec_definitions.predicates,
-                ProofContext::Execution(context) => context.spec_definitions.predicates,
-            };
-            let active_unfolds = self.focused_branch_unfolds().to_vec();
-            self.unfold_goal_surface(predicate_environment, &proposition, &active_unfolds)
-                .map_err(|message| {
-                    self.step_error(format!("could not unfold `have` goal: {message}"))
-                })?
-        } else {
-            proposition.clone()
-        };
-        let (body_kernel, body_introductions) = if structural_proposition == proposition {
-            (kernel.clone(), kernel_introductions)
-        } else {
-            self.lower_surface_goal_recording_introductions(&structural_proposition, "`have` body")?
-        };
+        let (body_kernel, body_introductions) = (kernel.clone(), kernel_introductions);
         // Opening a frontier goal must not reconstruct an ambient composition
         // context. Its written proof establishes separation from selected
         // evidence; the direct held-resource observation below is independent.
@@ -1183,18 +1131,7 @@ impl<'a> Proof<'a> {
                 body_facts = body_facts.with_selected_load_equality_bridge(&body_kernel);
             }
         }
-        // Chosen-body projections are scoped to the proposition proof that
-        // selected them. A nested `have` starts a fresh presentation scope;
-        // otherwise an outer witness could make an unrelated `extract`
-        // citation resolve against the wrong source epoch.
-        let body_execution = self.branch_execution().map(|execution| {
-            if execution.presentation.chosen_projection.is_none() {
-                return execution.clone();
-            }
-            let mut execution = execution.as_ref().clone();
-            execution.presentation.chosen_projection = None;
-            Arc::new(execution)
-        });
+        let body_execution = self.branch_execution().cloned();
         // Outcome certification must see the assumptions that preceded this
         // scope, not the facts its checked premise-selection operations just
         // derived. Keep those selected facts in the successor below.
@@ -1205,7 +1142,6 @@ impl<'a> Proof<'a> {
             } else {
                 body_facts.clone()
             },
-            unfolded_predicates: self.focused_branch_unfolds().clone(),
             execution: body_execution,
         };
         // An execution `have` borrows the current immutable frontier solely
@@ -1213,28 +1149,20 @@ impl<'a> Proof<'a> {
         // the nested goal; a `have` stated at a function outcome borrows that
         // outcome's result-aware outcome proof data the same way. The nested goal
         // cannot publish a changed frontier or outcome: `join` restores the
-        // exact root state. At a loop frontier it also retains the unfolded
-        // proposition that the nested proof established.
-        // Loop closure needs the actual statement proved by an unfolded
-        // predicate `have`, not only its opaque name. Retain this local
-        // output at a loop frontier; other scope interfaces are unchanged.
-        let retained_body = (at_frontier
-            && self.execution().is_some_and(|execution| {
-                execution.core.frontier.region == ExecutionRegionKind::LoopBody
-            })
-            && structural_proposition != proposition)
-            .then(|| (structural_proposition.clone(), body_kernel.clone()));
+        // exact root state. The named proposition is the scope
+        // interface, independently of the steps used inside its body.
+
         let mut body_goal = match self.focused_outcome_data() {
             Some(outcome_data) => OpenBranch::surface_proposition_at_outcome(
                 body_context,
                 outcome_data.clone(),
                 body_kernel.clone(),
-                structural_proposition,
+                proposition.clone(),
             ),
             None => OpenBranch::surface_proposition_in(
                 body_context,
                 body_kernel.clone(),
-                structural_proposition,
+                proposition.clone(),
             ),
         };
         if let Obligation::Proposition(body) = &mut body_goal.obligation
@@ -1283,7 +1211,6 @@ impl<'a> Proof<'a> {
             structure: Box::new(ProofScopeStructure::Have {
                 proposition,
                 kernel,
-                retained_body,
             }),
             body,
             introduced_facts: Vec::new(),
@@ -1316,9 +1243,6 @@ impl<'a> Proof<'a> {
             .execution()
             .cloned()
             .ok_or_else(|| self.step_error("execution-frontier proof lost its semantic state"))?;
-        if execution.presentation.chosen_projection.is_some() {
-            execution.presentation.chosen_projection = None;
-        }
         if execution.core.frontier.is_at_function_exit() {
             return Err(self.step_error("`open` must begin before execution reaches function exit"));
         }

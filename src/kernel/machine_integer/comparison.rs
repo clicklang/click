@@ -232,8 +232,8 @@ fn closed_comparison_for_operand_views(
     })
 }
 
-/// An order guard or closed wide equality over fixed-size roots is a fixed-size
-/// native comparison atom. Read only these roots, never an arithmetic DAG.
+/// A comparison-guard conditional over literal or variable roots is a
+/// fixed-size native comparison atom. Never traverse an arithmetic DAG.
 fn comparison_conditional_atom(root: &crate::kernel::KernelTerm) -> Option<MachineTerm> {
     use crate::kernel::{KernelTermNode as N, MachineOperandView as V};
     let N::MachineIf { arguments } = root.node() else {
@@ -259,12 +259,7 @@ fn comparison_conditional_atom(root: &crate::kernel::KernelTerm) -> Option<Machi
     else {
         return None;
     };
-    if !matches!(format.format().bits(), 32 | 64)
-        || (*relation == crate::kernel::CompareRelation::Equal
-            && (format.format().bits() != 64
-                || V::Shared(&guard[0]).literal().is_none()
-                || V::Shared(&guard[1]).literal().is_none()))
-    {
+    if !matches!(format.format().bits(), 32 | 64) {
         return None;
     }
     let atom = |root| {

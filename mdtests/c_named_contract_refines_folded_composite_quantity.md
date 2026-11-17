@@ -26,8 +26,8 @@ theorem preserving_used_bundles_preserves_available(
 ) {
     requires PreserveUsedBundles(callback);
     ensures PreserveAvailableBundles(callback) by {
-        unfold(PreserveUsedBundles);
-        unfold(PreserveAvailableBundles);
+        unfold(PreserveUsedBundles(callback));
+        unfold(PreserveAvailableBundles(callback));
         solve();
     }
 }

@@ -34,7 +34,7 @@ theorem incrementable_bound(x: int32) {
     requires incrementable(x);
 
     ensures x < 2147483647 by {
-        unfold(incrementable);
+        unfold(incrementable(x));
         solve();
     }
 }
@@ -43,7 +43,7 @@ int32 increment_unfold(int32 x) {
     requires incrementable(x);
 
     ensures to_integer(result) == to_integer(x + 1) by {
-        unfold(incrementable);
+        unfold(incrementable(x));
         step();
         solve();
     }
@@ -64,7 +64,7 @@ int32 increment_have(int32 x) {
 
     ensures to_integer(result) == to_integer(x + 1) by {
         have x < 2147483647 by {
-            unfold(incrementable);
+            unfold(incrementable(x));
             solve();
         }
         step();

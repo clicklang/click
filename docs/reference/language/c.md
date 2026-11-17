@@ -1926,7 +1926,7 @@ function: `requires Adds(f, { amount: k });`. A call through `f` then binds
 with `amount` fixed to `3`. An unknown, missing, or repeated name is refused.
 A refinement theorem may conclude a contract with value parameters, fixing
 them as an attachment does: `ensures Adds(&add3, { amount: 3 }) by {
-unfold(Adds); solve(); }`, whose `unfold(Adds)` opens the obligation with
+unfold(Adds(&add3, { amount: 3 })); solve(); }`, whose `unfold(Adds(&add3, { amount: 3 }))` opens the obligation with
 `amount` bound to `3`. An abstract refinement fixes the values of both its
 source fact and its conclusion, `requires Adds(f, { amount: 3 }); ensures
 Shifts(f, { offset: 3 })`. See
@@ -2020,20 +2020,20 @@ contract with resource handles are in
 [Automatic formation at `&f`](index.md#automatic-formation-at-f).
 
 A refinement outside that route is stated as a closed pure theorem, whose proof
-spells the step with `both`, `known`, `intro`, `extract`, `rewrite`, or
+spells the step with `both`, `known`, `intro`, `have`, `rewrite`, or
 `contradiction`, and `click expand` prints the spelling. `apply` the theorem
 before the call that needs the contract.
 
 When refinement depends on a conditional footprint, state it as a closed pure
 theorem. The conclusion applies the named contract to one concrete function
-address. `unfold(Contract)` introduces arbitrary values for the contract's
+address. `unfold(Contract(callback))` introduces arbitrary values for the contract's
 call parameters, after which an ordinary proof can use explicit logical cases:
 
 <!-- verified-example: mdtests/c_named_function_contract_refinement_theorem.md -->
 ```click
 theorem set_one_is_make_positive() {
     ensures MakePositive(&set_one_if_active) by {
-        unfold(MakePositive);
+        unfold(MakePositive(&set_one_if_active));
 
         if active != 0 {
             solve();
@@ -2062,9 +2062,8 @@ combinations of footprint guards.
 <!-- verified-example: mdtests/c_named_contract_ordinary_rejects_missing_premise.md -->
 
 The same proof may explicitly open stateful predicates used by either
-interface. After the contract itself is open, `unfold(Predicate)` authorizes
-the registered, checked definition of every occurrence of that predicate in
-the local comparison. This remains an explicit proof step: direct function
+interface. After the contract itself is open, `unfold(predicate(args))` opens the
+selected application in the local comparison. This remains an explicit proof step: direct function
 pointer formation does not unfold a predicate whose opaque interface differs,
 and naming an unrelated predicate grants no authority. Ordinary `solve` may
 select a needed predicate unfolding and record it in its certificate. The
@@ -2101,8 +2100,8 @@ theorem exact_increment_is_progress(
 ) {
     requires ExactIncrement(step);
     ensures ProgressPair(step) by {
-        unfold(ExactIncrement);
-        unfold(ProgressPair);
+        unfold(ExactIncrement(step));
+        unfold(ProgressPair(step));
         solve();
     }
 }
@@ -2450,7 +2449,11 @@ Direct assignment to an array object is rejected. Each modeled scalar array
 uses its ABI element width (`int8`/`uint8`: 1 byte, `int16`/`uint16`: 2 bytes,
 `int32`/`uint32`: 4 bytes, and `int64`/`uint64`: 8 bytes). A local array
 initializer writes each element in declaration order; omitted elements are
-zero-initialized, and too many elements are rejected.
+zero-initialized, and too many elements are rejected. Automatic `unsigned int`
+(`uint32`) arrays accept brace initializers, including nested groups for
+multidimensional arrays; each explicit value converts to the unsigned element
+type and omitted elements become zero
+(`mdtests/c_unsigned_array_initializer.md`).
 
 Scalar local arrays may have multiple fixed dimensions, such as
 `int32 matrix[3][4]`. Click lowers their storage in row-major order while

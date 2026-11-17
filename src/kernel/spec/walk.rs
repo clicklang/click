@@ -58,6 +58,7 @@ impl<'a> SpecNode<'a> {
                 }
                 SpecProposition::FloatClassification { expression, .. }
                 | SpecProposition::Defined(expression) => visit(N::Expression(expression)),
+                SpecProposition::MutexHeld(expression) => visit(N::Expression(expression)),
                 SpecProposition::And(left, right)
                 | SpecProposition::Or(left, right)
                 | SpecProposition::Implies(left, right) => {

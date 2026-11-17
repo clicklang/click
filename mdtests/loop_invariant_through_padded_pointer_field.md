@@ -90,7 +90,7 @@ int32 probe_contract(struct job *j) {
                 if k < i {
                     instantiate(at(region(3).entry, forall (k: int32) {
                         j->lo <= k and k < i implies j->p[k] == j->v
-                    }), k) using { j->lo <= k; k < i; };
+                    }), k);
                     solve();
                 } else {
                     have k == i;
@@ -138,9 +138,10 @@ int32 probe_contract(struct job *j) {
                         at(region(4).entry, i) < j->hi;
                     };
                 }
+                have j->lo <= k and k <= i;
                 instantiate(at(region(4).entry, forall (k: int32) {
                     j->lo <= k and k <= i implies j->p[k] == j->v
-                }), k) using { j->lo <= k; k <= at(region(4).entry, i); };
+                }), k);
                 known();
             }
             solve();

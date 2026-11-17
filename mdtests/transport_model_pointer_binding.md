@@ -48,7 +48,7 @@ int32 update(int32* p) {
                         normalize() using { separate(memory(p[1]), memory(p[0])); };
                     }
                     have p[0] == at(iteration, p[0]) by {
-                        preserve(separate(statement(0).statement(0).footprint, memory(p[0])));
+                        preserve(memory(p[0]), statement(0).statement(0));
                     }
                     have p[0] == 7 by { rewrite(p[0], at(iteration, p[0])); known(); }
                     have alias[0] == 7 by { rewrite(alias, p); known(); }

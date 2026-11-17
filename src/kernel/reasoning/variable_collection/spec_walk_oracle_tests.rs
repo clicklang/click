@@ -139,6 +139,9 @@ fn old_collect_spec_proposition_bitvector_variables(
             old_collect_spec_expression_bitvector_variables(left, variables);
             old_collect_spec_expression_bitvector_variables(right, variables);
         }
+        SpecProposition::MutexHeld(expression) => {
+            old_collect_spec_expression_bitvector_variables(expression, variables);
+        }
         SpecProposition::FloatClassification { expression, .. } => {
             old_collect_spec_expression_bitvector_variables(expression, variables);
         }
@@ -628,6 +631,9 @@ fn old_collect_spec_proposition_bound_identities(
         SpecProposition::Comparison { left, right, .. } => {
             old_collect_spec_integer_bound_expression(left, variables, integer_seen);
             old_collect_spec_integer_bound_expression(right, variables, integer_seen);
+        }
+        SpecProposition::MutexHeld(expression) => {
+            old_collect_spec_integer_bound_expression(expression, variables, integer_seen);
         }
         SpecProposition::FloatClassification { expression, .. }
         | SpecProposition::Defined(expression) => {

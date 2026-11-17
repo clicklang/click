@@ -28,20 +28,20 @@ void fill_t(uint8* dst) {
             normalize() using { separate(memory(dst[4u64]), memory(dst[k])); };
         }
         have at(statement(1).exit, dst[k]) == at(statement(1).entry, dst[k]) by {
-            preserve(separate(statement(1).footprint, memory(dst[k])));
+            preserve(memory(dst[k]), statement(1));
         }
         instantiate(at(statement(1).entry,
-            (0u64..4u64).all(|j| { defined(dst[j]) and dst[j] == 7 })), k) using { k < 4u64; };
+            (0u64..4u64).all(|j| { defined(dst[j]) and dst[j] == 7 })), k);
         have defined(dst[k]) by {
-            preserve(separate(statement(1).footprint, memory(dst[k])));
+            preserve(memory(dst[k]), statement(1));
         }
         have dst[k] == 7u8 by { known(); }
         known();
     }
     have bytes::all_equal(dst, 0u64, 4u64, 7u8) by {
-        unfold(bytes::all_equal);
+        unfold(bytes::all_equal(dst, 0u64, 4u64, 7u8));
         intro(); intro();
-        instantiate((0u64..4u64).all(|j| { defined(dst[j]) and dst[j] == 7 }), k) using { k < 4u64; };
+        instantiate((0u64..4u64).all(|j| { defined(dst[j]) and dst[j] == 7 }), k);
         known();
     }
     known();

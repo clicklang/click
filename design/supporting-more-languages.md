@@ -37,7 +37,7 @@ A mutable reborrow cannot duplicate ownership. Recovery must return updated
 contents once, preserve disjoint access, and reject expired or wrong child
 identities. Field partition and nested dependencies need explicit evidence.
 The [production Rust assessment](rust-borrow-authority-assessment.md) owns the
-implemented call and local-lease subsets; the independent
+implemented call subset; local borrows are trusted to rustc. The independent
 [worked correspondence](rust-resource-correspondence.md) and
 [compiler probes](borrow-probes/README.md) are evidence for their stated models,
 not substitutes for imported source or adversarial sidecar checks.

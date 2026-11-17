@@ -12,7 +12,7 @@ use std::sync::Arc;
 /// map the clause re-annotation uses.
 fn phase_proof_scope(
     environment: &ExecutionProofEnvironment<'_>,
-) -> PersistentMap<String, ContractExpression> {
+) -> PersistentBinderMap<ContractExpression> {
     environment
         .proof_locals
         .iter()
@@ -215,7 +215,7 @@ fn initialize_script_layout<'a>(
     let helper_end = tactics
         .iter()
         .position(|tactic| match tactic {
-            ProofTactic::UnfoldPredicate(_) => false,
+            ProofTactic::UnfoldProposition(_) | ProofTactic::UnfoldFunction(_) => false,
             ProofTactic::Have(_) => names_an_invariant(tactic),
             _ => true,
         })
@@ -435,7 +435,6 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
         environment.spec_definitions,
         environment.theorem_environment,
         &[],
-        &[],
     )
     .with_surface_local_scope(&phase_proof_scope(environment))
     // The entry checks the invariants before the first pass.
@@ -452,9 +451,12 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
         phase = phase.at_source_tactic(*source_index);
         let checkpoint = phase.checkpoint();
         phase = match helper {
-            ProofTactic::UnfoldPredicate(name) => phase
+            ProofTactic::UnfoldProposition(target) => phase
                 .driver()
-                .apply_step(ProofStep::UnfoldPredicate(name.clone()))?,
+                .apply_step(ProofStep::UnfoldProposition(target.clone()))?,
+            ProofTactic::UnfoldFunction(application) => phase
+                .driver()
+                .apply_step(ProofStep::UnfoldFunction(application.clone()))?,
             ProofTactic::Have(have) => {
                 let scope = phase.driver().open_have(have.proposition.clone())?;
                 check_initialization_body(&scope, &have.checking_proof(), None)?.join()?
@@ -1039,7 +1041,10 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 // The head's pass count is spelled `iterations`.
                 let mut names = written_invariant_binder_names(invariant_checks);
                 if let crate::kernel::IntegerTerm::Variable(count) = preservation.iterations() {
-                    names.insert(*count, crate::surface::LOOP_ITERATIONS_NAME.to_string());
+                    names.insert(
+                        *count,
+                        SurfaceBinder::from(crate::surface::LOOP_ITERATIONS_NAME),
+                    );
                 }
                 names
             }),

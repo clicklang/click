@@ -41,7 +41,7 @@ void walk(int32 n) {
         }
     }
     step();
-    extract(not (n > 0) or pending(state.model) == 0);
+    have not (n > 0) or pending(state.model) == 0;
     have n == 0 or pending(state.model) == 0 by {
         cases {
             not (n > 0) => {

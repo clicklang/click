@@ -39,7 +39,7 @@ int32 keep_h() {
 } by {
     have 0 <= 0;
     have icount(h, 0, 0) == 0 by {
-        peel(icount(h, 0, 0)) using { 0 <= 0; };
+        unfold(icount(h, 0, 0));
         normalize();
     }
     step_until(function.exit);

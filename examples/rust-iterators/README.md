@@ -22,7 +22,7 @@ Integers, and the body's arithmetic is `have P;`. The prefix length
 endpoint and an index. Facts about that machine value are written as
 Integer observations, `to_integer(bytes.len() - iter.len()) < 18446744073709551615`,
 which is the same fact as the native bound (see "One form for comparisons of
-observations" in `docs/internals/mathematical-integers.md`), so `peel` and
+observations" in `docs/internals/mathematical-integers.md`), so `unfold` and
 indexing use it directly. A plain `bytes.len() - iter.len()` in
 a comparison is Integer subtraction.
 

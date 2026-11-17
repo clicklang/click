@@ -154,6 +154,10 @@ pub(super) fn confined_resource_name<'a>(
         }
         ResourceFact::Own(Resource::MutexLive(_), _)
         | ResourceFact::View(Resource::MutexLive(_)) => return Some("mutex lifetime"),
+        ResourceFact::Own(Resource::ConditionalMutexGuard(_), _)
+        | ResourceFact::View(Resource::ConditionalMutexGuard(_)) => {
+            return Some("conditional mutex guard");
+        }
         ResourceFact::Own(Resource::MutexGuard(_), _)
         | ResourceFact::View(Resource::MutexGuard(_)) => return Some("mutex guard"),
         ResourceFact::Own(Resource::Composite { name, .. }, _)

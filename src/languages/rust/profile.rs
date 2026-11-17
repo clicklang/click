@@ -71,7 +71,7 @@ mod tests {
         let p = get();
         assert_eq!(
             format!("{:x}", Sha256::digest(p.semantic_identity().as_bytes())),
-            "b3843eccb3ce25569340d0937b4641556986ef0415d478019560f6084fe3af34"
+            "14609af1cfef5248d6b05bc66b7636b04990b84950f6d9d521f82b152b284784"
         );
         assert!(
             include_str!("../../../Cargo.toml")

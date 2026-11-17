@@ -59,9 +59,10 @@ int32 render(char buf[], uint32 n) {
             };
         }
         have buf[0] == format::decimal_digit(n as uint64, 0u64) by {
+            have 0u64 < format::decimal_length(n as uint64) and 0u64 + 1u64 < 8u64;
             instantiate(forall (k: uint64) {
                 k < format::decimal_length(n as uint64) and k + 1u64 < 8u64 implies buf[k] == format::decimal_digit(n as uint64, k)
-            }, 0u64) using { format::decimal_length(n as uint64) == 2u64; };
+            }, 0u64);
             solve();
         }
         have buf[0] == 52 by {

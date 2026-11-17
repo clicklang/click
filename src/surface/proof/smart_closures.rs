@@ -143,6 +143,8 @@ fn collect_signed_surface_terms<'a>(
     while let Some(expression) = pending.pop() {
         terms.push(expression);
         match expression {
+            ContractExpression::IntegerContext(value) => pending.push(value),
+
             ContractExpression::Proposition(proposition) => {
                 collect_signed_surface_proposition_terms(proposition, terms)
             }
@@ -549,7 +551,8 @@ pub(super) fn observed_native_surface_comparison(
     // by that arithmetic; only an observation makes it Integer arithmetic.
     fn written_integer(operand: &ContractExpression) -> bool {
         match operand {
-            // Synthesis retains mathematical sort with this lexical alias.
+            ContractExpression::IntegerContext(_) => true,
+            // An authored Integer let can supply the same sort context.
             // Observing it again would place an Integer inside a machine cast.
             ContractExpression::Let {
                 name,
@@ -3041,7 +3044,7 @@ impl<'a> Proof<'a> {
         Some(bounds)
     }
 
-    /// The premise speller's spelling of a goal a search states, as
+    /// The premise raiser's spelling of a goal a search states, as
     /// `Proof::spelled_goal` spells a refined one, without its exemption for
     /// a smart tactic: the search writes a `have` of it.
     fn spelled_goal_for_search(&self, goal: &Proposition) -> Option<ClickProposition> {
@@ -3072,7 +3075,7 @@ impl<'a> Proof<'a> {
     /// The fixed state premises are spelled against. Every proof state has
     /// one: an outcome, a proposition judged mid-execution, the execution
     /// frontier itself, or a fixed-state proof
-    /// (`docs/internals/spellability.md`).
+    /// (`docs/internals/raise-lower-principle.md`).
     pub(super) fn premise_fixed_state_view(&self) -> Option<FixedStateOperationView<'_>> {
         self.outcome_fixed_state_view()
             .or_else(|| self.execution_proposition_fixed_state_view())
@@ -3433,7 +3436,7 @@ impl<'a> Proof<'a> {
             return Ok(Some(spelling));
         }
         // Fixed-state and focused-outcome requirements can refer to reads
-        // retained from an intermediate statement. Give their speller the
+        // retained from an intermediate statement. Give their raiser the
         // same indexed historical names as ordinary facts and goals.
         let _binder_names = self.requirement_binder_name_scope();
         let spelling_view = self.premise_fixed_state_view();
@@ -3479,12 +3482,12 @@ impl<'a> Proof<'a> {
         };
         if let Some(surface) = non_execution_surface {
             let surface = surface.ok_or_else(|| self.step_error(
-                "a generated prerequisite has no Surface spelling; this is a spellability defect",
+                "a generated prerequisite has no Surface spelling; this is a raise-lower principle defect",
             ).with_unresolved_requirement(&ProofObligation::verification_condition(requirement.proposition.clone())))?;
             let lowered = self.lower_surface_goal(&surface, "proof definedness requirement")?;
             if !lowered_states_requirement(&lowered, requirement) {
                 return Err(self.step_error(
-                    "a proof definedness requirement does not round-trip; this is a spellability defect",
+                    "a proof definedness requirement does not round-trip; this is a raise-lower principle defect",
                 ));
             }
             return Ok(Some(RequirementSpelling { surface }));
@@ -3534,9 +3537,9 @@ impl<'a> Proof<'a> {
                 source_backed_direct_caller_requirement(requirement, step, execution, context);
             let candidate = match &direct_caller {
                 Some((predicate_name, _)) => {
-                    let mut unfolded = self.active_unfolded_predicates();
+                    let mut unfolded = Vec::<String>::new();
                     unfolded.push(predicate_name.clone());
-                    unfold_structural_invariant_proposition(
+                    unfold_surface_predicates(
                         context.spec_definitions.predicates,
                         &registry_surface.proposition,
                         &unfolded,
@@ -5519,7 +5522,7 @@ pub(in crate::surface::proof) fn describe_recorded_store_separation_miss(
     )
 }
 
-mod multiplication;
-
 mod division;
+mod fact_projection;
 mod machine_bridges;
+mod multiplication;

@@ -41,7 +41,7 @@ int32 apply_read(int32 (*read)(int32*), int32* cells) {
 
 theorem read_first_satisfies_ReadFirst() {
     ensures ReadFirst(&read_first) by {
-        unfold(ReadFirst);
+        unfold(ReadFirst(&read_first));
         solve();
     }
 }

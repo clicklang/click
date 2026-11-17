@@ -31,16 +31,17 @@ int32 bad(int32 x) {
                 known();
             }
             have x == 5 by {
+                have 5 == 5;
                 instantiate(
                     forall (u: int32) {
                         u == 5 implies forall (z: int32) { z == 5 }
                     },
                     5
-                ) using { };
+                );
                 instantiate(
                     forall (z: int32) { z == 5 },
                     x
-                ) using { };
+                );
                 known();
             }
             known();
@@ -58,16 +59,17 @@ int32 bad(int32 x) {
                 known();
             }
             have x == 5 by {
+                have 5 == 5;
                 instantiate(
                     forall (u: int32) {
                         u == 5 implies forall (z: int32) { z == 5 }
                     },
                     5
-                ) using { };
+                );
                 instantiate(
                     forall (z: int32) { z == 5 },
                     x
-                ) using { };
+                );
                 known();
             }
             known();

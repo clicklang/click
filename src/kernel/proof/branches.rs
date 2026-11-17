@@ -5,19 +5,18 @@
 //! branch's obligation and semantic payload, but cannot construct or reuse
 //! identities independently of this collection.
 
-use super::{PersistentOrderedSet, ProofFacts};
+use super::ProofFacts;
 use crate::persistent::PersistentMap;
 use std::sync::Arc;
 
 /// Path-local state shared by one open proof branch.
 ///
 /// `E` is an opaque language attachment during the boundary migration. The
-/// kernel owns the fact and unfold state and the persistent branch shape; it
+/// kernel owns the facts and the persistent branch shape; it
 /// never interprets `E` as evidence.
 #[derive(Clone)]
 pub(crate) struct ProofBranchState<E> {
     pub(crate) facts: ProofFacts,
-    pub(crate) unfolded_predicates: PersistentOrderedSet<String>,
     pub(crate) execution: Option<Arc<E>>,
 }
 

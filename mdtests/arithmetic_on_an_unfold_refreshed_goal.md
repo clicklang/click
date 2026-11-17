@@ -1,7 +1,7 @@
-# arithmetic reads the goal `peel` refreshed
+# arithmetic reads the goal `unfold` refreshed
 
-`peel(f(args)) using { ... }` refreshes the goal through the range-fold law
-the listed guards select. It installs that refreshed claim in both forms: the
+`unfold(f(args))` refreshes the goal through the range-fold law
+the available range facts select. It installs that refreshed claim in both forms: the
 kernel proposition the law substituted into, and the written spelling the law
 replaced `f(args)` by. A later tactic that dispatches on the written goal --
 arithmetic over the `Integer` linear fragment among them -- therefore reads
@@ -26,10 +26,7 @@ theorem refreshed_goal(lo: int32, hi: int32) {
         have to_integer(hi - 1) < 2147483647 by {
             solve() using { 0 <= lo; lo < hi; hi < 2147483647; };
         }
-        peel(total(lo, hi)) using {
-            to_integer(lo) <= to_integer(hi - 1);
-            to_integer(hi - 1) < 2147483647;
-        };
+        unfold(total(lo, hi));
         solve() using { to_integer(lo) <= to_integer(hi - 1); };
     }
 }

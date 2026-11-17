@@ -19,8 +19,8 @@ function adler_spec_b(bytes: uint8[], length: int32, a0: Integer, b0: Integer) -
  truncating_remainder(b0 + to_integer(length) * a0 + adler_weighted_sum(bytes, length, length), 65521)
 }
 theorem adler_sum_empty(bytes: uint8[], weight_end: int32) {
- ensures adler_byte_sum(bytes, 0) == 0 by { peel(adler_byte_sum(bytes, 0)) using { 0 >= 0; }; solve(); }
- ensures adler_weighted_sum(bytes, 0, weight_end) == 0 by { peel(adler_weighted_sum(bytes, 0, weight_end)) using { 0 >= 0; }; solve(); }
+ ensures adler_byte_sum(bytes, 0) == 0 by { unfold(adler_byte_sum(bytes, 0)); solve(); }
+ ensures adler_weighted_sum(bytes, 0, weight_end) == 0 by { unfold(adler_weighted_sum(bytes, 0, weight_end)); solve(); }
 }
 
 theorem adler_sum_append(bytes: uint8[], n: int32) {
@@ -28,7 +28,7 @@ theorem adler_sum_append(bytes: uint8[], n: int32) {
  ensures adler_byte_sum(bytes, n) == adler_byte_sum(bytes, n - 1) + to_integer(bytes[n - 1] as int32) by {
   have 0 <= to_integer(n - 1) by { solve() using { 0 < n; }; }
   have to_integer(n - 1) < 2147483647 by { solve() using { 0 < n; }; }
-  peel(adler_byte_sum(bytes, n)) using { 0 <= to_integer(n - 1); to_integer(n - 1) < 2147483647; };
+  unfold(adler_byte_sum(bytes, n));
   normalize();
  }
 }
@@ -37,7 +37,7 @@ theorem adler_weighted_append(bytes: uint8[], n: int32, weight_end: int32) {
  ensures adler_weighted_sum(bytes, n, weight_end) == adler_weighted_sum(bytes, n - 1, weight_end) + (to_integer(weight_end) - to_integer(n - 1)) * to_integer(bytes[n - 1] as int32) by {
   have 0 <= to_integer(n - 1) by { solve() using { 0 < n; }; }
   have to_integer(n - 1) < 2147483647 by { solve() using { 0 < n; }; }
-  peel(adler_weighted_sum(bytes, n, weight_end)) using { 0 <= to_integer(n - 1); to_integer(n - 1) < 2147483647; };
+  unfold(adler_weighted_sum(bytes, n, weight_end));
   normalize();
  }
 }
@@ -47,9 +47,9 @@ theorem adler_weight_shift(bytes: uint8[], n: int32, w0: int32, w1: int32) {
  ensures adler_weighted_sum(bytes, n, w1) - adler_weighted_sum(bytes, n, w0) == (to_integer(w1) - to_integer(w0)) * adler_byte_sum(bytes, n) by {
   induct(n) as ih;
   if n <= 0 {
-   peel(adler_weighted_sum(bytes, n, w1)) using { n <= 0; };
-   peel(adler_weighted_sum(bytes, n, w0)) using { n <= 0; };
-   peel(adler_byte_sum(bytes, n)) using { n <= 0; };
+   unfold(adler_weighted_sum(bytes, n, w1));
+   unfold(adler_weighted_sum(bytes, n, w0));
+   unfold(adler_byte_sum(bytes, n));
    have adler_weighted_sum(bytes, n, w1) == 0 by { known(); }
    have adler_weighted_sum(bytes, n, w0) == 0 by { known(); }
    have adler_byte_sum(bytes, n) == 0 by { known(); }
@@ -61,9 +61,9 @@ theorem adler_weight_shift(bytes: uint8[], n: int32, w0: int32, w1: int32) {
    have to_integer(n - 1) < 2147483647 by { solve() using { 0 < n; }; }
    have defined(n - 1) by { solve() using { 0 < n; }; }
    apply(ih(n - 1)) using { defined(n - 1); 0 <= to_integer(n - 1); to_integer(n - 1) < to_integer(n); };
-   peel(adler_weighted_sum(bytes, n, w1)) using { 0 <= to_integer(n - 1); to_integer(n - 1) < 2147483647; };
-   peel(adler_weighted_sum(bytes, n, w0)) using { 0 <= to_integer(n - 1); to_integer(n - 1) < 2147483647; };
-   peel(adler_byte_sum(bytes, n)) using { 0 <= to_integer(n - 1); to_integer(n - 1) < 2147483647; };
+   unfold(adler_weighted_sum(bytes, n, w1));
+   unfold(adler_weighted_sum(bytes, n, w0));
+   unfold(adler_byte_sum(bytes, n));
    have (adler_weighted_sum(bytes, n - 1, w1) + (to_integer(w1) - to_integer(n - 1)) * to_integer(bytes[n - 1] as int32)) - (adler_weighted_sum(bytes, n - 1, w0) + (to_integer(w0) - to_integer(n - 1)) * to_integer(bytes[n - 1] as int32)) == (adler_weighted_sum(bytes, n - 1, w1) - adler_weighted_sum(bytes, n - 1, w0)) + (to_integer(w1) - to_integer(w0)) * to_integer(bytes[n - 1] as int32) by {
     solve() using {  };
    }
@@ -117,7 +117,7 @@ theorem adler_sum_nonnegative(bytes: uint8[], n: int32) {
  ensures 0 <= adler_byte_sum(bytes, n) by {
   induct(n) as ih;
   if n <= 0 {
-   peel(adler_byte_sum(bytes, n)) using { n <= 0; };
+   unfold(adler_byte_sum(bytes, n));
    solve() using { adler_byte_sum(bytes, n) == 0; };
   } else {
    have 0 < n by { solve(); }
@@ -137,7 +137,7 @@ theorem adler_weighted_nonnegative(bytes: uint8[], n: int32) {
  ensures 0 <= adler_weighted_sum(bytes, n, n) by {
   induct(n) as ih;
   if n <= 0 {
-   peel(adler_weighted_sum(bytes, n, n)) using { n <= 0; };
+   unfold(adler_weighted_sum(bytes, n, n));
    solve() using { adler_weighted_sum(bytes, n, n) == 0; };
   } else {
    have 0 < n by { solve(); }
@@ -927,7 +927,8 @@ theorem adler_sums_extensional(left: uint8[], right: uint8[], bound: int32, n: i
     0 <= to_integer(n - 1); to_integer(n - 1) < to_integer(n); to_integer(n - 1) <= to_integer(bound);
     forall (k: int32) { 0 <= k and k < bound implies left[k] == right[k] };
    };
-   instantiate(forall (k: int32) { 0 <= k and k < bound implies left[k] == right[k] }, n - 1) using { 0 <= to_integer(n - 1); to_integer(n - 1) < to_integer(bound); };
+   have 0 <= (n - 1) and (n - 1) < bound;
+   instantiate(forall (k: int32) { 0 <= k and k < bound implies left[k] == right[k] }, n - 1);
    apply(adler_sum_append(left, n)) using { 0 < n; };
    apply(adler_sum_append(right, n)) using { 0 < n; };
    apply(adler_weighted_append(left, n, weight)) using { 0 < n; };

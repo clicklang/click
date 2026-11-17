@@ -16,7 +16,7 @@ void keep(uint8* p, uint8* q) {
         normalize() using { separate(memory(*p), memory(*q)); };
     }
     have *q == at(statement(0).entry, *q) by {
-        preserve(separate(statement(0).footprint, memory(*q)));
+        preserve(memory(*q), statement(0));
     }
     step_until(function.exit);
     known();

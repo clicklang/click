@@ -1,9 +1,7 @@
 //! Predicate and resource unfold/fold/observation steps.
 
 use super::*;
-use crate::kernel::binary_term;
 use crate::kernel::{IntegerTerm, SharedIntegerTerm};
-use crate::kernel::{MachineBinaryOp, MachineIntegerType};
 
 impl<'a> Proof<'a> {
     /// Whether `resource` names a declared family that is not an
@@ -308,7 +306,6 @@ impl<'a> Proof<'a> {
             .expect("population member change requires an open goal")
             .with_state(BranchState {
                 facts: after_facts,
-                unfolded_predicates: self.focused_branch_unfolds().clone(),
                 execution: Some(Arc::new(execution)),
             });
         Ok(CheckedFocusedTransition {
@@ -372,7 +369,6 @@ impl<'a> Proof<'a> {
             .expect("population authority exchange requires an open goal")
             .with_state(BranchState {
                 facts: before_facts,
-                unfolded_predicates: self.focused_branch_unfolds().clone(),
                 execution: Some(Arc::new(execution)),
             });
         Ok(CheckedFocusedTransition {
@@ -445,7 +441,7 @@ impl<'a> Proof<'a> {
             // A proof `match` arm's bindings are proof locals, not C locals:
             // the fields below substitute them, and so do the resource's own
             // arguments, so `fold(cell_at(id), ...)` names the pointer a
-            // `have` goal spelling `id` does.
+            // `have` goal raising `id` does.
             let resource = &self.substitute_fixed_state_locals_in_resource_arguments(resource)?;
             let lowered = lower_resource_clause_at_current_locals_with_entry_and_assumptions(
                 resource,
@@ -789,85 +785,72 @@ impl<'a> Proof<'a> {
             // arguments and fields. Pair body clauses by the producer's
             // ordinal, rather than reconstructing those values from state.
             let mut written = BTreeMap::new();
-            let source_body = if let (Some(fields), ResourceClause::Named { resource, .. }) =
-                (&binding.fold_fields, resource)
-                && let ResourceClause::Declared {
-                    name, arguments, ..
-                } = resource.as_ref()
-                && let Some(source_definition) = context.resource_environment.get(name)
-                && let Some(body) = source_definition.composite_body()
-            {
-                written.extend(
-                    source_definition.parameters().iter().zip(arguments).map(
+            let source_body =
+                if let (Some(fields), ResourceClause::Named { resource, .. }) =
+                    (&binding.fold_fields, resource)
+                    && let ResourceClause::Declared {
+                        name, arguments, ..
+                    } = resource.as_ref()
+                    && let Some(source_definition) = context.resource_environment.get(name)
+                    && let Some(body) = source_definition.composite_body()
+                {
+                    written.extend(source_definition.parameters().iter().zip(arguments).map(
                         |(parameter, argument)| (parameter.name().to_owned(), argument.clone()),
-                    ),
-                );
-                written.extend(fields.iter().cloned());
-                // A field supplies the type of a contextual literal.
-                // Preserve that type when the initializer is substituted
-                // into an independently written obligation.
-                for field in source_definition.fields() {
-                    if *field.click_type() == ClickType::Integer
-                        && let Some(value) = written.get_mut(field.name())
-                    {
-                        *value = ContractExpression::Let {
-                            name: "field_value".to_owned(),
-                            click_type: Some(ClickType::Integer),
-                            value: Box::new(value.clone()),
-                            body: Box::new(ContractExpression::Binding("field_value".to_owned())),
-                        };
-                    } else if let Some(value) = written.get_mut(field.name()) {
-                        // The kernel evaluates the initializer at the field's
-                        // declared type. Keep that same conversion in the
-                        // independently printed prerequisite: n + 1 for an
-                        // int32 field must not become Integer arithmetic.
-                        *value = crate::surface::lowering::pure_function_parameter_argument(
-                            &FunctionParameter {
-                                name: field.name().to_owned(),
-                                click_type: field.click_type().clone(),
-                                struct_name: None,
-                                function_pointer_signature: None,
-                                constant: false,
-                                pointee_constant: false,
-                                reference: false,
-                            },
-                            value,
-                        );
+                    ));
+                    written.extend(fields.iter().cloned());
+                    // A field supplies the type of a contextual literal.
+                    // Preserve that type when the initializer is substituted
+                    // into an independently written obligation.
+                    for field in source_definition.fields() {
+                        if *field.click_type() == ClickType::Integer
+                            && let Some(value) = written.get_mut(field.name())
+                        {
+                            *value = ContractExpression::IntegerContext(Box::new(value.clone()));
+                        } else if let Some(value) = written.get_mut(field.name()) {
+                            // The kernel evaluates the initializer at the field's
+                            // declared type. Keep that same conversion in the
+                            // independently printed prerequisite: n + 1 for an
+                            // int32 field must not become Integer arithmetic.
+                            *value = crate::surface::lowering::pure_function_parameter_argument(
+                                &FunctionParameter {
+                                    name: field.name().to_owned(),
+                                    click_type: field.click_type().clone(),
+                                    struct_name: None,
+                                    function_pointer_signature: None,
+                                    constant: false,
+                                    pointee_constant: false,
+                                    reference: false,
+                                },
+                                value,
+                            );
+                        }
                     }
-                }
-                match &body.matched {
-                    None => Some(context.resource_environment.fold_source(name)?.body.clone()),
-                    Some(matched) => match written.get(&matched.field) {
-                        Some(ContractExpression::AlgebraicConstructor {
-                            variant,
-                            arguments,
-                            ..
-                        }) => {
-                            let (bindings, arm) = context
-                                .resource_environment
-                                .fold_source(name)?
-                                .arms
-                                .get(variant)
-                                .ok_or_else(|| {
-                                    self.step_error("fold constructor has no source arm")
-                                })?;
-                            let arguments = arguments.clone();
-                            // Constructor fields have their declared types,
-                            // including the implicit object-pointer coercion
-                            // of a void* field. Preserve that conversion in
-                            // the source obligation just as constructor
-                            // lowering does in the kernel term.
-                            written.extend(bindings.iter().cloned().zip(arguments).map(
+                    match &body.matched {
+                        None => Some(context.resource_environment.fold_source(name)?.body.clone()),
+                        Some(matched) => match written.get(&matched.field) {
+                            Some(ContractExpression::AlgebraicConstructor {
+                                variant,
+                                arguments,
+                                ..
+                            }) => {
+                                let (bindings, arm) = context
+                                    .resource_environment
+                                    .fold_source(name)?
+                                    .arms
+                                    .get(variant)
+                                    .ok_or_else(|| {
+                                        self.step_error("fold constructor has no source arm")
+                                    })?;
+                                let arguments = arguments.clone();
+                                // Constructor fields have their declared types,
+                                // including the implicit object-pointer coercion
+                                // of a void* field. Preserve that conversion in
+                                // the source obligation just as constructor
+                                // lowering does in the kernel term.
+                                written.extend(bindings.iter().cloned().zip(arguments).map(
                                 |((name, click_type), argument)| {
                                     let value = if click_type == ClickType::Integer {
-                                        ContractExpression::Let {
-                                            name: "field_value".to_owned(),
-                                            click_type: Some(ClickType::Integer),
-                                            value: Box::new(argument),
-                                            body: Box::new(ContractExpression::Binding(
-                                                "field_value".to_owned(),
-                                            )),
-                                        }
+                                        ContractExpression::IntegerContext(Box::new(argument))
                                     } else {
                                         crate::surface::lowering::pure_function_parameter_argument(
                                             &FunctionParameter {
@@ -885,14 +868,14 @@ impl<'a> Proof<'a> {
                                     (name, value)
                                 },
                             ));
-                            Some(arm.clone())
-                        }
-                        _ => None,
-                    },
-                }
-            } else {
-                None
-            };
+                                Some(arm.clone())
+                            }
+                            _ => None,
+                        },
+                    }
+                } else {
+                    None
+                };
             let selected_by_name = selected_children
                 .as_deref()
                 .unwrap_or(&[])
@@ -1084,7 +1067,6 @@ impl<'a> Proof<'a> {
                 updated,
                 BranchState {
                     facts,
-                    unfolded_predicates: branch.state.unfolded_predicates.clone(),
                     execution: Some(Arc::new(execution)),
                 },
             )
@@ -1106,7 +1088,6 @@ impl<'a> Proof<'a> {
             execution.core.state = after.into();
             branch.with_state(BranchState {
                 facts,
-                unfolded_predicates: branch.state.unfolded_predicates.clone(),
                 execution: Some(Arc::new(execution)),
             })
         };
@@ -1229,8 +1210,18 @@ impl<'a> Proof<'a> {
     pub(super) fn apply_function_unfold(
         &self,
         application: &ClickFunctionApplication,
-        premises: Option<&[ClickProposition]>,
     ) -> Result<CheckedFocusedTransition, ClickError> {
+        let definitions = match self.context.as_ref() {
+            ProofContext::Pure(context) => context.spec_definitions,
+            ProofContext::FixedState(context) => context.spec_definitions,
+            ProofContext::Execution(context) => context.spec_definitions,
+        };
+        if definitions.predicates.get(&application.name).is_some() {
+            return self.apply_local_predicate_unfold(&ClickProposition::PredicateCall {
+                name: application.name.clone(),
+                arguments: application.arguments.clone(),
+            });
+        }
         let mut referenced_names = BTreeSet::new();
         for argument in &application.arguments {
             collect_contract_expression_referenced_names(argument, &mut referenced_names);
@@ -1242,11 +1233,6 @@ impl<'a> Proof<'a> {
         // cloned.
         if let Some(goal) = self.surface_goal() {
             collect_click_proposition_referenced_names(goal, &mut referenced_names);
-        }
-        if let Some(premises) = premises {
-            for premise in premises {
-                collect_click_proposition_referenced_names(premise, &mut referenced_names);
-            }
         }
         let local_algebraic_values = |inherited: BTreeMap<String, SpecAlgebraicExpression>| {
             referenced_names
@@ -1275,7 +1261,6 @@ impl<'a> Proof<'a> {
                     ExecutionState::new().with_memory(context.theorem_context.memory.clone());
                 self.apply_function_unfold_in_state(
                     application,
-                    premises,
                     context.theorem_context.values.clone(),
                     context.theorem_context.array_refs.clone(),
                     local_algebraic_values(
@@ -1302,7 +1287,6 @@ impl<'a> Proof<'a> {
                     contract_environment_at_state(&values, &array_refs, context.fixed_state.state);
                 self.apply_function_unfold_in_state(
                     application,
-                    premises,
                     values,
                     array_refs,
                     local_algebraic_values(BTreeMap::new()),
@@ -1328,7 +1312,6 @@ impl<'a> Proof<'a> {
                     contract_environment_at_state(&values, &array_refs, view.fixed_state.state);
                 self.apply_function_unfold_in_state(
                     application,
-                    premises,
                     values,
                     array_refs,
                     local_algebraic_values(BTreeMap::new()),
@@ -1356,7 +1339,6 @@ impl<'a> Proof<'a> {
                     context.old_reference_state(&execution.core.frontier, &execution.core.state);
                 self.apply_function_unfold_in_state(
                     application,
-                    premises,
                     values,
                     array_refs,
                     local_algebraic_values(BTreeMap::new()),
@@ -1380,14 +1362,10 @@ impl<'a> Proof<'a> {
     fn apply_function_unfold_in_state(
         &self,
         application: &ClickFunctionApplication,
-        premises: Option<&[ClickProposition]>,
         values: BTreeMap<String, ProgramValue>,
         array_refs: ClickArrayRefs,
         algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
-        integer_values: &crate::persistent::PersistentMap<
-            String,
-            crate::kernel::SpecIntegerExpression,
-        >,
+        integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
         fixed_state: FixedStateFrame<'_>,
         spec_definitions: SpecDefinitions<'_>,
         parameter_pointer_element_widths: BTreeMap<String, u32>,
@@ -1481,31 +1459,35 @@ impl<'a> Proof<'a> {
             ))
         })?;
 
-        // `peel(f(args)) using { ... }` opens one layer too, but the layer
-        // it opens is the range-fold law the listed guards select, stated
-        // over `f(args)` rather than over the fold the declaration writes.
-        // Its single fact is that equation, and the goal is refreshed through
-        // it; the raw defining equation stays inside the step, where the
-        // kernel law consumes it.
-        if let Some(premises) = premises {
-            let derived = self.derive_function_range_fold_equation(
-                application,
-                &definition,
-                premises,
-                &equality,
-                &values,
-                &array_refs,
-                &algebraic_values,
-                integer_values,
-                fixed_state,
-                spec_definitions,
-                &parameter_pointer_element_widths,
-            )?;
+        // A decided range exposes its empty or append equation over the
+        // named function, with ordinary obligations for its guards.
+        let fold_equation = if matches!(&equality,
+            Proposition::ConditionIs(ConditionTerm::IntegerEqual(_, folded), true)
+                if matches!(folded.as_ref(), IntegerTerm::RangeFold { .. }))
+            && !self.goal().is_some_and(|goal| {
+                crate::kernel::proof::propositions_are_alpha_equal(goal, &equality)
+            }) {
+            self.derive_function_range_fold_equation(application, &definition, &equality)?
+        } else {
+            None
+        };
+        if let Some((derived, predecessor_equation)) = fold_equation {
             let mut facts = self.facts().clone();
-            let added = (!facts.contains_top_level(&derived))
-                .then(|| derived.clone())
-                .into_iter()
-                .collect::<Vec<_>>();
+            let mut added = Vec::new();
+            // The fold law consumes these checked definition instances.
+            // Keep them available too, so equivalent functions retain
+            // their common body rather than becoming unrelated opaque
+            // predecessor calls after unfolding.
+            for definition_equation in std::iter::once(equality.clone()).chain(predecessor_equation)
+            {
+                if !facts.contains_top_level(&definition_equation) {
+                    added.push(definition_equation.clone());
+                }
+                facts = facts.with_kernel_checked_fact(definition_equation);
+            }
+            if !facts.contains_top_level(&derived) {
+                added.push(derived.clone());
+            }
             facts = facts.with_kernel_checked_fact(derived.clone());
             let branch = match self.focused_obligation() {
                 Some(Obligation::Proposition(goal)) => {
@@ -1778,76 +1760,20 @@ impl<'a> Proof<'a> {
         })
     }
 
-    /// The `using` half of a pure-function unfold: the range-fold law the
-    /// listed guards select, restated over the function application by
-    /// `crate::kernel::prove_integer_range_fold_over_equal_terms`.
-    ///
-    /// Returns the facts to publish beside the defining equation: the
-    /// predecessor instance of that equation for the append form, then the
-    /// law's conclusion. Every premise the kernel theorem carries -- the two
-    /// defining equations and the law's own guards -- is discharged here
-    /// against exactly the listed evidence; nothing is searched.
-    #[allow(clippy::too_many_arguments)]
+    /// State one fold equation over the selected call, exposing the chosen
+    /// law's guards to the ordinary obligation driver. An undecided range
+    /// retains its raw defining equation.
     fn derive_function_range_fold_equation(
         &self,
         application: &ClickFunctionApplication,
         definition: &ClickFunctionDefinition,
-        premises: &[ClickProposition],
         equality: &Proposition,
-        values: &BTreeMap<String, ProgramValue>,
-        array_refs: &ClickArrayRefs,
-        algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
-        integer_values: &crate::persistent::PersistentMap<
-            String,
-            crate::kernel::SpecIntegerExpression,
-        >,
-        fixed_state: FixedStateFrame<'_>,
-        spec_definitions: SpecDefinitions<'_>,
-        parameter_pointer_element_widths: &BTreeMap<String, u32>,
-    ) -> Result<Proposition, ClickError> {
+    ) -> Result<Option<(Proposition, Option<Proposition>)>, ClickError> {
         let name = &application.name;
-        let lower =
-            |proposition: &ClickProposition, what: &str| -> Result<Proposition, ClickError> {
-                let proposition = self.substitute_fixed_state_locals_in_proposition(proposition)?;
-                let mut opaque_calls = BTreeSet::new();
-                crate::surface::validation::collect_click_function_calls_in_proposition(
-                    &proposition,
-                    &mut opaque_calls,
-                );
-                lower_fixed_state_proposition_through_kernel_with(
-                    &proposition,
-                    self.facts().assumptions(),
-                    ContractEnvironment::new(values, array_refs),
-                    fixed_state,
-                    spec_definitions,
-                    FixedStateLoweringOptions {
-                        algebraic_values: Some(algebraic_values),
-                        integer_values: Some(integer_values),
-                        opaque_click_functions: Some(&opaque_calls),
-                        pointer_element_widths: parameter_pointer_element_widths.clone(),
-                        ..Default::default()
-                    },
-                )
-                .map_err(|message| self.step_error(format!("could not lower {what}: {message}")))
-            };
-
-        // Exactly the listed premises, each of which must already hold.
-        let mut available = Vec::new();
-        for premise in premises {
-            let lowered = lower(premise, "a `peel ... using` premise")?;
-            if !self.facts().listed_premise_available(&lowered, &[], false) {
-                return Err(self.step_error(format!(
-                    "`peel({name}(...)) using` requires an unavailable exact premise: {}",
-                    self.render_diagnostic_proposition(&lowered)
-                )));
-            }
-            available.push(lowered);
-        }
-
         let Proposition::ConditionIs(ConditionTerm::IntegerEqual(whole, folded), true) = equality
         else {
             return Err(self.step_error(format!(
-                "`peel({name}(...)) using` applies to an `Integer`-valued pure function whose body is a range fold"
+                "`unfold({name}(...))` applies to an `Integer`-valued pure function whose body is a range fold"
             )));
         };
         let IntegerTerm::RangeFold {
@@ -1858,11 +1784,7 @@ impl<'a> Proof<'a> {
             body,
         } = folded.as_ref()
         else {
-            // The kernel already reduced this call's range: its endpoints
-            // are constants, so the fold is its initial value or one step.
-            // The defining equation is then the law itself, with no guard
-            // left to discharge.
-            return Ok(equality.clone());
+            return Ok(None);
         };
 
         let empty = crate::kernel::prove_integer_range_fold_over_equal_terms(
@@ -1879,17 +1801,76 @@ impl<'a> Proof<'a> {
                 "the Integer fold empty law could not be stated over `{name}`: {reason}"
             ))
         })?;
-        available.push(equality.clone());
-        let mut empty_missing = Vec::new();
-        if discharge_restated_fold_law(&empty, &available, &mut empty_missing) {
-            let Proposition::Implies(_, conclusion) = empty.proposition() else {
-                return Err(
-                    self.step_error("the Integer fold law did not produce a guarded theorem")
-                );
+        let empty_range = {
+            let Proposition::Implies(guard, _) = empty.proposition() else {
+                return Err(self.step_error("the Integer fold law must be guarded"));
             };
-            return Ok(conclusion.as_ref().clone());
+            let mut required = Vec::new();
+            collect_conjunctive_premises(guard, &mut required);
+            let Some(Proposition::ConditionIs(condition, expected)) =
+                required.into_iter().find(|premise| *premise != equality)
+            else {
+                return Err(self.step_error("the empty fold law must have a range guard"));
+            };
+            match self.facts().assumptions().decide(condition) {
+                Some(value) => value == *expected,
+                None => {
+                    // A written predecessor guard also selects the append
+                    // case. Inspect only that guard, without instantiating
+                    // a body whose range case is still unknown.
+                    let guard = crate::kernel::integer_range_fold_predecessor_guard(index)
+                        .map(|condition| Proposition::ConditionIs(condition, true));
+                    if !guard.as_ref().is_some_and(|guard| {
+                        self.facts().listed_premise_available(guard, &[], false)
+                    }) {
+                        return Ok(None);
+                    }
+                    false
+                }
+            }
+        };
+        if empty_range {
+            let Proposition::Implies(guard, conclusion) = empty.proposition() else {
+                unreachable!("the selected empty law is guarded")
+            };
+            let mut required = Vec::new();
+            collect_conjunctive_premises(guard, &mut required);
+            for premise in required {
+                if premise != equality {
+                    self.require_function_fold_guard(premise)?;
+                }
+            }
+            return Ok(Some((conclusion.as_ref().clone(), None)));
         }
-
+        {
+            // Folds that capture their end, or do not have an endpoint
+            // parameter, still admit their ordinary defining equation. Check
+            // this source shape explicitly; do not hide a failed kernel law.
+            let fold_body = definition
+                .body()
+                .map(lambdas::reduce_head_fully)
+                .transpose()
+                .map_err(|message| self.step_error(message))?;
+            let Some(ContractExpression::RangeFold {
+                start,
+                end,
+                initial,
+                body,
+                ..
+            }) = fold_body.as_deref()
+            else {
+                return Ok(None);
+            };
+            let Some(end_parameter) = fold_end_parameter_name(end) else {
+                return Ok(None);
+            };
+            if [start.as_ref(), initial.as_ref(), body.as_ref()]
+                .into_iter()
+                .any(|part| contract_expression_reads_binding(part, end_parameter))
+            {
+                return Ok(None);
+            }
+        }
         let prior =
             self.function_range_fold_predecessor_application(application, definition, whole)?;
         let append = crate::kernel::prove_integer_range_fold_over_equal_terms(
@@ -1916,8 +1897,7 @@ impl<'a> Proof<'a> {
         // predecessor application, and publish it beside the conclusion.
         let mut required = Vec::new();
         collect_conjunctive_premises(append_guard, &mut required);
-        let mut predecessor_equality = false;
-        let mut append_missing = Vec::new();
+        let mut predecessor_equality = None;
         for premise in required {
             if premise == equality {
                 continue;
@@ -1927,32 +1907,34 @@ impl<'a> Proof<'a> {
                 && left.as_ref() == &prior
                 && matches!(right.as_ref(), IntegerTerm::RangeFold { .. })
             {
-                predecessor_equality = true;
+                predecessor_equality = Some(premise.clone());
                 continue;
             }
-            if !exact_fact_is_available(premise, &available)
-                && !matches!(normalize_proposition(premise), NormalizedProposition::True)
-            {
-                append_missing.push(premise.clone());
-            }
+            self.require_function_fold_guard(premise)?;
         }
-        if !append_missing.is_empty() {
-            let (names, values) = self.diagnostic_naming_tables();
-            let mut labels = crate::surface::proof_diagnostics::render::MemoryStateLabels::naming(
-                ParameterBinding::new(&names, &values),
-            );
-            return Err(self.step_error(format!(
-                "`peel({name}(...)) using` found no listed guard that decides the range. The empty-range equation needs {}; the append-last-cell equation needs {}.",
-                describe_missing_fold_guards(&empty_missing, &mut labels),
-                describe_missing_fold_guards(&append_missing, &mut labels)
-            )));
-        }
-        if !predecessor_equality {
+        if predecessor_equality.is_none() {
             return Err(self.step_error(format!(
                 "the Integer fold append law over `{name}` did not state its predecessor endpoint"
             )));
         }
-        Ok(append_conclusion.as_ref().clone())
+        Ok(Some((
+            append_conclusion.as_ref().clone(),
+            predecessor_equality,
+        )))
+    }
+
+    /// One explicit law guard, checked from its exact fact key or emitted
+    /// as an ordinary obligation. No premise or state history is searched.
+    fn require_function_fold_guard(&self, guard: &Proposition) -> Result<(), ClickError> {
+        if self.facts().listed_premise_available(guard, &[], false) {
+            return Ok(());
+        }
+        crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
+            self.step_error("`unfold` has an unproved range-fold guard")
+                .with_unresolved_requirement(
+                    &crate::kernel::ProofObligation::verification_condition(guard.clone()),
+                ),
+        )
     }
 
     /// `f(args)` with the argument that supplies the fold's end replaced by
@@ -1987,12 +1969,12 @@ impl<'a> Proof<'a> {
         }) = fold_body.as_deref()
         else {
             return Err(self.step_error(format!(
-                "`peel({name}(...)) using` requires the body of `{name}` to be exactly a range fold"
+                "`unfold({name}(...))` requires the body of `{name}` to be exactly a range fold"
             )));
         };
         let Some(end_parameter) = fold_end_parameter_name(end).cloned() else {
             return Err(self.step_error(format!(
-                "`peel({name}(...)) using`: the append-last-cell equation restates the shorter fold as `{name}` at the predecessor endpoint, so the fold's end must be a parameter of `{name}`"
+                "`unfold({name}(...))`: the append-last-cell equation restates the shorter fold as `{name}` at the predecessor endpoint, so the fold's end must be a parameter of `{name}`"
             )));
         };
         for (part, what) in [
@@ -2002,7 +1984,7 @@ impl<'a> Proof<'a> {
         ] {
             if contract_expression_reads_binding(part, &end_parameter) {
                 return Err(self.step_error(format!(
-                    "`peel({name}(...)) using`: the fold's {what} also reads `{end_parameter}`, so the shorter fold is not `{name}` at the predecessor endpoint"
+                    "`unfold({name}(...))`: the fold's {what} also reads `{end_parameter}`, so the shorter fold is not `{name}` at the predecessor endpoint"
                 )));
             }
         }
@@ -2012,18 +1994,18 @@ impl<'a> Proof<'a> {
             .position(|parameter| parameter.name() == end_parameter)
             .ok_or_else(|| {
                 self.step_error(format!(
-                    "`peel({name}(...)) using`: `{end_parameter}` is not a parameter of `{name}`"
+                    "`unfold({name}(...))`: `{end_parameter}` is not a parameter of `{name}`"
                 ))
             })?;
         crate::kernel::integer_range_fold_predecessor_application(whole.as_ref(), position)
             .ok_or_else(|| {
                 self.step_error(format!(
-                    "`peel({name}(...)) using` requires the call to remain the opaque application `{name}(...)` with an `int32` or `uint64` argument for `{end_parameter}`"
+                    "`unfold({name}(...))` requires the call to remain the opaque application `{name}(...)` with an `int32` or `uint64` argument for `{end_parameter}`"
                 ))
             })
     }
 
-    /// The Surface spelling of the goal `peel(f(args)) using { ... }` just
+    /// The Surface spelling of the goal `unfold(f(args))` just
     /// refreshed, or `None` when this step cannot write one down.
     ///
     /// The kernel goal was refreshed by substituting the restated fold law's
@@ -2118,7 +2100,10 @@ impl<'a> Proof<'a> {
             let equality = ClickProposition::Comparison {
                 left: whole.clone(),
                 operator: ComparisonOperator::Equal,
-                right: candidate,
+                // The call supplied its Integer carrier. Keep that carrier
+                // when its replacement is a bare numeral, especially in an
+                // order comparison after the last function call disappears.
+                right: crate::surface::lowering::pure_function_result_value(definition, candidate),
             };
             let Some(rewritten) =
                 rewrite_click_proposition_by_surface_equality(surface_goal, &equality)
@@ -2172,37 +2157,6 @@ impl<'a> Proof<'a> {
         None
     }
 
-    pub(super) fn apply_predicate_unfold(
-        &self,
-        name: &String,
-    ) -> Result<CheckedFocusedTransition, ClickError> {
-        match self.context.as_ref() {
-            ProofContext::Pure(context) => self.apply_proposition_predicate_unfold(
-                name,
-                context.spec_definitions,
-                context.claim_label,
-                self.node.depth,
-            ),
-            ProofContext::FixedState(context) => self.apply_proposition_predicate_unfold(
-                name,
-                context.spec_definitions,
-                context.claim_label,
-                context.tactic_index,
-            ),
-            // A function-outcome goal unfolds its own path-local facts and
-            // delta only: the borrowed execution state is shared by every
-            // sibling outcome and must not absorb one path's unfolding.
-            ProofContext::Execution(context) if self.focused_outcome_data().is_some() => self
-                .apply_proposition_predicate_unfold(
-                    name,
-                    context.spec_definitions,
-                    context.claim_label,
-                    context.tactic_index,
-                ),
-            ProofContext::Execution(_) => self.apply_execution_unfold(name),
-        }
-    }
-
     /// Unfolds `names` in a goal's surface form. A signed character
     /// parameter passed to a predicate's `uint8` bytes first takes its
     /// explicit byte view, as contract lowering and call steps give it: the
@@ -2229,206 +2183,7 @@ impl<'a> Proof<'a> {
                     .map(crate::languages::interface::ImportedParameter::interface_type)
             })
         });
-        unfold_structural_invariant_proposition(
-            predicates,
-            elaborated.as_ref().unwrap_or(surface),
-            names,
-        )
-    }
-
-    pub(super) fn apply_proposition_predicate_unfold(
-        &self,
-        name: &String,
-        spec_definitions: SpecDefinitions<'_>,
-        claim_label: &str,
-        tactic_index: usize,
-    ) -> Result<CheckedFocusedTransition, ClickError> {
-        let checked = check_unfold_predicate_in_facts(
-            self.facts(),
-            name,
-            spec_definitions,
-            claim_label,
-            tactic_index,
-        )?;
-        let goal = match self.focused_obligation() {
-            Some(Obligation::Proposition(goal)) => {
-                let surface = match &goal.surface {
-                    Some(surface) => Some(
-                        self.unfold_goal_surface(
-                            spec_definitions.predicates,
-                            surface,
-                            std::slice::from_ref(name),
-                        )
-                        .map_err(|message| self.step_error(message))?,
-                    ),
-                    None => None,
-                };
-                // Fixed-state and outcome certificates check `unfold` from its
-                // retained surface form.  Re-lower that unfolded body
-                // against the checked successor facts as part of this same
-                // audited step, so resource counts and current memory loads
-                // resolve exactly as they do during independent verification.
-                // Unfolding only the already-lowered kernel predicate leaves
-                // those expressions stranded in the older lowering context.
-                let kernel = match (&surface, self.context.as_ref()) {
-                    (Some(surface), ProofContext::FixedState(context)) => {
-                        let surface = self.substitute_fixed_state_locals_in_proposition(surface)?;
-                        lower_fixed_state_proposition_with_assumptions(
-                            &surface,
-                            checked.facts.assumptions(),
-                            context.parameter_binding,
-                            context.fixed_state,
-                            context.spec_definitions,
-                        )
-                        .map_err(|message| self.step_error(message))?
-                    }
-                    (Some(surface), ProofContext::Execution(_))
-                        if self.focused_outcome_data().is_some() =>
-                    {
-                        let view = self
-                            .outcome_fixed_state_view()
-                            .expect("a focused outcome judgment resolves its fixed-state view");
-                        let surface = self.substitute_fixed_state_locals_in_proposition(surface)?;
-                        lower_fixed_state_proposition_with_assumptions(
-                            &surface,
-                            checked.facts.assumptions(),
-                            view.parameter_binding,
-                            view.fixed_state,
-                            view.spec_definitions,
-                        )
-                        .map_err(|message| self.step_error(message))?
-                    }
-                    _ => unfold_predicates_in_proposition(
-                        spec_definitions,
-                        std::slice::from_ref(name),
-                        goal.kernel(),
-                        checked.facts.assumptions(),
-                    )
-                    .map_err(|message| self.step_error(message))?,
-                };
-                self.refined_proposition(
-                    self.refined_branch_state(checked.facts.clone()),
-                    kernel,
-                    surface,
-                    false,
-                )
-            }
-            Some(Obligation::Frontier(_) | Obligation::FunctionOutcome(_)) => {
-                let branch = self.focused_branch().expect("focused branch exists");
-                let mut unfolded = branch.state.unfolded_predicates.clone();
-                unfolded.insert(name.clone());
-                branch.with_state(BranchState {
-                    facts: checked.facts.clone(),
-                    unfolded_predicates: unfolded,
-                    execution: branch.state.execution.clone(),
-                })
-            }
-            None => return Err(self.step_error("`unfold` requires an open goal")),
-        };
-        let goal = {
-            let mut unfolded = goal.state.unfolded_predicates.clone();
-            unfolded.insert(name.clone());
-            goal.with_state(BranchState {
-                facts: goal.state.facts.clone(),
-                unfolded_predicates: unfolded,
-                execution: goal.state.execution.clone(),
-            })
-        };
-        Ok(CheckedFocusedTransition {
-            locals: self.state().locals().clone(),
-            branch: Some(goal),
-            added_facts: checked.added_facts.clone(),
-            checked_facts: checked.added_facts,
-        })
-    }
-
-    pub(super) fn apply_execution_unfold(
-        &self,
-        name: &String,
-    ) -> Result<CheckedFocusedTransition, ClickError> {
-        let ProofContext::Execution(context) = self.context.as_ref() else {
-            return Err(self.step_error("`unfold` requires an execution-frontier proof"));
-        };
-        let mut execution = self
-            .execution()
-            .cloned()
-            .ok_or_else(|| self.step_error("execution-frontier proof lost its semantic state"))?;
-        let checked = check_unfold_predicate_facts(&mut execution, context, self.facts(), name)?;
-        let mut unfolded_predicates = self.focused_branch_unfolds().clone();
-        for name in &checked.added_unfolded_predicates {
-            unfolded_predicates.insert(name.clone());
-        }
-        let refined_goal = match self.focused_obligation() {
-            Some(Obligation::Proposition(goal)) => {
-                let surface = goal
-                    .surface
-                    .as_deref()
-                    .map(|surface| {
-                        self.unfold_goal_surface(
-                            context.spec_definitions.predicates,
-                            surface,
-                            std::slice::from_ref(name),
-                        )
-                        .map_err(|message| self.step_error(message))
-                    })
-                    .transpose()?;
-                let kernel = match &surface {
-                    Some(surface) => {
-                        let surface = self.substitute_fixed_state_locals_in_proposition(surface)?;
-                        let pre_state = context
-                            .old_reference_state(&execution.core.frontier, &execution.core.state);
-                        lower_fixed_state_proposition_with_assumptions(
-                            &surface,
-                            checked.facts.assumptions(),
-                            context.parameter_binding(),
-                            FixedStateFrame::new(
-                                pre_state,
-                                &execution.core.state,
-                                None,
-                                &execution.presentation.recorded_states,
-                            ),
-                            context.spec_definitions,
-                        )
-                        .map_err(|message| {
-                            self.step_error(format!("could not unfold proposition goal: {message}"))
-                        })?
-                    }
-                    None => unfold_predicates_in_proposition(
-                        context.spec_definitions,
-                        std::slice::from_ref(name),
-                        goal.kernel(),
-                        checked.facts.assumptions(),
-                    )
-                    .map_err(|message| self.step_error(message))?,
-                };
-                Some((kernel, surface))
-            }
-            _ => None,
-        };
-        let goal_context = BranchState {
-            facts: checked.facts,
-            unfolded_predicates,
-            execution: Some(Arc::new(execution)),
-        };
-        let goal = match refined_goal {
-            Some((kernel, surface)) => {
-                self.refined_proposition(goal_context, kernel, surface, false)
-            }
-            None => self
-                .focused_branch()
-                .expect("execution unfold requires an open goal")
-                .with_state(goal_context),
-        };
-        Ok(CheckedFocusedTransition {
-            locals: self.state().locals().clone(),
-            // A nested proposition proof stated at this frontier unfolds its
-            // own goal through the same checked operation. Other execution
-            // goals retain their kind while installing the updated state
-            // and unfold delta.
-            branch: Some(goal),
-            added_facts: checked.added_facts.clone(),
-            checked_facts: checked.added_facts,
-        })
+        unfold_surface_predicates(predicates, elaborated.as_ref().unwrap_or(surface), names)
     }
 
     /// `take`, `give`, `gather`, or `scatter`: one checked kernel step on
@@ -2571,7 +2326,6 @@ impl<'a> Proof<'a> {
             .expect("an iterated ownership step requires an open goal")
             .with_state(BranchState {
                 facts: self.facts().clone(),
-                unfolded_predicates: self.focused_branch_unfolds().clone(),
                 execution: Some(Arc::new(execution)),
             });
         Ok(CheckedFocusedTransition {
@@ -2771,7 +2525,6 @@ impl<'a> Proof<'a> {
             .expect("resource observation requires an open goal")
             .with_state(BranchState {
                 facts: checked.facts,
-                unfolded_predicates: self.focused_branch_unfolds().clone(),
                 execution: Some(Arc::new(execution)),
             });
         Ok(CheckedFocusedTransition {
@@ -2927,7 +2680,6 @@ impl<'a> Proof<'a> {
             .expect("resource unfold requires an open goal")
             .with_state(BranchState {
                 facts: checked.facts,
-                unfolded_predicates: self.focused_branch_unfolds().clone(),
                 execution: Some(Arc::new(execution)),
             });
         Ok(CheckedFocusedTransition {
@@ -2979,7 +2731,7 @@ impl<'a> Proof<'a> {
                 },
             )
         }?;
-        transition.clear_chosen_projection();
+        transition.clear_existential_projection();
         let state = self.publish_checked_transition(transition)?;
         Ok(Self {
             site: self.site.clone(),
@@ -3042,7 +2794,6 @@ impl<'a> Proof<'a> {
             &pre_state,
             (*execution.core.state).clone(),
             context.spec_definitions,
-            &execution.core.unfolded_predicates,
             family_reaches_population,
         )?;
         let selected = &checked.selected;
@@ -3071,7 +2822,6 @@ impl<'a> Proof<'a> {
             .expect("resource fold requires an open goal")
             .with_state(BranchState {
                 facts: checked.facts,
-                unfolded_predicates: self.focused_branch_unfolds().clone(),
                 execution: Some(Arc::new(execution)),
             });
         Ok(CheckedFocusedTransition {
@@ -3167,7 +2917,6 @@ impl<'a> Proof<'a> {
                 updated,
                 BranchState {
                     facts: checked.facts,
-                    unfolded_predicates: branch_state.unfolded_predicates.clone(),
                     execution: Some(Arc::new(execution)),
                 },
             )),
@@ -3266,7 +3015,6 @@ impl<'a> Proof<'a> {
             pre_state,
             outcome,
             context.spec_definitions,
-            &self.active_unfolded_predicates(),
             closure,
             family_reaches_population,
         )?;
@@ -3353,7 +3101,6 @@ impl<'a> Proof<'a> {
         updated.data = Arc::new(data);
         let state = BranchState {
             facts: checked.facts,
-            unfolded_predicates: branch_state.unfolded_predicates.clone(),
             execution: Some(Arc::new(execution)),
         };
         Ok(CheckedFocusedTransition {
@@ -3417,7 +3164,6 @@ impl<'a> Proof<'a> {
         updated.data = Arc::new(data);
         let state = BranchState {
             facts: self.facts().clone(),
-            unfolded_predicates: branch_state.unfolded_predicates.clone(),
             execution: Some(Arc::new(execution.clone())),
         };
         Ok(CheckedFocusedTransition {
@@ -3427,30 +3173,6 @@ impl<'a> Proof<'a> {
             checked_facts: Vec::new(),
         })
     }
-}
-
-/// Whether every premise of a restated fold law is exactly available,
-/// collecting the ones that are not. A premise that normalizes to `true`
-/// without any evidence counts as discharged, exactly as `apply ... using`
-/// treats the fold laws' own guards.
-fn discharge_restated_fold_law(
-    theorem: &crate::kernel::Theorem,
-    available: &[Proposition],
-    missing: &mut Vec<Proposition>,
-) -> bool {
-    let Proposition::Implies(guard, _) = theorem.proposition() else {
-        return false;
-    };
-    let mut required = Vec::new();
-    collect_conjunctive_premises(guard, &mut required);
-    for premise in required {
-        if !exact_fact_is_available(premise, available)
-            && !matches!(normalize_proposition(premise), NormalizedProposition::True)
-        {
-            missing.push(premise.clone());
-        }
-    }
-    missing.is_empty()
 }
 
 /// Whether substituting this binding changes the expression. The parts of a
@@ -3494,73 +3216,6 @@ fn collect_conjunctive_premises<'a>(
         }
         proposition => facts.push(proposition),
     }
-}
-
-/// The guards a restated fold law still wants, in the order the kernel
-/// states them. A defining-equation premise is never listed: the step
-/// produces those itself, so naming one would point the reader at evidence
-/// they cannot write.
-/// Whether an Integer comparison observes a machine sum, difference or
-/// product, whose source spelling Integer arithmetic reads differently.
-fn observes_machine_arithmetic(reading: &Proposition) -> bool {
-    let Proposition::ConditionIs(crate::kernel::integer_comparison_condition!(left, right), _) =
-        reading
-    else {
-        return false;
-    };
-    [left, right].into_iter().any(|side| {
-        matches!(
-            side.as_ref(),
-            IntegerTerm::Machine(machine) if matches!(
-                machine.value(),
-                binary_term!(Bits32, Add, ..)
-                    | binary_term!(Bits32, Subtract, ..)
-                    | binary_term!(Bits32, Multiply, ..)
-                    | MachineTerm::Binary { format: MachineIntegerType::Int64, op: MachineBinaryOp::Add, .. }
-                    | MachineTerm::Binary { format: MachineIntegerType::Int64, op: MachineBinaryOp::Subtract, .. }
-                    | MachineTerm::Binary { format: MachineIntegerType::Int64, op: MachineBinaryOp::Multiply, .. }
-                    | MachineTerm::Binary { format: MachineIntegerType::UInt64, op: MachineBinaryOp::Add, .. }
-                    | MachineTerm::Binary { format: MachineIntegerType::UInt64, op: MachineBinaryOp::Subtract, .. }
-                    | MachineTerm::Binary { format: MachineIntegerType::UInt64, op: MachineBinaryOp::Multiply, .. }
-            )
-        )
-    })
-}
-
-fn describe_missing_fold_guards(
-    missing: &[Proposition],
-    labels: &mut crate::surface::proof_diagnostics::render::MemoryStateLabels,
-) -> String {
-    let rendered = missing
-        .iter()
-        .filter(|premise| {
-            !matches!(
-                premise,
-                Proposition::ConditionIs(ConditionTerm::IntegerEqual(_, _), true)
-            )
-        })
-        .map(|premise| {
-            // A native comparison over machine `+`, `-` or `*` is spelled by
-            // its observation, `to_integer(a - b) < c`, which lowers to the
-            // same fact. The spelling `a - b < c` reads as exact Integer
-            // arithmetic, a different proposition.
-            let reading =
-                crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(premise)
-                    .into_iter()
-                    .find(observes_machine_arithmetic);
-            format!(
-                "`{}`",
-                crate::surface::proof_diagnostics::render::render_proposition_labeled(
-                    reading.as_ref().unwrap_or(premise),
-                    labels
-                )
-            )
-        })
-        .collect::<Vec<_>>();
-    if rendered.is_empty() {
-        return "no further guard".to_string();
-    }
-    rendered.join(" and ")
 }
 
 mod search;

@@ -1,6 +1,6 @@
 //! Producer observations connecting locked MIR operations to completed
 //! reference assignments and checked memory accesses. Observation labels grant
-//! no permission; optional checked lease plans are separate semantic operations.
+//! no permission.
 use super::*;
 #[cfg(test)]
 use crate::kernel::{CompareRelation, MachineIntegerType};
@@ -16,29 +16,12 @@ pub(crate) struct ReferenceBorrowSourceId {
     pub(crate) child: Arc<str>,
 }
 
-/// Source observations compare neutrally. A checked lease plan participates in
-/// statement identity and executes an actual checked birth.
+/// Source observations compare neutrally.
 #[derive(Clone, Debug, Default)]
-pub struct StatementAssignSource(
-    Option<Arc<ReferenceBorrowSourceId>>,
-    Option<Arc<ScalarReferenceSourcePlan>>,
-);
+pub struct StatementAssignSource(Option<Arc<ReferenceBorrowSourceId>>);
 impl StatementAssignSource {
     pub(crate) fn new(source: ReferenceBorrowSourceId) -> Self {
-        Self(Some(Arc::new(source)), None)
-    }
-    pub(crate) fn as_ref(&self) -> Option<&ReferenceBorrowSourceId> {
-        self.0.as_deref()
-    }
-    pub(crate) fn with_lease_plan(mut self, plan: Arc<ScalarReferenceSourcePlan>) -> Self {
-        self.1 = Some(plan);
-        self
-    }
-    pub(super) fn lease_plan(&self) -> Option<&Arc<ScalarReferenceSourcePlan>> {
-        self.1.as_ref()
-    }
-    fn semantic_key(&self) -> Option<&ScalarReferencePlanKey> {
-        self.1.as_ref().map(|plan| plan.key())
+        Self(Some(Arc::new(source)))
     }
     pub(super) fn completed(
         &self,
@@ -80,19 +63,17 @@ impl StatementAssignSource {
     }
 }
 impl PartialEq for StatementAssignSource {
-    fn eq(&self, other: &Self) -> bool {
-        self.semantic_key() == other.semantic_key()
+    fn eq(&self, _: &Self) -> bool {
+        true
     }
 }
 impl Eq for StatementAssignSource {}
 impl std::hash::Hash for StatementAssignSource {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        std::hash::Hash::hash(&self.semantic_key(), state);
-    }
+    fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
 }
 impl Ord for StatementAssignSource {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.semantic_key().cmp(&other.semantic_key())
+    fn cmp(&self, _: &Self) -> std::cmp::Ordering {
+        std::cmp::Ordering::Equal
     }
 }
 impl PartialOrd for StatementAssignSource {

@@ -16,7 +16,6 @@ impl<L: Clone, P: Clone, O: Clone, E: Clone> ProofObject<L, ProofObligation<P, O
                 ProofObligation::Proposition(PropositionObligation::new(goal, presentation)),
                 ProofBranchState {
                     facts: ProofFacts::default(),
-                    unfolded_predicates: Default::default(),
                     execution: None,
                 },
             ),

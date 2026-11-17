@@ -567,7 +567,7 @@ contract, which Click checks at the call from `twice`'s own contract. When
 the two contracts agree only by a proof, a refinement theorem shows it,
 naming the crate function as a value by its path, as Rust passes it:
 `theorem twice_is_doubling() { ensures Doubling(function_pointers::twice) by
-{ unfold(Doubling); solve(); } }`, and the caller's proof applies it,
+{ unfold(Doubling(function_pointers::twice)); solve(); } }`, and the caller's proof applies it,
 `apply(twice_is_doubling());`. The diagnostic that refuses the call suggests
 that theorem. The importer reads Charon's `CastKind::FnPtr` of a
 crate function item and its `FnOperand::Dynamic` call through a local, and
@@ -1989,57 +1989,27 @@ covers construction, field reads, a requirement instantiated per arm,
 
 ## Borrow and proof boundary
 
-rustc establishes source type and borrow legality. Click checks the functional
-contract and memory access obligations of the extracted execution. `&mut T`
-parameters use pointer-shaped sidecar parameters with explicit `owns` clauses;
-shared references use explicit `views` where access is required. Borrowed
-references carry no allocation or deallocation authority.
+rustc establishes source type and borrow legality, and Click trusts it: the
+importer admits only safe Rust (it refuses `unsafe` functions, unsafe calls and
+raw pointers other than a `Box`'s), so every imported function's borrows have
+already been checked. Click checks the functional contract and the memory
+access obligations of the extracted execution. Borrowed references carry no
+allocation or deallocation authority.
 
 A reference parameter's type grants authority over its referent (see
 [Signatures in Rust syntax](#signatures-in-rust-syntax)); every other resource
-a contract uses is written. Reborrows of caller storage retain the
-same modeled pointer: writes through the child are observed through its parent.
-The compiler establishes when parent reuse is legal; the kernel establishes
-that each modeled access is justified by the supplied resources.
+a contract uses is written. At a call, the caller lends what the callee's
+contract names, and that lending is also how the caller knows the callee
+writes nothing else it holds.
 
-For supported scalar functions, locked lowering issues checked local lease
-births and explicit borrow-end operations. Straight-line code and structured
-acyclic branches with a shared continuation are supported.
-The supported pointees are `i32`, `u8`, `u16` and `u32`, with exact direct owned
-footprints. Local copies or moves retain the same lease identity; a reborrow
-creates a child that suspends its parent. Reads and writes use the ordinary
-memory producers and their authority checks.
-
-Ending frontiers follow scalar reads, writes, calculations and reference copies.
-An indexed source pass propagates descendant uses to parents and emits nested
-endings innermost first, including when several borrows end at one statement.
-The kernel resolves each ending through its current invocation's live handle;
-recovery does not depend on which alias name survives. Missing births, foreign
-source identities, duplicate endings and parent endings with live children are
-refused. Closing the outermost lease returns the original owned occurrence and
-preserves current memory. Expired aliases cannot use that returned owner.
-
-Across an `if`, scalar reads, writes and calculations can keep a borrow live
-through the common continuation. A use in a deeper arm extends that borrow to
-the corresponding common continuation; later uses can extend it further.
-Nested borrows end innermost first.
-
-Arm-local reborrows and reference copies are also supported when every such
-reference stays inside its defining arm. Each branch scope checkpoints the
-entry ledger, ends all references born there, verifies restoration of the exact
-original owned occurrences, and clears the private arm-local reference slots
-before restoring the exact entry ledger. Current writes are retained. Nested
-scopes may borrow an entry reference temporarily, preserving it at scope exit.
-The existing join still requires identical live loan state. Reference IDs are
-never reused, and old copies remain invalid after scope reconciliation.
-
-The source and sidecars require no additional lifetime annotations. Source
-observations remain read-only. Reference assignments to an existing outer
-binding, references escaping an arm, conditionally live borrow recovery,
-early returns, shared borrow graphs, aggregate or addressable reference
-transport, calls and loops still need source integration. Functions outside
-the activated subset retain their existing lowering and have no local lease
-coverage.
+Inside a body, a reference is the address of the place it borrows: `&mut x`
+and `&x` are pointers to `x`'s storage, a reborrow `&mut *r` is the same
+pointer, and reads and writes through any of them are reads and writes of that
+storage. Writes through a child are observed through its parent. Click does
+not re-check when a borrow ends or whether a parent is reused while a child is
+live; rustc has. A reference may stay live across calls, loops, branches and
+returns
+(`design/charon-trial/gate-fixtures/reference-across-call`).
 
 The trusted boundary includes the pinned compiler, exporter, semantic artifact,
 and its translator. The lock detects stale or changed inputs; it is not an

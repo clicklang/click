@@ -167,7 +167,7 @@ fn machine_comparison_alpha_keys_retain_shared_dags() {
 
 /// A fold whose endpoint reads a library value held in memory, a borrowed
 /// Rust iterator's `len`, is alpha-equal to the same fold built again, as
-/// `peel` requires; the read is keyed by its state's identity, so the
+/// `unfold` requires; the read is keyed by its state's identity, so the
 /// work does not grow with the state's unrelated cells.
 #[test]
 fn algebraic_read_fold_alpha_keys_ignore_unrelated_cells() {

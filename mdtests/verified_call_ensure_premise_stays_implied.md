@@ -4,7 +4,7 @@ The callee guarantees the written cell only while its flag is positive. The
 caller knows `1 <= count`, which implies the premise but is not that premise,
 so the call publishes the ensure as the implication it was written as. The
 proof spells the two steps the kernel no longer takes for it: an arithmetic
-`have` that makes the premise exactly available, then `extract`, whose
+`have` that makes the premise exactly available, then `have`, whose
 bounded modus ponens over that implication adds the consequent.
 
 ```c filename=ensure_premise_flag.c
@@ -46,7 +46,7 @@ int32 ensure_premise_caller(int32 count, int32* cell) {
                 1 <= count;
             };
         }
-        extract(cell[0] == 1);
+        have cell[0] == 1;
         known();
     }
 }

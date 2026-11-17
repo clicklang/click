@@ -1101,12 +1101,6 @@ fn cast_program_value_to_type_with_integer_origin(
         }
     }
     if let ProgramValue::Pointer(pointer) = &value {
-        if pointer.local_reference().is_some() {
-            return Err(RuntimeError::LoanRefusal(Box::new(
-                crate::kernel::loans::LoanRefusal::UnsupportedResource
-                    .diagnostic(crate::kernel::LoanRefusalOperation::MemoryAccess),
-            )));
-        }
         // Pointer-to-integer conversion under LP64: the integer is the
         // pointer's address term, which keeps the exact source pointer. Null
         // is the integer zero; function addresses are not modeled.
@@ -2928,7 +2922,6 @@ pub(in crate::kernel) fn evaluate_program_lvalue_paths(
                                 pointer.pointee_volatile(),
                             )
                             .with_constant(pointer.pointee_constant())
-                            .with_local_reference(pointer.local_reference().copied())
                             .with_extent_of(&pointer)
                             .with_access_class(CAccessClass::of_kernel_type(value_type)),
                         ),
@@ -2978,7 +2971,6 @@ pub(in crate::kernel) fn evaluate_program_lvalue_paths(
                                 *volatile || pointer.pointee_volatile(),
                             )
                             .with_constant(pointer.pointee_constant())
-                            .with_local_reference(pointer.local_reference().copied())
                             .with_pointee_constant(*pointee_constant)
                             .with_extent_of(&pointer)
                             .with_access_class(access_class.clone()),
@@ -3025,7 +3017,6 @@ pub(in crate::kernel) fn evaluate_program_lvalue_paths(
                                 pointer.pointee_volatile(),
                             )
                             .with_constant(pointer.pointee_constant())
-                            .with_local_reference(pointer.local_reference().copied())
                             .with_extent_of(&pointer)
                             .with_access_class(CAccessClass::of_kernel_type(value_type)),
                         ),
@@ -3165,77 +3156,8 @@ pub(in crate::kernel) fn read_retained_lvalue_paths(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<ExecutionValuePath>> {
-    let mut access_state = None;
-    if let LValueOutcome::LValue(lvalue) = &outcome {
-        if let Some(reference) = &lvalue.local_reference {
-            let effective_assumptions =
-                assumptions_with_path_context(assumptions, &facts, &obligations);
-            let result = lvalue
-                .pointer(state)
-                .ok_or(crate::kernel::loans::LoanRefusal::InvalidEvidence)
-                .and_then(|pointer| {
-                    state.local_scalar_access_resources(
-                        reference,
-                        &pointer,
-                        lvalue.value_type,
-                        &effective_assumptions,
-                    )
-                });
-            match result {
-                Ok((resources, _)) => {
-                    access_state = Some(state.clone().with_resource_context(resources))
-                }
-                Err(error) => {
-                    return Ok(vec![ExecutionValuePath {
-                        outcome: ExpressionOutcome::RuntimeError(RuntimeError::LoanRefusal(
-                            Box::new(
-                                error.diagnostic(crate::kernel::LoanRefusalOperation::MemoryAccess),
-                            ),
-                        )),
-                        facts,
-                        obligations,
-                    }]);
-                }
-            }
-        } else if state.has_local_scalar_references() {
-            let effective_assumptions =
-                assumptions_with_path_context(assumptions, &facts, &obligations);
-            let pointer = match &lvalue.storage {
-                LValueStorage::Memory { pointer } => Some(pointer),
-                LValueStorage::Local { name } => state
-                    .locals
-                    .slot(name)
-                    .filter(|pointer| state.memory.requires_explicit_scalar_ownership(pointer)),
-            };
-            if let Some(pointer) = pointer
-                && state
-                    .resources()
-                    .memory_write_range(
-                        pointer,
-                        lvalue.value_type.byte_width(),
-                        &effective_assumptions,
-                    )
-                    .is_none()
-            {
-                return Ok(vec![ExecutionValuePath {
-                    outcome: ExpressionOutcome::RuntimeError(RuntimeError::MissingResource {
-                        resource: Box::new(ResourceFact::own_memory(
-                            MemoryRange::new_with_element_width(
-                                pointer.clone(),
-                                0u32.into(),
-                                1u32.into(),
-                                lvalue.value_type.byte_width(),
-                            ),
-                        )),
-                    }),
-                    facts,
-                    obligations,
-                }]);
-            }
-        }
-    }
     let mut paths = read_retained_lvalue_paths_without_ranges(
-        access_state.as_ref().unwrap_or(state),
+        state,
         outcome,
         facts,
         obligations,
@@ -3692,7 +3614,14 @@ pub(in crate::kernel) fn address_of_lvalue_paths(
                     let pointer_type = if is_aggregate {
                         Some(ProgramType::Int32Pointer)
                     } else {
-                        lvalue.value_type().pointer_to()
+                        // A byte-array lvalue can name a complete record's
+                        // footprint for non-reading checked address formation.
+                        // Its address is carried as a byte pointer; no array
+                        // element or record field is loaded here.
+                        match lvalue.value_type() {
+                            ProgramType::UInt8Array(_) => Some(ProgramType::UInt8Pointer),
+                            value_type => value_type.pointer_to(),
+                        }
                     };
                     match pointer_type {
                         Some(pointer_type) => {
@@ -3708,9 +3637,6 @@ pub(in crate::kernel) fn address_of_lvalue_paths(
                                 address = address
                                     .with_designation(designation.clone())
                                     .with_opaque_extent(lvalue.opaque_extent.clone());
-                            }
-                            if let Some(reference) = &lvalue.local_reference {
-                                address = address.with_local_reference(*reference);
                             }
                             let value = ProgramValue::Pointer(address);
                             ExpressionPath {

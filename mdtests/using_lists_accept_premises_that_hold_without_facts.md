@@ -3,11 +3,12 @@
 A listed premise that lowers to the ground constant it asserts (`0 <= 0`), or
 to a comparison of a term with itself (`n <= n`), holds with no fact behind
 it. The listed-premise check every `using` list shares accepts both, so
-the same premise is accepted by `peel ... using`, `apply ... using`,
-`instantiate ... using` and `solve() using` alike, and a proof does not
+the same premise is accepted by `apply ... using`,
+`solve() using` alike, and a proof does not
 need a `have 0 <= 0` or `have n <= n` first.
 
-The kernel's condition decision answers the same reflexive comparisons, so a
+Ordinary `unfold` likewise discharges reflexive range guards without a
+separate fact. The kernel's condition decision answers these comparisons, so a
 call whose precondition instantiates to `n <= n` needs no fact either. The
 false neighbours, `n < n` and `n != n`, are refused:
 `mdtests/using_lists_refuse_a_false_reflexive_premise.md`.
@@ -55,10 +56,7 @@ theorem last_cell(a: int32[], n: int32) {
     requires n < 100;
     views a[0..n + 1];
     ensures a[n] == 0 by {
-        instantiate(forall (k: int32) { 0 <= k and k <= n implies a[k] == 0 }, n) using {
-            0 <= n;
-            n <= n;
-        };
+        instantiate(forall (k: int32) { 0 <= k and k <= n implies a[k] == 0 }, n);
         known();
     }
 }
@@ -76,7 +74,7 @@ void empty_prefix(int32 a[], int32 n) {
 } by {
     step();
     have icount(a, 0, 0) == 0 by {
-        peel(icount(a, 0, 0)) using { 0 <= 0; };
+        unfold(icount(a, 0, 0));
         normalize();
     }
 }
@@ -87,7 +85,7 @@ void empty_suffix(int32 a[], int32 n) {
 } by {
     step();
     have icount(a, n, n) == 0 by {
-        peel(icount(a, n, n)) using { n <= n; };
+        unfold(icount(a, n, n));
         normalize();
     }
 }

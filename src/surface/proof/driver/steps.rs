@@ -107,10 +107,10 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             );
         }
         if let Ok(next) = &result
-            && crate::surface::proof::spellability_census::enabled()
+            && crate::surface::proof::raise_lower_census::enabled()
             && !Arc::ptr_eq(&driver_proof.node, &next.node)
         {
-            driver_proof.record_spellability_census(next, tactic);
+            driver_proof.record_raise_lower_census(next, tactic);
         }
         if let Ok(next) = &result
             && crate::surface::proof::raise_lower_audit::enabled()
@@ -288,7 +288,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         if !super::execution_statements::implicit_solve_disabled()
             && matches!(
                 &step,
-                ProofStep::UnfoldPredicate(_)
+                ProofStep::UnfoldProposition(_)
                     | ProofStep::UnfoldFunction(_)
                     | ProofStep::UnfoldResource(_)
                     | ProofStep::UnfoldWitnesses { .. }
@@ -423,6 +423,23 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             return driver_proof.driver().apply_bare_statement_step(step);
         }
 
+        // Expansion must retain the name chosen for an implicit binder. A cold
+        // parse can then rename a newly desugared goal before referring to it.
+        let step = if matches!(step, ProofStep::Intro)
+            && matches!(driver_proof.goal(), Some(Proposition::ForAll { .. }))
+        {
+            match driver_proof.surface_goal() {
+                Some(ClickProposition::ForAll { name, .. })
+                | Some(ClickProposition::RangeAll { item: name, .. })
+                    if matches!(name, SurfaceBinder::Generated(_)) =>
+                {
+                    ProofStep::IntroBinder(name.clone())
+                }
+                _ => step,
+            }
+        } else {
+            step
+        };
         let provenance_step = step.clone();
         let checked_proposition_successor = match &step {
             ProofStep::CheckTerminationLocal(function) => Some(
@@ -439,6 +456,9 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             ProofStep::CheckTerminationCallbacks => Some(
                 driver_proof.apply_termination_check(crate::kernel::TerminationCheck::Callbacks),
             ),
+            ProofStep::ApplyFactUsing { fact, premises } => {
+                Some(driver_proof.apply_fact_using(fact, premises))
+            }
             ProofStep::Known => Some(driver_proof.apply_known()),
             ProofStep::Normalize => Some(driver_proof.apply_normalize()),
             ProofStep::NormalizeUsing(premises) => {
@@ -451,25 +471,20 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             ProofStep::Preserve(separation) => Some(driver_proof.apply_preserve(separation)),
 
             ProofStep::Intro => Some(driver_proof.apply_intro(None)),
-            ProofStep::IntroAs(name) => Some(driver_proof.apply_intro(Some(name))),
+            ProofStep::IntroAs(name) => Some(driver_proof.apply_intro(Some(name.into()))),
+            ProofStep::IntroBinder(name) => Some(driver_proof.apply_intro(Some(name.clone()))),
             ProofStep::Enumerate => Some(driver_proof.apply_enumerate()),
             ProofStep::Contradiction(surface) => Some(driver_proof.apply_contradiction(surface)),
-            ProofStep::Extract(proposition) => Some(driver_proof.apply_extract(proposition)),
-            ProofStep::InstantiateUsing {
+            ProofStep::Instantiate {
                 quantified,
                 argument,
-                premises,
-            } => Some(driver_proof.apply_fixed_state_instantiate_using(
-                quantified,
-                argument,
-                premises.as_deref(),
-            )),
+            } => Some(driver_proof.apply_fixed_state_instantiate(quantified, argument)),
             ProofStep::Mark(name) => Some(driver_proof.apply_execution_mark(name)),
             _ => None,
         };
         if let Some(successor) = checked_proposition_successor {
             let successor = successor?;
-            let successor = if matches!(step, ProofStep::InstantiateUsing { .. }) {
+            let successor = if matches!(step, ProofStep::Instantiate { .. }) {
                 close_goal_from_added_fact(successor)
             } else {
                 successor
@@ -505,14 +520,12 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 target,
                 premises,
             } => driver_proof.apply_transport_using(source, target, premises),
-            ProofStep::UnfoldPredicate(name) => driver_proof.apply_predicate_unfold(name),
-            ProofStep::UnfoldFunction(application) => {
-                driver_proof.apply_function_unfold(application, None)
+            ProofStep::UnfoldProposition(target) => {
+                driver_proof.apply_local_predicate_unfold(target)
             }
-            ProofStep::PeelFunction {
-                application,
-                premises,
-            } => driver_proof.apply_function_unfold(application, Some(premises)),
+            ProofStep::UnfoldFunction(application) => {
+                driver_proof.apply_function_unfold(application)
+            }
             ProofStep::UnfoldResource(resource) => {
                 // Resolve proof bindings before either the execution or
                 // outcome path interprets ordinary resource arguments.
@@ -561,13 +574,14 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             step,
             ProofStep::Rewrite(_) | ProofStep::TransportUsing { .. }
         ) {
-            transition.clear_chosen_projection();
+            transition.clear_existential_projection();
         }
 
         let state = driver_proof.publish_checked_transition(transition)?;
         let state = if matches!(
             step,
-            ProofStep::ApplyTheoremUsing { .. }
+            ProofStep::ApplyFactUsing { .. }
+                | ProofStep::ApplyTheoremUsing { .. }
                 | ProofStep::TransportUsing { .. }
                 | ProofStep::LetSatisfy(_)
         ) {

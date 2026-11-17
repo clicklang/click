@@ -6,7 +6,7 @@ printed spelling is wrong, so no false claim verifies.
 A refused back-edge bundle member of a Rust loop names the value
 `steps + 1` by the compiler temporary that holds it, `__rust_mir_6`, which
 no proof can write. Every printed fact must be spellable
-(`docs/internals/spellability.md`); the value's spelling is
+(`docs/internals/raise-lower-principle.md`); the value's spelling is
 `at(<iteration entry>, steps) + 1`, as the same member of a C loop prints.
 
 ## Reproduction

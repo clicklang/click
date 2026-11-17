@@ -5,129 +5,11 @@ use super::*;
 use crate::kernel::proof::fact_reasoning::{InstanceArgument, listed_equality_fact_is_available};
 use crate::kernel::proof::{CheckedProofCasePartition, OutcomeEvidenceFork, OutcomeForkArm};
 
-const MAX_CHOSEN_PROJECTION_WORK: usize = 4096;
-
-fn proposition_at_connective_path<'a>(
-    root: &'a Proposition,
-    path: &[usize],
-) -> Option<&'a Proposition> {
-    let mut current = root;
-    for direction in path {
-        let Proposition::And(left, right) = current else {
-            return None;
-        };
-        current = match direction {
-            0 => left,
-            1 => right,
-            _ => return None,
-        };
-    }
-    Some(current)
-}
-
-pub(super) fn projection_leaf_for_extract<'a>(
-    leaves: &'a [ChosenProjectionLeaf],
-    surface: &ClickProposition,
-    chosen_body: &Proposition,
-    source_id: &RequirementSourceId,
-) -> Option<&'a ChosenProjectionLeaf> {
-    let mut matching = leaves.iter().filter(|leaf| leaf.surface == *surface);
-    let leaf = matching.next()?;
-    if matching.next().is_some()
-        || leaf.source_token.source_id != *source_id
-        || proposition_at_connective_path(chosen_body, &leaf.source_token.connective_path)
-            != Some(&leaf.kernel)
-    {
-        return None;
-    }
-    Some(leaf)
-}
-
-#[cfg(test)]
-mod projection_path_tests {
-    use super::*;
-
-    fn source_id() -> RequirementSourceId {
-        RequirementSourceId {
-            owner: CallerSourceOwnerId::ordinary("path-test.c", "f"),
-            outer_ordinal: 0,
-        }
-    }
-
-    fn surface_leaf() -> ClickProposition {
-        ClickProposition::Comparison {
-            left: ContractExpression::ProgramExpression(ProgramExpression::Value(
-                ProgramValue::Int32(MachineTerm::constant(0)),
-            )),
-            operator: ComparisonOperator::Equal,
-            right: ContractExpression::ProgramExpression(ProgramExpression::Value(
-                ProgramValue::Int32(MachineTerm::constant(0)),
-            )),
-        }
-    }
-
-    fn kernel_leaf(value: bool) -> Proposition {
-        Proposition::ConditionIs(ConditionTerm::Constant(value), true)
-    }
-
-    fn leaf(id: RequirementSourceId, path: Vec<usize>, value: bool) -> ChosenProjectionLeaf {
-        ChosenProjectionLeaf {
-            source_token: ProjectionSourceToken {
-                source_id: id,
-                connective_path: path,
-            },
-            surface: surface_leaf(),
-            kernel: kernel_leaf(value),
-        }
-    }
-
-    #[test]
-    fn projection_paths_are_iterative_and_fail_closed() {
-        let left = kernel_leaf(true);
-        let middle = kernel_leaf(false);
-        let right = kernel_leaf(true);
-        let body = Proposition::And(
-            Box::new(Proposition::And(
-                Box::new(left.clone()),
-                Box::new(middle.clone()),
-            )),
-            Box::new(right.clone()),
-        );
-        assert_eq!(
-            proposition_at_connective_path(&body, &[0, 1]),
-            Some(&middle)
-        );
-        assert_eq!(proposition_at_connective_path(&body, &[1]), Some(&right));
-        assert_eq!(proposition_at_connective_path(&body, &[2]), None);
-        assert_eq!(proposition_at_connective_path(&body, &[0, 0, 0]), None);
-    }
-
-    #[test]
-    fn projection_leaf_selection_rejects_duplicate_surface_and_bad_tokens() {
-        let id = source_id();
-        let body = Proposition::And(Box::new(kernel_leaf(true)), Box::new(kernel_leaf(true)));
-        let duplicate = vec![
-            leaf(id.clone(), vec![0], true),
-            leaf(id.clone(), vec![1], true),
-        ];
-        assert!(projection_leaf_for_extract(&duplicate, &surface_leaf(), &body, &id).is_none());
-
-        let malformed_path = vec![leaf(id.clone(), vec![2], true)];
-        assert!(
-            projection_leaf_for_extract(&malformed_path, &surface_leaf(), &body, &id).is_none()
-        );
-        let wrong_id = RequirementSourceId {
-            outer_ordinal: 1,
-            ..id.clone()
-        };
-        let wrong_token = vec![leaf(wrong_id, vec![0], true)];
-        assert!(projection_leaf_for_extract(&wrong_token, &surface_leaf(), &body, &id).is_none());
-    }
-}
+const MAX_EXISTENTIAL_PROJECTION_WORK: usize = 4096;
 
 /// A source-sized decision graph. Both arms point to the shared continuation;
 /// walking an arm never visits the syntax or outcomes of its sibling.
-type OutcomeBindings = PersistentMap<String, ContractExpression>;
+type OutcomeBindings = PersistentBinderMap<ContractExpression>;
 
 // Nodes select their lexical match by source occurrence. Shared continuation
 // nodes keep their enclosing scope, so arm bindings cannot escape the arm.
@@ -914,13 +796,7 @@ impl<'a> Proof<'a> {
             integer_values: &integer_values,
             pointer_element_widths: BTreeMap::new(),
         };
-        let unfolded_predicates = self.active_unfolded_predicates();
-        let explicit_premises = unfold_available_predicate_facts(
-            context.spec_definitions,
-            &unfolded_predicates,
-            &explicit_premises,
-        )
-        .map_err(|message| self.step_error(message))?;
+
         // An explicit `using` list supplies both argument-domain evidence
         // and the theorem's premises; omitted guards cannot leak in from
         // the surrounding proof context.
@@ -943,7 +819,6 @@ impl<'a> Proof<'a> {
             &lowering_assumptions,
             &application_context,
             context.spec_definitions,
-            &unfolded_predicates,
         )?;
 
         let mut facts = self.facts().clone();
@@ -975,7 +850,6 @@ impl<'a> Proof<'a> {
         application: &TheoremApplication,
         surface_premises: &[ClickProposition],
     ) -> Result<CheckedFocusedTransition, ClickError> {
-        let unfolded_predicates = self.active_unfolded_predicates();
         let algebraic_values = application
             .arguments
             .iter()
@@ -1001,7 +875,6 @@ impl<'a> Proof<'a> {
             &self.local_integer_values(),
             &algebraic_values,
             view.surface_propositions,
-            &unfolded_predicates,
             view.effect_facts,
             view.spec_definitions,
         )?;
@@ -1061,7 +934,6 @@ impl<'a> Proof<'a> {
             &self.local_integer_values(),
             &algebraic_values,
             &execution.presentation.surface_propositions,
-            &execution.core.unfolded_predicates,
             &execution.core.effect_facts,
             context.spec_definitions,
         )?;
@@ -1205,23 +1077,13 @@ impl<'a> Proof<'a> {
         let source_fact_index = source_selection
             .as_ref()
             .map_or(source_ordinal, |selection| selection.principal_fact_index);
-        let mut source = source_facts
+        let source = source_facts
             .get(source_fact_index)
             .cloned()
             .ok_or_else(|| {
                 self.step_error(format!("requirement {source_ordinal} was not available"))
             })?;
-        let unfolded_predicates = self.active_unfolded_predicates();
-        if !matches!(source, Proposition::Exists { .. }) && !unfolded_predicates.is_empty() {
-            source = unfold_predicates_in_proposition(
-                view.spec_definitions,
-                &unfolded_predicates,
-                &source,
-                self.facts().assumptions(),
-            )
-            .map_err(|message| self.step_error(message))?;
-        }
-        let checked_source = source.clone();
+
         let Proposition::Exists {
             var, sort, body, ..
         } = source
@@ -1267,27 +1129,7 @@ impl<'a> Proof<'a> {
             .facts()
             .with_kernel_checked_fact(chosen_fact.clone())
             .with_reserved_variables([chosen_variable]);
-        let mut transition =
-            self.checked_fact_transition(locals, facts, false, added_facts, vec![chosen_fact]);
-        if let Some(projection) = self.build_chosen_projection(
-            &view,
-            source_facts
-                .get(source_fact_index)
-                .expect("validated requirement source index")
-                .clone(),
-            checked_source,
-            source_selection.as_ref(),
-            chosen_variable,
-            choice,
-            &chosen,
-        )? && let Some(branch) = transition.branch.as_mut()
-            && let Some(execution) = branch.state.execution.as_deref()
-        {
-            let mut execution = execution.clone();
-            execution.presentation.chosen_projection = Some(projection);
-            branch.state.execution = Some(Arc::new(execution));
-        }
-        Ok(transition)
+        Ok(self.checked_fact_transition(locals, facts, false, added_facts, vec![chosen_fact]))
     }
 
     pub(super) fn apply_let_satisfy(
@@ -1491,14 +1333,14 @@ impl<'a> Proof<'a> {
                 .expect("pointer choice sort"),
             _ => return Ok(None),
         };
-        let bound_names = BTreeMap::from([(chosen_variable, name.clone())]);
+        let bound_names = BTreeMap::from([(chosen_variable, SurfaceBinder::from(name))]);
         let mut pending = vec![(chosen_body.clone(), Vec::new())];
         let mut leaves = Vec::new();
         let mut work = 0usize;
         while let Some((proposition, path)) = pending.pop() {
             check_verification_deadline()?;
             work = work.saturating_add(1);
-            if work > MAX_CHOSEN_PROJECTION_WORK {
+            if work > MAX_EXISTENTIAL_PROJECTION_WORK {
                 return Err(self.step_error(
                     "opened existential body is too large to retain a bounded source projection",
                 ));
@@ -1656,169 +1498,6 @@ impl<'a> Proof<'a> {
             .with_kernel_checked_fact(fact.clone())
             .with_reserved_variables([chosen_variable]);
         Ok(self.checked_fact_transition(locals, facts, false, added, vec![fact]))
-    }
-
-    /// Retains the source spelling of a chosen existential's body leaves for
-    /// the narrow `extract` adapter.  The record is deliberately built from
-    /// the selected source only; it never consults ambient facts or asks the
-    /// kernel to establish a new proposition.
-    fn build_chosen_projection(
-        &self,
-        view: &FixedStateOperationView<'_>,
-        source_requirement: Proposition,
-        checked_source: Proposition,
-        source_selection: Option<&CallerRequirementSelection>,
-        chosen_variable: Variable,
-        choice: &ProofChoice,
-        chosen: &ProgramValue,
-    ) -> Result<Option<ChosenProjection>, ClickError> {
-        let ProofContext::Execution(context) = self.context.as_ref() else {
-            return Ok(None);
-        };
-        let Some(source_selection) = source_selection else {
-            return Ok(None);
-        };
-        // The source ID and final fact position are independent: do not
-        // recover an apparently equal requirement from another declaration
-        // or from an ambient fact.
-        if source_selection.principal_fact != source_requirement {
-            return Ok(None);
-        }
-        let Some(entry_state) = context.constants.function_entry_state.as_ref() else {
-            return Ok(None);
-        };
-        let source_memory_state =
-            crate::kernel::MemoryStateIdentity::of(view.fixed_state.pre_state.memory());
-        if source_memory_state != crate::kernel::MemoryStateIdentity::of(entry_state.memory()) {
-            return Ok(None);
-        }
-        let source_selector = ProgramPointSelector::ProgramPoint(ProgramPointRef {
-            region: CodeRegionRef::Function,
-            kind: ProgramPointKind::Entry,
-        });
-        // The body passed by `apply_fixed_state_choose` is the existential
-        // body before substitution. Build the substituted body from the
-        // selected requirement, preserving the original binder identity.
-        let instantiated = match (&checked_source, chosen) {
-            (Proposition::Exists { var, body, .. }, crate::kernel::integer_c_value!(value)) => {
-                substitute_int32_variable_in_proposition(body, *var, value.clone())
-            }
-            (Proposition::Exists { var, body, .. }, ProgramValue::Pointer(pointer)) => {
-                crate::kernel::substitute_pointer_value_in_proposition(body, *var, pointer)
-                    .map_err(|error| self.step_error(&error))?
-            }
-            _ => return Ok(None),
-        };
-        #[cfg(test)]
-        let projection_allocations_before = persistent_node_allocations();
-        let mut leaves = Vec::new();
-        let mut pending = vec![(instantiated, Vec::new())];
-        let bound_names = BTreeMap::from([(chosen_variable, choice.name.clone())]);
-        let mut work = 0usize;
-        while let Some((proposition, connective_path)) = pending.pop() {
-            check_verification_deadline()?;
-            work = work.saturating_add(1);
-            if work > MAX_CHOSEN_PROJECTION_WORK {
-                return Err(self.step_error(
-                    "chosen existential body is too large to retain a bounded source projection",
-                ));
-            }
-            match proposition {
-                Proposition::And(left, right) => {
-                    let mut right_path = connective_path.clone();
-                    right_path.push(1);
-                    pending.push((*right, right_path));
-                    let mut left_path = connective_path;
-                    left_path.push(0);
-                    pending.push((*left, left_path));
-                    continue;
-                }
-                leaf => {
-                    let Some(surface) =
-                        crate::surface::proof::surface_synthesis::synthesize_source_projection_proposition_with_bound_variable_names(
-                            &leaf,
-                            view.parameter_binding,
-                            entry_state,
-                            &bound_names,
-                        )
-                    else {
-                        // Retain the exact subset of leaves that can
-                        // round-trip at this source boundary. Every retained
-                        // leaf is checked below; an unsynthesizable sibling
-                        // does not invalidate those independent identities.
-                        continue;
-                    };
-                    let surface = surface_at_program_point(&surface, &source_selector)?;
-                    let validation_surface = substitute_click_proposition(
-                        &surface,
-                        &BTreeMap::from([(
-                            choice.name.clone(),
-                            ContractExpression::ProgramExpression(ProgramExpression::Value(
-                                chosen.clone(),
-                            )),
-                        )]),
-                    )
-                    .map_err(|message| {
-                        self.step_error(format!(
-                            "could not substitute chosen existential body leaf: {message}"
-                        ))
-                    })?;
-                    let lowered = lower_fixed_state_proposition_with_assumptions(
-                        &validation_surface,
-                        self.facts().assumptions(),
-                        view.parameter_binding,
-                        FixedStateFrame::new(
-                            view.fixed_state.pre_state,
-                            view.fixed_state.pre_state,
-                            None,
-                            view.fixed_state.recorded_states,
-                        ),
-                        view.spec_definitions,
-                    )
-                    .map_err(|message| {
-                        self.step_error(format!(
-                            "could not lower chosen existential body leaf: {message}"
-                        ))
-                    })?;
-                    if lowered != leaf {
-                        // A surface leaf is usable only when it lowers back
-                        // to this exact selected kernel leaf.
-                        continue;
-                    }
-                    leaves.push(ChosenProjectionLeaf {
-                        source_token: ProjectionSourceToken {
-                            source_id: source_selection.source_id.clone(),
-                            connective_path,
-                        },
-                        surface,
-                        kernel: leaf,
-                    });
-                }
-            }
-        }
-        #[cfg(test)]
-        CHOSEN_PROJECTION_WALK_WORK.with(|count| {
-            count.set((
-                work,
-                persistent_node_allocations() - projection_allocations_before,
-            ));
-        });
-        Ok((!leaves.is_empty()).then_some(ChosenProjection {
-            source_id: source_selection.source_id.clone(),
-            principal_fact_index: source_selection.principal_fact_index,
-            source_token: ProjectionSourceToken {
-                source_id: source_selection.source_id.clone(),
-                connective_path: Vec::new(),
-            },
-            source_proposition: source_selection.source_proposition.clone(),
-            source_requirement,
-            checked_source,
-            chosen_name: choice.name.clone(),
-            chosen_variable,
-            source_memory_state,
-            source_selector,
-            leaves,
-        }))
     }
 
     fn apply_pure_integer_choose(
@@ -2022,14 +1701,7 @@ impl<'a> Proof<'a> {
         let goal = self
             .proposition_goal("`witness` requires a proposition goal")?
             .clone();
-        let unfolded_predicates = self.active_unfolded_predicates();
-        let goal = unfold_predicates_in_proposition(
-            view.spec_definitions,
-            &unfolded_predicates,
-            &goal,
-            self.facts().assumptions(),
-        )
-        .map_err(|message| self.step_error(format!("could not unfold witness goal: {message}")))?;
+
         let values = parameter_values(view.parameter_binding)
             .map_err(|error| self.step_error(error.message))?;
         let array_refs = array_refs_for_parameters(
@@ -2050,7 +1722,7 @@ impl<'a> Proof<'a> {
             body,
         } = &goal
         {
-            if name != witness.name() {
+            if !name.is_empty() && name != witness.name() {
                 return Err(self.step_error(format!(
                     "`witness` binds `{name}`, but proof provided `{}`",
                     witness.name()
@@ -2092,7 +1764,7 @@ impl<'a> Proof<'a> {
                     written_name,
                     body,
                     ..
-                }) if written_name.as_ref().unwrap_or(name) == witness.name() => {
+                }) if name.matches_witness_label(written_name.as_deref(), witness.name()) => {
                     let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
                     Some(
                         substitute_click_proposition(body, &substitutions).map_err(|message| {
@@ -2139,7 +1811,7 @@ impl<'a> Proof<'a> {
                 written_name,
                 body,
                 ..
-            }) if written_name.as_ref().unwrap_or(name) == witness.name() => {
+            }) if name.matches_witness_label(written_name.as_deref(), witness.name()) => {
                 let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
                 Some(
                     substitute_click_proposition(body, &substitutions).map_err(|message| {
@@ -2155,7 +1827,7 @@ impl<'a> Proof<'a> {
                 item,
                 written_item,
                 body,
-            }) if written_item.as_ref().unwrap_or(item) == witness.name() => {
+            }) if item.matches_witness_label(written_item.as_deref(), witness.name()) => {
                 let substitutions = BTreeMap::from([(item.clone(), witness.value().clone())]);
                 let start =
                     substitute_contract_expression(start, &substitutions).map_err(|message| {
@@ -2330,7 +2002,7 @@ impl<'a> Proof<'a> {
                 written_name,
                 body,
                 ..
-            }) if written_name.as_ref().unwrap_or(name) == witness.name() => {
+            }) if name.matches_witness_label(written_name.as_deref(), witness.name()) => {
                 let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
                 Some(
                     substitute_click_proposition(body, &substitutions).map_err(|message| {
@@ -2369,7 +2041,7 @@ impl<'a> Proof<'a> {
                 "pure `witness` currently requires an Integer existential proposition",
             ));
         };
-        if name != witness.name() {
+        if !name.is_empty() && name != witness.name() {
             return Err(self.step_error(format!(
                 "`witness` binds `{name}`, but proof provided `{}`",
                 witness.name()
@@ -2387,7 +2059,7 @@ impl<'a> Proof<'a> {
                 written_name,
                 body,
                 ..
-            }) if written_name.as_ref().unwrap_or(name) == witness.name() => {
+            }) if name.matches_witness_label(written_name.as_deref(), witness.name()) => {
                 let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
                 Some(
                     substitute_click_proposition(body, &substitutions).map_err(|message| {
@@ -2426,7 +2098,7 @@ impl<'a> Proof<'a> {
                 "pure algebraic `witness` requires an algebraic existential proposition",
             ));
         };
-        if name != witness.name() {
+        if !name.is_empty() && name != witness.name() {
             return Err(self.step_error(format!(
                 "`witness` binds `{name}`, but proof provided `{}`",
                 witness.name()
@@ -2445,7 +2117,7 @@ impl<'a> Proof<'a> {
                 written_name,
                 body,
                 ..
-            }) if written_name.as_ref().unwrap_or(name) == witness.name() => {
+            }) if name.matches_witness_label(written_name.as_deref(), witness.name()) => {
                 let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
                 Some(
                     substitute_click_proposition(body, &substitutions).map_err(|message| {
@@ -2549,7 +2221,7 @@ impl<'a> Proof<'a> {
         let promoted = crate::surface::proof::surface_lowering::promote_integer_expression(
             expression,
             &integers,
-            &crate::persistent::PersistentMap::default(),
+            &PersistentBinderMap::default(),
         );
         if let Ok(crate::kernel::SpecIntegerExpression::Term(value)) =
             crate::surface::lowering::lower_contract_integer_to_spec(&promoted, &integers)
@@ -2818,26 +2490,13 @@ impl<'a> Proof<'a> {
         })
     }
 
-    pub(super) fn apply_fixed_state_instantiate_using(
+    pub(super) fn apply_fixed_state_instantiate(
         &self,
         surface_quantified: &ClickProposition,
         argument: &ContractExpression,
-        surface_premises: Option<&[ClickProposition]>,
     ) -> Result<KernelProofHandle, ClickError> {
         let surface_quantified =
             self.substitute_fixed_state_locals_in_proposition(surface_quantified)?;
-        let explicit_premises = surface_premises
-            .map(|premises| {
-                premises
-                    .iter()
-                    .map(|surface| {
-                        self.lower_cited_surface_proposition(surface, "`instantiate using` premise")
-                    })
-                    .collect::<Result<Vec<_>, _>>()
-            })
-            .transpose()?;
-        let bare = surface_premises.is_none();
-        let surface_premises = surface_premises.unwrap_or_default();
         let lowered_quantified = self.lower_cited_surface_proposition(
             &surface_quantified,
             "`instantiate` quantified fact",
@@ -2869,38 +2528,18 @@ impl<'a> Proof<'a> {
             InstanceArgument::Integer(_) => None,
         };
 
-        let checked = self.state
-            .apply_instantiate(lowered_quantified, argument, explicit_premises.as_deref())
+        let checked = self
+            .state
+            .apply_instantiate(lowered_quantified, argument)
             .map_err(|error| match error {
                 PropositionCloseError::NotProposition => {
                     self.step_error("`instantiate` requires a proposition goal")
-                }
-                PropositionCloseError::InstantiatePremiseUnavailable(index, premise) => {
-                    let written = surface_premises.get(index).map_or_else(
-                        || self.render_diagnostic_proposition(&premise),
-                        describe_click_proposition,
-                    );
-                    self.step_error(format!(
-                        "`instantiate using` premise {} `{written}` is not an available exact fact",
-                        index + 1
-                    ))
                 }
                 PropositionCloseError::InstantiateQuantifiedUnavailable => {
                     self.step_error(format!(
                         "`instantiate` quantified fact is not exactly available: {}",
                         describe_click_proposition(&surface_quantified)
                     ))
-                }
-                PropositionCloseError::InstantiateInvalid(
-                    crate::kernel::proof::fact_reasoning::ForallInstantiationError::MissingGuard(
-                        missing,
-                    ),
-                ) if bare => {
-                    self.step_error_with_requirement(
-                        "`instantiate` without `using` needs each instantiated guard as an exact fact; prove the missing guard first with `have`, or list the facts it follows from with `using { ... }`",
-                        None,
-                        Some(("missing exact guard", Box::new(missing), None)),
-                    )
                 }
                 PropositionCloseError::InstantiateInvalid(message) => self.step_error(format!(
                     "`instantiate` failed: {}",
@@ -2918,20 +2557,39 @@ impl<'a> Proof<'a> {
             && let ClickProposition::ForAll { name, body, .. } = &surface_quantified
             && let Some(surface_argument) = surface_argument
             && let [conclusion] = checked.state().checked_facts()
-            && let Ok(mut written) = substitute_click_proposition(
+            && let Ok(written) = substitute_click_proposition(
                 body,
                 &BTreeMap::from([(name.clone(), surface_argument)]),
             )
         {
-            while let ClickProposition::Implies(_, next) = written {
-                written = *next;
-            }
             let mut locals = checked.state().locals().clone();
             let mut spelled = locals.checked_lowerings.clone();
-            if spelled.record_lowering(&written, conclusion).is_ok() {
-                locals.checked_lowerings = spelled;
-                return Ok(checked.with_locals(locals));
+            let mut surface = &written;
+            let mut kernel = conclusion;
+            let facts = &checked
+                .state()
+                .open_branches()
+                .get(checked.focused_branch())
+                .expect("instantiation retains its open branch")
+                .state
+                .facts;
+            // Cache the most specific available suffix once. The full guarded
+            // instance remains in checked facts; this optional rewrite cache
+            // needs the exposed consequence when propagation has reached it.
+            while let (
+                ClickProposition::Implies(_, next_surface),
+                Proposition::Implies(_, next_kernel),
+            ) = (surface, kernel)
+            {
+                if !facts.pure_known_available(next_kernel) {
+                    break;
+                }
+                surface = next_surface;
+                kernel = next_kernel;
             }
+            let _ = spelled.record_lowering(surface, kernel);
+            locals.checked_lowerings = spelled;
+            return Ok(checked.with_locals(locals));
         }
         Ok(checked)
     }
@@ -3057,18 +2715,9 @@ impl<'a> Proof<'a> {
         view: &FixedStateOperationView<'_>,
         surface_equality: &ClickProposition,
     ) -> Result<CheckedFocusedTransition, ClickError> {
-        let unfolded_predicates = self.active_unfolded_predicates();
-        let goal = Box::new(
-            unfold_predicates_in_proposition(
-                view.spec_definitions,
-                &unfolded_predicates,
-                self.proposition_goal("`rewrite` requires a proposition goal")?,
-                self.facts().assumptions(),
-            )
-            .map_err(|message| {
-                self.step_error(format!("could not unfold `rewrite` goal: {message}"))
-            })?,
-        );
+        let goal = Box::new(Proposition::clone(
+            self.proposition_goal("`rewrite` requires a proposition goal")?,
+        ));
         let lookup = |map: &SurfacePropositionMap, surface: &ClickProposition| {
             map.available_kernel_matching(surface, |kernel| {
                 self.facts().materialization_available(kernel)
@@ -3114,17 +2763,7 @@ impl<'a> Proof<'a> {
                 ),
             }
         };
-        let equality = Box::new(
-            unfold_predicates_in_proposition(
-                view.spec_definitions,
-                &unfolded_predicates,
-                &equality,
-                self.facts().assumptions(),
-            )
-            .map_err(|message| {
-                self.step_error(format!("could not unfold `rewrite` equality: {message}"))
-            })?,
-        );
+        let equality = Box::new(Proposition::clone(&equality));
         self.finish_rewrite(goal, equality, surface_equality, || {
             let (mut parameters, mut arguments) =
                 crate::surface::diagnostics::local_naming_tables(view.fixed_state.state);
@@ -3262,190 +2901,19 @@ impl<'a> Proof<'a> {
         ))
     }
 
-    pub(super) fn apply_extract(
+    pub(super) fn apply_fact_using(
         &self,
-        surface: &ClickProposition,
+        fact: &ClickProposition,
+        premises: &[ClickProposition],
     ) -> Result<KernelProofHandle, ClickError> {
-        let proposition = match self.chosen_projection_for_extract(surface)? {
-            Some(proposition) => proposition,
-            None => self.lower_cited_surface_proposition(surface, "`extract` proposition")?,
-        };
-        self.state.apply_extract(proposition).map_err(|error| match error {
-            // Lowering need not retain source names; the refusal concerns
-            // the citation the user wrote, rather than its anonymous terms.
-            PropositionCloseError::ExtractUnavailable => self.step_error(format!(
-                "`extract` proposition is not a proper conjunct, a checked disjunction projection, a discharged implication consequent, or a field equality of an exact same-constructor equality: {}",
-                crate::surface::printing::source_click_proposition(surface)
-            )),
-            PropositionCloseError::Unavailable => {
-                self.step_error("`extract` requires an open proof branch")
-            }
-            _ => unreachable!("kernel returned an unrelated extract error"),
-        })
-    }
-
-    /// Resolves an `extract` citation only through the current chosen
-    /// existential's checked presentation record.  Returning the recorded
-    /// kernel leaf does not grant authority: `ProofState::apply_extract`
-    /// still performs the exact proper-conjunct membership check.
-    fn chosen_projection_for_extract(
-        &self,
-        surface: &ClickProposition,
-    ) -> Result<Option<Proposition>, ClickError> {
-        if let Some(leaf) = self.existential_projection_for_extract(surface)? {
-            return Ok(Some(leaf));
-        }
-        let Some(Obligation::Proposition(_)) = self.focused_obligation() else {
-            return Ok(None);
-        };
-        let Some(execution) = self.execution() else {
-            return Ok(None);
-        };
-        let Some(view) = self.execution_proposition_fixed_state_view() else {
-            return Ok(None);
-        };
-        let entry_memory_state = self
-            .execution_context()
-            .and_then(|context| context.constants.function_entry_state.as_ref())
-            .map(|state| crate::kernel::MemoryStateIdentity::of(state.memory()));
-        let expected_selector = ProgramPointSelector::ProgramPoint(ProgramPointRef {
-            region: CodeRegionRef::Function,
-            kind: ProgramPointKind::Entry,
-        });
-        let Some(projection) = execution.presentation.chosen_projection.as_ref() else {
-            return Ok(None);
-        };
-        let Some(context) = self.execution_context() else {
-            return Ok(None);
-        };
-        let Some(retained_source) = context
-            .constants
-            .caller_requirement_index
-            .lookup_source_requirement(&projection.source_id)
-        else {
-            return Ok(None);
-        };
-        if projection.source_token.source_id != projection.source_id
-            || !projection.source_token.connective_path.is_empty()
-            || retained_source.source_id != projection.source_id
-            || retained_source.principal_fact_index != projection.principal_fact_index
-            || retained_source.principal_fact != projection.source_requirement
-            || retained_source.source_proposition != projection.source_proposition
-            || context
-                .constants
-                .execution_start_facts
-                .get(projection.principal_fact_index)
-                != Some(&projection.source_requirement)
-            || entry_memory_state != Some(projection.source_memory_state)
-            || retained_source.entry_memory_state != projection.source_memory_state
-            || projection.source_selector != expected_selector
-        {
-            return Ok(None);
-        }
-        let mut checked_source = projection.source_requirement.clone();
-        let unfolded_predicates = self.active_unfolded_predicates();
-        if !matches!(checked_source, Proposition::Exists { .. }) && !unfolded_predicates.is_empty()
-        {
-            checked_source = unfold_predicates_in_proposition(
-                view.spec_definitions,
-                &unfolded_predicates,
-                &checked_source,
-                self.facts().assumptions(),
-            )
-            .map_err(|message| self.step_error(message))?;
-        }
-        if checked_source != projection.checked_source {
-            return Ok(None);
-        }
-        let Some(binding) = self.local_binding(&projection.chosen_name) else {
-            return Ok(None);
-        };
-        if !binding_names_chosen_variable(binding, projection.chosen_variable) {
-            return Ok(None);
-        }
-        let surface = self.substitute_fixed_state_locals_in_proposition(surface)?;
-        let chosen_body = match checked_source {
-            Proposition::Exists { var, body, .. } => match binding {
-                ContractExpression::ProgramExpression(ProgramExpression::Value(
-                    ProgramValue::Int32(_),
-                )) => substitute_int32_variable_in_proposition(
-                    &body,
-                    var,
-                    MachineTerm::Variable(projection.chosen_variable),
-                ),
-                ContractExpression::ProgramExpression(ProgramExpression::Value(
-                    ProgramValue::Pointer(pointer),
-                )) => crate::kernel::substitute_pointer_value_in_proposition(&body, var, pointer)
-                    .map_err(|error| self.step_error(&error))?,
-                _ => return Ok(None),
-            },
-            _ => return Ok(None),
-        };
-        let Some(leaf) = projection_leaf_for_extract(
-            &projection.leaves,
-            &surface,
-            &chosen_body,
-            &projection.source_id,
-        ) else {
-            return Ok(None);
-        };
-        Ok(Some(leaf.kernel.clone()))
-    }
-
-    fn existential_projection_for_extract(
-        &self,
-        surface: &ClickProposition,
-    ) -> Result<Option<Proposition>, ClickError> {
-        if !matches!(self.focused_obligation(), Some(Obligation::Proposition(_))) {
-            return Ok(None);
-        }
-        let Some(projection) = self
-            .execution()
-            .and_then(|execution| execution.presentation.existential_projection.as_ref())
-        else {
-            return Ok(None);
-        };
-        let Some(entry_state) = self
-            .execution_context()
-            .and_then(|context| context.constants.function_entry_state.as_ref())
-        else {
-            return Ok(None);
-        };
-        if projection.source_memory_state
-            != crate::kernel::MemoryStateIdentity::of(entry_state.memory())
-            || !self.facts().contains_top_level(&projection.chosen_body)
-        {
-            return Ok(None);
-        }
-        let Some(binding) = self.local_binding(&projection.chosen_name) else {
-            return Ok(None);
-        };
-        if !binding_names_chosen_variable(binding, projection.chosen_variable) {
-            return Ok(None);
-        }
-        // A leaf names the chosen binder, which the citation may already
-        // spell as its bound value; compare both after the same substitution.
-        let cited = self.substitute_fixed_state_locals_in_proposition(surface)?;
-        let mut leaf_surfaces = Vec::with_capacity(projection.leaves.len());
-        for leaf in &projection.leaves {
-            leaf_surfaces.push(self.substitute_fixed_state_locals_in_proposition(&leaf.surface)?);
-        }
-        let mut matches = projection
-            .leaves
+        let fact = self.lower_cited_surface_proposition(fact, "`apply` fact")?;
+        let premises = premises
             .iter()
-            .zip(&leaf_surfaces)
-            .filter(|(leaf, leaf_surface)| leaf.surface == cited || **leaf_surface == cited)
-            .map(|(leaf, _)| leaf);
-        let leaf = match (matches.next(), matches.next()) {
-            (Some(leaf), None) => leaf,
-            _ => return Ok(None),
-        };
-        if proposition_at_connective_path(&projection.chosen_body, &leaf.connective_path)
-            != Some(&leaf.kernel)
-        {
-            return Ok(None);
-        }
-        Ok(Some(leaf.kernel.clone()))
+            .map(|premise| self.lower_cited_surface_proposition(premise, "`apply` premise"))
+            .collect::<Result<Vec<_>, _>>()?;
+        self.state
+            .apply_fact(&fact, &premises)
+            .map_err(|message| self.step_error(message))
     }
 
     /// The fixed-state data a result-aware checker consumes, resolved
@@ -3549,7 +3017,7 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn checked_outcome_match_arm(
         &self,
         occurrence: usize,
-    ) -> Result<(usize, PersistentMap<String, ContractExpression>), ClickError> {
+    ) -> Result<(usize, PersistentBinderMap<ContractExpression>), ClickError> {
         if !matches!(
             self.focused_obligation(),
             Some(Obligation::FunctionOutcome(_))
@@ -4071,7 +3539,6 @@ impl<'a> Proof<'a> {
                 .map_err(|message| self.step_error(message))?;
             let state = BranchState {
                 facts,
-                unfolded_predicates: branch_state.unfolded_predicates.clone(),
                 execution: Some(Arc::new(execution)),
             };
             return Ok(CheckedFocusedTransition::replacing(
@@ -4356,21 +3823,6 @@ fn loadable_surface_range_endpoints(
     segment
         .surface_range()
         .map(|(_, start, end)| (start.clone(), end.clone()))
-}
-
-/// Whether a proof-local binding is the symbolic value `choose` introduced
-/// for `variable`: a machine integer of any width, or a pointer offset.
-fn binding_names_chosen_variable(binding: &ContractExpression, variable: Variable) -> bool {
-    match binding {
-        ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(
-            pointer,
-        ))) => pointer.pointer().offset == PointerOffsetTerm::Variable(variable),
-        ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
-            crate::kernel::MachineIntegerType::from_program_type(value.program_type())
-                .is_some_and(|integer| *value == integer.symbolic_value(variable))
-        }
-        _ => false,
-    }
 }
 
 #[path = "../driver/outcome_cases.rs"]

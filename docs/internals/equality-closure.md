@@ -457,7 +457,7 @@ This avoids normalization work during unrelated field-separation checks.
 These checks require no alias enumeration or cancellation rule.
 
 Checked cross-block pointer premises involving the shared external-argument
-block, concrete storage, or an unspellable displacement also join their raw
+block, concrete storage, or an unraisable displacement also join their raw
 `address(block, offset)` applications. An address class retains one offset
 witness per exact block. Merging classes with a shared block joins those
 offsets: `address(A, x) == p` and `p == address(A, y)` establish `x == y`,
@@ -529,7 +529,7 @@ match and one keyed lookup per admission or registration; no node or fact is
 scanned. C
 pointer arithmetic over a `char`-width displacement `i * K` records this fact
 when the path's facts decide it, since lowering keeps the written byte offset
-(`docs/internals/spellability.md#lowering-is-fact-stable`). Regressions:
+(`docs/internals/raise-lower-principle.md#lowering-is-fact-stable`). Regressions:
 `a_byte_product_joins_its_element_offset_in_either_registration_order`,
 `a_byte_product_stays_apart_without_its_no_overflow_fact`, and the scaling
 test `a_byte_product_merge_is_keyed_and_ignores_unrelated_products`.
@@ -937,7 +937,7 @@ For 8-, 16-, 32-, and 64-bit integer reads, a recorded store equation
 `load(M, id) == value` by ordinary congruence. Registering the read alone
 supplies no cached value. Lowering keeps the read's own term and does not
 respell the address through the equality (lowering is fact-stable,
-[spellability](spellability.md#lowering-is-fact-stable)). Both equation-before-alias
+[raise-lower principle](raise-lower-principle.md#lowering-is-fact-stable)). Both equation-before-alias
 and alias-before-equation admission orders work, without enumerating aliases
 or reading the memory's cached values.
 

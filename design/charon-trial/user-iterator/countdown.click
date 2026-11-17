@@ -51,6 +51,13 @@ fn last(n: u32) -> u32 {
             }
         }
     }
+    have iter.n == 0u32;
+    have last == 0u32 by {
+        cases {
+            iter.n == n and last == 0u32 => { solve(); }
+            last == iter.n => { solve(); }
+        }
+    }
     step_until(function.exit);
     solve();
 }

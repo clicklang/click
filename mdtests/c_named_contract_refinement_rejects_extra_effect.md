@@ -19,8 +19,8 @@ theorem wide_effect_is_first_cell_effect(
 ) {
     requires WideEffect(callback);
     ensures FirstCellEffect(callback) by {
-        unfold(WideEffect);
-        unfold(FirstCellEffect);
+        unfold(WideEffect(callback));
+        unfold(FirstCellEffect(callback));
         solve();
     }
 }

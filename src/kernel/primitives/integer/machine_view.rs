@@ -48,7 +48,8 @@ pub(crate) fn shared_machine_syntax_variables(
                 KernelTermNode::Variable(variable) => {
                     crate::persistent::PersistentSet::default().with_value(*variable)
                 }
-                KernelTermNode::MachineLiteral(_)
+                KernelTermNode::ThreadHandle(_)
+                | KernelTermNode::MachineLiteral(_)
                 | KernelTermNode::IntegerToMachine { .. }
                 | KernelTermNode::FloatConvert { .. }
                 | KernelTermNode::BoolCast { .. }

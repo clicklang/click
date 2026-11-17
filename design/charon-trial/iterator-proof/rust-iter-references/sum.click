@@ -26,7 +26,7 @@ fn sum(bytes: &[u8]) -> i32 {
     have prefix(bytes, bytes.len() - loop(0).iter.len()) == 0 by {
         rewrite(bytes.len() - loop(0).iter.len(), 0u64);
         have 0u64 <= 0u64;
-        peel(prefix(bytes, 0u64)) using { 0u64 <= 0u64; };
+        unfold(prefix(bytes, 0u64));
         solve();
     }
     have 0 <= to_integer(total) and to_integer(total) <= 255 * to_integer(bytes.len() - loop(0).iter.len());
@@ -50,10 +50,7 @@ fn sum(bytes: &[u8]) -> i32 {
                 have prefix(bytes, (bytes.len() - iter.len()) + 1u64) == prefix(bytes, (bytes.len() - iter.len())) + to_integer(bytes[(bytes.len() - iter.len())] as i32) by {
                     have to_integer(0u64) <= to_integer(bytes.len() - iter.len());
                     have to_integer(bytes.len() - iter.len()) < to_integer(18446744073709551615u64);
-                    peel(prefix(bytes, (bytes.len() - iter.len()) + 1u64)) using {
-                        to_integer(0u64) <= to_integer(bytes.len() - iter.len());
-                        to_integer(bytes.len() - iter.len()) < to_integer(18446744073709551615u64);
-                    };
+                    unfold(prefix(bytes, (bytes.len() - iter.len()) + 1u64));
                     solve();
                 }
                 have to_integer((bytes.len() - iter.len())) + 1 <= 18446744073709551615;

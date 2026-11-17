@@ -18,6 +18,7 @@ fn nonnumeric_storage_keys_preserve_native_pairwise_order_and_hash_classes() {
     let _session = VerificationSession::enter();
     let mut values = vec![ProgramValue::Void];
     for word in [
+        MachineTerm::ThreadHandle(crate::kernel::primitives::ThreadHandleId(998696)),
         MachineTerm::Constant {
             format: MachineIntegerType::UInt8,
             bits: 2,
@@ -91,4 +92,144 @@ fn float_storage_preserves_exact_call_argument_carrier_distinctions() {
             assert_eq!(left.same_native_value(&right), a == b);
         }
     }
+}
+
+#[test]
+fn boolean_connective_keys_keep_native_condition_identity_and_order() {
+    let _session = VerificationSession::enter();
+    let a = ConditionTerm::Variable(Variable(998670));
+    let b = ConditionTerm::Variable(Variable(998671));
+    let cases = [
+        ConditionTerm::Constant(false),
+        a.clone(),
+        ConditionTerm::BoolEqual(Box::new(a.clone()), Box::new(b.clone())),
+        ConditionTerm::BoolIf {
+            condition: Box::new(a.clone()),
+            then_condition: Box::new(b.clone()),
+            else_condition: Box::new(a.clone()),
+        },
+        ConditionTerm::BoolApplication(SharedPureApplication::intern("key_bool".into(), vec![])),
+    ];
+    let roots = cases
+        .iter()
+        .map(|term| KernelTermImport::default().condition(term))
+        .collect::<Vec<_>>();
+    let native = roots
+        .iter()
+        .map(|root| ExecutionValue::Shared(root.clone()).into_native())
+        .collect::<Vec<_>>();
+    for (i, a) in roots.iter().enumerate() {
+        for (j, b) in roots.iter().enumerate() {
+            let left = StoredExecutionValue::from(ExecutionValue::Shared(a.clone()));
+            let right = StoredExecutionValue::from(ExecutionValue::Shared(b.clone()));
+            assert_eq!(left.cmp(&right), native[i].cmp(&native[j]));
+            assert_eq!(left == right, native[i] == native[j]);
+            let legacy = StoredExecutionValue::from(native[i].clone());
+            assert_eq!(left, legacy);
+            assert_eq!(hash(&left), hash(&legacy));
+        }
+    }
+}
+
+#[test]
+fn deep_boolean_key_construction_and_drop_use_a_small_stack() {
+    std::thread::Builder::new()
+        .stack_size(256 << 10)
+        .spawn(|| {
+            let _session = VerificationSession::enter();
+            let atom = KernelTerm::variable(KernelType::Bool, Variable(998675));
+            let other = KernelTerm::variable(KernelType::Bool, Variable(998676));
+            let mut root = atom.clone();
+            for _ in 0..4096 {
+                root = KernelTerm::boolean_if_raw([atom.clone(), root, other.clone()]);
+            }
+            let value = StoredExecutionValue::from(ExecutionValue::Shared(root.clone()));
+            assert!(!root.has_cached_native_argument());
+            let _ = hash(&value);
+            assert!(!root.has_cached_native_argument());
+            drop(root);
+            drop(value);
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+#[test]
+fn float_operation_keys_preserve_native_order_and_payloads() {
+    let _session = VerificationSession::enter();
+    let mut roots = Vec::new();
+    for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
+        let atom =
+            KernelTerm::variable(KernelType::Program(format.program_type()), Variable(998690));
+        roots.push(atom.clone());
+        roots.push(KernelTerm::float_negate(format, atom.clone()).unwrap());
+        roots.push(
+            KernelTerm::float_binary(
+                format,
+                FloatBinaryOperator::Add,
+                [atom.clone(), atom.clone()],
+            )
+            .unwrap(),
+        );
+        roots.push(KernelTerm::float_call(
+            format,
+            "outer".into(),
+            vec![(atom.clone(), None)],
+        ));
+        let integer =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(998691));
+        roots.push(KernelTerm::float_convert(format, ProgramType::Int32, integer).unwrap());
+        // A newly added opaque native word keeps its identity and native
+        // ordering even when carried by an unsupported legacy float input.
+        roots.push(KernelTermImport::default().float(
+            format,
+            &MachineTerm::ThreadHandle(crate::kernel::primitives::ThreadHandleId(998696)),
+        ));
+        let native = MachineTerm::If {
+            condition: Box::new(ConditionTerm::Variable(Variable(998692))),
+            then_term: Box::new(MachineTerm::constant(1)),
+            else_term: Box::new(MachineTerm::constant(2)),
+        };
+        roots.push(KernelTermImport::default().float(format, &native));
+    }
+    let values = roots
+        .iter()
+        .map(|root| ExecutionValue::Shared(root.clone()).into_native())
+        .collect::<Vec<_>>();
+    for (i, a) in roots.iter().enumerate() {
+        let a = StoredExecutionValue::from(ExecutionValue::Shared(a.clone()));
+        let native = StoredExecutionValue::from(values[i].clone());
+        assert_eq!(a, native);
+        assert_eq!(hash(&a), hash(&native));
+        for (j, b) in roots.iter().enumerate() {
+            let b = StoredExecutionValue::from(ExecutionValue::Shared(b.clone()));
+            assert_eq!(a.cmp(&b), values[i].cmp(&values[j]));
+            assert_eq!(a == b, values[i] == values[j]);
+        }
+    }
+}
+
+#[test]
+fn deep_float_key_construction_and_drop_use_a_small_stack() {
+    std::thread::Builder::new()
+        .stack_size(256 << 10)
+        .spawn(|| {
+            let _session = VerificationSession::enter();
+            let mut root =
+                KernelTerm::variable(KernelType::Program(ProgramType::Float32), Variable(998695));
+            for _ in 0..4096 {
+                root = KernelTerm::float_negate(KernelFloatType::Float32, root).unwrap();
+            }
+            let stored = StoredExecutionValue::from(ExecutionValue::Shared(root.clone()));
+            let exports = KernelTermExport::float_export_count();
+            let _ = hash(&stored);
+            assert_eq!(KernelTermExport::float_export_count(), exports);
+            assert!(!root.has_cached_native_argument());
+            drop(root);
+            drop(stored);
+        })
+        .unwrap()
+        .join()
+        .unwrap();
 }

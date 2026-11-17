@@ -75,8 +75,7 @@ pub(super) struct TheoremApplicationContext<'a> {
     pub(super) post_state: &'a ExecutionState,
     pub(super) result: Option<&'a ProgramValue>,
     pub(super) recorded_states: &'a RecordedStates,
-    pub(super) integer_values:
-        &'a crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+    pub(super) integer_values: &'a PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     /// Physical pointee widths for C parameters in the caller's scope.  A
     /// theorem application may rename such a parameter, so the application
     /// binding maps this by argument expression before lowering the callee's
@@ -150,7 +149,6 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
     lowering_assumptions: &PureFactContext,
     context: &TheoremApplicationContext<'_>,
     spec_definitions: SpecDefinitions<'_>,
-    unfolded_predicates: &[String],
 ) -> Result<Vec<Proposition>, ClickError> {
     let evidence_context = std::cell::OnceCell::new();
     let evidence_assumptions =
@@ -272,7 +270,7 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
             .collect()
     });
     for (requirement_index, requirement) in requirements.iter().enumerate() {
-        let mut lowered = lower(requirement).map_err(|error| {
+        let lowered = lower(requirement).map_err(|error| {
             theorem_application_error(
                 claim_label,
                 path_index,
@@ -283,18 +281,6 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
                 ),
             )
         })?;
-        if !unfolded_predicates.is_empty() {
-            lowered = unfold_predicates_in_proposition(
-                spec_definitions,
-                unfolded_predicates,
-                &lowered,
-                evidence_assumptions(),
-            )
-            .map_err(|message| {
-                theorem_application_error(claim_label, path_index, tactic_index, message)
-            })?;
-        }
-        lowered = lowered.clone();
         if let Some(substitutions) = &prepared_substitutions {
             let written =
                 observe_machine_parameters(requirement, theorem.parameters(), substitutions);
@@ -322,7 +308,7 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
         // `defined(x + y)` fact emitted for a C addition.  The theorem may
         // require one of that fact's proper conjuncts (the no-overflow
         // condition), so select it through the same exact structural rule as
-        // the kernel `extract` step.  This does not derive or normalize a
+        // an explicit implication application.  This does not derive or normalize a
         // weaker proposition: the complete conjunction remains the supplied
         // evidence and only its checked conjunct satisfies this requirement.
         // A requirement is also met by a listed fact that states the same
@@ -1065,7 +1051,7 @@ pub(super) fn theorem_application_bindings(
         BTreeMap<String, ProgramValue>,
         ClickArrayRefs,
         BTreeMap<String, SpecAlgebraicExpression>,
-        crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+        PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     ),
     String,
 > {
@@ -1077,7 +1063,7 @@ pub(super) fn theorem_application_bindings(
     // bindings as the immutable lookup environment, and accumulate the
     // resulting parameter bindings separately; otherwise an earlier callee
     // parameter can capture a later argument with the same spelling.
-    let mut integer_values = crate::persistent::PersistentMap::default();
+    let mut integer_values = PersistentBinderMap::default();
     for (parameter, argument) in theorem.parameters().iter().zip(&application.arguments) {
         if parameter.click_type() == &ClickType::Resource {
             if !matches!(argument, ContractExpression::Resource(_)) {
@@ -1789,7 +1775,7 @@ theorem nested_count(value: int32) {
         let values = BTreeMap::new();
         let arrays = BTreeMap::new();
         let algebraic = BTreeMap::new();
-        let integers = crate::persistent::PersistentMap::default();
+        let integers = PersistentBinderMap::default();
         let result = int32(11u32);
         let mut retained_states = RecordedStates::default();
         retained_states.insert(

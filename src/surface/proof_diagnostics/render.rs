@@ -137,7 +137,7 @@ impl MemoryStateLabels {
         match value {
             crate::kernel::arithmetic_c_value!(MachineTerm::Variable(variable))
                 if crate::kernel::registered_load_for_variable(variable).is_none()
-                    && crate::kernel::model_fields::model_field_spelling(*variable).is_none() =>
+                    && crate::kernel::model_fields::model_field_surface(*variable).is_none() =>
             {
                 self.source_name(*variable, "result".into());
             }
@@ -1073,6 +1073,9 @@ pub(crate) fn render_resource_fact_labeled(
         trace_facts: true,
     };
     match fact {
+        ResourceFact::Own(resource @ Resource::ConditionalMutexGuard(_), _) => {
+            renderer.resource(resource)
+        }
         ResourceFact::Own(resource, quantity) => {
             renderer.push("owns ");
             renderer.resource(resource);
@@ -2014,7 +2017,7 @@ impl Renderer<'_> {
             // registered it, because the value lives inside the instance fact
             // and the term carries nothing to recover it from.
             IntegerTerm::Variable(variable) => {
-                match crate::kernel::model_fields::model_field_spelling(*variable) {
+                match crate::kernel::model_fields::model_field_surface(*variable) {
                     Some(spelling) if self.trace_facts => {
                         let name = self.variable_name(*variable, "integer");
                         self.fmt(format_args!("{name}={spelling}"));
@@ -2219,7 +2222,7 @@ impl Renderer<'_> {
             // beside it here, as a load variable's is, because this renderer
             // prints the kernel's own goal and premises.
             MachineTerm::Variable(v)
-                if let Some(spelling) = crate::kernel::model_fields::model_field_spelling(*v) =>
+                if let Some(spelling) = crate::kernel::model_fields::model_field_surface(*v) =>
             {
                 let name = self.variable_name(*v, "value");
                 self.fmt(format_args!("{name}={spelling}"))
@@ -2446,6 +2449,13 @@ impl Renderer<'_> {
             }
             Resource::Footprint(fp) => self.push(&fp.source),
             Resource::Parameter(v) => self.push(&format!("resource#{:?}", v)),
+            Resource::ConditionalMutexGuard(carrier) => {
+                self.push("if ");
+                self.condition(carrier.condition());
+                self.push(" { owns mutex_guard(");
+                self.pointer(carrier.mutex());
+                self.push("); }");
+            }
             Resource::MutexGuard(identity) => {
                 self.push("mutex_guard(");
                 self.pointer(identity.mutex());

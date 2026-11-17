@@ -157,3 +157,19 @@ fn fold_binding_scope_preserves_old_state_and_restores_outer_values() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/spec/binding_tests.rs");
 }
+
+#[test]
+fn generated_fold_slots_are_distinct_for_every_allocation_parity() {
+    let mut allocated = std::collections::BTreeSet::new();
+    for number in 0..32 {
+        let binding = GeneratedBinderId::from_spelling(number).binding_name();
+        for role in [0, 1] {
+            let variable = spec_fold_bound_variable(&binding, role);
+            assert_eq!(spec_fold_bound_variable(&binding, role), variable);
+            assert!(
+                allocated.insert(variable),
+                "different bindings or roles must never alias"
+            );
+        }
+    }
+}

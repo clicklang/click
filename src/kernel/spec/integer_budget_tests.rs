@@ -105,7 +105,7 @@ fn integer_existential_scopes_definedness_with_its_witness() {
         .with_local("left", int32(left_bits.clone()))
         .with_local("right", int32(right_bits.clone()));
     let body = SpecProposition::ExistsInteger {
-        name: "z".to_string(),
+        name: "z".to_string().into(),
         variable: witness,
         body: Box::new(SpecProposition::IntegerComparison {
             left: SpecIntegerExpression::Term(IntegerTerm::var(witness)),

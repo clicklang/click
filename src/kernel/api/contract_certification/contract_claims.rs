@@ -333,7 +333,6 @@ mod cached_read_completion_tests {
                     )),
                     ProofBranchState {
                         facts: ProofFacts::from_ordered(&[proposition]),
-                        unfolded_predicates: PersistentOrderedSet::default(),
                         execution: None,
                     },
                 ),
@@ -2060,7 +2059,7 @@ fn function_claim_holds_on_prepared_path(
                     exit_state.resources(),
                     fact,
                     function.composite_resource_definitions(),
-                    exit_state.memory(),
+                    &exit_state.program_point(),
                     assumptions,
                 )
             }) {
@@ -2588,11 +2587,7 @@ impl<'a> FunctionEnsureGoalContext<'a> {
         })
     }
 
-    pub(crate) fn goals(
-        &self,
-        contract_index: usize,
-        unfolded_predicates: &[String],
-    ) -> Result<Vec<ContractClaimGoal>, String> {
+    pub(crate) fn goals(&self, contract_index: usize) -> Result<Vec<ContractClaimGoal>, String> {
         let function = self.function;
         let entry_state = &self.entry_state;
         let post_state = &self.post_state;
@@ -2605,10 +2600,6 @@ impl<'a> FunctionEnsureGoalContext<'a> {
             .predicate_unfoldings()
             .iter()
             .find(|unfolding| unfolding.body() == ensure)
-            .filter(|unfolding| match unfolding.predicate() {
-                SpecProposition::Predicate { name, .. } => !unfolded_predicates.contains(name),
-                _ => false,
-            })
             .map_or(ensure, PredicateUnfolding::predicate);
         let lowering_assumptions = assumptions
             .clone()
@@ -2660,10 +2651,9 @@ pub fn program_function_ensure_goals(
     arguments: &[ProgramExpression],
     outcome: &FunctionOutcome,
     assumptions: &PureFactContext,
-    unfolded_predicates: &[String],
 ) -> Option<Vec<ContractClaimGoal>> {
     FunctionEnsureGoalContext::new(function, caller_state, arguments, outcome, assumptions)?
-        .goals(contract_index, unfolded_predicates)
+        .goals(contract_index)
         .ok()
 }
 
@@ -2687,7 +2677,7 @@ pub(crate) fn program_function_exceptional_ensure_goals(
     let expanded_entry_resources = expand_all_composite_resource_facts(
         entry_state.resources(),
         function.composite_resource_definitions(),
-        entry_state.memory(),
+        &entry_state.program_point(),
         assumptions,
     )?;
     entry_state = entry_state.with_resource_context(expanded_entry_resources);
@@ -4197,7 +4187,7 @@ mod claim_requirement_tests {
 
     use crate::kernel::proof::{
         FunctionOutcomeObligation, OutcomeIdentity, OutcomeProofCore, OutcomeProofState,
-        PersistentOrderedSet, ProofBranch, ProofBranchState, ProofFacts, ProofObject,
+        ProofBranch, ProofBranchState, ProofFacts, ProofObject,
         ProofObligation as BranchObligation, PropositionKnownContext,
     };
 
@@ -4212,7 +4202,6 @@ mod claim_requirement_tests {
                 )),
                 ProofBranchState {
                     facts,
-                    unfolded_predicates: PersistentOrderedSet::default(),
                     execution: None,
                 },
             ),

@@ -892,6 +892,7 @@ fn a_borrowed_composites_post_footprint_cannot_overlap_a_transferred_cell() {
     let transfers = ConsumedCellReturns {
         direct: BTreeMap::from([(1, selected)]),
         children: BTreeMap::new(),
+        constructed: BTreeMap::new(),
     };
     let result = evaluate_contract_return_resources(
         &ResourceContext::new_with_equalities(&facts),

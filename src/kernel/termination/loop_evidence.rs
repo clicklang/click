@@ -21,7 +21,7 @@ enum ShapeHead {
         natural_exit_target: Option<ControlTargetId>,
     },
     Switch(ProgramExpression, Vec<Option<u32>>),
-    Try(String, bool),
+    Try(BindingName, bool),
     Leaf(ProgramStatement),
 }
 
@@ -82,8 +82,6 @@ fn children_all(
         } => visit(try_body) && visit(handler),
         ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -858,7 +856,6 @@ pub(super) mod tests {
                 crate::kernel::proof::ProofObligation::FunctionOutcome(outcome),
                 ProofBranchState {
                     facts: ProofFacts::default(),
-                    unfolded_predicates: Default::default(),
                     execution: None,
                 },
             ),

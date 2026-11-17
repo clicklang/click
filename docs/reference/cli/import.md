@@ -545,9 +545,23 @@ resource for the referent. A write needs a mutable referent and owns it; its
 value must be free of calls and is read before the call, as C++17 sequences
 an assignment's right operand first. Compound assignment through a returned
 reference remains unsupported. Ending the local binding does
-not end the backing object's lifetime. References to local objects, temporary
-lifetime extension, rvalue references and nested reference declarations remain
-unsupported.
+not end the backing object's lifetime. Scalar references to local objects,
+temporary lifetime extension, rvalue references and nested reference
+declarations remain unsupported.
+
+Struct/class reference locals also bind existing objects: a record reference
+parameter or alias, a local record object, a nested record member, or a
+record-pointer dereference. `auto&` and `const auto&` retain Clang's resolved
+record identity and const qualification. A proof reads `ref.field` and names
+its address as `&ref`; the alias grants no memory permissions. Writes through
+a mutable alias need ownership, and const aliases continue to observe writes
+through a separately authorized mutable alias. Ending a reference binding does
+not destroy its backing object. Pointer-based binding checks the complete
+record's live byte footprint without reading or initializing its fields.
+Record-reference call results, rvalue references and temporary lifetime
+extension remain outside this slice. A record-reference name shared with a
+different record layout or a non-reference object in another scope is refused,
+rather than assigning its proof fields an ambiguous layout.
 
 A proof names a reference local as it names a reference parameter. For
 `int& r = value;`, `r` is the referent, as in `have r == 1;`, and `&r` is its

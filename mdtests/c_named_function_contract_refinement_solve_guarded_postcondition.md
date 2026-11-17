@@ -43,7 +43,7 @@ void set_one_if_active(int32 active, int32* cell) {
 
 theorem missing_cases() {
     ensures MakePositive(&set_one_if_active) by {
-        unfold(MakePositive);
+        unfold(MakePositive(&set_one_if_active));
         solve();
     }
 }

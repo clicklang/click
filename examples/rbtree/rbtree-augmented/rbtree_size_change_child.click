@@ -72,7 +72,7 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
                 normalize() using { separate(memory(parent->rb_left), memory(a->__rb_parent_color)); };
             }
             have a->__rb_parent_color == at(before_store, a->__rb_parent_color) by {
-                preserve(separate(statement(0).statement(0).statement(0).footprint, memory(a->__rb_parent_color)));
+                preserve(memory(a->__rb_parent_color), statement(0).statement(0).statement(0));
             }
             have ((a->__rb_parent_color & ~3) as (struct rb_node *)) == above by {
                 rewrite(a->__rb_parent_color, at(before_store, a->__rb_parent_color)); known();
@@ -121,7 +121,7 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
                         normalize() using { separate(memory(parent->rb_right), memory(a->__rb_parent_color)); };
                     }
                     have a->__rb_parent_color == at(before_right_store, a->__rb_parent_color) by {
-                        preserve(separate(statement(0).statement(0).statement(1).footprint, memory(a->__rb_parent_color)));
+                        preserve(memory(a->__rb_parent_color), statement(0).statement(0).statement(1));
                     }
                     have ((a->__rb_parent_color & ~3) as (struct rb_node *)) == above by {
                         rewrite(a->__rb_parent_color, at(before_right_store, a->__rb_parent_color)); known();
@@ -151,7 +151,7 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
                         normalize() using { separate(memory(parent->rb_right), memory(a->__rb_parent_color)); };
                     }
                     have a->__rb_parent_color == at(before_right_store, a->__rb_parent_color) by {
-                        preserve(separate(statement(0).statement(0).statement(1).footprint, memory(a->__rb_parent_color)));
+                        preserve(memory(a->__rb_parent_color), statement(0).statement(0).statement(1));
                     }
                     have ((a->__rb_parent_color & ~3) as (struct rb_node *)) == above by {
                         rewrite(a->__rb_parent_color, at(before_right_store, a->__rb_parent_color)); known();

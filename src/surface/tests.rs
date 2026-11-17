@@ -109,6 +109,22 @@ fn pure_function_returns_check_all_scalar_result_leaves() {
 }
 
 #[test]
+fn scalar_returns_keep_constructor_bound_algebraic_types() {
+    parser::parse(
+        "spec enum Color { Red, Black, } spec enum Tree { Empty, Node(Color, Tree, Tree), } function black(t: Tree) -> int32 { match t { Tree::Empty => 1, Tree::Node(c, l, r) => if c == Color::Black { 1 } else { 0 }, } }",
+    ).unwrap();
+    let error = parser::parse(
+        "spec enum Color { Red, Black, } spec enum Other { Black, } spec enum Tree { Empty, Node(Color, Tree, Tree), } function wrong(t: Tree) -> int32 { match t { Tree::Empty => 1, Tree::Node(c, l, r) => if c == Other::Black { 1 } else { 0 }, } }",
+    ).unwrap_err();
+    assert!(
+        error
+            .message()
+            .contains("comparison has types Color and Other in function `wrong`"),
+        "{error}"
+    );
+}
+
+#[test]
 fn pure_function_returns_keep_null_and_numeric_conversions() {
     parser::parse(
         "function narrow(n: uint64) -> int32 { n as int32 } function null() -> int32* { 0 } function choose(p: int32*, n: int32) -> int32* { if n == 0 { 0 } else { p } } spec enum Ptr { Empty, At(int32*) } function get(m: Ptr) -> int32* { match m { Ptr::Empty => 0, Ptr::At(p) => p, } } function inc(n: Integer) -> Integer { n + 1 } function big() -> Integer { 999999999999999999999999999999 }",
@@ -2259,7 +2275,7 @@ fn current_index(base: &str, index: u32) -> ContractExpression {
 fn contract_substitution_renames_colliding_logical_binders() {
     let proposition = ClickProposition::ForAll {
         click_type: ClickType::Program(InterfaceType::Int32),
-        name: "i".to_string(),
+        name: "i".to_string().into(),
         written_name: None,
         body: Box::new(ClickProposition::Comparison {
             left: current_var("argument"),
@@ -2287,7 +2303,7 @@ fn contract_substitution_renames_colliding_logical_binders() {
         &ClickProposition::Comparison {
             left: current_var("i"),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::CBinding(name),
+            right: name.reference(),
         }
     );
 }
@@ -2299,15 +2315,15 @@ fn contract_substitution_renames_colliding_range_fold_and_let_binders() {
         start: Box::new(current_int(0)),
         end: Box::new(current_int(3)),
         initial: Box::new(current_int(0)),
-        accumulator: "acc".to_string(),
-        item: "i".to_string(),
+        accumulator: "acc".to_string().into(),
+        item: "i".to_string().into(),
         body: Box::new(ContractExpression::Add(
             Box::new(current_var("argument")),
             Box::new(current_var("i")),
         )),
     };
     let let_expression = ContractExpression::Let {
-        name: "i".to_string(),
+        name: "i".to_string().into(),
         click_type: Some(ClickType::Program(InterfaceType::Int32)),
         value: Box::new(current_int(0)),
         body: Box::new(ContractExpression::Add(
@@ -2325,10 +2341,7 @@ fn contract_substitution_renames_colliding_range_fold_and_let_binders() {
     assert_ne!(item, "i");
     assert_eq!(
         body.as_ref(),
-        &ContractExpression::Add(
-            Box::new(current_var("i")),
-            Box::new(ContractExpression::CBinding(item.clone())),
-        )
+        &ContractExpression::Add(Box::new(current_var("i")), Box::new(item.reference()),)
     );
 
     let ContractExpression::Let { name, body, .. } =
@@ -2340,10 +2353,7 @@ fn contract_substitution_renames_colliding_range_fold_and_let_binders() {
     assert_ne!(name, "i");
     assert_eq!(
         body.as_ref(),
-        &ContractExpression::Add(
-            Box::new(current_var("i")),
-            Box::new(ContractExpression::CBinding(name)),
-        )
+        &ContractExpression::Add(Box::new(current_var("i")), Box::new(name.reference()),)
     );
 }
 

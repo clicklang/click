@@ -1,7 +1,7 @@
 # Unfolding a symbolic quantity refuses an undecided final unit
 
-The `requires` implies `amount == 1` only by a case split, which the unfold
-does not search for, so it is refused at the unit.
+The requirements permit either `amount == 1` or `amount == 2`. Neither
+arm is refuted, so exact propagation cannot decide the final unit.
 
 ```c filename=unfold_quantity_final_unit_refused.c
 void probe(int32 amount, int32 n) {}
@@ -18,7 +18,7 @@ resource bundle(n: int32) {
 }
 verifying "unfold_quantity_final_unit_refused.c";
 void probe(int32 amount, int32 n) {
-    requires 0 <= amount and (amount == 1 or amount == 2) and amount != 2;
+    requires 0 <= amount and (amount == 1 or amount == 2);
     owns amount of bundle(n);
 } by {
     unfold(amount of bundle(n));

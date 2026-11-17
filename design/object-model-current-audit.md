@@ -161,7 +161,7 @@ other ten selected fixtures passed. The full C, resources and proof remain in
 The baseline failure was at `rb_set_root.contract` tactic 4 (`fold`):
 
 ```text
-a generated prerequisite has no Surface spelling; this is a spellability defect
+a generated prerequisite has no Surface spelling; this is a raise-lower principle defect
 goal: at(<state A>, root->rb_node) == <pointer A>
 ```
 
@@ -535,8 +535,11 @@ output initialization remain distinct. No universal `valid_place` predicate or
 archived native-input metadata is required to justify the selected operations.
 The byte bridge uses the selected pinned compiler/LP64 little-endian
 representation model; it is not a blanket C++20 retyping guarantee. Standard-
-library contracts remain explicit assumptions. Native record-reference locals,
-unsupported result categories, nontrivial copy/move bodies and the broader
+library contracts remain explicit assumptions. The record-reference-local
+follow-up (`cpp_record_reference_locals_*`) checks mutable/const aliases,
+`ref.field`/`&ref` spelling, nested record members, non-reading pointer binding,
+permission refusals and storage retirement with expanded and retained replay.
+Unsupported result categories, nontrivial copy/move bodies and the broader
 source forms listed in the C++ coverage item remain outside these witnesses.
 
 They do not establish arbitrary casts/retyping, byte-built pointers, broader

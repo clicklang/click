@@ -18,8 +18,8 @@ theorem at_least_input_is_identity(
 ) {
     requires AtLeastInput(callback);
     ensures Identity(callback) by {
-        unfold(AtLeastInput);
-        unfold(Identity);
+        unfold(AtLeastInput(callback));
+        unfold(Identity(callback));
         solve();
     }
 }

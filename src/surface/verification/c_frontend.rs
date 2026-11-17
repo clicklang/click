@@ -1378,12 +1378,12 @@ pub(super) fn record_function_tables(
         references: function
             .local_references()
             .iter()
-            .map(|name| name.source_name().to_owned())
+            .filter_map(|name| name.source_spelling().map(str::to_owned))
             .collect(),
         pointers: function
             .local_pointers()
             .iter()
-            .map(|name| name.source_name().to_owned())
+            .filter_map(|name| name.source_spelling().map(str::to_owned))
             .collect(),
         loop_iterators: function.loop_iterators().to_vec(),
     };

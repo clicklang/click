@@ -7,7 +7,7 @@
 mod return_producer;
 pub(crate) use return_producer::CheckedReturnSeed;
 
-use super::{PersistentOrderedSet, PersistentSequence, ProofFacts, SharedValue, SharedVec};
+use super::{PersistentOrderedSet, PersistentSequence, ProofFacts, SharedValue};
 use crate::kernel::population_authority::storage_creation::{
     CheckedPopulationAuthorityExchange, CheckedPopulationMemberExchange,
 };
@@ -3273,11 +3273,17 @@ impl ContractEntryAuthority {
 /// The contract entry opened before a body proof. The producer selects its
 /// premises and constructs the state and resource transfer together; retaining
 /// it never asks the body proof to reconstruct or authorize its own inputs.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum OpenedEntryFactSource {
+    SourceFact(usize),
+    Requirement(usize),
+}
+
 #[derive(Clone)]
 pub(crate) struct OpenedContractEntry {
     entry: Arc<CheckedFunctionEntry>,
     facts: ProofFacts,
-    source_origins: Vec<Option<usize>>,
+    source_origins: Vec<Option<OpenedEntryFactSource>>,
     cases: Arc<crate::kernel::PreparedContractEntryCases>,
     contract_root: Option<crate::kernel::WholeContractRoot>,
 }
@@ -3309,7 +3315,7 @@ impl OpenedContractEntry {
             };
             if selected && kept.insert(fact.clone()) {
                 propositions.push(fact.clone());
-                source_origins.push(Some(index));
+                source_origins.push(Some(OpenedEntryFactSource::SourceFact(index)));
             }
         }
         for fact in contract.facts() {
@@ -3324,7 +3330,12 @@ impl OpenedContractEntry {
             );
             if visible && kept.insert(fact.proposition().clone()) {
                 propositions.push(fact.proposition().clone());
-                source_origins.push(None);
+                source_origins.push(match fact.origin() {
+                    Origin::PredicateIdentity(Some(source)) => {
+                        Some(OpenedEntryFactSource::Requirement(source))
+                    }
+                    _ => None,
+                });
             }
         }
         let byte_order = environment.byte_order_fact();
@@ -3369,6 +3380,11 @@ impl OpenedContractEntry {
         self.entry.caller_state()
     }
 
+    /// The one annotated function whose binder identities this entry owns.
+    pub(crate) fn function(&self) -> &ProgramFunction {
+        &self.entry.function
+    }
+
     /// Start the parent judgment for a function-proof session. Independent
     /// entry/execution APIs do not acquire whole-contract obligations.
     pub(crate) fn open_contract_root(
@@ -3401,7 +3417,7 @@ impl OpenedContractEntry {
 
     /// The selected source occurrence for each admitted fact. Derived facts
     /// carry no source occurrence; Surface retains only their presentation.
-    pub(crate) fn source_origins(&self) -> &[Option<usize>] {
+    pub(crate) fn source_origins(&self) -> &[Option<OpenedEntryFactSource>] {
         &self.source_origins
     }
 
@@ -5654,7 +5670,6 @@ impl CheckedInterfaceLowering {
                             )),
                             ProofBranchState {
                                 facts: root_facts,
-                                unfolded_predicates: Default::default(),
                                 execution: None,
                             },
                         ),
@@ -6186,7 +6201,7 @@ impl ExecutionFrontier {
 /// the `try` for normal completion.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct EvidenceTryFrame {
-    pub(crate) binding: String,
+    pub(crate) binding: BindingName,
     pub(crate) handler: Arc<ProgramStatement>,
     pub(crate) tail_after_try: Option<Arc<ProgramStatement>>,
     pub(crate) cleanup_unwind: bool,
@@ -6215,7 +6230,7 @@ pub(crate) struct ProofExecutionContinuation {
 /// carries one of these.
 #[derive(Clone)]
 pub(crate) struct ExceptionalContinuation {
-    pub(crate) binding: String,
+    pub(crate) binding: BindingName,
     pub(crate) handler: Arc<ProgramStatement>,
     pub(crate) handler_first_index: usize,
     pub(crate) cleanup_unwind: bool,
@@ -6369,7 +6384,6 @@ pub(crate) struct ExecutionProofCore {
     next_kernel_variable: u64,
     pub(crate) has_empty_execution_branch_leaf: bool,
     pub(crate) has_structured_branch_history: bool,
-    pub(crate) unfolded_predicates: SharedVec<String>,
 }
 
 #[cfg_attr(test, derive(Clone))]
@@ -8260,7 +8274,6 @@ impl ExecutionProofCore {
             next_kernel_variable: 0,
             has_empty_execution_branch_leaf: false,
             has_structured_branch_history: false,
-            unfolded_predicates: Default::default(),
         }
     }
 
@@ -9269,8 +9282,8 @@ impl ExecutionProofCore {
         // Binding micro-steps and handler heads are meaningful only while
         // a `try` frame is open; without one there is nothing to route to.
         let frame_binding_matches = |frame: &EvidenceTryFrame| match proved_statement {
-            ProgramStatement::Declare { name, .. } => name.binding().is_named(&frame.binding),
-            ProgramStatement::Assign { name, .. } => name.is_named(&frame.binding),
+            ProgramStatement::Declare { name, .. } => name.binding() == &frame.binding,
+            ProgramStatement::Assign { name, .. } => name == &frame.binding,
             _ => false,
         };
         if let Some(frame) = self.evidence_try_stack.last()

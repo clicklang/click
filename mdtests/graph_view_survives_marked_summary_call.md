@@ -30,7 +30,7 @@ void caller(int32 *left, int32 *visited, int32 n) {
     observe(graph(left, n));
     have forall (k: int32) { 0 <= k and k < n implies old(left[k]) == left[k] } by {
         intro(); intro();
-        extract(0 <= k); extract(k < n);
+        have 0 <= k; have k < n;
         have contains(memory(left[0..n]), memory(left[k])) by {
             apply(separation::contains_element(left, 0, n, k)) using { 0 <= k; k < n; };
         }
@@ -48,7 +48,7 @@ void caller(int32 *left, int32 *visited, int32 n) {
             };
         }
         have left[k] == old(left[k]) by {
-            preserve(separate(statement(0).footprint, memory(left[k])));
+            preserve(memory(left[k]), statement(0));
         }
         known();
     }

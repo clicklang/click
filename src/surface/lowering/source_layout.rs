@@ -338,7 +338,14 @@ fn syntax_statement_reads(statement: &syntax::CStatement) -> bool {
     }
 }
 
-fn record_assignment(layout: &mut SourceExecutionLayoutData, local: &str, index: usize) {
+fn record_assignment(
+    layout: &mut SourceExecutionLayoutData,
+    binding: &crate::kernel::BindingName,
+    index: usize,
+) {
+    let Some(local) = binding.source_spelling() else {
+        return;
+    };
     crate::instrumentation::record_deterministic_work(1);
     layout
         .assignments
@@ -678,7 +685,7 @@ impl SourceExecutionLayout {
                         ..
                     } = statement
                     {
-                        record_assignment(layout, name.source_name(), statement_index);
+                        record_assignment(layout, name, statement_index);
                     }
                     *next_statement_index += 1;
                     layout.statements.insert(
@@ -1170,7 +1177,7 @@ impl SourceExecutionLayout {
                         ..
                     } = statement
                     {
-                        record_assignment(layout, name.source_name(), statement_index);
+                        record_assignment(layout, name, statement_index);
                     }
                     *next_statement_index += 1;
                     layout.statements.insert(
@@ -1840,6 +1847,9 @@ pub(in crate::surface) fn collect_resource_subject_referenced_names(
     names: &mut BTreeSet<String>,
 ) {
     match resource {
+        ResourceSubject::At { resource, .. } => {
+            collect_resource_subject_referenced_names(resource, names)
+        }
         ResourceSubject::Emp => (),
         ResourceSubject::Star(left, right) => {
             collect_resource_subject_referenced_names(left, names);

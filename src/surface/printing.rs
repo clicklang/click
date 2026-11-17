@@ -1,7 +1,7 @@
 use super::diagnostics::{
-    aligned_sugar, describe_contract_expression, describe_contract_segment,
-    describe_program_expression, describe_program_point_selector, describe_resource_subject,
-    program_point_aligned_sugar,
+    aligned_sugar, describe_code_region_ref, describe_contract_expression,
+    describe_contract_segment, describe_program_expression, describe_program_point_selector,
+    describe_resource_subject, program_point_aligned_sugar,
 };
 use super::*;
 
@@ -46,6 +46,42 @@ fn source_rewrite_arguments(equality: &ClickProposition) -> String {
     }
     let (left, right) = operands(equality, true);
     format!("{left}, {right}")
+}
+
+// Preserve retains its exact separation evidence internally. Its public
+// arguments select the kept resource and the transition independently.
+fn source_preserve_arguments(separation: &ClickProposition) -> String {
+    fn operands(separation: &ClickProposition) -> (String, String) {
+        match separation {
+            ClickProposition::Separate { left, right } => {
+                let (region, resource) = match (left, right) {
+                    (ResourceSubject::Footprint(region), resource)
+                    | (resource, ResourceSubject::Footprint(region)) => (region, resource),
+                    _ => unreachable!("a checked preserve must cite a region footprint"),
+                };
+                (
+                    describe_resource_subject(resource),
+                    describe_code_region_ref(region),
+                )
+            }
+            ClickProposition::At {
+                selector,
+                proposition,
+            } => {
+                let (resource, region) = operands(proposition);
+                (
+                    format!(
+                        "at({}, {resource})",
+                        describe_program_point_selector(selector)
+                    ),
+                    region,
+                )
+            }
+            _ => unreachable!("a checked preserve must carry separation evidence"),
+        }
+    }
+    let (resource, region) = operands(separation);
+    format!("{resource}, {region}")
 }
 
 /// A proposition spelled for a refusal a person reads. It may print a term
@@ -637,9 +673,11 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             &prefix,
             &format!("{};", application.tactic_spelling()),
         ),
-        ProofTactic::UnfoldPredicate(name) => {
-            line(output, &prefix, &format!("unfold({name});"));
-        }
+        ProofTactic::UnfoldProposition(target) => line(
+            output,
+            &prefix,
+            &format!("unfold({});", source_click_proposition(target)),
+        ),
         ProofTactic::UnfoldFunction(application) => line(
             output,
             &prefix,
@@ -648,21 +686,6 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 format_click_function_application(application)
             ),
         ),
-        ProofTactic::PeelFunction {
-            application,
-            premises,
-        } => {
-            line(
-                output,
-                &prefix,
-                &format!(
-                    "peel({}) using {{",
-                    format_click_function_application(application)
-                ),
-            );
-            write_premise_list(output, premises, indent + 1);
-            line(output, &prefix, "};");
-        }
         ProofTactic::UnfoldResource(resource @ ResourceClause::Named { binding, .. })
             if binding.child_bindings.is_some() =>
         {
@@ -1155,12 +1178,18 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::CheckTerminationCallbacks => {
             line(output, &prefix, "check_termination_callbacks();")
         }
-        ProofTactic::Known => line(output, &prefix, "known();"),
-        ProofTactic::Extract(proposition) => line(
+        ProofTactic::ApplyFact(fact) => line(
             output,
             &prefix,
-            &format!("extract({});", source_click_proposition(proposition)),
+            &format!("apply({});", source_click_proposition(fact)),
         ),
+        ProofTactic::ApplyFactUsing { fact, premises } => write_using_premises(
+            output,
+            &format!("apply({})", source_click_proposition(fact)),
+            premises,
+            indent,
+        ),
+        ProofTactic::Known => line(output, &prefix, "known();"),
         ProofTactic::Normalize => line(output, &prefix, "normalize();"),
         ProofTactic::NormalizeUsing(premises) => {
             write_using_premises(output, "normalize()", premises, indent)
@@ -1170,6 +1199,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         }
         ProofTactic::Intro => line(output, &prefix, "intro();"),
         ProofTactic::IntroAs(name) => line(output, &prefix, &format!("intro() as {name};")),
+        ProofTactic::IntroBinder(name) => line(output, &prefix, &format!("intro() as {name};")),
         ProofTactic::Enumerate => line(output, &prefix, "enumerate();"),
         ProofTactic::Contradiction(fact) => line(
             output,
@@ -1189,7 +1219,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::Preserve(separation) => line(
             output,
             &prefix,
-            &format!("preserve({});", source_click_proposition(separation)),
+            &format!("preserve({});", source_preserve_arguments(separation)),
         ),
         ProofTactic::Rewrite(equality) => line(
             output,
@@ -1222,24 +1252,19 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             write_premise_list(output, premises, indent + 1);
             line(output, &prefix, "};");
         }
-        ProofTactic::InstantiateUsing {
+        ProofTactic::Instantiate {
             quantified,
             argument,
-            premises,
         } => {
-            let instantiate = format!(
-                "instantiate({}, {})",
-                source_click_proposition(quantified),
-                describe_contract_expression(argument)
+            line(
+                output,
+                &prefix,
+                &format!(
+                    "instantiate({}, {});",
+                    source_click_proposition(quantified),
+                    describe_contract_expression(argument)
+                ),
             );
-            match premises {
-                Some(premises) => {
-                    line(output, &prefix, &format!("{instantiate} using {{"));
-                    write_premise_list(output, premises, indent + 1);
-                    line(output, &prefix, "};");
-                }
-                None => line(output, &prefix, &format!("{instantiate};")),
-            }
         }
         ProofTactic::SmartExecute
         | ProofTactic::ExecuteUntil(_)

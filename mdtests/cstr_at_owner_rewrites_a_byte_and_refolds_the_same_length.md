@@ -29,9 +29,7 @@ void poke(uint8* s, uint64 n) {
             rewrite(k, 0u64);
             solve();
         } else {
-            instantiate(forall (k: uint64) { 0u64 <= k and k < n implies old(s[k]) != '\0' }, k) using {
-                0u64 <= k and k < n;
-            };
+            instantiate(forall (k: uint64) { 0u64 <= k and k < n implies old(s[k]) != '\0' }, k);
             have separate(memory(s[k]), memory(s[0u64])) by {
                 apply(click::separation::separate_elements(s, k, 0u64)) using { k != 0u64; };
             }
@@ -39,7 +37,7 @@ void poke(uint8* s, uint64 n) {
                 normalize() using { separate(memory(s[k]), memory(s[0u64])); };
             }
             have s[k] == old(s[k]) by {
-                preserve(separate(statement(0).footprint, memory(s[k])));
+                preserve(memory(s[k]), statement(0));
             }
             rewrite(s[k], old(s[k]));
             known();
@@ -53,7 +51,7 @@ void poke(uint8* s, uint64 n) {
         normalize() using { separate(memory(s[n]), memory(s[0u64])); };
     }
     have s[n] == old(s[n]) by {
-        preserve(separate(statement(0).footprint, memory(s[n])));
+        preserve(memory(s[n]), statement(0));
     }
     have s[n] == '\0' by { known(); }
     have forall (k: uint64) { 0u64 <= k and to_integer(k) < to_integer(n + 1u64) implies defined(s[k]) } by {
@@ -63,16 +61,14 @@ void poke(uint8* s, uint64 n) {
             rewrite(k, 0u64);
             solve();
         } else {
-            instantiate(forall (k: uint64) { 0u64 <= k and to_integer(k) < to_integer(n + 1u64) implies defined(old(s[k])) }, k) using {
-                0u64 <= k and to_integer(k) < to_integer(n + 1u64);
-            };
+            instantiate(forall (k: uint64) { 0u64 <= k and to_integer(k) < to_integer(n + 1u64) implies defined(old(s[k])) }, k);
             have separate(memory(s[k]), memory(s[0u64])) by {
                 apply(click::separation::separate_elements(s, k, 0u64)) using { k != 0u64; };
             }
             have separate(statement(0).footprint, memory(s[k])) by {
                 normalize() using { separate(memory(s[k]), memory(s[0u64])); };
             }
-            preserve(separate(statement(0).footprint, memory(s[k])));
+            preserve(memory(s[k]), statement(0));
         }
     }
     fold(cstr_at(s, n));

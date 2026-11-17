@@ -45,7 +45,7 @@ struct DeclaredResourceScope {
     /// The arms enclosing proof `match`es select, innermost last: the
     /// instance, its field and the variant.
     selected_arms: std::cell::RefCell<Vec<(Variable, String, String)>>,
-    unowned_resource_parameters: std::cell::RefCell<BTreeMap<Variable, String>>,
+    unowned_resource_parameters: std::cell::RefCell<BTreeMap<Variable, SurfaceBinder>>,
     /// The enclosing C function's parameters of signed character pointer
     /// type. A resource argument naming one, passed to `uint8` bytes, is
     /// read through its explicit byte view, as a predicate argument is.
@@ -1320,7 +1320,7 @@ fn expand_declared_resource_definition(
                     unreachable!()
                 };
                 (!owned.contains(&binding.identity))
-                    .then(|| (binding.identity, binding.name.clone()))
+                    .then(|| (binding.identity, SurfaceBinder::from(binding.name.clone())))
             })
             .collect();
         let previous = resource_definitions
@@ -1523,7 +1523,8 @@ fn expand_declared_resource_proof_of(
         }
         let introduced = match &tactic {
             ProofTactic::Intro => Some(None),
-            ProofTactic::IntroAs(name) => Some(Some(name.clone())),
+            ProofTactic::IntroAs(name) => Some(Some(SurfaceBinder::from(name))),
+            ProofTactic::IntroBinder(name) => Some(Some(name.clone())),
             _ => None,
         };
         match expand_declared_resource_tactic(tactic, resource_definitions) {
@@ -1541,7 +1542,8 @@ fn expand_declared_resource_proof_of(
                     written_name,
                     body,
                 }) => {
-                    let name = rename.unwrap_or_else(|| written_name.unwrap_or(name));
+                    let _ = written_name;
+                    let name = rename.unwrap_or(name);
                     bound.push(constructors.bind(&name, Some(click_type)));
                     Some(*body)
                 }
@@ -1594,13 +1596,13 @@ fn expand_declared_resource_tactic(
         | ProofTactic::ApplyInductionUsing { .. }
         | ProofTactic::ApplyTheoremUsing { .. }
         | ProofTactic::UnfoldFunction(_)
-        | ProofTactic::PeelFunction { .. }
-        | ProofTactic::InstantiateUsing { .. }) => {
+        | ProofTactic::Instantiate { .. }) => {
             expand_declared_resource_tactic_with_expressions(tactic, resource_definitions)
         }
         tactic @ (ProofTactic::ArithmeticUsing(_)
         | ProofTactic::Contradiction(_)
-        | ProofTactic::Extract(_)
+        | ProofTactic::ApplyFact(_)
+        | ProofTactic::ApplyFactUsing { .. }
         | ProofTactic::Preserve(_)
         | ProofTactic::Rewrite(_)
         | ProofTactic::Transport { .. }
@@ -1874,49 +1876,12 @@ fn expand_declared_resource_tactic_with_expressions(
             );
             Ok(ProofTactic::UnfoldFunction(application))
         }
-        // `peel` opens one layer of the same application `unfold` opens, so
-        // its arguments and premises are resolved as an `unfold`'s are.
-        ProofTactic::PeelFunction {
-            mut application,
-            premises,
-        } => {
-            application.arguments = application
-                .arguments
-                .into_iter()
-                .map(|argument| expand_declared_resource_expression(argument, resource_definitions))
-                .collect::<Result<Vec<_>, _>>()?;
-            resource_definitions.constructors.resolve_call(
-                CallKind::Function,
-                &application.name,
-                &mut application.arguments,
-            );
-            Ok(ProofTactic::PeelFunction {
-                application,
-                premises: premises
-                    .into_iter()
-                    .map(|premise| {
-                        expand_declared_resource_proposition(premise, resource_definitions)
-                    })
-                    .collect::<Result<Vec<_>, _>>()?,
-            })
-        }
-        ProofTactic::InstantiateUsing {
+        ProofTactic::Instantiate {
             quantified,
             argument,
-            premises,
-        } => Ok(ProofTactic::InstantiateUsing {
+        } => Ok(ProofTactic::Instantiate {
             quantified: expand_declared_resource_proposition(quantified, resource_definitions)?,
             argument: expand_declared_resource_expression(argument, resource_definitions)?,
-            premises: premises
-                .map(|premises| {
-                    premises
-                        .into_iter()
-                        .map(|premise| {
-                            expand_declared_resource_proposition(premise, resource_definitions)
-                        })
-                        .collect::<Result<Vec<_>, _>>()
-                })
-                .transpose()?,
         }),
         _ => unreachable!("tactic dispatched to the wrong declaration-expansion helper"),
     }
@@ -1937,9 +1902,16 @@ fn expand_declared_resource_tactic_with_propositions(
         ProofTactic::Contradiction(proposition) => Ok(ProofTactic::Contradiction(
             expand_declared_resource_proposition(proposition, resource_definitions)?,
         )),
-        ProofTactic::Extract(proposition) => Ok(ProofTactic::Extract(
-            expand_declared_resource_proposition(proposition, resource_definitions)?,
+        ProofTactic::ApplyFact(fact) => Ok(ProofTactic::ApplyFact(
+            expand_declared_resource_proposition(fact, resource_definitions)?,
         )),
+        ProofTactic::ApplyFactUsing { fact, premises } => Ok(ProofTactic::ApplyFactUsing {
+            fact: expand_declared_resource_proposition(fact, resource_definitions)?,
+            premises: premises
+                .into_iter()
+                .map(|premise| expand_declared_resource_proposition(premise, resource_definitions))
+                .collect::<Result<_, _>>()?,
+        }),
         ProofTactic::Preserve(proposition) => Ok(ProofTactic::Preserve(
             expand_declared_resource_proposition(proposition, resource_definitions)?,
         )),
@@ -2666,6 +2638,13 @@ fn expand_declared_resource_subject(
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<ResourceSubject, ClickError> {
     match resource {
+        ResourceSubject::At { selector, resource } => Ok(ResourceSubject::At {
+            selector,
+            resource: Box::new(expand_declared_resource_subject(
+                *resource,
+                resource_definitions,
+            )?),
+        }),
         ResourceSubject::Emp => Ok(ResourceSubject::Emp),
         ResourceSubject::Star(left, right) => Ok(ResourceSubject::Star(
             Box::new(expand_declared_resource_subject(
@@ -2709,27 +2688,27 @@ fn expand_declared_resource_proposition(
         BuildImplies,
         BuildForAll {
             click_type: ClickType,
-            name: String,
+            name: SurfaceBinder,
             written_name: Option<String>,
             shadowed: crate::surface::scoped_names::Scope,
         },
         BuildExists {
             click_type: ClickType,
-            name: String,
+            name: SurfaceBinder,
             written_name: Option<String>,
             shadowed: crate::surface::scoped_names::Scope,
         },
         BuildRangeAll {
             start: ContractExpression,
             end: ContractExpression,
-            item: String,
+            item: SurfaceBinder,
             written_item: Option<String>,
             shadowed: crate::surface::scoped_names::Scope,
         },
         BuildRangeAny {
             start: ContractExpression,
             end: ContractExpression,
-            item: String,
+            item: SurfaceBinder,
             written_item: Option<String>,
             shadowed: crate::surface::scoped_names::Scope,
         },
@@ -3150,7 +3129,7 @@ fn expand_declared_resource_expression(
     // iteratively so expanding their bodies does not retain one large match
     // frame per binding.
     type ExpandedLet = (
-        String,
+        SurfaceBinder,
         Option<ClickType>,
         ContractExpression,
         crate::surface::scoped_names::Scope,
@@ -3183,7 +3162,7 @@ fn expand_declared_resource_expression(
     let mut expanded = expanded?;
     while let Some((name, click_type, value, _)) = lets.pop() {
         expanded = ContractExpression::Let {
-            name,
+            name: name.into(),
             click_type,
             value: Box::new(value),
             body: Box::new(expanded),
@@ -3203,11 +3182,12 @@ fn expand_declared_resource_expression(
 /// binding its name had before the `let`, for the caller to restore once
 /// the body is expanded.
 fn expand_let_value(
-    name: &str,
+    name: impl Into<SurfaceBinder>,
     click_type: Option<&ClickType>,
     value: ContractExpression,
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<(ContractExpression, crate::surface::scoped_names::Scope), ClickError> {
+    let name = name.into();
     let constructors = &resource_definitions.constructors;
     let mut value = value;
     if let Some(click_type) = click_type {
@@ -3488,6 +3468,9 @@ fn expand_declared_resource_expression_children(
                 .collect::<Result<_, _>>()?,
         },
 
+        ContractExpression::IntegerContext(value) => {
+            ContractExpression::IntegerContext(Box::new(recurse(*value)?))
+        }
         ContractExpression::AlgebraicConstructor {
             algebraic_type,
             variant,
@@ -3551,9 +3534,14 @@ fn expand_declared_resource_expression_children(
         ContractExpression::At {
             selector,
             expression,
-        } => ContractExpression::At {
-            selector,
-            expression: Box::new(recurse(*expression)?),
+        } => match recurse(*expression)? {
+            ContractExpression::Resource(resource) => {
+                ContractExpression::Resource(Box::new(ResourceSubject::At { selector, resource }))
+            }
+            expression => ContractExpression::At {
+                selector,
+                expression: Box::new(expression),
+            },
         },
         ContractExpression::BitwiseNot(body) => {
             ContractExpression::BitwiseNot(Box::new(recurse(*body)?))

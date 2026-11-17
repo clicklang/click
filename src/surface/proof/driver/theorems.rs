@@ -3,6 +3,38 @@ use super::*;
 use crate::surface::proof::driver::ProofDriver;
 
 impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
+    /// An omitted evidence list proves each written antecedent in a `have`
+    /// scope, retaining those proofs before the explicit implication step.
+    pub(in crate::surface::proof) fn apply_fact_application(
+        &self,
+        fact: &ClickProposition,
+    ) -> Result<Proof<'a>, ClickError> {
+        let (antecedents, _) = crate::surface::proof::driver::fact_application_parts(fact);
+        if antecedents.is_empty() {
+            return Err(self
+                .proof
+                .step_error("`apply(fact)` requires an implication fact"));
+        }
+        let mut current = self.proof.clone();
+        for antecedent in &antecedents {
+            if implicit_solve_disabled() {
+                return Err(current.step_error("bare `apply(fact)` has implicit premise obligations; write `apply(fact) using { ... }`"));
+            }
+            let scope = current.driver().open_have(antecedent.clone())?;
+            let Some(closed) = scope.driver().try_solve_closure()? else {
+                return Err(scope.body().step_error(format!(
+                    "`apply(fact)` has an unproved antecedent: `{}`",
+                    crate::surface::printing::source_click_proposition(antecedent)
+                )));
+            };
+            current = closed.join()?;
+        }
+        current.driver().apply_step(ProofStep::ApplyFactUsing {
+            fact: fact.clone(),
+            premises: antecedents,
+        })
+    }
+
     /// Retain an application's evaluated arguments and instantiated result,
     /// then prove its argument and premise obligations before publication.
     pub(in crate::surface::proof) fn apply_theorem_application(

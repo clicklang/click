@@ -2997,7 +2997,7 @@ fn upstream_getfee_modular_callers_cover_empty_negative_and_oversize_inputs() {
         let proof = if conclusion.is_empty() {
             "step_until(function.exit); solve();"
         } else {
-            "have this->m_feerate.base.size != 0 by { solve(); } step_until(function.exit); extract(result != 0i64); solve();"
+            "have this->m_feerate.base.size != 0 by { solve(); } step_until(function.exit); have result != 0i64; solve();"
         };
         let contract = root_contract.replacen(
             "views this->m_feerate.base.fee;",

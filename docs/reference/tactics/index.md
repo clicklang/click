@@ -93,14 +93,15 @@ when the default misses or when a proof must not search.
   arm or iteration proves; a proof `if` before the C splits the paths that
   return differently, each arm stepping to exit.
 - **Closing a proposition: `solve`, `known`, `normalize`,
-  `extract`.** Letting the script end, so that the
+  `apply(fact) using {...}`.** Letting the script end,
+  so that the
   implicit closer closes the goal, is the default, and `solve()` closes the
   first open goal where a script continues after it. Write
   `solve() using { ... }` for a goal that follows from named facts, an
   integer bound or equality among them: it tries arithmetic over the listed
   premises last. `known()`
-  (the goal is an available fact), `normalize()` (the goal is true by
-  evaluation) and `extract(P)` (one part of a fact) do no search. They are
+  (the goal is an available fact) and `normalize()` (the goal is true by
+  evaluation) do no search. They are
   what expansion writes; write them by hand only in a proof that must not
   search.
 - **Equalities and states: `rewrite`, `transport`.** `rewrite(from, to)` is the
@@ -1074,16 +1075,14 @@ rebuilt when a context is restricted to selected facts; it does not equate reads
 version points where memory may have changed. Exact fact membership remains separate. See
 [`model_getter_constant_conflict.md`](https://github.com/clicklang/click/blob/master/mdtests/model_getter_constant_conflict.md).
 
-`extract(P)` can also project an available disjunction: each source arm
-must establish `P` through its direct `and`/`or` structure and equality-backed
-fact lookup. It selects stated disjunctions indexed by the values or addresses
-`P` names, without scanning unrelated facts, unfolding functions, or searching
-for theorems. It checks every arm and keeps their assumptions local. For example,
-`(A and X) or (B and Y)` supplies `A or B` without spelling `X` and `Y`.
-See [`extract_disjunction_projection.md`](https://github.com/clicklang/click/blob/master/mdtests/extract_disjunction_projection.md)
+`have P;` can project an available disjunction. The solver selects a connected
+stated disjunction and expands to explicit `cases`, with `known()` in each arm.
+For example, `(A and X) or (B and Y)` supplies `A or B`. Every source arm must
+establish the requested proposition; arm assumptions remain local.
+See [`have_disjunction_projection.md`](https://github.com/clicklang/click/blob/master/mdtests/have_disjunction_projection.md)
 and [`loop_exit_disjunction_projection.md`](https://github.com/clicklang/click/blob/master/mdtests/loop_exit_disjunction_projection.md).
 
-A simple tactic that adds a fact (`extract`, `instantiate ... using`,
+A simple tactic that adds a fact (`instantiate(...)`,
 `apply ... using`, `transport ... using`, and `obtain`) also closes a
 proposition goal that it adds, when it is the last written step or only
 `known`, `solve`, or `normalize` follows it. An added order fact closes
@@ -1104,21 +1103,20 @@ step is still checked.
 | `check_termination_component("f", mode)` | simple | Expansion output | Classify a generated recursive component using established premises. | [Reference](#termination-checks) |
 | `check_termination_callbacks()` | simple | Expansion output | Classify callback safety using established strict return premises. | [Reference](#termination-checks) |
 | `known()` | simple | Expansion output | Close a goal from available facts or goal-local computation. | [Reference](#available-facts) |
-| `extract(P)` | simple | Expansion output | Extract a proposition from an available fact. | [Reference](#extracting-a-fact) |
 | `normalize()` | simple | Expansion output | Close a goal by evaluation without context. | [Reference](#context-free-normalization) |
 | `normalize() using { P; ... }` | simple | Expansion output | Check normalization against written premises. | [Reference](#normalization-with-selected-premises) |
-| `preserve(separate(region.footprint, resource))` | simple | Specialized | Preserve a selected read across a separated effect. | [Reference](#preservation) |
+| `preserve(resource, region)` | simple | Specialized | Preserve a selected read across a separated effect. | [Reference](#preservation) |
 | `rewrite(from, to)` | simple | Core | Rewrite the goal using an equality. | [Reference](#rewriting) |
 | `intro()` | simple | Core | Introduce a universal binder or implication premise. | [Reference](#introducing-a-binder-or-premise) |
 | `intro() as name` | simple | Specialized | Choose the name introduced into the proof. | [Reference](#naming-an-introduced-binder) |
 | `enumerate()` | simple | Expansion output | Close a constant-bounded universal from its instances. | [Reference](#finite-enumeration) |
 | `contradiction(P)` | simple | Core | Close a goal from incompatible facts. | [Reference](#contradictions) |
 | `instantiate(F, value)` | simple | Specialized | Instantiate an available universal fact. | [Reference](#universal-instantiation) |
-| `instantiate(F, value) using { P; ... }` | simple | Expansion output | Instantiate using written premises. | [Reference](#instantiation-with-selected-premises) |
+| `apply(fact)` | smart | Core | Apply an established implication, proving its antecedents. | [Reference](#fact-application) |
+| `apply(fact) using { P; ... }` | simple | Expansion output | Apply an implication using written evidence. | [Reference](#fact-application) |
 | `apply(theorem(args))` | smart | Core | Apply a theorem, looking up its premises. | [Reference](#theorem-application) |
 | `apply(theorem(args)) using { P; ... }` | simple | Expansion output | Apply a theorem using written premises. | [Reference](#theorem-application-with-selected-premises) |
 | `unfold(function(args))` | simple | Core | Open one layer of a pure function. | [Reference](#unfolding-pure-functions) |
-| `peel(function(args)) using { P; ... }` | simple | Specialized | Open a function using written branch evidence. | [Reference](#peeling-a-pure-function) |
 | `match value [ensuring { ... }] { Type::Variant(fields) => { ... } ... }` | control | Core | Prove each constructor case of an algebraic value. | [Reference](#constructor-matches) |
 | `induct(n) as ih` | simple | Core | Introduce strong induction on a nonnegative `int32` or a `uint64`. | [Reference](#scalar-induction) |
 | `induct(xs) as ih { Type::Variant(fields) => { ... } ... }` | control | Core | Prove constructor cases with recursive hypotheses. | [Reference](#algebraic-induction) |
@@ -1190,7 +1188,7 @@ binders first, then every proof local, including the bindings a proof
 children, a `let { result: r } = step(...)` result, and a loop binder. The C null pointer constant
 is accepted at a pointer-typed theorem parameter and lowers to that
 type's null value, as it does at a pure function's pointer parameter.
-`instantiate` and `extract` resolve their written propositions the same way.
+`instantiate` and `have` resolve their written propositions the same way.
 See [`theorem_argument_arm_binding.md`](https://github.com/clicklang/click/blob/master/mdtests/theorem_argument_arm_binding.md),
 [`theorem_argument_arm_binding_algebraic.md`](https://github.com/clicklang/click/blob/master/mdtests/theorem_argument_arm_binding_algebraic.md),
 and [`theorem_argument_null_constant.md`](https://github.com/clicklang/click/blob/master/mdtests/theorem_argument_null_constant.md).
@@ -1203,7 +1201,7 @@ nonnegative, strict-decrease, and substituted-requirement facts.
 `enumerate` is how an explicit proof closes a finite case analysis over a
 constant-bounded universal, such as a `sorted(p, 3)` postcondition: the
 expanded proof spells one `have` per non-vacuous instance (typically closed by
-`intro`, `instantiate ... using`, an explicit transport, and `known`),
+`intro`, `instantiate(...)`, an explicit transport, and `known`),
 and `enumerate()` checks exactly those instances against the goal's own
 guard-derived ranges. A goal stated as a predicate call is unfolded to the
 body that binds the instances, and the smart `solve` proves nearest pairs
@@ -1257,7 +1255,7 @@ cursor forward, `v = v + cs`, carries `v == b + k` across the pass this way
 
 When a smart `have` needs memory permissions merely to lower its goal, its
 expanded proof retains the relevant viewability and order facts through
-explicit transports, rewrites, extracts, or named theorem applications. A
+explicit transports, rewrites, intermediate facts, or named theorem applications. A
 context-free-looking result such as a normalized equality is not emitted as
 bare `normalize()` if checking still needs those premises to interpret an
 indexed load. A `solve() using` equality may be selected through a bounded chain
@@ -1355,16 +1353,17 @@ for `x <= 100` false), so `a and b implies c` closes where the curried
 
 A goal that is one conjunct of an implication's consequent, `c == 2` from
 `a != 0` and `a != 0 implies (b == 1 and c == 2)`, is closed once the
-antecedent is an available fact: the closer extracts the whole consequent,
-spelled as the implication is written, and the goal is then a proper
-conjunct; expansion writes the `extract`
+antecedent is an exact available fact: unit propagation publishes the whole
+conclusion, and expansion can close the selected conjunct with `known()`.
+When the guard needs proving first, expansion may retain an explicit
+`apply(fact) using { ... }`
 ([`solve_closes_a_conjunct_of_a_discharged_consequent.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_closes_a_conjunct_of_a_discharged_consequent.md)).
 
 A comparison held only under a definedness guard (`defined(e) implies a == b`,
 as a call postcondition over partial arithmetic lowers) whose consequent names a
-goal operand is used once a nested `solve` proves the guard: the closer extracts
-the consequent and rewrites the goal with an equality or closes from the new
-fact.
+goal operand is used once a nested `solve` proves the guard: the closer applies
+the implication with explicit evidence and rewrites the goal with an equality
+or closes from the new fact.
 
 An `int32` or `int64` definedness goal `defined(a + b)` or `defined(a - b)`
 selects the constant order and equality facts of that width indexed under each
@@ -1428,9 +1427,8 @@ refuted arms closing by `contradiction`
 
 A goal that an available implication (or chain) concludes whose antecedents are
 exactly available, such as a call guarantee `r == 0 implies X` inside the branch
-where `r == 0`, is closed by modus ponens as a direct step through `extract`'s
-indexed consequent lookup, with the goal's `at(...)` points as written; an antecedent
-that is not exactly available is not proved or searched for.
+where `r == 0`, is closed by selecting the implication and expanding to
+`apply(fact) using { ... }`, with the goal's `at(...)` points as written.
 
 A guarded universal goal `forall k { G implies A }` closes from an available
 `forall k { G implies A and B }` with the same binder and guards, selected by one
@@ -1573,6 +1571,14 @@ available when one of these holds:
 
 - It is a fact, or a leaf conjunct of a fact. An implication or quantified
   goal must be such a fact up to renaming of its bound variables.
+- It follows by exact Boolean unit propagation. Admitting `A or B` and
+  `not A` makes `B` available; admitting `A implies B` and `A` makes `B`
+  available. Either admission order works, and consequences propagate through
+  chains and conjunctive guards. Matching preserves proposition syntax, types,
+  and memory states; it does not search for equivalent guards. Each clause
+  occurrence is processed at most once per proof-context lineage, and
+  `known()` reads the resulting ordinary fact indexes. See
+  [`exact_proposition_propagation.md`](https://github.com/clicklang/click/blob/master/mdtests/exact_proposition_propagation.md).
 - It is another spelling of an available order claim, in every order family
   (C machine integers and `Integer`): `0 <= x` for `x >= 0`, and `not(y <= x)`,
   `y > x` and `x < y` for one another. `x != y`, `not(x == y)`, and
@@ -1631,9 +1637,10 @@ already held as a fact retains its existing exact-lookup behavior.
 
 **Outside it**, with what to write instead:
 
-- A consequent of an available implication: `extract(Q)` first.
+- A consequent of an available implication: `have Q;` or apply the implication
+  with `apply(fact) using { ... }`.
 - A reordered disjunction fact (`y > 0 or x < y` from `x < y or y > 0`):
-  `extract(y > 0 or x < y)`, which checks each arm, then `known()`.
+  `have y > 0 or x < y;`, which expands to `cases`, then `known()`.
 - A weaker or derived bound, such as `x <= y` from `x < y`: `solve()
   using { x < y; }`.
 - An implication or quantifier whose body is only equivalent to a fact, such
@@ -1665,76 +1672,11 @@ and a cell owned beside it. `split()`, `left()` and `right()` were folded into t
 are refused with that advice.
 
 Lookup also accepts certified identity of a resource separation. It performs
-no function unfolding, implication extraction, or fact transport across
-effects. Expansion leaves the step unchanged, and profiling charges one
-simple leaf.
+no function unfolding, implication search, or fact transport across effects.
+Exact propagated consequences are already available facts. Expansion leaves
+this step unchanged, and profiling charges one simple leaf.
 
 **Checked examples:** [`simple_tactics.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_tactics.md), [`known_computes_fast_leaves.md`](https://github.com/clicklang/click/blob/master/mdtests/known_computes_fast_leaves.md), [`known_closes_an_evaluated_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/known_closes_an_evaluated_goal.md)
-
-### Extracting a fact
-
-**Form:** `extract(P)`
-
-**Expansion output.** `click expand` writes it; by hand, write it to state one
-conjunct or consequent of a fact before a step that needs it spelled. It adds
-`P` as a fact and closes the goal when the goal is then a fact. Written steps
-after a closing `extract` are still checked, and they see all of `P`
-([`extract_before_more_steps_keeps_the_whole_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/extract_before_more_steps_keeps_the_whole_fact.md)).
-
-**Accepts** `P` when one of these holds:
-
-- `P` is a proper sub-conjunction of a conjunction fact: a leaf conjunct, or
-  a parenthesized group of conjuncts exactly as the fact is built. `and`
-  associates to the left, so `a and b` is a sub-conjunction of `a and b and
-  c` while `b and c` is not. A leaf may be written in another polarity or
-  direction (`0 < y` for the conjunct `y > 0`), and a quantified conjunct
-  under renamed binders.
-- `P` is the consequent of an available implication fact, exactly as written
-  there (up to renaming of quantified binders), and every antecedent before
-  it is available in the sense of `known()`'s atomic rules: `A implies B
-  implies C` with `A` and `B` available gives `C`, and with `A` alone gives
-  `B implies C`.
-- `P` is a field equality `a == c` of an exact equality between two
-  applications of one algebraic constructor, `K(a, b) == K(c, d)`, at the
-  same field position and in that orientation.
-- Some available disjunction connected to `P`'s atoms has every arm, assumed
-  with the ambient facts, establish `P` by `known()`'s rules, including
-  the equality closure: `(x < 5 and y == 1) or (x < 5 and y == 2)` gives
-  `x < 5`, and also `y == 1 or y == 2`.
-
-Each leaf conjunct of a fact is already an available fact, so `extract` of a
-leaf conjunct adds nothing; every tactic, including `known()` and an
-ordinary arithmetic proof's premises, may cite it directly.
-
-Between execution steps and after execution, a bare `extract(P)` adds `P` to
-the current state exactly as `have P by { extract(P); }` does.
-
-**Outside it**, with what to write instead:
-
-- `P` that is itself a whole fact, or a regrouped or reordered selection of
-  conjuncts (`x < y and z == 1` from `x < y and y > 0 and z == 1`): cite the
-  fact directly, or build the conjunction with `have P by { known(); }`.
-- A part of an implication's consequent: extract the whole consequent, then
-  extract the part
-  ([`extract_takes_an_implication_consequent_whole.md`](https://github.com/clicklang/click/blob/master/mdtests/extract_takes_an_implication_consequent_whole.md)).
-- A consequent whose antecedent is not available, including a conjunction
-  antecedent that is not itself a fact: prove it with `have` first.
-- A consequent written in another spelling than the implication's: extract
-  it as written, then close with `known()`.
-- A consequence an arm establishes only by arithmetic or evaluation (`x != 3`
-  or `x < 3` from `x == 1 or x == 2`): `cases { x == 1 => { ... } x == 2 =>
-  { ... } }`, rewriting and normalizing in each arm.
-- Modus ponens with an implication that is a conjunct of a fact rather than
-  a fact itself: `extract` the implication, then its consequent.
-
-**Failure, checking, and tools:**
-
-A refusal names the requested proposition in its written syntax, retaining
-parameter and proof-local names. Click follows an indexed, checked
-derivation with no search; expansion is unchanged, and profiling charges that
-derivation.
-
-**Checked examples:** [`extract_refusal_keeps_written_parameter_names.md`](https://github.com/clicklang/click/blob/master/mdtests/extract_refusal_keeps_written_parameter_names.md), [`logical_tactics.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/tactic_tests/logical_tactics.rs), [`algebraic_symbolic_values.md`](https://github.com/clicklang/click/blob/master/mdtests/algebraic_symbolic_values.md), [`extract_disjunction_projection.md`](https://github.com/clicklang/click/blob/master/mdtests/extract_disjunction_projection.md), [`extract_disjunction_projection_missing_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/extract_disjunction_projection_missing_arm.md), [`a_bare_extract_between_execution_steps_adds_its_conjunct.md`](https://github.com/clicklang/click/blob/master/mdtests/a_bare_extract_between_execution_steps_adds_its_conjunct.md), [`extract_takes_an_implication_consequent_whole.md`](https://github.com/clicklang/click/blob/master/mdtests/extract_takes_an_implication_consequent_whole.md)
 
 ### Context-free normalization
 
@@ -1909,7 +1851,7 @@ cited premise is accepted:
 **Outside it**, with what to write instead:
 
 - A premise that is a conjunction, disjunction, implication, or quantifier:
-  `extract` the single condition and cite it. Two premises stating opposite
+  `have` the single condition and cite it. Two premises stating opposite
   values of one condition are refused as inconsistent.
 - A goal that needs a cited equality's value substituted into a term, such as
   `x * 2 < 15` from `x == 7`: `rewrite(x, 7)` then `normalize()`
@@ -2148,10 +2090,16 @@ planning again.
 
 ### Preservation
 
-**Form:** `preserve(separate(region.footprint, resource));`
+**Form:** `preserve(resource, region);`
 
-A simple tactic for a read-equality or read-definedness goal. Cite an exactly available separation
-between a recorded region footprint and the resource being read. The tactic
+A simple tactic for a read-equality or read-definedness goal. Select the resource
+being read and the recorded region across which to preserve it. The exact fact
+`separate(region.footprint, resource)` (in either order) must already be
+available; establish it with `have` first. For evidence at a saved snapshot, write
+`preserve(at(mark, resource), region)`. Here `at(mark, resource)` is an ordinary
+resource descriptor evaluated at the saved snapshot, just as in `separate` or
+`contains`. Parentheses only group: `(at(mark, resource))` has the same meaning.
+The recorded region endpoints remain fixed. The tactic
 constructs equality of the selected read at the region's exit and entry, in
 that order. It applies one primitive directly, with no premise discovery or
 history search. The current goal selects the read type or named-resource
@@ -2215,7 +2163,7 @@ are disjoint directly. This simple rule does not walk a region containing severa
 `preserve` supports complete pointer, `uint8`, 32/64-bit integer, and abstract
 typed memory observations. It also preserves a selected field of a named owned
 resource: cite `separate(region.footprint, r)` and write
-`preserve(separate(region.footprint, r));` under a goal such as
+`preserve(r, region);` under a goal such as
 `r.field == at(region.entry, r.field)`.
 Field lowering supplies the instance identity and field selector. The primitive
 reads that field from the footprint's persistent entry and exit resource contexts
@@ -2348,8 +2296,8 @@ fact. Write `rewrite(x, y)`; the old `rewrite(x == y)` form is refused.
 
 - A proposition that is not an equality (`x != y`, `x <= y`): there is no
   substitution by order; use `solve() using` or `normalize() using`.
-- An equality available only as an implication's consequent: `extract` it
-  first.
+- An equality available only as an implication's consequent: establish it
+  with `have` or `apply(fact)` first.
 - A goal without an occurrence of `L`, including a different association or
   a constant that lowering folded away: rewrite by the equality as the goal
   spells it, or in the other direction.
@@ -2380,7 +2328,8 @@ named binder and continue with the body goal. A universal's variable keeps the
 name its quantifier wrote; if that name is already in scope it shadows the older
 one, which stays readable as `outer.name`. That includes a range quantifier's
 variable in a `have` stated between C statements
-([`intro_names_a_range_variable_in_a_have_between_statements.md`](https://github.com/clicklang/click/blob/master/mdtests/intro_names_a_range_variable_in_a_have_between_statements.md)).
+([`intro_names_a_range_variable_in_a_have_between_statements.md`](https://github.com/clicklang/click/blob/master/mdtests/intro_names_a_range_variable_in_a_have_between_statements.md)). A known C/C++ record binding named `outer` keeps ordinary `outer.field`
+access in a proof; it is not parsed as the shadowed-binder qualifier.
 
 **Accepts** a goal whose lowered head is one of these, and makes one
 introduction:
@@ -2569,101 +2518,79 @@ Expansion is unchanged, and profiling charges one leaf.
 
 **Form:** `instantiate(F, value)`
 
-**Specialized.** Write it to use a universal fact at one value when `solve` does
-not choose that value. Specialize universal fact `F` at `value` and add the
-conclusion. The guards are fixed by `F` and `value`, so this is one
-availability lookup per guard conjunct; nothing is unfolded or searched.
+**Specialized.** Substitute one value into an established universal fact and
+add its entire body, including any implication guards. No guard is proved or
+assumed by this operation.
 
-**Accepts** `F` and `value` when:
+**Accepts:**
 
-- `F` is an available fact, possibly a conjunct of a held conjunction, as
-  written or with its binder renamed, and is `forall (k: T) { ... }` for `T`
-  `int32`, `uint64`, `Integer`, or a pointer type such as `int32*`, or a
-  range quantifier `(lo..hi).all(|k| { ... })` over `int32` or `uint64`.
-- `value` is an expression of the binder's type: an `int32` C expression for
-  an `int32` binder; a `uint64` one, such as `3u64` or `u`, for a `uint64`
-  binder; an `Integer` expression, such as `5` or `to_integer(x)`, for an
-  `Integer` binder; a pointer of the binder's type, such as a parameter or
-  `result`, for a pointer binder.
-- The guards are the conjuncts of the leading implications of `F`'s body at
-  `value` (`A implies B implies C` has guards `A` and `B`; a range
-  quantifier's guard is `lo <= value and value < hi`). A guard conjunct that
-  evaluates to true needs nothing. Every other conjunct is available through
-  the shared equality-backed lookup: as written, in an equivalent operand
-  spelling (`x >= 0` for `0 <= x`, `n > x` for `x < n`), or through an
-  equality fact (`0 <= y` and `x == y` give `0 <= x`).
-- The conclusion is the rest of the body, which may itself be a universal,
-  so a nested `forall` is instantiated one binder per step. An unguarded `F`
-  needs no fact at all. If the conclusion is the goal, the goal closes
-  unless other written steps follow.
+- An available `forall (k: T) { B }` fact, including a leaf conjunct, up to
+  typed binder renaming. `T` may be `int32`, `uint64`, `Integer`, or a
+  supported pointer type. Range quantifiers `(lo..hi).all(|k| { B })` use
+  their ordinary guarded universal representation.
+- A value of the binder's type: use `3u64` for `uint64`, an `Integer`
+  expression such as `to_integer(x)` for `Integer`, and a correctly typed
+  pointer for a pointer binder.
 
-**Outside it**, with what to write instead:
+The added fact is `B[value/k]`. For a range quantifier it retains the range
+condition. Nested quantifiers remain quantified and can be instantiated one
+binder at a time. The selected value is captured at the operation's state;
+`old` or `at` in the body does not reinterpret that argument at another state.
 
-- A guard that only follows from facts, such as `0 <= x` from `1 <= x`: list
-  those facts with `instantiate(F, value) using { 1 <= x; ... }`, or prove
-  the guard first with `have`.
-- An `int32` literal for a `uint64` binder (`3`): write `3u64`.
-- `F` not available, or available only in a different spelling of its body:
-  state it first with `have`.
+For `forall (k: int32) { 0 <= k implies f(k) >= 0 }`, instantiating at `x`
+adds `0 <= x implies f(x) >= 0`. If `0 <= x` is already an exact fact,
+ordinary unit propagation also makes `f(x) >= 0` available. A guard can be
+proved later with `have 0 <= x;`, with the same result. When a guard only
+follows through equality or arithmetic, prove that exact guard with `have`;
+instantiation performs no premise search or guard discharge.
+
+**Outside it:** a universal not yet established must be proved first with
+`have`. A value of another carrier needs a conversion. The former `using`
+list is rejected; write ordinary guard proofs instead.
 
 **Failure, checking, and tools:**
 
-An absent `F` fails with "`instantiate` quantified fact is not exactly
-available"; an unavailable guard fails naming it ("missing exact guard: ...");
-a value of the wrong type fails with "`instantiate` argument did not evaluate
-to int32" (or uint64, or a pointer), and a pointer of another type with "the
-argument is not a value of the universal binder's type". The conclusion is
-the substituted body, constructed directly. Expansion is unchanged, and
-profiling charges the guards and result.
+An unavailable source names the missing quantified fact. A non-universal or
+wrongly typed argument is refused locally. Missing guards do not cause an
+instantiation error: they remain in its resulting implication. If the whole
+instance is the goal, the step closes it; otherwise `known()` can close a
+consequence made available by propagation. Expansion emits bare instantiation
+and retains any needed guard proofs as ordinary `have` blocks. Checking does
+indexed source lookup and substitution over the selected body, without scans
+of unrelated facts.
 
-**Checked examples:** [`instantiate_without_using_finds_its_guards.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_without_using_finds_its_guards.md), [`instantiate_without_using_names_a_missing_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_without_using_names_a_missing_guard.md), [`a_uint64_universal_is_not_instantiated_at_an_int32.md`](https://github.com/clicklang/click/blob/master/mdtests/a_uint64_universal_is_not_instantiated_at_an_int32.md), [`pure_theorem_instantiate.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_theorem_instantiate.md), [`instantiate_takes_an_integer_binder_at_a_literal.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_takes_an_integer_binder_at_a_literal.md), [`instantiate_takes_an_integer_binder_at_to_integer.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_takes_an_integer_binder_at_to_integer.md), [`instantiate_takes_a_pointer_binder.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_takes_a_pointer_binder.md), [`instantiate_takes_integer_and_pointer_binders_in_a_function_proof.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_takes_integer_and_pointer_binders_in_a_function_proof.md), [`instantiate_without_using_names_a_missing_integer_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_without_using_names_a_missing_integer_guard.md)
+**Checked examples:** [`instantiate_preserves_guards.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_preserves_guards.md), [`instantiate_propagates_known_guards.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_propagates_known_guards.md), [`instantiate_guard_proved_through_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_guard_proved_through_equality.md), [`instantiate_does_not_prove_guarded_conclusion.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_does_not_prove_guarded_conclusion.md), [`instantiate_rejects_using_list.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_rejects_using_list.md)
 
-### Instantiation with selected premises
+### Fact application
 
-**Form:** `instantiate(F, value) using { P; ... }`
+**Forms:** `apply(fact)`; `apply(fact) using { P; ... }`
 
-**Expansion output.** `click expand` writes it; by hand, prefer the bare form,
-which finds its guards. Specialize universal fact `F` at `value`, discharge its
-guards from the listed premises and their checked machine readings, and add
-the conclusion.
+Apply an available implication, written in full or cited by a `have` fact
+name. For `A implies B implies C`, the result is `C` after proving `A` and
+`B`. The source must already be available; application does not unfold it or
+search for an implication with that conclusion.
 
-**Accepts** what the bare form accepts for `F`, `value`, and the conclusion,
-with the guards discharged differently:
+The bare form proves each antecedent in an ordinary `have` scope with the
+implicit solver. Expansion retains those proofs and writes
+`apply(fact) using { A; B; }`, which checks without search. Every listed
+premise must be available, and the antecedents must follow from the listed
+premises by `known()`'s rules. Ambient facts do not fill missing evidence.
+Conjunctions and quantified conclusions are retained whole. Later written
+steps see the established conclusion, as after theorem application.
 
-- Each listed `P` is an available fact, as written, in an equivalent operand
-  spelling, or as a conjunct of a held conjunction.
-- Each guard conjunct evaluates to true, equals a listed premise or a
-  conjunct of one, is a polarity or operand respelling of one, or is derived
-  from the listed premises alone by the checker's order and equality rules:
-  `1 <= x` gives `0 <= x`; `x < y` and `y <= n` give `x < n`; `x == y` and
-  `0 <= y` give `0 <= x`.
-- A listed Integer comparison over a machine addition or subtraction can
-  supply its native guard when exact indexed range facts in the proof context
-  establish that the operation does not wrap. These facts justify the reading
-  of the listed premise; they do not supply an omitted guard. For example,
-  `n - r < n` supplies the uint64 guard at `n - r` when `r <= n` is held.
-  A non-strict bound does not supply a strict guard, and a wrapping subtraction
-  is refused even if its mathematical comparison is true.
-- Unused premises are allowed; an unguarded `F` takes `using { }`.
+<!-- verified-example: mdtests/apply_implication_fact.md -->
+```click
+have h: x > 0 implies y > 0 by known();
+apply(h) using { x > 0; };
+```
 
-**Outside it**, with what to write instead:
+A source that is unavailable or is not an implication fails. A missing
+antecedent in the bare form names the unproved proposition; an explicit list
+with unavailable or insufficient evidence fails without invoking search.
+Named fact scope and program-point selectors retain their ordinary meaning.
+Theorem calls keep their existing `apply(theorem(args))` spelling.
 
-- A premise that is not available: prove it first with `have`.
-- A guard that needs a fact you did not list: list it. The context is read
-  only for the exact range facts establishing a listed comparison's machine
-  reading, not to search for other guard premises.
-- A guard that needs arithmetic beyond order and equality chaining: prove it
-  with `have ... by solve() using { ... };` and list it.
-
-**Failure, checking, and tools:**
-
-An unavailable premise fails naming its position ("premise 2 `x < n` is not an
-available exact fact"); an undischarged guard fails with "instantiated premise
-... does not follow from the listed evidence". Click performs the named
-instantiation; expansion is unchanged, and profiling charges the explicit
-premises and result.
-
-**Checked examples:** [`logical_tactics.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/tactic_tests/logical_tactics.rs), [`instantiate_a_universal_over_uint64.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_a_universal_over_uint64.md), [`instantiate_using_names_the_unavailable_premise.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_using_names_the_unavailable_premise.md)
+**Checked examples:** [`apply_implication_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/apply_implication_fact.md).
 
 ### Theorem application
 
@@ -2749,6 +2676,9 @@ profiling charges its explicit input and guarantees.
 
 **Core.** Expose one defining equation for the exact pure-function call at the
 current proof state and refresh the current goal through that one layer.
+Library field accessors such as `slice::len` and `slice::as_ptr` follow the
+same rule as locally defined functions: a constructor argument alone does
+not unfold the call.
 Integer arguments resolve in their lexical proof scope, including `intro` and
 `obtain` binders; a proof local shadows a same-named theorem parameter.
 
@@ -2774,6 +2704,20 @@ names are in scope, and:
   equation just added. After that only `known`, `solve`, or `normalize`
   may follow.
 - At a C execution frontier, adds the equation and leaves the frontier.
+- For an `Integer` range-fold body, a decided empty range exposes its initial
+  value; a decided nonempty range exposes its append-last-cell equation over
+  the same function at the predecessor endpoint. The whole-call and predecessor
+  defining equations remain available alongside that law. An available exact
+  predecessor-range guard also selects the append form, including `Integer`
+  index folds. Any missing law guards
+  are ordinary obligations, proved by the implicit solver and retained by expansion.
+  The append form requires the end to be a function parameter that its start,
+  initial value, and body do not read. When the
+  range case is undecided (including no available predecessor guard), or that
+  form cannot name a predecessor call, ordinary
+  unfolding retains the raw defining equation; split the range case or prove
+  the needed equation explicitly. A goal that already states the defining
+  equation continues to unfold that definition directly.
 
 **Outside it**, with what to write instead:
 
@@ -2782,9 +2726,8 @@ names are in scope, and:
 - A call whose arguments mention a quantifier's binder before it is
   introduced: `intro()` first.
 - More than one layer: `unfold` again at the exposed call.
-- A function whose body is a range fold over a symbolic range, or a fold at
-  constant endpoints that `normalize` should evaluate: `peel`.
-- A `using` list: `unfold` takes none; write `peel(f(args)) using { ... }`.
+- A `using` list: state supporting facts before `unfold`; its remaining guards
+  are ordinary obligations.
 
 The refreshed goal can also come out further simplified, as the lowering of
 the rewritten goal does: `n + k - k` over `int32` reduced to `n` in one probe.
@@ -2795,70 +2738,11 @@ goal needs it.
 
 An unknown function ("unknown pure function `h` in `unfold`") or an argument
 count mismatch fails; an argument that does not lower at this point fails with
-"could not lower defining equation". Expansion is unchanged, and profiling
-charges the arguments and one body layer.
+"could not lower defining equation". Expansion retains any generated guard proofs before the checked `unfold`;
+replay needs no implicit solver. Profiling charges the arguments, one body
+layer, and any implicit guard proofs.
 
-**Checked examples:** [`pure_function_unfold.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_function_unfold.md), [`unfold_rewrites_each_occurrence_of_the_exact_call.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_rewrites_each_occurrence_of_the_exact_call.md), [`normalize_evaluates_a_substituted_conversion.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_evaluates_a_substituted_conversion.md), [`a_step_after_an_unfold_that_closed_the_goal_is_refused.md`](https://github.com/clicklang/click/blob/master/mdtests/a_step_after_an_unfold_that_closed_the_goal_is_refused.md), [`unfold_function_after_integer_intro.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_function_after_integer_intro.md), [`unfold_function_integer_shadow.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_function_integer_shadow.md), [`unfold_using_names_peel.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_using_names_peel.md)
-
-### Peeling a pure function
-
-**Form:** `peel(function(args)) using { P; ... }`
-
-**Specialized.** Write it to open one step of a range-fold function, such as a
-sum over an array prefix, in an induction over its end. The single produced
-fact is a range-fold law stated over the call itself, and the goal is
-refreshed through it, so a range fact about a whole array range is provable by
-the existing `induct(hi)`.
-
-**Accepts** an `Integer`-valued pure function whose body is exactly
-`(lo..hi).fold(initial, |acc, k| { ... })`, a call of it, and a `using` list
-whose every premise is an available fact (as written or in an equivalent
-operand spelling). The listed premises select the law, empty first:
-
-- Empty range: listed `hi <= lo` (or `lo >= hi`), at the call's arguments,
-  gives `f(args) == initial`.
-- Append last cell: listed `lo <= hi - 1` and `hi - 1 < 2147483647` give
-  `f(.., hi) == f(.., hi - 1) + <body at acc = f(.., hi - 1), k = hi - 1>`.
-  For a `uint64` range the guards are `lo <= hi - 1u64` and
-  `hi - 1u64 < 18446744073709551615u64`. This form needs the fold's end to be
-  a parameter of the function that its start, initial value, and body do not
-  read.
-- Constant endpoints: the kernel has already reduced the fold, so the result
-  is the defining equation as reduced (over `0..0`, `f(args) == initial`);
-  the list is still required and checked for availability but selects
-  nothing.
-- The goal's occurrences of the call are replaced by the law's right side,
-  and the goal closes when the result is an available fact.
-
-**Outside it**, with what to write instead:
-
-- A guard in another form, such as `hi < lo` or `hi == lo` for the empty
-  range, or `lo < hi` for the append form: prove the exact guard first with
-  `have hi <= lo by solve() using { ... };` and list it.
-- A missing `using` list: write one; `unfold` takes no list.
-- A fold whose end is an expression such as `n + 1`, or whose body reads the
-  end parameter: only the empty-range law applies; restate the function with
-  the end as its own parameter.
-- An `int32`-valued fold: state the function as `Integer`-valued.
-- A refreshed goal that became reflexive, including when the goal was the law
-  itself: it stays open; close it with `solve()` or `normalize()`.
-
-`peel` of an `Integer`-valued function whose body is not a fold currently gives
-its defining equation, as `unfold` would. That is not guaranteed.
-
-**Failure, checking, and tools:**
-
-The step is a derived use of the two kernel fold laws: the raw defining
-equation and its predecessor instance are the law's own premises and stay
-inside the step. Every guard must be an exact listed premise; nothing is
-searched. A list that selects neither law is refused with what each form still
-wants ("The empty-range equation needs `hi <= lo`; the append-last-cell
-equation needs `to_integer(hi - 1) < 2147483647`"). A guard over machine `+`,
-`-` or `*` is named by its observation, which lowers to the native guard;
-the spelling `hi - 1 < 2147483647` is exact Integer arithmetic, a different
-proposition. Expansion is unchanged, and profiling charges one law instance.
-
-**Checked examples:** [`unfold_fold_function_empty_range.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_fold_function_empty_range.md), [`unfold_fold_function_appends_last_cell.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_fold_function_appends_last_cell.md), [`fold_function_is_nonnegative_by_induction.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_function_is_nonnegative_by_induction.md), [`unfold_fold_function_requires_a_range_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_fold_function_requires_a_range_guard.md), [`peel_at_a_constant_range_gives_the_defining_equation.md`](https://github.com/clicklang/click/blob/master/mdtests/peel_at_a_constant_range_gives_the_defining_equation.md), [`peel_requires_its_using_list.md`](https://github.com/clicklang/click/blob/master/mdtests/peel_requires_its_using_list.md)
+**Checked examples:** [`library_field_accessors_unfold_after_a_constructor_rewrite.md`](https://github.com/clicklang/click/blob/master/mdtests/library_field_accessors_unfold_after_a_constructor_rewrite.md), [`library_field_accessors_need_their_defining_equation.md`](https://github.com/clicklang/click/blob/master/mdtests/library_field_accessors_need_their_defining_equation.md), [`unfold_fold_integer_callback_uses_ordinary_obligations.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_fold_integer_callback_uses_ordinary_obligations.md), [`unfold_fold_empty_uses_ordinary_obligations.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_fold_empty_uses_ordinary_obligations.md), [`unfold_fold_int32_uses_ordinary_obligations.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_fold_int32_uses_ordinary_obligations.md), [`pure_function_unfold.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_function_unfold.md), [`unfold_rewrites_each_occurrence_of_the_exact_call.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_rewrites_each_occurrence_of_the_exact_call.md), [`normalize_evaluates_a_substituted_conversion.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_evaluates_a_substituted_conversion.md), [`a_step_after_an_unfold_that_closed_the_goal_is_refused.md`](https://github.com/clicklang/click/blob/master/mdtests/a_step_after_an_unfold_that_closed_the_goal_is_refused.md), [`unfold_function_after_integer_intro.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_function_after_integer_intro.md), [`unfold_function_integer_shadow.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_function_integer_shadow.md), [`unfold_rejects_using_list.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_rejects_using_list.md)
 
 ### Constructor matches
 
@@ -3159,7 +3043,7 @@ from an earlier `have` or a proof `if` condition inside a pure theorem has none
 and is not offered. In a pure theorem, an omitted proof of `ensures P` is the
 same `solve`. `have name: P` also names the fact: until the end of
 the enclosing block, `name` stands for `P` wherever a proposition is cited
-whole, as in `using { name; }`, `extract(name)` or `contradiction(name)`, and is
+whole, as in `using { name; }`, `have name by known();` or `contradiction(name)`, and is
 read as `P` there, so citing it proves exactly what restating `P` proves.
 
 The name is not visible inside the fact's own proof, and expansion writes `P` in
@@ -3388,7 +3272,7 @@ fact.
 **Outside it**, with what to write instead:
 
 - An existential held only under a disjunction or implication: `cases` or
-  `extract` it first.
+  `have` it first.
 - A body spelled differently from the fact (`n > m` for `m < n`), or a
   different binder type: write it as the fact states it.
 - More names than the fact's binders: name only those it has.
@@ -3462,7 +3346,7 @@ mathematical product.
 | --- | --- | --- | --- | --- |
 | `transport(P, Q)` | smart | Specialized | Carry a fact from an earlier memory state. | [Reference](#fact-transport) |
 | `transport(P, Q) using { R; ... }` | simple | Expansion output | Carry a fact using explicit frame evidence. | [Reference](#transport-with-selected-premises) |
-| `unfold(name)` | simple | Core | Make a predicate transparent in the current proof branch. | [Reference](#unfolding-predicates) |
+| `unfold(predicate(args))` | simple | Core | Open one selected predicate application. | [Reference](#unfolding-predicates) |
 | `unfold(resource(args))` | simple | Core | Open an owned resource instance. | [Reference](#unfolding-resources) |
 | `fold(resource)` | simple | Core | Assemble a resource from its body and children. | [Reference](#folding-resources) |
 | `fold(...) by { ... }` | control | Expansion output | Supply a proof for one fold obligation. | [Reference](#folding-with-one-obligation) |
@@ -3476,7 +3360,7 @@ mathematical product.
 | `observe(resource)` | simple | Specialized | Read a resource's persistent observations. | [Reference](#observing-resources) |
 
 Predicate calls are opaque to framing until their definitions are unfolded.
-To carry such a fact across C execution, run `unfold(name)` before the relevant
+To carry such a fact across C execution, unfold the selected application before the relevant
 steps and transport the unfolded definition.
 
 ### Fact transport
@@ -3542,7 +3426,7 @@ These cases expand to ordinary library applications.
 See `mdtests/viewable_restrict_transport_expansion.md`.
 
 At an execution frontier, a focused equality between a read now and the same
-read at a named statement's entry also expands to `preserve(separate(statement(...).footprint, R))`
+read at a named statement's entry also expands to `preserve(R, statement(...))`
 when that footprint separation is cited, the source is the earlier read's
 reflexive equality, and the statement's recorded exit is the current point.
 This covers memory reads and abstract resource fields. The explicit footprint
@@ -3708,40 +3592,23 @@ the named evidence.
 
 ### Unfolding predicates
 
-**Form:** `unfold(name)`
+**Form:** `unfold(predicate(args))`
 
-**Core.** Make the predicate `name` transparent for the rest of this proof
-branch. Every available fact that mentions it gains its one-layer body, the
-current goal is rewritten the same way, and a later goal that mentions it is
-read through its body too. The argument is the predicate's name, not one call:
-every instance opens together, found through the per-predicate fact index.
+**Core.** Open one layer of the selected predicate application at the current
+state. Click adds its definition equivalence as an ordinary fact. If the
+application is already available, its body becomes available too. Matching
+occurrences in the current goal are replaced by that body.
 
-**Accepts** the name of any declared `predicate`, in a pure theorem or a C
-proof:
+Other applications stay opaque. Later goals receive no special interpretation;
+open their applications explicitly as needed. A predicate called by the body
+also stays opaque until another unfold step opens it.
 
-- Each available fact mentioning `name`, anywhere inside it (a conjunct of a
-  requirement, under a quantifier or implication), gains a copy with every
-  application replaced by the body at its arguments. The original fact stays.
-- The current goal is rewritten the same way, including an application inside
-  an `and`.
-- A later goal of the same branch, such as a `have` goal, reads through the
-  body too.
-- A predicate mentioned nowhere is accepted and only marks the name
-  transparent.
+Use `unfold(at(mark, predicate(args)))` to select an application at a saved
+snapshot. An explicitly written quantified proposition or named fact can also
+select a quantified application without introducing free binder names.
 
-**Outside it**, with what to write instead:
-
-- A predicate the body calls: it stays opaque; `unfold` it as well.
-- A pure function or a resource name: use `unfold(f(args))` or
-  `unfold(resource(args))`.
-- Transparency outside the `have` that unfolded it: `unfold` again there.
-
-**Failure, checking, and tools:**
-
-An unknown name, including a resource's, fails with ``unknown predicate
-`name` ``. An `unfold` inside a `have` ends with it: the predicate is opaque
-again afterwards. Click opens exactly the named predicate layer; expansion is
-unchanged, and profiling charges the produced proposition.
+Bare predicate names are rejected. Owned resource bindings keep their existing
+`unfold(binding)` form; pure functions use `unfold(function(args))`.
 
 **Checked examples:** [`sorted_predicate.md`](https://github.com/clicklang/click/blob/master/mdtests/sorted_predicate.md), [`simple_statement_step_explicit_transport.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_statement_step_explicit_transport.md)
 
@@ -3768,7 +3635,8 @@ before exit, or at a function outcome after the C has returned) or in a `tactic`
 
 - The arguments name the held instance up to equality by current facts:
   under `requires p == q;`, `unfold(cell(q))` opens a held `cell(p)`.
-  `unfold(name)` on an instance binding opens that instance, its field names
+  `unfold(name
+([`unfold_names_a_witness_for_a_fold_body_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_names_a_witness_for_a_fold_body_fact.md)))` on an instance binding opens that instance, its field names
   denoting the instance's fields.
 - The body's `if` guard, or its `match` arm, must be decided by current facts;
   a decided false guard opens an empty body.
@@ -3788,7 +3656,7 @@ before exit, or at a function outcome after the C has returned) or in a `tactic`
 - Inside `have ... by { ... }` or another fixed-state proposition proof: run
   `unfold` at the frontier before the `have`.
 - Reading one layer without consuming it: `observe(resource)`.
-- A predicate: `unfold(name)` with the predicate's name.
+- A predicate: `unfold(predicate(args))` with explicit arguments.
 
 **Failure, checking, and tools:**
 

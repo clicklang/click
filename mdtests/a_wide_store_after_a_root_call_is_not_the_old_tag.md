@@ -84,7 +84,7 @@ void probe(struct node *p, struct root *root) {
            at(before_store, separate(memory(p->right), memory(nid->right)));
        };
    }
-   preserve(separate(statement(2).footprint, memory(nid->right)));
+   preserve(memory(nid->right), statement(2));
   }
   have separate(c, memory(near->right));
   have nid == near;
@@ -99,7 +99,7 @@ void probe(struct node *p, struct root *root) {
    contains(memory(nid->right), memory(nid->right));
   };
   have nid->right == at(before_call, nid->right) by {
-   preserve(separate(statement(3).footprint, memory(nid->right)));
+   preserve(memory(nid->right), statement(3));
   }
   step();
   have cursor == nid;

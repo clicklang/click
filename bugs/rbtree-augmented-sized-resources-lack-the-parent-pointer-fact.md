@@ -196,3 +196,98 @@ It uses the same owned frames across its recoloring calls, with the frame
 definitions shared by both sidecars in `rbtree_size_context_flip_frames.click`.
 Its C and contracts are unchanged, and the insertion proof expands and rechecks.
 Other remaining sidecars and the directory-wide audit still leave this report open.
+
+## Context rotation
+
+All three selected proofs in
+`rbtree_size_insert_context_rotation.click` now verify. The proof retains
+ancestor links and complete tagged-parent relationships across local
+initialization and read-only steps, executes the missing declaration and
+middle-child store, and keeps unchanged and newly written links in owned
+resources through the rotation helper. Empty children are refolded at the
+established null pointer.
+
+The shared `rbtree_size_rotate_set_parents.click` helper now also guarantees
+the promoted node's typed parent relationship, in addition to the copied
+numeric parent word. Its proof retains that complete relationship across the
+ancestor-link update. The output link uses the entry value of the unchanged
+subtree count; the existing unchanged-size guarantee is retained. Both helper
+proofs verify. Expansion audits pass all 10 sites in the insertion sidecar
+and all 34 sites in the shared helper.
+
+The C, original insertion contracts, existing tree-resource definitions, and
+verifier are unchanged by this repair. Other context sidecars and the
+full-directory audit remain outside this completed repair; keep this report
+open.
+
+## Mirrored context rotation
+
+All three selected proofs in
+`rbtree_size_insert_mirrored_context_rotation.click` now verify at default
+limits. The right-right rotation retains ancestor links and complete tagged-parent
+relationships across initialization and read-only steps, explicitly executes the
+local declaration and middle-child store, and retains unchanged and newly written
+child links through the parent-update helper. Empty children are refolded at the
+established null pointer.
+
+Expansion, cold-replay, and fixed-point checks pass all 10 audit sites across
+the insertion and its two wrappers. This mirrors the completed context-rotation
+repair. The C, original insertion
+contracts, existing tree-resource definitions, and verifier are unchanged. The
+remaining context sidecars and full-directory audit still leave this report open.
+
+## Context double rotation
+
+All three selected proofs in
+`rbtree_size_insert_context_double_rotation.click` now verify at default
+limits. The left-right rotation under an ancestor retains complete node
+observations across initialization and reads, executes the missing `tmp`
+declaration and inner-pivot load, and retains unchanged tags and child links
+through both rotations and the first callback. Opening and refolding the
+first callback's child exposes its identity before retaining that link through
+the outer parent update. Distinctness of the grandparent and pivot is stated
+explicitly from ownership of their separate header cells.
+
+Expansion, cold-replay, and fixed-point checks pass all 13 audit sites across
+the insertion and its two wrappers on merged master `262fd90d1`.
+
+Both callbacks, the C, the three original function contracts, existing tree
+resources, and verifier are unchanged. The remaining sidecars and full-directory
+audit still leave this report open.
+
+## Mirrored context double rotation
+
+All three selected proofs in
+`rbtree_size_insert_mirrored_context_double_rotation.click` now verify at
+default limits. The right-left case retains complete parent tags and child
+links across initialization, the extra mirrored uncle read, both rotations,
+and their callbacks. It executes the missing local declaration and pivot
+load, exposes the first callback child's identity before retaining the link,
+and proves grandparent/pivot distinctness from separate owned header cells.
+The final fold's count equation is stated directly in the library's child order.
+
+Expansion, cold-replay, and fixed-point checks pass all 13 audit sites across
+the insertion and its two wrappers on merged master `d6e2b0979`.
+
+The C, three original function contracts, both callbacks, existing tree
+resources, and verifier are unchanged by this proof repair. Other sidecars
+and the full-directory audit still leave this report open.
+
+## Context double rotation with an arbitrary far subtree
+
+All four selected proofs in
+`rbtree_size_insert_context_double_far_rotation.click` now verify at default
+limits, including the inorder-preservation theorem and both insertion wrappers.
+The far subtree and its cached count remain arbitrary. The proof retains its
+owned resource and incoming link through the rotations, alongside complete
+parent tags and the other unchanged child links. It explicitly executes the
+local declaration and pivot load, refolds empty children at null, and exposes
+the first callback child's identity before retaining that link through the
+outer parent update. The existing count and overflow arguments are retained.
+
+Expansion, cold-replay, and fixed-point checks pass all 30 audit sites on
+merged master `857116880`.
+
+The C, original contracts and theorem, both callbacks, existing tree resources,
+and verifier are unchanged by this repair. Other sidecars and the full-directory
+audit still leave this report open.

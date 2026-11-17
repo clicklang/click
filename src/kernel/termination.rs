@@ -654,11 +654,11 @@ impl TerminationWalk for StructuralMeasureWalk<'_> {
             .collect()
     }
 
-    fn unbind(&self, binding: &str, paths: Vec<Self::Path>) -> Vec<Self::Path> {
+    fn unbind(&self, binding: &BindingName, paths: Vec<Self::Path>) -> Vec<Self::Path> {
         paths
             .into_iter()
             .map(|mut path| {
-                path.aliases.remove(&binding.into());
+                path.aliases.remove(binding);
                 path
             })
             .collect()
@@ -1381,8 +1381,6 @@ fn collect_address_taken_locals(statement: &ProgramStatement, names: &mut BTreeS
     match statement {
         ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -1815,8 +1813,6 @@ fn statement_calls_visiting(
         }
         ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -1846,11 +1842,15 @@ fn statement_declared_variables(statement: &ProgramStatement, names: &mut BTreeS
     match statement {
         ProgramStatement::Declare { name, .. }
         | ProgramStatement::DeclareAggregate { name, .. } => {
-            names.insert(name.source_name().to_owned());
+            if let Some(spelling) = name.source_spelling() {
+                names.insert(spelling.to_owned());
+            }
         }
         ProgramStatement::CallConstruct { target: name, .. }
         | ProgramStatement::HeapAllocate { target: name, .. } => {
-            names.insert(name.source_name().to_owned());
+            if let Some(spelling) = name.source_spelling() {
+                names.insert(spelling.to_owned());
+            }
         }
         ProgramStatement::Seq(statements) => {
             charge_seq_spine(statements);
@@ -1865,7 +1865,9 @@ fn statement_declared_variables(statement: &ProgramStatement, names: &mut BTreeS
             ..
         } => {
             statement_declared_variables(try_body, names);
-            names.insert(binding.clone());
+            if let Some(name) = binding.source_spelling() {
+                names.insert(name.to_owned());
+            }
             statement_declared_variables(handler, names);
         }
         ProgramStatement::If {
@@ -1898,8 +1900,6 @@ fn statement_declared_variables(statement: &ProgramStatement, names: &mut BTreeS
         }
         ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -2017,7 +2017,7 @@ trait TerminationWalk {
     ) -> Vec<Self::Path>;
 
     /// Drops a binding a `try`/`catch` handler does not see.
-    fn unbind(&self, binding: &str, paths: Vec<Self::Path>) -> Vec<Self::Path>;
+    fn unbind(&self, binding: &BindingName, paths: Vec<Self::Path>) -> Vec<Self::Path>;
 
     /// The paths that continue past a join, as the form prefers to hold them.
     /// Narrowing here must keep every refusal the unnarrowed list would make.
@@ -2266,7 +2266,7 @@ impl TerminationWalk for Int32MeasureWalk<'_> {
             .collect()
     }
 
-    fn unbind(&self, _binding: &str, lower_bounds: Vec<i64>) -> Vec<i64> {
+    fn unbind(&self, _binding: &BindingName, lower_bounds: Vec<i64>) -> Vec<i64> {
         lower_bounds
     }
 
@@ -3594,8 +3594,6 @@ fn collect_loops_in_order<'a>(
         // statement kind must be placed in both.
         ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -3863,8 +3861,6 @@ fn collect_loops<'a>(statement: &'a ProgramStatement, loops: &mut Vec<&'a Progra
         }
         ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -4113,8 +4109,6 @@ fn visit_loop_obligations(
         }
         ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -4402,8 +4396,6 @@ fn statement_function_addresses(statement: &ProgramStatement, taken: &mut BTreeS
     match statement {
         ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -4778,8 +4770,6 @@ fn self_call_loop_indices(
         // statements, so a new statement kind must be placed in all of them.
         ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -6120,7 +6110,7 @@ mod local_descent_tests {
         let body = ProgramStatement::seq(
             Arc::new(ProgramStatement::TryCatchInt32 {
                 try_body: Box::new(spin(1)),
-                binding: "code".to_string(),
+                binding: "code".into(),
                 handler: Box::new(spin(2)),
                 cleanup_unwind: false,
             }),

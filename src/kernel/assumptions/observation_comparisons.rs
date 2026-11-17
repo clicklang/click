@@ -209,7 +209,9 @@ impl PropositionKey {
     }
 }
 
-fn key(view: &NativeComparisonView<'_>) -> Key {
+/// Shared/native storage-independent identity of this selected comparison.
+/// The caller chooses its observation and polarity reading.
+pub(super) fn key(view: &NativeComparisonView<'_>) -> Key {
     let equality = matches!(view.relation, Relation::Equal | Relation::NotEqual);
     let format = if equality {
         match view.format {

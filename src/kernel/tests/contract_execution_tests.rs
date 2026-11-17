@@ -6401,7 +6401,6 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
                     &arguments,
                     outcome,
                     &assumptions,
-                    &[],
                 )
                 .expect("forwarded ensure goals");
                 assert_eq!(goals.len(), 1);
@@ -6429,7 +6428,6 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
                             )),
                             ProofBranchState {
                                 facts: ProofFacts::from_ordered(&goal_facts),
-                                unfolded_predicates: PersistentOrderedSet::default(),
                                 execution: None,
                             },
                         ),
