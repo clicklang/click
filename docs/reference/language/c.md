@@ -1369,6 +1369,29 @@ is arithmetic right shift with sign extension. This is implementation-defined
 in ISO C for negative signed values, but it is the behavior of the mainstream
 compilers Click is targeting.
 
+### Local unsigned bit-fields
+
+The x86-64 C frontend supports standalone file-scope struct definitions consisting of
+named, unqualified `unsigned int` bit-fields that are narrower than `int` and
+fit in one 32-bit allocation word. A local object can use positional or
+designated integer-literal initialization, with omitted fields initialized to
+zero, or start with its fields unwritten. Use `object.field` to read a field
+and `object.field = expression;` to assign a side-effect-free integer
+expression. A read has the promoted `int` type. A write retains only the bits
+of the assigned value that fit the field and preserves the other fields.
+
+The local object uses one physical word. The frontend separately tracks which
+fields the program has initialized when it declares the object with no
+initializer. A write to one field leaves an unwritten neighbor unreadable.
+Object addresses, whole-object values, pointer member access, byte copies,
+bit-field accesses in unevaluated operands, and combinations with `goto` are
+outside this subset. Aligned or packed definitions, mixed ordinary fields,
+zero-width or unnamed fields, and layouts spanning allocation words are
+unsupported.
+
+<!-- verified-example: mdtests/c_bit_field_neighbor.md -->
+<!-- verified-example: mdtests/c_bit_field_partial_initialization.md -->
+
 ### Block-scope struct compound literals
 
 A `(struct T){ initializer-list }` expression is an unnamed aggregate lvalue.

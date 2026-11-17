@@ -39,6 +39,7 @@ pub const C_PUBLIC_FORMS: &[&str] = &[
     "type.local-array",
     "type.struct-array-parameter",
     "type.struct-value",
+    "type.local-unsigned-bit-field-record",
     "type.function-pointer",
     "type.struct-pointer",
     "type.typeof",
@@ -7265,6 +7266,11 @@ struct Parser {
     /// so a site quotes the expansion site rather than the replacement.
     written_lines: std::sync::Arc<BTreeMap<usize, std::sync::Arc<str>>>,
     position: usize,
+    // Bit-field records are admitted only through their private local lowering.
+    bit_field_records: BTreeMap<String, std::sync::Arc<bit_fields::BitFieldRecord>>,
+    local_bit_fields: BTreeMap<BindingName, bit_fields::LocalBitFields>,
+    bit_field_forbidden_operand: bool,
+    function_has_bit_fields: bool,
     structs: DeclarationMap<RecordLayout>,
     enums: DeclarationMap<CEnumDefinition>,
     enum_constants: BTreeMap<String, CExpression>,
@@ -7878,6 +7884,10 @@ impl Parser {
             written_lines: std::sync::Arc::default(),
             position: 0,
             structs: DeclarationMap::new(),
+            bit_field_records: BTreeMap::new(),
+            local_bit_fields: BTreeMap::new(),
+            bit_field_forbidden_operand: false,
+            function_has_bit_fields: false,
             enums: DeclarationMap::new(),
             enum_constants: BTreeMap::new(),
             typedefs: BTreeMap::new(),
@@ -7987,6 +7997,7 @@ impl Parser {
                     self.visible_bindings.remove(source_name);
                 }
             }
+            self.local_bit_fields.remove(&binding.kernel_name);
             self.variable_structs.remove(&binding.kernel_name);
             self.variable_struct_values.remove(&binding.kernel_name);
             self.variable_array_shapes.remove(&binding.kernel_name);
@@ -9355,9 +9366,11 @@ impl Parser {
         let previous_literal_flag =
             std::mem::replace(&mut self.function_has_compound_literals, false);
         let previous_goto_flag = std::mem::replace(&mut self.function_has_goto, false);
+        let previous_bit_field_flag = std::mem::replace(&mut self.function_has_bit_fields, false);
         let body_result = self.parse_block_statement();
         self.function_has_compound_literals = previous_literal_flag;
         self.function_has_goto = previous_goto_flag;
+        self.function_has_bit_fields = previous_bit_field_flag;
         self.source_regions = previous_source_regions;
         let callback_statement_sources = std::mem::replace(
             &mut self.callback_statement_sources,
@@ -10356,12 +10369,12 @@ impl Parser {
                             self.source_identity.as_deref().unwrap_or("source"),
                             self.position
                         );
-                        self.parse_struct_body(name.clone())?;
+                        self.parse_struct_body(name.clone(), false)?;
                         name
                     } else {
                         let name = self.expect_ident("struct name")?;
                         if allow_anonymous_struct && self.peek() == Some(&Token::LBrace) {
-                            self.parse_struct_body(name.clone())?;
+                            self.parse_struct_body(name.clone(), false)?;
                         }
                         name
                     },
@@ -10744,7 +10757,8 @@ impl Parser {
             return Ok(parsed);
         }
 
-        let expression = self.parse_expression_allow_direct_aggregate()?;
+        let expression =
+            self.without_bit_field_operands(Self::parse_expression_allow_direct_aggregate)?;
         self.expect(Token::RParen)?;
         if let CExpression::Variable(name) = &expression
             && self.incomplete_array_names.contains(name)
@@ -11674,6 +11688,11 @@ impl Parser {
     /// This matters for callers that deliberately parse on a small stack.
     #[inline(never)]
     fn parse_statement_unsited(&mut self) -> Result<CStatement, CSyntaxError> {
+        if !self.local_bit_fields.is_empty()
+            && let Some(store) = self.parse_local_bit_field_store()?
+        {
+            return Ok(store);
+        }
         if self.peek_ident() == Some("return") {
             return self.parse_return_statement();
         }
@@ -11992,6 +12011,11 @@ impl Parser {
                 Some("break") => self.parse_loop_control_statement(false),
                 Some("continue") => self.parse_loop_control_statement(true),
                 Some("goto") => {
+                    if self.function_has_bit_fields {
+                        return Err(self.error_here(
+                            "bit-field objects and goto in one function are not supported",
+                        ));
+                    }
                     if self.function_has_compound_literals {
                         return Err(self.error_here(
                             "compound literals and goto in one function are not supported",
@@ -12218,6 +12242,13 @@ impl Parser {
 
     fn parse_local_declaration(&mut self) -> Result<CStatement, CSyntaxError> {
         let parsed_type = self.parse_type()?;
+        if parsed_type
+            .struct_name
+            .as_ref()
+            .is_some_and(|tag| self.bit_field_records.contains_key(tag))
+        {
+            return self.parse_local_bit_field_record(&parsed_type);
+        }
         if parsed_type.union_name.is_some() {
             return Err(self.error_here(
                     "tagged union locals are not supported; access an active scalar member through a struct pointer",
@@ -17504,7 +17535,7 @@ impl Parser {
                     self.resolve_function_name(&name),
                 ));
             }
-            let target = self.parse_unary()?;
+            let target = self.without_bit_field_operands(Self::parse_unary)?;
             if matches!(target, CExpression::ScalarUpdate { .. }) {
                 return Err(self.error_here("an expression update result is not an lvalue"));
             }
@@ -19498,6 +19529,9 @@ impl Parser {
     }
 
     fn parse_primary(&mut self) -> Result<CExpression, CSyntaxError> {
+        if let Some(object) = self.local_bit_field_object().cloned() {
+            return self.parse_local_bit_field_read(object);
+        }
         if self.peek_ident() == Some("__builtin_offsetof") {
             return self.parse_builtin_offsetof();
         }
@@ -19539,7 +19573,8 @@ impl Parser {
             if !self.is_type_start() {
                 // `sizeof(expression)`: the operand is not evaluated; only
                 // its type is used, as for GNU `typeof`.
-                let operand = self.parse_expression_allow_direct_aggregate()?;
+                let operand =
+                    self.without_bit_field_operands(Self::parse_expression_allow_direct_aggregate)?;
                 self.expect(Token::RParen)?;
                 if let CExpression::Variable(name) = &operand
                     && self.incomplete_array_names.contains(name)
@@ -19869,6 +19904,8 @@ impl Parser {
     }
 }
 
+mod bit_field_layout;
+mod bit_fields;
 mod compound_literals;
 mod initializers;
 
