@@ -317,6 +317,17 @@ pub(super) fn print_proposition(
     }
     match proposition {
         ClickProposition::Value(expression) => describe_contract_expression(expression),
+        // A `bool` literal written as a proposition reads as `literal ==
+        // true` (`crate::surface::bool_truth`); print it as written.
+        ClickProposition::Comparison {
+            left,
+            operator: ComparisonOperator::Equal,
+            right,
+        } if crate::surface::bool_literal_value(right) == Some(true)
+            && let Some(value) = crate::surface::bool_literal_value(left) =>
+        {
+            value.to_string()
+        }
         ClickProposition::Comparison {
             left,
             operator,

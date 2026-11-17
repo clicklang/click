@@ -7070,3 +7070,30 @@ fn closed_machine_equality_lowering_retains_its_comparison() {
         }
     }
 }
+
+#[test]
+fn a_constant_condition_raises_as_a_bool_literal_that_lowers_back() {
+    let state = ExecutionState::new();
+    for constant in [false, true] {
+        for held in [false, true] {
+            let kernel = Proposition::ConditionIs(ConditionTerm::Constant(constant), held);
+            let raised =
+                synthesize_surface_proposition(&kernel, ParameterBinding::default(), &state)
+                    .unwrap();
+            let text = crate::surface::printing::source_click_proposition(&raised);
+            let file = parser::parse(&format!(
+                "theorem probe() {{ requires {text}; ensures true; }}"
+            ))
+            .unwrap();
+            let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0]
+            else {
+                panic!("requirement")
+            };
+            assert_eq!(
+                relower_written_proposition(written, &state).unwrap(),
+                kernel,
+                "{text}"
+            );
+        }
+    }
+}

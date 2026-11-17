@@ -3958,15 +3958,14 @@ fn literal_requirement_spelling(
     if requirement.assertion_condition.is_some() {
         return None;
     }
+    // The `bool` literal lowers to exactly this constant condition; a closed
+    // comparison such as `0 == 1` is retained by lowering instead.
+    let literal = crate::surface::bool_truth(crate::surface::bool_literal(*value));
     Some(RequirementSpelling {
-        surface: ClickProposition::Comparison {
-            left: ContractExpression::ProgramExpression(ProgramExpression::Value(
-                crate::kernel::int32(0),
-            )),
-            operator: ComparisonOperator::Equal,
-            right: ContractExpression::ProgramExpression(ProgramExpression::Value(
-                crate::kernel::int32(u32::from(value != polarity)),
-            )),
+        surface: if *polarity {
+            literal
+        } else {
+            ClickProposition::Not(Box::new(literal))
         },
     })
 }
@@ -4074,11 +4073,15 @@ pub(super) fn propositions_match_after_canonical_loads(
             (Proposition::Not(body), Proposition::Not(other_body)) => {
                 work.push((body, other_body));
             }
-            (
-                Proposition::ConditionIs(ConditionTerm::Constant(value), expected),
-                Proposition::ConditionIs(ConditionTerm::Constant(other), other_expected),
-            ) => {
-                if (value == expected) != (other == other_expected) {
+            // A constant condition and a closed literal comparison, which
+            // lowering retains as written, match by the truth they state.
+            (Proposition::ConditionIs(left, expected), Proposition::ConditionIs(right, other))
+                if closed_condition_value(left).is_some()
+                    && closed_condition_value(right).is_some() =>
+            {
+                if (closed_condition_value(left) == Some(*expected))
+                    != (closed_condition_value(right) == Some(*other))
+                {
                     return false;
                 }
             }
@@ -4123,6 +4126,17 @@ pub(super) fn propositions_match_after_canonical_loads(
         }
     }
     true
+}
+
+/// The value of a constant condition, or of a closed native comparison
+/// decided from its two literal roots.
+fn closed_condition_value(condition: &ConditionTerm) -> Option<bool> {
+    match condition {
+        ConditionTerm::Constant(value) => Some(*value),
+        condition => {
+            crate::kernel::machine_integer::comparison::literal_native_comparison_value(condition)
+        }
+    }
 }
 
 #[test]

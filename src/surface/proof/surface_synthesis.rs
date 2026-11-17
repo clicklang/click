@@ -2767,17 +2767,13 @@ fn synthesize_surface_atomic_proposition(
         });
     }
     if let ConditionTerm::Constant(condition) = condition {
-        // A native equality folds to precisely this constant condition;
-        // using != would instead change its polarity.
-        let comparison = ClickProposition::Comparison {
-            left: ContractExpression::IntegerLiteral("0".into()),
-            operator: ComparisonOperator::Equal,
-            right: ContractExpression::IntegerLiteral(if *condition { "0" } else { "1" }.into()),
-        };
+        // The `bool` literal lowers to exactly this constant condition. A
+        // closed comparison such as `0 == 1` does not: lowering retains it.
+        let literal = crate::surface::bool_truth(crate::surface::bool_literal(*condition));
         return Some(if *value {
-            comparison
+            literal
         } else {
-            ClickProposition::Not(Box::new(comparison))
+            ClickProposition::Not(Box::new(literal))
         });
     }
     if let ConditionTerm::PointerOffsetEqual(left, right) = condition {
