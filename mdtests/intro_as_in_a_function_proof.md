@@ -1,6 +1,6 @@
-# intro as in a function proof
+# Named intro in a function proof
 
-`intro() as name` works wherever `intro()` does in a C function's proof: on
+`let name = intro()` works wherever `intro()` does in a C function's proof: on
 a quantified postcondition after execution, and inside a `have` before it.
 
 ```c filename=intro_as_in_a_function_proof.c
@@ -16,7 +16,7 @@ int32 keep(int32 x) {
     ensures forall (k: int32) { k < result implies k < x };
 } by {
     step_until(function.exit);
-    intro() as below;
+    let below = intro();
     solve();
 }
 
@@ -25,7 +25,7 @@ int32 keep_again(int32 x) {
     ensures result == x;
 } by {
     have forall (k: int32) { k < x implies k < x } by {
-        intro() as below;
+        let below = intro();
         intro();
         known();
     }

@@ -20,7 +20,7 @@ theorem hypothesis_owes_the_range_extent(v: int32[], lo: int32, hi: int32) {
     requires 0 <= hi;
     requires hi <= 1073741823;
     ensures 0 <= hi by {
-        induct(hi) as ih;
+        let ih = induct(hi);
         if hi <= lo {
             known();
         } else {

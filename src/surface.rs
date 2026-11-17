@@ -2534,6 +2534,8 @@ pub(crate) fn proposition_bool_value(
             operator: ComparisonOperator::Equal,
             right,
         } if bool_literal_value(&right) == Some(true) => Ok(left),
+        // A written `true` or `false` is that literal value.
+        ClickProposition::Value(literal) if bool_literal_value(&literal).is_some() => Ok(literal),
         proposition => branch(proposition, bool_literal(true), bool_literal(false), &mut 0),
     }
 }
@@ -3456,7 +3458,29 @@ impl<'a> ContractEnvironment<'a> {
     /// Ordinal lookup is checked against the exact prepared declaration: another
     /// function's parameter with the same spelling never acquires this value.
     fn parameter_value(self, binding: &crate::kernel::BindingName) -> Option<&'a ProgramValue> {
-        let id = binding.local_id()?;
+        if let Some(referent) = binding.reference_referent() {
+            if let Some(index) = self.parameters.index {
+                let position = index.position(referent.source_name())?;
+                let parameter = self.parameters.parameters.get(position)?;
+                if !parameter.matches_binding(binding) {
+                    return None;
+                }
+                let ProgramExpression::Value(value) = self.parameters.arguments.get(position)?
+                else {
+                    return None;
+                };
+                return Some(value);
+            }
+            // An unresolved carrier uses the explicit source-parameter value
+            // table, just as an unresolved ordinary parameter does. This is
+            // a source name lookup, never decoding a fabricated identifier.
+            if let Some(name) = referent.named() {
+                return self.values.get(name);
+            }
+        }
+        let id = binding
+            .local_id()
+            .or_else(|| binding.reference_referent()?.local_id())?;
         if !id.is_parameter() {
             return None;
         }
@@ -3472,6 +3496,17 @@ impl<'a> ContractEnvironment<'a> {
         Some(value)
     }
 }
+/// Ordinary parameters are written by their source identifier in the current
+/// function scope. A reference's pointer has no lexical identifier: its Surface
+/// expression retains the structural carrier and prints as `&x`.
+fn surface_parameter_binding(binding: &crate::kernel::BindingName) -> crate::kernel::BindingName {
+    if binding.reference_referent().is_some() {
+        binding.clone()
+    } else {
+        binding.source_name().into()
+    }
+}
+
 /// How many recorded memories on each side of a load's own the raiser
 /// checks for it.
 const MEMORY_POINTS_NEAR: usize = 4;
@@ -3605,6 +3640,10 @@ struct RecordedStates {
     /// The call that produced each algebraic value a call returned, a Rust
     /// enum's: the value is spelled `<region>.result`.
     algebraic_call_results: crate::persistent::PersistentMap<crate::kernel::AlgebraicTerm, usize>,
+    /// The call that produced each pointer a call returned, by the
+    /// pointer's address: the value is spelled `<region>.result`, which
+    /// lowers to the exact returned value.
+    pointer_call_results: crate::persistent::PersistentMap<crate::kernel::Pointer, usize>,
     /// Each exited loop's pass count, the head's `iterations`, which the
     /// facts past the loop state over: spelled `loop(i).iterations`.
     loop_iterations: crate::persistent::PersistentMap<usize, crate::kernel::IntegerTerm>,
@@ -3677,6 +3716,7 @@ impl Default for RecordedStates {
             read_event_scalar_names: Default::default(),
             read_event_pointer_names: Default::default(),
             algebraic_call_results: crate::persistent::PersistentMap::default(),
+            pointer_call_results: crate::persistent::PersistentMap::default(),
             loop_iterations: crate::persistent::PersistentMap::default(),
             loop_iteration_variables: crate::persistent::PersistentMap::default(),
             field_points: crate::persistent::PersistentMap::default(),
@@ -4309,6 +4349,11 @@ impl RecordedStates {
         {
             self.algebraic_call_results.remove(term.as_ref());
         }
+        if let Some(ProgramValue::Pointer(pointer)) = self.call_results.get(&index)
+            && self.pointer_call_results.get(pointer.pointer()) == Some(&index)
+        {
+            self.pointer_call_results.remove(pointer.pointer());
+        }
         self.call_results.remove(&index);
         if let Some(value) = value.filter(|value| *value != ProgramValue::Void) {
             if let ProgramValue::Bool(term) | crate::kernel::integer_c_value!(term) =
@@ -4323,6 +4368,13 @@ impl RecordedStates {
             {
                 self.algebraic_call_results
                     .insert(term.as_ref().clone(), index);
+            }
+            // So does the first call to return a pointer.
+            if let ProgramValue::Pointer(pointer) = &value
+                && self.pointer_call_results.get(pointer.pointer()).is_none()
+            {
+                self.pointer_call_results
+                    .insert(pointer.pointer().clone(), index);
             }
             self.call_results.insert(index, value);
         }
@@ -4394,6 +4446,18 @@ impl RecordedStates {
         crate::instrumentation::record_deterministic_work(1);
         let index = *self.algebraic_call_results.get(term)?;
         matches!(self.call_results.get(&index), Some(ProgramValue::Parameter(held)) if held.as_ref() == term)
+            .then_some(CodeRegionRef::Region(index))
+    }
+
+    /// The call that returned the pointer at `pointer`'s address: one index
+    /// lookup, checked against the recorded value.
+    fn call_result_naming_pointer(
+        &self,
+        pointer: &crate::kernel::Pointer,
+    ) -> Option<CodeRegionRef> {
+        crate::instrumentation::record_deterministic_work(1);
+        let index = *self.pointer_call_results.get(pointer)?;
+        matches!(self.call_results.get(&index), Some(ProgramValue::Pointer(held)) if held.pointer() == pointer)
             .then_some(CodeRegionRef::Region(index))
     }
 
@@ -5843,7 +5907,7 @@ pub enum ProofTactic {
     NormalizeUsing(Vec<ClickProposition>),
     ArithmeticUsing(Vec<ClickProposition>),
     Intro,
-    /// `intro() as name`: introduce a universal goal's variable under a
+    /// `let name = intro()`: introduce a universal goal's variable under a
     /// name the proof chooses instead of the one the proposition wrote.
     IntroAs(String),
     IntroBinder(SurfaceBinder),
@@ -6157,7 +6221,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "induct",
-        syntax: "induct(n) as ih",
+        syntax: "let ih = induct(n)",
         class: "simple",
     },
     PublicTacticForm {
@@ -6247,7 +6311,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "witness",
-        syntax: "witness {",
+        syntax: "witness(",
         class: "simple",
     },
     PublicTacticForm {
@@ -6282,7 +6346,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "intro-as",
-        syntax: "intro() as name",
+        syntax: "let name = intro()",
         class: "simple",
     },
     PublicTacticForm {
@@ -7350,86 +7414,51 @@ pub enum ProgramPointKind {
     Parameters,
 }
 
-/// `witness { k: value, ... }`: a value for each named binder of the
-/// existential goal, instantiated in the order written.
+/// `witness(value, ...)`: instantiate the outermost existential binders
+/// with the supplied values, in order.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofWitness {
-    bindings: Vec<WitnessBinding>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct WitnessBinding {
-    name: String,
-    value: ContractExpression,
+    values: Vec<ContractExpression>,
 }
 
 impl ProofWitness {
-    pub(crate) fn single(name: String, value: ContractExpression) -> Self {
+    pub(crate) fn single(value: ContractExpression) -> Self {
         Self {
-            bindings: vec![WitnessBinding { name, value }],
+            values: vec![value],
         }
     }
 
-    pub(crate) fn new(bindings: Vec<(String, ContractExpression)>) -> Self {
-        Self {
-            bindings: bindings
-                .into_iter()
-                .map(|(name, value)| WitnessBinding { name, value })
-                .collect(),
-        }
+    pub(crate) fn new(values: Vec<ContractExpression>) -> Self {
+        Self { values }
     }
 
-    pub(crate) fn bindings(&self) -> impl Iterator<Item = (&str, &ContractExpression)> {
-        self.bindings
-            .iter()
-            .map(|binding| (binding.name.as_str(), &binding.value))
+    pub(crate) fn values(&self) -> impl Iterator<Item = &ContractExpression> {
+        self.values.iter()
     }
 
-    /// One single-binder witness per binding, in order; a step with several
-    /// bindings is applied as these.
+    /// One single-binder witness per value, in order.
     pub(crate) fn singles(&self) -> impl Iterator<Item = Self> + '_ {
-        self.bindings.iter().map(|binding| Self {
-            bindings: vec![binding.clone()],
-        })
+        self.values.iter().cloned().map(Self::single)
     }
 
     pub(crate) fn is_single(&self) -> bool {
-        self.bindings.len() == 1
+        self.values.len() == 1
     }
 
-    /// The binder of a single-binder witness.
-    pub(crate) fn name(&self) -> &str {
-        debug_assert!(
-            self.is_single(),
-            "a multi-binder witness is applied binding by binding"
-        );
-        &self.bindings[0].name
-    }
-
-    /// The value of a single-binder witness.
     pub(crate) fn value(&self) -> &ContractExpression {
         debug_assert!(
             self.is_single(),
-            "a multi-binder witness is applied binding by binding"
+            "a multi-binder witness is applied value by value"
         );
-        &self.bindings[0].value
+        &self.values[0]
     }
 
     pub(crate) fn try_map_values<E>(
         &self,
-        mut map: impl FnMut(&ContractExpression) -> Result<ContractExpression, E>,
+        map: impl FnMut(&ContractExpression) -> Result<ContractExpression, E>,
     ) -> Result<Self, E> {
         Ok(Self {
-            bindings: self
-                .bindings
-                .iter()
-                .map(|binding| {
-                    Ok(WitnessBinding {
-                        name: binding.name.clone(),
-                        value: map(&binding.value)?,
-                    })
-                })
-                .collect::<Result<_, E>>()?,
+            values: self.values.iter().map(map).collect::<Result<_, E>>()?,
         })
     }
 }
@@ -9707,6 +9736,14 @@ impl FunctionSignature {
 }
 
 impl FunctionParameter {
+    pub fn binding_name(&self) -> crate::kernel::BindingName {
+        if self.reference {
+            crate::kernel::BindingName::reference_carrier(self.name.as_str())
+        } else {
+            self.name.clone().into()
+        }
+    }
+
     pub fn interface_type(&self) -> InterfaceType {
         match &self.click_type {
             ClickType::Resource => panic!("a Resource parameter has no C type"),
@@ -10701,12 +10738,12 @@ impl ClickError {
                 }
             }
             if self.failed_tactic == Some("known()")
-                && let Some(Proposition::Exists { name, .. }) = state.kernel_goal()
+                && let Some(Proposition::Exists { .. }) = state.kernel_goal()
             {
-                let binder = if name.is_empty() { "name" } else { name };
-                context.push(format!(
-                    "help: choose a witness with `witness {{ {binder}: <value> }};`, then prove its body"
-                ));
+                context.push(
+                    "help: choose a witness with `witness(<value>);`, then prove its body"
+                        .to_string(),
+                );
             }
         }
         // A refused step's goal is the requirement it could not establish,

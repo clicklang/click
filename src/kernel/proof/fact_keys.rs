@@ -1038,6 +1038,10 @@ enum AlphaPointerOffsetNode {
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum AlphaPointerBlockKey {
+    ReferenceCarrier(
+        std::sync::Arc<crate::kernel::BindingName>,
+        crate::kernel::LocalStorageInstance,
+    ),
     AggregateReturn(u64),
     ContractResult,
     ContractException,
@@ -2155,6 +2159,9 @@ fn alpha_pointer_block_key<const ALLOW_LOADS: bool>(
     next_binder: &mut usize,
 ) -> Option<AlphaPointerBlockKey> {
     Some(match block {
+        PointerBlock::ReferenceCarrier { referent, instance } => {
+            AlphaPointerBlockKey::ReferenceCarrier(referent.clone(), instance.clone())
+        }
         PointerBlock::AggregateReturn { frame } => AlphaPointerBlockKey::AggregateReturn(*frame),
         PointerBlock::ContractResult => AlphaPointerBlockKey::ContractResult,
         PointerBlock::ContractException => AlphaPointerBlockKey::ContractException,

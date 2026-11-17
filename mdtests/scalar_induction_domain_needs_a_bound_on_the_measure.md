@@ -11,7 +11,7 @@ theorem domain_from_a_chain(n: int32, m: int32) {
     requires 0 <= m;
     requires m <= n;
     ensures n == n by {
-        induct(n) as ih;
+        let ih = induct(n);
         normalize();
     }
 }

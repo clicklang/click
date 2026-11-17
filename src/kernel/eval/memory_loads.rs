@@ -2623,16 +2623,36 @@ thread_local! {
 /// kernel rule that compares a stated term with the one it derives compares
 /// their comparison forms. This is the one place the authority enters
 /// matching; a check does not resolve reads on its own.
+///
+/// A closed comparison, which lowering retains as written (`1u64 == 0u64`,
+/// `true == false`), has the comparison form of the constant it decides, so
+/// it matches the folded `false` a kernel constructor produced for the same
+/// fact. Only the two literal roots are inspected.
 pub(crate) fn comparison_form(proposition: &Proposition) -> Option<Proposition> {
+    if let Proposition::ConditionIs(condition, value) = proposition
+        && let Some(decided) =
+            crate::kernel::machine_integer::comparison::closed_condition_value(condition)
+    {
+        return Some(Proposition::ConditionIs(
+            ConditionTerm::Constant(decided),
+            *value,
+        ));
+    }
     if crate::instrumentation::deadline_exceeded_with_work(0) {
         return None;
     }
     if let Some(result) = COMPARISON_FORMS.with(|cache| cache.borrow().get(proposition).cloned()) {
         return result;
     }
-    let result = comparison_form_uncached(proposition);
+    let mut result = comparison_form_uncached(proposition);
     if crate::instrumentation::deadline_exceeded_with_work(0) {
         return None;
+    }
+    // A closed comparison nested under connectives or binders, such as the
+    // antecedent of `0 == 0 implies x == 1`, stands for the constant it
+    // decides, as the top-level case above does.
+    if let Some(decided) = decide_closed_conditions(result.as_ref().unwrap_or(proposition)) {
+        result = Some(decided);
     }
     COMPARISON_FORMS.with(|cache| {
         let mut cache = cache.borrow_mut();
@@ -2642,6 +2662,64 @@ pub(crate) fn comparison_form(proposition: &Proposition) -> Option<Proposition> 
         cache.insert(proposition.clone(), result.clone());
     });
     result
+}
+
+/// `proposition` with each closed comparison under its connectives and
+/// binders replaced by the constant it decides from its literal roots, or
+/// `None` when it contains none. Visits only the proposition's own nodes.
+///
+/// Uncharged, like the rest of the comparison form: the form is memoized, so
+/// charging its walk would make the same lookup cost differ by cache state.
+fn decide_closed_conditions(proposition: &Proposition) -> Option<Proposition> {
+    let pair = |left: &Proposition, right: &Proposition| {
+        let decided_left = decide_closed_conditions(left);
+        let decided_right = decide_closed_conditions(right);
+        (decided_left.is_some() || decided_right.is_some()).then(|| {
+            (
+                Box::new(decided_left.unwrap_or_else(|| left.clone())),
+                Box::new(decided_right.unwrap_or_else(|| right.clone())),
+            )
+        })
+    };
+    match proposition {
+        Proposition::ConditionIs(condition, value)
+            if !matches!(condition, ConditionTerm::Constant(_)) =>
+        {
+            crate::kernel::machine_integer::comparison::closed_condition_value(condition)
+                .map(|decided| Proposition::ConditionIs(ConditionTerm::Constant(decided), *value))
+        }
+        Proposition::And(left, right) => pair(left, right).map(|(l, r)| Proposition::And(l, r)),
+        Proposition::Or(left, right) => pair(left, right).map(|(l, r)| Proposition::Or(l, r)),
+        Proposition::Implies(left, right) => {
+            pair(left, right).map(|(l, r)| Proposition::Implies(l, r))
+        }
+        Proposition::Not(body) => {
+            decide_closed_conditions(body).map(|body| Proposition::Not(Box::new(body)))
+        }
+        Proposition::ForAll {
+            name,
+            var,
+            sort,
+            body,
+        } => decide_closed_conditions(body).map(|body| Proposition::ForAll {
+            name: name.clone(),
+            var: *var,
+            sort: sort.clone(),
+            body: Box::new(body),
+        }),
+        Proposition::Exists {
+            name,
+            var,
+            sort,
+            body,
+        } => decide_closed_conditions(body).map(|body| Proposition::Exists {
+            name: name.clone(),
+            var: *var,
+            sort: sort.clone(),
+            body: Box::new(body),
+        }),
+        _ => None,
+    }
 }
 
 fn comparison_form_uncached(proposition: &Proposition) -> Option<Proposition> {
@@ -3807,6 +3885,16 @@ pub(crate) fn canonical_condition_fact(fact: &Proposition) -> Proposition {
 /// Select unresolved read descriptors with an explicit worklist. Range-fold
 /// bodies remain scoped and are not assigned a global read identity.
 fn select_scalar_reads(term: &MachineTerm) -> MachineTerm {
+    select_scalar_reads_impl(term, false)
+}
+
+/// Prepare an equality-graph expression by selecting only read identities.
+/// Preserve a producer-selected read exactly; never substitute cached values.
+pub(in crate::kernel) fn select_graph_scalar_reads(term: &MachineTerm) -> MachineTerm {
+    select_scalar_reads_impl(term, true)
+}
+
+fn select_scalar_reads_impl(term: &MachineTerm, retain_selected: bool) -> MachineTerm {
     enum Task<'a> {
         VisitTerm(&'a MachineTerm),
         VisitCondition(&'a ConditionTerm),
@@ -3859,8 +3947,16 @@ fn select_scalar_reads(term: &MachineTerm) -> MachineTerm {
                                 .unwrap_or_else(|| term.clone()),
                         );
                     }
-                    MachineTerm::MemoryLoad(_, _, _) => {
-                        term_results.push(canonical_scalar_read(term));
+                    MachineTerm::MemoryLoad(memory, pointer, kind) => {
+                        term_results.push(
+                            if retain_selected
+                                && is_selected_scalar_read(memory.shared_memory(), pointer, *kind)
+                            {
+                                term.clone()
+                            } else {
+                                canonical_scalar_read(term)
+                            },
+                        );
                     }
                     MachineTerm::PointerAddress(_, _) | MachineTerm::IntegerToMachine { .. } => {
                         term_results.push(term.clone())

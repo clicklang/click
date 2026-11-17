@@ -33,7 +33,7 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, hi: int32) {
     requires 0 <= hi;
     requires hi <= 1073741823;
     ensures 0 <= unmarked(v, lo, hi) by {
-        induct(hi) as ih;
+        let ih = induct(hi);
         if hi <= lo {
             unfold(unmarked(v, lo, hi));
             solve();

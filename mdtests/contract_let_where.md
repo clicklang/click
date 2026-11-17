@@ -14,7 +14,7 @@ int32 identity(int32 x) {
 
     ensures result_matches_witness: result == k by {
         step_until(function.exit);
-        witness { k: x };
+        witness(x);
     }
 }
 ```

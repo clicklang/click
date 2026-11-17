@@ -93,8 +93,7 @@ pub struct ImportedFunction {
     /// the spelling a Click sidecar uses.
     pub(super) local_struct_values: BTreeMap<crate::kernel::BindingName, String>,
     /// The automatic locals of reference type, by the name the source gives
-    /// each. Its carrying pointer is the local [`reference_carrier_name`]
-    /// names.
+    /// each. Its carrying pointer has a typed reference-carrier binding.
     pub(super) local_references: BTreeSet<crate::kernel::BindingName>,
     /// The automatic locals of pointer type, by C spelling. A sidecar
     /// comparison doing arithmetic on one keeps its C meaning. A spelling
@@ -1363,6 +1362,17 @@ impl ImportedParameter {
         parameter
     }
 
+    pub(crate) fn from_binding(
+        interface_type: InterfaceType,
+        name: impl Into<crate::kernel::BindingName>,
+        struct_name: Option<String>,
+    ) -> Self {
+        let name = name.into();
+        let mut parameter = Self::new(interface_type, name.source_name().to_owned(), struct_name);
+        parameter.name = name;
+        parameter
+    }
+
     pub(crate) fn new(
         interface_type: InterfaceType,
         name: String,
@@ -1397,7 +1407,15 @@ impl ImportedParameter {
     /// A contract's unresolved source name refers to this parameter; an
     /// explicit declaration reference must match its exact identity.
     pub(crate) fn matches_binding(&self, binding: &crate::kernel::BindingName) -> bool {
-        binding == self.binding_name() || binding.is_named(self.name())
+        binding == self.binding_name()
+            || match (
+                self.binding_name().reference_referent(),
+                binding.reference_referent(),
+            ) {
+                (Some(actual), Some(written)) => written.is_named(actual.source_name()),
+                (None, None) => binding.is_named(self.name()),
+                _ => false,
+            }
     }
 
     pub fn interface_type(&self) -> InterfaceType {
@@ -1811,6 +1829,10 @@ pub(super) fn declared_pointer_locals(
 
             ProgramStatement::TryCatchInt32 {
                 try_body, handler, ..
+            }
+            | ProgramStatement::UnwindCleanup {
+                body: try_body,
+                cleanup: handler,
             } => {
                 pending.push(try_body);
                 pending.push(handler);

@@ -317,7 +317,7 @@ fn named_model_pointer_does_not_gain_parameter_borrow_custody() {
         &outputs,
         &[definition],
         &ExecutionState::new(),
-        ReturnResourceComposition::RestoreEntryBorrows,
+        ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
         &facts,
     )
     .unwrap();
@@ -395,8 +395,12 @@ fn authority_returns_retain_ledger_counts_and_refuse_a_duplicate_held_authority(
     let state = ledger(pointer.clone());
     let (head, definition) = control(pointer.clone());
     let outputs = emitted(head.clone(), &facts);
-    let bodies =
-        ConstructedReturnBodies::construct(&outputs, &[definition.clone()], &state, &facts);
+    let bodies = ConstructedReturnBodies::construct(
+        &outputs,
+        std::slice::from_ref(&definition),
+        &state,
+        &facts,
+    );
     let source = outputs.occurrences[0].source;
     let body = bodies.get(source).unwrap();
     let evidence = body.specialized.as_ref().unwrap();
@@ -426,7 +430,7 @@ fn authority_returns_retain_ledger_counts_and_refuse_a_duplicate_held_authority(
     assert!(
         ConstructedReturnBodies::try_construct(
             &outputs,
-            &[definition.clone()],
+            std::slice::from_ref(&definition),
             &ExecutionState::new(),
             ReturnResourceComposition::ValidateDescriptions,
             &facts
@@ -484,7 +488,7 @@ fn matched_returns_carry_one_selected_constructor_and_keep_unknown_models_opaque
     let source = outputs.occurrences[0].source;
     let bodies = ConstructedReturnBodies::construct(
         &outputs,
-        &[definition.clone()],
+        std::slice::from_ref(&definition),
         &ExecutionState::new(),
         &parent,
     );
@@ -496,7 +500,7 @@ fn matched_returns_carry_one_selected_constructor_and_keep_unknown_models_opaque
     ));
     let bodies = ConstructedReturnBodies::construct(
         &outputs,
-        &[definition.clone()],
+        std::slice::from_ref(&definition),
         &ExecutionState::new(),
         &branch,
     );

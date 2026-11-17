@@ -2714,7 +2714,12 @@ impl EqualityGraph {
             // without visiting
             // unrelated opaque pointer members of the same equality class.
             let mut next = members.get_greater_than(&PointerBlock::Temporary(u64::MAX));
-            while let Some((member @ PointerBlock::AutomaticLocal { .. }, delta)) = next {
+            while let Some((
+                member @ (PointerBlock::AutomaticLocal { .. }
+                | PointerBlock::ReferenceCarrier { .. }),
+                delta,
+            )) = next
+            {
                 push(member, delta);
                 next = members.get_greater_than(member);
             }
@@ -3097,6 +3102,7 @@ impl EqualityGraphState {
                 | PointerBlock::StringLiteral { .. }
                 | PointerBlock::StaticObject { .. }
                 | PointerBlock::AutomaticLocal { .. }
+                | PointerBlock::ReferenceCarrier { .. }
         ) || matches!(block, PointerBlock::Concrete(name) if name != "null")
     }
 
@@ -3363,9 +3369,9 @@ impl EqualityGraph {
     }
 }
 
-/// A raw descriptor of an already registered read is the same selected input
-/// as its retained name. Preserve that exact state before applying the
-/// legacy comparison form to inputs that do not already have an identity.
+/// Select raw read identities without replacing reads by cached values.
+/// Compound expressions retain their written structure: their read leaves
+/// register as applications, and explicit equations supply their values.
 fn exact_read_comparison_input(term: &MachineTerm) -> MachineTerm {
     if let MachineTerm::MemoryLoad(memory, pointer, kind) = term {
         if crate::kernel::eval::is_selected_scalar_read(memory.shared_memory(), pointer, *kind) {
@@ -3385,8 +3391,10 @@ fn exact_read_comparison_input(term: &MachineTerm) -> MachineTerm {
                 *kind,
             );
         }
+        // Unmigrated raw read kinds retain their existing preparation policy.
+        return crate::kernel::canonical_term(term);
     }
-    crate::kernel::canonical_term(term)
+    crate::kernel::eval::select_graph_scalar_reads(term)
 }
 
 #[cfg(test)]
@@ -4530,3 +4538,6 @@ mod boolean_cast_dependency_tests {
 
 #[cfg(test)]
 mod function_read_tests;
+
+#[cfg(test)]
+mod compound_read_tests;

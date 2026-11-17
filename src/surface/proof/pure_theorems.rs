@@ -645,19 +645,18 @@ fn prepare_pure_induction_tactics(
     goal: &ClickProposition,
     tactics: &[ProofTactic],
 ) -> Result<(Vec<ProofTactic>, Option<PureInductionSetup>), ClickError> {
-    let Some(ProofTactic::Induct {
-        parameter,
-        hypothesis,
-    }) = tactics.first()
-    else {
-        if tactics
+    let Some((induction_index, parameter, hypothesis)) =
+        tactics
             .iter()
-            .any(|tactic| matches!(tactic, ProofTactic::Induct { .. }))
-        {
-            return Err(ClickError::new(
-                "`induct` must be the first tactic in a pure theorem proof",
-            ));
-        }
+            .enumerate()
+            .find_map(|(index, tactic)| match tactic {
+                ProofTactic::Induct {
+                    parameter,
+                    hypothesis,
+                } => Some((index, parameter, hypothesis)),
+                _ => None,
+            })
+    else {
         return Ok((tactics.to_vec(), None));
     };
     if !theorem.parameters().iter().any(|candidate| {
@@ -676,6 +675,7 @@ fn prepare_pure_induction_tactics(
     fn transform(
         tactics: &[ProofTactic],
         hypothesis: &str,
+        active: bool,
     ) -> Result<Vec<ProofTactic>, ClickError> {
         tactics
             .iter()
@@ -683,7 +683,9 @@ fn prepare_pure_induction_tactics(
                 ProofTactic::Induct { .. } => Err(ClickError::new(
                     "a pure theorem proof may contain only one top-level `induct` tactic",
                 )),
-                ProofTactic::ApplyTheorem(application) if application.name == hypothesis => {
+                ProofTactic::ApplyTheorem(application)
+                    if active && application.name == hypothesis =>
+                {
                     // Measure induction quantifies one scalar variable, so
                     // its hypothesis names only the replacement measure.
                     let [argument] = application.arguments.as_slice() else {
@@ -699,7 +701,7 @@ fn prepare_pure_induction_tactics(
                 ProofTactic::ApplyTheoremUsing {
                     application,
                     premises,
-                } if application.name == hypothesis => {
+                } if active && application.name == hypothesis => {
                     let [argument] = application.arguments.as_slice() else {
                         return Err(ClickError::new(format!(
                             "induction hypothesis `{hypothesis}` expects one argument"
@@ -714,23 +716,24 @@ fn prepare_pure_induction_tactics(
                 ProofTactic::If(proof_if) => Ok(ProofTactic::If(ProofIf {
                     condition: proof_if.condition.clone(),
                     ensuring: proof_if.ensuring.clone(),
-                    then_tactics: transform(&proof_if.then_tactics, hypothesis)?,
-                    else_tactics: transform(&proof_if.else_tactics, hypothesis)?,
+                    then_tactics: transform(&proof_if.then_tactics, hypothesis, active)?,
+                    else_tactics: transform(&proof_if.else_tactics, hypothesis, active)?,
                 })),
                 ProofTactic::Both(both) => Ok(ProofTactic::Both(ProofBoth {
-                    left_tactics: transform(&both.left_tactics, hypothesis)?,
-                    right_tactics: transform(&both.right_tactics, hypothesis)?,
+                    left_tactics: transform(&both.left_tactics, hypothesis, active)?,
+                    right_tactics: transform(&both.right_tactics, hypothesis, active)?,
                 })),
                 ProofTactic::Cases(proof_cases) => Ok(ProofTactic::Cases(
-                    proof_cases.try_map_tactics(|tactics| transform(tactics, hypothesis))?,
+                    proof_cases
+                        .try_map_tactics(|tactics| transform(tactics, hypothesis, active))?,
                 )),
-                // The hypothesis is in scope in every nested proof of the
-                // script, a `have` body and a `match` arm included.
+                // Once declared, the hypothesis is in scope in every nested
+                // proof, a `have` body and a `match` arm included.
                 ProofTactic::Have(have) => Ok(ProofTactic::Have(ProofHave {
                     proposition: have.proposition.clone(),
                     proof: match &have.proof {
                         SourceProof::Script(tactics) => {
-                            SourceProof::Script(transform(tactics, hypothesis)?)
+                            SourceProof::Script(transform(tactics, hypothesis, active)?)
                         }
                         proof => proof.clone(),
                     },
@@ -747,7 +750,7 @@ fn prepare_pure_induction_tactics(
                                     type_name: arm.type_name.clone(),
                                     variant: arm.variant.clone(),
                                     bindings: arm.bindings.clone(),
-                                    tactics: transform(&arm.tactics, hypothesis)?,
+                                    tactics: transform(&arm.tactics, hypothesis, active)?,
                                 })
                             })
                             .collect::<Result<_, ClickError>>()?,
@@ -763,8 +766,15 @@ fn prepare_pure_induction_tactics(
             .collect()
     }
 
-    let mut prepared = vec![tactics[0].clone()];
-    prepared.extend(transform(&tactics[1..], hypothesis)?);
+    // Keep calls before the declaration as ordinary theorem applications.
+    // The checked `induct` step introduces the hypothesis at its source site.
+    let mut prepared = transform(&tactics[..induction_index], hypothesis, false)?;
+    prepared.push(tactics[induction_index].clone());
+    prepared.extend(transform(
+        &tactics[induction_index + 1..],
+        hypothesis,
+        true,
+    )?);
     Ok((
         prepared,
         Some(PureInductionSetup {
@@ -3909,6 +3919,7 @@ mod tests {
     #[test]
     #[ignore = "nightly: 1.0s in the parallel gate"]
     fn ordinary_pure_numeric_induction_expands_and_reverifies() {
+        let library = TheoremEnvironment::with_standard_library(&[]).unwrap();
         for fixture in [
             include_str!("../../../mdtests/pure_induction_countdown.md"),
             include_str!("../../../mdtests/pure_induction_two_step.md"),
@@ -3921,7 +3932,7 @@ mod tests {
                 .split_once("\n```")
                 .unwrap()
                 .0;
-            let result = verify_instantiation_theorem(source);
+            let result = verify_instantiation_theorem_in_environment(source, &library);
             let verified = result.unwrap();
             assert!(matches!(
                 verified.checked_completion,
@@ -3938,6 +3949,75 @@ mod tests {
                 crate::surface::expand_c_claim_source_by_label(&expanded, &[], &label).unwrap()
             );
         }
+    }
+
+    #[test]
+    #[ignore = "nightly: induction prefix scope and cold expansion replay"]
+    fn scalar_induction_prefixes_preserve_scope_and_cold_replay() {
+        let fixture = include_str!("../../../mdtests/scalar_induction_after_helper_facts.md");
+        let source = fixture
+            .split_once("```click\n")
+            .unwrap()
+            .1
+            .split_once("\n```")
+            .unwrap()
+            .0;
+        let global_before_local = format!(
+            "theorem ih(n: int32) {{ ensures n == n by known(); }}\n{}",
+            source.replace("have n == n;", "have n == n by { apply(ih(n)); }")
+        );
+        for source in [source.to_string(), global_before_local] {
+            crate::surface::verify_c_sources(&source, &[]).unwrap();
+            let expanded = crate::surface::expand_c_claim_source_by_label(
+                &source,
+                &[],
+                "countdown_is_zero.ensures_0",
+            )
+            .unwrap();
+            crate::surface::proof::without_implicit_solve(|| {
+                crate::surface::verify_c_sources(&expanded, &[])
+            })
+            .unwrap();
+        }
+        crate::surface::verify_c_sources(
+            "theorem unsigned_prefix(n: uint64) { ensures n == n by { have 0u64 <= n; let ih = induct(n); known(); } }", &[],
+        ).unwrap();
+        for (invalid, diagnostic) in [
+            (
+                source.replace(
+                    "have n == n;",
+                    "have n == n by { if n > 0 { apply(ih(0)); known(); } else { known(); } }",
+                ),
+                "ih",
+            ),
+            (
+                source.replace(
+                    "let ih = induct(n);",
+                    "let ih = induct(n); let another = induct(n);",
+                ),
+                "only one top-level",
+            ),
+            (
+                source.replace(
+                    "have n == n;",
+                    "have n == n by { let ih = induct(n); known(); }",
+                ),
+                "only one top-level",
+            ),
+        ] {
+            let error = crate::surface::verify_c_sources(&invalid, &[])
+                .expect_err("invalid induction scope must be refused");
+            assert!(error.message().contains(diagnostic), "{}", error.report());
+            assert!(!error.message().contains("budget"), "{}", error.report());
+        }
+        let changed_goal = "theorem changed_goal(n: int32) { requires n >= 0; ensures n >= 0 implies n >= 0 by { intro(); let ih = induct(n); known(); } }";
+        let error = crate::surface::verify_c_sources(changed_goal, &[])
+            .expect_err("induction still targets the original theorem goal");
+        assert!(
+            error.message().contains("original theorem goal"),
+            "{}",
+            error.report()
+        );
     }
 
     #[test]
@@ -4010,13 +4090,20 @@ mod tests {
     "#;
 
     fn verify_instantiation_theorem(source: &str) -> Result<VerifiedPureTheorem, ClickError> {
+        verify_instantiation_theorem_in_environment(source, &TheoremEnvironment::new(&[]))
+    }
+
+    fn verify_instantiation_theorem_in_environment(
+        source: &str,
+        theorems: &TheoremEnvironment,
+    ) -> Result<VerifiedPureTheorem, ClickError> {
         let file = crate::surface::parse(source)?;
         let predicates = PredicateEnvironment::new(file.predicate_definitions());
         let functions = ClickFunctionEnvironment::new(file.click_function_definitions());
         let mut verified = verify_concrete_theorem_definition(
             &file.theorem_definitions()[0],
             SpecDefinitions::new(&predicates, &functions),
-            &TheoremEnvironment::new(&[]),
+            theorems,
             None,
         )?;
         Ok(verified.remove(0))
@@ -4146,7 +4233,7 @@ mod tests {
     fn pure_instantiate_in_numeric_induction_retains_completion() {
         let source = INSTANTIATE_BOUND.replace("0 <= x", "x >= 0").replace(
             "ensures x <= upper by {",
-            "ensures x <= upper by { induct(x) as ih;",
+            "ensures x <= upper by { let ih = induct(x);",
         );
         let source = source.replace(
             "instantiate(forall",
@@ -4689,6 +4776,9 @@ mod tests {
                 assert!(verify_standard_declaration(&forged).is_err(), "{forged}");
             }
         }
+    }
+    mod scaling_tests {
+        include!("../../scaling_tests/surface/proof/pure_theorems/tests.rs");
     }
 }
 

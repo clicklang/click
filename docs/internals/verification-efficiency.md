@@ -115,9 +115,19 @@ Distinguish these producer boundaries:
 | Return composition | An executed body's `ConstructedBodyReturn` retains its constructed output group and captured caller frame; `finish` installs it directly. Summary paths restore selected entry borrows, consumed-cell transfers, and fresh-allocation outputs, then send remaining descriptions through compatibility admission. `ValidateDescriptions` deliberately does not turn a role marker into transfer evidence. |
 | Produced composite boundary | A retained child rule binds unchanged one-level parameter footprints to selected consumed inputs. Unguarded borrowed parameter-only children retain entry provenance. Those children leave no new boundary; unmatched children and post-memory footprints still pass through `produced_composite_frontier_conflict`. |
 | Iterated `take` and `scatter` | The checked hole/guard transition or hole-free whole-range consumption constructs the exposed memory directly in the same frame. Neither operation readmits it or normalizes the surrounding block. Source selection, guard reasoning, and the explicit hole list have separate costs. |
-| Call and suspended-loan recovery | `recover_candidate_stable_view_resources` restores escrows beside the callee's output residual; `StableViewTransferPlan::recover_stable_views_impl` also restores selected resources. An unmatched raw output has not necessarily been checked against a withheld escrow. Suspended recovery additionally uses the parent's current frame. These relationships must be constructed before generic recovery admission can be removed. The former `ReservedLocalScalarOwner` carrier is no longer present. |
-| Worker completion and loop-frame exchange | Checked output inside a worker or narrowed loop body is not by itself evidence about the current parent or withheld frame. These callers still validate the newly composed boundary. A replacement must construct that boundary from the operation's transfer evidence. |
+| Call and suspended-loan recovery | `recover_returned_views` constructs recovery directly in the actual return residual, retaining output occurrences and supported cores. Each escrow is admitted once against that destination; publication receives its constructed context and explicit recovered hold occurrence IDs. There is no discarded entry-frame reconstruction or second insertion. Suspended recovery likewise uses today's parent frame. An unmatched output's relationship to withheld escrow remains a real boundary obligation, with compatibility discovery for unsupported geometry. |
+| Worker completion and loop-frame exchange | `compose_checked_outputs` checks only the checked worker group's boundary with today's parent frame, and retains output occurrences, projection support, loan dependencies and cached expansions in the resulting construction. It does not recheck output/output memory pairs. `restore_frame_after_exchange` admits the changed loop partition directly with the exit's selected occurrence IDs and retains that successor; it no longer checks a temporary context and reinserts the same facts. Newly described output must still establish its boundary with the current or withheld frame. Unsupported geometry retains compatibility discovery. |
 | Instance and authority bookkeeping | Some callers add only an instance identity or an exclusive authority. Those facts do not have a raw memory footprint for alias discovery; do not classify every use of the generic API as a memory scan. |
+
+Whole-range iterated guard checking selects a retained universal equality by
+an alpha/load identity key built from its bounds and guard cell. The index is
+maintained when the explicit universal is admitted. Exact value conclusions
+come first; a selected cell-value source can also decide the comparison, and
+one cell source with different bounds is usable only if its instantiated
+antecedent is proved. The operation never enumerates a universal bucket or
+replays its conclusion into a temporary context. Bounds with several possible
+sources may need an explicit whole-range `have forall` premise; selection does
+not search those alternatives. Query keys preserve the read's memory version.
 
 The return paths are in
 [`mixed_return_resources.rs`](https://github.com/clicklang/click/blob/master/src/kernel/functions/mixed_return_resources.rs)
@@ -136,10 +146,10 @@ On the summary and description-only paths, `admit_clause` checks the returned de
 `FreshAllocationReturn` records the allocation's identity, not a consumed
 slice or a partition of its outputs. Two descriptions of the same fresh cell
 can both carry that provenance. The regression
-`fresh_return_group_checks_sibling_overlap_before_restoration` exercises
-adjacent and duplicate slices from an actual allocation: early admission
-rejects the duplicate, and the body's separate
-`jointly_consume_returned_resource_units` check cannot supply it twice either.
+`fresh_return_group_refuses_sibling_overlap` exercises adjacent and duplicate
+slices from an actual allocation: description admission rejects the
+duplicate, the body's `jointly_consume_returned_resource_units` check cannot
+supply it twice, and body-return restoration refuses it.
 Freshness alone therefore does not justify skipping group construction. A
 body-return construction retains the outputs of joint consumption rather
 than reconstructing ownership from independent descriptions and checking it again.
@@ -420,7 +430,7 @@ Other operations follow the same shape:
   a recorded state.
 - Logical reads through opaque pointers select an admitted footprint through
   the composition's class and interval indexes, without enumerating pointer
-  spellings or scanning composition frames.
+  forms or scanning composition frames.
 
 ## Output-sensitive exceptions
 
@@ -457,9 +467,9 @@ charged to visible semantic output rather than hidden ambient state:
   quantifier (`quantified_frame_is_near_linear_in_unrelated_facts`).
 - Typed range membership of an unsigned 64-bit index in a range with
   constant bounds (`PointerInRangeEvidence::UnsignedIndexed`) builds at most
-  four spellings of the bound and looks each up exactly.
+  four forms of the bound and looks each up exactly.
 - A premise that is one conjunct of a recorded source fact's lowering is
-  spelled through the surface proposition map's conjunct index.
+  raised through the surface proposition map's conjunct index.
 - A store keeps every earlier cell of its block that it proves it misses.
   Constant byte gaps are decided by offset arithmetic over an anchor-ordered
   key range (`src/kernel/reasoning/store_gap.rs`), recorded strict signed
@@ -649,7 +659,7 @@ A separation query (range and pointer disjointness, subrange inheritance, a
 store crossing a cached cell, two distinct range anchors) asks each held
 composition for two distinct owned members of the query's block, one holding
 each side (`ResourceContext::separated_owned_members_in_block`). Members filed
-under the roots the two sides are spelled at are asked first; when they hold
+under the roots the two sides are expressed at are asked first; when they hold
 no pair, the conservative candidate index above selects the members. The
 answers are exactly those the former pairwise projection gave. A consumer that
 needs a separation proposition asks the prover, which serves it from the
@@ -764,12 +774,12 @@ separation or a pointer disequality to the congruence closure. Those
 contradictions are left to proof steps.
 
 A condition-fact query (`PureFactContext::has_condition_fact`) reads the
-facts filed under the keys it spells: its kind and the canonical forms of its
+facts filed under the keys it forms: its kind and the canonical forms of its
 two sides and their recorded-equality classes. A fact of two atoms is never
-visited by a query that does not spell its key
+visited by a query that does not form its key
 (`condition_fact_queries_ignore_unrelated_facts`). A fact with a non-atom side
 (a load, a sum, a conditional) can match through reasoning its key does not
-spell. When the keys miss, the query reads the facts filed under its own
+express. When the keys miss, the query reads the facts filed under its own
 variables and the members of their recorded-equality classes
 (`condition_facts_by_variable`), never every fact of its kind
 (`open_sided_condition_queries_read_only_their_variables_facts`). A ground
@@ -890,7 +900,7 @@ call in its syntax; missing evidence falls back to the source body.
 
 `program_termination_height_plan` proposes a height per node (iterative Tarjan,
 longest path over the condensation, cycle members sharing a height).
-`program_verified_function_termination_rules` checks the proposal level by level in
+The termination check (`TerminationObligations::prove_implicitly`) checks the proposal level by level in
 ascending height, reading at each call site only whether the callee is above
 its caller, whether a strictly lower callee has evidence, and whether an
 equal-height callee is a recursive edge a declared measure ranks. A refused
@@ -974,13 +984,13 @@ suffix at the prefix's endpoint, including an exactly addressed materialized
 cell or dense run span ending at its next hole, instead of pairing ambient
 ranges or enumerating memory cells and runs.
 Candidate states, extents and pointer equality still pass the kernel checks.
-Read-defined goals use typed evidence, exact aliases and equality spellings;
+Read-defined goals use typed evidence, exact aliases and equality forms;
 memory separation uses the unordered block-pair bucket. Large buckets at the
 same address and long alias components still need separate growth audits.
 
 Atom memory-condition matching uses exact/canonical condition keys and keys
-from equality spellings. A miss does not consult the family's entire open-fact
-bucket. A condition requiring a different spelling can be established explicitly
+from equality forms. A miss does not consult the family's entire open-fact
+bucket. A condition requiring a different form can be established explicitly
 before the checked operation. Compound-query and carrier/state controls remain.
 
 Atomic certificate planning keeps persistent syntax adjacency for condition
@@ -993,14 +1003,14 @@ goal and source. Wider smart fallbacks belong to the slow part and are charged
 to its budget; every successful selection still establishes the goal in the
 restricted kernel context.
 
-Before spelling a typed equality, `solve` retains only the sources its
+Before forming a typed equality, `solve` retains only the sources its
 evidence named, and the kernel rebuilds the selected context from them.
 Compatibility evidence that retains a whole connected component can be
 reduced by bounded chunk-deletion trials (at most 255 restricted queries,
 charged to the smart budget). Theorem application retrieves the latest
 recorded source form of its exact matched premise from `SurfacePropositionMap`,
 following one selected fact. A read of a held native range uses the address
-graph's retained wide-index producer rather than a narrow alias's spelling.
+graph's retained wide-index producer rather than a narrow alias's form.
 
 ## Regression policy
 
@@ -1018,7 +1028,7 @@ The scaling suite covers independent axes:
 - number of unrelated functions and verified rules;
 - straight-line statements and program-point states in one function;
 - ambient pure and condition facts;
-- surface-to-kernel proposition spellings;
+- surface-to-kernel proposition mappings;
 - resource facts and resource-definition members;
 - global and imported theorem declarations;
 - number of claims sharing one function execution; and

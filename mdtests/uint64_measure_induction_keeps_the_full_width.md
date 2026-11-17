@@ -7,7 +7,7 @@ The induction hypothesis retains the theorem's other requirements.
 theorem full_width_induction(n: uint64, limit: uint64) {
     requires n <= limit;
     ensures n <= limit by {
-        induct(n) as ih;
+        let ih = induct(n);
         if n <= 0u64 {
             known();
         } else {

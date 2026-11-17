@@ -2288,10 +2288,14 @@ fn declared_exceptional_path_certifies_its_payload_postcondition() {
     )
     .expect("the exceptional payload should lower at the throw boundary");
     assert_eq!(goals.len(), 1);
+    // The payload is 7: lowering retains the closed comparison `7 == 7`
+    // rather than folding it to `true`.
     assert!(
         matches!(
             goals[0].proposition(),
-            Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+            Proposition::ConditionIs(condition @ ConditionTerm::Compare { .. }, true)
+                if crate::kernel::machine_integer::comparison::closed_condition_value(condition)
+                    == Some(true)
         ),
         "unexpected exceptional goal: {:?}",
         goals[0].proposition()
@@ -7257,7 +7261,7 @@ fn allocator_certification_checks_the_body_allocation_against_produced_resources
                         vec![],
                     )])
             } else {
-                function.with_resource_summary(vec![], specs(CONTRACT_RESULT.into()))
+                function.with_resource_summary(vec![], specs(CONTRACT_RESULT))
             };
             let claims_list = if composite {
                 vec![

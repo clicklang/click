@@ -48,6 +48,11 @@ fn write_havoc_string(identity: &mut String, tag: &str, value: &str) {
 
 fn write_havoc_block(identity: &mut String, block: PointerBlock) {
     match block {
+        PointerBlock::ReferenceCarrier { referent, instance } => {
+            identity.push_str("bref;");
+            write_havoc_block(identity, Memory::local_pointer(referent.as_ref()).block);
+            let _ = write!(identity, "{instance:?};");
+        }
         PointerBlock::AggregateReturn { frame } => {
             let _ = write!(identity, "breturn{frame};");
         }
@@ -1320,6 +1325,9 @@ pub(crate) fn resource_context_has_symbolic_range_read(
 
 impl LocalEnvironment {
     pub(crate) fn resolve_binding(&self, name: &BindingName) -> BindingName {
+        if matches!(name, BindingName::ReferenceCarrier(_)) {
+            crate::instrumentation::record_deterministic_work(1);
+        }
         if self.visible_names.is_empty() {
             return name.clone();
         }
@@ -1341,7 +1349,8 @@ impl LocalEnvironment {
                 .and_then(|entries| entries.last())
                 .map(|(_, binding)| binding.clone())
                 .unwrap_or_else(|| name.clone()),
-            BindingName::Local(_)
+            BindingName::ReferenceCarrier(_)
+            | BindingName::Local(_)
             | BindingName::Static(_)
             | BindingName::ContractResult
             | BindingName::ContractException
@@ -1355,7 +1364,8 @@ impl LocalEnvironment {
             BindingName::Local(id) => id.spelling()?,
             BindingName::Static(id) => id.spelling(),
             BindingName::Named(name) => name,
-            BindingName::ContractResult
+            BindingName::ReferenceCarrier(_)
+            | BindingName::ContractResult
             | BindingName::ContractException
             | BindingName::Generated(_) => return None,
         };
@@ -7583,6 +7593,10 @@ impl Memory {
     pub(in crate::kernel) fn value_parameter_pointer(name: impl Into<BindingName>) -> Pointer {
         let name = name.into();
         let block = match name {
+            BindingName::ReferenceCarrier(referent) => PointerBlock::ReferenceCarrier {
+                referent,
+                instance: LocalStorageInstance::ValueParameter,
+            },
             BindingName::Local(binding) => PointerBlock::AutomaticLocal {
                 binding,
                 instance: LocalStorageInstance::ValueParameter,
@@ -7604,6 +7618,10 @@ impl Memory {
     pub(in crate::kernel) fn local_pointer(name: impl Into<BindingName>) -> Pointer {
         let name = name.into();
         let block = match name {
+            BindingName::ReferenceCarrier(referent) => PointerBlock::ReferenceCarrier {
+                referent,
+                instance: LocalStorageInstance::Implicit,
+            },
             BindingName::Local(binding) => PointerBlock::AutomaticLocal {
                 binding,
                 instance: LocalStorageInstance::Implicit,
@@ -7626,6 +7644,10 @@ impl Memory {
     ) -> Pointer {
         let name = name.into();
         let block = match name {
+            BindingName::ReferenceCarrier(referent) => PointerBlock::ReferenceCarrier {
+                referent,
+                instance: LocalStorageInstance::Lifetime(lifetime),
+            },
             BindingName::Local(binding) => PointerBlock::AutomaticLocal {
                 binding,
                 instance: LocalStorageInstance::Lifetime(lifetime),
@@ -7648,7 +7670,8 @@ impl Memory {
         let block = match name.into() {
             BindingName::Static(binding) => PointerBlock::StaticObject { binding },
             BindingName::Named(name) => format!("global:{name}").into(),
-            BindingName::Local(_)
+            BindingName::ReferenceCarrier(_)
+            | BindingName::Local(_)
             | BindingName::ContractResult
             | BindingName::ContractException
             | BindingName::Generated(_) => {
@@ -7675,7 +7698,8 @@ impl Memory {
         let block = match name.into() {
             BindingName::Static(binding) => PointerBlock::StaticObject { binding },
             BindingName::Named(name) => format!("static:{function}:{name}").into(),
-            BindingName::Local(_)
+            BindingName::ReferenceCarrier(_)
+            | BindingName::Local(_)
             | BindingName::ContractResult
             | BindingName::ContractException
             | BindingName::Generated(_) => {
@@ -7701,6 +7725,13 @@ impl Memory {
         name: impl Into<BindingName>,
     ) -> Pointer {
         match name.into() {
+            BindingName::ReferenceCarrier(referent) => Pointer {
+                block: PointerBlock::ReferenceCarrier {
+                    referent,
+                    instance: LocalStorageInstance::Frame(frame),
+                },
+                offset: PointerOffsetTerm::Constant(0),
+            },
             BindingName::Local(binding) => Pointer {
                 block: PointerBlock::AutomaticLocal {
                     binding,
@@ -9081,7 +9112,7 @@ impl ExecutionState {
                 return Err("control resource argument has the wrong type".into());
             }
             evaluation.locals.set_typed(
-                parameter.name().to_string(),
+                parameter.binding_name().clone(),
                 value.clone(),
                 parameter.program_type(),
             );
@@ -9816,7 +9847,6 @@ impl ExecutionState {
     }
 
     /// The point this state stands at on its path.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn program_point(&self) -> super::ProgramPoint {
         super::ProgramPoint::of_state(&self.memory, &self.point)
     }
@@ -9829,6 +9859,21 @@ impl ExecutionState {
         state.memory = point.memory().clone();
         state.point = point.path_link().clone();
         state
+    }
+
+    /// A fresh state standing where `state` stands, holding `state`'s own
+    /// memory value. A callee frame is the caller's state at the call seen
+    /// through the callee's parameter names, so it starts here; it keeps the
+    /// caller's memory value, not only equal contents, because a call's
+    /// requirements are matched to the memory they were evaluated in by its
+    /// storage.
+    pub(crate) fn at_state(state: &Self) -> Self {
+        let point = state.program_point();
+        let mut fresh = Self::new();
+        fresh.memory = state.memory.clone();
+        fresh.memory.pending_steps = None;
+        fresh.point = point.path_link().clone();
+        fresh
     }
 
     /// Where on its path this state stands.

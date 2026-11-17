@@ -31,7 +31,7 @@ $ click verify zero.click
 The claim is small, but it contains the whole Click shape:
 
 - `verifying "zero.c";` names the C source. The C itself is not changed.
-- `int32 zero()` identifies the C function being specified. Click spells C
+- `int32 zero()` identifies the C function being specified. Click writes C
   types by their width, so C's `int`, `signed int` and `int32_t` are all
   `int32` (see [Supported types](../reference/language/c.md#supported-types)).
 - `ensures result == 0;` states the fact to prove. It has no proof clause, so

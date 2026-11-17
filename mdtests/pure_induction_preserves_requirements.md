@@ -4,7 +4,7 @@
 theorem restricted(n: int32) {
     requires n >= 5;
     ensures n == n by {
-        induct(n) as ih;
+        let ih = induct(n);
         have 0 <= to_integer(n - 1);
         have to_integer(n - 1) < to_integer(n);
         apply(ih(n - 1));

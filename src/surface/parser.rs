@@ -193,6 +193,7 @@ pub(in crate::surface) struct SourceBindingIndex {
 impl SourceBindingIndex {
     fn info(&self, binding: &crate::kernel::BindingName) -> Option<&SourceBindingInfo> {
         match binding {
+            crate::kernel::BindingName::ReferenceCarrier(referent) => self.info(referent),
             crate::kernel::BindingName::Local(id) => self.declarations.get(id),
             crate::kernel::BindingName::Static(id) => self.statics.get(id),
             crate::kernel::BindingName::Named(_)
@@ -1408,6 +1409,9 @@ impl ProgramLayouts {
                     } => {
                         record(binding, None, false);
                         pending.extend([try_body.as_ref(), handler.as_ref()]);
+                    }
+                    ProgramStatement::UnwindCleanup { body, cleanup } => {
+                        pending.extend([body.as_ref(), cleanup.as_ref()]);
                     }
                     ProgramStatement::Seq(sequence) => {
                         pending.extend(sequence.iter().map(|s| s.as_ref()))
@@ -3909,7 +3913,7 @@ impl Parser {
                         );
                     }
                     witnesses.push(ResourceWitness {
-                        name: binding.name.into(),
+                        name: binding.name,
                         interface_type,
                     });
                     facts.push(condition);
@@ -4243,11 +4247,7 @@ impl Parser {
                         struct_array_params.insert(parsed_parameter.parameter.name.clone());
                     }
                     if parsed_parameter.parameter.is_reference() {
-                        reference_params.insert(
-                            syntax::referent_of_carrier(&parsed_parameter.parameter.name)
-                                .unwrap_or(&parsed_parameter.parameter.name)
-                                .to_string(),
-                        );
+                        reference_params.insert(parsed_parameter.parameter.name.clone());
                     }
                     if let Some(bytes) = parsed_parameter.declared_bytes {
                         declared_loadable_bytes
@@ -6243,11 +6243,7 @@ impl Parser {
                 struct_array_params.insert(parsed_parameter.parameter.name.clone());
             }
             if parsed_parameter.parameter.is_reference() {
-                reference_params.insert(
-                    syntax::referent_of_carrier(&parsed_parameter.parameter.name)
-                        .unwrap_or(&parsed_parameter.parameter.name)
-                        .to_string(),
-                );
+                reference_params.insert(parsed_parameter.parameter.name.clone());
             }
             if let Some(bytes) = parsed_parameter.declared_bytes {
                 declared_loadable_bytes.push((parsed_parameter.parameter.name.clone(), bytes));
@@ -7088,11 +7084,7 @@ impl Parser {
                     click_type: ClickType::Program(interface_type),
                     // The parameter is the pointer that carries the
                     // reference; the written name is the referent.
-                    name: if parsed_type.reference {
-                        syntax::reference_carrier_name(&name)
-                    } else {
-                        name
-                    },
+                    name,
                     struct_name: struct_name.clone(),
                     function_pointer_signature: None,
                     constant: parsed_type.constant,
@@ -9362,6 +9354,7 @@ impl Parser {
                 _ => false,
             };
             if proposition_binding
+                || crate::surface::bool_literal_value(&left).is_some()
                 || matches!(&left, ContractExpression::Call { name, .. } if self.proposition_function_names.contains(name))
                 || matches!(
                     left,
@@ -10039,8 +10032,45 @@ impl Parser {
     // common tactic dispatcher so nested proof bodies fit the bounded stack.
     #[inline(never)]
     fn parse_let_proof_tactic(&mut self) -> Result<ProofTactic, ClickError> {
+        // Generated logical identities are valid intro outputs, while
+        // resource and call output patterns retain their written names.
+        if self.peek_ident() == Some("binder") && self.peek_next() == Some(&Token::LParen) {
+            let binder = self.expect_surface_binder("introduced variable")?;
+            self.expect(Token::Equal)?;
+            self.expect_ident_spelling("intro")?;
+            if self.tactic_names.contains("intro") {
+                return Err(self.error("generated binder outputs require the built-in `intro`"));
+            }
+            self.expect_empty_tactic_args("intro")?;
+            self.expect(Token::Semicolon)?;
+            return self.named_intro(binder);
+        }
         let output = self.parse_let_output_pattern()?;
         self.expect(Token::Equal)?;
+        if matches!(self.peek_ident(), Some("intro" | "induct"))
+            && !self.tactic_names.contains(self.peek_ident().unwrap())
+        {
+            let tactic = self.expect_ident("binding-producing tactic")?;
+            let CallOutputPattern::Single(name) = output else {
+                return Err(self.error(format!(
+                    "`{tactic}` produces one binding: write `let name = {tactic}(...);`"
+                )));
+            };
+            if tactic == "intro" {
+                self.expect_empty_tactic_args("intro")?;
+                self.expect(Token::Semicolon)?;
+                return self.named_intro(name.into());
+            }
+            self.refuse_cast_type_binder(&name)?;
+            self.expect(Token::LParen)?;
+            let parameter = self.expect_ident("induction parameter")?;
+            self.expect(Token::RParen)?;
+            self.expect(Token::Semicolon)?;
+            return Ok(ProofTactic::Induct {
+                parameter,
+                hypothesis: name,
+            });
+        }
         if self.peek_ident() == Some("step") {
             self.position += 1;
             self.expect(Token::LParen)?;
@@ -10943,87 +10973,92 @@ impl Parser {
         self.parse_named_proof_tactic(name)
     }
 
+    fn named_intro(&mut self, name: SurfaceBinder) -> Result<ProofTactic, ClickError> {
+        if let Some(name) = name.written() {
+            self.refuse_cast_type_binder(name)?;
+        }
+        self.names.hide_for_proof_binder(&name, false);
+        if let Some(name) = name.written() {
+            self.names.ended_fact_names.remove(name);
+        }
+        Ok(match name {
+            SurfaceBinder::Written(name) => ProofTactic::IntroAs(name),
+            name => ProofTactic::IntroBinder(name),
+        })
+    }
+
     // Structural induction retains a child proof parser. Its syntax
     // temporaries must not share the large leaf-tactic dispatch frame.
     #[inline(never)]
     fn parse_induct_proof_tactic(&mut self) -> Result<ProofTactic, ClickError> {
-        let tactic = {
-            self.expect(Token::LParen)?;
-            let parameter = self.expect_ident("induction parameter")?;
-            self.expect(Token::RParen)?;
-            self.expect_ident_spelling("as")?;
-            let hypothesis = self.expect_ident("induction hypothesis name")?;
-            self.refuse_cast_type_binder(&hypothesis)?;
-            if self.peek() == Some(&Token::LBrace) {
+        self.expect(Token::LParen)?;
+        let parameter = self.expect_ident("induction parameter")?;
+        self.expect(Token::RParen)?;
+        self.expect_ident_spelling("as")?;
+        let hypothesis = self.expect_ident("induction hypothesis name")?;
+        self.refuse_cast_type_binder(&hypothesis)?;
+        if self.peek() != Some(&Token::LBrace) {
+            return Err(self.error("scalar induction uses `let ih = induct(n);`"));
+        }
+        self.position += 1;
+        let mut arms = Vec::new();
+        while self.peek() != Some(&Token::RBrace) {
+            let type_name = self.expect_ident("induction pattern datatype")?;
+            self.expect(Token::ColonColon)?;
+            let variant = self.expect_ident("induction pattern variant")?;
+            let mut bindings = Vec::new();
+            if self.peek() == Some(&Token::LParen) {
                 self.position += 1;
-                let mut arms = Vec::new();
-                while self.peek() != Some(&Token::RBrace) {
-                    let type_name = self.expect_ident("induction pattern datatype")?;
-                    self.expect(Token::ColonColon)?;
-                    let variant = self.expect_ident("induction pattern variant")?;
-                    let mut bindings = Vec::new();
-                    if self.peek() == Some(&Token::LParen) {
-                        self.position += 1;
-                        if self.peek() != Some(&Token::RParen) {
-                            loop {
-                                bindings.push(self.expect_ident("induction pattern binding")?);
-                                match self.peek() {
-                                    Some(Token::Comma) => self.position += 1,
-                                    Some(Token::RParen) => break,
-                                    Some(token) => {
-                                        return Err(self.error(format!(
-                                            "expected `,` or `)` after induction binding, got {}",
-                                            token.describe()
-                                        )));
-                                    }
-                                    None => {
-                                        return Err(
-                                            self.error("expected `)` after induction bindings")
-                                        );
-                                    }
-                                }
+                if self.peek() != Some(&Token::RParen) {
+                    loop {
+                        bindings.push(self.expect_ident("induction pattern binding")?);
+                        match self.peek() {
+                            Some(Token::Comma) => self.position += 1,
+                            Some(Token::RParen) => break,
+                            Some(token) => {
+                                return Err(self.error(format!(
+                                    "expected `,` or `)` after induction binding, got {}",
+                                    token.describe()
+                                )));
+                            }
+                            None => {
+                                return Err(self.error("expected `)` after induction bindings"));
                             }
                         }
-                        self.expect(Token::RParen)?;
-                    }
-                    self.expect(Token::FatArrow)?;
-                    let newly_bound = bindings
-                        .iter()
-                        .filter(|binding| {
-                            self.names
-                                .insert(NameKind::ContractBinding, (*binding).clone())
-                        })
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    let tactics = self.parse_possibly_empty_tactic_block();
-                    for binding in newly_bound {
-                        self.names.remove(NameKind::ContractBinding, &binding);
-                    }
-                    arms.push(ProofInductionArm {
-                        type_name,
-                        variant,
-                        bindings,
-                        tactics: tactics?,
-                    });
-                    if self.peek() == Some(&Token::Comma) {
-                        self.position += 1;
                     }
                 }
-                self.expect(Token::RBrace)?;
-                self.skip_redundant_semicolon();
-                return Ok(ProofTactic::StructuralInduct {
-                    parameter,
-                    hypothesis,
-                    arms,
-                });
+                self.expect(Token::RParen)?;
             }
-            ProofTactic::Induct {
-                parameter,
-                hypothesis,
+            self.expect(Token::FatArrow)?;
+            let newly_bound = bindings
+                .iter()
+                .filter(|binding| {
+                    self.names
+                        .insert(NameKind::ContractBinding, (*binding).clone())
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            let tactics = self.parse_possibly_empty_tactic_block();
+            for binding in newly_bound {
+                self.names.remove(NameKind::ContractBinding, &binding);
             }
-        };
-        self.expect(Token::Semicolon)?;
-        Ok(tactic)
+            arms.push(ProofInductionArm {
+                type_name,
+                variant,
+                bindings,
+                tactics: tactics?,
+            });
+            if self.peek() == Some(&Token::Comma) {
+                self.position += 1;
+            }
+        }
+        self.expect(Token::RBrace)?;
+        self.skip_redundant_semicolon();
+        Ok(ProofTactic::StructuralInduct {
+            parameter,
+            hypothesis,
+            arms,
+        })
     }
 
     // Keep the large leaf-tactic dispatch frame out of recursive proof-body
@@ -11294,32 +11329,20 @@ impl Parser {
                 }
             }
             "witness" => {
-                // `witness { k: value, ... }`: a value for each named binder
-                // of the existential goal, in order.
-                self.expect(Token::LBrace)?;
-                let mut bindings: Vec<(String, ContractExpression)> = Vec::new();
-                while self.peek() != Some(&Token::RBrace) {
-                    let name = self.expect_ident("witness binder name")?;
-                    if bindings.iter().any(|(bound, _)| bound == &name) {
-                        return Err(self.error(format!("duplicate witness for `{name}`")));
-                    }
-                    self.expect(Token::Colon)?;
-                    let value = self.parse_contract_expression()?;
-                    bindings.push((name, value));
+                self.expect(Token::LParen)?;
+                let mut values = Vec::new();
+                while self.peek() != Some(&Token::RParen) {
+                    values.push(self.parse_contract_expression()?);
                     if self.peek() != Some(&Token::Comma) {
                         break;
                     }
                     self.position += 1;
                 }
-                self.expect(Token::RBrace)?;
-                if bindings.is_empty() {
-                    return Err(self.error("`witness` needs at least one `binder: value`"));
+                self.expect(Token::RParen)?;
+                if values.is_empty() {
+                    return Err(self.error("`witness` needs at least one value"));
                 }
-                if self.peek() != Some(&Token::Semicolon) {
-                    return Err(self.error("expected `;` after `witness { ... }`"));
-                }
-                self.position += 1;
-                return Ok(ProofTactic::Witness(ProofWitness::new(bindings)));
+                ProofTactic::Witness(ProofWitness::new(values))
             }
             "obtain" => return self.parse_obtain(),
             "check_termination_local" => {
@@ -11381,22 +11404,9 @@ impl Parser {
             "intro" => {
                 self.expect_empty_tactic_args(&name)?;
                 if self.peek_ident() == Some("as") {
-                    self.position += 1;
-                    let name = self.expect_surface_binder("name for the introduced variable")?;
-                    if let Some(name) = name.written() {
-                        self.refuse_cast_type_binder(name)?;
-                    }
-                    self.names.hide_for_proof_binder(&name, false);
-                    if let Some(name) = name.written() {
-                        self.names.ended_fact_names.remove(name);
-                    }
-                    match name {
-                        SurfaceBinder::Written(name) => ProofTactic::IntroAs(name),
-                        name => ProofTactic::IntroBinder(name),
-                    }
-                } else {
-                    ProofTactic::Intro
+                    return Err(self.error("`intro() as name` is now `let name = intro();`"));
                 }
+                ProofTactic::Intro
             }
             "split" | "left" | "right" => {
                 return Err(self.error(format!(
@@ -12455,7 +12465,8 @@ impl Parser {
         let mut struct_name = match &surface_base {
             ContractExpression::Field { .. } => self.contract_expression_struct_name(&surface_base),
             ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                binding @ (crate::kernel::BindingName::Local(_)
+                binding @ (crate::kernel::BindingName::ReferenceCarrier(_)
+                | crate::kernel::BindingName::Local(_)
                 | crate::kernel::BindingName::Static(_)),
             )) => self.binding_struct_name(binding).cloned(),
             ContractExpression::Binding(name)
@@ -12494,7 +12505,8 @@ impl Parser {
         }
         let names_aggregate_object = match &surface_base {
             ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                binding @ (crate::kernel::BindingName::Local(_)
+                binding @ (crate::kernel::BindingName::ReferenceCarrier(_)
+                | crate::kernel::BindingName::Local(_)
                 | crate::kernel::BindingName::Static(_)),
             )) => self.binding_is_aggregate(binding),
             ContractExpression::Binding(name)
@@ -12511,7 +12523,8 @@ impl Parser {
         let mut union_name: Option<String> = None;
         let mut struct_array_element_width = match &surface_base {
             ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                binding @ (crate::kernel::BindingName::Local(_)
+                binding @ (crate::kernel::BindingName::ReferenceCarrier(_)
+                | crate::kernel::BindingName::Local(_)
                 | crate::kernel::BindingName::Static(_)),
             )) => self
                 .local_bindings
@@ -12539,7 +12552,8 @@ impl Parser {
         };
         let mut struct_array_shape = match &surface_base {
             ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                binding @ (crate::kernel::BindingName::Local(_)
+                binding @ (crate::kernel::BindingName::ReferenceCarrier(_)
+                | crate::kernel::BindingName::Local(_)
                 | crate::kernel::BindingName::Static(_)),
             )) => self
                 .local_bindings
@@ -12556,7 +12570,8 @@ impl Parser {
         };
         let mut scalar_array_shape = match &surface_base {
             ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                binding @ (crate::kernel::BindingName::Local(_)
+                binding @ (crate::kernel::BindingName::ReferenceCarrier(_)
+                | crate::kernel::BindingName::Local(_)
                 | crate::kernel::BindingName::Static(_)),
             )) => self
                 .local_bindings
@@ -12983,22 +12998,19 @@ impl Parser {
             }]);
         }
         // A struct reference written alone is the struct it refers to.
-        let carries_reference = |name: &str| {
-            syntax::referent_of_carrier(name)
-                .is_some_and(|referent| self.names.contains(NameKind::ReferenceParameter, referent))
+        let carries_reference = |binding: &crate::kernel::BindingName| {
+            binding.reference_referent().is_some_and(|referent| {
+                self.names
+                    .contains(NameKind::ReferenceParameter, referent.source_name())
+            })
         };
-        let names_reference = match &surface_base {
-            ContractExpression::Binding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                crate::kernel::BindingName::Named(name),
-            )) => carries_reference(name),
-            _ => false,
-        };
-        let names_scalar_referent = matches!(
-            &surface_base,
+        let names_reference = matches!(&surface_base,
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(binding))
+                if carries_reference(binding));
+        let names_scalar_referent = matches!(&surface_base,
             ContractExpression::ProgramExpression(ProgramExpression::Index(carrier, _))
-                if matches!(carrier.as_ref(), ProgramExpression::Variable(crate::kernel::BindingName::Named(name)) if carries_reference(name))
-        );
+                if matches!(carrier.as_ref(), ProgramExpression::Variable(binding) if carries_reference(binding)));
+
         if dereference && (names_reference || names_scalar_referent) {
             return Err(self.error(
                 "a reference parameter already names what it refers to; write it without `*`",
@@ -13675,6 +13687,9 @@ impl Parser {
     /// still reads the surrounding state.
     fn binding_struct_name(&self, binding: &crate::kernel::BindingName) -> Option<&String> {
         match binding {
+            crate::kernel::BindingName::ReferenceCarrier(referent) => {
+                self.binding_struct_name(referent)
+            }
             crate::kernel::BindingName::ContractException => None,
             crate::kernel::BindingName::Generated(id) => match self.let_operands.types.get(id) {
                 Some(ClickType::CObjectPointer { struct_name, .. }) => Some(struct_name),
@@ -13707,6 +13722,7 @@ impl Parser {
     }
     fn binding_is_aggregate(&self, binding: &crate::kernel::BindingName) -> bool {
         match binding {
+            crate::kernel::BindingName::ReferenceCarrier(_) => false,
             crate::kernel::BindingName::ContractException
             | crate::kernel::BindingName::Generated(_) => false,
             crate::kernel::BindingName::ContractResult => {
@@ -13732,7 +13748,8 @@ impl Parser {
         crate::instrumentation::record_deterministic_work(1);
         match expression {
             ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                binding @ (crate::kernel::BindingName::Local(_)
+                binding @ (crate::kernel::BindingName::ReferenceCarrier(_)
+                | crate::kernel::BindingName::Local(_)
                 | crate::kernel::BindingName::Static(_)),
             )) => self.binding_struct_name(binding).cloned(),
             ContractExpression::CUnary {
@@ -14389,11 +14406,11 @@ impl Parser {
             || (self.current_reference_result && name == "result")
     }
 
-    fn reference_binding_carrier(&self, name: &str) -> String {
+    fn reference_binding_carrier(&self, name: &str) -> crate::kernel::BindingName {
         if self.current_reference_result && name == "result" {
-            "result".to_string()
+            "result".into()
         } else {
-            syntax::reference_carrier_name(name)
+            crate::kernel::BindingName::reference_carrier(name)
         }
     }
 
@@ -14439,7 +14456,7 @@ impl Parser {
         {
             let name = name.clone();
             let carrier = self.reference_binding_carrier(&name);
-            let is_struct = self.names.struct_params.contains_key(&carrier);
+            let is_struct = self.names.struct_params.contains_key(carrier.source_name());
             if is_struct && !matches!(self.peek(), Some(Token::Arrow | Token::Dot)) {
                 return Err(self.error(format!(
                     "`{name}` is a struct reference; name a field as `{name}.field`, or its address as `&{name}`"
@@ -14481,7 +14498,8 @@ impl Parser {
         let mut struct_name = match &expression {
             ContractExpression::Field { .. } => self.contract_expression_struct_name(&expression),
             ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                binding @ (crate::kernel::BindingName::Local(_)
+                binding @ (crate::kernel::BindingName::ReferenceCarrier(_)
+                | crate::kernel::BindingName::Local(_)
                 | crate::kernel::BindingName::Static(_)),
             )) => self.binding_struct_name(binding).cloned(),
             ContractExpression::CUnary {
@@ -14525,7 +14543,8 @@ impl Parser {
         let mut union_name: Option<String> = None;
         let mut struct_array_element_width = match &expression {
             ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                binding @ (crate::kernel::BindingName::Local(_)
+                binding @ (crate::kernel::BindingName::ReferenceCarrier(_)
+                | crate::kernel::BindingName::Local(_)
                 | crate::kernel::BindingName::Static(_)),
             )) => self
                 .local_bindings
@@ -14557,7 +14576,8 @@ impl Parser {
         };
         let mut struct_array_shape = match &expression {
             ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                binding @ (crate::kernel::BindingName::Local(_)
+                binding @ (crate::kernel::BindingName::ReferenceCarrier(_)
+                | crate::kernel::BindingName::Local(_)
                 | crate::kernel::BindingName::Static(_)),
             )) => self
                 .local_bindings
@@ -14572,7 +14592,8 @@ impl Parser {
         };
         let mut scalar_array_shape = match &expression {
             ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                binding @ (crate::kernel::BindingName::Local(_)
+                binding @ (crate::kernel::BindingName::ReferenceCarrier(_)
+                | crate::kernel::BindingName::Local(_)
                 | crate::kernel::BindingName::Static(_)),
             )) => self
                 .local_bindings
@@ -16935,7 +16956,7 @@ impl Parser {
             }
             Some(Token::Ident(name)) if self.is_reference_binding(&name) => {
                 let carrier = self.reference_binding_carrier(&name);
-                let is_struct = self.names.struct_params.contains_key(&carrier);
+                let is_struct = self.names.struct_params.contains_key(carrier.source_name());
                 let carrier = CExpression::Variable((carrier).into());
                 Ok(if is_struct {
                     carrier
@@ -18124,6 +18145,91 @@ mod tactic_classification_tests {
     use super::*;
     use crate::surface::proof_certificate::certificate_step_class;
 
+    #[test]
+    fn logical_bindings_use_let_and_round_trip() {
+        for source in [
+            "intro();",
+            "let x = intro();",
+            "let binder(7) = intro();",
+            "let ih = induct(n);",
+        ] {
+            let tactic = Parser::new(source).unwrap().parse_proof_tactic().unwrap();
+            let printed = super::super::printing::format_partial_tactic_sequence(
+                std::slice::from_ref(&tactic),
+            );
+            assert_eq!(printed, source);
+            Parser::new(&printed).unwrap().parse_proof_tactic().unwrap();
+            match (source, &tactic) {
+                ("intro();", ProofTactic::Intro) => {}
+                ("let x = intro();", ProofTactic::IntroAs(name)) => assert_eq!(name, "x"),
+                ("let binder(7) = intro();", ProofTactic::IntroBinder(_)) => {}
+                (
+                    "let ih = induct(n);",
+                    ProofTactic::Induct {
+                        parameter,
+                        hypothesis,
+                    },
+                ) => {
+                    assert_eq!(parameter, "n");
+                    assert_eq!(hypothesis, "ih");
+                }
+                _ => panic!("unexpected tactic: {source}"),
+            }
+        }
+        for source in [
+            "intro() as x;",
+            "intro() as binder(7);",
+            "induct(n) as ih;",
+            "let x = intro(3);",
+            "let ih = induct(n, m);",
+            "let ih = induct();",
+            "let { x: y } = intro();",
+            "let { x: y } = induct(n);",
+            "let x = intro()",
+            "let ih = induct(n)",
+        ] {
+            assert!(
+                Parser::new(source).unwrap().parse_proof_tactic().is_err(),
+                "{source}"
+            );
+        }
+        assert!(matches!(
+            Parser::new("induct(xs) as ih { List::Nil => {} }")
+                .unwrap()
+                .parse_proof_tactic()
+                .unwrap(),
+            ProofTactic::StructuralInduct { .. }
+        ));
+    }
+
+    #[test]
+    fn witness_accepts_only_nonempty_positional_values() {
+        for (source, count) in [
+            ("witness(3);", 1),
+            ("witness(3, 4);", 2),
+            ("witness(3, 4,);", 2),
+        ] {
+            let ProofTactic::Witness(witness) =
+                Parser::new(source).unwrap().parse_proof_tactic().unwrap()
+            else {
+                panic!("expected witness: {source}");
+            };
+            assert_eq!(witness.values().count(), count);
+        }
+        for source in [
+            "witness();",
+            "witness { x: 3 };",
+            "witness(x: 3);",
+            "witness(3,,4);",
+            "witness(3)",
+        ] {
+            assert!(
+                Parser::new(source).unwrap().parse_proof_tactic().is_err(),
+                "{source}"
+            );
+        }
+    }
+
     /// One written instance of every public tactic form. The parser is given
     /// a contract `Contract`, a callee `f`, and a user tactic `name`, each
     /// declaring one supplied binder `cell`, and a held instance `c`.
@@ -18154,7 +18260,7 @@ mod tactic_classification_tests {
         ("gather-resource", "gather(reference(p));"),
         ("scatter-resource", "scatter(reference(p));"),
         ("construct-resource", "construct(reference(p));"),
-        ("induct", "induct(n) as ih;"),
+        ("induct", "let ih = induct(n);"),
         (
             "structural-induct",
             "induct(xs) as ih { List::Nil => { normalize(); } }",
@@ -18196,14 +18302,14 @@ mod tactic_classification_tests {
             "loop { invariant x == 1; initialize by { normalize(); } preserve by { normalize(); } }",
         ),
         ("observe-resource", "observe(reference(p));"),
-        ("witness", "witness { x: 1 };"),
+        ("witness", "witness(1);"),
         ("obtain", "obtain (x: Integer) { x == x }"),
         ("known", "known();"),
         ("normalize", "normalize();"),
         ("normalize-using", "normalize() using { x == 1; };"),
         ("preserve", "preserve(memory(*p), statement(0));"),
         ("intro", "intro();"),
-        ("intro-as", "intro() as name;"),
+        ("intro-as", "let name = intro();"),
         ("enumerate", "enumerate();"),
         ("contradiction", "contradiction(x == 1);"),
         ("rewrite", "rewrite(x, 1);"),
@@ -18465,7 +18571,8 @@ mod preserve_syntax_tests {
             let expected = parser(evidence).parse_proposition().unwrap();
             assert_eq!(tactic, ProofTactic::Preserve(expected));
             let printed =
-                crate::surface::printing::format_proof_tactics(&[tactic.clone()]).unwrap();
+                crate::surface::printing::format_proof_tactics(std::slice::from_ref(&tactic))
+                    .unwrap();
             assert!(!printed.contains("preserve(separate("), "{printed}");
             let reparsed = parser(&printed).parse_proof_clause_or_default().unwrap();
             let SourceProof::Script(reparsed) = reparsed else {

@@ -16,7 +16,7 @@ function countdown(n: int32) -> int32
 theorem countdown_is_zero(n: int32) {
     requires n >= 0;
     ensures countdown(n) == 0 by {
-        induct(n) as ih;
+        let ih = induct(n);
         if n <= 0 {
             unfold(countdown(n));
             normalize() using { n <= 0; };

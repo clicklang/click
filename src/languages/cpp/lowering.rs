@@ -27,8 +27,8 @@ use crate::kernel::{
     program_copy_aggregate, program_declare, program_declare_aggregate,
     program_declare_initialized, program_declare_with_all_qualifiers,
     program_end_automatic_lifetimes, program_function, program_if, program_parameter,
-    program_return, program_seq, program_skip, program_try_catch_int32,
-    program_try_catch_int32_with_cleanup, program_typed_store,
+    program_return, program_seq, program_skip, program_try_catch_int32, program_typed_store,
+    program_unwind_cleanup,
 };
 
 /// One kernel function together with the immutable semantic artifact that
@@ -237,14 +237,16 @@ fn lower_function(
             if is_receiver(index, parameter) {
                 let mut receiver = parameter.clone();
                 receiver.name = RECEIVER_NAME.to_string();
-                return lower_parameter(&receiver, layouts);
+                return lower_parameter(&receiver, layouts, RECEIVER_NAME.into());
             }
             if !is_reference_parameter(index, parameter) {
-                return lower_parameter(parameter, layouts);
+                return lower_parameter(parameter, layouts, parameter.name.clone().into());
             }
-            let mut carrier = parameter.clone();
-            carrier.name = reference_carrier_name(&parameter.name);
-            lower_parameter(&carrier, layouts)
+            lower_parameter(
+                parameter,
+                layouts,
+                BindingName::reference_carrier(parameter.name.as_str()),
+            )
         })
         .collect::<Result<Vec<_>, String>>()?;
     let mut context = LoweringContext {
@@ -323,8 +325,6 @@ fn lower_function(
     Ok(function)
 }
 
-pub(super) use crate::languages::c::syntax::reference_carrier_name;
-
 /// The name a sidecar gives a member function's receiver: the pointer
 /// `this`, as in C++.
 pub(super) const RECEIVER_NAME: &str = "this";
@@ -351,6 +351,7 @@ pub(super) fn is_reference_parameter(index: usize, parameter: &CppPlace) -> bool
 fn lower_parameter(
     parameter: &CppPlace,
     layouts: &BTreeMap<String, crate::languages::interface::RecordLayout>,
+    binding: BindingName,
 ) -> Result<crate::kernel::ProgramParameter, String> {
     match &parameter.value_type {
         CppType::Record {
@@ -362,32 +363,32 @@ fn lower_parameter(
                 .get(name)
                 .ok_or("C++ record parameter has no checked layout")?;
             Ok(crate::kernel::program_parameter_with_aggregate_layout(
-                parameter.name.clone(),
+                binding.clone(),
                 ProgramType::UInt8Pointer,
                 layout.to_kernel_aggregate_layout(),
             ))
         }
         CppType::Integer { .. } | CppType::Enumeration { .. } | CppType::Parameter { .. } => {
             Ok(program_parameter(
-                parameter.name.clone(),
+                binding.clone(),
                 cpp_scalar_kernel_type(&parameter.value_type)?,
             ))
         }
         CppType::Boolean {
             bits: 8,
             is_const: false,
-        } => Ok(program_parameter(parameter.name.clone(), ProgramType::Bool)),
+        } => Ok(program_parameter(binding.clone(), ProgramType::Bool)),
         CppType::LvalueReference { .. }
             if scalar::reference_element(&parameter.value_type).is_some() =>
         {
             let element = scalar::reference_element(&parameter.value_type).unwrap();
             Ok(
-                program_parameter(parameter.name.clone(), element_pointer_type(element)?)
+                program_parameter(binding.clone(), element_pointer_type(element)?)
                     .with_pointee_constant(element.is_const),
             )
         }
         CppType::LvalueReference { pointee } if is_const_int64(pointee) => Ok(program_parameter(
-            parameter.name.clone(),
+            binding.clone(),
             ProgramType::Int64Pointer,
         )
         .with_pointee_constant(true)),
@@ -395,7 +396,7 @@ fn lower_parameter(
             if matches!(pointee.as_ref(), CppType::Record { .. }) =>
         {
             Ok(
-                program_parameter(parameter.name.clone(), ProgramType::Int32Pointer)
+                program_parameter(binding.clone(), ProgramType::Int32Pointer)
                     .with_pointee_constant(matches!(
                         pointee.as_ref(),
                         CppType::Record { is_const: true, .. }
@@ -403,17 +404,17 @@ fn lower_parameter(
             )
         }
         CppType::FunctionPointer { .. } => Ok(program_parameter(
-            parameter.name.clone(),
+            binding.clone(),
             super::interface::function_pointer_signature(&parameter.value_type)?
                 .pointer_type()
                 .to_kernel_type(),
         )),
         pointer @ CppType::Pointer { .. } if scalar::record_pointee(pointer).is_some() => Ok(
-            program_parameter(parameter.name.clone(), ProgramType::Int32Pointer),
+            program_parameter(binding.clone(), ProgramType::Int32Pointer),
         ),
         CppType::Pointer { pointee } if Scalar::pointer_element(pointee, true).is_some() => {
             Ok(program_parameter(
-                parameter.name.clone(),
+                binding.clone(),
                 Scalar::pointer_element(pointee, true)
                     .unwrap()
                     .kind
@@ -459,7 +460,7 @@ struct ScalarEvaluation {
 
 struct LoweringContext<'a> {
     /// Declarations of the reference parameters, whose carrying pointers are
-    /// named by [`reference_carrier_name`].
+    /// represented by a typed reference-carrier binding.
     reference_parameters: std::collections::BTreeSet<&'a str>,
     /// The declaration of the receiver, which is named [`RECEIVER_NAME`].
     receiver: Option<&'a str>,
@@ -829,7 +830,7 @@ impl LoweringContext<'_> {
                 )),
                 (CppType::LvalueReference { .. }, CppInitializer::Value { value }) => {
                     let address = self.lower_expression(value)?;
-                    let carrier = reference_carrier_name(&local.name);
+                    let carrier = BindingName::reference_carrier(local.name.as_str());
                     let (pointer_type, constant) = match &local.value_type {
                         CppType::LvalueReference { pointee }
                             if matches!(pointee.as_ref(), CppType::Record { .. }) =>
@@ -895,9 +896,9 @@ impl LoweringContext<'_> {
                     // A reference bound to a call's result is carried by a
                     // pointer named for the address it holds.
                     let name = if is_reference_local(local) {
-                        reference_carrier_name(&local.name)
+                        BindingName::reference_carrier(local.name.as_str())
                     } else {
-                        local.name.clone()
+                        local.name.clone().into()
                     };
                     let evaluation = self.normalize_scalar_into(
                         ScalarInput::Call {
@@ -909,7 +910,7 @@ impl LoweringContext<'_> {
                         (conversions.is_empty()
                             && !Scalar::of(&local.value_type)
                                 .is_some_and(|scalar| scalar.is_const))
-                        .then_some(name.as_str()),
+                        .then_some(name.clone()),
                     )?;
                     let constant =
                         Scalar::of(&local.value_type).is_some_and(|scalar| scalar.is_const);
@@ -1121,7 +1122,7 @@ impl LoweringContext<'_> {
                 let mut result = program_seq(
                     program_declare(object.clone(), ProgramType::Int32Pointer),
                     ProgramStatement::HeapAllocate {
-                        target: (object.clone()).into(),
+                        target: (object.clone()),
                         bytes: crate::kernel::program_expression::int32_literal(source.size_bytes),
                         zeroed: false,
                         object_type: class,
@@ -1345,9 +1346,7 @@ impl LoweringContext<'_> {
                 } else {
                     program_seq(
                         operation,
-                        program_end_automatic_lifetimes(
-                            temporaries.into_iter().map(Into::into).collect(),
-                        ),
+                        program_end_automatic_lifetimes(temporaries.into_iter().collect()),
                     )
                 };
                 Ok(evaluate_then(prefix, operation))
@@ -1409,18 +1408,7 @@ impl LoweringContext<'_> {
         can_throw: bool,
     ) -> Result<ProgramStatement, String> {
         if can_throw && self.unwind_cleanups && !unwind_cleanups.is_empty() {
-            let binding = self.fresh_temporary(ProgramType::Int32)?;
-            let mut handler = program_skip();
-            for cleanup in unwind_cleanups {
-                handler = program_seq(handler, self.lower_cleanup(cleanup)?);
-            }
-            handler = program_seq(
-                handler,
-                ProgramStatement::Throw(crate::kernel::program_expression::variable(
-                    binding.clone(),
-                )),
-            );
-            evaluation = program_try_catch_int32_with_cleanup(evaluation, binding, handler, true);
+            evaluation = program_unwind_cleanup(evaluation, self.lower_cleanups(unwind_cleanups)?);
         }
         let mut result = program_seq(program_declare(capture.clone(), value_type), evaluation);
         for cleanup in cleanups {
@@ -1496,7 +1484,7 @@ impl LoweringContext<'_> {
                                     crate::kernel::program_expression::variable(temporary.clone()),
                                     layout,
                                 ),
-                                program_end_automatic_lifetimes(vec![(temporary).into()]),
+                                program_end_automatic_lifetimes(vec![(temporary)]),
                             ),
                         ),
                     ),
@@ -1733,26 +1721,30 @@ impl LoweringContext<'_> {
         }
     }
 
+    /// A statement that may exit by throwing, with the destructors of the
+    /// objects live around it to run if it does.
     fn lower_throwing_statement<'p>(
         &mut self,
         statement: ProgramStatement,
-        mut cleanups: impl Iterator<Item = &'p CppCleanup>,
+        cleanups: impl Iterator<Item = &'p CppCleanup>,
     ) -> Result<ProgramStatement, String> {
-        let Some(first) = cleanups.next() else {
+        let cleanups = cleanups.collect::<Vec<_>>();
+        if cleanups.is_empty() {
             return Ok(statement);
-        };
-        let binding = self.fresh_temporary(ProgramType::Int32)?;
-        let mut handler = program_seq(program_skip(), self.lower_cleanup(first)?);
-        for cleanup in cleanups {
-            handler = program_seq(handler, self.lower_cleanup(cleanup)?);
         }
-        handler = program_seq(
-            handler,
-            ProgramStatement::Throw(crate::kernel::program_expression::variable(binding.clone())),
-        );
-        Ok(program_try_catch_int32_with_cleanup(
-            statement, binding, handler, true,
+        Ok(program_unwind_cleanup(
+            statement,
+            self.lower_cleanups(&cleanups)?,
         ))
+    }
+
+    /// The destructors to run, in order, as one statement.
+    fn lower_cleanups(&mut self, cleanups: &[&CppCleanup]) -> Result<ProgramStatement, String> {
+        let mut lowered = program_skip();
+        for cleanup in cleanups {
+            lowered = program_seq(lowered, self.lower_cleanup(cleanup)?);
+        }
+        Ok(lowered)
     }
 
     /// Normalize evaluation into explicit statements followed by a pure value.
@@ -1765,7 +1757,7 @@ impl LoweringContext<'_> {
     fn normalize_scalar_into(
         &mut self,
         input: ScalarInput<'_>,
-        destination: Option<&str>,
+        destination: Option<BindingName>,
     ) -> Result<ScalarEvaluation, String> {
         match input {
             ScalarInput::Value(value) if expression_contains_observer(value) => {
@@ -2794,16 +2786,16 @@ impl LoweringContext<'_> {
 
     /// The kernel variable a place reference reads: the place's own name,
     /// or the carrier of a reference parameter.
-    fn variable_name(&self, place: &CppPlaceReference) -> String {
+    fn variable_name(&self, place: &CppPlaceReference) -> BindingName {
         if self.receiver == Some(place.declaration_id.as_str()) {
-            RECEIVER_NAME.to_string()
+            RECEIVER_NAME.into()
         } else if self
             .reference_parameters
             .contains(place.declaration_id.as_str())
         {
-            reference_carrier_name(&place.name)
+            BindingName::reference_carrier(place.name.as_str())
         } else {
-            place.name.clone()
+            place.name.clone().into()
         }
     }
 

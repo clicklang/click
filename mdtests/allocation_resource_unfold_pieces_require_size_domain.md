@@ -22,5 +22,5 @@ void pack(int32* p) {
 ```
 
 ```expect
-fail: not established: `0 == 1`
+fail: not established: `false`
 ```

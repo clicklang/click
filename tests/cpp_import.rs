@@ -2726,11 +2726,9 @@ fn scalar_int32_profile_emits_function_scope_cleanup_edges_for_escaping_throws()
         edges: &mut Vec<(&'a ProgramStatement, &'a ProgramStatement)>,
     ) {
         match statement {
-            ProgramStatement::TryCatchInt32 {
-                try_body,
-                handler,
-                cleanup_unwind: true,
-                ..
+            ProgramStatement::UnwindCleanup {
+                body: try_body,
+                cleanup: handler,
             } => {
                 edges.push((try_body, handler));
                 collect_unwind_edges(try_body, edges);
@@ -2766,12 +2764,10 @@ fn scalar_int32_profile_emits_function_scope_cleanup_edges_for_escaping_throws()
         2,
         "both exceptional operations need cleanup edges"
     );
-    for (_, handler) in &edges {
+    for (_, cleanup) in &edges {
         assert!(
-            matches!(handler, ProgramStatement::Seq(sequence)
-                if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Restore::~Restore")
-                    && matches!(rethrow.as_ref(), ProgramStatement::Throw(_)) }),
-            "each escaping edge must run the live destructor before rethrowing"
+            contains_call(cleanup, "Restore::~Restore"),
+            "each escaping edge must run the live destructor before the exception continues"
         );
     }
     assert!(
@@ -2834,17 +2830,20 @@ fn scalar_int32_profile_rejects_hostile_cleanup_proofs() {
             "a proof cannot omit a required destructor",
         ),
         // Each `step()` runs the next lowered statement, so a destructor runs
-        // once however many steps a proof writes: once both destructors and
-        // the return have run, no step is left. One extra step only moves
-        // the `have` past the first guard's destructor, where it still holds
-        // and now verifies, since the caller's `second_cell` is kept
-        // across that call although its value is not cached
-        // (`mdtests/call_keeps_an_uncached_flat_field_beside_folded_state.md`).
+        // once however many steps a proof writes. After the four written
+        // steps, the returning path has `second`'s lifetime end, `~first`,
+        // `first`'s lifetime end, and the return left: three more steps are
+        // a valid proof (the `have` still holds past `~first`), and the
+        // eighth reaches function exit. A ninth step has no statement to
+        // run, rather than running a destructor again, and is refused.
         (
             "duplicated_cleanup",
             sidecar_source.replacen(
                 "            step();\n            step();\n            step();\n            step();\n            have second_cell == old(second_cell);",
-                "            step();\n            step();\n            step();\n            step();\n            step();\n            step();\n            step();\n            have second_cell == old(second_cell);",
+                &format!(
+                    "{}            have second_cell == old(second_cell);",
+                    "            step();\n".repeat(9)
+                ),
                 1,
             ),
             "a proof cannot execute a destructor twice",
@@ -6187,7 +6186,11 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
     assert_eq!(function.name(), "increment");
     assert_eq!(function.return_type(), ProgramType::Int32);
     assert_eq!(function.parameters().len(), 1);
-    assert_eq!(function.parameters()[0].name(), "&value");
+    assert_eq!(function.parameters()[0].name(), "value");
+    assert_eq!(
+        function.parameters()[0].binding_name(),
+        &click::kernel::BindingName::reference_carrier("value")
+    );
     assert_eq!(
         function.parameters()[0].program_type(),
         ProgramType::Int32Pointer
@@ -6204,7 +6207,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
                     volatile: false,
                     pointee_constant: false,
                     ..
-                } if pointer.is_named("&value")
+                } if pointer.reference_referent().is_some_and(|name| name.is_named("value"))
                     && matches!(
                         left.as_ref(),
                         ProgramExpression::TypedLoad {
@@ -6212,7 +6215,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
                             value_type: ProgramType::Int32,
                             volatile: false,
                             ..
-                        } if matches!(pointer.as_ref(), ProgramExpression::Variable(name) if name.is_named("&value"))
+                        } if matches!(pointer.as_ref(), ProgramExpression::Variable(name) if name.reference_referent().is_some_and(|name| name.is_named("value")))
                     )
                     && matches!(right.as_ref(), ProgramExpression::Value(value) if value == &int32(1))
             )
@@ -6223,7 +6226,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
                     value_type: ProgramType::Int32,
                     volatile: false,
                     ..
-                }) if matches!(pointer.as_ref(), ProgramExpression::Variable(name) if name.is_named("&value"))
+                }) if matches!(pointer.as_ref(), ProgramExpression::Variable(name) if name.reference_referent().is_some_and(|name| name.is_named("value")))
             ) }
     ));
 
@@ -9373,12 +9376,8 @@ fn direct_return_calls_keep_guarded_try_returns_unsupported_and_emit_uncaught_cl
     let lowered = lower_import(&load_import(&escaping.config()).unwrap()).unwrap();
     fn has_unwind_cleanup(statement: &ProgramStatement) -> bool {
         match statement {
-            ProgramStatement::TryCatchInt32 {
-                handler,
-                cleanup_unwind: true,
-                ..
-            } => {
-                matches!(handler.as_ref(), ProgramStatement::Seq(sequence) if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Restore::~Restore") && matches!(rethrow.as_ref(), ProgramStatement::Throw(_)) })
+            ProgramStatement::UnwindCleanup { cleanup, .. } => {
+                contains_call(cleanup, "Restore::~Restore")
             }
             ProgramStatement::Seq(statements) => statements
                 .iter()
@@ -14847,14 +14846,8 @@ int choose(int* slot, bool fail) { Guard guard(slot); if (predicate(fail)) { *sl
             ProgramStatement::Seq(statements) => statements
                 .iter()
                 .any(|statement| guarded_condition(statement)),
-            ProgramStatement::TryCatchInt32 {
-                try_body,
-                handler,
-                cleanup_unwind: true,
-                ..
-            } => {
-                contains_call(try_body, "predicate")
-                    && matches!(handler.as_ref(), ProgramStatement::Seq(sequence) if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), ProgramStatement::Throw(_)) })
+            ProgramStatement::UnwindCleanup { body, cleanup } => {
+                contains_call(body, "predicate") && contains_call(cleanup, "Guard::~Guard")
             }
             _ => false,
         }
@@ -15558,15 +15551,8 @@ fn converted_call_initializers_emit_active_guard_cleanup_before_rethrow() {
             ProgramStatement::Seq(statements) => {
                 statements.iter().any(|statement| has_cleanup(statement))
             }
-            ProgramStatement::TryCatchInt32 {
-                try_body,
-                handler,
-                cleanup_unwind: true,
-                ..
-            } => {
-                contains_call(try_body, "helper")
-                    && matches!(handler.as_ref(), ProgramStatement::Seq(sequence)
-                    if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), ProgramStatement::Throw(_)) })
+            ProgramStatement::UnwindCleanup { body, cleanup } => {
+                contains_call(body, "helper") && contains_call(cleanup, "Guard::~Guard")
             }
             _ => false,
         }
@@ -16020,15 +16006,8 @@ fn converted_return_calls_emit_active_object_cleanup_on_exception() {
             ProgramStatement::Seq(statements) => {
                 statements.iter().any(|statement| has_cleanup(statement))
             }
-            ProgramStatement::TryCatchInt32 {
-                try_body,
-                handler,
-                cleanup_unwind: true,
-                ..
-            } => {
-                contains_call(try_body, "helper")
-                    && matches!(handler.as_ref(), ProgramStatement::Seq(sequence)
-                    if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), ProgramStatement::Throw(_)) })
+            ProgramStatement::UnwindCleanup { body, cleanup } => {
+                contains_call(body, "helper") && contains_call(cleanup, "Guard::~Guard")
             }
             _ => false,
         }
@@ -16268,19 +16247,36 @@ fn check_converted_wide_call_results(initializer: bool) {
                 assert!(error.message().len() < 8000);
             }
         }
-        for missing in [
-            format!("requires {lo} <= to_integer(value);"),
-            format!("requires to_integer(value) <= {hi};"),
+        // Each bound the narrowing needs is a requirement: without it the
+        // value may not fit the result type. An unsigned source's lower
+        // bound, `0 <= to_integer(value)`, is instead its type's own range,
+        // so the proof holds without that requirement.
+        let lower_is_the_type_range = source.starts_with('u');
+        for (missing, needed) in [
+            (
+                format!("requires {lo} <= to_integer(value);"),
+                !lower_is_the_type_range,
+            ),
+            (format!("requires to_integer(value) <= {hi};"), true),
         ] {
             let hostile = proof.replace(&missing, "");
             let path = project.directory.join("hostile.click");
             fs::write(&path, &hostile).unwrap();
-            let error = verify_program_prepared_project(
+            let verified = verify_program_prepared_project(
                 &read_click_project(&path, &hostile).unwrap(),
                 &import,
-            )
-            .unwrap_err();
-            assert!(error.message().len() < 8000);
+            );
+            if needed {
+                let error = verified.unwrap_err();
+                assert!(error.message().len() < 8000);
+            } else {
+                verified.unwrap_or_else(|error| {
+                    panic!(
+                        "{source} -> {result}: `{missing}` is the source type's range: {}",
+                        error.message()
+                    )
+                });
+            }
         }
     }
 }
@@ -20892,14 +20888,12 @@ fn check_noexcept_cleanup(profile: &str, declaration: &str, thrown: &str) {
     project.write_config_with_exception_behavior("probe", "cleanup.cpp", true, profile);
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let source = format!(
-        r#"verifying "cleanup.cpp";
-    Guard::Guard(int32* p) {{ owns this->slot; owns p[0]; ensures this->slot == p; ensures separate(memory(*this), memory(this->slot[0..1])); }}
-    Guard::~Guard() {{ requires separate(memory(*this), memory(this->slot[0..1])); views this->slot; owns this->slot[0]; ensures this->slot[0] == 9; }}
-    int32 fallible(bool fail) {{ requires fail == false; ensures result == 4; }}
-    int32 probe(int32* slot, bool fail) {{ requires fail == false; owns slot[0]; ensures slot[0] == 9; ensures result == 4; }}
-    "#
-    );
+    let source = r#"verifying "cleanup.cpp";
+    Guard::Guard(int32* p) { owns this->slot; owns p[0]; ensures this->slot == p; ensures separate(memory(*this), memory(this->slot[0..1])); }
+    Guard::~Guard() { requires separate(memory(*this), memory(this->slot[0..1])); views this->slot; owns this->slot[0]; ensures this->slot[0] == 9; }
+    int32 fallible(bool fail) { requires fail == false; ensures result == 4; }
+    int32 probe(int32* slot, bool fail) { requires fail == false; owns slot[0]; ensures slot[0] == 9; ensures result == 4; }
+    "#.to_string();
     click::surface::with_proof_trace("probe", || {
         check_noexcept_replay_all(&project, &import, &source)
     });

@@ -8746,6 +8746,10 @@ pub(super) fn statement_may_write_memory(
             .any(|statement| statement_may_write_memory(state, statement)),
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
+        }
+        | ProgramStatement::UnwindCleanup {
+            body: try_body,
+            cleanup: handler,
         } => {
             statement_may_write_memory(state, try_body)
                 || statement_may_write_memory(state, handler)
@@ -8844,8 +8848,12 @@ pub(super) fn collect_loop_modified_locals(
             ..
         } => {
             collect_loop_modified_locals(try_body, names);
-            names.insert(binding.clone().into());
+            names.insert(binding.clone());
             collect_loop_modified_locals(handler, names);
+        }
+        ProgramStatement::UnwindCleanup { body, cleanup } => {
+            collect_loop_modified_locals(body, names);
+            collect_loop_modified_locals(cleanup, names);
         }
         ProgramStatement::If {
             then_branch,
@@ -9096,6 +9104,10 @@ fn for_each_statement_expression<'a>(
         }
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
+        }
+        | ProgramStatement::UnwindCleanup {
+            body: try_body,
+            cleanup: handler,
         } => {
             for_each_statement_expression(try_body, visit);
             for_each_statement_expression(handler, visit);
@@ -9207,6 +9219,10 @@ pub(crate) fn collect_address_taken_locals(
         }
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
+        }
+        | ProgramStatement::UnwindCleanup {
+            body: try_body,
+            cleanup: handler,
         } => {
             collect_address_taken_locals(try_body, names);
             collect_address_taken_locals(handler, names);

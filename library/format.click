@@ -1,7 +1,7 @@
 import click::integer;
 
 // Decimal rendering as C's `printf` family writes an integer: the fewest
-// digits that spell it, most significant first, so zero is "0". A digit is
+// digits that write it, most significant first, so zero is "0". A digit is
 // its ASCII character, `'0'` through `'9'`. The C front end states each
 // `snprintf` call's output with these functions
 // (docs/reference/language/c.md#formatted-output).

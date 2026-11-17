@@ -100,7 +100,7 @@ at the same pointer.
 A body may name its parameters, its own `let`, fold and quantifier bindings,
 and other pure functions. It may not read a C object by name: a file-scope
 variable such as `counter`, or any object by its qualified `unit::counter`
-spelling, is refused:
+form, is refused:
 
 <!-- verified-example: mdtests/a_pure_function_reading_a_global_by_name_is_refused.md -->
 ```click
@@ -219,7 +219,7 @@ pure theorem when the proof needs the result at a smaller argument:
 theorem countdown_is_zero(n: int32) {
     requires n >= 0;
     ensures countdown(n) == 0 by {
-        induct(n) as ih;
+        let ih = induct(n);
         if n <= 0 {
             unfold(countdown(n));
             normalize() using { n <= 0; };
@@ -242,7 +242,7 @@ obligations at `n - 1` before `apply(ih(n - 1))` looks them up. They compare
 `to_integer(n - 1)`, the `int32` value the hypothesis is instantiated at, not
 the `Integer` difference that `0 <= n - 1` would state.
 
-`induct(n) as ih` is a simple tactic. It requires the current
+`let ih = induct(n)` is a simple tactic. It requires the current
 facts to prove `n >= 0`. Within the rest of that theorem proof, `ih(m)` states
 the same goal at any proved nonnegative `m < n`. The application also requires
 the theorem's declared requirements with `n` replaced by `m`; Click never

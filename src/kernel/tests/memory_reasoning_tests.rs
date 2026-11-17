@@ -7565,6 +7565,29 @@ fn a_cached_parameter_partition_does_not_hide_aliases_or_wide_cells() {
             .without_possible_aliasing_cells(&p, 4, &alias)
             .has_known_cell_at(&q)
     );
+    // A pair of explicit read equations connecting the selected parameter
+    // coordinates must still invalidate the other cell.
+    let read = MachineTerm::MemoryLoad(
+        ProgramPoint::at(&intern_memory(Memory::new())),
+        Box::new(Pointer::symbolic(Variable(990_003))),
+        LoadKind::Int32,
+    );
+    let read_alias = assumptions
+        .clone()
+        .assume_condition(
+            ConditionTerm::equal(MachineTerm::Variable(Variable(990_001)), read.clone()),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::equal(read, MachineTerm::Variable(Variable(990_002))),
+            true,
+        );
+    assert!(read_alias.parameter_store_partition(&p, 4).is_none());
+    assert!(
+        !memory
+            .without_possible_aliasing_cells(&p, 4, &read_alias)
+            .has_known_cell_at(&q)
+    );
     assert!(
         !memory
             .without_possible_aliasing_cells(&p, 4, &PureFactContext::new())

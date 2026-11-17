@@ -36,6 +36,7 @@ impl<'a> SpecNode<'a> {
         use SpecNode as N;
         match self {
             N::Proposition(proposition) => match proposition {
+                SpecProposition::Truth(_) => {}
                 SpecProposition::Comparison { left, right, .. } => {
                     visit(N::Expression(left));
                     visit(N::Expression(right));

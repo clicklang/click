@@ -670,6 +670,7 @@ impl ResourceContextIndex {
                 PointerBlock::Concrete(_)
                     | PointerBlock::StaticObject { .. }
                     | PointerBlock::AutomaticLocal { .. }
+                    | PointerBlock::ReferenceCarrier { .. }
             ) {
                 result.nonconcrete_memory_count += 1;
             }
@@ -995,6 +996,7 @@ impl ResourceContextIndex {
                 PointerBlock::Concrete(_)
                     | PointerBlock::StaticObject { .. }
                     | PointerBlock::AutomaticLocal { .. }
+                    | PointerBlock::ReferenceCarrier { .. }
             ) {
                 result.nonconcrete_memory_count -= 1;
             }
@@ -2301,35 +2303,29 @@ impl ResourceContext {
                 }
             }
         }
-        // Check the new authority against the withheld frame before publishing
-        // it. Applying an exchange must never duplicate or overlap ownership.
-        restored
-            .clone()
-            .try_compose_into_valid_context_delaying_normalization(
-                additions.iter().map(|(fact, _)| fact.clone()),
-                assumptions,
-            )
-            .ok()?;
-        for (fact, occurrence) in additions {
-            if restored
+        // A changed description still needs separation from the withheld frame.
+        // Construct that successor once, retaining the exit's occurrence IDs.
+        if additions.iter().any(|(_, occurrence)| {
+            restored
                 .storage
                 .entry_by_occurrence
-                .contains_key(&occurrence)
-            {
-                return None;
-            }
-            restored.insert_fact_with_support_occurrence_and_metadata_at(
-                fact,
-                None,
-                None,
-                None,
-                Some(occurrence),
-            );
-            if let Some(binding) = self.loan_dependency(occurrence) {
-                restored = restored.with_loan_dependency(occurrence, binding.clone());
-            }
+                .contains_key(occurrence)
+        }) {
+            return None;
         }
-        restored.advance_prepared_memory_equalities(assumptions);
+        let dependencies = additions
+            .iter()
+            .filter_map(|(_, occurrence)| {
+                self.loan_dependency(*occurrence)
+                    .map(|binding| (*occurrence, binding.clone()))
+            })
+            .collect::<Vec<_>>();
+        restored = restored
+            .compose_selected_occurrences(additions, assumptions)
+            .ok()?;
+        for (occurrence, binding) in dependencies {
+            restored = restored.with_loan_dependency(occurrence, binding);
+        }
         Some(restored)
     }
 
@@ -6306,17 +6302,123 @@ impl ResourceContext {
         if self.storage.facts.is_empty() {
             self.synchronize_memory_equalities(assumptions);
         }
-        let facts = facts.into_iter().collect::<Vec<_>>();
-        for fact in &facts {
-            self.clone()
-                .try_compose_into_valid_context_delaying_normalization(
-                    std::iter::once(fact.clone()),
-                    assumptions,
-                )?;
+        let frame = self.clone();
+        let mut context = self;
+        let mut inserted = Vec::new();
+        for fact in facts {
+            // This group's internal composition is already established. Only
+            // its boundary with the captured destination is a new obligation.
+            frame.admit_certified_memory_boundary(&fact, assumptions)?;
+            let entry = context.storage.next_entry_id;
+            context.insert_fact(fact.clone());
+            if let Some(error) = context.exclusive_validity_error(&fact) {
+                return Err(error);
+            }
+            inserted.push((fact, context.occurrence(entry)));
         }
-        let (context, inserted) = self.unchecked_with_facts_and_occurrences(facts);
         context.advance_prepared_memory_equalities(assumptions);
         Ok((context, inserted))
+    }
+
+    fn admit_certified_memory_boundary(
+        &self,
+        fact: &ResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Result<(), ResourceContextValidityError> {
+        // Absence of retained memory owners establishes this boundary even
+        // when the group's certified quantity or bounds are symbolic. Do not
+        // ask geometry discovery to prove separation from an empty partition.
+        if self.storage.index.owned_memory_by_block.is_empty() {
+            return Ok(());
+        }
+        match self.constant_owned_overlap(fact, assumptions) {
+            crate::kernel::primitives::memory_equality_index::ConstantOwnedOverlap::Clear => {}
+            crate::kernel::primitives::memory_equality_index::ConstantOwnedOverlap::Overlap(
+                entry,
+            ) => {
+                return Err(
+                    ResourceContextValidityError::OverlappingOwnedMemoryResources {
+                        left: self
+                            .fact(entry)
+                            .memory_own_range()
+                            .expect("indexed owner")
+                            .clone(),
+                        right: fact.memory_own_range().expect("queried owner").clone(),
+                    },
+                );
+            }
+            crate::kernel::primitives::memory_equality_index::ConstantOwnedOverlap::Unsupported => {
+                if let Some((error, _)) = self.legacy_memory_boundary_conflict(
+                    fact,
+                    self.storage.next_entry_id,
+                    assumptions,
+                ) {
+                    return Err(error);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Join a constructed output partition with today's frame, preserving
+    /// its occurrence identities, dependencies and cached projections. Only
+    /// the boundary with that frame needs memory admission.
+    pub(crate) fn compose_checked_outputs(
+        mut self,
+        outputs: &Self,
+        assumptions: &PureFactContext,
+    ) -> Result<Self, ResourceContextValidityError> {
+        if self.storage.facts.is_empty() {
+            self.synchronize_memory_equalities(assumptions);
+        }
+        let frame = self.clone();
+        for (entry, fact) in outputs.storage.facts.iter() {
+            crate::instrumentation::record_deterministic_work(1);
+            frame.admit_certified_memory_boundary(fact, assumptions)?;
+            let occurrence = outputs.occurrence(*entry);
+            if self.storage.entry_by_occurrence.contains_key(&occurrence) {
+                return Err(ResourceContextValidityError::DuplicateOwnedResourceFact(
+                    fact.clone(),
+                ));
+            }
+            if let Resource::Instance(instance) = fact.resource() {
+                self.record_instance_consumption(
+                    instance.identity(),
+                    outputs.instance_consumption(instance.identity()).cloned(),
+                );
+            }
+            self.insert_fact_with_support_occurrence_and_metadata_at(
+                fact.clone(),
+                outputs.storage.supported_by.get(entry).cloned(),
+                outputs
+                    .storage
+                    .support_occurrence_by_projection
+                    .get(entry)
+                    .copied(),
+                outputs
+                    .storage
+                    .support_metadata_by_projection
+                    .get(&occurrence)
+                    .cloned(),
+                Some(occurrence),
+            );
+            if let Some(error) = self.exclusive_validity_error(fact) {
+                return Err(error);
+            }
+            if let Some(binding) = outputs.loan_dependency(occurrence) {
+                self = self.with_loan_dependency(occurrence, binding.clone());
+            }
+            if let Some(expansion) = outputs
+                .storage
+                .expansions_by_support_occurrence
+                .get(&occurrence)
+            {
+                self =
+                    self.with_cached_supported_expansion_arc(occurrence, fact, expansion.clone());
+            }
+        }
+        self.advance_prepared_memory_equalities(assumptions);
+        Ok(self)
     }
 
     /// The held facts' combined written-syntax ceiling, cached on the

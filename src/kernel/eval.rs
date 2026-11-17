@@ -35,21 +35,22 @@ pub(crate) use undefined_site::{
 /// refusing.
 fn volatile_access_fact(
     budget: &mut ExecutionBudget,
-    write: bool,
+    kind: VolatileAccessKind,
     pointer: Pointer,
     value_type: ProgramType,
     value: ProgramValue,
 ) -> ExecutionResult<ExecutionPureFact> {
-    let event_id = budget.allocate_kernel_variable()?.0;
-    let operation = if write { "write" } else { "read" };
-    let pointer_type = value_type.pointer_to().unwrap_or(ProgramType::UInt8Pointer);
-    Ok(ExecutionPureFact::certified(Proposition::Predicate {
-        name: format!("__click_volatile_{operation}_{event_id}"),
-        arguments: vec![
-            Term::ProgramValue(ProgramValue::typed_pointer(pointer, pointer_type)),
-            Term::ProgramValue(value),
-        ],
-    }))
+    crate::instrumentation::record_deterministic_work(1);
+    let id = VolatileEventId(budget.allocate_kernel_variable()?.0);
+    Ok(ExecutionPureFact::certified(Proposition::VolatileAccess(
+        std::sync::Arc::new(VolatileAccess {
+            id,
+            kind,
+            pointer,
+            value_type,
+            value,
+        }),
+    )))
 }
 
 #[cfg(test)]
@@ -102,6 +103,7 @@ pub(crate) use memory_loads::recorded_load_access_width;
 pub(crate) use memory_loads::registered_load_bytes_for_variable;
 pub(crate) use memory_loads::registered_load_for_variable;
 pub(crate) use memory_loads::registered_load_origin_for_variable;
+pub(in crate::kernel) use memory_loads::select_graph_scalar_reads;
 pub(in crate::kernel) use memory_loads::symbolic_load_value_unrecorded;
 pub(in crate::kernel) use memory_loads::term_mentions_a_memory_load;
 pub(crate) use memory_loads::terms_have_same_canonical_form;
@@ -162,3 +164,6 @@ pub(crate) use memory_loads::{
 pub(crate) use memory_loads::loaded_pointer_stored_block;
 
 pub(in crate::kernel) type ExecutionValuePath = ExpressionPath<ExecutionValue>;
+
+#[cfg(test)]
+mod volatile_access_tests;

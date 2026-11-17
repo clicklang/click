@@ -195,12 +195,12 @@ excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 18 | 35 |
-| `examples/` | 21 | 160 |
+| `mdtests/` | 15 | 31 |
+| `examples/` | 18 | 111 |
 | `library/` | 0 | 0 |
-| Total | 39 | 195 |
+| Total | 33 | 142 |
 
-The 11 mdtests with failure expectations still require migration while retaining
+The 9 mdtests with failure expectations still require migration while retaining
 their semantic refusals. Positive fixtures also supply exact input text
 to expansion/mutation tests; migrate those inputs together with their tests,
 rather than replacing a smart test input with an already-expanded proof. Positive fixtures also need full-file verification:
@@ -430,10 +430,15 @@ well as retained same-block owners and both alias shapes at 4/16/64.
 Iterated `take`/`scatter` now construct their exposed ownership from the checked
 hole/guard exchange without admission or block normalization; their exposure
 regression grows retained owners and aliases and retains occurrence support.
-Scatter installation is measured separately from its existing guard preparation,
-whose alias growth remains open; this is not a whole-scatter bound.
-Call escrow recovery, suspended/worker recovery, and loop-frame exchange still
-need producer-owned evidence against their actual destination frames. See the
+Scatter guard preparation now selects an indexed whole-range equality source
+without enumerating universals or replaying its conclusion. Its regression
+bounds preparation as well as installation while growing aliases, owners and
+same-cell premises with other bounds. Call recovery constructs directly in
+the return residual and carries recovered hold occurrence IDs to publication;
+worker completion retains its checked output group and support metadata, and
+loop-frame exchange retains its admitted successor with the exit identities.
+These constructors still establish missing relationships against their actual
+destination frames; unsupported memory geometry retains compatibility discovery. See the
 caller audit in [verification efficiency](../docs/internals/verification-efficiency.md#iterated-exposure-and-the-remaining-callers).
 
 Hold one inserted owner and one relevant neighbor fixed. Independently grow

@@ -1,8 +1,7 @@
-# intro as names the introduced variable
+# Named intro names the introduced variable
 
 Bare `intro()` introduces a universal's variable under the name its
-quantifier wrote, which may be in a contract far from the proof. `intro() as
-name` lets the proof choose: the variable is `row` from here on, in the
+quantifier wrote, which may be in a contract far from the proof. `let name = intro()` lets the proof choose: the variable is `row` from here on, in the
 remaining goal and in every later step, for machine integer, mathematical
 `Integer` and pointer binders alike, and for nested quantifiers.
 
@@ -10,7 +9,7 @@ remaining goal and in every later step, for machine integer, mathematical
 theorem int32_binder(n: int32) {
     requires forall (k: int32) { to_integer(k + 0) == to_integer(k) };
     ensures forall (j: int32) { 0 <= j implies to_integer(j + 0) == to_integer(j) } by {
-        intro() as row;
+        let row = intro();
         intro();
         instantiate(forall (k: int32) { to_integer(k + 0) == to_integer(k) }, row);
         known();
@@ -19,7 +18,7 @@ theorem int32_binder(n: int32) {
 
 theorem integer_binder() {
     ensures forall (m: Integer) { m + 0 == m } by {
-        intro() as value;
+        let value = intro();
         have value + 0 == value by solve() using {};
         known();
     }
@@ -27,7 +26,7 @@ theorem integer_binder() {
 
 theorem pointer_binder(q: int32*) {
     ensures forall (p: int32*) { p == p } by {
-        intro() as cell;
+        let cell = intro();
         have cell == cell by normalize();
         known();
     }
@@ -35,8 +34,8 @@ theorem pointer_binder(q: int32*) {
 
 theorem nested_binders(n: int32) {
     ensures forall (a: int32) { forall (b: int32) { a < b implies a < b } } by {
-        intro() as x;
-        intro() as y;
+        let x = intro();
+        let y = intro();
         intro();
         have x < y by known();
         known();

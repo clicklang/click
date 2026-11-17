@@ -312,3 +312,67 @@ limits.
 The C, three original function contracts, inorder theorem, both callbacks,
 existing tree resources, and verifier are unchanged. Other sidecars and the
 full-directory audit still leave this report open.
+
+## Context double rotation with a nonempty transferred subtree
+
+All four selected proofs in
+`rbtree_size_insert_context_double_middle_subtree_rotation.click` now verify
+at default limits on master `7b90f7357` plus the proof repair, including the
+inorder-preservation theorem and both insertion wrappers. Initialization
+exposes the transferred root's entry-time identity and retains complete node
+observations through the C reads. The proof executes the missing local
+declaration and pivot load, retains tags and child links through the inner
+rotation and parent updates, and reparents the nonempty middle subtree with
+its original arbitrary children and cached count. Both writable callbacks
+and the original count arguments remain in the proof. The outer rotation
+retains the first callback child's identity and restores the ancestor context.
+
+Expansion, retained and cold verification, and fixed-point checks pass all 21
+audit sites at default limits.
+
+The C, three original function contracts, inorder theorem, tree models,
+callbacks, existing tree resources, and verifier are unchanged. Other sidecars
+and the full-directory audit still leave this report open.
+
+## Mirrored context double rotation with a nonempty transferred subtree
+
+All four selected proofs in
+`rbtree_size_insert_mirrored_context_double_middle_subtree_rotation.click`
+now verify at default limits on master `1aeae5459` plus the proof repair,
+including the inorder-preservation theorem and both insertion wrappers.
+Initialization retains the transferred root's entry-time identity and complete
+node observations through the C reads. The right-left rotation explicitly
+executes the missing local declaration and pivot load after the mirrored uncle
+read, retains tags and child links through both parent updates, and reparents
+the transferred subtree with its original arbitrary children and cached count.
+Both writable callbacks and the existing mirrored count arguments remain.
+The outer rotation retains the first callback child's identity and restores
+the ancestor context.
+
+Expansion, retained and cold verification, and fixed-point checks pass all 27
+audit sites at default limits.
+
+The C, three original function contracts, inorder theorem, tree models,
+callbacks, existing tree resources, and verifier are unchanged. Other sidecars
+and the full-directory audit still leave this report open.
+
+## Context rotation with a nonempty black middle leaf
+
+All three selected proofs in
+`rbtree_size_insert_context_middle_rotation.click` now verify at default
+limits on master `81adf013b` plus the proof repair, including both insertion
+wrappers. Complete node observations retain the child inequalities and typed
+parent relationships through initialization and read-only loop steps. The
+proof executes the missing local declaration and middle-child store, retains
+the unchanged and newly written child links through both parent-update calls,
+and reparents the black middle leaf before restoring the ancestor context.
+The callback count equation closes explicitly from `gv == 3 + nv`. Arbitrary
+focused-node subtrees, symbolic valid cached sizes, and the writable size
+callback remain in the proof.
+
+Expansion, retained and cold verification, and fixed-point checks pass all 13
+audit sites at default limits.
+
+The C, three original function contracts, tree models, imported inorder
+theorem, callback, existing tree resources, and verifier are unchanged. Other
+sidecars and the full-directory audit still leave this report open.

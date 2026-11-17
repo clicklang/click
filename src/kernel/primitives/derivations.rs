@@ -2043,6 +2043,10 @@ fn execution_statement_source_cost(statement: &ProgramStatement) -> ProgramSourc
             }
             ProgramStatement::TryCatchInt32 {
                 try_body, handler, ..
+            }
+            | ProgramStatement::UnwindCleanup {
+                body: try_body,
+                cleanup: handler,
             } => {
                 pending.push(try_body);
                 pending.push(handler);

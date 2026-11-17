@@ -208,15 +208,7 @@ fn record_resource_clause_attempt() {
 /// outputs still pass through description admission.
 #[derive(Clone, Copy)]
 enum ReturnResourceComposition<'a> {
-    #[cfg(test)]
-    RestoreEntryBorrows,
     ApplyTransfers(&'a ConsumedCellReturns),
-    #[cfg_attr(not(test), allow(dead_code))]
-    BodyAllocations {
-        creator: &'a CreationEvents,
-        events: &'a CreationEvents,
-        consumed: Option<&'a ConsumedCellReturns>,
-    },
     BodyReturn {
         state: &'a ExecutionState,
         frame: &'a ResourceContext,
@@ -230,7 +222,6 @@ impl<'a> ReturnResourceComposition<'a> {
     fn consumed_children(self) -> Option<&'a ConsumedCellReturns> {
         match self {
             Self::ApplyTransfers(plan) => Some(plan),
-            Self::BodyAllocations { consumed, .. } => consumed,
             Self::BodyReturn {
                 consumed,
                 allocations: Some(_),
@@ -249,9 +240,6 @@ impl<'a> ReturnResourceComposition<'a> {
 
     fn allocation_events(self) -> Option<(&'a CreationEvents, &'a CreationEvents)> {
         match self {
-            Self::BodyAllocations {
-                creator, events, ..
-            } => Some((creator, events)),
             Self::BodyReturn { allocations, .. } => allocations,
             _ => None,
         }
@@ -260,8 +248,6 @@ impl<'a> ReturnResourceComposition<'a> {
     fn restores_entry_borrows(self) -> bool {
         match self {
             Self::ApplyTransfers(_) => true,
-            #[cfg(test)]
-            Self::RestoreEntryBorrows => true,
             _ => false,
         }
     }
@@ -964,37 +950,6 @@ fn recover_candidate_stable_view_resources(
         })
         .map(|(_, binding)| binding.clone())
         .collect::<Vec<_>>();
-    let mut recovery = plan
-        .clone()
-        .recover_stable_views(assumptions, &escaping, &consumed_holds)
-        .map_err(|error| {
-            error
-                .loan_diagnostic(LoanRefusalOperation::Recovery)
-                .map(|refusal| RuntimeError::LoanRefusal(Box::new(refusal)))
-                .unwrap_or_else(|| {
-                    RuntimeError::FunctionContract("stable-view call recovery refused".to_string())
-                })
-        })?;
-    retain_rebound_composite_holds(&mut recovery, &mut rebound_heads, plan.caller_participant())?;
-    let loan_evidence = Arc::new(CheckedLoanCallEvidence::new(
-        plan.clone(),
-        recovery.ledger.clone(),
-        recovery.terminal_ledger.clone(),
-        recovery.transitions.clone(),
-        recovery.hold_base_ledger.clone(),
-        recovery.hold_transitions.clone(),
-    ));
-    // Recheck the kernel-issued discharge evidence from the exact callee root
-    // before installing the canonical predecessor root in the caller state.
-    recovery
-        .recheck_transitions(actual_ledger, plan.caller_participant())
-        .map_err(|error| {
-            RuntimeError::LoanRefusal(Box::new(error.diagnostic_with_subject(
-                LoanRefusalOperation::Recovery,
-                recovery.diagnostic_subject(),
-            )))
-        })?;
-    let recovered_ledger = recovery.ledger;
     let mut residual = return_resources;
     for fact in plan.mutex_use_requirements.values() {
         residual = residual
@@ -1086,31 +1041,45 @@ fn recover_candidate_stable_view_resources(
                 })?;
         }
     }
-    // The return residual carries the callee's outputs with their support
-    // bookkeeping: a core the return published as a projection of a produced
-    // owner is recorded against that owner's occurrence, so consuming the
-    // owner later drops it. Compose the recovered escrows into that residual
-    // rather than rebuilding the residual fact by fact, which would keep the
-    // facts and lose what supports them.
-    let mut recovered_resources = residual;
+    // Recover into the actual constructed return. The loan operation admits
+    // each recovered source once and retains that successor, including the
+    // output cores' exact support metadata.
+    let mut recovery = plan
+        .clone()
+        .recover_returned_views(residual, assumptions, &escaping, &consumed_holds)
+        .map_err(|error| {
+            error
+                .loan_diagnostic(LoanRefusalOperation::Recovery)
+                .map(|refusal| RuntimeError::LoanRefusal(Box::new(refusal)))
+                .unwrap_or_else(|| {
+                    RuntimeError::FunctionContract("stable-view call recovery refused".to_string())
+                })
+        })?;
+    retain_rebound_composite_holds(&mut recovery, &mut rebound_heads, plan.caller_participant())?;
+    let loan_evidence = Arc::new(CheckedLoanCallEvidence::new(
+        plan.clone(),
+        recovery.ledger.clone(),
+        recovery.terminal_ledger.clone(),
+        recovery.transitions.clone(),
+        recovery.hold_base_ledger.clone(),
+        recovery.hold_transitions.clone(),
+    ));
+    // Recheck the kernel-issued discharge evidence from the exact callee root
+    // before installing the canonical predecessor root in the caller state.
+    recovery
+        .recheck_transitions(actual_ledger, plan.caller_participant())
+        .map_err(|error| {
+            RuntimeError::LoanRefusal(Box::new(error.diagnostic_with_subject(
+                LoanRefusalOperation::Recovery,
+                recovery.diagnostic_subject(),
+            )))
+        })?;
+    let recovered_ledger = recovery.ledger;
+    let mut recovered_resources = recovery.resources;
     let mut recovered_bindings = recovery.view_bindings;
-    for (escrow, hold_binding) in recovery.recovered_escrows {
-        if recovered_resources.contains_exact_representation(&escrow) {
-            continue;
-        }
-        let (next, mut inserted) = recovered_resources
-            .try_compose_with_legacy_discovery_and_occurrences([escrow], assumptions)
-            .map_err(resource_context_runtime_error)?;
-        let occurrence = inserted.pop().map(|(_, occurrence)| occurrence);
-        recovered_resources = next;
-        // An escrowed borrowing composite keeps its hold binding across the
-        // call: the hold stayed in the ledger while the head was lent, and
-        // the recovered head is the occurrence that carries it again.
-        if let (Some(binding), Some(occurrence)) = (hold_binding, occurrence) {
-            recovered_resources =
-                recovered_resources.with_loan_dependency(occurrence, binding.clone());
-            recovered_bindings = recovered_bindings.with_inserted(occurrence, binding);
-        }
+    for (occurrence, binding) in recovery.recovered_hold_occurrences {
+        recovered_resources = recovered_resources.with_loan_dependency(occurrence, binding.clone());
+        recovered_bindings = recovered_bindings.with_inserted(occurrence, binding);
     }
     // The producer retained the exact destination occurrence. Equal head
     // descriptions and unrelated ambient owners cannot select this binding.
@@ -5513,10 +5482,10 @@ fn prepare_verified_function_call<'a>(
         .zip(application_value_arguments)
     {
         entry_state.locals.set_typed_qualified_with_all_qualifiers(
-            parameter.name().to_string(),
+            parameter.binding_name().clone(),
             value.clone(),
             parameter.program_type(),
-            Memory::value_parameter_pointer(parameter.name()),
+            Memory::value_parameter_pointer(parameter.binding_name()),
             false,
             false,
             false,
@@ -8306,7 +8275,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
                 return false;
             }
             evaluation.locals.set_typed(
-                parameter.name().to_owned(),
+                parameter.binding_name().clone(),
                 value.clone(),
                 parameter.program_type(),
             );
@@ -8326,7 +8295,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
             self.reaches_unnamed = true;
             return;
         }
-        let mut evaluation = ExecutionState::new().with_memory(self.state.memory().clone());
+        let mut evaluation = ExecutionState::at_point(&self.state.program_point());
         evaluation.preserves_mutex_protocols = self.state.preserves_mutex_protocols;
         if !Self::bind_parameters(definition, arguments, &mut evaluation)
             || bind_composite_witnesses(definition, arguments, &mut evaluation, self.assumptions)
@@ -10202,7 +10171,7 @@ fn evaluate_resource_population_body_resources(
                 return Ok(Err(RuntimeError::TypeMismatch));
             }
             population_state.locals.set_typed(
-                parameter.name().to_string(),
+                parameter.binding_name().clone(),
                 argument.clone(),
                 parameter.program_type(),
             );
@@ -10621,8 +10590,7 @@ fn composite_definition_facts_hold(
     if definition.parameters().len() != arguments.len() {
         return Ok(false);
     }
-    let mut state = ExecutionState::new()
-        .with_memory(caller_state.memory().clone())
+    let mut state = ExecutionState::at_point(&caller_state.program_point())
         .with_resource_context(caller_state.resources().clone());
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
         let Some(argument) = argument.as_program_value() else {
@@ -10632,7 +10600,7 @@ fn composite_definition_facts_hold(
             return Ok(false);
         }
         state.locals.set_typed(
-            parameter.name().to_string(),
+            parameter.binding_name().clone(),
             argument.clone(),
             parameter.program_type(),
         );
@@ -11172,7 +11140,7 @@ fn with_private_aggregate_parameter_owners(
     for parameter in interface.parameters() {
         crate::instrumentation::record_deterministic_work(1);
         if let Some(layout) = parameter.aggregate_layout()
-            && let Some(slot) = callee.locals.slot(parameter.name())
+            && let Some(slot) = callee.locals.slot(parameter.binding_name().clone())
         {
             resources = resources
                 .unchecked_with_fact(private_aggregate_storage_owner(slot.clone(), layout));
@@ -13927,10 +13895,10 @@ fn indexed_witness_origin_words(facts: &[SpecProposition]) -> BTreeMap<&str, &Sp
                     target_type: ProgramType::UInt64 | ProgramType::Int64,
                     ..
                 }) => {
-                    if let ProgramExpression::Variable(name) = expression.as_ref() {
-                        if let Some(name) = name.named() {
-                            words.entry(name).or_insert(word);
-                        }
+                    if let ProgramExpression::Variable(name) = expression.as_ref()
+                        && let Some(name) = name.named()
+                    {
+                        words.entry(name).or_insert(word);
                     }
                 }
                 SpecExpression::Add(left, right) => {
@@ -15851,7 +15819,7 @@ fn construct_composite_resource_body(
             return None;
         }
         state.locals.set_typed(
-            parameter.name().to_string(),
+            parameter.binding_name().clone(),
             argument.clone(),
             parameter.program_type(),
         );
@@ -16751,7 +16719,6 @@ pub(super) fn resource_context_satisfies_definitional_fact(
     at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> bool {
-    let memory = at.memory();
     if available.satisfies_fact(required, assumptions) {
         return true;
     }
@@ -16772,7 +16739,7 @@ pub(super) fn resource_context_satisfies_definitional_fact(
             || assembled_composite_body_facts_hold(
                 composite,
                 definitions,
-                memory,
+                at,
                 &expanded_available,
                 assumptions,
             )
@@ -16793,7 +16760,7 @@ pub(super) fn resource_context_satisfies_definitional_fact(
 pub(super) fn assembled_composite_body_facts_hold(
     composite: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    at: &ProgramPoint,
     resources: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -16812,9 +16779,7 @@ pub(super) fn assembled_composite_body_facts_hold(
     if definition.parameters().len() != arguments.len() {
         return false;
     }
-    let mut state = ExecutionState::new()
-        .with_memory(memory.clone())
-        .with_resource_context(resources.clone());
+    let mut state = ExecutionState::at_point(at).with_resource_context(resources.clone());
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
         let Some(argument) = argument.as_program_value() else {
             return false;
@@ -16823,7 +16788,7 @@ pub(super) fn assembled_composite_body_facts_hold(
             return false;
         }
         state.locals.set_typed(
-            parameter.name().to_string(),
+            parameter.binding_name().clone(),
             argument.clone(),
             parameter.program_type(),
         );
@@ -16965,7 +16930,7 @@ fn consume_resource_fact_definitionally(
             if !assembled_composite_body_facts_hold(
                 required,
                 definitions,
-                memory,
+                &crate::kernel::ProgramPoint::of_memory(memory),
                 available,
                 assumptions,
             ) {
@@ -18570,7 +18535,7 @@ fn resource_clause_composite_memory_views(
     evaluate_composite_resource_memory_ranges(
         fact,
         &definitions[index..=index],
-        state.memory(),
+        &state.program_point(),
         assumptions,
     )
     .unwrap_or_default()

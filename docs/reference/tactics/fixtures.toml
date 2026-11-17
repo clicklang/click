@@ -90,7 +90,7 @@ needle = "construct(open_fd(result));"
 [[form]]
 id = "induct"
 path = "mdtests/pure_induction_countdown.md"
-needle = "induct(n) as ih;"
+needle = "let ih = induct(n);"
 
 [[form]]
 id = "structural-induct"
@@ -165,7 +165,7 @@ needle = "observe(live_fd(fd));"
 [[form]]
 id = "witness"
 path = "mdtests/witness_and_choose.md"
-needle = "witness { k: 0 }"
+needle = "witness(0)"
 
 [[form]]
 id = "obtain"
@@ -200,7 +200,7 @@ needle = "intro();"
 [[form]]
 id = "intro-as"
 path = "mdtests/intro_as_names_the_introduced_variable.md"
-needle = "intro() as row;"
+needle = "let row = intro();"
 
 [[form]]
 id = "enumerate"

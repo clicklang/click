@@ -823,7 +823,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         } => line(
             output,
             &prefix,
-            &format!("induct({parameter}) as {hypothesis};"),
+            &format!("let {hypothesis} = induct({parameter});"),
         ),
         ProofTactic::Match(proof_match) => {
             let scrutinee = describe_contract_expression(&proof_match.scrutinee);
@@ -1108,10 +1108,10 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             output,
             &prefix,
             &format!(
-                "witness {{ {} }};",
+                "witness({});",
                 witness
-                    .bindings()
-                    .map(|(name, value)| format!("{name}: {}", describe_contract_expression(value)))
+                    .values()
+                    .map(describe_contract_expression)
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
@@ -1198,8 +1198,8 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             write_using_premises(output, "solve()", premises, indent)
         }
         ProofTactic::Intro => line(output, &prefix, "intro();"),
-        ProofTactic::IntroAs(name) => line(output, &prefix, &format!("intro() as {name};")),
-        ProofTactic::IntroBinder(name) => line(output, &prefix, &format!("intro() as {name};")),
+        ProofTactic::IntroAs(name) => line(output, &prefix, &format!("let {name} = intro();")),
+        ProofTactic::IntroBinder(name) => line(output, &prefix, &format!("let {name} = intro();")),
         ProofTactic::Enumerate => line(output, &prefix, "enumerate();"),
         ProofTactic::Contradiction(fact) => line(
             output,

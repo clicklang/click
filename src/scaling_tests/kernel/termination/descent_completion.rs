@@ -44,7 +44,7 @@ fn termination_consumes_completed_descent_without_walking_unrelated_source() {
             BTreeMap::new(),
         )];
         let rules = [rule];
-        let goals = super::super::super::obligations::TerminationObligations::generate_independent(
+        let goals = super::super::super::obligations::TerminationObligations::generate_for_rules(
             &rules,
             &plans,
             &BTreeMap::new(),

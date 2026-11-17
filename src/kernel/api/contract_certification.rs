@@ -230,7 +230,7 @@ pub(crate) fn contract_resource_condition_cases(
                 return None;
             }
             condition_state.locals.set_typed(
-                parameter.name().to_string(),
+                parameter.binding_name().clone(),
                 value.clone(),
                 parameter.program_type(),
             );
@@ -1548,7 +1548,9 @@ fn program_function_contract_entry_facts(
     ] {
         for (index, parameter) in parameters.iter().enumerate() {
             if let Some(bytes) = parameter.fixed_reference_extent {
-                let pointer_value = entry_state.locals.get_native(parameter.name());
+                let pointer_value = entry_state
+                    .locals
+                    .get_native(parameter.binding_name().clone());
                 let Some(ProgramValue::Pointer(pointer)) = pointer_value.as_deref() else {
                     return Err("array reference entry argument is not a pointer value".into());
                 };
@@ -1565,7 +1567,9 @@ fn program_function_contract_entry_facts(
             let Some(length_index) = parameter.slice_length_parameter else {
                 continue;
             };
-            let pointer_value = entry_state.locals.get_native(parameter.name());
+            let pointer_value = entry_state
+                .locals
+                .get_native(parameter.binding_name().clone());
             let Some(ProgramValue::Pointer(pointer)) = pointer_value.as_deref() else {
                 return Err("slice entry argument is not a pointer value".into());
             };
@@ -2730,7 +2734,7 @@ pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions
                                 evaluate_composite_resource_relation_propositions(
                                     fact,
                                     composite_resource_definitions,
-                                    memory,
+                                    &crate::kernel::ProgramPoint::of_memory(memory),
                                     assumptions,
                                 )
                             })
@@ -2864,7 +2868,7 @@ pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions
                 || crate::kernel::functions::assembled_composite_body_facts_hold(
                     composite,
                     composite_resource_definitions,
-                    other_memory,
+                    &crate::kernel::ProgramPoint::of_memory(other_memory),
                     other_expanded,
                     assumptions,
                 )

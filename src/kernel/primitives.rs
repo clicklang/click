@@ -47,12 +47,13 @@ pub(crate) fn predicate_source_name(name: &str) -> Option<&str> {
 
 impl Proposition {
     /// Whether this is kernel authority rather than a proof-state fact: a
-    /// resource composition, or a predicate with no Click spelling. The
+    /// resource composition, a completed volatile access record, or a
+    /// predicate with no Click spelling. The
     /// kernel holds and checks it like any fact; no surface view presents or
     /// cites it (`docs/internals/raise-lower-principle.md`).
     pub(crate) fn is_kernel_authority(&self) -> bool {
         match self {
-            Self::ResourceComposition(_) => true,
+            Self::ResourceComposition(_) | Self::VolatileAccess(_) => true,
             Self::Predicate { name, .. } => predicate_source_name(name).is_none(),
             _ => false,
         }
@@ -2534,6 +2535,7 @@ impl PointerValue {
                     | PointerBlock::ContractException
                     | PointerBlock::StaticObject { .. }
                     | PointerBlock::AutomaticLocal { .. }
+                    | PointerBlock::ReferenceCarrier { .. }
                     | PointerBlock::Concrete(_)
                     | PointerBlock::Heap(_)
                     | PointerBlock::Temporary(_)
@@ -3050,6 +3052,12 @@ pub enum PointerBlock {
         binding: LocalBindingId,
         instance: LocalStorageInstance,
     },
+    /// Internal storage of the pointer carrying a reference, distinct from
+    /// the referent object and from an ordinary address-looking source name.
+    ReferenceCarrier {
+        referent: Arc<BindingName>,
+        instance: LocalStorageInstance,
+    },
     StaticObject {
         binding: StaticBindingId,
     },
@@ -3079,6 +3087,11 @@ impl std::hash::Hash for PointerBlock {
             Self::StaticObject { binding } => {
                 12u64.hash(state);
                 binding.hash(state);
+            }
+            Self::ReferenceCarrier { referent, instance } => {
+                16u64.hash(state);
+                referent.hash(state);
+                instance.hash(state);
             }
             Self::AutomaticLocal { binding, instance } => {
                 11u64.hash(state);
@@ -3196,7 +3209,7 @@ impl PointerBlock {
 
     pub(crate) fn starts_with(&self, prefix: &str) -> bool {
         match self {
-            Self::AutomaticLocal { instance, .. } => {
+            Self::AutomaticLocal { instance, .. } | Self::ReferenceCarrier { instance, .. } => {
                 prefix == "local:"
                     || match instance {
                         LocalStorageInstance::ValueParameter => prefix == "local:value-parameter:",
@@ -3221,6 +3234,7 @@ impl PointerBlock {
             | Self::ContractException
             | Self::StaticObject { .. }
             | Self::AutomaticLocal { .. }
+            | Self::ReferenceCarrier { .. }
             | Self::StringLiteral { .. }
             | Self::Function(_)
             | Self::FunctionSymbolic(_)
@@ -3333,6 +3347,7 @@ impl PointerBlock {
                         | Self::ContractException
                         | Self::StaticObject { .. }
                         | Self::AutomaticLocal { .. }
+                        | Self::ReferenceCarrier { .. }
                         | Self::Concrete(_)
                         | Self::Function(_)
                 )
@@ -3357,6 +3372,7 @@ impl PointerBlock {
                         | Self::ContractResult
                         | Self::ContractException
                         | Self::AutomaticLocal { .. }
+                        | Self::ReferenceCarrier { .. }
                         | Self::StaticObject { .. }
                 ) && matches!(
                     other,
@@ -3364,6 +3380,7 @@ impl PointerBlock {
                         | Self::ContractResult
                         | Self::ContractException
                         | Self::AutomaticLocal { .. }
+                        | Self::ReferenceCarrier { .. }
                         | Self::StaticObject { .. }
                         | Self::Concrete(_)
                 ))
@@ -3373,6 +3390,7 @@ impl PointerBlock {
                         | Self::ContractResult
                         | Self::ContractException
                         | Self::AutomaticLocal { .. }
+                        | Self::ReferenceCarrier { .. }
                         | Self::StaticObject { .. }
                 ) && matches!(self, Self::Concrete(_)))
                 || literal_versus_declared(self, other)
@@ -3436,6 +3454,12 @@ impl std::fmt::Display for PointerBlock {
             Self::ContractResult => formatter.write_str("result.storage()"),
             Self::ContractException => formatter.write_str("exception.storage()"),
             Self::StaticObject { binding } => write!(formatter, "{binding}.storage()"),
+            Self::ReferenceCarrier { referent, instance } => {
+                write!(
+                    formatter,
+                    "reference-carrier({referent}).storage({instance})"
+                )
+            }
             Self::AutomaticLocal { binding, instance } => {
                 write!(formatter, "{}.storage({instance})", binding.canonical())
             }
@@ -5401,6 +5425,9 @@ pub enum SpecProposition {
         expression: SpecExpression,
         classification: FloatClassification,
     },
+    /// A written `true` or `false`: lowers to that constant condition
+    /// directly, not through a comparison.
+    Truth(bool),
     And(Box<SpecProposition>, Box<SpecProposition>),
     Or(Box<SpecProposition>, Box<SpecProposition>),
     Not(Box<SpecProposition>),
@@ -5531,7 +5558,7 @@ pub enum SpecResource {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct SwitchCase {
     /// `None` is the default case; integer values are represented in the
-    /// promoted int32 bit pattern used by C.
+    /// promoted int32 or uint32 bit pattern used by C.
     pub value: Option<u32>,
     pub body: Box<ProgramStatement>,
 }
@@ -5721,10 +5748,15 @@ pub enum ProgramStatement {
         try_body: Box<ProgramStatement>,
         binding: BindingName,
         handler: Box<ProgramStatement>,
-        /// This is an implementation cleanup edge inserted by a frontend,
-        /// rather than a source-level handler. Its handler runs cleanup and
-        /// rethrows the original payload.
-        cleanup_unwind: bool,
+    },
+    /// `body`, which may exit by throwing while destructible objects are
+    /// live, as a C++ call made in their scope can. On an int32 exceptional
+    /// exit, `cleanup` (their destructors) runs and the same exception
+    /// continues to propagate; every other outcome is `body`'s own. It is
+    /// not a source handler: nothing is caught, and no binding is introduced.
+    UnwindCleanup {
+        body: Box<ProgramStatement>,
+        cleanup: Box<ProgramStatement>,
     },
     Store {
         pointer: ProgramExpression,
@@ -12680,7 +12712,7 @@ impl ResourceSpec {
                     {
                         if *state_source == ResourceStateSource::Entry
                             && let ProgramExpression::Variable(name) = argument
-                            && let Some(value) = name.named_in(entry_values)
+                            && let Some(value) = name.metadata_in(entry_values)
                         {
                             *argument = ProgramExpression::Value(value.clone());
                         }
@@ -13229,8 +13261,32 @@ impl Hash for BinderName {
     fn hash<H: Hasher>(&self, _: &mut H) {}
 }
 
+/// The nominal identity of one completed sequential volatile access.
+/// This is not a binder, a C value, or permission to access memory.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct VolatileEventId(pub(crate) u64);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum VolatileAccessKind {
+    Read,
+    Write,
+}
+
+/// Kernel-produced evidence of one access. Equal addresses and values do
+/// not identify distinct events. Read results are exposed by source region
+/// through `read_event(i).result`, independently of this nominal identity.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct VolatileAccess {
+    pub(crate) id: VolatileEventId,
+    pub(crate) kind: VolatileAccessKind,
+    pub(crate) pointer: Pointer,
+    pub(crate) value_type: ProgramType,
+    pub(crate) value: ProgramValue,
+}
+
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Proposition {
+    VolatileAccess(Arc<VolatileAccess>),
     Equal(Term, Term),
     ConditionIs(ConditionTerm, bool),
     Predicate {
@@ -13452,6 +13508,7 @@ impl Hash for Proposition {
 fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
     std::mem::discriminant(atomic).hash(state);
     match atomic {
+        Proposition::VolatileAccess(event) => event.hash(state),
         Proposition::Equal(left, right) => {
             left.hash(state);
             right.hash(state);
@@ -13736,6 +13793,7 @@ pub(crate) fn clone_proposition_iteratively(proposition: &Proposition) -> Propos
 
 fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
     match proposition {
+        Proposition::VolatileAccess(event) => Proposition::VolatileAccess(event.clone()),
         Proposition::Equal(left, right) => Proposition::Equal(left.clone(), right.clone()),
         Proposition::ConditionIs(condition, value) => {
             Proposition::ConditionIs(condition.clone(), *value)
@@ -14511,6 +14569,13 @@ pub struct PureFactContext {
     pub(super) universals_by_conclusion: crate::persistent::PersistentMap<
         super::assumptions::UniversalConclusionKey,
         crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
+    >,
+    /// One retained source per alpha/load identity of an explicit universal
+    /// equality or its selected operand. Range-guard checking never enumerates
+    /// the context's equality universals.
+    pub(super) universal_equality_sources: crate::persistent::PersistentMap<
+        crate::kernel::proof::PropositionIdentityKey,
+        (std::sync::Arc<Proposition>, bool),
     >,
     pub(super) condition_facts: super::fact_collections::FactMap<ConditionTerm, bool>,
     pub(super) signed_variable_chains: super::assumptions::variable_chains::VariableChains,
@@ -15678,7 +15743,9 @@ impl CallParameters {
             let Some(layout) = parameter.aggregate_layout() else {
                 continue;
             };
-            let slot = entry.locals.aggregate_object_pointer(parameter.name())?;
+            let slot = entry
+                .locals
+                .aggregate_object_pointer(parameter.binding_name().clone())?;
             bound.locals.set_aggregate_object_at(
                 parameter.name().to_string(),
                 layout.clone(),

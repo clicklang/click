@@ -193,6 +193,7 @@ pub(super) fn state_independent_node(node: SpecNode<'_>) -> Visit<()> {
             SpecProposition::Comparison { .. }
             | SpecProposition::IntegerComparison { .. }
             | SpecProposition::FloatClassification { .. }
+            | SpecProposition::Truth(_)
             | SpecProposition::Defined(_)
             | SpecProposition::And(..)
             | SpecProposition::Or(..)
@@ -299,6 +300,7 @@ pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
             | SpecProposition::Comparison { .. }
             | SpecProposition::AlgebraicComparison { .. }
             | SpecProposition::FloatClassification { .. }
+            | SpecProposition::Truth(_)
             | SpecProposition::Defined(_)
             | SpecProposition::And(..)
             | SpecProposition::Or(..)
@@ -1028,6 +1030,10 @@ pub(super) fn statement_writes_aggregate_parameter(
         }
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
+        }
+        | ProgramStatement::UnwindCleanup {
+            body: try_body,
+            cleanup: handler,
         } => {
             statement_writes_aggregate_parameter(try_body, parameter_name, writes, unknown_write);
             statement_writes_aggregate_parameter(handler, parameter_name, writes, unknown_write);

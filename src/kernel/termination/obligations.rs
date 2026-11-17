@@ -50,8 +50,11 @@ pub(super) struct TerminationObligations {
 }
 
 impl TerminationObligations {
+    /// Generates obligations for verified rules with no completed contract
+    /// bodies, through the same body inputs program completion builds.
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn generate_independent(
+    pub(super) fn generate_for_rules(
         partial_rules: &[VerifiedFunctionRule],
         plan_entries: &[FunctionTerminationPlan],
         loop_rules: &BTreeMap<String, Vec<VerifiedLoopRule>>,
@@ -62,7 +65,8 @@ impl TerminationObligations {
         diverging_contracts: &BTreeSet<String>,
         allow_unused_recursive_measure: bool,
     ) -> Result<Self, TerminationError> {
-        let inputs = super::inputs::TerminationBodyInputs::independent(partial_rules, loop_rules);
+        let inputs =
+            super::inputs::TerminationBodyInputs::completed(&[], partial_rules, loop_rules);
         Self::generate_from_inputs(
             &inputs,
             plan_entries,

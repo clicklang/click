@@ -8,11 +8,6 @@ pub enum SurfaceBinder {
     Generated(GeneratedBinderId),
 }
 impl SurfaceBinder {
-    pub(super) fn matches_witness_label(&self, hint: Option<&str>, label: &str) -> bool {
-        hint.or_else(|| self.written())
-            .is_none_or(|name| name == label)
-    }
-
     pub(crate) fn fresh() -> Self {
         Self::Generated(GeneratedBinderId::fresh())
     }
@@ -129,7 +124,7 @@ impl From<GeneratedBinderId> for SurfaceBinder {
 }
 impl From<&GeneratedBinderId> for SurfaceBinder {
     fn from(id: &GeneratedBinderId) -> Self {
-        Self::Generated(id.clone())
+        Self::Generated(*id)
     }
 }
 
@@ -629,7 +624,7 @@ mod tests {
     #[test]
     fn generated_binder_syntax_and_beta_capture_roundtrip() {
         for source in [
-            "theorem check() { ensures forall (binder(7): Integer) { binder(7) == binder(7) } by { intro() as binder(8); solve(); } }",
+            "theorem check() { ensures forall (binder(7): Integer) { binder(7) == binder(7) } by { let binder(8) = intro(); solve(); } }",
             "theorem check() { ensures (|binder(3): Integer| -> Integer { binder(3) + 1 })(41) == 42 by solve(); }",
             "theorem check() { ensures (|binder(5): uint64| -> uint64 { binder(5) + 1u64 })(41u64) == 42u64 by solve(); }",
             "spec enum Boxed { Value(Integer) } function unpack(b: Boxed) -> Integer { match b { Boxed::Value(binder(2)) => binder(2) } } theorem check() { ensures unpack(Boxed::Value(42)) == 42 by { unfold(unpack(Boxed::Value(42))); solve(); } }",
@@ -646,7 +641,7 @@ mod tests {
         for source in [
             "theorem check() { ensures answer: forall (binder(7): Integer) { binder(7) == binder(7) } by { intro(); solve(); } }",
             "function every(p: fn(int32) -> Prop, lo: int32, hi: int32) -> Prop { (lo..hi).all(p) } theorem check(lo: int32, hi: int32) { requires lo < hi; ensures answer: every(|i: int32| -> Prop { i < hi }, lo, hi) by { intro(); intro(); solve(); } }",
-            "theorem check(lo: int32, hi: int32, limit: int32) { let p = |x: int32| -> Prop { x < limit }; requires hi <= limit; ensures answer: (lo..hi).all(p) by { intro() as binder(7); intro(); solve(); } }",
+            "theorem check(lo: int32, hi: int32, limit: int32) { let p = |x: int32| -> Prop { x < limit }; requires hi <= limit; ensures answer: (lo..hi).all(p) by { let binder(7) = intro(); intro(); solve(); } }",
         ] {
             let expanded =
                 crate::surface::expand_c_claim_source_by_label(source, &[], "check.answer")
@@ -701,7 +696,7 @@ mod tests {
                 error.report()
             );
             crate::surface::verify_c_sources(
-                &source.replace("intro(); intro();", "intro(); intro() as binder(8);"),
+                &source.replace("intro(); intro();", "intro(); let binder(8) = intro();"),
                 &[],
             )
             .unwrap_or_else(|error| panic!("{}", error.report()));

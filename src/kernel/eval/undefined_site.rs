@@ -121,6 +121,7 @@ pub(super) fn statement_expressions<'a>(
         }
         | ProgramStatement::DeclareAggregate { .. }
         | ProgramStatement::TryCatchInt32 { .. }
+        | ProgramStatement::UnwindCleanup { .. }
         | ProgramStatement::EndAutomaticLifetimes { .. } => {}
     }
 }

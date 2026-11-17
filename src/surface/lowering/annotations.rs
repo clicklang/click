@@ -1554,6 +1554,10 @@ pub(in crate::surface) fn kernel_loop_by_index<'a>(
             .or_else(|| kernel_loop_by_index(else_branch, target, next_loop_index)),
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
+        }
+        | ProgramStatement::UnwindCleanup {
+            body: try_body,
+            cleanup: handler,
         } => kernel_loop_by_index(try_body, target, next_loop_index)
             .or_else(|| kernel_loop_by_index(handler, target, next_loop_index)),
         ProgramStatement::Switch { cases, .. } => cases
@@ -1742,6 +1746,10 @@ fn count_kernel_loops(statement: &ProgramStatement) -> usize {
         } => count_kernel_loops(then_branch) + count_kernel_loops(else_branch),
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
+        }
+        | ProgramStatement::UnwindCleanup {
+            body: try_body,
+            cleanup: handler,
         } => count_kernel_loops(try_body) + count_kernel_loops(handler),
         ProgramStatement::Switch { cases, .. } => cases
             .iter()
@@ -2740,17 +2748,23 @@ pub(in crate::surface) fn function_contract_summary(
     let mut context = SpecElaborationContext::for_function_contract();
     // Parameters shadow file-scope spellings in both current and old clauses.
     // Keep them as C bindings, not loads from same-named global storage.
-    context
-        .values
-        .extend(parsed_function.parameters().iter().map(|parameter| {
-            let name = parameter.name().to_string();
-            (
-                name.clone(),
-                SpecExpression::ProgramExpression(ProgramExpression::Variable(
-                    parameter.binding_name().clone(),
-                )),
-            )
-        }));
+    context.values.extend(
+        parsed_function
+            .parameters()
+            .iter()
+            .filter(|parameter| !parameter.is_reference())
+            .map(|parameter| {
+                // Reference expressions already retain their typed carrier. They
+                // are program bindings, never lexical aliases of pointer values.
+                let name = parameter.name().to_owned();
+                (
+                    name,
+                    SpecExpression::ProgramExpression(ProgramExpression::Variable(
+                        parameter.binding_name().clone(),
+                    )),
+                )
+            }),
+    );
     let all_predicates = spec_definitions
         .predicates
         .definitions
@@ -3088,6 +3102,10 @@ fn collect_local_pointer_element_types(
 
             ProgramStatement::TryCatchInt32 {
                 try_body, handler, ..
+            }
+            | ProgramStatement::UnwindCleanup {
+                body: try_body,
+                cleanup: handler,
             } => pending.extend([try_body.as_ref(), handler.as_ref()]),
             ProgramStatement::Switch { cases, .. } => {
                 pending.extend(cases.iter().map(|case| case.body.as_ref()))
@@ -3437,7 +3455,6 @@ pub(in crate::surface) fn lower_integer_arithmetic_proposition(
 }
 
 /// The decimal spelling of an integer literal, negated or not.
-
 fn integer_literal_spelling(expression: &ContractExpression) -> Option<String> {
     match expression {
         ContractExpression::IntegerLiteral(text) => Some(text.clone()),
@@ -3747,7 +3764,7 @@ impl AnnotationLowerer<'_> {
                 .pointee_type()
                 .or_else(|| self.result_type.array_element_type());
         }
-        if name.named().is_none() {
+        if name.unresolved_name().is_none() {
             return name
                 .program_type()
                 .and_then(|ty| ty.pointee_type().or_else(|| ty.array_element_type()));
@@ -3761,7 +3778,7 @@ impl AnnotationLowerer<'_> {
                     // its element type, as a fixed-state proof reads it.
                     .or_else(|| state.locals().array_object_element_type(&name))
             })
-            .or_else(|| name.named_in(&self.pointer_element_types).copied())
+            .or_else(|| name.metadata_in(&self.pointer_element_types).copied())
     }
 
     /// Attach the same checked loop clauses to compiler-lowered statements.
@@ -3866,15 +3883,22 @@ impl AnnotationLowerer<'_> {
                 try_body,
                 binding,
                 handler,
-                cleanup_unwind,
             } => {
                 self.next_statement_index();
-                crate::kernel::program_try_catch_int32_with_cleanup(
+                crate::kernel::program_try_catch_int32(
                     self.lower_kernel_statement(try_body)?,
                     binding.clone(),
                     self.lower_kernel_statement(handler)?,
-                    *cleanup_unwind,
                 )
+            }
+            ProgramStatement::UnwindCleanup { body, cleanup } => {
+                self.next_statement_index();
+                let body = self.lower_kernel_statement(body)?;
+                let cleanup = self.lower_kernel_statement(cleanup)?;
+                // The point where the exception continues after the cleanup
+                // is numbered as the layout numbers it.
+                self.next_statement_index();
+                crate::kernel::program_unwind_cleanup(body, cleanup)
             }
             _ => {
                 self.next_statement_index();
@@ -4576,6 +4600,11 @@ impl AnnotationLowerer<'_> {
     ) -> Result<SpecProposition, String> {
         if let Some(reduced) = lambdas::reduce_head(expression)? {
             return self.lower_proposition_value(&reduced, environment);
+        }
+        // A written `true` or `false` is that truth value, not `literal ==
+        // true`.
+        if let Some(value) = crate::surface::bool_literal_value(expression) {
+            return Ok(SpecProposition::Truth(value));
         }
         match expression {
             ContractExpression::Call { name, arguments }
@@ -5659,13 +5688,13 @@ impl AnnotationLowerer<'_> {
         if name == crate::kernel::CONTRACT_RESULT {
             return Some(self.result_type);
         }
-        if name.named().is_none() {
+        if name.unresolved_name().is_none() {
             return name.program_type();
         }
-        name.named_in(&self.program_parameter_types)
+        name.metadata_in(&self.program_parameter_types)
             .copied()
             .or_else(|| {
-                name.named_in(&self.entry_values)
+                name.metadata_in(&self.entry_values)
                     .map(ProgramValue::program_type)
             })
             .or_else(|| {
@@ -6011,10 +6040,10 @@ impl AnnotationLowerer<'_> {
         expression: &ContractExpression,
         environment: &SpecElaborationContext,
     ) -> Result<crate::kernel::SpecIntegerExpression, String> {
-        if let Some(id) = expression.generated_binder() {
-            if let Some(value) = environment.integer_values.get(&id) {
-                return Ok(value.clone());
-            }
+        if let Some(id) = expression.generated_binder()
+            && let Some(value) = environment.integer_values.get(&id)
+        {
+            return Ok(value.clone());
         }
 
         if let Some(reduced) = lambdas::reduce_head(expression)? {
@@ -7557,7 +7586,7 @@ impl AnnotationLowerer<'_> {
                 .and_then(|ty| ty.interface_type())
                 .map(|ty| ty.to_kernel_type());
         }
-        if name.named().is_none() {
+        if name.unresolved_name().is_none() {
             return name.program_type();
         }
         if name.named_in(&environment.algebraic_values).is_some() {
@@ -7566,10 +7595,10 @@ impl AnnotationLowerer<'_> {
         if name.is_named("result") {
             Some(self.result_type)
         } else {
-            name.named_in(&self.program_parameter_types)
+            name.metadata_in(&self.program_parameter_types)
                 .copied()
                 .or_else(|| {
-                    name.named_in(&self.entry_values)
+                    name.metadata_in(&self.entry_values)
                         .map(ProgramValue::program_type)
                         .or_else(|| {
                             self.local_type_state
@@ -7634,10 +7663,10 @@ impl AnnotationLowerer<'_> {
         expression: &ContractExpression,
         environment: &SpecElaborationContext,
     ) -> Result<SpecAlgebraicExpression, String> {
-        if let Some(id) = expression.generated_binder() {
-            if let Some(value) = environment.algebraic_values.get(&id) {
-                return Ok(value.clone());
-            }
+        if let Some(id) = expression.generated_binder()
+            && let Some(value) = environment.algebraic_values.get(&id)
+        {
+            return Ok(value.clone());
         }
 
         if let Some(reduced) = lambdas::reduce_head(expression)? {
@@ -7897,7 +7926,7 @@ impl AnnotationLowerer<'_> {
                                                 binding_type,
                                             )?,
                                         node: SpecAlgebraicExpressionNode::Binding(
-                                            binding.kernel_name().into(),
+                                            binding.kernel_name(),
                                         ),
                                     },
                                 );
@@ -8565,7 +8594,7 @@ impl AnnotationLowerer<'_> {
                 .byte_width());
         }
         if let ProgramExpression::Variable(name) = &segment.base
-            && let Some(width) = name.named_in(&self.parameter_pointer_element_widths)
+            && let Some(width) = name.metadata_in(&self.parameter_pointer_element_widths)
         {
             return Ok(*width);
         }
@@ -9327,6 +9356,35 @@ impl AnnotationLowerer<'_> {
                 })
         {
             return Ok(SpecExpression::Value(value));
+        }
+        // Reference carriers are program bindings, outside the lexical binder
+        // namespace. Their pointer is fixed when the reference is initialized;
+        // old-state reads change the referent's memory, never that pointer.
+        if let Some(referent) = name.reference_referent() {
+            let state = environment.reference_state.as_ref().or_else(|| {
+                if environment.at_function_entry {
+                    Some(self.entry_state)
+                } else {
+                    self.local_type_state
+                }
+            });
+            if let Some(value) = state
+                .and_then(|state| state.locals().get(&name))
+                .map(|value| value.clone().into_native())
+                .or_else(|| {
+                    referent
+                        .named()
+                        .and_then(|name| self.entry_values.get(name))
+                        .cloned()
+                })
+            {
+                return Ok(SpecExpression::Value(value));
+            }
+            if environment.function_contract {
+                return Ok(SpecExpression::ProgramExpression(
+                    ProgramExpression::Variable(name),
+                ));
+            }
         }
         if name == crate::kernel::CONTRACT_RESULT
             && let Some(value) = &environment.contract_result
@@ -10339,7 +10397,7 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Option<u32> {
         if let ProgramExpression::Variable(name) = expression
-            && let Some(width) = name.named_in(&self.parameter_pointer_element_widths)
+            && let Some(width) = name.metadata_in(&self.parameter_pointer_element_widths)
         {
             return Some(*width);
         }
@@ -10380,7 +10438,7 @@ impl AnnotationLowerer<'_> {
                 target_type.pointee_type().map(ProgramType::byte_width)
             }
             ProgramExpression::Variable(name) => name
-                .named_in(&self.parameter_pointer_element_widths)
+                .metadata_in(&self.parameter_pointer_element_widths)
                 .copied()
                 .or_else(|| {
                     name.named_in(&environment.array_refs)

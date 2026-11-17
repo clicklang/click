@@ -17,7 +17,7 @@ theorem guarded_count(base: int32, n: int32) {
     requires n <= 1000000;
     requires defined(base + n);
     ensures guarded_countdown(n) == 0 and base + n == base + n by {
-        induct(n) as ih;
+        let ih = induct(n);
         if n <= 0 {
             both { unfold(guarded_countdown(n)); normalize() using { n <= 0; }; }
             and { normalize(); }

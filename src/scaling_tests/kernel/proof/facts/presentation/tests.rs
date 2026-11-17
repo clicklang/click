@@ -24,7 +24,7 @@ fn written_syntax_and_ordinal_queries_scale_with_input() {
             assert!(facts.get(size + 1).is_none());
         });
         assert!(
-            selected <= 2 * (usize::BITS - (size as usize).leading_zeros()) as usize + 4,
+            selected <= 2 * (usize::BITS - size.leading_zeros()) as usize + 4,
             "size {size}: {selected}"
         );
     }

@@ -2068,7 +2068,7 @@ int32 contains(uint8 p[], int32 n) {
         obtain (found: uint64) {
             0u64 <= found and found < n as uint64 and p[found] == 'x'
         };
-        witness { k: found };
+        witness(found);
         solve();
     }
 }"#;
@@ -2087,7 +2087,7 @@ int32 contains(uint8 p[], int32 n) {
     // The `solve` closes the proof the `witness` opened, so it expands to
     // that one step rather than restating the claim.
     assert!(
-        expanded.contains("witness { k: found };\n        known();"),
+        expanded.contains("witness(found);\n        known();"),
         "{expanded}"
     );
     verify_c_sources(&expanded, &[("contains.c", c_source)])
@@ -3786,7 +3786,6 @@ fn a_caught_call_can_bypass_its_branch_return() {
         try_body: Box::new(body),
         binding: "error".into(),
         handler: Box::new(program_skip()),
-        cleanup_unwind: false,
     };
     assert!(
         returning_then_arms(&caught).is_empty(),

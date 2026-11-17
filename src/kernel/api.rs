@@ -612,6 +612,7 @@ impl LoopFinalExitCandidate {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn new(state: ExecutionState, pure_facts: Vec<Proposition>) -> Self {
         crate::instrumentation::record_deterministic_work(pure_facts.len());
         Self {
@@ -2268,7 +2269,7 @@ pub fn composite_resource_witness_values(
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
         let argument = argument.as_program_value()?;
         state.locals.set_typed(
-            parameter.name().to_string(),
+            parameter.binding_name().clone(),
             argument.clone(),
             parameter.program_type(),
         );
@@ -2733,20 +2734,34 @@ pub fn program_try_catch_int32(
     binding: impl Into<BindingName>,
     handler: ProgramStatement,
 ) -> ProgramStatement {
-    program_try_catch_int32_with_cleanup(try_body, binding, handler, false)
-}
-
-pub fn program_try_catch_int32_with_cleanup(
-    try_body: ProgramStatement,
-    binding: impl Into<BindingName>,
-    handler: ProgramStatement,
-    cleanup_unwind: bool,
-) -> ProgramStatement {
     ProgramStatement::TryCatchInt32 {
         try_body: Box::new(try_body),
         binding: binding.into(),
         handler: Box::new(handler),
-        cleanup_unwind,
+    }
+}
+
+/// The statements an int32 exceptional exit from an
+/// [`ProgramStatement::UnwindCleanup`] runs: its cleanup, then the same
+/// exception continuing with `payload`. Execution, the proof cursor, and
+/// the source layout all step this one shape, so the point where the
+/// exception continues is a statement of its own.
+pub fn program_unwind_continuation(
+    cleanup: &ProgramStatement,
+    payload: ProgramExpression,
+) -> ProgramStatement {
+    program_seq(cleanup.clone(), ProgramStatement::Throw(payload))
+}
+
+/// `body` with the cleanup an int32 exceptional exit from it runs before
+/// propagating ([`ProgramStatement::UnwindCleanup`]).
+pub fn program_unwind_cleanup(
+    body: ProgramStatement,
+    cleanup: ProgramStatement,
+) -> ProgramStatement {
+    ProgramStatement::UnwindCleanup {
+        body: Box::new(body),
+        cleanup: Box::new(cleanup),
     }
 }
 
@@ -2906,11 +2921,23 @@ pub(crate) fn program_loop_pass(
     update: Option<&ProgramStatement>,
     test: Option<&LoopTestRegion>,
 ) -> ProgramStatement {
+    program_loop_pass_and_continuation(body, update, test).0
+}
+
+/// Assemble a pass and retain its shared continuation from the same source.
+/// A checked entry can use this code directly as its continue destination.
+pub(crate) fn program_loop_pass_and_continuation(
+    body: &ProgramStatement,
+    update: Option<&ProgramStatement>,
+    test: Option<&LoopTestRegion>,
+) -> (ProgramStatement, Option<std::sync::Arc<ProgramStatement>>) {
     let body = program_loop_body_region(body, test);
-    match program_loop_continuation(update, test) {
-        Some(tail) => ProgramStatement::seq(std::sync::Arc::new(body), tail),
+    let continuation = program_loop_continuation(update, test);
+    let pass = match &continuation {
+        Some(tail) => ProgramStatement::seq(std::sync::Arc::new(body), tail.clone()),
         None => body,
-    }
+    };
+    (pass, continuation)
 }
 
 impl ProgramStatement {
@@ -3714,10 +3741,10 @@ pub(crate) fn bind_contract_value_parameters(
 ) {
     for (parameter, value) in parameters.iter().zip(values) {
         entry.locals.set_typed_qualified_with_all_qualifiers(
-            parameter.name().to_string(),
+            parameter.binding_name().clone(),
             value.clone(),
             parameter.program_type(),
-            Memory::value_parameter_pointer(parameter.name()),
+            Memory::value_parameter_pointer(parameter.binding_name()),
             false,
             false,
             false,
@@ -7019,7 +7046,7 @@ pub(crate) fn prove_prepared_function_contract_execution_paths(
                         crate::kernel::functions::evaluate_composite_resource_relation_propositions(
                             &composite,
                             definitions,
-                            entry_state.memory(),
+                            &entry_state.program_point(),
                             &reuse_assumptions,
                         )
                     else {
@@ -8616,7 +8643,7 @@ fn pop_executed_value_pins(function: &mut ProgramFunction, values: &[ProgramValu
     for (parameter, value) in parameters.iter().zip(values).rev() {
         let pin = SpecProposition::Comparison {
             left: SpecExpression::ProgramExpression(ProgramExpression::Variable(
-                (parameter.name().to_string()).into(),
+                parameter.binding_name().clone(),
             )),
             operator: ComparisonOperator::Equal,
             right: SpecExpression::Value(value.clone()),
@@ -8638,7 +8665,7 @@ fn executed_call_arguments(
     Some(
         function.parameters()[..call_count]
             .iter()
-            .map(|parameter| ProgramExpression::Variable((parameter.name().to_string()).into()))
+            .map(|parameter| ProgramExpression::Variable(parameter.binding_name().clone()))
             .collect(),
     )
 }

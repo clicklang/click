@@ -3,8 +3,9 @@
 //! Every kernel term a proof state holds must satisfy `lower(raise(x)) == x`
 //! (`docs/internals/raise-lower-principle.md#the-raise-lower-principle`). Setting
 //! `CLICK_RAISE_LOWER=<path>` raises each fact a checked step adds, and the
-//! goal it leaves focused, with the canonical raiser
-//! (`synthesize_surface_proposition`) at the step's fixed state. It lowers
+//! goal it leaves focused, with the canonical raiser goal presentation uses
+//! (`Proof::structural_proposition_candidate`: the step's fixed state, its
+//! entry state and the path's recorded points). It lowers
 //! that spelling again in the same proof and appends one line saying how the
 //! round trip ended. `scripts/raise-lower.sh` runs the corpus under it.
 //!
@@ -185,6 +186,74 @@ mod tests {
         );
     }
 
+    /// The round trips `fixture` records, as `(outcome, original)` pairs.
+    fn round_trips(name: &str, text: &str) -> Vec<(String, String)> {
+        let fixture = crate::cli::parse_mdtest(std::path::Path::new(name), text).unwrap();
+        let sources = fixture
+            .c_sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        capture(|| {
+            let _ = crate::surface::verify_c_sources(
+                fixture.click_source.as_deref().unwrap(),
+                &sources,
+            );
+        })
+        .iter()
+        .map(|line| {
+            let fields = line.split('\t').collect::<Vec<_>>();
+            (fields[0].to_string(), fields[6].to_string())
+        })
+        .collect()
+    }
+
+    /// A pointer a call returned raises as that call's result, and a read
+    /// at an earlier point as `at(point, ..)`: the audit raises with the
+    /// path's recorded points, as goal presentation does.
+    #[test]
+    fn call_result_pointers_and_earlier_reads_round_trip() {
+        let lines = round_trips(
+            "a_call_result_is_spelled_by_its_call.md",
+            include_str!("../../../mdtests/a_call_result_is_spelled_by_its_call.md"),
+        );
+        for original in [
+            "statement(0).call(make, 0).result == h[0]",
+            "at(statement(0).exit, h[0]) == h[0]",
+        ] {
+            assert!(
+                lines.contains(&("same".to_string(), original.to_string())),
+                "{original}: {lines:#?}"
+            );
+        }
+        let lines = round_trips(
+            "a_guarded_memset_value_claim_crosses_a_disjoint_store.md",
+            include_str!(
+                "../../../mdtests/a_guarded_memset_value_claim_crosses_a_disjoint_store.md"
+            ),
+        );
+        assert!(
+            lines.contains(&("same".to_string(), "statement(0).result == dst".to_string())),
+            "{lines:#?}"
+        );
+    }
+
+    /// A 64-bit equality reads both words at its format, so a `uint64`
+    /// call in it raises as the call, not cast to `int64`, which would lower
+    /// to a different term.
+    #[test]
+    fn a_wide_call_result_equality_round_trips_without_a_cast() {
+        let lines = round_trips(
+            "a_wide_call_result_equality_raises_without_a_cast.md",
+            include_str!("../../../mdtests/a_wide_call_result_equality_raises_without_a_cast.md"),
+        );
+        let fact = "statement(0).call(add, 0).result == click::integer::uint64_wrapping_add(a, b)";
+        assert!(
+            lines.contains(&("same".to_string(), fact.to_string())),
+            "{lines:#?}"
+        );
+    }
+
     #[test]
     fn a_checked_step_records_how_each_added_fact_round_trips() {
         let fixture = crate::cli::parse_mdtest(
@@ -212,12 +281,13 @@ mod tests {
                     && fields[6] == original
             })
         };
-        // The unfolded viewability round-trips; the hidden record's value
-        // has no name at this state, so the raiser spells nothing for it.
+        // The unfolded viewability round-trips, and so does the hidden
+        // record's value: raised with the entry state, it is
+        // `old(pair(p).first.v)`.
         assert!(
             unfold("same", "viewable((p as (uint8 *))[0..8])"),
             "{lines:#?}"
         );
-        assert!(unfold("unraised", "<unnamed A> >= 0"), "{lines:#?}");
+        assert!(unfold("same", "<unnamed A> >= 0"), "{lines:#?}");
     }
 }

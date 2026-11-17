@@ -26,7 +26,7 @@ theorem hypothesis_cites_the_range_extent(v: int32[], lo: int32, n: int32, hi: i
     requires hi <= n;
     requires n >= 0 and viewable(v[lo..n]);
     ensures 0 <= hi by {
-        induct(hi) as ih;
+        let ih = induct(hi);
         if hi <= 0 {
             known();
         } else {
