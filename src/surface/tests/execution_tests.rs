@@ -1800,10 +1800,10 @@ fn explicit_store_step_with_unfolded_resource_facts_verifies() {
             ensures owner->data[index] == value;
         } by {
             unfold(owned_string(owner));
-            unfold(terminated_at);
+            unfold(terminated_at(owner->data, owner->len));
             step();
             have terminated_at(owner->data, owner->len) by {
-                unfold(terminated_at);
+                unfold(terminated_at(owner->data, owner->len));
                 solve();
             }
             have owner->data[owner->len] == 0 by solve();
@@ -1898,7 +1898,7 @@ fn expanded_read_step_uses_contextual_range_separation() {
             have owner->len - 1 < owner->len by solve();
             step_until(function.exit);
             have terminated_at(owner->data, owner->len) by {
-                unfold(terminated_at);
+                unfold(terminated_at(owner->data, owner->len));
                 solve();
             }
             have 0 <= owner->len by solve();

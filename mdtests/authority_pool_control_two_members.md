@@ -55,9 +55,9 @@ void initialize(struct pool* pool, int32 amount) {
     fold(amount of slot(pool));
     fold(control(pool));
     step();
-    unfold(valid_pool);
+    unfold(valid_pool(pool));
     known();
-    unfold(valid_pool);
+    unfold(valid_pool(pool));
     have to_integer(count(item(pool, _))) == 0 by {
         known();
     }
@@ -249,9 +249,9 @@ void give_back(struct pool* pool, struct payload* p) {
         }
     }
     step();
-    unfold(valid_pool);
+    unfold(valid_pool(pool));
     known();
-    unfold(valid_pool);
+    unfold(valid_pool(pool));
     have to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) + 1) by {
         have -2147483648 <= (to_integer(old(count(slot(pool)))) + 1) by {
             solve() using { 0 <= to_integer(old(count(slot(pool)))); };

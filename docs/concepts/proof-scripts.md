@@ -217,7 +217,7 @@ at unchanged function entry, after executed statements, and inside a loop's
 `preserve` body.
 
 An arm's bindings are in scope in every term the arm writes: `have` goals,
-theorem arguments and `using` premises, `instantiate`, `extract`, `rewrite`,
+theorem arguments and `using` premises, `instantiate`, `have`, `rewrite`,
 `normalize() using`, the premises of a `solve() using` or `normalize() using`
 inside a `have` body (`mdtests/have_body_solve_using_names_an_arm_binding.md`),
 the clauses of a `loop` written inside the arm

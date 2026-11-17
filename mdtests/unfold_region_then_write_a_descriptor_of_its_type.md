@@ -69,14 +69,14 @@ int32 peek(struct slot* s, struct slot* other) {
         normalize() using { separate(memory(other->at), memory(s->pool->data)); };
     }
     have at(statement(1).exit, s->pool->data) == at(statement(1).entry, s->pool->data) by {
-        preserve(separate(statement(1).footprint, memory(s->pool->data)));
+        preserve(memory(s->pool->data), statement(1));
     }
     have separate(memory(other->pool), memory(s->pool->data)) by { solve(); }
     have separate(statement(2).footprint, memory(s->pool->data)) by {
         normalize() using { separate(memory(other->pool), memory(s->pool->data)); };
     }
     have at(statement(2).exit, s->pool->data) == at(statement(2).entry, s->pool->data) by {
-        preserve(separate(statement(2).footprint, memory(s->pool->data)));
+        preserve(memory(s->pool->data), statement(2));
     }
     have s->pool->data == at(statement(2).exit, s->pool->data) by { solve(); }
     have s->pool->data == old(s->pool->data) by { solve(); }

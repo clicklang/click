@@ -539,6 +539,29 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
     /// Preserve a missing-premise diagnostic instead of treating the written
     /// application as a search miss. Function-exit applications remain
     /// outcome-local ordered-finalization operations.
+    pub(in crate::surface::proof) fn apply_fact_application(
+        &self,
+        fact: &ClickProposition,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let driver_proof = self.proof;
+        if driver_proof.body.is_at_function_exit() {
+            return Ok(None);
+        }
+        let body = driver_proof.body.driver().apply_fact_application(fact)?;
+        let mut next = driver_proof.clone();
+        if matches!(
+            driver_proof.structure.as_ref(),
+            ProofScopeStructure::Open { .. }
+        ) {
+            for fact in body.added_facts() {
+                if !next.introduced_facts.contains(fact) {
+                    next.introduced_facts.push(fact.clone());
+                }
+            }
+        }
+        next.body = body;
+        Ok(Some(next))
+    }
     pub(in crate::surface::proof) fn apply_theorem_application(
         &self,
         application: &TheoremApplication,

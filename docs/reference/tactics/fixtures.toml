@@ -65,17 +65,12 @@ needle = "step_until(statement(2));"
 [[form]]
 id = "unfold-predicate"
 path = "mdtests/sorted_predicate.md"
-needle = "unfold(sorted);"
+needle = "unfold(sorted(p, n));"
 
 [[form]]
 id = "unfold-function"
 path = "mdtests/pure_function_unfold.md"
 needle = "unfold(clamp_nonpositive(n));"
-
-[[form]]
-id = "peel-function"
-path = "mdtests/unfold_fold_function_empty_range.md"
-needle = "peel(icount(p, lo, hi, x)) using {"
 
 [[form]]
 id = "unfold-resource"
@@ -111,6 +106,16 @@ needle = "apply(ih(n - 1));"
 id = "apply-induction-using"
 path = "mdtests/pure_induction_countdown_explicit.md"
 needle = "apply(ih(n - 1)) using {"
+
+[[form]]
+id = "apply-fact"
+path = "mdtests/apply_implication_fact.md"
+needle = "apply(h);"
+
+[[form]]
+id = "apply-fact-using"
+path = "mdtests/apply_implication_fact.md"
+needle = "apply(x > 0 implies y > 0 implies z > 0) using"
 
 [[form]]
 id = "apply-theorem"
@@ -178,11 +183,6 @@ path = "tests/cpp_import.rs"
 needle = "outcomes {"
 
 [[form]]
-id = "extract"
-path = "src/surface/tests/tactic_tests/logical_tactics.rs"
-needle = "extract(k == k);"
-
-[[form]]
 id = "normalize"
 path = "mdtests/simple_tactics.md"
 needle = "normalize();"
@@ -229,13 +229,8 @@ needle = "transport(old(p[0]) == 7, p[0] == 7) using {"
 
 [[form]]
 id = "instantiate"
-path = "mdtests/instantiate_without_using_finds_its_guards.md"
+path = "mdtests/instantiate_propagates_known_guards.md"
 needle = "}, k);"
-
-[[form]]
-id = "instantiate-using"
-path = "src/surface/tests/tactic_tests/logical_tactics.rs"
-needle = "instantiate(forall (k: int32) {"
 
 [[form]]
 id = "solve"
@@ -275,7 +270,7 @@ needle = "let { result: status, output: done } = step(Repair, { input: dirty });
 [[form]]
 id = "preserve"
 path = "mdtests/preserve_step_carries_a_fact.md"
-needle = "preserve(separate(statement(0).footprint, memory(*q)));"
+needle = "preserve(memory(*q), statement(0));"
 
 [[form]]
 id = "check-termination-local"

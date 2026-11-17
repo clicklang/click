@@ -954,8 +954,8 @@ generate at least four sizes, normally `N`, `2N`, `4N`, and `8N`, and measure
 verifier work rather than host time. Each sample records work attributed to
 named verifier operations and tactic kinds, and a failed curve reports those
 named curves; wall-clock profiler attribution is corroboration. Exact
-repeated-sample comparisons measure the named operation itself
-(`choose_projection_walk_is_deterministic_across_selected_body_sizes`).
+repeated-sample comparisons measure the named operation itself, with proof
+setup and persistent-index allocations reported separately.
 
 The scaling suite covers independent axes:
 

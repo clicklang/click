@@ -33,7 +33,7 @@ int32 set_then_read_end(int32* data, int32 index, int32 len, int32 cap) {
     ensures result == 0;
 } by {
     unfold(zero_terminated(data, len, cap));
-    unfold(terminated_at);
+    unfold(at(function.entry, terminated_at(data, len)));
     have index < cap;
     step();
     step();
@@ -46,13 +46,13 @@ int32 set_then_read_end(int32* data, int32 index, int32 len, int32 cap) {
     }
     have separate(statement(0).footprint, memory(data[len])) by { normalize() using {}; }
     have at(statement(0).exit, data[len]) == at(statement(0).entry, data[len]) by {
-        preserve(separate(statement(0).footprint, memory(data[len])));
+        preserve(memory(data[len]), statement(0));
     }
     have at(statement(1).exit, data[len]) == at(statement(1).entry, data[len]) by {
-        preserve(separate(statement(1).footprint, memory(data[len])));
+        preserve(memory(data[len]), statement(1));
     }
     have terminated_at(data, len) by {
-        unfold(terminated_at);
+        unfold(terminated_at(data, len));
         known();
     }
     step();

@@ -19,8 +19,8 @@ theorem nested_universal_body(n: int32) {
         0 <= k and k < n implies (0 <= k and (k < n or k == n))
     } by {
         intro();
-        extract(0 <= k);
-        extract(k < n);
+        have 0 <= k;
+        have k < n;
         both {
             known();
         } and {
@@ -32,5 +32,5 @@ theorem nested_universal_body(n: int32) {
 ```
 
 ```expect
-fail: extract
+fail: could not establish `0 <= k`
 ```

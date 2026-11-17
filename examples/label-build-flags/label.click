@@ -40,11 +40,12 @@ uint64 label_copy(char* dst, const char* src) {
     }
     have separate(memory(dst[n]), memory(src[0u64..len + 1u64])) by { solve(); }
     open(cstr_at(src, len)) {
-        unfold(bytes::equal);
         step();
         mark copied;
+        unfold(at(copied, bytes::equal(dst, 0u64, old(src), 0u64, n)));
         step();
         have bytes::equal(dst, 0u64, src, 0u64, n) by {
+            unfold(bytes::equal(dst, 0u64, src, 0u64, n));
             transport(
                 at(copied, (0u64..n).all(|k| {
                     (dst as (uint8 *))[0u64 + k] == old((src as (uint8 *))[0u64 + k])

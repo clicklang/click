@@ -928,17 +928,16 @@ fn surface_predicate_call_name(proposition: &ClickProposition) -> Option<&str> {
 pub(in crate::surface::proof) fn fact_transport_planning_failure(
     source: &ClickProposition,
     target: &ClickProposition,
-    unfolded_predicates: &[String],
     error: &ClickError,
     source_refusal: Option<&ClickError>,
 ) -> String {
     let opaque_name = [source, target]
         .into_iter()
         .filter_map(surface_predicate_call_name)
-        .find(|name| !unfolded_predicates.iter().any(|unfolded| unfolded == name));
+        .next();
     if let Some(name) = opaque_name {
         return format!(
-            "`transport` cannot frame opaque predicate `{name}` across C execution because its memory footprint is hidden; run `unfold({name});` before the execution steps and transport its unfolded definition"
+            "`transport` cannot frame opaque predicate `{name}` across C execution because its memory footprint is hidden; unfold the selected application, such as `unfold({name}(args));`, before execution and transport its unfolded definition"
         );
     }
     if let Some(frame_refusal) = source_refusal.and_then(|refusal| {

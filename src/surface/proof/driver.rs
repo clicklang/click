@@ -33,3 +33,29 @@ impl From<super::ClickError> for OutcomeSplitFailure {
         Self::Partition(error)
     }
 }
+
+/// Peel the written implication chain, retaining an explicit program point
+/// on both its antecedents and its conclusion.
+pub(in crate::surface::proof) fn fact_application_parts(
+    fact: &super::ClickProposition,
+) -> (Vec<super::ClickProposition>, super::ClickProposition) {
+    if let super::ClickProposition::At {
+        selector,
+        proposition,
+    } = fact
+    {
+        let (premises, conclusion) = fact_application_parts(proposition);
+        let at = |proposition| super::ClickProposition::At {
+            selector: selector.clone(),
+            proposition: Box::new(proposition),
+        };
+        return (premises.into_iter().map(&at).collect(), at(conclusion));
+    }
+    let mut premises = Vec::new();
+    let mut conclusion = fact;
+    while let super::ClickProposition::Implies(left, right) = conclusion {
+        premises.push(left.as_ref().clone());
+        conclusion = right;
+    }
+    (premises, conclusion.clone())
+}

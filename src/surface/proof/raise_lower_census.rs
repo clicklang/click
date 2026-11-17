@@ -486,7 +486,7 @@ theorem only_element(v: int32, x: int32) {
             predicate positive(x: int32) { x > 0 }
             theorem from_positive(x: int32) {
                 requires positive(x);
-                ensures x > 0 by { unfold(positive); known(); }
+                ensures x > 0 by { unfold(positive(x)); known(); }
             }
         "#;
         let checked = capture(|| {
@@ -617,10 +617,10 @@ void pack(struct node* p, struct node* id) {
     }
 
     #[test]
-    fn a_rewritten_goal_with_no_written_template_is_raised() {
-        // `unfold(Adds)` opens a contract's obligation, which no written
-        // proposition raises; the goals the rewrites inside `solve` leave are
-        // raised from the kernel goal instead.
+    fn a_rewritten_goal_with_no_written_template_is_spelled() {
+        // `unfold(Adds(&add3))` opens a contract's obligation, which no written
+        // proposition spells; the goals the rewrites inside `solve` leave are
+        // spelled from the kernel goal instead.
         let c = "int32 add3(int32 x) { return x + 3; }";
         let click = r#"verifying "f.c";
 
@@ -638,7 +638,7 @@ int32 add3(int32 x) {
 
 theorem add3_adds_four() {
     ensures Adds(&add3, { amount: 4 }) by {
-        unfold(Adds);
+        unfold(Adds(&add3, { amount: 4 }));
         solve();
     }
 }

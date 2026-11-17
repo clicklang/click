@@ -163,7 +163,7 @@ pub(super) fn refinement_route_proves(
 /// planning: it chose an index alignment, an arm, and a rewrite
 /// representative, and issued refinement authority from that choice with no
 /// record of it. Those choices now belong to the refinement theorem's proof,
-/// where `both`, `left`/`right`, `intro`, `extract`, and `rewrite` spell them
+/// where `both`, `left`/`right`, `intro`, `have`, and `rewrite` spell them
 /// and `click expand` prints them. See `prepare_contract_refinement_obligations`,
 /// which emits the refinement implication, and
 /// `api.rs::prove_program_function_contract_refinement`, which issues authority only

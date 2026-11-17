@@ -120,24 +120,24 @@ theorem closed_marks_exclude_target(left: int32[], right: int32[], v: int32[], n
         induct(path) as ih {
             Path::Here => {
                 instantiate(forall (k: int32) { 0 <= k and k < n and v[k] != 0 implies k != to and (v[left[k]] != 0 and v[right[k]] != 0) }, from);
-                extract(from != to);
+                have from != to;
                 unfold(walk(left, right, from, Path::Here));
                 known();
             }
             Path::Left(rest) => {
                 instantiate(forall (k: int32) { 0 <= k and k < n implies 0 <= left[k] and left[k] < n }, from);
-                extract(0 <= left[from]); extract(left[from] < n);
+                have 0 <= left[from]; have left[from] < n;
                 instantiate(forall (k: int32) { 0 <= k and k < n and v[k] != 0 implies k != to and (v[left[k]] != 0 and v[right[k]] != 0) }, from);
-                extract(v[left[from]] != 0);
+                have v[left[from]] != 0;
                 apply(ih(left, right, v, n, left[from], to, rest));
                 unfold(walk(left, right, from, Path::Left(rest)));
                 known();
             }
             Path::Right(rest) => {
                 instantiate(forall (k: int32) { 0 <= k and k < n implies 0 <= right[k] and right[k] < n }, from);
-                extract(0 <= right[from]); extract(right[from] < n);
+                have 0 <= right[from]; have right[from] < n;
                 instantiate(forall (k: int32) { 0 <= k and k < n and v[k] != 0 implies k != to and (v[left[k]] != 0 and v[right[k]] != 0) }, from);
-                extract(v[right[from]] != 0);
+                have v[right[from]] != 0;
                 apply(ih(left, right, v, n, right[from], to, rest));
                 unfold(walk(left, right, from, Path::Right(rest)));
                 known();
@@ -158,7 +158,7 @@ theorem exhausted_zero_entry(left: int32[], right: int32[], before: int32[], aft
     ensures forall (path: Path) { walk(left, right, from, path) != to } by {
         have forall (k: int32) { 0 <= k and k < n and after[k] != 0 implies k != to and (after[left[k]] != 0 and after[right[k]] != 0) } by {
             intro(); intro();
-            extract(0 <= k); extract(k < n); extract(after[k] != 0);
+            have 0 <= k; have k < n; have after[k] != 0;
             instantiate(forall (k: int32) { 0 <= k and k < n implies before[k] == 0 }, k);
             instantiate(forall (k: int32) { 0 <= k and k < n and before[k] == 0 and after[k] != 0 implies after[left[k]] != 0 and after[right[k]] != 0 }, k);
             have k != to by {
@@ -166,7 +166,7 @@ theorem exhausted_zero_entry(left: int32[], right: int32[], before: int32[], aft
                     have 0 <= to;
                     have to < n;
                     have 0 <= to and to < n by known();
-                    extract(after[to] == before[to]);
+                    have after[to] == before[to];
                     have before[to] == 0 by {
                         instantiate(forall (k: int32) { 0 <= k and k < n implies before[k] == 0 }, to);
                         known();

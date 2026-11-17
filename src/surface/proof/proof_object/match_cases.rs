@@ -1014,7 +1014,6 @@ impl<'a> Proof<'a> {
             base_executions: [execution.clone(), execution.clone()],
             path_facts,
             common_facts: branch.state.facts.clone(),
-            parent_unfolds: branch.state.unfolded_predicates.clone(),
             parent_locals: self.state.locals().clone(),
             execution_start_state: execution
                 .core

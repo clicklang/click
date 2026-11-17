@@ -18,37 +18,3 @@ pub(super) fn resolve_code_region_ref(
             }
         })
 }
-
-pub(super) fn requirements_with_structural_unfolds(
-    spec_definitions: SpecDefinitions<'_>,
-    function_block: &FunctionBlock,
-    requirement_pure_facts: &PureFactList,
-) -> Result<PureFactList, String> {
-    let unfolded_predicates = structural_unfold_tactic_names(function_block);
-    let unfolded = crate::surface::checking::unfold_available_predicate_fact_delta(
-        spec_definitions,
-        &unfolded_predicates,
-        requirement_pure_facts,
-    )?;
-    let mut facts = requirement_pure_facts.clone();
-    facts.extend(unfolded);
-    Ok(facts)
-}
-
-pub(super) fn structural_unfold_tactic_names(function_block: &FunctionBlock) -> Vec<String> {
-    let mut seen = BTreeSet::new();
-    let mut names = Vec::new();
-    for clause in function_block.structural_clauses() {
-        for proof in [clause.initialize_proof(), clause.preserve_proof()]
-            .into_iter()
-            .flatten()
-        {
-            for name in proof.unfold_tactic_names() {
-                if seen.insert(name.clone()) {
-                    names.push(name);
-                }
-            }
-        }
-    }
-    names
-}

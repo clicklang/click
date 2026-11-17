@@ -1596,13 +1596,13 @@ fn expand_declared_resource_tactic(
         | ProofTactic::ApplyInductionUsing { .. }
         | ProofTactic::ApplyTheoremUsing { .. }
         | ProofTactic::UnfoldFunction(_)
-        | ProofTactic::PeelFunction { .. }
-        | ProofTactic::InstantiateUsing { .. }) => {
+        | ProofTactic::Instantiate { .. }) => {
             expand_declared_resource_tactic_with_expressions(tactic, resource_definitions)
         }
         tactic @ (ProofTactic::ArithmeticUsing(_)
         | ProofTactic::Contradiction(_)
-        | ProofTactic::Extract(_)
+        | ProofTactic::ApplyFact(_)
+        | ProofTactic::ApplyFactUsing { .. }
         | ProofTactic::Preserve(_)
         | ProofTactic::Rewrite(_)
         | ProofTactic::Transport { .. }
@@ -1876,49 +1876,12 @@ fn expand_declared_resource_tactic_with_expressions(
             );
             Ok(ProofTactic::UnfoldFunction(application))
         }
-        // `peel` opens one layer of the same application `unfold` opens, so
-        // its arguments and premises are resolved as an `unfold`'s are.
-        ProofTactic::PeelFunction {
-            mut application,
-            premises,
-        } => {
-            application.arguments = application
-                .arguments
-                .into_iter()
-                .map(|argument| expand_declared_resource_expression(argument, resource_definitions))
-                .collect::<Result<Vec<_>, _>>()?;
-            resource_definitions.constructors.resolve_call(
-                CallKind::Function,
-                &application.name,
-                &mut application.arguments,
-            );
-            Ok(ProofTactic::PeelFunction {
-                application,
-                premises: premises
-                    .into_iter()
-                    .map(|premise| {
-                        expand_declared_resource_proposition(premise, resource_definitions)
-                    })
-                    .collect::<Result<Vec<_>, _>>()?,
-            })
-        }
-        ProofTactic::InstantiateUsing {
+        ProofTactic::Instantiate {
             quantified,
             argument,
-            premises,
-        } => Ok(ProofTactic::InstantiateUsing {
+        } => Ok(ProofTactic::Instantiate {
             quantified: expand_declared_resource_proposition(quantified, resource_definitions)?,
             argument: expand_declared_resource_expression(argument, resource_definitions)?,
-            premises: premises
-                .map(|premises| {
-                    premises
-                        .into_iter()
-                        .map(|premise| {
-                            expand_declared_resource_proposition(premise, resource_definitions)
-                        })
-                        .collect::<Result<Vec<_>, _>>()
-                })
-                .transpose()?,
         }),
         _ => unreachable!("tactic dispatched to the wrong declaration-expansion helper"),
     }
@@ -1939,9 +1902,16 @@ fn expand_declared_resource_tactic_with_propositions(
         ProofTactic::Contradiction(proposition) => Ok(ProofTactic::Contradiction(
             expand_declared_resource_proposition(proposition, resource_definitions)?,
         )),
-        ProofTactic::Extract(proposition) => Ok(ProofTactic::Extract(
-            expand_declared_resource_proposition(proposition, resource_definitions)?,
+        ProofTactic::ApplyFact(fact) => Ok(ProofTactic::ApplyFact(
+            expand_declared_resource_proposition(fact, resource_definitions)?,
         )),
+        ProofTactic::ApplyFactUsing { fact, premises } => Ok(ProofTactic::ApplyFactUsing {
+            fact: expand_declared_resource_proposition(fact, resource_definitions)?,
+            premises: premises
+                .into_iter()
+                .map(|premise| expand_declared_resource_proposition(premise, resource_definitions))
+                .collect::<Result<_, _>>()?,
+        }),
         ProofTactic::Preserve(proposition) => Ok(ProofTactic::Preserve(
             expand_declared_resource_proposition(proposition, resource_definitions)?,
         )),
@@ -2668,6 +2638,13 @@ fn expand_declared_resource_subject(
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<ResourceSubject, ClickError> {
     match resource {
+        ResourceSubject::At { selector, resource } => Ok(ResourceSubject::At {
+            selector,
+            resource: Box::new(expand_declared_resource_subject(
+                *resource,
+                resource_definitions,
+            )?),
+        }),
         ResourceSubject::Emp => Ok(ResourceSubject::Emp),
         ResourceSubject::Star(left, right) => Ok(ResourceSubject::Star(
             Box::new(expand_declared_resource_subject(
@@ -3557,9 +3534,14 @@ fn expand_declared_resource_expression_children(
         ContractExpression::At {
             selector,
             expression,
-        } => ContractExpression::At {
-            selector,
-            expression: Box::new(recurse(*expression)?),
+        } => match recurse(*expression)? {
+            ContractExpression::Resource(resource) => {
+                ContractExpression::Resource(Box::new(ResourceSubject::At { selector, resource }))
+            }
+            expression => ContractExpression::At {
+                selector,
+                expression: Box::new(expression),
+            },
         },
         ContractExpression::BitwiseNot(body) => {
             ContractExpression::BitwiseNot(Box::new(recurse(*body)?))

@@ -7315,33 +7315,6 @@ impl Parser {
         .then_some(start + 3 - position)
     }
 
-    /// `at(point, name)`: a bound resource instance as it was held at a
-    /// recorded state. Leaves the position unchanged when the tokens are not
-    /// exactly that form, so `at(point, expression)` still parses as a value.
-    fn try_parse_instance_at(&mut self) -> Option<ResourceSubject> {
-        if self.peek_ident() != Some("at") || self.peek_next() != Some(&Token::LParen) {
-            return None;
-        }
-        let saved = self.position;
-        self.position += 2;
-        if let Ok(selector) = self.parse_program_point_selector()
-            && self.peek() == Some(&Token::Comma)
-            && let Some(Token::Ident(name)) = self.peek_next()
-            && let Some((identity, _)) = self.names.resource_bindings.get(name)
-            && self.tokens.get(self.position + 2) == Some(&Token::RParen)
-        {
-            let subject = ResourceSubject::Instance {
-                name: name.clone(),
-                identity: *identity,
-                at: Some(selector),
-            };
-            self.position += 3;
-            return Some(subject);
-        }
-        self.position = saved;
-        None
-    }
-
     fn parse_resource_subject_atom(&mut self) -> Result<ResourceSubject, ClickError> {
         if self.peek() == Some(&Token::LParen) {
             self.position += 1;
@@ -7365,8 +7338,19 @@ impl Parser {
             self.position += 1;
             return Ok(subject);
         }
-        if let Some(subject) = self.try_parse_instance_at() {
-            return Ok(subject);
+        if self.peek_ident() == Some("at") && self.peek_next() == Some(&Token::LParen) {
+            self.position += 2;
+            let selector = self.parse_program_point_selector()?;
+            self.expect(Token::Comma)?;
+            let resource = self.parse_resource_subject()?;
+            self.expect(Token::RParen)?;
+            let mut names = BTreeSet::new();
+            collect_current_resource_subject_variables(&resource, &mut names);
+            self.refuse_result_in_program_point(Some(&selector), names.contains("result"))?;
+            return Ok(ResourceSubject::At {
+                selector,
+                resource: Box::new(resource),
+            });
         }
         if let Some(name) = self.peek_ident()
             && let Some(index) = self.resource_parameters.get(name).copied()
@@ -11160,6 +11144,19 @@ impl Parser {
                         && self.peek_next() != Some(&Token::LParen))
                 {
                     ProofTactic::UnfoldResource(self.parse_owned_resource_target()?)
+                } else if self.peek_ident().is_some_and(|name| {
+                    self.contract_value_parameter_names
+                        .get(name)
+                        .is_some_and(|parameters| !parameters.is_empty())
+                }) || matches!(
+                    self.peek_ident(),
+                    Some("at" | "forall" | "exists" | "prop")
+                ) || self.peek() == Some(&Token::LParen)
+                    || self
+                        .peek_ident()
+                        .is_some_and(|name| self.names.fact_names.contains_key(name))
+                {
+                    ProofTactic::UnfoldProposition(self.parse_proposition()?)
                 } else if matches!(self.peek(), Some(Token::Ident(_)))
                     && self.peek_next() == Some(&Token::LParen)
                 {
@@ -11173,13 +11170,12 @@ impl Parser {
                         "resource instance `{name}` is not available as an unfold target"
                     )));
                 } else {
-                    let predicate = self.expect_reference_name("predicate name")?;
-                    ProofTactic::UnfoldPredicate(predicate)
+                    return Err(self.error("unfold requires an application, such as `unfold(p(x))`, or an owned resource"));
                 };
                 self.expect(Token::RParen)?;
                 if self.peek_ident() == Some("using") {
                     return Err(self.error(
-                        "`unfold` takes no `using` list; write `peel(f(args)) using { ... }` to open a range fold by the law its guards select",
+                        "`unfold` takes no `using` list; its guards are ordinary proof obligations",
                     ));
                 }
                 if self.peek_ident() == Some("as") {
@@ -11189,32 +11185,37 @@ impl Parser {
                 }
                 tactic
             }
-            "peel" => {
-                self.expect(Token::LParen)?;
-                if !(matches!(self.peek(), Some(Token::Ident(_)))
-                    && self.peek_next() == Some(&Token::LParen))
-                {
-                    return Err(
-                        self.error("`peel` requires a pure-function application, `peel(f(args))`")
-                    );
-                }
-                let (name, arguments) = self.parse_call_arguments("function name")?;
-                self.expect(Token::RParen)?;
-                if self.peek_ident() != Some("using") {
-                    return Err(self.error(
-                        "`peel` requires a `using { ... }` list naming the guard that decides the range",
-                    ));
-                }
-                let premises = self.parse_exact_premises()?;
-                self.skip_redundant_semicolon();
-                return Ok(ProofTactic::PeelFunction {
-                    application: ClickFunctionApplication { name, arguments },
-                    premises,
-                });
-            }
             "apply" => {
                 self.expect(Token::LParen)?;
-                let application = self.parse_theorem_application()?;
+                // A call remains a theorem application. Other propositions,
+                // including named facts and parenthesized implications, are facts.
+                let start = self.position;
+                let application = if self.peek_ident().is_some()
+                    && self.peek_next() == Some(&Token::LParen)
+                    && !matches!(self.peek_ident(), Some("at" | "old" | "forall" | "exists"))
+                {
+                    let application = self.parse_theorem_application()?;
+                    if self.peek() == Some(&Token::RParen) {
+                        Some(application)
+                    } else {
+                        self.position = start;
+                        None
+                    }
+                } else {
+                    None
+                };
+                if application.is_none() {
+                    let fact = self.parse_proposition()?;
+                    self.expect(Token::RParen)?;
+                    if self.peek_ident() == Some("using") {
+                        let premises = self.parse_exact_premises()?;
+                        self.skip_redundant_semicolon();
+                        return Ok(ProofTactic::ApplyFactUsing { fact, premises });
+                    }
+                    self.skip_redundant_semicolon();
+                    return Ok(ProofTactic::ApplyFact(fact));
+                }
+                let application = application.unwrap();
                 self.expect(Token::RParen)?;
                 if self.peek_ident() != Some("using") {
                     ProofTactic::ApplyTheorem(application)
@@ -11356,12 +11357,6 @@ impl Parser {
                 }
                 ProofTactic::Sorry
             }
-            "extract" => {
-                self.expect(Token::LParen)?;
-                let proposition = self.parse_proposition()?;
-                self.expect(Token::RParen)?;
-                ProofTactic::Extract(proposition)
-            }
             "normalize" => {
                 self.expect_empty_tactic_args(&name)?;
                 if self.peek_ident() == Some("using") {
@@ -11373,8 +11368,14 @@ impl Parser {
             }
             "preserve" => {
                 self.expect(Token::LParen)?;
-                let separation = self.parse_proposition()?;
+                let resource = self.parse_resource_subject()?;
+                self.expect(Token::Comma)?;
+                let region = self.parse_code_region_ref()?;
                 self.expect(Token::RParen)?;
+                let separation = ClickProposition::Separate {
+                    left: ResourceSubject::Footprint(region),
+                    right: resource,
+                };
                 ProofTactic::Preserve(separation)
             }
             "intro" => {
@@ -11451,20 +11452,12 @@ impl Parser {
                 self.expect(Token::Comma)?;
                 let argument = self.parse_contract_expression()?;
                 self.expect(Token::RParen)?;
-                if self.peek_ident() != Some("using") {
-                    ProofTactic::InstantiateUsing {
-                        quantified,
-                        argument,
-                        premises: None,
-                    }
-                } else {
-                    let premises = self.parse_exact_premises()?;
-                    self.skip_redundant_semicolon();
-                    return Ok(ProofTactic::InstantiateUsing {
-                        quantified,
-                        argument,
-                        premises: Some(premises),
-                    });
+                if self.peek_ident() == Some("using") {
+                    return Err(self.error("`instantiate` takes no `using` list; prove guards with ordinary `have` steps"));
+                }
+                ProofTactic::Instantiate {
+                    quantified,
+                    argument,
                 }
             }
             "solve" => {
@@ -11972,7 +11965,7 @@ impl Parser {
                     }
                     ContractExpression::Binding(name) => name,
                     ContractExpression::Resource(subject) => match *subject {
-                        ResourceSubject::Instance { name, at: None, .. } => name,
+                        ResourceSubject::Instance { name, .. } => name,
                         _ => return Err(self.error("resource arguments must name instances")),
                     },
                     _ => {
@@ -12264,41 +12257,36 @@ impl Parser {
         self.parse_ensure_bitwise_or()
     }
 
-    fn parse_contract_expression(&mut self) -> Result<ContractExpression, ClickError> {
-        let mut atom = self.position;
-        while self.tokens.get(atom) == Some(&Token::LParen) {
-            atom += 1;
-        }
-        let resource_start = match self.tokens.get(atom) {
-            Some(Token::Ident(name)) => {
-                self.resource_parameters.contains_key(name)
-                    || self.empty_resource_token_len(atom).is_some()
-                    || (name == "memory" && self.tokens.get(atom + 1) == Some(&Token::LParen))
-            }
-            _ => false,
-        };
-        if resource_start {
-            return self
-                .parse_resource_subject()
-                .map(|r| ContractExpression::Resource(Box::new(r)));
-        }
-        // `at(point, name)` naming an instance, possibly parenthesized and
-        // combined with `*`, is a resource descriptor too.
+    fn resource_expression_follows(&mut self) -> bool {
         let saved = self.position;
-        self.position = atom;
-        let instance_at = self.try_parse_instance_at().is_some();
-        self.position = saved;
-        if instance_at {
-            return self
-                .parse_resource_subject()
-                .map(|r| ContractExpression::Resource(Box::new(r)));
+        loop {
+            if self.peek() == Some(&Token::LParen) {
+                self.position += 1;
+            } else if self.peek_ident() == Some("at") && self.peek_next() == Some(&Token::LParen) {
+                self.position += 2;
+                if self.parse_program_point_selector().is_err()
+                    || self.expect(Token::Comma).is_err()
+                {
+                    self.position = saved;
+                    return false;
+                }
+            } else {
+                break;
+            }
         }
-        if self.peek_ident().is_some_and(|name| {
+        let follows = self.peek_ident().is_some_and(|name| {
             self.resource_parameters.contains_key(name)
+                || self.empty_resource_token_len(self.position).is_some()
+                || (name == "memory" && self.peek_next() == Some(&Token::LParen))
                 || (self.names.resource_bindings.contains_key(name)
                     && !matches!(self.peek_next(), Some(Token::Dot | Token::LParen)))
-        }) || (self.peek_ident() == Some("memory") && self.peek_next() == Some(&Token::LParen))
-        {
+        });
+        self.position = saved;
+        follows
+    }
+
+    fn parse_contract_expression(&mut self) -> Result<ContractExpression, ClickError> {
+        if self.resource_expression_follows() {
             return self
                 .parse_resource_subject()
                 .map(|r| ContractExpression::Resource(Box::new(r)));
@@ -12370,9 +12358,7 @@ impl Parser {
         // measure, as before resource descriptors could be theorem arguments.
         let component = match component {
             ContractExpression::Resource(subject) => match *subject {
-                ResourceSubject::Instance { name, at: None, .. } => {
-                    ContractExpression::Binding(name)
-                }
+                ResourceSubject::Instance { name, .. } => ContractExpression::Binding(name),
                 other => ContractExpression::Resource(Box::new(other)),
             },
             other => other,
@@ -18159,9 +18145,8 @@ mod tactic_classification_tests {
         ),
         ("user-tactic", "name(x, { cell: c });"),
         ("step-until", "step_until(label);"),
-        ("unfold-predicate", "unfold(name);"),
+        ("unfold-predicate", "unfold(predicate(x));"),
         ("unfold-function", "unfold(f(x));"),
-        ("peel-function", "peel(f(x)) using { x == 1; };"),
         ("unfold-resource", "unfold(reference(p));"),
         ("fold-resource", "fold(reference(p));"),
         ("take-element", "take(base[0..n]);"),
@@ -18180,6 +18165,11 @@ mod tactic_classification_tests {
         ),
         ("apply-induction", "apply(ih(m));"),
         ("apply-induction-using", "apply(ih(m)) using { m == 1; };"),
+        ("apply-fact", "apply(x > 0 implies y > 0);"),
+        (
+            "apply-fact-using",
+            "apply(x > 0 implies y > 0) using { x > 0; };",
+        ),
         ("apply-theorem", "apply(theorem(x));"),
         (
             "apply-theorem-using",
@@ -18209,13 +18199,9 @@ mod tactic_classification_tests {
         ("witness", "witness { x: 1 };"),
         ("obtain", "obtain (x: Integer) { x == x }"),
         ("known", "known();"),
-        ("extract", "extract(x == 1);"),
         ("normalize", "normalize();"),
         ("normalize-using", "normalize() using { x == 1; };"),
-        (
-            "preserve",
-            "preserve(separate(statement(0).footprint, memory(*p)));",
-        ),
+        ("preserve", "preserve(memory(*p), statement(0));"),
         ("intro", "intro();"),
         ("intro-as", "intro() as name;"),
         ("enumerate", "enumerate();"),
@@ -18227,7 +18213,6 @@ mod tactic_classification_tests {
             "transport(x == 1, y == 1) using { x == y; };",
         ),
         ("instantiate", "instantiate(F, 1);"),
-        ("instantiate-using", "instantiate(F, 1) using { x == 1; };"),
         ("solve", "solve();"),
         ("solve-using", "solve() using { x == 1; };"),
         ("check-termination-local", "check_termination_local(\"f\");"),
@@ -18423,6 +18408,167 @@ mod loop_name_tests {
                 .contains("unknown name `bogus` in loop preserve clause"),
             "{error}"
         );
+    }
+}
+
+#[cfg(test)]
+mod preserve_syntax_tests {
+    use super::*;
+
+    fn parser(source: &str) -> Parser {
+        let mut parser = Parser::new(source).unwrap();
+        parser
+            .names
+            .resource_bindings
+            .insert("r".into(), (Variable(123), "Node".into()));
+        parser.resource_parameters.insert("R".into(), 0);
+        parser
+            .declared_resource_fields
+            .insert("Node".into(), Vec::new());
+        parser
+    }
+
+    #[test]
+    fn preserve_arguments_retain_exact_separation_and_snapshot_scopes() {
+        for (source, evidence) in [
+            ("preserve(r, call(0));", "separate(call(0).footprint, r)"),
+            (
+                "preserve(at(saved, r), call(0));",
+                "separate(call(0).footprint, at(saved, r))",
+            ),
+            (
+                "preserve((at(saved, r)), call(0));",
+                "separate(call(0).footprint, at(saved, r))",
+            ),
+            (
+                "preserve(memory(*p), statement(0));",
+                "separate(statement(0).footprint, memory(*p))",
+            ),
+            (
+                "preserve(memory(p[i]), loop(1).statement(2));",
+                "separate(loop(1).statement(2).footprint, memory(p[i]))",
+            ),
+            (
+                "preserve(at(saved, memory(*p)), region(3));",
+                "separate(region(3).footprint, at(saved, memory(*p)))",
+            ),
+            (
+                "preserve(at(outer, at(inner, memory(*p))), region(3));",
+                "separate(region(3).footprint, at(outer, at(inner, memory(*p))))",
+            ),
+            (
+                "preserve(memory(at(saved, p)[0]), region(3));",
+                "separate(region(3).footprint, memory(at(saved, p)[0]))",
+            ),
+        ] {
+            let tactic = parser(source).parse_proof_tactic().unwrap();
+            let expected = parser(evidence).parse_proposition().unwrap();
+            assert_eq!(tactic, ProofTactic::Preserve(expected));
+            let printed =
+                crate::surface::printing::format_proof_tactics(&[tactic.clone()]).unwrap();
+            assert!(!printed.contains("preserve(separate("), "{printed}");
+            let reparsed = parser(&printed).parse_proof_clause_or_default().unwrap();
+            let SourceProof::Script(reparsed) = reparsed else {
+                panic!("expected a script")
+            };
+            // Resource printing canonicalizes cell sugar to a range. Check
+            // the canonical evidence, rather than incidental source metadata.
+            let ProofTactic::Preserve(actual) = &reparsed[0] else {
+                panic!("expected preserve")
+            };
+            let ProofTactic::Preserve(expected) = &tactic else {
+                unreachable!()
+            };
+            assert_eq!(
+                printing::source_click_proposition(actual),
+                printing::source_click_proposition(expected),
+                "{source} -> {printed}"
+            );
+        }
+    }
+
+    #[test]
+    fn snapshot_resources_share_one_grammar_and_parentheses_only_group() {
+        for subject in [
+            "r",
+            "R",
+            "memory(*p)",
+            "Node()",
+            "separation::emp",
+            "memory(*p) * r",
+        ] {
+            let resource = format!("at(saved, {subject})");
+            let expected = parser(&resource).parse_resource_subject().unwrap();
+            for resource in [
+                resource,
+                format!("(at(saved, {subject}))"),
+                format!("at(saved, ({subject}))"),
+                format!("((at(saved, (({subject})))))"),
+            ] {
+                assert_eq!(
+                    parser(&resource).parse_resource_subject().unwrap(),
+                    expected,
+                    "{resource}"
+                );
+                let ProofTactic::Preserve(ClickProposition::Separate { right, .. }) =
+                    parser(&format!("preserve({resource}, statement(0));"))
+                        .parse_proof_tactic()
+                        .unwrap()
+                else {
+                    panic!("expected preserve")
+                };
+                assert_eq!(right, expected, "{resource}");
+                let ClickProposition::Separate { right, .. } =
+                    parser(&format!("separate(statement(0).footprint, {resource})"))
+                        .parse_proposition()
+                        .unwrap()
+                else {
+                    panic!("expected separation")
+                };
+                assert_eq!(right, expected, "{resource}");
+                let actual = parser(&resource).parse_contract_expression().unwrap();
+                if subject == "Node()" {
+                    // Constructor calls are resolved after all declarations,
+                    // including when nested under a snapshot.
+                    assert!(
+                        matches!(actual, ContractExpression::At { .. }),
+                        "{resource}"
+                    );
+                } else {
+                    assert_eq!(
+                        actual,
+                        ContractExpression::Resource(Box::new(expected.clone())),
+                        "{resource}"
+                    );
+                }
+            }
+        }
+        for value in ["at(saved, x)", "at(saved, f(x))", "at(saved, r.field)"] {
+            assert!(
+                matches!(
+                    parser(value).parse_contract_expression().unwrap(),
+                    ContractExpression::At { .. }
+                ),
+                "{value}"
+            );
+        }
+    }
+
+    #[test]
+    fn preserve_refuses_the_old_proposition_argument_and_wrong_arity() {
+        for source in [
+            "preserve(separate(statement(0).footprint, memory(*p)));",
+            "preserve();",
+            "preserve(memory(*p));",
+            "preserve(memory(*p), statement(0).footprint);",
+            "preserve(memory(*p), statement(0), statement(1));",
+            "preserve(at(saved, separate(statement(0).footprint, memory(*p))));",
+        ] {
+            assert!(
+                Parser::new(source).unwrap().parse_proof_tactic().is_err(),
+                "{source}"
+            );
+        }
     }
 }
 

@@ -28,8 +28,8 @@ void inspect(struct pool* pool) {
     requires 0 < count(pool_object(pool, _));
     ensures 0 < pool->checked_out;
 } by {
-    unfold(wrapped_valid_pool);
-    unfold(valid_pool);
+    unfold(at(function.entry, wrapped_valid_pool(pool)));
+    unfold(at(function.entry, valid_pool(pool)));
     have 0 < pool->checked_out by {
         rewrite(pool->checked_out, count(pool_object(pool, _)));
         known();

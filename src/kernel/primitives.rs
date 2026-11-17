@@ -2583,6 +2583,26 @@ impl PointerValue {
             .with_designation(origin)
     }
 
+    /// The read that introduced this complete pointer's opaque domain when
+    /// its numeric address alone names a different read version. This is
+    /// producer provenance, not an address-alias or preservation query.
+    pub(crate) fn complete_read_source(&self) -> Option<(SharedMemory, Pointer)> {
+        if self.opaque_extent() != Some(self.designation())
+            || self.pointer.object_identity() == *self.designation()
+        {
+            return None;
+        }
+        let address_read = self.pointer.as_loaded_value()?;
+        let origin = self.designation().as_loaded_value()?;
+        if address_read.displacement != PointerOffsetTerm::Constant(0)
+            || origin.displacement != PointerOffsetTerm::Constant(0)
+            || address_read.defining_address != origin.defining_address
+        {
+            return None;
+        }
+        Some((origin.defining_memory, origin.defining_address))
+    }
+
     pub(crate) fn designation(&self) -> &Pointer {
         &self.designation
     }
@@ -6756,10 +6776,35 @@ impl Ord for ContractRequirementSources {
     }
 }
 
+// Declaration provenance is retained through instantiation but does not alter
+// a definition's semantic identity, just like ContractRequirementSources.
+#[derive(Clone, Debug, Default)]
+pub(super) struct PredicateRequirementSource(Option<usize>);
+impl PartialEq for PredicateRequirementSource {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+impl Eq for PredicateRequirementSource {}
+impl std::hash::Hash for PredicateRequirementSource {
+    fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
+}
+impl PartialOrd for PredicateRequirementSource {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for PredicateRequirementSource {
+    fn cmp(&self, _: &Self) -> std::cmp::Ordering {
+        std::cmp::Ordering::Equal
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct PredicateUnfolding {
     pub(super) predicate: SpecProposition,
     pub(super) body: SpecProposition,
+    pub(super) requirement_source: PredicateRequirementSource,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -14693,6 +14738,8 @@ pub struct PureFactContext {
     /// each lowering path and planning probe, so an extension must copy
     /// only a search path, not the whole set.
     pub(super) prop_facts: super::fact_collections::FactSet<Proposition>,
+    /// Persistent exact Boolean propagation, maintained only at fact admission.
+    pub(super) exact_propagation: super::assumptions::exact_propagation::Index,
     pub(super) comparison_views: PersistentMap<
         super::assumptions::observation_comparisons::PropositionKey,
         crate::persistent::PersistentSet<Proposition>,

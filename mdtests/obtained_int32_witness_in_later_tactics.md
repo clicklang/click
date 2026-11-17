@@ -14,6 +14,7 @@ theorem instantiate_at_the_witness(x: int32) {
     ensures x < 1000 by {
         obtain (k: int32) { k > x }
         instantiate(forall (j: int32) { j > x implies x < 1000 }, k);
+        known();
     }
 }
 
@@ -23,6 +24,7 @@ theorem quantifier_binder_shadows_the_witness(x: int32) {
     ensures x < 1000 by {
         obtain (k: int32) { k > x }
         instantiate(forall (k: int32) { k > x implies x < 1000 }, k);
+        known();
     }
 }
 

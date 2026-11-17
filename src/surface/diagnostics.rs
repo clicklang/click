@@ -2183,6 +2183,11 @@ pub(in crate::surface) fn describe_iterated_memory(
 
 pub(super) fn describe_resource_subject(resource: &ResourceSubject) -> String {
     match resource {
+        ResourceSubject::At { selector, resource } => format!(
+            "at({}, {})",
+            describe_program_point_selector(selector),
+            describe_resource_subject(resource)
+        ),
         ResourceSubject::Emp => "separation::emp".into(),
         ResourceSubject::Star(a, b) => format!(
             "({} * {})",

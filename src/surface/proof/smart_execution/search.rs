@@ -725,7 +725,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             integer_values: &integer_values,
             pointer_element_widths: parameter_pointer_element_widths(parameter_binding.parameters),
         };
-        let unfolded_predicates = search_input.active_unfolded_predicates();
+
         let mut lowering_assumptions = search_input.facts().assumptions().clone();
         for fact in fixed_state
             .state
@@ -740,7 +740,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             &application_context,
             &lowering_assumptions,
             spec_definitions,
-            &unfolded_predicates,
         )
         .map_err(|message| {
             search_input.step_error(format!("could not lower theorem requirements: {message}"))
@@ -1035,14 +1034,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             integer_values: &integer_values,
             pointer_element_widths: BTreeMap::new(),
         };
-        let unfolded_predicates = search_input.active_unfolded_predicates();
+
         let requirements = lower_theorem_application_requirements_with_assumptions(
             context.theorem_environment,
             application,
             &application_context,
             search_input.facts().assumptions(),
             context.spec_definitions,
-            &unfolded_predicates,
         )
         .map_err(|message| {
             search_input.step_error(format!("could not lower theorem requirements: {message}"))

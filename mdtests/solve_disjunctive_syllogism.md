@@ -1,9 +1,8 @@
 # solve proves one disjunct when the context refutes the other
 
-`a == 0 or b < 5` and `a != 0` give `b < 5`. `solve` finds the disjunction
-with the goal as one disjunct and every other disjunct refuted by an exact
-fact, and eliminates it by `cases`, closing the refuted arm by
-`contradiction`. A Rust overflow check's pre-state requirement takes this
+`a == 0 or b < 5` and `a != 0` give `b < 5` by exact unit propagation.
+The consequence is an ordinary available fact, so `solve` can close it with
+`known()` without a case split. A Rust overflow check's pre-state requirement takes this
 shape: `rhs == 0 or x <= 4294967295 / rhs` with `rhs != 0` known.
 
 ```c filename=solve_disjunctive_syllogism.c

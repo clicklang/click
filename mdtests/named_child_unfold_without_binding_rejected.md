@@ -35,7 +35,6 @@ void copy_across(struct pair *p) {
 } by {
     let { guard: guard, state: state } = step(pthread_mutex_lock, { access: access });
     let { a: a, b: b } = unfold(state);
-    unfold(second);
     step();
     let copied = fold(cell(p), { v: p->b });
     let restored = fold(pair_state(p), { a: p->a, b: p->b }, { second: copied });

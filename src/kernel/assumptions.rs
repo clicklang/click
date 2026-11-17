@@ -51,6 +51,7 @@ pub(in crate::kernel) mod checked_scalar_facts;
 mod condition_reasoning;
 pub(super) mod contradiction_endpoints;
 pub(in crate::kernel) mod contradictions;
+pub(in crate::kernel) mod exact_propagation;
 pub(in crate::kernel) mod observation_comparisons;
 pub(in crate::kernel) mod retained_order_bounds;
 pub(in crate::kernel) mod shared_condition_variables;
@@ -5618,6 +5619,7 @@ impl PureFactContext {
     /// to replace the condition indexes and refile the selected facts.
     pub(super) fn clear_proposition_facts(&mut self) {
         self.prop_facts = Default::default();
+        self.exact_propagation = Default::default();
         self.comparison_views = Default::default();
         self.equality_graph.clear_proposition_pointer_facts();
         self.execution_fact_projection = self
@@ -6029,19 +6031,6 @@ impl PureFactContext {
     ) -> impl Iterator<Item = &(Proposition, usize)> {
         self.equality_graph
             .algebraic_constructor_field_sources(field)
-    }
-
-    /// Whether an exact same-constructor equality in this context entails
-    /// `field`. This is the checked no-confusion rule used by explicit
-    /// `extract`; the persistent index keeps the query independent of the
-    /// number of unrelated facts in the proof state.
-    pub(crate) fn contains_algebraic_constructor_field_equality(
-        &self,
-        field: &Proposition,
-    ) -> bool {
-        self.algebraic_constructor_field_sources(field)
-            .next()
-            .is_some()
     }
 
     /// Test census of the loadable facts whose base is in `block`.
@@ -6763,6 +6752,7 @@ impl PureFactContext {
                 self.composition_object_resources
                     .advance_memory_equalities(self);
                 self.content_fingerprint ^= Self::fingerprint(3, &resources);
+                self.admit_shared_exact_propagation(shared);
             }
             return;
         }
@@ -6802,6 +6792,7 @@ impl PureFactContext {
             self.adjust_memory_effect_fact(&proposition);
             self.adjust_pointer_class_fact(&proposition);
             self.content_fingerprint ^= Self::fingerprint(2, &proposition);
+            self.admit_shared_exact_propagation(shared);
         }
     }
 
@@ -7793,7 +7784,8 @@ impl PureFactContext {
         if condition.is_bool_value_form() {
             self.admit_bool_binder_truths(&condition);
         }
-        self.content_fingerprint ^= Self::fingerprint(1, &(condition, value));
+        self.content_fingerprint ^= Self::fingerprint(1, &(condition.clone(), value));
+        self.admit_exact_propagation(Proposition::ConditionIs(condition, value));
         self
     }
 
@@ -8539,6 +8531,9 @@ impl PureFactContext {
         restricted.rebuild_null_pointer_offsets();
         restricted.rebuild_memory_load_condition_facts();
         restricted.rebuild_condition_match_indexes();
+        for (condition, value) in conditions {
+            restricted.admit_exact_propagation(Proposition::ConditionIs(condition.clone(), *value));
+        }
         // File proposition edges and resource indexes only after their
         // condition graph is the selected one, never the inherited graph.
         for proposition in propositions {

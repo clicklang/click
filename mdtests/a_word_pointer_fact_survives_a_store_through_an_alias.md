@@ -26,10 +26,10 @@ void update(struct node *g, struct node *p) {
             normalize() using { separate(memory(p->left), memory(g->word)); };
         }
         have g->word == at(before, g->word) by {
-            preserve(separate(statement(0).footprint, memory(g->word)));
+            preserve(memory(g->word), statement(0));
         }
         have *((&g->word) as (int32 **)) == at(before, *((&g->word) as (int32 **))) by {
-            preserve(separate(statement(0).footprint, memory(g->word)));
+            preserve(memory(g->word), statement(0));
         }
         rewrite(g->word, at(before, g->word));
         known();

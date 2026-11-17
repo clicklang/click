@@ -162,13 +162,13 @@ int32 owned_segmented_buffer_set_first(
         normalize() using { at(before_store, separate(memory(owner->first_data), memory(owner->first_data[index]))); };
     }
     have owner->first_data == at(before_store, owner->first_data) by {
-        preserve(separate(statement(0).footprint, memory(owner->first_data)));
+        preserve(memory(owner->first_data), statement(0));
     }
     have separate(statement(0).footprint, memory(owner->second_data)) by {
         normalize() using { at(before_store, separate(memory(owner->second_data), memory(owner->first_data[index]))); };
     }
     have owner->second_data == at(before_store, owner->second_data) by {
-        preserve(separate(statement(0).footprint, memory(owner->second_data)));
+        preserve(memory(owner->second_data), statement(0));
     }
     step();
     solve();
@@ -220,13 +220,13 @@ int32 owned_segmented_buffer_set_second(
         normalize() using { at(before_store, separate(memory(owner->first_data), memory(owner->second_data[index]))); };
     }
     have owner->first_data == at(before_store, owner->first_data) by {
-        preserve(separate(statement(0).footprint, memory(owner->first_data)));
+        preserve(memory(owner->first_data), statement(0));
     }
     have separate(statement(0).footprint, memory(owner->second_data)) by {
         normalize() using { at(before_store, separate(memory(owner->second_data), memory(owner->second_data[index]))); };
     }
     have owner->second_data == at(before_store, owner->second_data) by {
-        preserve(separate(statement(0).footprint, memory(owner->second_data)));
+        preserve(memory(owner->second_data), statement(0));
     }
     step();
     solve();
@@ -327,7 +327,7 @@ int32 owned_segmented_buffer_pipeline(
         normalize() using { separate(memory(ignored), memory(first_data[0])); };
     }
     have first_data[0] == at(statement(3).call(0).exit, first_data[0]) by {
-        preserve(separate(statement(3).assignment(ignored, 0).footprint, memory(first_data[0])));
+        preserve(memory(first_data[0]), statement(3).assignment(ignored, 0));
     }
     have first_data[0] == first_value by { known(); }
     step();
@@ -350,14 +350,14 @@ int32 owned_segmented_buffer_pipeline(
         };
     }
     have at(statement(4).call(0).exit, first_data[0]) == at(statement(4).call(0).entry, first_data[0]) by {
-        preserve(separate(statement(4).call(0).footprint, memory(first_data[0])));
+        preserve(memory(first_data[0]), statement(4).call(0));
     }
     have separate(memory(ignored), memory(first_data[0])) by { known(); }
     have separate(statement(4).assignment(ignored, 0).footprint, memory(first_data[0])) by {
         normalize() using { separate(memory(ignored), memory(first_data[0])); };
     }
     have at(statement(4).assignment(ignored, 0).exit, first_data[0]) == at(statement(4).assignment(ignored, 0).entry, first_data[0]) by {
-        preserve(separate(statement(4).assignment(ignored, 0).footprint, memory(first_data[0])));
+        preserve(memory(first_data[0]), statement(4).assignment(ignored, 0));
     }
     have first_data[0] == first_value by { known(); }
     have owner->first_data == first_data by { known(); }

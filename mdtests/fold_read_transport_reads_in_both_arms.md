@@ -27,8 +27,8 @@ theorem same_weighted(p: int32[], q: int32[], lo: int32, n: int32, hi: int32) {
     ensures weighted(p, lo, hi) == weighted(q, lo, hi) by {
         induct(hi) as ih;
         if hi <= lo {
-            peel(weighted(p, lo, hi)) using { hi <= lo; };
-            peel(weighted(q, lo, hi)) using { hi <= lo; };
+            unfold(weighted(p, lo, hi));
+            unfold(weighted(q, lo, hi));
             known();
         } else {
             have lo < hi;
@@ -46,14 +46,12 @@ theorem same_weighted(p: int32[], q: int32[], lo: int32, n: int32, hi: int32) {
             };
             have to_integer(hi - 1) < to_integer(n) by { solve(); }
             have to_integer(lo) <= to_integer(hi - 1) by { solve(); }
-            instantiate(forall (k: int32) { lo <= k and k < n implies p[k] == q[k] }, hi - 1) using {
-                to_integer(lo) <= to_integer(hi - 1);
-                to_integer(hi - 1) < to_integer(n);
-            };
+            have lo <= (hi - 1) and (hi - 1) < n;
+            instantiate(forall (k: int32) { lo <= k and k < n implies p[k] == q[k] }, hi - 1);
             have to_integer(lo) <= to_integer(hi - 1) by { solve(); }
             have to_integer(hi - 1) < 2147483647 by { solve(); }
-            peel(weighted(p, lo, hi)) using { to_integer(lo) <= to_integer(hi - 1); to_integer(hi - 1) < 2147483647; };
-            peel(weighted(q, lo, hi)) using { to_integer(lo) <= to_integer(hi - 1); to_integer(hi - 1) < 2147483647; };
+            unfold(weighted(p, lo, hi));
+            unfold(weighted(q, lo, hi));
             rewrite(p[hi - 1], q[hi - 1]);
             known();
         }
@@ -92,7 +90,7 @@ void set_end(int32 *v, int32 i, int32 n) {
             have separate(statement(0).footprint, memory(v[k])) by {
                 normalize() using { separate(memory(v[i]), memory(v[k])); };
             }
-            preserve(separate(statement(0).footprint, memory(v[k])));
+            preserve(memory(v[k]), statement(0));
         }
         have viewable(v[0..n]) by { observe(v[0..n]); known(); }
         have viewable(v[0..i]) by {

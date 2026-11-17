@@ -3,7 +3,7 @@
 The companion of `mdtests/leaf_conjuncts_are_available_facts.md`: the leaves
 of `(x >= 0 and x <= 5) and y == 1` are available facts. The inner
 conjunction `x >= 0 and x <= 5` is not itself recorded, but `known()`
-closes a conjunction whose every side is a fact, so it needs no `extract`.
+closes a conjunction whose every side is a fact, so it needs no `have`.
 
 ```click
 theorem sub(x: int32, y: int32) {

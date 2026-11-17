@@ -219,7 +219,6 @@ mod tests {
                 crate::kernel::proof::ProofObligation::FunctionOutcome(goal),
                 ProofBranchState {
                     facts: ProofFacts::from_ordered(&[truth]),
-                    unfolded_predicates: PersistentOrderedSet::default(),
                     execution: None,
                 },
             ),

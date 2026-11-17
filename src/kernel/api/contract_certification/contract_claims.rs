@@ -333,7 +333,6 @@ mod cached_read_completion_tests {
                     )),
                     ProofBranchState {
                         facts: ProofFacts::from_ordered(&[proposition]),
-                        unfolded_predicates: PersistentOrderedSet::default(),
                         execution: None,
                     },
                 ),
@@ -2588,11 +2587,7 @@ impl<'a> FunctionEnsureGoalContext<'a> {
         })
     }
 
-    pub(crate) fn goals(
-        &self,
-        contract_index: usize,
-        unfolded_predicates: &[String],
-    ) -> Result<Vec<ContractClaimGoal>, String> {
+    pub(crate) fn goals(&self, contract_index: usize) -> Result<Vec<ContractClaimGoal>, String> {
         let function = self.function;
         let entry_state = &self.entry_state;
         let post_state = &self.post_state;
@@ -2605,10 +2600,6 @@ impl<'a> FunctionEnsureGoalContext<'a> {
             .predicate_unfoldings()
             .iter()
             .find(|unfolding| unfolding.body() == ensure)
-            .filter(|unfolding| match unfolding.predicate() {
-                SpecProposition::Predicate { name, .. } => !unfolded_predicates.contains(name),
-                _ => false,
-            })
             .map_or(ensure, PredicateUnfolding::predicate);
         let lowering_assumptions = assumptions
             .clone()
@@ -2660,10 +2651,9 @@ pub fn program_function_ensure_goals(
     arguments: &[ProgramExpression],
     outcome: &FunctionOutcome,
     assumptions: &PureFactContext,
-    unfolded_predicates: &[String],
 ) -> Option<Vec<ContractClaimGoal>> {
     FunctionEnsureGoalContext::new(function, caller_state, arguments, outcome, assumptions)?
-        .goals(contract_index, unfolded_predicates)
+        .goals(contract_index)
         .ok()
 }
 
@@ -4197,7 +4187,7 @@ mod claim_requirement_tests {
 
     use crate::kernel::proof::{
         FunctionOutcomeObligation, OutcomeIdentity, OutcomeProofCore, OutcomeProofState,
-        PersistentOrderedSet, ProofBranch, ProofBranchState, ProofFacts, ProofObject,
+        ProofBranch, ProofBranchState, ProofFacts, ProofObject,
         ProofObligation as BranchObligation, PropositionKnownContext,
     };
 
@@ -4212,7 +4202,6 @@ mod claim_requirement_tests {
                 )),
                 ProofBranchState {
                     facts,
-                    unfolded_predicates: PersistentOrderedSet::default(),
                     execution: None,
                 },
             ),

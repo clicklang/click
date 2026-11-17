@@ -191,7 +191,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                             &provenance.surface_propositions,
                             context.spec_definitions,
                             context.theorem_environment,
-                            &[],
                             &execution.core.effect_facts,
                             context.function_block.requires(),
                             Some(facts.clone()),

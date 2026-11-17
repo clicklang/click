@@ -113,7 +113,7 @@ fn function_pointers::apply(f: fn(i32) -> i32, x: i32) -> i32 {
 
 theorem twice_is_doubling() {
     ensures Doubling(function_pointers::twice) by {
-        unfold(Doubling);
+        unfold(Doubling(function_pointers::twice));
         solve();
     }
 }
@@ -1395,7 +1395,7 @@ Theorems can be reused by explicit application:
 theorem nonnegative_body(x: int32) {
     requires nonnegative(x);
     ensures x >= 0 by {
-        unfold(nonnegative);
+        unfold(nonnegative(x));
         solve();
     }
 }
@@ -1590,7 +1590,7 @@ return types retain their C types. See the
 
 An explicit proof `if` after `step(Contract)` may distinguish success and
 failure using `result`. Conditional postconditions remain conditional until
-their guard is established; `extract` exposes the selected consequence.
+their guard is established; `apply(fact)` exposes the selected consequence.
 Each case must return the target resources, and failure does not inherit
 success's update guarantee (nor success failure's preservation guarantee).
 The [status-returning callback tests](https://github.com/clicklang/click/blob/master/mdtests/c_contract_executes_status.md)
@@ -1689,8 +1689,8 @@ the callee must be verified or explicitly external in the project. Extra
 theorem parameters are refused, and every feasible proof case must
 execute exactly one call, as in the abstract form.
 `apply(increment_is_exact())` then introduces `Exact(&increment)` at a call site
-exactly like a concrete `unfold(Name)` refinement theorem. This is the explicit
-route for a target contract with resource handles, which `unfold(Name)` refuses.
+exactly like a concrete `unfold(Name(callback))` refinement theorem. This is the explicit
+route for a target contract with resource handles, which `unfold(Name(callback))` refuses.
 The [modeled-instance variant](https://github.com/clicklang/click/blob/master/mdtests/c_contract_executes_concrete_model.md)
 carries a tree instance through the same two maps.
 
@@ -3914,10 +3914,15 @@ at(region(0).entry, p[0] == 7)
 at(region(0).entry, viewable(p[0..n]))
 ```
 
-Where a resource is expected, in `separate(...)`, `contains(...)` or a
-`Resource` theorem argument, `at(point, name)` names the bound resource
-instance `name` as it was held at that point. It is how a proof names an
-instance a call has since consumed, which the current state no longer holds.
+Where a resource is expected, in `separate(...)`, `contains(...)`, `preserve(...)`
+or a `Resource` theorem argument, `at(point, resource)` evaluates the resource
+descriptor at that point. It accepts memory, named instances, resource parameters,
+and resource constructors using the same grammar. Parentheses only group:
+`at(point, resource)` and `(at(point, resource))` mean the same thing.
+
+For a named instance, `at(point, name)` names the instance as it was held at
+that point. It is how a proof names an instance a call has since consumed,
+which the current state no longer holds.
 A point where the path did not hold `name` is refused with "resource instance `name`
 is not owned at this state"
 (`mdtests/a_consumed_resource_instance_is_named_at_a_mark.md`,
@@ -4474,7 +4479,7 @@ remain exact. Click does not unfold predicate bodies unless a proof asks for it:
 <!-- verified-example: mdtests/sorted_predicate.md -->
 ```click
 ensures still_sorted: sorted(p, n) by {
-    unfold(sorted);
+    unfold(sorted(p, n));
 }
 ```
 
@@ -4490,13 +4495,13 @@ loop as carry_sorted {
     invariant sorted(old(p), 3);
 
     initialize by {
-        unfold(sorted);
-        unfold(sorted_range);
+        unfold(sorted(old(p), 3));
+        unfold(sorted_range(p, 0, 3));
         ...
     }
     preserve by {
-        unfold(sorted);
-        unfold(sorted_range);
+        unfold(sorted(old(p), 3));
+        unfold(sorted_range(p, 0, 3));
     }
 }
 ```

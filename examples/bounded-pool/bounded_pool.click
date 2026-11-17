@@ -47,7 +47,7 @@ void pool_init(struct pool* pool, int32 capacity) {
     step(); step();
     fold(capacity of pool_slot(pool));
     fold(pool_control(pool));
-    step_until(function.exit); unfold(valid_pool);
+    step_until(function.exit); unfold(valid_pool(pool));
 }
 void pool_destroy(struct pool* pool) {
     consumes pool_control(pool);
@@ -66,7 +66,7 @@ void pool_destroy(struct pool* pool) {
     step();
     unfold(authority(pool_slot(pool)));
     unfold(authority(pool_object(pool, _)));
-    step_until(function.exit); unfold(valid_pool);
+    step_until(function.exit); unfold(valid_pool(pool));
 }
 void pool_zero_pipeline(struct pool* pool) {
     consumes pool_storage(pool);
@@ -83,7 +83,7 @@ void pool_zero_pipeline(struct pool* pool) {
     unfold(pool_control(pool));
     fold(pool_control(pool));
     step();
-    step_until(function.exit); unfold(valid_pool);
+    step_until(function.exit); unfold(valid_pool(pool));
 }
 
 void pool_checkout(struct pool* pool, struct object* object) {
@@ -106,7 +106,7 @@ void pool_checkout(struct pool* pool, struct object* object) {
         fold(pool_object(pool, object));
         have pool->capacity == pool->checked_out + count(pool_slot(pool));
     }
-    step_until(function.exit); unfold(valid_pool);
+    step_until(function.exit); unfold(valid_pool(pool));
 }
 
 void pool_return(struct pool* pool, struct object* object) {
@@ -131,7 +131,7 @@ void pool_return(struct pool* pool, struct object* object) {
         fold(pool_slot(pool));
         have pool->capacity == pool->checked_out + count(pool_slot(pool));
     }
-    step_until(function.exit); unfold(valid_pool);
+    step_until(function.exit); unfold(valid_pool(pool));
 }
 
 void pool_pipeline(struct pool* pool, struct object* first, struct object* second) {
@@ -186,7 +186,7 @@ void pool_pipeline(struct pool* pool, struct object* first, struct object* secon
     step();
     have first->value == 11;
     have second->value == 22;
-    step_until(function.exit); unfold(valid_pool);
+    step_until(function.exit); unfold(valid_pool(pool));
 }
 
 void pool_shrink(struct pool* pool, int32 amount) {
@@ -206,7 +206,7 @@ void pool_shrink(struct pool* pool, int32 amount) {
         step();
         have pool->capacity == pool->checked_out + count(pool_slot(pool));
     }
-    step_until(function.exit); unfold(valid_pool);
+    step_until(function.exit); unfold(valid_pool(pool));
 }
 
 void pool_resize_pipeline(struct pool* pool) {
@@ -225,7 +225,7 @@ void pool_resize_pipeline(struct pool* pool) {
     unfold(pool_control(pool));
     fold(pool_control(pool));
     step();
-    step_until(function.exit); unfold(valid_pool);
+    step_until(function.exit); unfold(valid_pool(pool));
 }
 
 void pool_grow(struct pool* pool, int32 amount) {
@@ -247,7 +247,7 @@ void pool_grow(struct pool* pool, int32 amount) {
         fold(amount of pool_slot(pool));
         have pool->capacity == pool->checked_out + count(pool_slot(pool));
     }
-    step_until(function.exit); unfold(valid_pool);
+    step_until(function.exit); unfold(valid_pool(pool));
 }
 
 void pool_transfer(struct pool* source, struct pool* destination, struct object* object) {
@@ -287,13 +287,13 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
                 normalize() using { separate(memory(source->checked_out), memory(destination->checked_out)); };
             }
             have destination->checked_out == at(before_source_write, destination->checked_out) by {
-                preserve(separate(statement(0).footprint, memory(destination->checked_out)));
+                preserve(memory(destination->checked_out), statement(0));
             }
             have separate(statement(0).footprint, memory(destination->capacity)) by {
                 normalize() using { separate(memory(source->checked_out), memory(destination->capacity)); };
             }
             have destination->capacity == at(before_source_write, destination->capacity) by {
-                preserve(separate(statement(0).footprint, memory(destination->capacity)));
+                preserve(memory(destination->capacity), statement(0));
             }
             have separate(memory(destination->checked_out), memory(destination->capacity));
             step();
@@ -301,7 +301,7 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
                 normalize() using { separate(memory(destination->checked_out), memory(destination->capacity)); };
             }
             have destination->capacity == at(statement(1).entry, destination->capacity) by {
-                preserve(separate(statement(1).footprint, memory(destination->capacity)));
+                preserve(memory(destination->capacity), statement(1));
             }
             have destination->capacity == at(before_source_write, destination->capacity) by {
                 known();
@@ -313,7 +313,7 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
         }
         have source->capacity == source->checked_out + count(pool_slot(source));
     }
-    step_until(function.exit); unfold(valid_pool);
+    step_until(function.exit); unfold(valid_pool(destination));
 }
 
 void pool_transfer_pipeline(struct pool* source, struct pool* destination, struct object* object) {
@@ -352,5 +352,5 @@ void pool_transfer_pipeline(struct pool* source, struct pool* destination, struc
     have defined(count(pool_object(destination, _)) + 1);
     apply(population_member_count_zero(count(pool_object(destination, object))));
     step();
-    step_until(function.exit); unfold(valid_pool);
+    step_until(function.exit); unfold(valid_pool(destination));
 }

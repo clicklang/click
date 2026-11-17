@@ -13,7 +13,7 @@ pub(in crate::surface::proof) fn explicit_loop_preservation_tactics(
     };
     (!tactics
         .iter()
-        .all(|tactic| matches!(tactic, ProofTactic::UnfoldPredicate(_))))
+        .all(|tactic| matches!(tactic, ProofTactic::UnfoldProposition(_))))
     .then_some(tactics)
 }
 

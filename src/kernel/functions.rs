@@ -9282,13 +9282,13 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
             // The callee's ensure holds under its own leading premises. Where
             // one of those premises is exactly available at this call, the
             // consequent is available too, and publishing it saves every
-            // caller an `extract`. This is the kernel's modus ponens, so it
+            // caller an implication application. This is the kernel's modus ponens, so it
             // walks only the ensure's own implication chain and cites each
             // discharged premise exactly: an indexed hit in the call context,
             // or a premise already discharged above it in this chain. A
             // premise neither route settles ends the walk, and the ensure
             // stays available as the implication it was written as, for the
-            // proof to discharge with `extract`.
+            // proof to discharge with `apply(fact)`.
             let mut specialized = ensure_path.proposition.clone();
             let mut discharged_premises: Vec<Proposition> = Vec::new();
             while let Proposition::Implies(premise, body) = specialized {

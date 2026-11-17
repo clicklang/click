@@ -1,7 +1,7 @@
 # pure theorem instantiate requires guard evidence
 
-Specialization must still reject a universal fact when its instantiated guard
-does not follow from the explicitly listed premises.
+The ordinary `have` for the instantiated guard must still fail when its bound
+is unavailable. Instantiation never assumes that bound.
 
 ```click
 theorem bounded_value(value: int32, limit: int32) {
@@ -10,14 +10,15 @@ theorem bounded_value(value: int32, limit: int32) {
     };
 
     ensures 2 <= value by {
+        have 0 <= 2 and 2 < limit;
         instantiate(forall (k: int32) {
             0 <= k and k < limit implies k <= value
-        }, 2) using {};
+        }, 2);
         known();
     }
 }
 ```
 
 ```expect
-fail: does not follow from the listed evidence
+fail: could not establish `0 <= 2 and 2 < limit`
 ```

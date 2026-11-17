@@ -230,6 +230,7 @@ try_history_indexed_equalities
 try_integer_composition_using
 apply_integer_composition
 try_recorded_footprint_preservation
+publish_selected_fact
 try_signed_interval_using
 ordinary_integer_fact
 apply_signed_interval_composition

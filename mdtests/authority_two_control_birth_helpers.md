@@ -74,7 +74,7 @@ void pool_init(struct pool* pool, int32 capacity) {
     step(); step();
     fold(capacity of pool_slot(pool));
     fold(pool_control(pool));
-    step_until(function.exit); unfold(valid_pool); solve();
+    step_until(function.exit); unfold(valid_pool(pool)); solve();
 }
 void initialize_pair(struct pool* source, struct pool* destination) {
     requires source != destination;

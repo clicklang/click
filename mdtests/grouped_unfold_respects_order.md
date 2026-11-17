@@ -21,7 +21,7 @@ int32 identity(int32 x) {
 } by {
     step_until(function.exit);
     solve();
-    unfold(nonnegative);
+    unfold(nonnegative(x));
 }
 ```
 

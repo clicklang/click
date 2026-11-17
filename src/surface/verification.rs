@@ -7437,7 +7437,7 @@ pub(in crate::surface) fn validate_loop_initialization_tactics(
                 validate_loop_initialization_tactics(&both.left_tactics)?;
                 validate_loop_initialization_tactics(&both.right_tactics)?;
             }
-            ProofTactic::UnfoldPredicate(_)
+            ProofTactic::UnfoldProposition(_)
             | ProofTactic::UnfoldFunction(_)
             | ProofTactic::ApplyTheorem(_)
             | ProofTactic::ApplyTheoremUsing { .. }

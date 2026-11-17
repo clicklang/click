@@ -567,7 +567,7 @@ contract, which Click checks at the call from `twice`'s own contract. When
 the two contracts agree only by a proof, a refinement theorem shows it,
 naming the crate function as a value by its path, as Rust passes it:
 `theorem twice_is_doubling() { ensures Doubling(function_pointers::twice) by
-{ unfold(Doubling); solve(); } }`, and the caller's proof applies it,
+{ unfold(Doubling(function_pointers::twice)); solve(); } }`, and the caller's proof applies it,
 `apply(twice_is_doubling());`. The diagnostic that refuses the call suggests
 that theorem. The importer reads Charon's `CastKind::FnPtr` of a
 crate function item and its `FnOperand::Dynamic` call through a local, and

@@ -856,7 +856,6 @@ pub(super) mod tests {
                 crate::kernel::proof::ProofObligation::FunctionOutcome(outcome),
                 ProofBranchState {
                     facts: ProofFacts::default(),
-                    unfolded_predicates: Default::default(),
                     execution: None,
                 },
             ),

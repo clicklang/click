@@ -28,7 +28,7 @@ int32 sorted_pair_count(int32 p[2], int32 x) {
     requires p[0] == x;
     ensures sorted_pair: sorted(p, 2) by {
         step_until(function.exit);
-        unfold(sorted);
+        unfold(sorted(p, 2));
         solve();
     }
     ensures counted: count_matches(p, 0, 1, x) == 1;

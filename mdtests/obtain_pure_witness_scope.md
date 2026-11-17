@@ -8,8 +8,7 @@ theorem obtained_int32(x: int32) {
         obtain (k: int32) { k > x }
         have k > x by known();
         have forall (k: int32) { k == k } by { intro(); normalize(); }
-        instantiate(forall (j: int32) { j > x implies j > 1000 }, k)
-            using { k > x; };
+        instantiate(forall (j: int32) { j > x implies j > 1000 }, k);
         have k > 1000;
         witness { z: k };
         known();

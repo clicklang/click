@@ -40,7 +40,7 @@ void increment(int32* state) {
 
 theorem increment_is_guarded_progress() {
     ensures GuardedProgress(&increment) by {
-        unfold(GuardedProgress);
+        unfold(GuardedProgress(&increment));
         intro();
         both {
             solve() using {

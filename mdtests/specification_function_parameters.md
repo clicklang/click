@@ -83,7 +83,7 @@ theorem callback_fold_append(lo: int32, hi: int32) {
     requires lo <= hi;
     requires hi < 2147483647;
     ensures reduce(|acc: Integer, i: int32| -> Integer { acc + to_integer(i) }, lo, hi + 1, 0) == reduce(|acc: Integer, i: int32| -> Integer { acc + to_integer(i) }, lo, hi, 0) + to_integer(hi) by {
-        peel(reduce(|acc: Integer, i: int32| -> Integer { acc + to_integer(i) }, lo, hi + 1, 0)) using { lo <= hi; hi < 2147483647; };
+        unfold(reduce(|acc: Integer, i: int32| -> Integer { acc + to_integer(i) }, lo, hi + 1, 0));
         solve();
     }
 }
@@ -96,7 +96,7 @@ theorem mathematical_callback_fold_append(lo: Integer, hi: Integer) {
     ensures math_total(|acc: Integer, i: Integer| -> Integer { acc + i }, lo, hi + 1) == math_total(|acc: Integer, i: Integer| -> Integer { acc + i }, lo, hi) + hi by {
         have hi + 1 - 1 == hi by solve();
         have lo <= hi + 1 - 1 by solve();
-        peel(math_total(|acc: Integer, i: Integer| -> Integer { acc + i }, lo, hi + 1)) using { lo <= hi + 1 - 1; };
+        unfold(math_total(|acc: Integer, i: Integer| -> Integer { acc + i }, lo, hi + 1));
         solve();
     }
 }

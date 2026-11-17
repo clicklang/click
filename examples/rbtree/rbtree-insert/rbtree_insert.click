@@ -892,13 +892,13 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(gparent->rb_right)); };
                                                         }
                                                         have gparent->rb_right == at(before_grandparent_links, gparent->rb_right) by {
-                                                            preserve(separate(statement(1).statement(3).footprint, memory(gparent->rb_right)));
+                                                            preserve(memory(gparent->rb_right), statement(1).statement(3));
                                                         }
                                                         have separate(statement(1).statement(3).footprint, memory(parent->rb_left)) by {
                                                             normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(parent->rb_left)); };
                                                         }
                                                         have parent->rb_left == at(before_grandparent_links, parent->rb_left) by {
-                                                            preserve(separate(statement(1).statement(3).footprint, memory(parent->rb_left)));
+                                                            preserve(memory(parent->rb_left), statement(1).statement(3));
                                                         }
                                                         unfold(read_focus_link);
                                                         unfold(read_tag);
@@ -1145,9 +1145,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     have separate(memory(sx->rb_right), memory(tmp->__rb_parent_color)) by { rewrite(tmp, sx); known(); }
                                                                 step();
                                                                     have separate(statement(1).statement(4).statement(5).statement(0).footprint, memory(sx->rb_left)) by { normalize() using { separate(memory(sx->rb_left), memory(tmp->__rb_parent_color)); }; }
-                                                                    have sx->rb_left == at(before_sibling_recolor, sx->rb_left) by { preserve(separate(statement(1).statement(4).statement(5).statement(0).footprint, memory(sx->rb_left))); }
+                                                                    have sx->rb_left == at(before_sibling_recolor, sx->rb_left) by { preserve(memory(sx->rb_left), statement(1).statement(4).statement(5).statement(0)); }
                                                                     have separate(statement(1).statement(4).statement(5).statement(0).footprint, memory(sx->rb_right)) by { normalize() using { separate(memory(sx->rb_right), memory(tmp->__rb_parent_color)); }; }
-                                                                    have sx->rb_right == at(before_sibling_recolor, sx->rb_right) by { preserve(separate(statement(1).statement(4).statement(5).statement(0).footprint, memory(sx->rb_right))); }
+                                                                    have sx->rb_right == at(before_sibling_recolor, sx->rb_right) by { preserve(memory(sx->rb_right), statement(1).statement(4).statement(5).statement(0)); }
                                                                     unfold(written_sibling_link);
                                                                     unfold(written_grandparent_link);
                                                                     unfold(saved_child_left);
@@ -1511,11 +1511,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     unfold(triangle_saved_rb_right);
                                                                     have tmp->rb_right == unid->rb_right by { rewrite(tmp, unid); known(); }
                                                                     have separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_right)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_right)); }; }
-                                                                    have at(statement(1).statement(4).statement(9).exit, node->rb_right) == at(statement(1).statement(4).statement(9).entry, node->rb_right) by { preserve(separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_right))); }
+                                                                    have at(statement(1).statement(4).statement(9).exit, node->rb_right) == at(statement(1).statement(4).statement(9).entry, node->rb_right) by { preserve(memory(node->rb_right), statement(1).statement(4).statement(9)); }
                                                                     have at(statement(1).statement(4).statement(9).entry, node->rb_right) == at(triangle_before_uncle_load, node->rb_right) by known();
                                                                     have node->rb_right == at(triangle_before_uncle_load, node->rb_right) by known();
                                                                     have separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_left)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_left)); }; }
-                                                                    have at(statement(1).statement(4).statement(9).exit, node->rb_left) == at(statement(1).statement(4).statement(9).entry, node->rb_left) by { preserve(separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_left))); }
+                                                                    have at(statement(1).statement(4).statement(9).exit, node->rb_left) == at(statement(1).statement(4).statement(9).entry, node->rb_left) by { preserve(memory(node->rb_left), statement(1).statement(4).statement(9)); }
                                                                     have at(statement(1).statement(4).statement(9).entry, node->rb_left) == at(triangle_before_uncle_load, node->rb_left) by known();
                                                                     have node->rb_left == at(triangle_before_uncle_load, node->rb_left) by known();
                                                                     let un = fold(rb_at(uid->rb_left), { model: RbTree::Node(unid, gparent, Color::Black, unl, unr) }, { left: ul, right: ur });
@@ -1538,11 +1538,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     unfold(triangle_uncle_link);
                                                                 have gparent->rb_left == tmp by { known(); }
                                                                     have separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_right)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_right)); }; }
-                                                                    have at(statement(1).statement(4).statement(9).exit, node->rb_right) == at(statement(1).statement(4).statement(9).entry, node->rb_right) by { preserve(separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_right))); }
+                                                                    have at(statement(1).statement(4).statement(9).exit, node->rb_right) == at(statement(1).statement(4).statement(9).entry, node->rb_right) by { preserve(memory(node->rb_right), statement(1).statement(4).statement(9)); }
                                                                     have at(statement(1).statement(4).statement(9).entry, node->rb_right) == at(triangle_before_uncle_load, node->rb_right) by known();
                                                                     have node->rb_right == at(triangle_before_uncle_load, node->rb_right) by known();
                                                                     have separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_left)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_left)); }; }
-                                                                    have at(statement(1).statement(4).statement(9).exit, node->rb_left) == at(statement(1).statement(4).statement(9).entry, node->rb_left) by { preserve(separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_left))); }
+                                                                    have at(statement(1).statement(4).statement(9).exit, node->rb_left) == at(statement(1).statement(4).statement(9).entry, node->rb_left) by { preserve(memory(node->rb_left), statement(1).statement(4).statement(9)); }
                                                                     have at(statement(1).statement(4).statement(9).entry, node->rb_left) == at(triangle_before_uncle_load, node->rb_left) by known();
                                                                     have node->rb_left == at(triangle_before_uncle_load, node->rb_left) by known();
                                                                 let un = fold(rb_at(tmp), { model: RbTree::Empty });
@@ -1633,12 +1633,12 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         contains(at(before_gparent_call, load_tag), statement(1).statement(2).call(0).footprint);
                                                                         contains(memory(node->rb_right), memory(node->rb_right));
                                                                     };
-                                                                    have at(statement(1).statement(2).call(0).exit, node->rb_right) == at(before_gparent_call, node->rb_right) by { preserve(separate(statement(1).statement(2).call(0).footprint, memory(node->rb_right))); }
+                                                                    have at(statement(1).statement(2).call(0).exit, node->rb_right) == at(before_gparent_call, node->rb_right) by { preserve(memory(node->rb_right), statement(1).statement(2).call(0)); }
                                                                     have separate(statement(1).statement(2).assignment(gparent, 0).footprint, memory(node->rb_right)) by { normalize() using { separate(memory(((&gparent) as (uint8 *))[0..8]), memory(node->rb_right)); }; }
-                                                                    have at(statement(1).statement(2).assignment(gparent, 0).exit, node->rb_right) == at(statement(1).statement(2).assignment(gparent, 0).entry, node->rb_right) by { preserve(separate(statement(1).statement(2).assignment(gparent, 0).footprint, memory(node->rb_right))); }
+                                                                    have at(statement(1).statement(2).assignment(gparent, 0).exit, node->rb_right) == at(statement(1).statement(2).assignment(gparent, 0).entry, node->rb_right) by { preserve(memory(node->rb_right), statement(1).statement(2).assignment(gparent, 0)); }
                                                                     have at(statement(1).statement(2).assignment(gparent, 0).entry, node->rb_right) == at(statement(1).statement(2).call(0).exit, node->rb_right) by known();
                                                                     have separate(statement(1).statement(3).footprint, memory(node->rb_right)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_right)); }; }
-                                                                    have at(statement(1).statement(3).exit, node->rb_right) == at(statement(1).statement(3).entry, node->rb_right) by { preserve(separate(statement(1).statement(3).footprint, memory(node->rb_right))); }
+                                                                    have at(statement(1).statement(3).exit, node->rb_right) == at(statement(1).statement(3).entry, node->rb_right) by { preserve(memory(node->rb_right), statement(1).statement(3)); }
                                                                     have at(statement(1).statement(3).entry, node->rb_right) == at(statement(1).statement(2).assignment(gparent, 0).exit, node->rb_right) by known();
 
                                                                     have separate(memory(((&gparent) as (uint8 *))[0..8]), memory(node->rb_left)) by known();
@@ -1650,12 +1650,12 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         contains(at(before_gparent_call, load_tag), statement(1).statement(2).call(0).footprint);
                                                                         contains(memory(node->rb_left), memory(node->rb_left));
                                                                     };
-                                                                    have at(statement(1).statement(2).call(0).exit, node->rb_left) == at(before_gparent_call, node->rb_left) by { preserve(separate(statement(1).statement(2).call(0).footprint, memory(node->rb_left))); }
+                                                                    have at(statement(1).statement(2).call(0).exit, node->rb_left) == at(before_gparent_call, node->rb_left) by { preserve(memory(node->rb_left), statement(1).statement(2).call(0)); }
                                                                     have separate(statement(1).statement(2).assignment(gparent, 0).footprint, memory(node->rb_left)) by { normalize() using { separate(memory(((&gparent) as (uint8 *))[0..8]), memory(node->rb_left)); }; }
-                                                                    have at(statement(1).statement(2).assignment(gparent, 0).exit, node->rb_left) == at(statement(1).statement(2).assignment(gparent, 0).entry, node->rb_left) by { preserve(separate(statement(1).statement(2).assignment(gparent, 0).footprint, memory(node->rb_left))); }
+                                                                    have at(statement(1).statement(2).assignment(gparent, 0).exit, node->rb_left) == at(statement(1).statement(2).assignment(gparent, 0).entry, node->rb_left) by { preserve(memory(node->rb_left), statement(1).statement(2).assignment(gparent, 0)); }
                                                                     have at(statement(1).statement(2).assignment(gparent, 0).entry, node->rb_left) == at(statement(1).statement(2).call(0).exit, node->rb_left) by known();
                                                                     have separate(statement(1).statement(3).footprint, memory(node->rb_left)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_left)); }; }
-                                                                    have at(statement(1).statement(3).exit, node->rb_left) == at(statement(1).statement(3).entry, node->rb_left) by { preserve(separate(statement(1).statement(3).footprint, memory(node->rb_left))); }
+                                                                    have at(statement(1).statement(3).exit, node->rb_left) == at(statement(1).statement(3).entry, node->rb_left) by { preserve(memory(node->rb_left), statement(1).statement(3)); }
                                                                     have at(statement(1).statement(3).entry, node->rb_left) == at(statement(1).statement(2).assignment(gparent, 0).exit, node->rb_left) by known();
 
                                                                     have (node->__rb_parent_color & 1) == color_bit(Color::Red) by {
@@ -1670,7 +1670,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     step();
                                                                     step();
                                                                     have separate(statement(1).statement(4).statement(11).footprint, memory(node->rb_left)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_left)); }; }
-                                                                    have at(statement(1).statement(4).statement(11).exit, node->rb_left) == at(statement(1).statement(4).statement(11).entry, node->rb_left) by { preserve(separate(statement(1).statement(4).statement(11).footprint, memory(node->rb_left))); }
+                                                                    have at(statement(1).statement(4).statement(11).exit, node->rb_left) == at(statement(1).statement(4).statement(11).entry, node->rb_left) by { preserve(memory(node->rb_left), statement(1).statement(4).statement(11)); }
                                                                     have at(statement(1).statement(4).statement(11).entry, node->rb_left) == at(triangle_uncle_pointer, node->rb_left) by known();
                                                                     have separate(memory(parent->rb_left), memory(node->rb_right)) by { known(); }
                                                                     mark before_inner_parent_right;
@@ -1890,10 +1890,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             let { left: rl_at, right: rr_at } = unfold(nl_at);
                                                                             have separate(memory(((&parent) as (uint8 *))[0..8]), memory(original_left->rb_left)) by known();
                                                                             have separate(statement(1).statement(4).statement(12).statement(6).footprint, memory(original_left->rb_left)) by { normalize() using { separate(memory(((&parent) as (uint8 *))[0..8]), memory(original_left->rb_left)); }; }
-                                                                            have at(statement(1).statement(4).statement(12).statement(6).exit, original_left->rb_left) == at(statement(1).statement(4).statement(12).statement(6).entry, original_left->rb_left) by { preserve(separate(statement(1).statement(4).statement(12).statement(6).footprint, memory(original_left->rb_left))); }
+                                                                            have at(statement(1).statement(4).statement(12).statement(6).exit, original_left->rb_left) == at(statement(1).statement(4).statement(12).statement(6).entry, original_left->rb_left) by { preserve(memory(original_left->rb_left), statement(1).statement(4).statement(12).statement(6)); }
                                                                             have separate(memory(((&parent) as (uint8 *))[0..8]), memory(original_left->rb_right)) by known();
                                                                             have separate(statement(1).statement(4).statement(12).statement(6).footprint, memory(original_left->rb_right)) by { normalize() using { separate(memory(((&parent) as (uint8 *))[0..8]), memory(original_left->rb_right)); }; }
-                                                                            have at(statement(1).statement(4).statement(12).statement(6).exit, original_left->rb_right) == at(statement(1).statement(4).statement(12).statement(6).entry, original_left->rb_right) by { preserve(separate(statement(1).statement(4).statement(12).statement(6).footprint, memory(original_left->rb_right))); }
+                                                                            have at(statement(1).statement(4).statement(12).statement(6).exit, original_left->rb_right) == at(statement(1).statement(4).statement(12).statement(6).entry, original_left->rb_right) by { preserve(memory(original_left->rb_right), statement(1).statement(4).statement(12).statement(6)); }
                                                                             have rx == original_left by known();
 
                                                                             let outer_child_left = fold(insert_left_link(original_left), { link: InsertLink::To(original_left->rb_left) });
@@ -1924,9 +1924,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             have separate(memory(original_left->rb_right), memory(tmp->__rb_parent_color)) by { rewrite(tmp, original_left); normalize(); }
                                                                             step();
                                                                             have separate(statement(1).statement(4).statement(15).statement(0).footprint, memory(original_left->rb_left)) by { normalize() using { separate(memory(original_left->rb_left), memory(tmp->__rb_parent_color)); }; }
-                                                                            have original_left->rb_left == at(before_outer_child_color, original_left->rb_left) by { preserve(separate(statement(1).statement(4).statement(15).statement(0).footprint, memory(original_left->rb_left))); }
+                                                                            have original_left->rb_left == at(before_outer_child_color, original_left->rb_left) by { preserve(memory(original_left->rb_left), statement(1).statement(4).statement(15).statement(0)); }
                                                                             have separate(statement(1).statement(4).statement(15).statement(0).footprint, memory(original_left->rb_right)) by { normalize() using { separate(memory(original_left->rb_right), memory(tmp->__rb_parent_color)); }; }
-                                                                            have original_left->rb_right == at(before_outer_child_color, original_left->rb_right) by { preserve(separate(statement(1).statement(4).statement(15).statement(0).footprint, memory(original_left->rb_right))); }
+                                                                            have original_left->rb_right == at(before_outer_child_color, original_left->rb_right) by { preserve(memory(original_left->rb_right), statement(1).statement(4).statement(15).statement(0)); }
                                                                             unfold(outer_child_left);
                                                                             unfold(outer_child_right);
                                                                             have tmp->rb_left == original_left->rb_left by { rewrite(tmp, original_left); known(); }
@@ -2382,13 +2382,13 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(gparent->rb_right)); };
                                                         }
                                                         have gparent->rb_right == at(before_grandparent_links, gparent->rb_right) by {
-                                                            preserve(separate(statement(1).statement(3).footprint, memory(gparent->rb_right)));
+                                                            preserve(memory(gparent->rb_right), statement(1).statement(3));
                                                         }
                                                         have separate(statement(1).statement(3).footprint, memory(parent->rb_right)) by {
                                                             normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(parent->rb_right)); };
                                                         }
                                                         have parent->rb_right == at(before_grandparent_links, parent->rb_right) by {
-                                                            preserve(separate(statement(1).statement(3).footprint, memory(parent->rb_right)));
+                                                            preserve(memory(parent->rb_right), statement(1).statement(3));
                                                         }
                                                         unfold(read_focus_link);
                                                         mark before_uncle_pointer_changes;
@@ -2557,12 +2557,12 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         contains(at(before_gparent_call, load_tag), statement(1).statement(2).call(0).footprint);
                                                                         contains(memory(node->rb_left), memory(node->rb_left));
                                                                     };
-                                                                    have at(statement(1).statement(2).call(0).exit, node->rb_left) == at(before_gparent_call, node->rb_left) by { preserve(separate(statement(1).statement(2).call(0).footprint, memory(node->rb_left))); }
+                                                                    have at(statement(1).statement(2).call(0).exit, node->rb_left) == at(before_gparent_call, node->rb_left) by { preserve(memory(node->rb_left), statement(1).statement(2).call(0)); }
                                                                     have separate(statement(1).statement(2).assignment(gparent, 0).footprint, memory(node->rb_left)) by { normalize() using { separate(memory(((&gparent) as (uint8 *))[0..8]), memory(node->rb_left)); }; }
-                                                                    have at(statement(1).statement(2).assignment(gparent, 0).exit, node->rb_left) == at(statement(1).statement(2).assignment(gparent, 0).entry, node->rb_left) by { preserve(separate(statement(1).statement(2).assignment(gparent, 0).footprint, memory(node->rb_left))); }
+                                                                    have at(statement(1).statement(2).assignment(gparent, 0).exit, node->rb_left) == at(statement(1).statement(2).assignment(gparent, 0).entry, node->rb_left) by { preserve(memory(node->rb_left), statement(1).statement(2).assignment(gparent, 0)); }
                                                                     have at(statement(1).statement(2).assignment(gparent, 0).entry, node->rb_left) == at(statement(1).statement(2).call(0).exit, node->rb_left) by known();
                                                                     have separate(statement(1).statement(3).footprint, memory(node->rb_left)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_left)); }; }
-                                                                    have at(statement(1).statement(3).exit, node->rb_left) == at(statement(1).statement(3).entry, node->rb_left) by { preserve(separate(statement(1).statement(3).footprint, memory(node->rb_left))); }
+                                                                    have at(statement(1).statement(3).exit, node->rb_left) == at(statement(1).statement(3).entry, node->rb_left) by { preserve(memory(node->rb_left), statement(1).statement(3)); }
                                                                     have at(statement(1).statement(3).entry, node->rb_left) == at(statement(1).statement(2).assignment(gparent, 0).exit, node->rb_left) by known();
 
                                                                     have separate(memory(((&gparent) as (uint8 *))[0..8]), memory(node->rb_right)) by known();
@@ -2574,12 +2574,12 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         contains(at(before_gparent_call, load_tag), statement(1).statement(2).call(0).footprint);
                                                                         contains(memory(node->rb_right), memory(node->rb_right));
                                                                     };
-                                                                    have at(statement(1).statement(2).call(0).exit, node->rb_right) == at(before_gparent_call, node->rb_right) by { preserve(separate(statement(1).statement(2).call(0).footprint, memory(node->rb_right))); }
+                                                                    have at(statement(1).statement(2).call(0).exit, node->rb_right) == at(before_gparent_call, node->rb_right) by { preserve(memory(node->rb_right), statement(1).statement(2).call(0)); }
                                                                     have separate(statement(1).statement(2).assignment(gparent, 0).footprint, memory(node->rb_right)) by { normalize() using { separate(memory(((&gparent) as (uint8 *))[0..8]), memory(node->rb_right)); }; }
-                                                                    have at(statement(1).statement(2).assignment(gparent, 0).exit, node->rb_right) == at(statement(1).statement(2).assignment(gparent, 0).entry, node->rb_right) by { preserve(separate(statement(1).statement(2).assignment(gparent, 0).footprint, memory(node->rb_right))); }
+                                                                    have at(statement(1).statement(2).assignment(gparent, 0).exit, node->rb_right) == at(statement(1).statement(2).assignment(gparent, 0).entry, node->rb_right) by { preserve(memory(node->rb_right), statement(1).statement(2).assignment(gparent, 0)); }
                                                                     have at(statement(1).statement(2).assignment(gparent, 0).entry, node->rb_right) == at(statement(1).statement(2).call(0).exit, node->rb_right) by known();
                                                                     have separate(statement(1).statement(3).footprint, memory(node->rb_right)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_right)); }; }
-                                                                    have at(statement(1).statement(3).exit, node->rb_right) == at(statement(1).statement(3).entry, node->rb_right) by { preserve(separate(statement(1).statement(3).footprint, memory(node->rb_right))); }
+                                                                    have at(statement(1).statement(3).exit, node->rb_right) == at(statement(1).statement(3).entry, node->rb_right) by { preserve(memory(node->rb_right), statement(1).statement(3)); }
                                                                     have at(statement(1).statement(3).entry, node->rb_right) == at(statement(1).statement(2).assignment(gparent, 0).exit, node->rb_right) by known();
 
                                                                     have (node->__rb_parent_color & 1) == color_bit(Color::Red) by {
@@ -2594,10 +2594,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     step();
                                                                     step();
                                                                     have separate(statement(1).statement(4).statement(1).footprint, memory(node->rb_right)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_right)); }; }
-                                                                    have at(statement(1).statement(4).statement(1).exit, node->rb_right) == at(statement(1).statement(4).statement(1).entry, node->rb_right) by { preserve(separate(statement(1).statement(4).statement(1).footprint, memory(node->rb_right))); }
+                                                                    have at(statement(1).statement(4).statement(1).exit, node->rb_right) == at(statement(1).statement(4).statement(1).entry, node->rb_right) by { preserve(memory(node->rb_right), statement(1).statement(4).statement(1)); }
                                                                     have at(statement(1).statement(4).statement(1).entry, node->rb_right) == at(triangle_uncle_pointer, node->rb_right) by known();
                                                                     have separate(statement(1).statement(4).statement(1).footprint, memory(node->rb_left)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_left)); }; }
-                                                                    have at(statement(1).statement(4).statement(1).exit, node->rb_left) == at(statement(1).statement(4).statement(1).entry, node->rb_left) by { preserve(separate(statement(1).statement(4).statement(1).footprint, memory(node->rb_left))); }
+                                                                    have at(statement(1).statement(4).statement(1).exit, node->rb_left) == at(statement(1).statement(4).statement(1).entry, node->rb_left) by { preserve(memory(node->rb_left), statement(1).statement(4).statement(1)); }
                                                                     have separate(memory(parent->rb_right), memory(node->rb_left)) by { known(); }
                                                                     mark before_inner_parent_right;
                                                                     have at(before_inner_parent_right, parent->rb_left == parent->rb_left) by { normalize(); }
@@ -2653,15 +2653,15 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             let { right: bl_at, left: br_at } = unfold(nl_at);
                                                                             have separate(memory(((&tmp) as (uint8 *))[0..8]), memory(bx->rb_left)) by known();
                                                                             have separate(statement(1).statement(4).statement(1).footprint, memory(bx->rb_left)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(bx->rb_left)); }; }
-                                                                            have at(statement(1).statement(4).statement(1).exit, bx->rb_left) == at(statement(1).statement(4).statement(1).entry, bx->rb_left) by { preserve(separate(statement(1).statement(4).statement(1).footprint, memory(bx->rb_left))); }
+                                                                            have at(statement(1).statement(4).statement(1).exit, bx->rb_left) == at(statement(1).statement(4).statement(1).entry, bx->rb_left) by { preserve(memory(bx->rb_left), statement(1).statement(4).statement(1)); }
                                                                             have separate(memory(((&tmp) as (uint8 *))[0..8]), memory(bx->rb_right)) by known();
                                                                             have separate(statement(1).statement(4).statement(1).footprint, memory(bx->rb_right)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(bx->rb_right)); }; }
-                                                                            have at(statement(1).statement(4).statement(1).exit, bx->rb_right) == at(statement(1).statement(4).statement(1).entry, bx->rb_right) by { preserve(separate(statement(1).statement(4).statement(1).footprint, memory(bx->rb_right))); }
+                                                                            have at(statement(1).statement(4).statement(1).exit, bx->rb_right) == at(statement(1).statement(4).statement(1).entry, bx->rb_right) by { preserve(memory(bx->rb_right), statement(1).statement(4).statement(1)); }
                                                                             step();
                                                                             have separate(statement(1).statement(4).statement(2).statement(0).footprint, memory(bx->rb_left)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(bx->rb_left)); }; }
-                                                                            have at(statement(1).statement(4).statement(2).statement(0).exit, bx->rb_left) == at(statement(1).statement(4).statement(2).statement(0).entry, bx->rb_left) by { preserve(separate(statement(1).statement(4).statement(2).statement(0).footprint, memory(bx->rb_left))); }
+                                                                            have at(statement(1).statement(4).statement(2).statement(0).exit, bx->rb_left) == at(statement(1).statement(4).statement(2).statement(0).entry, bx->rb_left) by { preserve(memory(bx->rb_left), statement(1).statement(4).statement(2).statement(0)); }
                                                                             have separate(statement(1).statement(4).statement(2).statement(0).footprint, memory(bx->rb_right)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(bx->rb_right)); }; }
-                                                                            have at(statement(1).statement(4).statement(2).statement(0).exit, bx->rb_right) == at(statement(1).statement(4).statement(2).statement(0).entry, bx->rb_right) by { preserve(separate(statement(1).statement(4).statement(2).statement(0).footprint, memory(bx->rb_right))); }
+                                                                            have at(statement(1).statement(4).statement(2).statement(0).exit, bx->rb_right) == at(statement(1).statement(4).statement(2).statement(0).entry, bx->rb_right) by { preserve(memory(bx->rb_right), statement(1).statement(4).statement(2).statement(0)); }
                                                                             mark before_inner_child_links;
                                                                             have separate(memory(node->rb_left), memory(tmp->__rb_parent_color)) by { known(); }
 
@@ -2826,10 +2826,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             let { right: rl_at, left: rr_at } = unfold(nr_at);
                                                                             have separate(memory(((&parent) as (uint8 *))[0..8]), memory(original_outer_child->rb_right)) by known();
                                                                             have separate(statement(1).statement(4).statement(2).statement(6).footprint, memory(original_outer_child->rb_right)) by { normalize() using { separate(memory(((&parent) as (uint8 *))[0..8]), memory(original_outer_child->rb_right)); }; }
-                                                                            have at(statement(1).statement(4).statement(2).statement(6).exit, original_outer_child->rb_right) == at(statement(1).statement(4).statement(2).statement(6).entry, original_outer_child->rb_right) by { preserve(separate(statement(1).statement(4).statement(2).statement(6).footprint, memory(original_outer_child->rb_right))); }
+                                                                            have at(statement(1).statement(4).statement(2).statement(6).exit, original_outer_child->rb_right) == at(statement(1).statement(4).statement(2).statement(6).entry, original_outer_child->rb_right) by { preserve(memory(original_outer_child->rb_right), statement(1).statement(4).statement(2).statement(6)); }
                                                                             have separate(memory(((&parent) as (uint8 *))[0..8]), memory(original_outer_child->rb_left)) by known();
                                                                             have separate(statement(1).statement(4).statement(2).statement(6).footprint, memory(original_outer_child->rb_left)) by { normalize() using { separate(memory(((&parent) as (uint8 *))[0..8]), memory(original_outer_child->rb_left)); }; }
-                                                                            have at(statement(1).statement(4).statement(2).statement(6).exit, original_outer_child->rb_left) == at(statement(1).statement(4).statement(2).statement(6).entry, original_outer_child->rb_left) by { preserve(separate(statement(1).statement(4).statement(2).statement(6).footprint, memory(original_outer_child->rb_left))); }
+                                                                            have at(statement(1).statement(4).statement(2).statement(6).exit, original_outer_child->rb_left) == at(statement(1).statement(4).statement(2).statement(6).entry, original_outer_child->rb_left) by { preserve(memory(original_outer_child->rb_left), statement(1).statement(4).statement(2).statement(6)); }
                                                                             have rx == original_outer_child by known();
 
                                                                             let outer_child_left = fold(insert_right_link(original_outer_child), { link: InsertLink::To(original_outer_child->rb_right) });
@@ -2860,9 +2860,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             have separate(memory(original_outer_child->rb_left), memory(tmp->__rb_parent_color)) by { rewrite(tmp, original_outer_child); normalize(); }
                                                                             step();
                                                                             have separate(statement(1).statement(4).statement(5).statement(0).footprint, memory(original_outer_child->rb_right)) by { normalize() using { separate(memory(original_outer_child->rb_right), memory(tmp->__rb_parent_color)); }; }
-                                                                            have original_outer_child->rb_right == at(before_outer_child_color, original_outer_child->rb_right) by { preserve(separate(statement(1).statement(4).statement(5).statement(0).footprint, memory(original_outer_child->rb_right))); }
+                                                                            have original_outer_child->rb_right == at(before_outer_child_color, original_outer_child->rb_right) by { preserve(memory(original_outer_child->rb_right), statement(1).statement(4).statement(5).statement(0)); }
                                                                             have separate(statement(1).statement(4).statement(5).statement(0).footprint, memory(original_outer_child->rb_left)) by { normalize() using { separate(memory(original_outer_child->rb_left), memory(tmp->__rb_parent_color)); }; }
-                                                                            have original_outer_child->rb_left == at(before_outer_child_color, original_outer_child->rb_left) by { preserve(separate(statement(1).statement(4).statement(5).statement(0).footprint, memory(original_outer_child->rb_left))); }
+                                                                            have original_outer_child->rb_left == at(before_outer_child_color, original_outer_child->rb_left) by { preserve(memory(original_outer_child->rb_left), statement(1).statement(4).statement(5).statement(0)); }
                                                                             unfold(outer_child_left);
                                                                             unfold(outer_child_right);
                                                                             have tmp->rb_right == original_outer_child->rb_right by { rewrite(tmp, original_outer_child); known(); }
@@ -3244,11 +3244,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     unfold(triangle_saved_rb_right);
                                                                     have tmp->rb_right == unid->rb_right by { rewrite(tmp, unid); known(); }
                                                                     have separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_right)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_right)); }; }
-                                                                    have at(statement(1).statement(4).statement(9).exit, node->rb_right) == at(statement(1).statement(4).statement(9).entry, node->rb_right) by { preserve(separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_right))); }
+                                                                    have at(statement(1).statement(4).statement(9).exit, node->rb_right) == at(statement(1).statement(4).statement(9).entry, node->rb_right) by { preserve(memory(node->rb_right), statement(1).statement(4).statement(9)); }
                                                                     have at(statement(1).statement(4).statement(9).entry, node->rb_right) == at(triangle_before_uncle_load, node->rb_right) by known();
                                                                     have node->rb_right == at(triangle_before_uncle_load, node->rb_right) by known();
                                                                     have separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_left)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_left)); }; }
-                                                                    have at(statement(1).statement(4).statement(9).exit, node->rb_left) == at(statement(1).statement(4).statement(9).entry, node->rb_left) by { preserve(separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_left))); }
+                                                                    have at(statement(1).statement(4).statement(9).exit, node->rb_left) == at(statement(1).statement(4).statement(9).entry, node->rb_left) by { preserve(memory(node->rb_left), statement(1).statement(4).statement(9)); }
                                                                     have at(statement(1).statement(4).statement(9).entry, node->rb_left) == at(triangle_before_uncle_load, node->rb_left) by known();
                                                                     have node->rb_left == at(triangle_before_uncle_load, node->rb_left) by known();
                                                                     let un = fold(rb_at(uid->rb_left), { model: RbTree::Node(unid, gparent, Color::Black, unl, unr) }, { left: ul, right: ur });
@@ -3271,11 +3271,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     unfold(triangle_uncle_link);
                                                                     have gparent->rb_left == tmp by { known(); }
                                                                     have separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_right)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_right)); }; }
-                                                                    have at(statement(1).statement(4).statement(9).exit, node->rb_right) == at(statement(1).statement(4).statement(9).entry, node->rb_right) by { preserve(separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_right))); }
+                                                                    have at(statement(1).statement(4).statement(9).exit, node->rb_right) == at(statement(1).statement(4).statement(9).entry, node->rb_right) by { preserve(memory(node->rb_right), statement(1).statement(4).statement(9)); }
                                                                     have at(statement(1).statement(4).statement(9).entry, node->rb_right) == at(triangle_before_uncle_load, node->rb_right) by known();
                                                                     have node->rb_right == at(triangle_before_uncle_load, node->rb_right) by known();
                                                                     have separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_left)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_left)); }; }
-                                                                    have at(statement(1).statement(4).statement(9).exit, node->rb_left) == at(statement(1).statement(4).statement(9).entry, node->rb_left) by { preserve(separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_left))); }
+                                                                    have at(statement(1).statement(4).statement(9).exit, node->rb_left) == at(statement(1).statement(4).statement(9).entry, node->rb_left) by { preserve(memory(node->rb_left), statement(1).statement(4).statement(9)); }
                                                                     have at(statement(1).statement(4).statement(9).entry, node->rb_left) == at(triangle_before_uncle_load, node->rb_left) by known();
                                                                     have node->rb_left == at(triangle_before_uncle_load, node->rb_left) by known();
                                                                 let un = fold(rb_at(tmp), { model: RbTree::Empty });
@@ -3451,9 +3451,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     have separate(memory(sx->rb_right), memory(tmp->__rb_parent_color)) by { rewrite(tmp, sx); known(); }
                                                                 step();
                                                                     have separate(statement(1).statement(4).statement(15).statement(0).footprint, memory(sx->rb_left)) by { normalize() using { separate(memory(sx->rb_left), memory(tmp->__rb_parent_color)); }; }
-                                                                    have sx->rb_left == at(before_sibling_recolor, sx->rb_left) by { preserve(separate(statement(1).statement(4).statement(15).statement(0).footprint, memory(sx->rb_left))); }
+                                                                    have sx->rb_left == at(before_sibling_recolor, sx->rb_left) by { preserve(memory(sx->rb_left), statement(1).statement(4).statement(15).statement(0)); }
                                                                     have separate(statement(1).statement(4).statement(15).statement(0).footprint, memory(sx->rb_right)) by { normalize() using { separate(memory(sx->rb_right), memory(tmp->__rb_parent_color)); }; }
-                                                                    have sx->rb_right == at(before_sibling_recolor, sx->rb_right) by { preserve(separate(statement(1).statement(4).statement(15).statement(0).footprint, memory(sx->rb_right))); }
+                                                                    have sx->rb_right == at(before_sibling_recolor, sx->rb_right) by { preserve(memory(sx->rb_right), statement(1).statement(4).statement(15).statement(0)); }
                                                                     unfold(written_sibling_link);
                                                                     unfold(written_grandparent_link);
                                                                     unfold(saved_child_left);
