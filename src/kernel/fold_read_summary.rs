@@ -536,7 +536,7 @@ impl BodyChecker<'_> {
                 Err(Self::unsupported("an unlowered C expression"))
             }
             SpecExpression::MemoryLoad {
-                memory,
+                point: memory,
                 pointer,
                 value_type,
             } => {

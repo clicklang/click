@@ -562,7 +562,7 @@ fn pointer_call_producers_retain_nested_arguments_and_native_metadata() {
                     SpecPureFunctionArgument::Value(argument)
                 } else {
                     SpecPureFunctionArgument::ArrayRef {
-                        memory: SpecPoint::Current,
+                        point: SpecPoint::Current,
                         pointer: argument,
                         element_type: ProgramType::Int32,
                     }

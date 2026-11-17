@@ -1692,13 +1692,13 @@ fn verified_function_rule_does_not_publish_one_spec_alias_path() {
     let q = SpecExpression::ProgramExpression(crate::kernel::program_expression::variable("q"));
     let reflexive_load = SpecProposition::Comparison {
         left: SpecExpression::MemoryLoad {
-            memory: SpecPoint::Current,
+            point: SpecPoint::Current,
             pointer: Box::new(q.clone()),
             value_type: ProgramType::Int32,
         },
         operator: ComparisonOperator::Equal,
         right: SpecExpression::MemoryLoad {
-            memory: SpecPoint::Current,
+            point: SpecPoint::Current,
             pointer: Box::new(q),
             value_type: ProgramType::Int32,
         },

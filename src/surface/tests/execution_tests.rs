@@ -1516,7 +1516,7 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
                 )
                 .with_contract(
                     vec![SpecProposition::MemoryLoadable {
-                        memory: SpecPoint::Current,
+                        point: SpecPoint::Current,
                         base: SpecExpression::ProgramExpression(ProgramExpression::Variable(
                             parameter_binding.clone(),
                         )),

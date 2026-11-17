@@ -4225,7 +4225,7 @@ pub enum SpecExpression {
         byte_width: u32,
     },
     MemoryLoad {
-        memory: SpecPoint,
+        point: SpecPoint,
         pointer: Box<SpecExpression>,
         value_type: ProgramType,
     },
@@ -4499,7 +4499,7 @@ pub enum SpecPureFunctionArgument {
     Integer(SpecIntegerExpression),
     Algebraic(SpecAlgebraicExpression),
     ArrayRef {
-        memory: SpecPoint,
+        point: SpecPoint,
         pointer: SpecExpression,
         element_type: ProgramType,
     },
@@ -5388,7 +5388,7 @@ pub enum SpecSequenceExpression {
 pub enum SpecPredicateArgument {
     Value(SpecExpression),
     ArrayRef {
-        memory: SpecPoint,
+        point: SpecPoint,
         pointer: SpecExpression,
     },
 }
@@ -5500,7 +5500,7 @@ pub enum SpecProposition {
         right: SpecResource,
     },
     ResourceViewable {
-        memory: SpecPoint,
+        point: SpecPoint,
         resource: SpecResource,
     },
     ResourceContains {
@@ -5508,7 +5508,7 @@ pub enum SpecProposition {
         child: SpecResource,
     },
     MemoryLoadable {
-        memory: SpecPoint,
+        point: SpecPoint,
         base: SpecExpression,
         start: SpecExpression,
         end: SpecExpression,

@@ -981,7 +981,7 @@ fn lower_spec_proposition_at_state_without_range_guards_in(
     // Separation retains its range-validity conjuncts even in a resource
     // definition: folding establishes them and observing may expose them.
     let SpecProposition::MemoryLoadable {
-        memory,
+        point: memory,
         base,
         start,
         end,
@@ -2022,7 +2022,10 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 },
             )
         }
-        SpecProposition::ResourceViewable { memory, resource } => {
+        SpecProposition::ResourceViewable {
+            point: memory,
+            resource,
+        } => {
             let memory = match memory {
                 SpecPoint::Current => scope.state.memory(),
                 SpecPoint::FunctionEntry | SpecPoint::LoopEntry => match scope.loop_entry_state {
@@ -2058,7 +2061,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             )
         }
         SpecProposition::MemoryLoadable {
-            memory,
+            point: memory,
             base,
             start,
             end,
@@ -5809,7 +5812,10 @@ fn lower_spec_predicate_proposition_at_state_in(
     for argument in arguments {
         let (expression, memory) = match argument {
             SpecPredicateArgument::Value(expression) => (expression, None),
-            SpecPredicateArgument::ArrayRef { memory, pointer } => (pointer, Some(memory)),
+            SpecPredicateArgument::ArrayRef {
+                point: memory,
+                pointer,
+            } => (pointer, Some(memory)),
         };
         let argument_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
             scope,
@@ -6641,7 +6647,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 return evaluate_spec_expression_paths_with_algebraic_bindings_in(
                     SpecScope { state, ..scope },
                     &SpecExpression::MemoryLoad {
-                        memory: SpecPoint::Current,
+                        point: SpecPoint::Current,
                         pointer: pointer.clone(),
                         value_type: *value_type,
                     },
@@ -6664,7 +6670,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             evaluate_spec_expression_paths_with_algebraic_bindings_in(
                 SpecScope { state, ..scope },
                 &SpecExpression::MemoryLoad {
-                    memory: SpecPoint::At(ProgramPoint::of_memory(memory)),
+                    point: SpecPoint::At(ProgramPoint::of_memory(memory)),
                     pointer: Box::new(pointer),
                     value_type: *value_type,
                 },
@@ -7047,7 +7053,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             evaluate_spec_expression_paths_with_algebraic_bindings_in(
                 SpecScope { state, ..scope },
                 &SpecExpression::MemoryLoad {
-                    memory: SpecPoint::Current,
+                    point: SpecPoint::Current,
                     pointer: Box::new(SpecExpression::Value(ProgramValue::typed_pointer(
                         slot.clone(),
                         ProgramType::ParameterPointer(parameter),
@@ -7679,7 +7685,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             budget,
         )?,
         SpecExpression::MemoryLoad {
-            memory,
+            point: memory,
             pointer,
             value_type,
         } => {
@@ -8263,7 +8269,7 @@ fn evaluate_spec_pure_function_argument_paths_in(
             evaluate_spec_algebraic_argument_paths_in(scope, expression, assumptions, budget)
         }
         SpecPureFunctionArgument::ArrayRef {
-            memory,
+            point: memory,
             pointer,
             element_type,
         } => {
