@@ -96,7 +96,7 @@ fn range_values_and_constants_resolve_long_wide_equality_chains() {
 }
 
 #[test]
-fn an_aliased_read_meets_its_stored_cell_without_scanning_unrelated_cells_or_aliases() {
+fn an_aliased_read_uses_its_store_equation_without_scanning_unrelated_cells_or_aliases() {
     let mut previous = None;
     for size in [16_u64, 64, 256, 1024] {
         let _session = VerificationSession::enter();
@@ -121,6 +121,14 @@ fn an_aliased_read_meets_its_stored_cell_without_scanning_unrelated_cells_or_ali
         context = context.assume_proposition(alias(&read_at, &cell(size)));
         let read = word(&memory, &read_at, 8);
         let stored = MachineTerm::uint64_constant(size);
+        context = context.assume_proposition(
+            crate::kernel::memory_provenance::store_value_equation(
+                memory.memory(),
+                &cell(size),
+                &ProgramValue::UInt64(stored.clone()),
+            )
+            .unwrap(),
+        );
         let (ok, work) = crate::instrumentation::measure_deterministic_work(|| {
             context.equality_graph.are_uint64_equal(&read, &stored)
         });
@@ -136,7 +144,7 @@ fn an_aliased_read_meets_its_stored_cell_without_scanning_unrelated_cells_or_ali
 }
 
 #[test]
-fn an_aliased_read_grows_linearly_with_its_own_alias_class() {
+fn an_aliased_read_query_does_not_walk_its_own_alias_class() {
     let mut samples = Vec::new();
     for size in [16_u64, 64, 256, 1024] {
         let _session = VerificationSession::enter();
@@ -154,6 +162,14 @@ fn an_aliased_read_grows_linearly_with_its_own_alias_class() {
         for i in 1..=size {
             context = context.assume_proposition(alias(&link(i), &link(i - 1)));
         }
+        context = context.assume_proposition(
+            crate::kernel::memory_provenance::store_value_equation(
+                memory.memory(),
+                &stored_at,
+                &ProgramValue::UInt64(MachineTerm::uint64_constant(7)),
+            )
+            .unwrap(),
+        );
         let read = word(&memory, &link(size), 8);
         let (ok, work) = crate::instrumentation::measure_deterministic_work(|| {
             context
@@ -163,10 +179,9 @@ fn an_aliased_read_grows_linearly_with_its_own_alias_class() {
         assert!(ok);
         samples.push((size, work));
     }
-    // Linear in the class: four times the aliases, at most about four times
-    // the work.
+    // Address congruence selects the recorded equation without enumerating aliases.
     assert!(
-        samples.windows(2).all(|pair| pair[1].1 <= pair[0].1 * 5),
+        samples.windows(2).all(|pair| pair[1].1 == pair[0].1),
         "{samples:?}"
     );
 }

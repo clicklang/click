@@ -3367,7 +3367,7 @@ fn exact_read_comparison_input(term: &MachineTerm) -> MachineTerm {
         if crate::kernel::eval::is_selected_scalar_read(memory.shared_memory(), pointer, *kind) {
             return term.clone();
         }
-        if kind.is_word32() {
+        if kind.is_word32() || *kind == LoadKind::Bits64 {
             // Select the read identity without recovering a cached value.
             // Already-selected reads above retain their producer's identity.
             return crate::kernel::canonical_form_of_load(

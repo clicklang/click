@@ -423,10 +423,10 @@ impl TermClasses {
                         W::Bits128 => MachineIntegerType::UInt128,
                     };
                     if width == W::Bits64 {
-                        self.intern_typed_machine(
+                        let selected = crate::kernel::equality_graph::exact_read_comparison_input(
                             term.machine_read_leaf().expect("read leaf"),
-                            width,
-                        )
+                        );
+                        self.intern_typed_machine(&selected, width)
                     } else if width != W::Bits128 && {
                         let (memory, pointer, kind) =
                             crate::kernel::MachineOperandView::Shared(term)
