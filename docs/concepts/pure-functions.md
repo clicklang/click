@@ -267,12 +267,14 @@ Fixed mathematical `Integer` parameters and requirements on them retain the
 theorem's Integer bindings in the induction hypothesis. See
 [`scalar_induction_keeps_fixed_integer_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/scalar_induction_keeps_fixed_integer_parameters.md).
 
-For a recursive algebraic parameter, constructor-branching `induct` combines
-exhaustive case analysis with structural induction:
+For a recursive algebraic parameter, introduce the structural induction
+hypothesis with `let ih = induct(xs);` and prove the constructor cases with
+`match xs`:
 
 <!-- verified-example: mdtests/algebraic_structural_induction.md -->
 ```click
-induct(xs) as ih {
+let ih = induct(xs);
+match xs {
     List::Nil => {
         // base case
     }
@@ -318,8 +320,8 @@ proof writes `ih(up, HeapTree::Node(parent, value, a, sibling),
 HeapTree::Node(parent, value, b, sibling))`.
 
 Expression-level `match` remains symbolic and does not itself split a proof or
-introduce proof-scope names. Only the explicit constructor-branching induction
-form performs proof case analysis.
+introduce proof-scope names. A proof-level `match` performs case analysis; after an induction declaration,
+its immediate recursive fields also admit applications of the hypothesis.
 
 `unfold(function(args))` explicitly exposes one symbolic defining equation.
 A recursive call produced by that layer stays opaque. Neither `solve` nor

@@ -87,7 +87,7 @@ fn integer_address_coordinates_join_word_classes_and_follow_scoped_equalities() 
         ConditionTerm::pointer_equal(decoded, pointer),
         true,
     )));
-    assert!(!child.pointer_designations_match(&left, &right));
+    assert!(!child.pointer_provenance_match(&left, &right));
     assert!(!child.contains_known(&Proposition::ConditionIs(
         ConditionTerm::pointer_value_equal(left, right),
         true,
@@ -146,7 +146,7 @@ fn equal_integer_address_words_do_not_merge_pointer_names_or_domains() {
     assert!(!context.equality_graph.are_equal(&p, &q));
     let p = PointerValue::new(p, ProgramType::Int32Pointer);
     let q = PointerValue::new(q, ProgramType::Int32Pointer);
-    assert!(!context.pointer_designations_match(&p, &q));
+    assert!(!context.pointer_provenance_match(&p, &q));
     assert!(!context.contains_known(&Proposition::ConditionIs(
         ConditionTerm::pointer_value_equal(p, q),
         true,

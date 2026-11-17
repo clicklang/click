@@ -745,7 +745,7 @@ fn checked_pointer_read_retention_keeps_a_simplified_address_equation() {
     assert!(!context.pointers_known_equal(&named, &read));
     fact.retain_pointer_read_definition(&context);
     assert!(context.pointers_known_equal(&named, &read));
-    assert!(!context.designations_equal(&named, &read));
+    assert!(!context.provenance_equal(&named, &read));
     assert!(!isolated.pointers_known_equal(&named, &read));
 }
 
@@ -947,7 +947,7 @@ fn pointer_domain_queries_register_stored_read_definitions_without_prior_address
     // equality query must not be needed to make its domain definition visible.
     assert_eq!(
         [
-            EqualityGraph::default().designations_equal(&read, stored.designation()),
+            EqualityGraph::default().provenance_equal(&read, stored.provenance()),
             EqualityGraph::default().opaque_extents_equal(&read, stored.opaque_extent().unwrap()),
             EqualityGraph::default().opaque_extent_is_root(&root_read),
         ],
@@ -960,7 +960,7 @@ fn pointer_domain_queries_register_stored_read_definitions_without_prior_address
             .store(slot.offset_by_bytes(4), ProgramValue::UInt32(0u32.into())),
     );
     let partial_read = Pointer::loaded_value(&partial, &slot);
-    assert!(!EqualityGraph::default().designations_equal(&partial_read, stored.designation()));
+    assert!(!EqualityGraph::default().provenance_equal(&partial_read, stored.provenance()));
     assert!(
         !EqualityGraph::default()
             .opaque_extents_equal(&partial_read, stored.opaque_extent().unwrap())

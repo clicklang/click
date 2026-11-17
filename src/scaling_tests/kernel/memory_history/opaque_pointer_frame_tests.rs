@@ -130,7 +130,7 @@ fn complete_read_domains_use_numeric_storage_classes_without_scanning_other_clas
         let left = Pointer::loaded_value(&memory, &a);
         let right = Pointer::loaded_value(&memory, &b);
         let (holds, work) = crate::instrumentation::measure_deterministic_work(|| {
-            pointer_read_designations_equal(&left, &right, &facts)
+            pointer_read_provenance_equal(&left, &right, &facts)
                 && pointer_read_extents_equal(&left, &right, &facts)
         });
         assert!(holds);
@@ -188,7 +188,7 @@ fn copied_pointer_frames_ignore_unrelated_separations() {
             let (read, equality) =
                 explicit_pointer_store_frame(&before, &after, &field, &write, &facts).unwrap();
             let derived = facts.clone().assume_proposition(equality);
-            derived.pointer_designations_match(&read, &stored)
+            derived.pointer_provenance_match(&read, &stored)
         });
         assert!(holds);
         work
@@ -251,7 +251,7 @@ fn sibling_pointer_reads_stop_before_unrelated_shared_history() {
         let context = PureFactContext::new();
         let (holds, work) = crate::instrumentation::measure_deterministic_work(|| {
             complete_pointer_reads_equal_across_frame(&a, &b, &context)
-                && pointer_read_designations_equal(
+                && pointer_read_provenance_equal(
                     &Pointer::loaded_value(&left, &field),
                     &Pointer::loaded_value(&right, &field),
                     &context,
@@ -504,7 +504,7 @@ fn complete_word_frame_reuses_named_versions_across_observations() {
         }
         let before = intern_memory(observed);
         // This is the actual read producer, not a warm-up of the query:
-        // its designation names the pre-observation version of the word.
+        // its provenance names the pre-observation version of the word.
         let value = PointerValue::from_read(
             Pointer::integer_address(MachineTerm::uint64_constant(8)),
             ProgramType::Int32Pointer,
@@ -542,10 +542,10 @@ fn complete_word_frame_reuses_named_versions_across_observations() {
         let changed = Pointer::loaded_value(&overwritten, &field);
         let (holds, work) = crate::instrumentation::measure_deterministic_work(|| {
             complete_pointer_reads_equal_across_frame(
-                value.designation(),
-                target.designation(),
+                value.provenance(),
+                target.provenance(),
                 &context,
-            ) && !complete_pointer_reads_equal_across_frame(value.designation(), &changed, &context)
+            ) && !complete_pointer_reads_equal_across_frame(value.provenance(), &changed, &context)
         });
         assert!(holds, "observation count {size}");
         work

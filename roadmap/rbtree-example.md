@@ -1737,7 +1737,7 @@ integration remain unfinished.
 
 The sized subtree and ancestor resources now retain the full pointer recovered
 from each packed parent word, matching the base rbtree resource's representation
-invariant. Numeric address equality alone does not retain pointer designation
+invariant. Numeric address equality alone does not retain pointer provenance
 and bounds. Both context color-flip proofs explicitly transport the unchanged
 left/right child inequalities across the recoloring writes. All six insertion
 and wrapper claims verify, and both eighteen-site expansion audits pass. The

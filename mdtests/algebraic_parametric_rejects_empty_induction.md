@@ -2,7 +2,8 @@
 
 ```click
 theorem invalid<T>(x: T) {
-    ensures 0 == 1 by { induct(x) as ih {} }
+    ensures 0 == 1 by { let ih = induct(x);
+    match x {} }
 }
 ```
 

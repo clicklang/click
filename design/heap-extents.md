@@ -551,7 +551,7 @@ the `UInt64` kind.
    (`memory_range_covers_struct_array_field`). The rule also now refuses a
    negative constant offset whose access ends inside the range. When a
    call's owned memory requirement is missing and the one supplier coverage
-   selected is a wide range of another width whose designation matches, the
+   selected is a wide range of another width whose provenance matches, the
    refusal names the undecided product
    (`CRuntimeError::WideRangeRespellingMayWrap`,
    `wide_range_respelling_refusal`): ``range `p[0u64..n]` of 8-byte elements
@@ -573,7 +573,7 @@ the `UInt64` kind.
 
    Still refused: a byte range a contract spells through a cast,
    `owns (p as (uint8 *))[0..m * 8u64]`, does not supply `owns p[0..m]` to a
-   callee, bounded or not: the cast range keeps the cast's designation, which
+   callee, bounded or not: the cast range keeps the cast's provenance, which
    the struct requirement's typed carrier does not match. (That is why the
    no-wrap refusal has no mdtest: a byte range over an unbounded count reaches
    a struct requirement only through such a cast.) A 32-bit (`int`) count

@@ -32,7 +32,7 @@ So the bug is two defects:
    Dereference (`read_c_lvalue_paths_without_ranges`, `write_c_lvalue_paths_*`)
    is checked only for address coverage by an owned or viewed range
    (`ResourceContext::permits_memory_read` / `memory_write_range`).
-2. **Modular (designation across address equality).** In a callee, a pointer
+2. **Modular (provenance across address equality).** In a callee, a pointer
    parameter is an opaque address. Authority lookup
    (`read_access_entries` through equality-graph pointer classes) accepts any
    pointer whose address is proven equal to a carrier that holds authority.
@@ -172,7 +172,7 @@ first. A pointer without an extent is unaffected.
 A contract `==` between two pointers that both carry an extent also requires
 the extents to be equal (D2), so a call cannot satisfy `requires q == p` with
 `&pair->first + 1` and `&pair->second`. When either value has none, the
-comparison stays an address equality: that value's designation may be
+comparison stays an address equality: that value's provenance may be
 unknown, and assuming the equality must not refute a reachable path. A
 contract's scalar member address `&p->f` is narrowed to the member as the C
 frontend narrows it, so `ensures result == &p->second` does not hold for
@@ -181,7 +181,7 @@ are not narrowed.
 
 ## Phase B: C `==` states address equality (modular defect)
 
-Approved 2026-10-15. It replaces the earlier "designation is part of the
+Approved 2026-10-15. It replaces the earlier "provenance is part of the
 pointer value" plan, which is parked (see *Abandoned approach* below).
 
 ### Principle

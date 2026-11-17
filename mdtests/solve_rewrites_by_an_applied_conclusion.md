@@ -33,7 +33,8 @@ function append(xs: IntList, ys: IntList) -> IntList
 
 theorem append_nil(xs: IntList) {
     ensures append(xs, IntList::Nil) == xs by {
-        induct(xs) as ih {
+        let ih = induct(xs);
+        match xs {
             IntList::Nil => {
                 unfold(append(IntList::Nil, IntList::Nil));
                 solve();
@@ -68,7 +69,8 @@ spec enum Flag { On, Off }
 
 theorem reversed_in_an_induction_arm(flag: Flag, xs: IntList) {
     ensures xs == append(xs, IntList::Nil) by {
-        induct(flag) as ih {
+        let ih = induct(flag);
+        match flag {
             Flag::On => {
                 apply(append_nil(xs));
                 have xs == append(xs, IntList::Nil);

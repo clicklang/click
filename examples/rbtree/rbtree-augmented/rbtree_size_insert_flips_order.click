@@ -7,7 +7,8 @@ import "rbtree_size_insert_flips_model.click";
 theorem sized_flip_result_preserves_inorder(chain: SizedFlipChain, sub: SizedTree) {
     ensures rb_inorder(sized_shape(sized_flip_result(chain, sub)))
         == rb_inorder(sized_shape(sized_plug(sized_flip_context(chain), sub))) by {
-        induct(chain) as ih {
+        let ih = induct(chain);
+        match chain {
             SizedFlipChain::Root => {
                 apply(sized_recolor_observations(sub, Color::Black));
                 apply(rb_recolor_preserves_inorder(sized_shape(sub), Color::Black));

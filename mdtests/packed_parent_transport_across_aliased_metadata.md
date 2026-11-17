@@ -1,6 +1,6 @@
 # A packed parent pointer survives metadata writes through an alias
 
-The numeric word and its complete pointer designation must both cross the
+The numeric word and its complete pointer provenance must both cross the
 metadata-only call. The explicit transport lists the two disjoint write
 regions, while the resource retains the word through the loaded child alias.
 

@@ -40,7 +40,8 @@ function tree_size(m: Tree) -> Integer
 
 theorem tree_size_is_nonnegative(m: Tree) {
     ensures 0 <= tree_size(m) by {
-        induct(m) as ih {
+        let ih = induct(m);
+        match m {
             Tree::Leaf => {
                 unfold(tree_size(Tree::Leaf));
                 normalize();

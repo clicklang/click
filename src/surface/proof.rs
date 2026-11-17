@@ -1634,12 +1634,6 @@ fn source_tactic_width(tactic: &ProofTactic) -> usize {
                 .map(|arm| source_tactic_count(arm.tactics()))
                 .sum::<usize>()
         }
-        ProofTactic::StructuralInduct { arms, .. } => {
-            1 + arms
-                .iter()
-                .map(|arm| source_tactic_count(&arm.tactics))
-                .sum::<usize>()
-        }
         ProofTactic::Branch(proof_branch) => {
             1 + source_tactic_count(&proof_branch.then_tactics)
                 + source_tactic_count(&proof_branch.else_tactics)
@@ -2231,6 +2225,17 @@ pub(super) fn initial_claim_context_with_caller_owner(
     for (surface, kernel) in &bool_range_facts {
         surface_propositions.record_lowering(surface, kernel)?;
     }
+    // Two requirements can lower to the same fact (`requires viewable(a[0..n])`
+    // beside `views a[0..n]`, and their shared range guards). Resource
+    // projection keeps one occurrence of each fact and appends its own, so
+    // drop repeats here together with their origins: each retained fact keeps
+    // its first source, and the origins stay aligned with the projected list.
+    let mut seen = BTreeSet::new();
+    (requirement_pure_facts, entry_fact_origins) = requirement_pure_facts
+        .into_iter()
+        .zip(entry_fact_origins)
+        .filter(|(fact, _)| seen.insert(fact.clone()))
+        .unzip();
     let requirement_facts = PureFactList::from(requirement_pure_facts);
     state = project_initial_composite_resource_cores(
         resource_environment,
@@ -2250,6 +2255,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         claim_label,
     )?
     .into_vec();
+    debug_assert!(requirement_pure_facts.len() >= entry_fact_origins.len());
     entry_fact_origins.resize(requirement_pure_facts.len(), EntryFactOrigin::Derived);
     let definedness_state = project_initial_composite_resource_cores(
         resource_environment,

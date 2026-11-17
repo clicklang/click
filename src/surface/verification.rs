@@ -444,8 +444,15 @@ impl<'a> ProgramSourceContext<'a> {
 }
 
 fn collect_applied_theorems(tactics: &[ProofTactic], names: &mut BTreeSet<String>) {
-    for tactic in tactics {
+    for (index, tactic) in tactics.iter().enumerate() {
         match tactic {
+            ProofTactic::Induct { hypothesis, .. } => {
+                let mut subsequent = BTreeSet::new();
+                collect_applied_theorems(&tactics[index + 1..], &mut subsequent);
+                subsequent.remove(hypothesis);
+                names.extend(subsequent);
+                break;
+            }
             ProofTactic::ApplyTheorem(application)
             | ProofTactic::ApplyTheoremUsing { application, .. } => {
                 names.insert(application.name.clone());
@@ -483,16 +490,6 @@ fn collect_applied_theorems(tactics: &[ProofTactic], names: &mut BTreeSet<String
             ProofTactic::Cases(proof_cases) => {
                 for arm in proof_cases.arms() {
                     collect_applied_theorems(arm.tactics(), names);
-                }
-            }
-            ProofTactic::StructuralInduct {
-                hypothesis, arms, ..
-            } => {
-                for arm in arms {
-                    let mut arm_names = BTreeSet::new();
-                    collect_applied_theorems(&arm.tactics, &mut arm_names);
-                    arm_names.remove(hypothesis);
-                    names.extend(arm_names);
                 }
             }
             ProofTactic::Match(proof_match) => {
@@ -8825,6 +8822,40 @@ pub(in crate::surface) fn program_contract_failure(
                     unreachable!("the program root was opened into its declared goals")
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod induction_dependency_tests {
+    use super::*;
+
+    #[test]
+    fn induction_hypothesis_is_local_only_after_its_declaration() {
+        let source = r#"
+            spec enum Chain { Nil, Link(Chain), }
+            theorem reflexive(xs: Chain) {
+                ensures xs == xs by {
+                    apply(ih());
+                    let ih = induct(xs);
+                    match xs {
+                        Chain::Nil => { apply(helper()); }
+                        Chain::Link(tail) => { apply(ih(tail)); }
+                    }
+                }
+            }
+        "#;
+        for (text, expected) in [
+            (source.to_string(), vec!["helper", "ih"]),
+            (source.replace("apply(ih());", ""), vec!["helper"]),
+        ] {
+            let file = crate::surface::parse(&text).unwrap();
+            let mut names = BTreeSet::new();
+            collect_applied_theorems_from_proof(
+                file.theorem_definitions()[0].ensures()[0].proof(),
+                &mut names,
+            );
+            assert_eq!(names, expected.into_iter().map(String::from).collect());
         }
     }
 }

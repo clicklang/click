@@ -236,7 +236,7 @@ fn stored_pointer_bounds_ignore_unrelated_numeric_classes() {
             );
         }
         let (matches, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.pointer_designations_match(&read, &stored)
+            context.pointer_provenance_match(&read, &stored)
         });
         assert!(matches);
         assert!(work <= 512, "{size} unrelated classes: {work} work");

@@ -203,7 +203,7 @@ fn pointer_certification_visits_shared_address_dags_without_exporting_them() {
         ));
         let mut value = base.node().clone();
         value.address = SharedPointerAddress::new(value.address.node().block.clone(), offset);
-        value.designation = value.address.clone();
+        value.provenance = value.address.clone();
         let root = KernelTerm::shared_pointer_value(SharedPointerValue::new(value));
         let exports = KernelTermExport::machine_export_count();
         let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {

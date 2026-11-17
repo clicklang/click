@@ -26,7 +26,8 @@ function links_len(m: Links) -> Integer
 
 theorem links_len_is_nonnegative(m: Links) {
     ensures 0 <= links_len(m) by {
-        induct(m) as ih {
+        let ih = induct(m);
+        match m {
             Links::Nil => {
                 unfold(links_len(Links::Nil));
                 normalize();

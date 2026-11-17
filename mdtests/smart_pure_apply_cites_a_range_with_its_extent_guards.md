@@ -34,7 +34,8 @@ theorem walk_in_range(next: int32[], n: int32, from: int32, fuel: Nat) {
         0 <= k and k < n implies 0 <= next[k] and next[k] < n
     };
     ensures 0 <= walk(next, from, fuel) and walk(next, from, fuel) < n by {
-        induct(fuel) as ih {
+        let ih = induct(fuel);
+        match fuel {
             Nat::Zero => {
                 unfold(walk(next, from, Nat::Zero));
                 solve();

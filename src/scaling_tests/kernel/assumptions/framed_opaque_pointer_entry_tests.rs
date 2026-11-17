@@ -60,11 +60,11 @@ fn provenance_misses_do_not_enumerate_direct_alias_stars() {
                 true,
             );
         }
-        assert!(facts.designations_equal(&pointer(0), &pointer(size)));
+        assert!(facts.provenance_equal(&pointer(0), &pointer(size)));
         assert!(facts.opaque_extents_equal(&pointer(0), &pointer(size)));
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..4 {
-                assert!(!facts.designations_equal(&pointer(0), &pointer(size + 1)));
+                assert!(!facts.provenance_equal(&pointer(0), &pointer(size + 1)));
                 assert!(!facts.opaque_extents_equal(&pointer(0), &pointer(size + 1)));
             }
         });

@@ -3239,7 +3239,7 @@ fn pointer_read_naming_samples(with_history: bool, same_cell: bool) -> Vec<(u32,
         for ((address, read), value) in reads.iter().zip(values.iter()) {
             assert_eq!(value.pointer(), read);
             let exact = Pointer::loaded_value(&current, address);
-            assert_eq!(value.designation(), &exact);
+            assert_eq!(value.provenance(), &exact);
             assert_eq!(value.opaque_extent(), Some(&exact));
         }
         samples.push((size, work));

@@ -475,8 +475,8 @@ fn partial_borrow_carrier_return_ignores_unrelated_owners() {
         let plan = plan.unwrap();
         let returned = plan.canonical_transferred_ownership[0].as_ref().unwrap();
         assert_eq!(
-            returned.memory_own_range().unwrap().access_designation(),
-            owner.memory_own_range().unwrap().access_designation()
+            returned.memory_own_range().unwrap().access_provenance(),
+            owner.memory_own_range().unwrap().access_provenance()
         );
         samples.push(work);
     }

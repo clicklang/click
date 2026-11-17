@@ -3198,7 +3198,7 @@ fn loop_exit_local_arguments(
             }
             // A numeric address is a pure projection of the declared local.
             // It must follow the local's joined value just as a direct index
-            // does; it never transfers the pointer's designation or extent.
+            // does; it never transfers the pointer's provenance or extent.
             let (name, address_only) = match expression {
                 ProgramExpression::Variable(name) => (name, false),
                 ProgramExpression::Cast {
@@ -5565,7 +5565,7 @@ pub(super) fn collect_loop_preservation_summary(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct EvaluatedMemorySegment {
     pub(super) base: Pointer,
-    pub(super) designation: std::sync::Arc<Pointer>,
+    pub(super) provenance: std::sync::Arc<Pointer>,
     pub(super) opaque_extent: Option<std::sync::Arc<Pointer>>,
     pub(super) extent_known: bool,
     pub(super) start: MachineTerm,
@@ -5578,7 +5578,7 @@ pub(super) struct EvaluatedMemorySegment {
 impl EvaluatedMemorySegment {
     /// The range this segment denotes, in its own index kind.
     pub(super) fn into_range(self) -> MemoryRange {
-        let designation = self.designation;
+        let provenance = self.provenance;
         let range = match self.kind {
             RangeIndexKind::Int32 => MemoryRange::new_with_element_width(
                 self.base,
@@ -5593,7 +5593,7 @@ impl EvaluatedMemorySegment {
         let mut range = range;
         range.formation_coverage = self.formation_coverage;
         range
-            .with_designation(designation)
+            .with_provenance(provenance)
             .with_opaque_extent(self.opaque_extent, self.extent_known)
             .with_typed_carrier()
     }
@@ -7562,7 +7562,7 @@ pub(super) fn collect_loop_effect_check_obligations(
                     validated
                         .iter()
                         .map(|range| EvaluatedMemorySegment {
-                            designation: range.designation.clone(),
+                            provenance: range.provenance.clone(),
                             opaque_extent: range.opaque_extent.clone(),
                             extent_known: range.carrier_extent_known,
                             base: range.base.clone(),
@@ -7741,7 +7741,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
         && let Some((start, end)) = crate::kernel::wide_range_bounds(start, end)
     {
         let evaluated = EvaluatedMemorySegment {
-            designation: std::sync::Arc::new(base_value.designation().clone()),
+            provenance: std::sync::Arc::new(base_value.provenance().clone()),
             opaque_extent: base_value.opaque_extent().cloned().map(std::sync::Arc::new),
             extent_known: base_value.extent_is_known(),
             base,
@@ -7785,7 +7785,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     };
     let element_width = segment.element_width;
     let evaluated = EvaluatedMemorySegment {
-        designation: std::sync::Arc::new(base_value.designation().clone()),
+        provenance: std::sync::Arc::new(base_value.provenance().clone()),
         opaque_extent: base_value.opaque_extent().cloned().map(std::sync::Arc::new),
         extent_known: base_value.extent_is_known(),
         base,
@@ -9416,7 +9416,7 @@ fn with_retained_extent(
             ProgramValue::Pointer(
                 pointer
                     .with_extent(previous.extent().cloned())
-                    .with_designation(std::sync::Arc::new(previous.designation().clone()))
+                    .with_provenance(std::sync::Arc::new(previous.provenance().clone()))
                     .with_opaque_extent(previous.opaque_extent().cloned().map(std::sync::Arc::new)),
             )
         }

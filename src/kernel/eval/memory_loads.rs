@@ -1802,7 +1802,7 @@ fn canonicalized_pointer_value_from_int_cell(
         pointer,
     );
     if purpose == LoadPurpose::Program
-        && let Some(boundary) = result.designation().as_loaded_value()
+        && let Some(boundary) = result.provenance().as_loaded_value()
         && let Some(previous) =
             assumptions.pointer_read_source(&boundary.defining_memory, &boundary.defining_address)
     {
@@ -1829,7 +1829,7 @@ fn canonicalized_pointer_value_from_int_cell(
     if purpose != LoadPurpose::Logical
         && !SpecificationReadScope::is_active()
         && let Some(stored) = crate::kernel::memory_history::complete_pointer_read_value(
-            result.designation(),
+            result.provenance(),
             assumptions,
         )
     {
@@ -2080,7 +2080,7 @@ fn canonicalized_retained_symbolic_load_value_with_identity(
     let names_version = purpose == LoadPurpose::Logical && value_type.is_pointer();
     // Canonical address selection can expose a materialized pointer cell that
     // the original spelling did not name. Reuse its complete stored value;
-    // manufacturing another read here would discard the selected designation.
+    // manufacturing another read here would discard the selected provenance.
     if !names_version
         && let Some(value) = memory.known_retained_value(&address)
         && value.pointer().is_some()
@@ -2200,7 +2200,7 @@ fn canonicalized_retained_symbolic_load_value_with_identity(
         && !SpecificationReadScope::is_active()
         && !assumptions.should_force_symbolic_external_loads()
         && let Some(stored) = crate::kernel::memory_history::complete_pointer_read_retained_value(
-            complete_read.designation(),
+            complete_read.provenance(),
             assumptions,
         )
     {
@@ -2780,7 +2780,7 @@ fn comparison_form_uncached(proposition: &Proposition) -> Option<Proposition> {
             resolved = Proposition::ConditionIs(condition, *value);
         }
     }
-    // A pointer value carries a designation and an extent beside its address,
+    // A pointer value carries a provenance and an extent beside its address,
     // so each read side resolves to the whole stored value, and the
     // comparison is rebuilt from the two values: equal addresses alone never
     // make two pointer values equal.
@@ -5548,7 +5548,7 @@ mod tests {
                 vec![],
                 &context,
             );
-            // The structural read keeps its own designation. The complete
+            // The structural read keeps its own provenance. The complete
             // stored value is related through the graph, not folded into it.
             let ProgramValue::Pointer(stored_value) = &value else {
                 unreachable!()
@@ -7164,9 +7164,9 @@ mod tests {
         };
         let (value, facts) = read(&memory);
         // Naming stays structural; the graph retains the complete stored
-        // pointer, including the designation, bounds, and access class.
+        // pointer, including the provenance, bounds, and access class.
         assert_ne!(value.pointer(), stored.pointer());
-        assert_eq!(value.designation(), value.pointer());
+        assert_eq!(value.provenance(), value.pointer());
         assert!(context.equality_graph.knows_condition(
             &ConditionTerm::PointerValueEqual(Box::new(value.clone()), Box::new(stored.clone())),
             true,
@@ -7193,14 +7193,14 @@ mod tests {
             Pointer::loaded_value(&crate::kernel::intern_memory_ref(&memory), &field),
             ProgramType::Int32Pointer,
         );
-        assert!(context.pointer_designations_match(&current, &stored));
+        assert!(context.pointer_provenance_match(&current, &stored));
         assert!(context.pointers_known_equal(current.pointer(), stored.pointer()));
         assert!(context.pure_facts().is_empty());
         assert!(
             crate::kernel::equality_graph::logical_pointer_read_term(stored.pointer()).is_none()
         );
         let partial = memory.store(field.offset_by_bytes(4), ProgramValue::UInt32(0u32.into()));
-        assert!(!context.pointer_designations_match(&read(&partial).0, &stored));
+        assert!(!context.pointer_provenance_match(&read(&partial).0, &stored));
     }
 
     #[test]
@@ -7374,7 +7374,7 @@ mod tests {
         match recovered {
             Err(RuntimeError::PointerConversion(_)) => {}
             Ok(ProgramValue::Pointer(recovered)) => assert!(
-                !facts.pointer_designations_match(&recovered, &pointer),
+                !facts.pointer_provenance_match(&recovered, &pointer),
                 "numeric equality alone cannot supply the original pointer bounds"
             ),
             other => panic!("unexpected numeric cast result: {other:?}"),
@@ -7440,7 +7440,7 @@ mod tests {
         );
         let changed = read(&overwritten, &field);
         assert!(changed.extent().is_none());
-        assert!(!context.pointer_designations_match(&changed, &stored));
+        assert!(!context.pointer_provenance_match(&changed, &stored));
     }
 
     #[test]
@@ -8034,21 +8034,21 @@ mod tests {
             .expect("typed cached read") else {
                 panic!("pointer read")
             };
-            let new_read = result.designation();
+            let new_read = result.provenance();
             let retained = facts.iter().fold(PureFactContext::new(), |context, fact| {
                 context.assume_execution_pure_fact(fact)
             });
             assert_eq!(
                 retained
                     .equality_graph
-                    .designations_equal(&old_read, new_read),
+                    .provenance_equal(&old_read, new_read),
                 expected,
                 "owned bytes={owned_bytes}, overlap={overlap}, later stores={later_stores}"
             );
             assert!(
                 !PureFactContext::new()
                     .equality_graph
-                    .designations_equal(&old_read, new_read)
+                    .provenance_equal(&old_read, new_read)
             );
             if owned_bytes == 8 && !overlap {
                 let left = Resource::Memory(MemoryRange::new_with_element_width(
@@ -8108,7 +8108,7 @@ mod tests {
                 assert!(
                     explicit
                         .equality_graph
-                        .designations_equal(&old_read, new_read),
+                        .provenance_equal(&old_read, new_read),
                     "explicit complete-pointer frames recover the long case"
                 );
             }
@@ -8243,7 +8243,7 @@ mod tests {
             .materialize_symbolic_cell(address.clone().offset_by_bytes(4), ProgramType::Int32);
         let observed_read = read(&observed, &context);
         assert_eq!(observed_read.pointer(), original.pointer());
-        assert!(context.pointer_designations_match(&observed_read, &bounded));
+        assert!(context.pointer_provenance_match(&observed_read, &bounded));
         assert_eq!(
             context
                 .pointer_value_at_entry(&observed_read)
@@ -8262,7 +8262,7 @@ mod tests {
             original.pointer(),
             "the cached numeric prefix is unchanged; it cannot supply bounds"
         );
-        assert!(!context.pointer_designations_match(&changed, &bounded));
+        assert!(!context.pointer_provenance_match(&changed, &bounded));
         assert!(context.pointer_value_at_entry(&changed).extent().is_none());
     }
 
@@ -8962,7 +8962,7 @@ mod pointer_read_value_definition_tests {
             ProgramType::Int32Pointer,
         );
         assert_ne!(named.pointer(), stored.pointer());
-        assert_ne!(named.designation(), stored.designation());
+        assert_ne!(named.provenance(), stored.provenance());
         let context = PureFactContext::new();
         assert!(context.equality_graph.knows_condition(
             &ConditionTerm::PointerValueEqual(Box::new(named.clone()), Box::new(stored.clone())),

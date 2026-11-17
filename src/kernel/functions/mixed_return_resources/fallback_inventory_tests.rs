@@ -272,7 +272,7 @@ fn selected_frontier_returns_keep_output_carriers_and_refuse_reuse() {
     plan.retain_frontier([range(p.clone()), range(q.clone())], &facts);
     let output = ResourceFact::own_memory(
         range(alias)
-            .with_designation(Arc::new(Pointer::symbolic(Variable(8_915_103))))
+            .with_provenance(Arc::new(Pointer::symbolic(Variable(8_915_103))))
             .with_typed_carrier(),
     );
     let composition = ReturnResourceComposition::ApplyTransfers(&plan);

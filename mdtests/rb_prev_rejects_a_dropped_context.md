@@ -179,7 +179,8 @@ theorem list_starts_with_append<T>(xs: List<T>, ys: List<T>,
                                 value: T) {
     requires rb_list_starts_with(xs, value) != 0;
     ensures rb_list_starts_with(list::append(xs, ys), value) == 1 by {
-        induct(xs) as ih {
+        let ih = induct(xs);
+        match xs {
             List::Nil => {
                 have rb_list_starts_with(List<T>::Nil, value) == 0 by {
                     unfold(rb_list_starts_with(List<T>::Nil, value));
@@ -225,7 +226,8 @@ theorem list_starts_with_append<T>(xs: List<T>, ys: List<T>,
 theorem list_ends_with_is_nonempty<T>(xs: List<T>, value: T) {
     requires rb_list_ends_with(xs, value) != 0;
     ensures xs != List<T>::Nil by {
-        induct(xs) as ih {
+        let ih = induct(xs);
+        match xs {
             List::Nil => {
                 have rb_list_ends_with(List<T>::Nil, value) == 0 by {
                     unfold(rb_list_ends_with(List<T>::Nil, value));
@@ -255,7 +257,8 @@ theorem list_ends_with_append<T>(xs: List<T>, ys: List<T>,
                               value: T) {
     requires rb_list_ends_with(ys, value) == 1;
     ensures rb_list_ends_with(list::append(xs, ys), value) == 1 by {
-        induct(xs) as ih {
+        let ih = induct(xs);
+        match xs {
             List::Nil => {
                 unfold(list::append(List<T>::Nil, ys));
                 known();
@@ -282,7 +285,8 @@ theorem rb_inorder_first_at_leftmost(tree: RbTree, node: struct rb_node*) {
     requires rb_left(tree) == RbTree::Empty;
     requires rb_identity_is(tree, node) == 1;
     ensures rb_list_starts_with(rb_inorder(tree), node) == 1 by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 have rb_identity_is(RbTree::Empty, node) != 0 by {
                     rewrite(rb_identity_is(RbTree::Empty, node), 1);
@@ -364,7 +368,8 @@ theorem rb_inorder_last_at_rightmost(tree: RbTree, node: struct rb_node*) {
     requires rb_right(tree) == RbTree::Empty;
     requires rb_identity_is(tree, node) == 1;
     ensures rb_list_ends_with(rb_inorder(tree), node) == 1 by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 have rb_identity_is(RbTree::Empty, node) != 0 by {
                     rewrite(rb_identity_is(RbTree::Empty, node), 1);
@@ -453,7 +458,8 @@ theorem plug_keeps_first(ctx: Context, sub: RbTree, node: struct rb_node*) {
     requires ctx_all_left(ctx) == 1;
     requires rb_list_starts_with(rb_inorder(sub), node) == 1;
     ensures rb_list_starts_with(rb_inorder(plug(ctx, sub)), node) == 1 by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => {
                 unfold(plug(Context::Top, sub));
                 known();
@@ -521,7 +527,8 @@ theorem plug_keeps_last(ctx: Context, sub: RbTree, node: struct rb_node*) {
     requires ctx_all_right(ctx) == 1;
     requires rb_list_ends_with(rb_inorder(sub), node) == 1;
     ensures rb_list_ends_with(rb_inorder(plug(ctx, sub)), node) == 1 by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => {
                 unfold(plug(Context::Top, sub));
                 known();
@@ -689,7 +696,8 @@ theorem list_adjacent_append_left<T>(xs: List<T>, ys: List<T>,
                                   first: T, second: T) {
     requires rb_list_adjacent(ys, first, second) == 1;
     ensures rb_list_adjacent(list::append(xs, ys), first, second) == 1 by {
-        induct(xs) as ih {
+        let ih = induct(xs);
+        match xs {
             List::Nil => {
                 unfold(list::append(List<T>::Nil, ys));
                 known();
@@ -744,7 +752,8 @@ theorem list_adjacent_append_right<T>(xs: List<T>, ys: List<T>,
                                    first: T, second: T) {
     requires rb_list_adjacent(xs, first, second) == 1;
     ensures rb_list_adjacent(list::append(xs, ys), first, second) == 1 by {
-        induct(xs) as ih {
+        let ih = induct(xs);
+        match xs {
             List::Nil => {
                 have rb_list_adjacent(List<T>::Nil, first, second) == 0 by {
                     unfold(rb_list_adjacent(List<T>::Nil, first, second));
@@ -799,7 +808,8 @@ theorem list_ends_then_adjacent<T>(xs: List<T>, head: T,
     requires second == head;
     ensures rb_list_adjacent(
         list::append(xs, List<T>::Cons(head, ys)), first, second) == 1 by {
-        induct(xs) as ih {
+        let ih = induct(xs);
+        match xs {
             List::Nil => {
                 have rb_list_ends_with(List<T>::Nil, first) == 0 by {
                     unfold(rb_list_ends_with(List<T>::Nil, first));
@@ -952,7 +962,8 @@ theorem plug_keeps_adjacent(ctx: Context, sub: RbTree,
                             first: struct rb_node*, second: struct rb_node*) {
     requires rb_list_adjacent(rb_inorder(sub), first, second) == 1;
     ensures rb_list_adjacent(rb_inorder(plug(ctx, sub)), first, second) == 1 by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => {
                 unfold(plug(Context::Top, sub));
                 known();
@@ -1006,7 +1017,8 @@ theorem plug_successor(ctx: Context, sub: RbTree,
     requires ctx_descends_from(ctx, node) == 1;
     requires rb_list_starts_with(rb_inorder(sub), next) == 1;
     ensures rb_list_adjacent(rb_inorder(plug(ctx, sub)), node, next) == 1 by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => {
                 have ctx_descends_from(Context::Top, node) == 0 by {
                     unfold(ctx_descends_from(Context::Top, node));
@@ -1203,7 +1215,8 @@ theorem rb_parent_is_same(tree: RbTree, a: struct rb_node*, b: struct rb_node*) 
     requires rb_parent_is(tree, a) == 1;
     requires a == b;
     ensures rb_parent_is(tree, b) == 1 by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_parent_is(RbTree::Empty, b));
                 normalize();
@@ -1225,7 +1238,8 @@ theorem ctx_node_is_same(ctx: Context, a: struct rb_node*, b: struct rb_node*) {
     requires ctx_node_is(ctx, a) == 1;
     requires a == b;
     ensures ctx_node_is(ctx, b) == 1 by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => {
                 apply(ctx_node_is_top(a));
                 have b == 0 by {
@@ -1288,7 +1302,8 @@ function ctx_is_right(ctx: Context) -> int32 {
 theorem rb_ctx_linked_is_nonempty(tree: RbTree, ctx: Context) {
     requires rb_ctx_linked(tree, ctx) == 1;
     ensures tree != RbTree::Empty by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 have rb_ctx_linked(RbTree::Empty, ctx) == 0 by {
                     unfold(rb_ctx_linked(RbTree::Empty, ctx));
@@ -1313,7 +1328,8 @@ theorem rb_ctx_linked_left_parent(tree: RbTree, identity: struct rb_node*,
     requires rb_ctx_linked(tree,
         Context::Left(identity, grandparent, color, sibling_model, up_model)) == 1;
     ensures rb_parent_is(tree, identity) == 1 by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_parent_is(RbTree::Empty, identity));
                 normalize();
@@ -1349,7 +1365,8 @@ theorem rb_ctx_linked_right_parent(tree: RbTree, identity: struct rb_node*,
     requires rb_ctx_linked(tree,
         Context::Right(identity, grandparent, color, sibling_model, up_model)) == 1;
     ensures rb_parent_is(tree, identity) == 1 by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             RbTree::Empty => {
                 unfold(rb_parent_is(RbTree::Empty, identity));
                 normalize();
@@ -1423,7 +1440,8 @@ theorem plug_predecessor(ctx: Context, sub: RbTree,
     requires ctx_descends_from_left(ctx, node) == 1;
     requires rb_list_ends_with(rb_inorder(sub), prev) == 1;
     ensures rb_list_adjacent(rb_inorder(plug(ctx, sub)), prev, node) == 1 by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => {
                 have ctx_descends_from_left(Context::Top, node) == 0 by {
                     unfold(ctx_descends_from_left(Context::Top, node));

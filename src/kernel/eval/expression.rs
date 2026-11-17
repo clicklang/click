@@ -1056,7 +1056,7 @@ fn cast_program_value_to_type_with_integer_origin(
                 ));
             }
             // An address without a complete representation record reconstructs
-            // an opaque designation. Numeric facts cannot supply pointer bounds.
+            // an opaque provenance. Numeric facts cannot supply pointer bounds.
             ProgramValue::UInt64(term) | ProgramValue::Int64(term)
                 if !matches!(target_type, ProgramType::FunctionPointer(_)) =>
             {
@@ -1069,7 +1069,7 @@ fn cast_program_value_to_type_with_integer_origin(
                     return Ok(ProgramValue::typed_pointer(Pointer::null(), target_type));
                 }
                 // Numeric tag equations recover coordinates and source object class,
-                // never the original designation or bounds.
+                // never the original provenance or bounds.
                 return match super::pointer_tags::cast_tagged_address_to_pointer(
                     &term, assumptions, obligations, target_type,
                 ) {
@@ -3256,13 +3256,13 @@ fn read_retained_lvalue_paths_without_ranges(
                 let local_assumptions =
                     assumptions_with_path_context(assumptions, &facts, &obligations);
                 if let Some(pointer) = state.locals.slot(name)
-                    && lvalue.designation.as_deref().is_some_and(|origin| {
-                        !local_assumptions.designations_equal(origin, &pointer.object_identity())
+                    && lvalue.provenance.as_deref().is_some_and(|origin| {
+                        !local_assumptions.provenance_equal(origin, &pointer.object_identity())
                             || !lvalue.extent_known && lvalue.opaque_extent.is_some()
                     })
                     && !state.resources().permits_designated_memory_read(
                         pointer,
-                        lvalue.access_designation(),
+                        lvalue.access_provenance(),
                         lvalue.value_type.byte_width(),
                         &local_assumptions,
                     )
@@ -3435,9 +3435,8 @@ fn read_retained_lvalue_paths_without_ranges(
                     assumptions_with_path_context(assumptions, &facts, &obligations);
                 let is_external = is_external_memory_pointer(pointer)
                     || state.memory.requires_explicit_scalar_ownership(pointer)
-                    || lvalue.designation.as_deref().is_some_and(|origin| {
-                        !effective_assumptions
-                            .designations_equal(origin, &pointer.object_identity())
+                    || lvalue.provenance.as_deref().is_some_and(|origin| {
+                        !effective_assumptions.provenance_equal(origin, &pointer.object_identity())
                             || !lvalue.extent_known && lvalue.opaque_extent.is_some()
                     });
                 let require_owned = assumptions.should_require_owned_expression_loads();
@@ -3453,7 +3452,7 @@ fn read_retained_lvalue_paths_without_ranges(
                         || crate::kernel::api::with_extended_dag_bridging(|| {
                             state.resources().permits_designated_memory_read(
                                 pointer,
-                                lvalue.access_designation(),
+                                lvalue.access_provenance(),
                                 lvalue.value_type.byte_width(),
                                 &effective_assumptions,
                             )
@@ -3633,9 +3632,9 @@ pub(in crate::kernel) fn address_of_lvalue_paths(
                             if lvalue.extent_known && lvalue.extent().is_none() {
                                 address = address.with_root_extent();
                             }
-                            if let Some(designation) = &lvalue.designation {
+                            if let Some(provenance) = &lvalue.provenance {
                                 address = address
-                                    .with_designation(designation.clone())
+                                    .with_provenance(provenance.clone())
                                     .with_opaque_extent(lvalue.opaque_extent.clone());
                             }
                             let value = ProgramValue::Pointer(address);
@@ -4269,7 +4268,7 @@ mod pointer_integer_tests {
         assert_eq!(decoded.pointer(), source.pointer());
         assert_eq!(decoded.object_class(), Some(class));
         assert!(!decoded.extent_is_known());
-        assert_ne!(decoded.designation(), source.designation());
+        assert_ne!(decoded.provenance(), source.provenance());
     }
 
     #[test]
@@ -4304,7 +4303,7 @@ mod pointer_integer_tests {
                     panic!("pointer")
                 };
                 assert!(!opaque.extent_is_known());
-                assert_ne!(opaque.designation(), member.designation());
+                assert_ne!(opaque.provenance(), member.provenance());
             }
         }
     }
@@ -4359,7 +4358,7 @@ mod pointer_integer_tests {
             panic!("pointer")
         };
         assert!(!opaque.extent_is_known());
-        assert!(!context.pointer_designations_match(&opaque, &root));
+        assert!(!context.pointer_provenance_match(&opaque, &root));
     }
 }
 
@@ -4435,7 +4434,7 @@ mod pointer_integer_cast_identity_tests {
         ));
         assert!(!resources.permits_designated_memory_read(
             second.pointer(),
-            Some(second.access_designation()),
+            Some(second.access_provenance()),
             4,
             &context
         ));
@@ -4512,7 +4511,7 @@ mod packed_word_contract_tests {
         let reconstructed = cast(word, &empty);
         let unrelated = cast(other, &empty);
         assert_eq!(reconstructed.pointer(), unrelated.pointer());
-        assert!(!empty.pointer_designations_match(&reconstructed, &unrelated));
+        assert!(!empty.pointer_provenance_match(&reconstructed, &unrelated));
         let target = PointerValue::new(
             Pointer::symbolic(Variable(997_004)),
             ProgramType::Int32Pointer,
@@ -4525,7 +4524,7 @@ mod packed_word_contract_tests {
             ConditionTerm::pointer_equal(reconstructed.pointer().clone(), target.pointer().clone()),
             true,
         );
-        assert!(!numeric.pointer_designations_match(&reconstructed, &target));
+        assert!(!numeric.pointer_provenance_match(&reconstructed, &target));
         let relation = Proposition::ConditionIs(
             ConditionTerm::PointerValueEqual(
                 Box::new(reconstructed.clone()),
@@ -4534,8 +4533,8 @@ mod packed_word_contract_tests {
             true,
         );
         let full = numeric.assume_proposition(relation.clone());
-        assert!(full.pointer_designations_match(&reconstructed, &target));
-        assert!(!full.pointer_designations_match(&unrelated, &target));
+        assert!(full.pointer_provenance_match(&reconstructed, &target));
+        assert!(!full.pointer_provenance_match(&unrelated, &target));
     }
 
     #[test]
@@ -4581,7 +4580,7 @@ mod packed_word_contract_tests {
             super::super::operators::BitwiseOperation::And,
         ));
         let restored = cast(cleared, &context);
-        assert!(context.pointer_designations_match(&restored, &original));
+        assert!(context.pointer_provenance_match(&restored, &original));
         assert!(!restored.extent_is_known());
     }
 }

@@ -181,7 +181,8 @@ function ctx_parent_word(ctx: Context, word: uint64) -> int32 {
 theorem insert_black_context_word(ctx: Context, p: struct rb_node*) {
     requires ctx_node_is(ctx, p) == 1;
     ensures ctx_parent_word(ctx, address(p) + 1) == 1 by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => { unfold(ctx_node_is(Context::Top, p)); unfold(ctx_parent_word(Context::Top, address(p) + 1)); have p == 0; rewrite(p, 0); normalize(); },
             Context::Left(id, up, shade, sibling, outer) => { unfold(ctx_node_is(Context::Left(id, up, shade, sibling, outer), p)); have p == id; rewrite(p, id); unfold(ctx_parent_word(Context::Left(id, up, shade, sibling, outer), address(id) + 1)); normalize(); },
             Context::Right(id, up, shade, sibling, outer) => { unfold(ctx_node_is(Context::Right(id, up, shade, sibling, outer), p)); have p == id; rewrite(p, id); unfold(ctx_parent_word(Context::Right(id, up, shade, sibling, outer), address(id) + 1)); normalize(); },

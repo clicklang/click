@@ -408,20 +408,25 @@ the one the text names.
   choosing a term by known origin. Equalities stay in the equality graph
   and the comparison form, which every check consults.
 
-Closed native order comparisons at 8, 16, 32, and 64 bits retain their comparison
+Closed native comparisons at 8, 16, 32, and 64 bits retain their comparison
 node, format, and literal operands during logical lowering. Their truth is
 established by checking, including when exact rewriting removed the last
 variable before the comparison was printed. This does not change literal
-arithmetic evaluation or the existing 32-bit equality normal forms. Closed
-64-bit equalities retain their comparison node at the native `Int64` word
-equality format, with their literal operand payloads.
+arithmetic evaluation. Comparisons of
+the same variable at 32/64 bits also retain their comparison node: recognition
+compares the two variable IDs, without consulting facts or walking expression
+trees. Closed 64-bit equalities retain their comparison node at the native
+`Int64` word equality format, with their literal operand payloads.
 
-Machine conditionals with closed 32/64-bit order guards or closed 64-bit
-equality guards retain their `if` node and guard during logical lowering. Their arm domains remain guarded, including
+Machine conditionals with closed 32/64-bit order guards, closed 64-bit equality
+guards, or same-variable 32/64-bit comparison guards retain their `if` node and
+guard during logical lowering. Their arm domains remain guarded, including
 unselected reads and invalid shifts. Checking selects the arm when needed.
 The comparison boundary recognizes conditionals guarded by a Boolean variable
 or a 32/64-bit comparison over literal/variable operands, with literal/variable
-arms, as fixed-size native atoms. Negated Boolean variables use the same guard
+arms or one bitwise operation (`&`, `|`, `^`) over literal/variable arm operands,
+as fixed-size native atoms. Bitwise recognition reads only the operation and
+its immediate leaves. Negated Boolean variables use the same guard
 with swapped arms. It retains the comparison family without exporting arithmetic
 DAGs or selecting an arm from ambient facts. Other result families retain their existing
 selected-arm behavior; literal Boolean and closed 32-bit equality guards keep
@@ -451,7 +456,7 @@ remain opaque instead of acquiring an invented value.
 Logical object-pointer reads now retain their version names, including when
 memory stores a complete pointer at the cell. The read's complete stored value
 is related through `EqualityGraph::register_logical_read_values` and the
-producer's read equations; its address, bounds, and designation are not folded
+producer's read equations; its address, bounds, and provenance are not folded
 into the lowered term. The cached-prefix route also excludes logical reads
 from fact-supported recovery, even outside specification scope.
 

@@ -25,7 +25,7 @@ fn extent_work(steps: u64, unrelated: u64) -> usize {
                 ConditionTerm::pointer_value_equal(next.clone(), previous),
                 true,
             );
-            assert!(facts.access_designations_match(next.access_designation(), &held));
+            assert!(facts.access_provenance_match(next.access_provenance(), &held));
             previous = next;
         }
     });

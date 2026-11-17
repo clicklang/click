@@ -5,7 +5,8 @@ import click::rust::vec;
 
 theorem all_short(v: Vec<uint32>) {
     ensures vec::len(v) < 5u64 by {
-        induct(v) as ih {
+        let ih = induct(v);
+        match v {
         }
     }
 }

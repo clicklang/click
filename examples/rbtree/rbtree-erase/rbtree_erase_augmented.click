@@ -316,7 +316,8 @@ function erase_deep_splice(tree: RbTree, minimum: RbMinimum) -> RbTree {
 theorem erase_unlink_red_if_not_black(c: Color) {
     requires not(c == Color::Black);
     ensures c == Color::Red by {
-        induct(c) as ih {
+        let ih = induct(c);
+        match c {
             Color::Red => { normalize(); }
             Color::Black => {
                 have Color::Black == Color::Black by normalize();
@@ -333,7 +334,8 @@ theorem erase_deep_no_fixup(tree: RbTree, up: Context, successor: struct rb_node
     requires not(child == RbTree::Empty) or color == Color::Red;
     ensures erase_deep_outcome(tree, up, RbMinimum::Found(successor, color, child))
         == EraseOutcome::Balanced(plug(up, erase_child_deep_model(tree))) by {
-        induct(child) as ih {
+        let ih = induct(child);
+        match child {
             RbTree::Empty => {
                 cases {
                     not(RbTree::Empty == RbTree::Empty) => {
@@ -354,7 +356,8 @@ theorem erase_deep_no_fixup(tree: RbTree, up: Context, successor: struct rb_node
         }
     }
     ensures erase_deep_splice(tree, RbMinimum::Found(successor, color, child)) == erase_child_deep_model(tree) by {
-        induct(child) as ih {
+        let ih = induct(child);
+        match child {
             RbTree::Empty => {
                 cases {
                     not(RbTree::Empty == RbTree::Empty) => {

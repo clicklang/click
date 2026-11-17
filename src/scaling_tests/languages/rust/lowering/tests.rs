@@ -64,3 +64,46 @@ fn narrow_remainder_lowering_has_bounded_selected_and_linear_total_work() {
         );
     }
 }
+
+#[test]
+fn returned_call_lowering_ignores_unrelated_function_declarations() {
+    let mut baseline = None;
+    for count in [16, 64, 256, 1024] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut export = super::return_call_tests::fixture("__rust_return_value");
+        let selected = export.functions[1].clone();
+        let identity = export.functions[0].clone();
+        export.functions.extend((0..count).map(|index| {
+            let mut function = identity.clone();
+            function.name = format!("unrelated_{index}");
+            function
+        }));
+        let functions = export
+            .functions
+            .iter()
+            .map(|f| (f.name.as_str(), f))
+            .collect();
+        let (lowered, work) = crate::instrumentation::measure_deterministic_work(|| {
+            lower_function(
+                &export,
+                None,
+                &selected,
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &functions,
+            )
+        });
+        let lowered = lowered.unwrap();
+        assert!(
+            matches!(lowered.prelowered_kernel_function().unwrap().body(), ProgramStatement::Seq(body)
+            if matches!(body.iter().last().map(|statement| statement.as_ref()), Some(ProgramStatement::Return(ProgramExpression::StepResult { step: 0, .. }))))
+        );
+        assert!(work > 0);
+        assert_eq!(
+            work,
+            *baseline.get_or_insert(work),
+            "{count} unrelated functions"
+        );
+    }
+}

@@ -3538,7 +3538,7 @@ pub(in crate::surface) fn pure_function_parameter_argument(
 
 /// Implicit argument conversions also apply when a helper's body is unfolded.
 /// Unlike an authored void-pointer cast, the object-pointer coercion retains
-/// the caller's designation and selected extent.
+/// the caller's provenance and selected extent.
 pub(in crate::surface) fn pure_function_parameter_conversion(
     parameter: &FunctionParameter,
 ) -> Option<(ProgramType, crate::kernel::IntegerCastMode)> {

@@ -13,6 +13,45 @@ fn retained(value: &ProgramValue) -> StoredExecutionValue {
     ExecutionValue::Shared(root).into()
 }
 
+fn memory_matrix(values: &[ProgramValue]) {
+    let native: Vec<_> = values
+        .iter()
+        .cloned()
+        .map(StoredMemoryValue::from)
+        .collect();
+    let shared: Vec<_> = values
+        .iter()
+        .map(|value| {
+            let root = match value {
+                ProgramValue::Parameter(value) => KernelTermImport::default().algebraic(value),
+                ProgramValue::Pointer(value) => {
+                    KernelTerm::shared_pointer_value(SharedPointerValue::import_produced(value))
+                }
+                _ => KernelTermImport::default()
+                    .argument(&PureFunctionArgument::Value(value.clone())),
+            };
+            StoredMemoryValue::from(ExecutionValue::Shared(root))
+        })
+        .collect();
+    for i in 0..values.len() {
+        assert_eq!(hash(&native[i]), hash(&shared[i]));
+        for j in 0..values.len() {
+            let order = values[i].cmp(&values[j]);
+            for left in [&native[i], &shared[i]] {
+                for right in [&native[j], &shared[j]] {
+                    assert_eq!(left.cmp(right), order, "memory {i}/{j}");
+                    assert_eq!(left == right, order.is_eq());
+                    if left == right {
+                        assert_eq!(hash(left), hash(right));
+                    }
+                }
+            }
+            assert_eq!(shared[i] == values[j], order.is_eq());
+            assert_eq!(values[j] == shared[i], order.is_eq());
+        }
+    }
+}
+
 #[test]
 fn nonnumeric_storage_keys_preserve_native_pairwise_order_and_hash_classes() {
     let _session = VerificationSession::enter();
@@ -56,13 +95,19 @@ fn nonnumeric_storage_keys_preserve_native_pairwise_order_and_hash_classes() {
             let a = StoredMemoryValue::from(left.clone());
             let b = StoredMemoryValue::from(right.clone());
             assert_eq!(a.cmp(&b), expected);
+            let shared = StoredMemoryValue::from(retained(left).into_value());
             assert_eq!(
                 hash(&a),
-                hash(left),
-                "memory hashes preserve native streams"
+                hash(&shared),
+                "equal memory carriers hash equally"
             );
+            assert_eq!(a == b, left == right);
+            if a == b {
+                assert_eq!(hash(&a), hash(&b));
+            }
         }
     }
+    memory_matrix(&values);
 }
 
 #[test]
@@ -129,6 +174,7 @@ fn boolean_connective_keys_keep_native_condition_identity_and_order() {
             assert_eq!(hash(&left), hash(&legacy));
         }
     }
+    memory_matrix(&native);
 }
 
 #[test]
@@ -208,6 +254,7 @@ fn float_operation_keys_preserve_native_order_and_payloads() {
             assert_eq!(a == b, values[i] == values[j]);
         }
     }
+    memory_matrix(&values);
 }
 
 #[test]
@@ -349,6 +396,7 @@ fn algebraic_storage_keys_preserve_native_order_and_carrier_classes() {
         assert!(!shared[i].shared().unwrap().has_cached_native_argument());
     }
     assert_eq!(KernelTermExport::algebraic_export_count(), exports);
+    memory_matrix(&natives);
 }
 
 #[test]
@@ -390,7 +438,7 @@ fn pointer_storage_keys_preserve_the_complete_native_identity_tuple() {
         pointer.clone().with_type(ProgramType::VoidPointer),
         pointer
             .clone()
-            .with_designation(std::sync::Arc::new(other.clone())),
+            .with_provenance(std::sync::Arc::new(other.clone())),
         pointer
             .clone()
             .with_opaque_extent(Some(std::sync::Arc::new(other.clone()))),
@@ -453,6 +501,7 @@ fn pointer_storage_keys_preserve_the_complete_native_identity_tuple() {
     // The selected scalar subobject widths use their explicit compatibility
     // reader; no enclosing pointer descriptor is produced.
     assert!(KernelTermExport::machine_export_count() - exports <= 3);
+    memory_matrix(&natives);
 }
 
 #[test]
@@ -478,7 +527,7 @@ fn deep_pointer_storage_keys_use_a_small_stack() {
             }
             payload.address =
                 SharedPointerAddress::new(payload.address.node().block.clone(), offset);
-            payload.designation = payload.address.clone();
+            payload.provenance = payload.address.clone();
             let stored = StoredExecutionValue::from(ExecutionValue::Shared(
                 KernelTerm::shared_pointer_value(SharedPointerValue::new(payload)),
             ));
@@ -488,4 +537,72 @@ fn deep_pointer_storage_keys_use_a_small_stack() {
         .unwrap()
         .join()
         .unwrap();
+}
+
+#[test]
+fn memory_numeric_keys_keep_native_syntax_instead_of_local_observations() {
+    let _session = VerificationSession::enter();
+    let word = MachineTerm::Variable(Variable(998795));
+    let call = |arg| {
+        ProgramValue::UInt32(MachineTerm::ClickFunctionApplication {
+            name: "memory_carrier_key".into(),
+            arguments: vec![arg],
+        })
+    };
+    let a = call(PureFunctionArgument::Value(ProgramValue::UInt32(
+        word.clone(),
+    )));
+    let b = call(PureFunctionArgument::SharedMachine(
+        SharedMachineIntegerTerm::intern(MachineIntegerType::UInt32, word),
+    ));
+    assert_ne!(a, b);
+    assert_eq!(
+        StoredExecutionValue::from(a.clone()),
+        StoredExecutionValue::from(b.clone())
+    );
+    let cells = [
+        StoredMemoryValue::from(a.clone()),
+        StoredMemoryValue::from(b.clone()),
+    ];
+    assert_ne!(cells[0], cells[1]);
+    assert_eq!(cells[0].cmp(&cells[1]), a.cmp(&b));
+    assert_eq!(hash(&cells[0]), hash(&a));
+    assert_eq!(hash(&cells[1]), hash(&b));
+}
+
+#[test]
+fn memory_hash_collisions_still_compare_values() {
+    #[derive(Default)]
+    struct Collision;
+    impl Hasher for Collision {
+        fn finish(&self) -> u64 {
+            0
+        }
+        fn write(&mut self, _: &[u8]) {}
+    }
+    let _session = VerificationSession::enter();
+    let values = [
+        0,
+        0x8000000000000000,
+        0x7ff8000000000001,
+        0x7ff8000000000002,
+    ]
+    .map(|bits| ProgramValue::Float64(MachineTerm::uint64_constant(bits)));
+    let mut map = std::collections::HashMap::<
+        StoredMemoryValue,
+        usize,
+        std::hash::BuildHasherDefault<Collision>,
+    >::default();
+    for (i, value) in values.iter().enumerate() {
+        map.insert(StoredMemoryValue::from(value.clone()), i);
+    }
+    assert_eq!(map.len(), values.len());
+    for (i, value) in values.iter().enumerate() {
+        let root =
+            KernelTermImport::default().argument(&PureFunctionArgument::Value(value.clone()));
+        assert_eq!(
+            map.get(&StoredMemoryValue::from(ExecutionValue::Shared(root))),
+            Some(&i)
+        );
+    }
 }

@@ -20,7 +20,8 @@ theorem sized_valid_node(identity: struct rb_node*, parent: struct rb_node*, col
 theorem sized_valid_value_matches_size(tree: SizedTree) {
     requires sized_counts_valid(tree) == 1;
     ensures to_integer(sized_value(tree)) == rb_subtree_size(sized_shape(tree)) by {
-        induct(tree) as ih {
+        let ih = induct(tree);
+        match tree {
             SizedTree::Empty => {
                 unfold(sized_value(SizedTree::Empty));
                 unfold(sized_shape(SizedTree::Empty));

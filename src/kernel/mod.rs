@@ -38,7 +38,7 @@ pub(crate) mod fact_stability;
 mod fold_read_summary;
 mod functions;
 mod owned_footprint_reach;
-mod pointer_designations;
+mod pointer_provenance;
 mod population_access;
 // Population authority: checked anchor lifetimes, registrations and the C
 // creation ledger.

@@ -36,7 +36,8 @@ theorem pointer_lists(xs: List<int32*>, ys: List<int32*>, zs: List<int32*>, valu
 
 theorem explicit_induction_application(xs: List<int32>) {
     ensures list::append(xs, List<int32>::Nil) == xs by {
-        induct(xs) as ih {
+        let ih = induct(xs);
+        match xs {
             List::Nil => {
                 unfold(list::append(List<int32>::Nil, List<int32>::Nil));
                 normalize();

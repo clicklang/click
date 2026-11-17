@@ -1037,12 +1037,12 @@ mod resource_relation_tests {
                 ] {
                     assert!(!facts.proves_exact(&relation(different, pointer.clone(), separate)));
                 }
-                let different_designation = pointer
+                let different_provenance = pointer
                     .clone()
-                    .with_designation(std::sync::Arc::new(address.offset_by_bytes(4)));
+                    .with_provenance(std::sync::Arc::new(address.offset_by_bytes(4)));
                 assert!(!facts.proves_exact(&relation(
                     MachineTerm::Variable(name),
-                    different_designation,
+                    different_provenance,
                     separate
                 )));
                 let different_pointer =

@@ -880,9 +880,9 @@ fn prepare_structural_induction_arm_tactics(
                         .collect::<Result<_, ClickError>>()?,
                 })))
             }
-            ProofTactic::StructuralInduct { .. } | ProofTactic::Induct { .. } => Err(
-                ClickError::new("nested induction is not supported in a structural induction arm"),
-            ),
+            ProofTactic::Induct { .. } => Err(ClickError::new(
+                "nested induction is not supported in a structural induction arm",
+            )),
             ProofTactic::ApplyInduction { .. } | ProofTactic::ApplyInductionUsing { .. } => Err(
                 ClickError::new("internal induction-application syntax is not accepted directly"),
             ),
@@ -932,15 +932,15 @@ fn check_pure_structural_induction(
         .first()
         .and_then(|tactic| TacticTiming::pure_source(claim_label, vec![0], tactic));
     let [
-        ProofTactic::StructuralInduct {
+        ProofTactic::Induct {
             parameter,
             hypothesis,
-            arms,
         },
+        ProofTactic::Match(proof_match),
     ] = tactics
     else {
         return Err(ClickError::new(
-            "structural `induct` must be the only top-level tactic in a pure theorem proof",
+            "structural induction requires `let ih = induct(xs);` followed by `match xs { ... }` as the two top-level tactics in a pure theorem proof",
         ));
     };
     let Some((parameter_index, parameter_definition)) = theorem
@@ -970,6 +970,25 @@ fn check_pure_structural_induction(
             parameter_type.name
         )));
     }
+    let matches_parameter = match &proof_match.scrutinee {
+        ContractExpression::AlgebraicVariable { name, .. } => {
+            name.written() == Some(parameter.as_str())
+        }
+        ContractExpression::Binding(name) => name == parameter,
+        _ => false,
+    };
+    if !matches_parameter {
+        return Err(ClickError::new(format!(
+            "structural induction on `{parameter}` requires a match on that same parameter"
+        )));
+    }
+    if proof_match.ensuring.is_some() {
+        return Err(ClickError::new(
+            "a structural induction match proves the theorem goal in each arm and does not accept an `ensuring` interface",
+        ));
+    }
+    let arms = &proof_match.arms;
+    let _match_timing = TacticTiming::pure_source(claim_label, vec![1], &tactics[1]);
     let state = ExecutionState::new().with_memory(context.memory.clone());
     let parameter_value = capture_fixed_state_algebraic_expression(
         &parameter_expression,
@@ -1298,9 +1317,9 @@ fn check_pure_structural_induction(
             branch_setup,
         );
         let mut search = super::attempt::search_scope("pure structural induction arm");
-        // The `induct` tactic is source tactic 0 and the arms follow it in
-        // written order, each numbered through its own nested tactics.
-        let first_source_index = 1 + arms[..arm_index]
+        // Declaration 0 is followed by match 1. Its arms follow in written
+        // order, each numbered through its own nested tactics.
+        let first_source_index = 2 + arms[..arm_index]
             .iter()
             .map(|earlier| super::source_tactic_count(&earlier.tactics))
             .sum::<usize>();
@@ -1346,11 +1365,17 @@ fn check_pure_structural_induction(
             missing.join(", ")
         )));
     }
-    let certificate = ProofCertificate::from_proof_tactics(&[ProofTactic::StructuralInduct {
-        parameter: parameter.clone(),
-        hypothesis: hypothesis.clone(),
-        arms: checked_arms,
-    }])
+    let certificate = ProofCertificate::from_proof_tactics(&[
+        ProofTactic::Induct {
+            parameter: parameter.clone(),
+            hypothesis: hypothesis.clone(),
+        },
+        ProofTactic::Match(std::sync::Arc::new(ProofMatch {
+            scrutinee: proof_match.scrutinee.clone(),
+            ensuring: None,
+            arms: checked_arms,
+        })),
+    ])
     .map_err(|error| {
         ClickError::new(format!(
             "structural induction for `{claim_label}` produced an invalid certificate: {error}"
@@ -2096,7 +2121,19 @@ fn verify_theorem_ensure(
                     "`{claim_label}` has an empty explicit proof script"
                 )));
             }
-            if matches!(tactics.first(), Some(ProofTactic::StructuralInduct { .. })) {
+            let structural_induction = tactics
+                .iter()
+                .find_map(|tactic| match tactic {
+                    ProofTactic::Induct { parameter, .. } => Some(parameter),
+                    _ => None,
+                })
+                .is_some_and(|name| {
+                    theorem.parameters().iter().any(|parameter| {
+                        parameter.name() == name
+                            && matches!(parameter.click_type(), ClickType::Algebraic(_))
+                    })
+                });
+            if structural_induction {
                 if let Some(error) = entry_requirements.refusals.first() {
                     return Err(error.clone());
                 }
@@ -4049,12 +4086,62 @@ mod tests {
     }
 
     #[test]
+    fn structural_induction_declaration_requires_its_matching_cases() {
+        let source = r#"
+            spec enum Chain { Nil, Link(Chain), }
+            theorem reflexive(xs: Chain, ys: Chain) {
+                ensures xs == xs by {
+                    let ih = induct(xs);
+                    match xs {
+                        Chain::Nil => { known(); }
+                        Chain::Link(tail) => { apply(ih(tail)); known(); }
+                    }
+                }
+            }
+        "#;
+        let verified = verify_instantiation_theorem(source).unwrap();
+        assert!(matches!(verified.proof_certificate().unwrap().steps(),
+            [ProofStep::Induct { .. }, ProofStep::Match { arms, .. }] if arms.len() == 2));
+        for (bad, diagnostic) in [
+            (
+                source.replace("match xs", "match ys"),
+                "match on that same parameter",
+            ),
+            (
+                source.replace("match xs", "match Chain::Nil"),
+                "match on that same parameter",
+            ),
+            (
+                source.replace("match xs {", "match xs ensuring { fact xs == xs; } {"),
+                "does not accept an `ensuring`",
+            ),
+            (
+                source.replace("let ih = induct(xs);", "let ih = induct(xs); known();"),
+                "two top-level tactics",
+            ),
+            (
+                source.replace("apply(ih(tail));", "let inner = induct(tail);"),
+                "nested induction",
+            ),
+            (
+                source.replace("apply(ih(tail));", "apply(ih(xs));"),
+                "immediate recursive field",
+            ),
+        ] {
+            let error =
+                verify_instantiation_theorem(&bad).expect_err("invalid induction must fail");
+            assert!(error.report().contains(diagnostic), "{}", error.report());
+        }
+    }
+
+    #[test]
     fn ordinary_pure_structural_induction_retains_arm_evidence() {
         let source = r#"
             spec enum TestNat { Zero, Succ(TestNat), }
             theorem reflexive(n: TestNat) {
                 ensures n == n by {
-                    induct(n) as ih {
+                    let ih = induct(n);
+                    match n {
                         TestNat::Zero => { normalize(); }
                         TestNat::Succ(tail) => { normalize(); }
                     }
@@ -4069,7 +4156,7 @@ mod tests {
             matches!(&verified.checked_completion, Some(TheoremProofCompletion::StructuralInduction(arms)) if arms.len() == 2)
         );
         assert!(
-            matches!(verified.proof_certificate().unwrap().steps(), [ProofStep::StructuralInduct { arms, .. }] if arms.len() == 2)
+            matches!(verified.proof_certificate().unwrap().steps(), [ProofStep::Induct { .. }, ProofStep::Match { arms, .. }] if arms.len() == 2)
         );
     }
 
@@ -4099,7 +4186,10 @@ mod tests {
     ) -> Result<VerifiedPureTheorem, ClickError> {
         let file = crate::surface::parse(source)?;
         let predicates = PredicateEnvironment::new(file.predicate_definitions());
-        let functions = ClickFunctionEnvironment::new(file.click_function_definitions());
+        let functions = ClickFunctionEnvironment::with_algebraic_types(
+            file.click_function_definitions(),
+            file.algebraic_type_definitions(),
+        );
         let mut verified = verify_concrete_theorem_definition(
             &file.theorem_definitions()[0],
             SpecDefinitions::new(&predicates, &functions),

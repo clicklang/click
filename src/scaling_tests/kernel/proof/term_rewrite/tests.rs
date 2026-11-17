@@ -62,7 +62,7 @@ fn full_pointer_alias_keeps_typed_constructor_fields_in_linear_work() {
                 panic!("pointer field expected")
             };
             assert_eq!(pointer.pointer(), to.pointer());
-            assert_eq!(pointer.designation(), to.designation());
+            assert_eq!(pointer.provenance(), to.provenance());
             assert!(pointer.supports_object_class(&class));
         }
         work.push(units);
@@ -83,14 +83,14 @@ fn full_pointer_alias_keeps_typed_constructor_fields_in_linear_work() {
     };
     assert!(!actual.supports_object_class(&class));
 
-    // Numeric equality cannot replace the original object's designation.
+    // Numeric equality cannot replace the original object's provenance.
     let ProgramValue::Pointer(actual) =
         TermRewrite::for_pointer_exact(from.pointer(), to.pointer())
             .value(&ProgramValue::Pointer(typed.clone()))
     else {
         panic!("pointer expected")
     };
-    assert_eq!(actual.designation(), typed.designation());
+    assert_eq!(actual.provenance(), typed.provenance());
     assert_eq!(actual.opaque_extent(), typed.opaque_extent());
 }
 

@@ -306,7 +306,7 @@ pub(crate) fn substitute_pointer_variable_in_proposition(
     walk_proposition(proposition, &PointerSubstitution { from, to })
 }
 
-/// Bind a pointer witness without discarding its subobject designation.
+/// Bind a pointer witness without discarding its subobject provenance.
 pub(crate) fn substitute_pointer_value_in_proposition(
     proposition: &Proposition,
     from: Variable,
@@ -1734,7 +1734,7 @@ fn walk_memory_range<S: VariableSubstitution + ?Sized>(range: &MemoryRange, s: &
             s.bitvector(range.bound_terms().0),
             s.bitvector(range.bound_terms().1),
         )
-        .with_designation(std::sync::Arc::new(s.pointer(&range.designation)))
+        .with_provenance(std::sync::Arc::new(s.pointer(&range.provenance)))
         .with_opaque_extent(
             range
                 .opaque_extent
