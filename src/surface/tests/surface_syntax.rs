@@ -1340,8 +1340,8 @@ fn signed_arithmetic_smart_planner_expands_to_ordinary_proof() {
         .expect("smart arithmetic should expand");
     assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(
-        expanded.contains("normalize"),
-        "ordinary interval normalization expected: {expanded}"
+        !expanded.contains("normalize("),
+        "signed interval expansion must use ordinary proof steps: {expanded}"
     );
     let rechecked = source.replace("by { solve() using { 0 <= n; n <= 100; } }", &expanded);
     assert!(
