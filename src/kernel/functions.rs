@@ -24,6 +24,7 @@ mod literal_objects;
 mod mixed_return_resources;
 mod produced_argument_supply;
 mod return_loan_backing;
+mod summary_transfer;
 pub(in crate::kernel) use mixed_return_resources::{
     ConstructedBodyReturn, ConstructedReturnBody, ReturnResourceTransfer, ReturnedConsumedCell,
     ReturnedFreshAllocation,
@@ -33,6 +34,7 @@ use mixed_return_resources::{
     ProducedBorrowingPiece, ProjectedReturnResource, ReturnOwnershipOrigin,
     project_return_resource_cores,
 };
+pub(in crate::kernel) use summary_transfer::SummaryResourceTransferRule;
 #[cfg(test)]
 mod produced_argument_supply_tests;
 use produced_argument_supply::prepare_produced_argument_supply;
@@ -284,6 +286,13 @@ impl<'a> ReturnResourceComposition<'a> {
             return ReturnOwnershipOrigin::ConsumedCell(transfer);
         }
         ReturnOwnershipOrigin::Description
+    }
+
+    fn constructed_summary_output(self, clause: usize) -> Option<&'a ResourceFact> {
+        match self {
+            Self::ApplyTransfers(transfers) => transfers.constructed.get(&clause),
+            _ => None,
+        }
     }
 }
 
@@ -13207,28 +13216,29 @@ fn evaluate_contract_return_resource_context(
         .and_then(|key| entry_borrows.get_mut(&key))
         .and_then(VecDeque::pop_front);
         let return_entry_borrow = entry_borrow.is_some();
-        let resource = if let Some(entry_borrow) = entry_borrow {
-            entry_borrow
-        } else {
-            match evaluate_returned(
-                clause_index,
-                resource,
-                &returned,
-                &mut canonical_by_checked,
-                budget,
-            )? {
-                Ok(resource) => resource,
-                Err(error) if resource_clause_failure_awaits_supply(&error) => {
-                    deferred.push((clause_index, resource, error));
-                    continue;
+        let resource =
+            if let Some(constructed) = composition.constructed_summary_output(clause_index) {
+                constructed.clone()
+            } else if let Some(entry_borrow) = entry_borrow {
+                entry_borrow
+            } else {
+                match evaluate_returned(
+                    clause_index,
+                    resource,
+                    &returned,
+                    &mut canonical_by_checked,
+                    budget,
+                )? {
+                    Ok(resource) => resource,
+                    Err(error) if resource_clause_failure_awaits_supply(&error) => {
+                        deferred.push((clause_index, resource, error));
+                        continue;
+                    }
+                    Err(error) => return Ok(Err(error)),
                 }
-                Err(error) => return Ok(Err(error)),
-            }
-        };
-        // Admit each returned clause against the growing context, retaining
-        // its occurrence. Consumers compose the pieces of their requested
-        // footprint; constructing outputs must not discover optional merges
-        // by walking the ambient pointer/endpoint equality classes.
+            };
+        // Retain the occurrence constructed by transfer or custody; descriptions
+        // still need their missing relationship established by admission.
         evaluated = match evaluated.construct_clause(
             resource.clone(),
             composition.origin_for_return(clause_index, return_entry_borrow, &resource),

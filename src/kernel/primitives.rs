@@ -6591,6 +6591,7 @@ pub struct FunctionContractInterface {
     pub(crate) value_parameters: Vec<ProgramParameter>,
     pub(crate) resource_requires: Vec<ResourceSpec>,
     pub(crate) resource_ensures: Vec<ResourceSpec>,
+    pub(super) resource_transfer_rule: Arc<super::functions::SummaryResourceTransferRule>,
     pub(crate) resource_constructors: Vec<ResourceSpec>,
     pub(crate) contract_requires: Vec<SpecProposition>,
     /// For each lowered contract requirement, the originating source

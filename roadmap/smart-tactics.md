@@ -413,8 +413,11 @@ Executed-body returns now construct their group by consuming each output from
 the actual body's remaining ownership, then install that group in the captured
 caller frame. They no longer run early description-group admission or repeat
 the Boolean custody pass afterward. Folded-head post-memory boundary checks
-remain; summary-only and description-only admission still use their existing
-compatibility paths. Keep those paths separate when measuring the symbolic
+remain. Summary application now retains a clause-level rule for unchanged flat
+footprints, including parameter bounds, and binds it to the selected entry
+reservation. Justified outputs and checked entry borrows avoid early group
+admission; unmatched and description-only outputs retain compatibility
+admission. Keep those paths separate when measuring the symbolic
 diagnostic above. The executed-body regressions cover alias/body/frame growth,
 selected splits and duplicate refusal; this does not close every raw-admission
 or consumption route.
