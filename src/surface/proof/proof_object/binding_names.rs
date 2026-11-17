@@ -5,7 +5,7 @@ use super::*;
 
 #[derive(Clone, Default)]
 pub(in crate::surface::proof) struct BindingNames {
-    names: PersistentMap<Variable, PersistentMap<String, u8>>,
+    names: PersistentMap<Variable, PersistentBinderMap<u8>>,
 }
 
 pub(in crate::surface::proof) fn variable(expression: &ContractExpression) -> Option<Variable> {
@@ -31,16 +31,16 @@ pub(in crate::surface::proof) fn variable(expression: &ContractExpression) -> Op
 impl BindingNames {
     pub(super) fn update_values(
         &mut self,
-        before: &PersistentMap<String, ContractExpression>,
-        after: &PersistentMap<String, ContractExpression>,
+        before: &PersistentBinderMap<ContractExpression>,
+        after: &PersistentBinderMap<ContractExpression>,
     ) {
         self.update(before, after, 1, variable);
     }
 
     pub(super) fn update_integers(
         &mut self,
-        before: &PersistentMap<String, crate::kernel::SpecIntegerExpression>,
-        after: &PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+        before: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
+        after: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     ) {
         self.update(before, after, 2, |expression| match expression {
             crate::kernel::SpecIntegerExpression::Term(crate::kernel::IntegerTerm::Variable(
@@ -52,8 +52,8 @@ impl BindingNames {
 
     pub(super) fn update_algebraics(
         &mut self,
-        before: &PersistentMap<String, crate::kernel::SpecAlgebraicExpression>,
-        after: &PersistentMap<String, crate::kernel::SpecAlgebraicExpression>,
+        before: &PersistentBinderMap<crate::kernel::SpecAlgebraicExpression>,
+        after: &PersistentBinderMap<crate::kernel::SpecAlgebraicExpression>,
     ) {
         self.update(before, after, 4, |expression| match expression.node {
             crate::kernel::SpecAlgebraicExpressionNode::Variable(variable) => Some(variable),
@@ -61,10 +61,10 @@ impl BindingNames {
         });
     }
 
-    fn update<T: PartialEq>(
+    fn update<T: PartialEq + Clone>(
         &mut self,
-        before: &PersistentMap<String, T>,
-        after: &PersistentMap<String, T>,
+        before: &PersistentBinderMap<T>,
+        after: &PersistentBinderMap<T>,
         kind: u8,
         variable: impl Fn(&T) -> Option<Variable>,
     ) {
@@ -95,8 +95,8 @@ impl BindingNames {
         }
     }
 
-    pub(in crate::surface::proof) fn name(&self, variable: Variable) -> Option<&str> {
+    pub(in crate::surface::proof) fn name(&self, variable: Variable) -> Option<&SurfaceBinder> {
         crate::instrumentation::record_deterministic_work(1);
-        self.names.get(&variable)?.keys().next().map(String::as_str)
+        self.names.get(&variable)?.keys().next()
     }
 }

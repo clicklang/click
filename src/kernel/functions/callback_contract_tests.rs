@@ -1569,7 +1569,7 @@ fn requirement_capability_describes_the_complete_source_tree() {
     // reads memory, so a lowered arithmetic leaf must not advertise the
     // whole requirement as state independent.
     let stateful_exists = SpecProposition::ExistsInt32 {
-        name: "len".to_string(),
+        name: "len".to_string().into(),
         variable: Variable(900),
         body: Box::new(SpecProposition::MemoryLoadable {
             memory: SpecMemory::Current,

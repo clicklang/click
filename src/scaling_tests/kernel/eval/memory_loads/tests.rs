@@ -779,7 +779,12 @@ fn logical_scalar_read_meets_model_cell_through_later_external_alias() {
         ResourceContext::new_with_equalities(&empty).unchecked_with_fact(ResourceFact::own_memory(
             MemoryRange::new_with_element_width(field.clone(), 0u32.into(), 1u32.into(), 8),
         ));
-    let before = empty.assume_proposition(Proposition::ResourceComposition(resources));
+    let before = empty
+        .assume_proposition(Proposition::ResourceComposition(resources))
+        .assume_proposition(
+            crate::kernel::memory_provenance::store_value_equation(&memory, &field, &value)
+                .unwrap(),
+        );
     let read = |memory: &Memory, pointer: Pointer, context: &PureFactContext| {
         let paths = evaluate_logical_memory_load_paths(
             memory,
@@ -802,7 +807,7 @@ fn logical_scalar_read_meets_model_cell_through_later_external_alias() {
         ))
     };
     // The read keeps its own term (lowering is fact-stable); the alias makes
-    // it equal to the stored value in the context's equality graph.
+    // it equal to the explicitly recorded value in the context's equality graph.
     let equals = |read: ExpressionOutcome, context: &PureFactContext, expected: &ProgramValue| {
         let (ExpressionOutcome::Value(read), Some(expected)) = (
             read,
@@ -857,14 +862,27 @@ fn logical_scalar_read_meets_model_cell_through_later_external_alias() {
         assert!(!ResourceContext::new().permits_memory_read(&queried, 8, &context));
         let changed_value = ProgramValue::UInt64(MachineTerm::uint64_constant(19));
         let changed = memory.clone().store(field.clone(), changed_value.clone());
-        assert!(equals(
+        assert!(!equals(
             read(&changed, queried.clone(), &context),
             &context,
             &changed_value
         ));
+        let changed_context = context.clone().assume_proposition(
+            crate::kernel::memory_provenance::store_value_equation(
+                &changed,
+                &field,
+                &changed_value,
+            )
+            .unwrap(),
+        );
+        assert!(equals(
+            read(&changed, queried.clone(), &changed_context),
+            &changed_context,
+            &changed_value
+        ));
         assert!(!equals(
-            read(&changed, queried.clone(), &context),
-            &context,
+            read(&changed, queried.clone(), &changed_context),
+            &changed_context,
             &value
         ));
         // An exact newer cell takes precedence over a cached alias.

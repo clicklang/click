@@ -1965,15 +1965,15 @@ fn int64_guarded_postcondition_expands_to_int64_defined_and_reverifies() {
     assert!(!claim.contains("execute()"), "{expanded}");
     assert!(!claim.contains("solve()"), "{expanded}");
     assert!(
-        claim.contains("implies (let integer_value: Integer = to_integer(old((st.total as "),
+        claim.contains("implies ((to_integer(old((st.total as "),
         "{expanded}"
     );
     assert!(
-        claim.contains("integer_value) <= 9223372036854775807"),
+        claim.contains(": Integer) <= 9223372036854775807"),
         "{expanded}"
     );
     assert!(
-        claim.contains("integer_value) >= -9223372036854775808"),
+        claim.contains(": Integer) >= -9223372036854775808"),
         "{expanded}"
     );
     if let Err(error) = verify_c_sources(&expanded, &c_sources) {
@@ -2002,7 +2002,7 @@ fn int32_guarded_postcondition_expands_to_int32_defined_and_reverifies() {
     assert!(!claim.contains("execute()"), "{expanded}");
     assert!(!claim.contains("solve()"), "{expanded}");
     assert!(
-        claim.contains("implies (let integer_value: Integer = to_integer(old((st.total as "),
+        claim.contains("implies ((to_integer(old((st.total as "),
         "{expanded}"
     );
     if let Err(error) = verify_c_sources(&expanded, &c_sources) {

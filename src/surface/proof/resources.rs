@@ -623,6 +623,7 @@ fn materialize_folded_composite_resource_memory(
             Resource::Memory(_)
             | Resource::Token { .. }
             | Resource::Instance(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_)
@@ -2336,6 +2337,7 @@ fn project_held_resource_observable_facts(
         Resource::Memory(_)
         | Resource::Token { .. }
         | Resource::Instance(_)
+        | Resource::ConditionalMutexGuard(_)
         | Resource::MutexGuard(_)
         | Resource::MutexLive(_)
         | Resource::MutexUse(_)
@@ -3417,6 +3419,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             }
             Resource::Memory(_) => unreachable!("a declared resource lowered to memory"),
             Resource::Instance(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_)
@@ -4223,6 +4226,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 Resource::Composite { name, .. } | Resource::Token { name, .. } => name,
                 Resource::Memory(_)
                 | Resource::Instance(_)
+                | Resource::ConditionalMutexGuard(_)
                 | Resource::MutexGuard(_)
                 | Resource::MutexLive(_)
                 | Resource::MutexUse(_)
@@ -4325,6 +4329,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 }
                 Resource::Memory(_) => unreachable!("declared resource lowered to memory"),
                 Resource::Instance(_)
+                | Resource::ConditionalMutexGuard(_)
                 | Resource::MutexGuard(_)
                 | Resource::MutexLive(_)
                 | Resource::MutexUse(_)

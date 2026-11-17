@@ -92,3 +92,64 @@ fn float_storage_preserves_exact_call_argument_carrier_distinctions() {
         }
     }
 }
+
+#[test]
+fn boolean_connective_keys_keep_native_condition_identity_and_order() {
+    let _session = VerificationSession::enter();
+    let a = ConditionTerm::Variable(Variable(998670));
+    let b = ConditionTerm::Variable(Variable(998671));
+    let cases = [
+        ConditionTerm::Constant(false),
+        a.clone(),
+        ConditionTerm::BoolEqual(Box::new(a.clone()), Box::new(b.clone())),
+        ConditionTerm::BoolIf {
+            condition: Box::new(a.clone()),
+            then_condition: Box::new(b.clone()),
+            else_condition: Box::new(a.clone()),
+        },
+        ConditionTerm::BoolApplication(SharedPureApplication::intern("key_bool".into(), vec![])),
+    ];
+    let roots = cases
+        .iter()
+        .map(|term| KernelTermImport::default().condition(term))
+        .collect::<Vec<_>>();
+    let native = roots
+        .iter()
+        .map(|root| ExecutionValue::Shared(root.clone()).into_native())
+        .collect::<Vec<_>>();
+    for (i, a) in roots.iter().enumerate() {
+        for (j, b) in roots.iter().enumerate() {
+            let left = StoredExecutionValue::from(ExecutionValue::Shared(a.clone()));
+            let right = StoredExecutionValue::from(ExecutionValue::Shared(b.clone()));
+            assert_eq!(left.cmp(&right), native[i].cmp(&native[j]));
+            assert_eq!(left == right, native[i] == native[j]);
+            let legacy = StoredExecutionValue::from(native[i].clone());
+            assert_eq!(left, legacy);
+            assert_eq!(hash(&left), hash(&legacy));
+        }
+    }
+}
+
+#[test]
+fn deep_boolean_key_construction_and_drop_use_a_small_stack() {
+    std::thread::Builder::new()
+        .stack_size(256 << 10)
+        .spawn(|| {
+            let _session = VerificationSession::enter();
+            let atom = KernelTerm::variable(KernelType::Bool, Variable(998675));
+            let other = KernelTerm::variable(KernelType::Bool, Variable(998676));
+            let mut root = atom.clone();
+            for _ in 0..4096 {
+                root = KernelTerm::boolean_if_raw([atom.clone(), root, other.clone()]);
+            }
+            let value = StoredExecutionValue::from(ExecutionValue::Shared(root.clone()));
+            assert!(!root.has_cached_native_argument());
+            let _ = hash(&value);
+            assert!(!root.has_cached_native_argument());
+            drop(root);
+            drop(value);
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}

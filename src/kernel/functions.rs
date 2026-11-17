@@ -8287,6 +8287,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
                     ));
                 }
             }
+            Resource::ConditionalMutexGuard(_) => {}
             Resource::MutexGuard(identity) => {
                 if let Some(bytes) = self.mutex_storage_bytes {
                     self.ranges.push(MemoryRange::new_with_element_width(
@@ -8592,7 +8593,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
             {
                 match (variable, value) {
                     (None, AlgebraicValue::Algebraic(value)) => {
-                        algebraic_bindings.insert(name.clone(), value.clone());
+                        algebraic_bindings.insert(name.clone().into(), value.clone());
                     }
                     (Some(variable), AlgebraicValue::Integer(value)) => {
                         integer_bindings.insert(*variable, value.clone());
@@ -10212,6 +10213,7 @@ fn evaluate_resource_population_body_resources(
             Resource::Memory(_)
             | Resource::PopulationAuthority(_)
             | Resource::Instance(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_)
@@ -14213,7 +14215,7 @@ fn lower_selected_resource_body_clauses(
     source: &[SpecProposition],
     arm: Option<&str>,
     integer_bindings: &BTreeMap<Variable, IntegerTerm>,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
+    algebraic_bindings: &BTreeMap<BindingName, AlgebraicTerm>,
     body_assumptions: &PureFactContext,
     established_assumptions: Option<&PureFactContext>,
     budget: &mut ExecutionBudget,
@@ -14870,7 +14872,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                     }
                 }
                 (AlgebraicValueType::Algebraic { .. }, None, AlgebraicValue::Algebraic(value)) => {
-                    algebraic_bindings.insert(name.clone(), value.clone());
+                    algebraic_bindings.insert(name.clone().into(), value.clone());
                 }
                 _ => return Err("resource match constructor binding type mismatch".into()),
             }
@@ -18673,6 +18675,7 @@ fn resource_clause_supply_with_fact(
                 Resource::Token { .. }
                 | Resource::PopulationAuthority(_)
                 | Resource::Instance(_)
+                | Resource::ConditionalMutexGuard(_)
                 | Resource::MutexGuard(_)
                 | Resource::MutexLive(_)
                 | Resource::MutexUse(_)
@@ -20081,6 +20084,7 @@ fn resource_fact_transfer_priority(resource: &ResourceFact) -> u8 {
             | Resource::Token { .. }
             | Resource::PopulationAuthority(_)
             | Resource::Instance(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_)

@@ -13,7 +13,7 @@
 //! query plus the depth of the answer's position.
 use super::{
     ClickError, ClickProposition, ClickType, ContractExpression, ProgramPointSelector,
-    clone_click_proposition_iteratively, proof,
+    SurfaceBinder, clone_click_proposition_iteratively, proof,
 };
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{ConditionTerm, MachineTerm, Pointer, Proposition, Sort, Variable};
@@ -100,27 +100,27 @@ enum SurfaceConnective {
     Implies(NodeId, NodeId),
     ForAll {
         click_type: ClickType,
-        name: String,
+        name: SurfaceBinder,
         written_name: Option<String>,
         body: NodeId,
     },
     Exists {
         click_type: ClickType,
-        name: String,
+        name: SurfaceBinder,
         written_name: Option<String>,
         body: NodeId,
     },
     RangeAll {
         start: ContractExpression,
         end: ContractExpression,
-        item: String,
+        item: SurfaceBinder,
         written_item: Option<String>,
         body: NodeId,
     },
     RangeAny {
         start: ContractExpression,
         end: ContractExpression,
-        item: String,
+        item: SurfaceBinder,
         written_item: Option<String>,
         body: NodeId,
     },

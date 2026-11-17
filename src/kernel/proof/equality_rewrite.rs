@@ -1011,6 +1011,7 @@ fn rewrite_term(term: &MachineTerm, from: &MachineTerm, to: &MachineTerm) -> Mac
     // it is deterministic arithmetic on the rewritten node only, so the
     // rewritten goal states the value the substitution denotes.
     match term {
+        MachineTerm::ThreadHandle(_) => term.clone(),
         binary_term!(Int32, Add, left, right) => {
             let (left, right) = binary(left, right);
             match (left.as_ref(), right.as_ref()) {
@@ -1600,6 +1601,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 offset: rewrite_offset(&pointer.offset, left, right),
             };
             match term {
+                MachineTerm::ThreadHandle(_) => term.clone(),
                 MachineTerm::PureFunctionApplication { name, arguments } => {
                     MachineTerm::rebuild_pure_application(
                         name.clone(),
@@ -1666,6 +1668,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 | Resource::Token { .. }
                 | Resource::PopulationAuthority(_)
                 | Resource::Instance(_)
+                | Resource::ConditionalMutexGuard(_)
                 | Resource::MutexGuard(_)
                 | Resource::MutexLive(_)
                 | Resource::MutexUse(_)
@@ -2411,6 +2414,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
         | Resource::Token { .. }
         | Resource::PopulationAuthority(_)
         | Resource::Instance(_)
+        | Resource::ConditionalMutexGuard(_)
         | Resource::MutexGuard(_)
         | Resource::MutexLive(_)
         | Resource::MutexUse(_)

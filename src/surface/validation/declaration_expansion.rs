@@ -45,7 +45,7 @@ struct DeclaredResourceScope {
     /// The arms enclosing proof `match`es select, innermost last: the
     /// instance, its field and the variant.
     selected_arms: std::cell::RefCell<Vec<(Variable, String, String)>>,
-    unowned_resource_parameters: std::cell::RefCell<BTreeMap<Variable, String>>,
+    unowned_resource_parameters: std::cell::RefCell<BTreeMap<Variable, SurfaceBinder>>,
     /// The enclosing C function's parameters of signed character pointer
     /// type. A resource argument naming one, passed to `uint8` bytes, is
     /// read through its explicit byte view, as a predicate argument is.
@@ -1320,7 +1320,7 @@ fn expand_declared_resource_definition(
                     unreachable!()
                 };
                 (!owned.contains(&binding.identity))
-                    .then(|| (binding.identity, binding.name.clone()))
+                    .then(|| (binding.identity, SurfaceBinder::from(binding.name.clone())))
             })
             .collect();
         let previous = resource_definitions
@@ -1523,7 +1523,8 @@ fn expand_declared_resource_proof_of(
         }
         let introduced = match &tactic {
             ProofTactic::Intro => Some(None),
-            ProofTactic::IntroAs(name) => Some(Some(name.clone())),
+            ProofTactic::IntroAs(name) => Some(Some(SurfaceBinder::from(name))),
+            ProofTactic::IntroBinder(name) => Some(Some(name.clone())),
             _ => None,
         };
         match expand_declared_resource_tactic(tactic, resource_definitions) {
@@ -1541,7 +1542,8 @@ fn expand_declared_resource_proof_of(
                     written_name,
                     body,
                 }) => {
-                    let name = rename.unwrap_or_else(|| written_name.unwrap_or(name));
+                    let _ = written_name;
+                    let name = rename.unwrap_or(name);
                     bound.push(constructors.bind(&name, Some(click_type)));
                     Some(*body)
                 }
@@ -2709,27 +2711,27 @@ fn expand_declared_resource_proposition(
         BuildImplies,
         BuildForAll {
             click_type: ClickType,
-            name: String,
+            name: SurfaceBinder,
             written_name: Option<String>,
             shadowed: crate::surface::scoped_names::Scope,
         },
         BuildExists {
             click_type: ClickType,
-            name: String,
+            name: SurfaceBinder,
             written_name: Option<String>,
             shadowed: crate::surface::scoped_names::Scope,
         },
         BuildRangeAll {
             start: ContractExpression,
             end: ContractExpression,
-            item: String,
+            item: SurfaceBinder,
             written_item: Option<String>,
             shadowed: crate::surface::scoped_names::Scope,
         },
         BuildRangeAny {
             start: ContractExpression,
             end: ContractExpression,
-            item: String,
+            item: SurfaceBinder,
             written_item: Option<String>,
             shadowed: crate::surface::scoped_names::Scope,
         },
@@ -3150,7 +3152,7 @@ fn expand_declared_resource_expression(
     // iteratively so expanding their bodies does not retain one large match
     // frame per binding.
     type ExpandedLet = (
-        String,
+        SurfaceBinder,
         Option<ClickType>,
         ContractExpression,
         crate::surface::scoped_names::Scope,
@@ -3183,7 +3185,7 @@ fn expand_declared_resource_expression(
     let mut expanded = expanded?;
     while let Some((name, click_type, value, _)) = lets.pop() {
         expanded = ContractExpression::Let {
-            name,
+            name: name.into(),
             click_type,
             value: Box::new(value),
             body: Box::new(expanded),
@@ -3203,11 +3205,12 @@ fn expand_declared_resource_expression(
 /// binding its name had before the `let`, for the caller to restore once
 /// the body is expanded.
 fn expand_let_value(
-    name: &str,
+    name: impl Into<SurfaceBinder>,
     click_type: Option<&ClickType>,
     value: ContractExpression,
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<(ContractExpression, crate::surface::scoped_names::Scope), ClickError> {
+    let name = name.into();
     let constructors = &resource_definitions.constructors;
     let mut value = value;
     if let Some(click_type) = click_type {
@@ -3488,6 +3491,9 @@ fn expand_declared_resource_expression_children(
                 .collect::<Result<_, _>>()?,
         },
 
+        ContractExpression::IntegerContext(value) => {
+            ContractExpression::IntegerContext(Box::new(recurse(*value)?))
+        }
         ContractExpression::AlgebraicConstructor {
             algebraic_type,
             variant,

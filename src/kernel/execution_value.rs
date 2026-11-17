@@ -1,6 +1,8 @@
 //! Values retained between evaluation and execution boundaries.
 //! Compatibility reads are explicit; a shared value owns only its common root.
 use super::prelude::*;
+pub(in crate::kernel) mod storage_keys;
+use storage_keys::{BooleanStorageKey, NativeStorageIdentity};
 
 #[derive(Clone, Debug, Eq)]
 pub enum ExecutionValue {
@@ -472,17 +474,25 @@ struct StoredValueData {
 #[derive(Eq, PartialEq, Hash, Ord, PartialOrd)]
 enum StoredIdentity<'a> {
     Machine(&'a SharedMachineIntegerTerm),
-    Native(&'a ProgramValue),
+    Native(NativeStorageIdentity<'a>),
 }
 /// A machine key owns only its shared observation handle. Families awaiting
 /// migration select their existing native descriptor at the consumer boundary.
 #[derive(Debug)]
 enum StoredKey {
     Machine(SharedMachineIntegerTerm),
+    Boolean(BooleanStorageKey),
     Native,
 }
 impl StoredKey {
     fn for_value(value: &ExecutionValue) -> Self {
+        if value.program_type() == ProgramType::Bool {
+            return Self::Boolean(match value {
+                ExecutionValue::Shared(root) => BooleanStorageKey::shared(root),
+                ExecutionValue::Native(ProgramValue::Bool(word)) => BooleanStorageKey::native(word),
+                _ => unreachable!("Boolean value"),
+            });
+        }
         let Some((format, view)) = value.machine() else {
             return Self::Native;
         };
@@ -509,12 +519,13 @@ impl StoredExecutionValue {
             .get_or_init(|| StoredKey::for_value(&self.0.value))
         {
             StoredKey::Machine(identity) => StoredIdentity::Machine(identity),
-            StoredKey::Native => StoredIdentity::Native(
+            StoredKey::Boolean(key) => StoredIdentity::Native(NativeStorageIdentity::Boolean(key)),
+            StoredKey::Native => StoredIdentity::Native(NativeStorageIdentity::Value(
                 self.native_payload()
                     .or_else(|| self.shared()?.algebraic_native_value())
                     .or_else(|| self.shared()?.float_native_value())
                     .expect("native storage"),
-            ),
+            )),
         }
     }
     /// Preserve an exact native-payload comparison at a compatibility consumer.
