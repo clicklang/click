@@ -7607,9 +7607,9 @@ fn closed_word32_equality_guards_with_selected_literal_arms_round_trip() {
 
 #[test]
 fn a_non_null_pointer_equality_spells_each_address_by_its_parameter() {
-    use crate::kernel::PointerValue;
+    use crate::kernel::Pointer;
     let _session = crate::kernel::VerificationSession::enter();
-    let node = PointerValue::new(
+    let node = Pointer::new(
         Address::symbolic(Variable(999977)),
         ProgramType::Int32Pointer,
     );
@@ -7625,8 +7625,8 @@ fn a_non_null_pointer_equality_spells_each_address_by_its_parameter() {
     let state = ExecutionState::new();
     let equality = Proposition::ConditionIs(
         ConditionTerm::PointerEqual(
-            Box::new(node.pointer().clone()),
-            Box::new(node.pointer().clone()),
+            Box::new(node.address().clone()),
+            Box::new(node.address().clone()),
         ),
         true,
     );
