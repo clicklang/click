@@ -3845,7 +3845,11 @@ fn source_struct_names(
 ) -> BTreeMap<String, String> {
     let mut names: BTreeMap<String, Option<String>> = BTreeMap::new();
     for (binding, ty) in bindings {
-        let Some(spelling) = binding.source_spelling() else {
+        let Some(spelling) = binding
+            .reference_referent()
+            .unwrap_or(binding)
+            .source_spelling()
+        else {
             continue;
         };
         names
@@ -5299,11 +5303,12 @@ pub(in crate::surface) fn external_c_function_with_layouts(
             .parameters()
             .iter()
             .map(|parameter| {
-                let program_parameter = crate::languages::interface::ImportedParameter::new(
-                    parameter.interface_type(),
-                    parameter.name().to_string(),
-                    parameter.struct_name().map(str::to_string),
-                );
+                let program_parameter =
+                    crate::languages::interface::ImportedParameter::from_binding(
+                        parameter.interface_type(),
+                        parameter.binding_name(),
+                        parameter.struct_name().map(str::to_string),
+                    );
                 let program_parameter = match parameter
                     .struct_name()
                     .filter(|_| program_parameter.is_struct_value())
@@ -7338,9 +7343,8 @@ pub(in crate::surface) fn check_signature(
 /// A parameter's name as a signature writes it: a reference is written by
 /// its referent, not by the pointer that carries it.
 fn written_parameter_name(name: &str, reference: bool) -> &str {
-    syntax::referent_of_carrier(name)
-        .filter(|_| reference)
-        .unwrap_or(name)
+    let _ = reference;
+    name
 }
 
 pub(in crate::surface) fn describe_parameter_type(

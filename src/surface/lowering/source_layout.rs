@@ -1880,7 +1880,13 @@ pub(in crate::surface) fn collect_program_expression_referenced_names(
     expression: &ProgramExpression,
     names: &mut BTreeSet<String>,
 ) {
-    collect_program_expression_referenced_bindings(expression, names);
+    let mut bindings = BTreeSet::<crate::kernel::BindingName>::new();
+    collect_program_expression_referenced_bindings(expression, &mut bindings);
+    names.extend(
+        bindings
+            .iter()
+            .filter_map(|binding| binding.unresolved_name().map(str::to_owned)),
+    );
 }
 
 pub(in crate::surface) fn collect_program_expression_referenced_bindings<N: ReferencedBinding>(

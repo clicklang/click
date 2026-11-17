@@ -2714,7 +2714,12 @@ impl EqualityGraph {
             // without visiting
             // unrelated opaque pointer members of the same equality class.
             let mut next = members.get_greater_than(&PointerBlock::Temporary(u64::MAX));
-            while let Some((member @ PointerBlock::AutomaticLocal { .. }, delta)) = next {
+            while let Some((
+                member @ (PointerBlock::AutomaticLocal { .. }
+                | PointerBlock::ReferenceCarrier { .. }),
+                delta,
+            )) = next
+            {
                 push(member, delta);
                 next = members.get_greater_than(member);
             }
@@ -3097,6 +3102,7 @@ impl EqualityGraphState {
                 | PointerBlock::StringLiteral { .. }
                 | PointerBlock::StaticObject { .. }
                 | PointerBlock::AutomaticLocal { .. }
+                | PointerBlock::ReferenceCarrier { .. }
         ) || matches!(block, PointerBlock::Concrete(name) if name != "null")
     }
 

@@ -3456,7 +3456,29 @@ impl<'a> ContractEnvironment<'a> {
     /// Ordinal lookup is checked against the exact prepared declaration: another
     /// function's parameter with the same spelling never acquires this value.
     fn parameter_value(self, binding: &crate::kernel::BindingName) -> Option<&'a ProgramValue> {
-        let id = binding.local_id()?;
+        if let Some(referent) = binding.reference_referent() {
+            if let Some(index) = self.parameters.index {
+                let position = index.position(referent.source_name())?;
+                let parameter = self.parameters.parameters.get(position)?;
+                if !parameter.matches_binding(binding) {
+                    return None;
+                }
+                let ProgramExpression::Value(value) = self.parameters.arguments.get(position)?
+                else {
+                    return None;
+                };
+                return Some(value);
+            }
+            // An unresolved carrier uses the explicit source-parameter value
+            // table, just as an unresolved ordinary parameter does. This is
+            // a source name lookup, never decoding a fabricated identifier.
+            if let Some(name) = referent.named() {
+                return self.values.get(name);
+            }
+        }
+        let id = binding
+            .local_id()
+            .or_else(|| binding.reference_referent()?.local_id())?;
         if !id.is_parameter() {
             return None;
         }
@@ -9707,6 +9729,14 @@ impl FunctionSignature {
 }
 
 impl FunctionParameter {
+    pub fn binding_name(&self) -> crate::kernel::BindingName {
+        if self.reference {
+            crate::kernel::BindingName::reference_carrier(self.name.as_str())
+        } else {
+            self.name.clone().into()
+        }
+    }
+
     pub fn interface_type(&self) -> InterfaceType {
         match &self.click_type {
             ClickType::Resource => panic!("a Resource parameter has no C type"),

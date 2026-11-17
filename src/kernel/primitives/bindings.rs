@@ -485,21 +485,50 @@ pub enum BindingName {
     ContractException,
     /// A lexical proof binder, never a program object.
     Generated(GeneratedBinderId),
+    /// The address carrying a reference binding. The referent's binding is
+    /// structural identity; an address-looking source string is never a carrier.
+    ReferenceCarrier(Arc<BindingName>),
 }
 
 impl BindingName {
+    pub fn reference_carrier(referent: impl Into<BindingName>) -> Self {
+        Self::ReferenceCarrier(Arc::new(referent.into()))
+    }
+    /// A source type-table lookup, separate from lexical value/storage lookup.
+    pub(crate) fn metadata_in<'a, T>(&self, map: &'a impl NamedBindingMap<T>) -> Option<&'a T> {
+        self.unresolved_name().and_then(|name| map.get_named(name))
+    }
+    pub fn reference_referent(&self) -> Option<&BindingName> {
+        match self {
+            Self::ReferenceCarrier(referent) => Some(referent),
+            _ => None,
+        }
+    }
+    /// Unresolved source spelling for a metadata lookup. This never identifies
+    /// execution storage: the carrier and its referent remain different keys.
+    pub(crate) fn unresolved_name(&self) -> Option<&str> {
+        match self {
+            Self::Named(name) => Some(name),
+            Self::ReferenceCarrier(referent) => referent.unresolved_name(),
+            _ => None,
+        }
+    }
     /// A lexical source spelling, absent for frontend temporaries and outcomes.
     pub fn source_spelling(&self) -> Option<&str> {
         match self {
             Self::Named(name) => Some(name),
             Self::Local(id) => id.spelling(),
             Self::Static(id) => Some(id.spelling()),
-            Self::ContractResult | Self::ContractException | Self::Generated(_) => None,
+            Self::ReferenceCarrier(_)
+            | Self::ContractResult
+            | Self::ContractException
+            | Self::Generated(_) => None,
         }
     }
     pub fn source_name(&self) -> &str {
         match self {
             Self::Named(name) => name,
+            Self::ReferenceCarrier(referent) => referent.source_name(),
             Self::Local(id) => id.spelling().unwrap_or(""),
             Self::Static(id) => id.spelling(),
             Self::ContractResult => "result",
@@ -579,6 +608,7 @@ impl From<BindingName> for BindingDeclaration {
             BindingName::ContractResult => Some(Arc::from("result")),
             BindingName::ContractException => Some(Arc::from("exception")),
             BindingName::Generated(_) => None,
+            BindingName::ReferenceCarrier(referent) => Some(Arc::from(referent.source_name())),
         };
         let scope_depth = reference.local_id().map_or(0, LocalBindingId::scope_depth);
         let array_shape = reference.array_shape().map(Arc::from);
@@ -682,6 +712,7 @@ impl std::fmt::Display for BindingName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Named(name) => f.write_str(name),
+            Self::ReferenceCarrier(referent) => write!(f, "&{referent}"),
             Self::Local(id) => id.fmt(f),
             Self::Static(id) => id.fmt(f),
             Self::ContractResult => f.write_str("result"),
@@ -773,6 +804,40 @@ impl From<StaticBindingId> for BindingName {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reference_carriers_have_structural_identity_and_separate_storage() {
+        let owner = LocalFunctionId::new(Some("references.cpp".into()), "f".into());
+        let referent: BindingName = local(&owner, 0, "x", 0).into();
+        let shadow: BindingName = local(&owner, 1, "x", 1).into();
+        let carrier = BindingName::reference_carrier(referent.clone());
+        assert_eq!(carrier.reference_referent(), Some(&referent));
+        assert_ne!(carrier, referent);
+        assert_ne!(carrier, BindingName::from("&x"));
+        assert_ne!(carrier, BindingName::reference_carrier(shadow));
+        assert!(carrier.source_spelling().is_none());
+        let first = Memory::frame_local_pointer(1, carrier.clone());
+        assert_ne!(first, Memory::frame_local_pointer(1, referent));
+        assert_ne!(first, Memory::frame_local_pointer(1, "&x"));
+        assert_ne!(first, Memory::frame_local_pointer(2, carrier.clone()));
+        assert!(first.block.is_local_block());
+        assert!(first.blocks_proven_distinct(&Memory::frame_local_pointer(2, carrier)));
+    }
+
+    #[test]
+    fn carrier_metadata_does_not_resolve_an_ordinary_value_name() {
+        let carrier = BindingName::reference_carrier("x");
+        let names = BTreeMap::from([("x".to_owned(), 7)]);
+        assert_eq!(carrier.metadata_in(&names), Some(&7));
+        assert!(carrier.named_in(&names).is_none());
+        let mut locals = LocalEnvironment::default();
+        locals.set("x", int32(1));
+        locals.set("&x", int32(2));
+        locals.set(carrier.clone(), int32(3));
+        assert_eq!(locals.get("x").unwrap().native().as_ref(), &int32(1));
+        assert_eq!(locals.get("&x").unwrap().native().as_ref(), &int32(2));
+        assert_eq!(locals.get(&carrier).unwrap().native().as_ref(), &int32(3));
+    }
 
     fn local(owner: &LocalFunctionId, ordinal: u32, name: &str, depth: u32) -> BindingName {
         LocalBindingId::new(owner.clone(), false, ordinal, Some(name.into()))

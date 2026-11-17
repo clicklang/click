@@ -2362,7 +2362,7 @@ pub(in crate::surface) fn apply_contract_lets_to_expression(
     // with an indexed worklist: the old fixed-point loop rescanned every
     // binding once per dependency depth, which made a linear alias chain
     // quadratic before lowering even had a chance to preserve sharing.
-    let referenced_names = contract_expression_referenced_names(&expression);
+    let referenced_names = contract_expression_referenced_lexical_names(&expression);
     let referenced_bindings = referenced_contract_let_bindings(bindings, referenced_names);
     let substitutions = contract_let_substitutions(bindings);
     let expression = substitute_contract_expression(&expression, &substitutions)?;
@@ -2393,7 +2393,7 @@ fn referenced_contract_let_bindings(
         let Some(value) = bindings[index].value() else {
             continue;
         };
-        for dependency in contract_expression_referenced_names(value) {
+        for dependency in contract_expression_referenced_lexical_names(value) {
             if referenced_names.insert(dependency.clone()) {
                 pending.push(dependency);
             }
@@ -2434,6 +2434,14 @@ pub(in crate::surface) fn contract_lets_without_name(
         .collect()
 }
 
+fn contract_expression_referenced_lexical_names(
+    expression: &ContractExpression,
+) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    collect_contract_expression_referenced_bindings(expression, &mut names);
+    names
+}
+
 pub(in crate::surface) fn contract_expression_referenced_names(
     expression: &ContractExpression,
 ) -> BTreeSet<String> {
@@ -2472,14 +2480,25 @@ pub(in crate::surface) fn collect_contract_expression_referenced_names(
     expression: &ContractExpression,
     names: &mut BTreeSet<String>,
 ) {
-    collect_contract_expression_referenced_bindings(expression, names);
+    let bindings = contract_expression_referenced_bindings(expression);
+    names.extend(
+        bindings
+            .iter()
+            .filter_map(|binding| binding.unresolved_name().map(str::to_owned)),
+    );
 }
 
 pub(in crate::surface) fn collect_click_proposition_referenced_names(
     proposition: &ClickProposition,
     names: &mut BTreeSet<String>,
 ) {
-    collect_click_proposition_referenced_bindings(proposition, names);
+    let mut bindings = BTreeSet::<crate::kernel::BindingName>::new();
+    collect_click_proposition_referenced_bindings(proposition, &mut bindings);
+    names.extend(
+        bindings
+            .iter()
+            .filter_map(|binding| binding.unresolved_name().map(str::to_owned)),
+    );
 }
 
 /// Select lexical dependencies or exact program bindings with the same walk.
@@ -5027,6 +5046,37 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn reference_dependencies_survive_same_named_lexical_binders() {
+        let carrier = crate::kernel::BindingName::reference_carrier("x");
+        let expression = ContractExpression::Let {
+            name: "x".into(),
+            click_type: None,
+            value: Box::new(ContractExpression::IntegerLiteral("0".into())),
+            body: Box::new(ContractExpression::ProgramExpression(
+                ProgramExpression::Variable(carrier.clone()),
+            )),
+        };
+        assert_eq!(
+            contract_expression_referenced_bindings(&expression),
+            BTreeSet::from([carrier]),
+        );
+        assert_eq!(
+            contract_expression_referenced_names(&expression),
+            BTreeSet::from(["x".to_owned()]),
+        );
+        assert!(contract_expression_referenced_lexical_names(&expression).is_empty());
+        let substituted = substitute_contract_expression(
+            &expression,
+            &BTreeMap::from([(
+                "x".to_owned(),
+                ContractExpression::IntegerLiteral("7".into()),
+            )]),
+        )
+        .unwrap();
+        assert_eq!(substituted, expression);
+    }
 
     #[test]
     fn logical_substitution_preserves_operators_points_and_bound_names() {

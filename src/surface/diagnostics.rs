@@ -192,7 +192,7 @@ fn reference_carriers(
     function
         .parameters()
         .iter()
-        .filter(|parameter| syntax::referent_of_carrier(parameter.name()).is_some())
+        .filter(|parameter| parameter.is_reference())
         .map(|parameter| {
             let shape = match parameter.struct_name() {
                 None => PointeeShape::ScalarReferent,
@@ -226,10 +226,10 @@ impl ParameterPlaceScope {
             let reference = parameters
                 .iter()
                 .any(|parameter| parameter.name() == name && parameter.is_reference());
-            if reference && syntax::referent_of_carrier(name).is_none() {
-                syntax::reference_carrier_name(name)
+            if reference {
+                crate::kernel::BindingName::reference_carrier(name)
             } else {
-                name.to_string()
+                crate::kernel::BindingName::from(name)
             }
         };
         let mut shapes: BTreeMap<_, _> = parameters
@@ -413,12 +413,7 @@ fn describe_read_through_parameter(
             && let Some(PointeeShape::ScalarReferent) = scope.carriers.get(variable)
         {
             return (offset_bytes == 0)
-                .then(|| {
-                    variable
-                        .named()
-                        .and_then(syntax::referent_of_carrier)
-                        .map(str::to_string)
-                })
+                .then(|| variable.reference_referent().map(ToString::to_string))
                 .flatten();
         }
         let (base, fields) = struct_pointer_place(base, scope)?;
@@ -1514,7 +1509,7 @@ pub(super) fn local_naming_tables_with_source(
                 } else if parameter.interface_type().is_pointer() {
                     parameter = crate::languages::interface::ImportedParameter::new(
                         InterfaceType::CharPointer(syntax::PlainChar::Unsigned),
-                        format!("((char *){})", parameter.name()),
+                        format!("((char *){})", parameter.binding_name()),
                         None,
                     );
                 }
@@ -2369,10 +2364,9 @@ fn describe_struct_place_range(
         // parent. Do not infer that layout for pointers to another type.
         if let Some(field_name) =
             describe_parameter_struct_field_pointer(range.base(), parameter, base.pointer())
-            && let Some((_, field)) = layout
-                .fields()
-                .iter()
-                .find(|(name, _)| field_name == describe_field_place(parameter.name(), name))
+            && let Some((_, field)) = layout.fields().iter().find(|(name, _)| {
+                field_name == describe_field_place(&parameter.binding_name().to_string(), name)
+            })
             && field.struct_name().is_some()
             && field.struct_name() == parameter.struct_name()
             && let Some(place) =
@@ -2656,7 +2650,8 @@ pub(super) fn describe_memory_range(
                 .or_else(|| parameter.struct_layout());
             let slot = layout.and_then(|layout| {
                 layout.fields().iter().find_map(|(name, slot)| {
-                    (field == describe_field_place(parameter.name(), name)).then_some(slot)
+                    (field == describe_field_place(&parameter.binding_name().to_string(), name))
+                        .then_some(slot)
                 })
             });
             let width = slot
@@ -2804,9 +2799,9 @@ pub(super) fn describe_parameter_relative_range(
         rescale_range_index(&start, from, to),
         rescale_range_index(&end, from, to),
     ) {
-        (Some(start), Some(end)) => (parameter.name().to_string(), start, end),
+        (Some(start), Some(end)) => (parameter.binding_name().to_string(), start, end),
         _ => (
-            format!("((char *){})", parameter.name()),
+            format!("((char *){})", parameter.binding_name()),
             rescale_range_index(&start, from, 1)?,
             rescale_range_index(&end, from, 1)?,
         ),
@@ -2816,12 +2811,8 @@ pub(super) fn describe_parameter_relative_range(
     {
         // A whole element behind a reference parameter is its referent.
         // An explicit byte slice keeps its exact extent and cast spelling.
-        if low == 0
-            && name == parameter.name()
-            && parameter.is_reference()
-            && let Some(referent) = syntax::referent_of_carrier(parameter.name())
-        {
-            return Some(referent.to_string());
+        if low == 0 && name == parameter.binding_name().to_string() && parameter.is_reference() {
+            return Some(parameter.name().to_string());
         }
         return Some(format!("{}[{low}]", name));
     }
@@ -5096,6 +5087,7 @@ pub(in crate::surface) fn describe_pointer(
             | PointerBlock::ContractException
             | PointerBlock::AggregateReturn { .. }
             | PointerBlock::AutomaticLocal { .. }
+            | PointerBlock::ReferenceCarrier { .. }
             | PointerBlock::StaticObject { .. }
     ) {
         return if pointer.offset == PointerOffsetTerm::Constant(0) {
@@ -5153,11 +5145,11 @@ pub(in crate::surface) fn describe_pointer(
             diagnostic_parameter_element_width(parameter),
         ) {
             let spelled = if index == MachineTerm::constant(0) {
-                parameter.name().to_string()
+                parameter.binding_name().to_string()
             } else {
                 format!(
                     "{}[{}]",
-                    parameter.name(),
+                    parameter.binding_name(),
                     describe_address_index(&index, parameter_binding)
                 )
             };
@@ -5176,7 +5168,7 @@ pub(in crate::surface) fn describe_pointer(
             // byte offset from the parameter, as a named object's is below.
             let spelled = format!(
                 "(char *){} + {}",
-                parameter.name(),
+                parameter.binding_name(),
                 describe_pointer_offset(&bytes)
             );
             if byte_offset
@@ -5289,7 +5281,7 @@ fn describe_parameter_struct_field_pointer(
         }
         let field_offset = diagnostic_pointer_element_index_from_base(&loaded_at, base, 1)?;
         (field_offset == MachineTerm::constant(field.offset_bytes()))
-            .then(|| describe_field_place(parameter.name(), name))
+            .then(|| describe_field_place(&parameter.binding_name().to_string(), name))
     })
 }
 
@@ -5727,6 +5719,7 @@ pub(super) fn describe_program_value(
                     | PointerBlock::AggregateReturn { .. }
                     | PointerBlock::StringLiteral { .. }
                     | PointerBlock::AutomaticLocal { .. }
+                    | PointerBlock::ReferenceCarrier { .. }
                     | PointerBlock::StaticObject { .. }
             ) =>
         {
@@ -6412,12 +6405,17 @@ fn describe_load_at(pointer: &Pointer, parameter_binding: ParameterBinding<'_>) 
         return field;
     }
     let address = describe_pointer(pointer, parameter_binding);
-    let referent = parameter_binding.parameters.iter().find_map(|parameter| {
-        (parameter.is_reference() && parameter.name() == address)
-            .then(|| syntax::referent_of_carrier(parameter.name()))
-            .flatten()
-            .map(|referent| (parameter, referent))
-    });
+    let referent = parameter_binding
+        .parameters
+        .iter()
+        .zip(parameter_binding.arguments)
+        .find_map(|(parameter, argument)| {
+            let ProgramExpression::Value(ProgramValue::Pointer(base)) = argument else {
+                return None;
+            };
+            (parameter.is_reference() && base.pointer() == pointer)
+                .then_some((parameter, parameter.name()))
+        });
     match referent {
         Some((parameter, referent)) => match parameter
             .pointee_struct_layout()
@@ -6676,7 +6674,9 @@ fn describe_loaded_pointer_range(
 /// carrying pointer is named this way, so its referent prints as the bare
 /// name a sidecar writes.
 pub(super) fn object_at_address(rendered: &str) -> Option<&str> {
-    syntax::referent_of_carrier(rendered)
+    rendered
+        .strip_prefix('&')
+        .filter(|name| !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_'))
 }
 
 /// A field of the struct `base` points at: `c.field` through an object's

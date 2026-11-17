@@ -670,6 +670,7 @@ impl ResourceContextIndex {
                 PointerBlock::Concrete(_)
                     | PointerBlock::StaticObject { .. }
                     | PointerBlock::AutomaticLocal { .. }
+                    | PointerBlock::ReferenceCarrier { .. }
             ) {
                 result.nonconcrete_memory_count += 1;
             }
@@ -995,6 +996,7 @@ impl ResourceContextIndex {
                 PointerBlock::Concrete(_)
                     | PointerBlock::StaticObject { .. }
                     | PointerBlock::AutomaticLocal { .. }
+                    | PointerBlock::ReferenceCarrier { .. }
             ) {
                 result.nonconcrete_memory_count -= 1;
             }

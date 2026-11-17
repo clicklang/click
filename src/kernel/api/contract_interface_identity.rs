@@ -281,7 +281,8 @@ impl Names {
         match expression {
             Variable(name) => match name {
                 BindingName::Named(source) => self.reference(source),
-                BindingName::Local(_)
+                BindingName::ReferenceCarrier(_)
+                | BindingName::Local(_)
                 | BindingName::Generated(_)
                 | BindingName::Static(_)
                 | BindingName::ContractResult
@@ -425,7 +426,8 @@ impl Names {
             } => {
                 match parameter {
                     BindingName::Named(name) => self.reference(name),
-                    BindingName::Local(_)
+                    BindingName::ReferenceCarrier(_)
+                    | BindingName::Local(_)
                     | BindingName::Static(_)
                     | BindingName::ContractResult
                     | BindingName::ContractException
