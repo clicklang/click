@@ -1485,17 +1485,6 @@ fn opaque_instances_keep_the_actual_fields_without_opening_unhandled_children() 
     assert_eq!(body.expansion, vec![head]);
     assert!(body.frontier.is_empty());
     assert!(body.transfers.is_empty());
-    definition.instance_schema = Some(ResourceFieldSchema::new(vec![]).unwrap());
-    assert!(
-        ConstructedReturnBodies::try_construct(
-            &evaluated,
-            &[definition],
-            &ExecutionState::new(),
-            ReturnResourceComposition::ValidateDescriptions,
-            &facts
-        )
-        .is_none()
-    );
 }
 
 #[test]

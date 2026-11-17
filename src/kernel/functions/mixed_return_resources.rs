@@ -1152,14 +1152,7 @@ impl ConstructedReturnBodies {
             // Generic composite expansion never opened field-bearing
             // instances. Preserve that opacity with the actual instance and
             // its bindings, without reconstructing any child descriptions.
-            if let Resource::Instance(instance) = support.resource() {
-                if definition
-                    .instance_schema
-                    .as_ref()
-                    .is_some_and(|schema| schema != instance.schema())
-                {
-                    return None;
-                }
+            if matches!(support.resource(), Resource::Instance(_)) {
                 let mut body = ConstructedReturnBody::opaque(support, occurrence.source);
                 if definition.matched.is_none()
                     && definition.contains().is_empty()
