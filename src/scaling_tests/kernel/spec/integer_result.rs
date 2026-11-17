@@ -71,3 +71,37 @@ fn integer_result_nested_conditionals_do_not_reexport_prefixes() {
         assert!(lw * small <= sw * large * 2, "{samples:?}");
     }
 }
+
+#[test]
+fn integer_result_fold_assembly_does_not_export_growing_bodies() {
+    let samples = [8, 32, 128].map(|size| {
+        let _session = VerificationSession::enter();
+        let index = IntegerRangeFoldIndex::Integer {
+            start: IntegerTerm::constant_i64(0).into(),
+            end: IntegerTerm::constant_i64(2).into(),
+        };
+        let initial = IntegerResult::from(IntegerTerm::constant_i64(0));
+        let mut body = IntegerResult::from(IntegerTerm::var(Variable(1009950)));
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            for depth in 0..size {
+                let old = body.clone().into_kernel();
+                body = IntegerResult::range_fold(
+                    index.clone(),
+                    initial.clone(),
+                    Variable(1010000 + 2 * depth as u64),
+                    Variable(1010001 + 2 * depth as u64),
+                    body,
+                );
+                assert_eq!(body.clone().into_kernel().children()[3], old);
+            }
+        });
+        (size, work)
+    });
+    eprintln!("Integer result fold body work: {samples:?}");
+    for pair in samples.windows(2) {
+        let [(small, sw), (large, lw)] = pair else {
+            unreachable!()
+        };
+        assert!(lw * small <= sw * large * 2, "{samples:?}");
+    }
+}

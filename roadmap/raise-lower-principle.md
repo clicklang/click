@@ -594,7 +594,7 @@ sequence below. These rows record planned scope, not completed implementation.
 | Slice | Scope | Acceptance / dependency | Status |
 | --- | --- | --- | --- |
 | 10j | Remove redundant native payloads from stored execution and memory values. | Audit actual wrapper-owned and reachable duplicate payloads first; remove demonstrated redundancy while preserving producer, storage and exact-refresh contracts. Account for live compatibility readers. | Audit complete; wrapper field duplication already absent; live dependencies below remain. |
-| 10k | Migrate native Integer result storage. | Integer results retain shared roots through result handoffs; exact native output is an explicit boundary. | Planned. |
+| 10k | Migrate native Integer result storage. | Integer results retain shared roots through result handoffs; exact native output is an explicit boundary. | Implemented; validation and PR integration in progress. See evidence below. |
 | 10l | Migrate deferred Integer bindings and fold endpoints. | Deferred bindings and endpoints retain shared operands through substitution and evaluation with unchanged fold behavior. | Planned. |
 | 10m | Migrate algebraic field and match-result storage. | Fields and match results retain shared values with existing constructor/arm identity and producer metadata. | Planned. |
 | 10n | Migrate theorem argument and recorded-state value storage. | Stored arguments and recorded values retain shared operands with unchanged substitution and state selection. | Planned. |
@@ -838,6 +838,45 @@ silently declare them covered by 10k or by the later cache-removal titles.
 10k–10q remain the saved consumer sequence, and 10r–10s remain dependent cache
 cleanup. Splitting or reassigning the newly explicit memory dependencies is a
 plan decision to discuss, not an implementation change made by this audit.
+
+### 10k Integer result storage
+
+`SpecIntegerPath` now retains `IntegerResult`, which owns only a `KernelTerm`.
+Arithmetic, conditionals and fold initial/body handoffs retain common children.
+Conditional construction preserves native literal-guard and equal-arm behavior,
+including the original left producer when common roots distinguish metadata
+that native equality ignores. No proof rules, search indexes or budgets change.
+
+Growing conditional production exposed a prefix-export regression: work at
+8/32/128 levels was 238/1,702/19,077 with the first storage-only prototype;
+common construction reduces it to 144/552/2,184. Fold body production likewise
+fell from 111/819/9,411 to 20/68/260. Tests cover native-source release,
+constant-cost root handoffs, shared DAGs and native equality classes.
+
+Native comparison, capture, ranking, match rewriting and pure-call descriptors
+remain explicit compatibility outputs. Deferred Integer bindings and fold
+endpoints belong to 10l; algebraic matches/fields to 10m; theorem arguments to
+10n; proposition output schemas to 10q. Native machine memory carriers found
+by 10j are not mathematical Integer result storage and remain unresolved.
+
+The changed-endpoint negative fold fixture previously asserted failure for a
+true zero-count equality: storing one adds zero to that count. An accepted
+trace unfolds the calls, splits off that zero contribution, and transports
+only the unchanged prefix. Preserve that source as a positive fixture with
+expansion/replay coverage; the negative now counts ones, making its unchanged
+endpoint claim false (already for index zero in a one-element range). The C
+program and tactic steps are unchanged. No proof weakening was needed.
+
+Validation: 30 focused Integer checks; 2,294 Spec/API/termination/documentation
+and scaling checks (including all 1,881 scaling cases). One narrow-cast case
+hit its unchanged 30-second limit in the first concurrent run; all four sizes
+passed in isolation, and the remaining selection passed with two workers.
+The workspace reconnect lost that latter runner handle; its completed log
+reports all 2,288 selected cases passing. The regular mdtest corpus, fact
+stability (zero changed terms/paths), regular examples and quality checks
+passed before the final direct-fold producer adjustment; affected fold fixtures
+and replay are checked separately after that adjustment. Full nightly was not
+run.
 
 ## Chunk 3: machine-valued pure-function results
 

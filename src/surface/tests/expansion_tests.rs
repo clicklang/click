@@ -23124,3 +23124,24 @@ fn returned_member_domain_access_expands_and_replays() {
         assert!(verify_c_sources(&bad, &sources).is_err());
     }
 }
+
+#[test]
+#[ignore = "nightly: fold model expansion and replay"]
+fn integer_fold_zero_contribution_expansion_replays_without_search() {
+    use crate::surface::{verify_c_sources, without_implicit_solve};
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/fold_read_solve_extends_endpoint_with_zero_contribution.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let crate::cli::VerificationInput::Bundle(sources) =
+        crate::cli::prepare_mdtest_inputs(&fixture).unwrap()
+    else {
+        panic!("C bundle")
+    };
+    let source = fixture.click_source.as_ref().unwrap();
+    let refs = crate::cli::source_refs(&sources);
+    let verified = verify_c_sources(source, &refs).unwrap();
+    let expanded = verified[0].expanded_proof_source().unwrap();
+    let start = source.find("} by {").unwrap() + 2;
+    let replay = format!("{}{}", &source[..start], expanded);
+    without_implicit_solve(|| verify_c_sources(&replay, &refs)).unwrap();
+}

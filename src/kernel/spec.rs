@@ -1462,31 +1462,31 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     };
                     let condition = match operator {
                         IntegerComparisonOperator::Equal => ConditionTerm::IntegerEqual(
-                            left_path.value.clone().into(),
-                            right_path.value.clone().into(),
+                            left_path.value.native_compat(),
+                            right_path.value.native_compat(),
                         ),
                         IntegerComparisonOperator::NotEqual => ConditionTerm::IntegerNotEqual(
-                            left_path.value.clone().into(),
-                            right_path.value.clone().into(),
+                            left_path.value.native_compat(),
+                            right_path.value.native_compat(),
                         ),
                         IntegerComparisonOperator::LessThan => ConditionTerm::IntegerLessThan(
-                            left_path.value.clone().into(),
-                            right_path.value.clone().into(),
+                            left_path.value.native_compat(),
+                            right_path.value.native_compat(),
                         ),
                         IntegerComparisonOperator::LessEqual => ConditionTerm::IntegerLessEqual(
-                            left_path.value.clone().into(),
-                            right_path.value.clone().into(),
+                            left_path.value.native_compat(),
+                            right_path.value.native_compat(),
                         ),
                         IntegerComparisonOperator::GreaterThan => {
                             ConditionTerm::IntegerGreaterThan(
-                                left_path.value.clone().into(),
-                                right_path.value.clone().into(),
+                                left_path.value.native_compat(),
+                                right_path.value.native_compat(),
                             )
                         }
                         IntegerComparisonOperator::GreaterEqual => {
                             ConditionTerm::IntegerGreaterEqual(
-                                left_path.value.clone().into(),
-                                right_path.value.clone().into(),
+                                left_path.value.native_compat(),
+                                right_path.value.native_compat(),
                             )
                         }
                     };
@@ -2424,14 +2424,13 @@ fn evaluate_spec_integer_expression_paths_in(
                         };
                         if let Some(body_value) = body_value {
                             result.push(SpecIntegerPath {
-                                value: (IntegerTerm::range_fold(
+                                value: IntegerResult::range_fold(
                                     index.clone(),
-                                    initial_path.value.clone().into_native_compat(),
+                                    initial_path.value.clone(),
                                     *accumulator,
                                     *item,
-                                    body_value.into_native_compat(),
-                                ))
-                                .into(),
+                                    body_value,
+                                ),
                                 facts,
                                 obligations,
                             });
@@ -2518,14 +2517,13 @@ fn evaluate_spec_integer_expression_paths_in(
                             continue;
                         };
                         result.push(SpecIntegerPath {
-                            value: (IntegerTerm::range_fold(
+                            value: IntegerResult::range_fold(
                                 index.clone(),
-                                initial_path.value.clone().into_native_compat(),
+                                initial_path.value.clone(),
                                 *accumulator,
                                 *item,
-                                body_path.value.clone().into_native_compat(),
-                            ))
-                            .into(),
+                                body_path.value.clone(),
+                            ),
                             facts,
                             obligations,
                         });
@@ -3174,8 +3172,8 @@ fn evaluate_spec_integer_range_fold_indices_in(
                     };
                     result.push((
                         IntegerRangeFoldIndex::Integer {
-                            start: start_path.value.clone().into(),
-                            end: end_path.value.into(),
+                            start: start_path.value.native_compat(),
+                            end: end_path.value.native_compat(),
                         },
                         facts,
                         obligations,
@@ -6725,7 +6723,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     program_value_from_bitvector_term(
                         destination.program_type(),
                         MachineTerm::IntegerToMachine {
-                            value: path.value.into(),
+                            value: path.value.native_compat(),
                             destination: *destination,
                         },
                     )
@@ -8247,7 +8245,7 @@ fn evaluate_spec_pure_function_argument_paths_in(
                 .into_iter()
                 .map(|path| SpecPureFunctionArgumentPath {
                     value: SpecCallArgument::Native(PureFunctionArgument::Integer(
-                        path.value.into(),
+                        path.value.native_compat(),
                     )),
                     facts: path.facts,
                     obligations: path.obligations,
@@ -9416,12 +9414,11 @@ fn evaluate_spec_integer_if_paths_in(
                             (else_path.value.clone(), then_path.value.clone())
                         };
                         branch_paths.push(SpecIntegerPath {
-                            value: (IntegerTerm::if_then_else(
+                            value: IntegerResult::conditional(
                                 condition.clone(),
-                                then_value.into_native_compat(),
-                                else_value.into_native_compat(),
-                            ))
-                            .into(),
+                                then_value,
+                                else_value,
+                            ),
                             facts,
                             obligations,
                         });
