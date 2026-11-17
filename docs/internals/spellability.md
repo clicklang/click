@@ -374,17 +374,33 @@ the one the text names.
   choosing a term by known provenance. Equalities stay in the equality graph
   and the comparison form, which every check consults.
 
-Closed native comparisons at 8, 16, 32, and 64 bits, order and equality
-alike, retain their comparison node, format, and literal operands during
-logical lowering: `1u64 == 0u64` lowers to that comparison, not to `false`.
-Their truth is established by checking
-(`machine_integer::comparison::literal_native_comparison_value`), including
-when exact rewriting removed the last variable before the comparison was
-printed (`mdtests/closed_machine_order_comparisons.md`,
-`mdtests/closed_machine_equality_comparisons.md`). A retained 64-bit
-equality is filed at `int64`, as the folding constructor files a symbolic
-one. This does not change literal arithmetic evaluation, and the shared
-comparison constructors used by checking still fold.
+Lowering never folds a comparison of two literals.
+
+- Closed native comparisons at 8, 16, 32, and 64 bits, order and equality
+  alike, retain their comparison node, format, and literal operands:
+  `1u64 == 0u64` lowers to that comparison, not to `false`. A retained
+  64-bit equality is filed at `int64`, as the folding constructor files a
+  symbolic one, and is decided by its bits.
+- A comparison of two `bool` literals, `true == false`, retains a
+  `BoolEqual` of the two constants.
+- A written `true` or `false` is a literal proposition, not `literal ==
+  true`: it lowers directly to the constant condition
+  (`SpecProposition::Truth`). The raiser spells a constant condition the
+  same way, so `false` round-trips without a comparison.
+
+Checking decides a closed condition from its literal roots with
+`machine_integer::comparison::closed_condition_value`: exact matching
+through the comparison form (so `contradiction(1 == 0)` matches a held
+`false`), requirement matching, `normalize`, and assumption-free
+normalization. A closed goal is false or true whatever the facts, so `solve`
+treats a false one like the goal `false` and refutes the path. Regressions:
+`mdtests/closed_machine_order_comparisons.md`,
+`mdtests/closed_machine_equality_comparisons.md`,
+`mdtests/an_infeasible_path_with_a_closed_order_goal_closes.md`, and the
+`closed_*` and `a_constant_condition_raises_*` unit tests in
+`surface::proof::surface_synthesis`. This does not change literal arithmetic
+evaluation, and the shared comparison constructors used by checking still
+fold.
 
 Machine conditionals with closed 32/64-bit order guards retain their `if` node
 and guard during logical lowering. Their arm domains remain guarded, including
