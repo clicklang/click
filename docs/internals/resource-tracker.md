@@ -1842,22 +1842,32 @@ The automatic call-return inventory now distinguishes these boundaries:
 
 | Route | Current status |
 | --- | --- |
-| `EvaluatedReturnResources::admit_clause` | Carries checked entry-borrow and fixed consumed-input occurrence selections from the checked call plan, uses each input once, and checks those members only against the newly described subset. Other outputs use bounded indexed admission. Unsupported geometry refuses; no discovery fallback. |
-| `construct_composite_resource_body` | Selected returned bodies construct their child partition with bounded admission and preserve child identities. The unselected expansion path remains a generic full-composition consumer. |
+| `EvaluatedReturnResources::admit_clause` | Carries checked entry-borrow and consumed-input selections from the checked call plan, including individually consumed finite input-frontier pieces, and checks them only against newly described outputs. Other outputs use bounded indexed admission. Unsupported geometry refuses; no discovery fallback. |
+| `construct_composite_resource_body` | Selected returned heads retain their certified internal body partition and child identities. Bounded admission detects supported internal conflicts; only boundaries with other returned groups need new separation checks. The unselected expansion path remains a generic full-composition consumer. |
 | `PreparedReturnComposition::finish` | Consumes an opaque `ReturnedOwnershipPartition`. The producer's partition, including restored borrowed/consumed/fresh outputs, is retained; only pending outputs versus the original retained frame are checked. Returned pieces are not compared with each other again. |
 | `produced_composite_frontier_conflict` | Constructed frontiers use bounded cross-boundary checks. Proven conflicts retain the selected held fact; unsupported geometry refuses. Legacy family expansion remains separate, but its exposed frontier also uses bounded boundary checks. |
 | `recover_candidate_stable_view_resources` | Consumes checked escrow restoration receipts carrying selected occurrences and holds. Restores the entry partition directly; checks only new return ownership against protected escrows and newly released inherited roots. No legacy ownership admission. |
 | Worker completion and loop-frame exchange | Checked output groups and occurrence identities survive composition. Their generic boundary adapters remain separate compatibility consumers. |
 | `project_return_resource_cores` and legacy-family expansion | Unconstructed families are expanded from descriptions again. Each classifier outcome eventually needs a reusable body/frontier, deliberately opaque ownership, or a bounded refusal. Unsupported language shapes do not all need implementation. |
 
-The producer separates selected fixed-footprint inputs from newly described
-outputs. Distinct selected input occurrences already belong to the call's
+The producer separates selected input ownership from newly described outputs.
+The checked entry projection issues a finite input frontier for read-only tactics
+as well as mutating calls; recording custody does not add write effects. Each
+returned leaf consumes one indexed supplier or residual piece, so static clause
+recipes and dynamically selected pieces cannot reuse the same input bytes.
+Matching custody uses spatial footprints; returned carrier metadata stays on the
+emitted output. Ordinary coordinate ensures are lowered before selection and
+reused by provisional postcondition processing. Ledger observations remain after
+the corresponding ledger transitions.
+
+Distinct selected input occurrences already belong to the call's
 checked input partition, even when their pointer descriptions have symbolic
 coordinates or growing alias classes. A selected member checks only its
 boundary with the new-description subset; a new description checks against the
 whole emitted prefix. Neither order can silently admit an overlap. These
 selections carry ownership identity, not permission inferred from matching
-pointer spellings. Other input families keep their bounded-admission route.
+pointer spellings. Unsupported input frontiers and newly described relationships
+keep their bounded-admission route.
 
 Escrow recovery retains the selected backing occurrence rather than allocating a
 replacement from its description. Adapter materialization allocates its restored
@@ -1875,7 +1885,10 @@ resource descriptions. Ledger liveness and transition checks remain separate.
 
 Executed-body return construction consumes each selected output from one persistent
 live-body remainder, establishing the output partition directly. Installation and
-recovery do not repeat that custody consumption.
+recovery do not repeat that custody consumption or compare its returned siblings
+again. Summary construction keeps each returned head's certified body separate
+from other output groups; finalization preserves composite-specific refusals for
+conflicts with returned flat clauses.
 The caller boundary still checks new ownership against its retained frame.
 Entry-state borrowed clauses carry the checked input occurrence even when their
 surface address is a field expression or their endpoints are symbolic.
@@ -1887,7 +1900,12 @@ establish a separating envelope, and singleton exact-base/width intervals
 whose signed endpoints have direct separation evidence. A singleton can also use
 its two explicit ranges' canonical byte coordinates, without preparing the ambient
 frame. It does not enumerate
-alias spellings, symbolic owners, or order chains to recover a miss.
+alias spellings, symbolic owners, or order chains to recover a miss. Cold physical
+frames use maintained block coverage and the query's checked storage anchor.
+A singleton can register the two explicit ranges' checked read definitions and
+endpoints locally: complete address-class misses require no ambient preparation.
+A positive interval witness can report a conflict even beside unsupported owners.
+Hidden-local coverage is invalidated when its addressability classification changes.
 
 Regressions in
 `src/kernel/functions/mixed_return_resources/fallback_inventory_tests.rs`

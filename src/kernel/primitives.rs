@@ -11155,6 +11155,9 @@ pub(super) struct ResourceContextIndex {
     pub(super) owned_memory_by_block: PersistentMap<PointerBlock, ResourceEntryIds>,
     /// Automatic memory owners, indexed independently of external and global
     /// holdings. Addressability is checked when projecting observable facts.
+    pub(super) owned_hidden_memory_generation: Option<u64>,
+    pub(super) owned_physical_memory_by_block: PersistentMap<PointerBlock, ResourceEntryIds>,
+    pub(super) owned_hidden_memory_by_block: PersistentMap<PointerBlock, ResourceEntryIds>,
     pub(super) owned_automatic_memory_by_block: PersistentMap<PointerBlock, ResourceEntryIds>,
     /// The blocks holding two or more owned memory ranges. Only those can
     /// contribute same-block separation candidates, so projecting a

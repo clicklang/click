@@ -890,6 +890,7 @@ fn a_borrowed_composites_post_footprint_cannot_overlap_a_transferred_cell() {
         .with_memory(memory.store(field, ProgramValue::pointer(cell)))
         .with_resource_context(ResourceContext::new_with_equalities(&facts));
     let transfers = ConsumedCellReturns {
+        frontier: None,
         direct: BTreeMap::from([(1, selected)]),
         children: BTreeMap::new(),
         borrowed: BTreeMap::new(),
@@ -2006,6 +2007,7 @@ fn viewed_expansion_transports_only_the_selected_occurrence_dependency() {
             &crate::kernel::ProgramPoint::of_memory(&memory),
             &facts,
             Some(selected),
+            None,
         )
         .unwrap();
         let (piece, occurrence) = &body.occurrences[0];
@@ -2086,6 +2088,7 @@ fn selected_view_expansion_keeps_raw_child_bindings_through_adjacent_normalizati
         &crate::kernel::ProgramPoint::of_memory(&memory),
         &facts,
         Some(selected),
+        None,
     )
     .unwrap();
     assert_eq!(

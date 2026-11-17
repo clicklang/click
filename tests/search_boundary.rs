@@ -1680,6 +1680,19 @@ fn migrated_return_partitions_and_boundaries_cannot_restore_legacy_search() {
         ),
         ("src/kernel/functions/mixed_return_resources.rs", "finish"),
         (
+            "src/kernel/functions/mixed_return_resources.rs",
+            "take_returned_footprint",
+        ),
+        ("src/kernel/functions/mixed_return_resources.rs", "admit"),
+        (
+            "src/kernel/functions/mixed_return_resources.rs",
+            "finish_group",
+        ),
+        (
+            "src/kernel/functions/mixed_return_resources.rs",
+            "retain_frontier",
+        ),
+        (
             "src/kernel/functions.rs",
             "construct_composite_resource_body",
         ),

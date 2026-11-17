@@ -247,7 +247,7 @@ impl<'a> ReturnResourceComposition<'a> {
 
     fn restores_entry_borrows(self) -> bool {
         match self {
-            Self::ApplyTransfers(_) => true,
+            Self::ApplyTransfers(_) | Self::BodyReturn { .. } => true,
             _ => false,
         }
     }
@@ -258,13 +258,13 @@ impl<'a> ReturnResourceComposition<'a> {
         entry_borrow: bool,
         fact: &ResourceFact,
     ) -> ReturnOwnershipOrigin {
+        if entry_borrow {
+            return ReturnOwnershipOrigin::EntryBorrow;
+        }
         if let Some((creator, events)) = self.allocation_events() {
             return FreshAllocationReturn::from_created_owner(fact, creator, events)
                 .map(ReturnOwnershipOrigin::FreshAllocation)
                 .unwrap_or(ReturnOwnershipOrigin::Description);
-        }
-        if entry_borrow {
-            return ReturnOwnershipOrigin::EntryBorrow;
         }
         if let Self::ApplyTransfers(transfers) = self
             && let Some(transfer) = transfers.get(clause)
@@ -3844,6 +3844,36 @@ fn execute_verified_function_applications_with_suspension(
         let entry_resource_state =
             with_contract_interface_argument_views(&entry_state, interface, &argument_values);
 
+        // Coordinate ensures are certified by the callee independently of
+        // return admission. Carry them to the ownership producer before it
+        // selects finite input pieces. Ledger observations remain later.
+        let mut coordinate_facts = ExecutionFacts::new();
+        let coordinate_context =
+            assumptions_with_path_context(&effective_assumptions, &facts, &obligations);
+        // This input view contains the checked clauses, never the ambient
+        // caller frame, when the lowerer needs entry-state read authority.
+        let coordinate_entry = entry_resource_state
+            .clone()
+            .with_resource_context(transfer.callee_resources.clone());
+        let early_coordinates = !interface.resource_ensures().is_empty();
+        if early_coordinates {
+            add_verified_function_ensure_facts_selected_with_interface(
+                &mut coordinate_facts,
+                &obligations,
+                &output_resource_state,
+                &coordinate_entry,
+                interface,
+                interface
+                    .contract_ensures()
+                    .iter()
+                    .filter(|ensure| return_coordinate_ensure(ensure)),
+                &coordinate_context,
+                budget,
+            )?;
+        }
+        let return_assumptions =
+            assumptions_with_path_context(&coordinate_context, &coordinate_facts, &[]);
+
         let return_resource_timing = crate::instrumentation::OperationTiming::new(
             name,
             "verified function rule application",
@@ -3867,7 +3897,7 @@ fn execute_verified_function_applications_with_suspension(
             interface,
             &prepared_outputs,
             ReturnResourceComposition::ApplyTransfers(&transfer.consumed_cell_returns),
-            &effective_assumptions,
+            &return_assumptions,
             budget,
         )? {
             Ok(resources) => resources,
@@ -4315,6 +4345,7 @@ fn execute_verified_function_applications_with_suspension(
             }
         };
         let mut provisional_facts = facts.clone();
+        provisional_facts.extend_shared(&coordinate_facts);
         let provisional_ensure_timing = crate::instrumentation::OperationTiming::new(
             name,
             "verified function rule application",
@@ -4326,7 +4357,10 @@ fn execute_verified_function_applications_with_suspension(
             &provisional_post_contract_state,
             &canonical_entry_contract_state,
             interface,
-            interface.contract_ensures().iter(),
+            interface
+                .contract_ensures()
+                .iter()
+                .filter(|ensure| !early_coordinates || !return_coordinate_ensure(ensure)),
             &effective_assumptions,
             budget,
         )?;
@@ -6553,6 +6587,12 @@ fn prepare_verified_function_call<'a>(
     // The projection above is also retained on the transition record below;
     // no later call path reconstructs the footprint from source clauses.
     let mut transfer = transfer;
+    transfer.consumed_cell_returns.retain_frontier(
+        projection_range_sources
+            .iter()
+            .map(|(range, _)| range.clone()),
+        &effective_assumptions,
+    );
     if caller_state.resources().structural_witnesses.is_some() {
         for input in transfer
             .borrowed_inputs
@@ -8603,30 +8643,31 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
         ));
     }
     let evaluated_transition;
-    let transition_resources = if interface.resource_derived_mutable_frame() {
-        match transition_resources {
-            Some(resources) => Some(resources),
-            None => {
-                evaluated_transition = match evaluate_function_resource_context_with_metadata(
-                    entry,
-                    interface.resource_requires(),
-                    interface.composite_resource_definitions(),
-                    assumptions,
-                    budget,
-                )? {
-                    Ok((_, checked)) => checked,
-                    Err(error) => {
-                        return Ok(Err(format!(
-                            "could not evaluate resource transition: {error}"
-                        )));
-                    }
-                };
-                Some(evaluated_transition.as_slice())
+    let transition_resources =
+        if interface.resource_derived_mutable_frame() || transition_resources.is_some() {
+            match transition_resources {
+                Some(resources) => Some(resources),
+                None => {
+                    evaluated_transition = match evaluate_function_resource_context_with_metadata(
+                        entry,
+                        interface.resource_requires(),
+                        interface.composite_resource_definitions(),
+                        assumptions,
+                        budget,
+                    )? {
+                        Ok((_, checked)) => checked,
+                        Err(error) => {
+                            return Ok(Err(format!(
+                                "could not evaluate resource transition: {error}"
+                            )));
+                        }
+                    };
+                    Some(evaluated_transition.as_slice())
+                }
             }
-        }
-    } else {
-        None
-    };
+        } else {
+            None
+        };
     if transition_resources.is_some_and(|resources| {
         resources.iter().any(|checked| {
             checked.role == ResourceTransferRole::Produce
@@ -8643,9 +8684,7 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
     let mut ranges = BTreeSet::new();
     let mut evidence_facts = Vec::new();
     let mut range_sources = Vec::new();
-    if interface.resource_derived_mutable_frame()
-        && let Some(resources) = transition_resources
-    {
+    if let Some(resources) = transition_resources {
         for checked in resources {
             // Borrowing is a boundary role, not an access-mode rewrite:
             // `requires owns p` paired with `ensures borrowed p` still gives
@@ -8659,6 +8698,9 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
                 entry,
                 assumptions,
             ) else {
+                if !interface.resource_derived_mutable_frame() {
+                    continue;
+                }
                 return Ok(Err(
                     "could not expand the checked resource transition".to_string()
                 ));
@@ -8668,7 +8710,9 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
                 // whatever depth it came from, so the requirement is the
                 // provenance recorded for each of its ranges.
                 range_sources.push((range.clone(), checked.fact.clone()));
-                ranges.insert(range);
+                if interface.resource_derived_mutable_frame() {
+                    ranges.insert(range);
+                }
             }
         }
     }
@@ -9085,6 +9129,43 @@ fn add_verified_function_ensure_facts(
         effective_assumptions,
         budget,
     )
+}
+
+fn return_coordinate_ensure(ensure: &SpecProposition) -> bool {
+    matches!(
+        ensure,
+        SpecProposition::Comparison { .. } | SpecProposition::ResourceSeparate { .. }
+    ) && spec_tree_all(SpecNode::Proposition(ensure), |node| {
+        crate::instrumentation::record_deterministic_work(1);
+        let allowed = match node {
+            // These are values of the already emitted instance, independent
+            // of ledger observations. Descendant identities are built later.
+            SpecNode::Expression(SpecExpression::ResourceField { projection, .. }) => {
+                projection.children.is_empty()
+            }
+            SpecNode::Expression(expression) => matches!(
+                expression,
+                SpecExpression::Value(_)
+                    | SpecExpression::ProgramExpression(_)
+                    | SpecExpression::MemoryLoad { .. }
+                    | SpecExpression::LoopEntryState(_)
+                    | SpecExpression::Cast(..)
+                    | SpecExpression::PointerCoercion(..)
+                    | SpecExpression::Subobject { .. }
+                    | SpecExpression::PointerOffset { .. }
+                    | SpecExpression::ObjectAddress(_)
+                    | SpecExpression::Add(..)
+                    | SpecExpression::Subtract(..)
+                    | SpecExpression::Multiply(..)
+            ),
+            _ => true,
+        };
+        if allowed {
+            Visit::Descend
+        } else {
+            Visit::Stop(())
+        }
+    })
 }
 
 fn add_verified_function_ensure_facts_selected_with_interface<'a>(
@@ -13348,6 +13429,20 @@ fn evaluate_contract_return_resources(
         Ok(prepared) => prepared,
         Err(error) => return Ok(Err(resource_context_runtime_error(error))),
     };
+    // Returned flat clauses are an explicit output delta. A head's boundary
+    // with them is finalized here, so an overlap keeps the composite-specific
+    // refusal instead of becoming an opaque body-construction failure.
+    let flat_outputs = if composition.body_return().is_none() {
+        prepared
+            .pending
+            .facts()
+            .iter()
+            .filter(|fact| fact.memory_own_range().is_some())
+            .cloned()
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
     // A composite arrives folded, so composing its head says nothing about
     // what its body covers. Check the body against the destination before the
     // head enters it, or a contract that produces a composite over bytes the
@@ -13365,7 +13460,8 @@ fn evaluate_contract_return_resources(
                     .clone()
                     .unchecked_with_facts(
                         prepared.transferred_memory_outputs.facts().iter().cloned(),
-                    );
+                    )
+                    .unchecked_with_facts(flat_outputs.iter().cloned());
                 if let Some(error) = produced_composite_frontier_conflict(
                     &retained,
                     prepared
@@ -13381,7 +13477,10 @@ fn evaluate_contract_return_resources(
             // Withheld escrows have their own checked finite frontier. Their
             // boundary is checked once, when that restoration receipt is
             // consumed, rather than by expanding their heads here.
-            let destination = prepared.frame.clone();
+            let destination = prepared
+                .frame
+                .clone()
+                .unchecked_with_facts(flat_outputs.iter().cloned());
             produced_composite_frontier_conflict(
                 &destination,
                 prepared
@@ -15736,7 +15835,7 @@ pub(super) fn expand_composite_resource_fact_with_children(
     at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Option<(ResourceContext, Vec<ResourceFact>, Vec<ResourceFact>)> {
-    construct_composite_resource_body(context, composite, definitions, at, assumptions, None)
+    construct_composite_resource_body(context, composite, definitions, at, assumptions, None, None)
         .map(|body| (body.expanded, body.children, body.raw_children))
 }
 
@@ -15749,6 +15848,7 @@ struct CompositeBodyConstruction {
     children: Vec<ResourceFact>,
     raw_children: Vec<ResourceFact>,
     occurrences: Vec<(ResourceFact, ResourceOccurrenceId)>,
+    transferred: Vec<Option<mixed_return_resources::ConsumedCellReturn>>,
     opened: bool,
 }
 
@@ -15760,6 +15860,7 @@ impl CompositeBodyConstruction {
             children: Vec::new(),
             raw_children: Vec::new(),
             occurrences: Vec::new(),
+            transferred: Vec::new(),
             opened: false,
         }
     }
@@ -15772,6 +15873,7 @@ fn construct_composite_resource_body(
     at: &ProgramPoint,
     assumptions: &PureFactContext,
     selected: Option<ResourceOccurrenceId>,
+    mut return_admission: Option<&mut mixed_return_resources::ReturnFrontierAdmission>,
 ) -> Option<CompositeBodyConstruction> {
     let Resource::Composite { name, arguments } = composite.resource() else {
         return None;
@@ -15915,12 +16017,22 @@ fn construct_composite_resource_body(
             .map(|fact| ResourceFact::View(fact.resource().clone()))
             .collect()
     };
+    let mut transferred = Vec::new();
+    if let Some(admission) = return_admission.as_deref_mut() {
+        for child in &raw_children {
+            transferred.push(admission.admit(child, assumptions)?);
+        }
+    }
     let children = crate::instrumentation::measure_operation(
         name,
         "composite expansion",
         "composite child composition",
         || {
-            if selected.is_some() {
+            if return_admission.is_some() {
+                Ok(ResourceContext::new_with_equalities(assumptions)
+                    .unchecked_with_facts(raw_children.clone())
+                    .normalized_without_discovery(assumptions))
+            } else if selected.is_some() {
                 ResourceContext::new_with_equalities(assumptions)
                     .try_compose_without_discovery_and_occurrences(child_facts, assumptions)
                     .map(|(context, _)| context.normalized_without_discovery(assumptions))
@@ -15955,12 +16067,16 @@ fn construct_composite_resource_body(
             .cloned()
             .collect::<Vec<_>>()
     };
-    let (expanded_context, inserted) = expanded
-        .try_compose_certified_group_into_valid_context_delaying_normalization_with_occurrences(
-            missing,
-            assumptions,
-        )
-        .ok()?;
+    let (expanded_context, inserted) = if return_admission.is_some() {
+        expanded.unchecked_with_facts_and_occurrences(missing)
+    } else {
+        expanded
+            .try_compose_certified_group_into_valid_context_delaying_normalization_with_occurrences(
+                missing,
+                assumptions,
+            )
+            .ok()?
+    };
     expanded = expanded_context;
     if let Some((_, binding)) = borrowed_parent {
         let mut transferred_views = BTreeSet::new();
@@ -16008,6 +16124,7 @@ fn construct_composite_resource_body(
         children,
         raw_children,
         occurrences: inserted,
+        transferred,
         opened: true,
     })
 }

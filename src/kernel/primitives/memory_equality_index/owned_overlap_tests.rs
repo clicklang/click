@@ -343,3 +343,71 @@ fn cold_automatic_partitions_use_the_storage_index_and_exclude_opaque_owners() {
         ConstantOwnedOverlap::Clear
     ));
 }
+
+#[test]
+fn hidden_local_coverage_is_invalidated_when_addressability_changes() {
+    let _session = crate::kernel::VerificationSession::enter();
+    crate::kernel::set_never_address_taken_locals(BTreeSet::from([
+        "hidden_a".into(),
+        "hidden_b".into(),
+    ]));
+    let facts = PureFactContext::new();
+    let root = ResourceContext::new_with_equalities(&facts).unchecked_with_facts([
+        owner(
+            Pointer {
+                block: "local:hidden_a".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            0,
+            4,
+        ),
+        owner(
+            Pointer {
+                block: "local:hidden_b".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            0,
+            4,
+        ),
+    ]);
+    let query = owner(at(100), 0, 4);
+    assert!(matches!(
+        root.structural_owned_overlap(&query, &facts),
+        ConstantOwnedOverlap::Clear
+    ));
+    crate::kernel::clear_never_address_taken_locals();
+    let aliased = facts.assume_condition(
+        ConditionTerm::pointer_equal(
+            at(100),
+            Pointer {
+                block: "local:hidden_a".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+        ),
+        true,
+    );
+
+    assert!(matches!(
+        root.structural_owned_overlap(&query, &aliased),
+        ConstantOwnedOverlap::Unsupported
+    ));
+}
+
+#[test]
+fn known_conflict_is_not_hidden_by_unrelated_unsupported_owners() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let facts = PureFactContext::new();
+    let held = owner(at(101), 0, 4);
+    let root = ResourceContext::new_with_equalities(&facts)
+        .unchecked_with_facts([held.clone(), owner(at(102), 0, 4)]);
+    for query in [held.clone(), owner(at(101), (-4i32) as u32, 2)] {
+        assert!(matches!(
+            root.constant_owned_overlap(&query, &facts),
+            ConstantOwnedOverlap::Overlap(_)
+        ));
+    }
+    assert!(matches!(
+        root.structural_owned_overlap(&owner(at(101), 8, 12), &facts),
+        ConstantOwnedOverlap::Unsupported
+    ));
+}

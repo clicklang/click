@@ -1,9 +1,9 @@
 //! Retain return-clause roles through guards and deferred evaluation.
 use super::*;
 
-/// A checked call consumed this selected flat owner and promises the same
-/// fixed footprint on return. This is permission to move ownership back into
-/// its residual frame, never permission to admit an arbitrary description.
+/// A checked call selected this input ownership component, directly or from
+/// its finite projected frontier, to supply one returned footprint. This permits
+/// moving custody back into its residual frame, never admitting an arbitrary description.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct ConsumedCellReturn {
     input: ResourceOccurrenceId,
@@ -13,6 +13,7 @@ pub(super) struct ConsumedCellReturn {
 /// actually emits for that output clause. Each input clause is selected once.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(super) struct ConsumedCellReturns {
+    frontier: Option<ResourceContext>,
     direct: BTreeMap<usize, ConsumedCellReturn>,
     children: BTreeMap<Vec<usize>, ConsumedCellReturn>,
     borrowed: BTreeMap<usize, ResourceOccurrenceId>,
@@ -21,6 +22,22 @@ pub(super) struct ConsumedCellReturns {
 }
 
 impl ConsumedCellReturns {
+    // These are the finite ranges the checked entry transition already
+    // projected, not ranges rediscovered from the returned descriptions.
+    pub(super) fn retain_frontier(
+        &mut self,
+        ranges: impl IntoIterator<Item = MemoryRange>,
+        assumptions: &PureFactContext,
+    ) {
+        self.frontier = Some(
+            ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(
+                ranges
+                    .into_iter()
+                    .map(|range| ResourceFact::own_memory(range.spatial_key())),
+            ),
+        );
+    }
+
     pub(super) fn prepare(
         interface: &FunctionContractInterface,
         plan: &StableViewTransferPlan,
@@ -404,6 +421,7 @@ pub(super) struct EvaluatedReturnResources {
     // the same checked call-input partition need only meet this new boundary.
     unclassified: ResourceContext,
     selected_inputs: BTreeSet<ResourceOccurrenceId>,
+    checked_frontier: Option<ResourceContext>,
     body: Option<BodyReturnConstruction>,
 }
 
@@ -455,6 +473,7 @@ impl EvaluatedReturnResources {
             occurrences: Vec::new(),
             unclassified: ResourceContext::new_with_equalities(assumptions),
             selected_inputs: BTreeSet::new(),
+            checked_frontier: None,
             body: None,
         }
     }
@@ -464,6 +483,9 @@ impl EvaluatedReturnResources {
         assumptions: &PureFactContext,
     ) -> Self {
         let mut output = Self::new(assumptions);
+        output.checked_frontier = composition
+            .consumed_children()
+            .and_then(|plan| plan.frontier.clone());
         output.body = composition
             .body_return()
             .map(|(state, frame)| BodyReturnConstruction {
@@ -559,6 +581,23 @@ impl EvaluatedReturnResources {
         input_partition: Option<&ConsumedCellReturns>,
         assumptions: &PureFactContext,
     ) -> Result<Self, ResourceContextValidityError> {
+        let transferred = self
+            .checked_frontier
+            .as_mut()
+            .and_then(|frontier| take_returned_footprint(frontier, &fact, assumptions));
+        let origin = match (origin, transferred) {
+            (ReturnOwnershipOrigin::ConsumedCell(_) | ReturnOwnershipOrigin::EntryBorrow, None)
+                if self.checked_frontier.is_some() && fact.memory_own_range().is_some() =>
+            {
+                // A static recipe cannot reuse bytes already taken by a
+                // dynamically selected output earlier in this partition.
+                ReturnOwnershipOrigin::Description
+            }
+            (ReturnOwnershipOrigin::Description, Some(input)) => {
+                ReturnOwnershipOrigin::ConsumedCell(input)
+            }
+            (origin, _) => origin,
+        };
         let selected = clause
             .zip(input_partition)
             .and_then(|(clause, plan)| match origin {
@@ -570,6 +609,7 @@ impl EvaluatedReturnResources {
                 }
                 _ => None,
             });
+        let selected = selected.or_else(|| transferred.map(|input| input.input));
         let (resources, mut inserted) = if let Some(input) = selected {
             if !self.selected_inputs.insert(input) {
                 return Err(ResourceContextValidityError::DuplicateOwnedResourceFact(
@@ -612,33 +652,11 @@ impl EvaluatedReturnResources {
         assumptions: &PureFactContext,
     ) -> Result<PreparedReturnComposition, ResourceContextValidityError> {
         if let Some(body) = &self.body {
-            // A folded head may read post-call memory. Preserve its existing
-            // boundary rule against the caller frame and the flat siblings
-            // constructed in this return, without readmitting those siblings.
-            let has_heads = self.resources.iter().any(|fact| {
-                matches!(
-                    fact.resource(),
-                    Resource::Composite { .. } | Resource::Instance(_)
-                )
-            });
-            let frontier_frame = if has_heads {
-                body.frame.clone().unchecked_with_facts(
-                    self.resources
-                        .iter()
-                        .filter(|fact| {
-                            !matches!(
-                                fact.resource(),
-                                Resource::Composite { .. } | Resource::Instance(_)
-                            )
-                        })
-                        .cloned(),
-                )
-            } else {
-                body.frame.clone()
-            };
+            // Joint consumption established sibling separation. Only the
+            // original captured caller frame is a new boundary.
             return Ok(PreparedReturnComposition {
                 retained: body.frame.clone(),
-                frame: frontier_frame,
+                frame: body.frame.clone(),
                 pending: ResourceContext::new_with_equalities(assumptions),
                 entry_borrow_outputs: ResourceContext::new_with_equalities(assumptions),
                 transferred_memory_outputs: ResourceContext::new_with_equalities(assumptions),
@@ -911,6 +929,108 @@ impl ConstructedReturnBody {
     }
 }
 
+/// Select one indexed finite input piece and consume that exact occurrence.
+/// The supplier selector is singleton-only; a failed coverage check is final.
+fn take_returned_footprint(
+    frontier: &mut ResourceContext,
+    fact: &ResourceFact,
+    assumptions: &PureFactContext,
+) -> Option<ConsumedCellReturn> {
+    if fact.owned_quantity_term().and_then(MachineTerm::as_const) != Some(1) {
+        return None;
+    }
+    // Custody concerns bytes. Keep the returned carrier metadata on the
+    // output, rather than requiring the input's carrier to describe it.
+    let footprint = ResourceFact::own_memory(fact.memory_own_range()?.spatial_key());
+    let selected =
+        frontier.directly_supporting_owned_entry_ignoring_separation(&footprint, assumptions);
+    let (input, _) = selected?;
+    let next = frontier.clone().without_selected_fact_with_origins(
+        input,
+        &footprint,
+        assumptions,
+        &mut MemorySplitOrigins::default(),
+    )?;
+    *frontier = next;
+    Some(ConsumedCellReturn { input })
+}
+
+pub(super) struct ReturnFrontierAdmission {
+    remaining: ResourceContext,
+    outputs: ResourceContext,
+    unclassified: ResourceContext,
+    executed_body: bool,
+    group: ResourceContext,
+    group_unclassified: ResourceContext,
+    deferred_flats: ResourceContext,
+}
+
+impl ReturnFrontierAdmission {
+    fn finish_group(&mut self, assumptions: &PureFactContext) {
+        self.outputs = self
+            .outputs
+            .clone()
+            .unchecked_with_facts(self.group.facts().iter().cloned());
+        self.unclassified = self
+            .unclassified
+            .clone()
+            .unchecked_with_facts(self.group_unclassified.facts().iter().cloned());
+        self.group = ResourceContext::new_with_equalities(assumptions);
+        self.group_unclassified = ResourceContext::new_with_equalities(assumptions);
+    }
+
+    pub(super) fn admit(
+        &mut self,
+        fact: &ResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Option<Option<ConsumedCellReturn>> {
+        // Joint consumption constructed this body's entire output partition;
+        // its held heads certify their children, including sibling separation.
+        if self.executed_body {
+            return Some(None);
+        }
+        let mut transferred = take_returned_footprint(&mut self.remaining, fact, assumptions);
+        let previous = if transferred.is_some() {
+            &self.unclassified
+        } else {
+            &self.outputs
+        };
+        match previous.admit_returned_frontier(std::slice::from_ref(fact), assumptions) {
+            FlatBodyAdmission::Admitted => {}
+            FlatBodyAdmission::Conflict { held, .. }
+                if self.deferred_flats.contains_exact_representation(&held) =>
+            {
+                // Finalization checks this leaf against every returned flat
+                // clause and emits ProducedCompositeOverlapsHeldResource.
+                transferred = None;
+            }
+            _ => return None,
+        }
+        // One selected returned head certifies its own separating body. Keep
+        // supported conflict detection, but an unsupported internal geometry
+        // does not invalidate that certificate. Cross-head/flat boundaries
+        // above still require a bounded check, and consume input pieces once.
+        self.group = match self
+            .group
+            .clone()
+            .admit_without_discovery([fact.clone()], assumptions)
+        {
+            OwnershipAdmission::Admitted { context, .. } => context,
+            OwnershipAdmission::Conflict(_) => return None,
+            OwnershipAdmission::Unsupported(_) => {
+                self.group.clone().unchecked_with_fact(fact.clone())
+            }
+        };
+        if transferred.is_none() {
+            self.group_unclassified = self
+                .group_unclassified
+                .clone()
+                .unchecked_with_fact(fact.clone());
+        }
+        Some(transferred)
+    }
+}
+
 impl ConstructedReturnBodies {
     #[cfg(test)]
     pub(super) fn construct(
@@ -936,6 +1056,46 @@ impl ConstructedReturnBodies {
         composition: ReturnResourceComposition,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
+        let mut admission = if evaluated.body.is_some() {
+            Some(ReturnFrontierAdmission {
+                remaining: ResourceContext::new_with_equalities(assumptions),
+                outputs: evaluated.resources.clone(),
+                unclassified: evaluated.unclassified.clone(),
+                executed_body: true,
+                group: ResourceContext::new_with_equalities(assumptions),
+                group_unclassified: ResourceContext::new_with_equalities(assumptions),
+                deferred_flats: ResourceContext::new_with_equalities(assumptions)
+                    .unchecked_with_facts(
+                        evaluated
+                            .resources
+                            .facts()
+                            .iter()
+                            .filter(|fact| fact.memory_own_range().is_some())
+                            .cloned(),
+                    ),
+            })
+        } else {
+            evaluated
+                .checked_frontier
+                .clone()
+                .map(|remaining| ReturnFrontierAdmission {
+                    remaining,
+                    outputs: evaluated.resources.clone(),
+                    unclassified: evaluated.unclassified.clone(),
+                    executed_body: false,
+                    group: ResourceContext::new_with_equalities(assumptions),
+                    group_unclassified: ResourceContext::new_with_equalities(assumptions),
+                    deferred_flats: ResourceContext::new_with_equalities(assumptions)
+                        .unchecked_with_facts(
+                            evaluated
+                                .resources
+                                .facts()
+                                .iter()
+                                .filter(|fact| fact.memory_own_range().is_some())
+                                .cloned(),
+                        ),
+                })
+        };
         let mut bodies = BTreeMap::new();
         let mut legacy = BTreeSet::new();
         let mut supported = BTreeMap::new();
@@ -958,10 +1118,14 @@ impl ConstructedReturnBodies {
                     occurrence.origin == ReturnOwnershipOrigin::EntryBorrow
                         && composition.restores_entry_borrows(),
                     assumptions,
+                    admission.as_mut(),
                 )? {
                     specialized_returns::Construction::Body(body) => {
                         bodies.insert(occurrence.source, *body);
                     }
+                }
+                if let Some(admission) = admission.as_mut() {
+                    admission.finish_group(assumptions);
                 }
                 continue;
             }
@@ -992,8 +1156,12 @@ impl ConstructedReturnBodies {
                     &mut occurrence.clause.into_iter().collect(),
                     occurrence.clause.is_some(),
                     borrowed,
+                    &mut admission,
                 )?,
             );
+            if let Some(admission) = admission.as_mut() {
+                admission.finish_group(assumptions);
+            }
         }
         Some(Self(bodies, legacy))
     }
@@ -1063,6 +1231,7 @@ impl ConstructedReturnBodies {
         path: &mut Vec<usize>,
         planned: bool,
         borrowed: bool,
+        admission: &mut Option<ReturnFrontierAdmission>,
     ) -> Option<ConstructedReturnBody> {
         let (singleton, inserted) = ResourceContext::new_with_equalities(assumptions)
             .unchecked_with_facts_and_occurrences([support.clone()]);
@@ -1084,6 +1253,7 @@ impl ConstructedReturnBodies {
             &mut transfers,
             &mut witnesses,
             &mut folded,
+            admission,
         )?;
         // Normalize descriptions only after the transfer producer has finished.
         // Source/parent identities remain the actual pre-normalization IDs.
@@ -1131,6 +1301,7 @@ impl ConstructedReturnBodies {
         transfers: &mut Vec<CompositeChildTransfer>,
         witnesses: &mut BTreeMap<ResourceOccurrenceId, Vec<ProgramValue>>,
         folded: &mut Vec<(ResourceFact, ResourceOccurrenceId)>,
+        admission: &mut Option<ReturnFrontierAdmission>,
     ) -> Option<(
         ResourceContext,
         Vec<ResourceFact>,
@@ -1152,6 +1323,7 @@ impl ConstructedReturnBodies {
             &state.program_point(),
             assumptions,
             Some(selected),
+            admission.as_mut(),
         )?;
         if !body.opened {
             folded.push((support.clone(), parent));
@@ -1180,12 +1352,20 @@ impl ConstructedReturnBodies {
             }
             let fixed_borrow = fact.is_own()
                 && borrowed
+                && summary_transfer::invariant_body_condition(definition, &parameters)
                 && (fixed_memory_shape(spec, &parameters).is_some()
-                    || definition.condition.is_none()
-                        && summary_transfer::invariant_memory_shape(spec, &parameters));
+                    || summary_transfer::invariant_memory_shape(spec, &parameters));
             // A view remains a view even when its definition contains owns.
             // Neither its declaration nor a fresh backing block grants custody.
             let origin = if fact.is_view() {
+                ReturnOwnershipOrigin::Description
+            } else if let Some(Some(input)) = body.transferred.get(index) {
+                ReturnOwnershipOrigin::ConsumedCell(*input)
+            } else if admission
+                .as_ref()
+                .is_some_and(|admission| !admission.executed_body)
+                && fact.memory_own_range().is_some()
+            {
                 ReturnOwnershipOrigin::Description
             } else if fixed_borrow {
                 ReturnOwnershipOrigin::EntryBorrow
@@ -1247,6 +1427,7 @@ impl ConstructedReturnBodies {
                     transfers,
                     witnesses,
                     folded,
+                    admission,
                 )?;
             }
             path.pop();

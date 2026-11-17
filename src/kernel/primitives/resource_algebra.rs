@@ -710,11 +710,40 @@ impl ResourceContextIndex {
                     result.owned_memory_by_anchor =
                         insert_resource_index_entry(&result.owned_memory_by_anchor, anchor, entry);
                 }
+                if result.owned_memory_by_block.is_empty() {
+                    result.owned_hidden_memory_by_block = Default::default();
+                    result.owned_hidden_memory_generation =
+                        Some(super::memory_state::never_address_taken_generation());
+                }
+                if matches!(
+                    block,
+                    PointerBlock::Concrete(_)
+                        | PointerBlock::AutomaticLocal { .. }
+                        | PointerBlock::StaticObject { .. }
+                        | PointerBlock::AggregateReturn { .. }
+                        | PointerBlock::ContractResult
+                        | PointerBlock::ContractException
+                        | PointerBlock::Heap(_)
+                        | PointerBlock::Temporary(_)
+                ) {
+                    result.owned_physical_memory_by_block = insert_resource_index_entry(
+                        &result.owned_physical_memory_by_block,
+                        block.clone(),
+                        entry,
+                    );
+                }
                 result.owned_memory_by_block = insert_resource_index_entry(
                     &result.owned_memory_by_block,
                     block.clone(),
                     entry,
                 );
+                if block_is_never_address_taken_local(&block) {
+                    result.owned_hidden_memory_by_block = insert_resource_index_entry(
+                        &result.owned_hidden_memory_by_block,
+                        block.clone(),
+                        entry,
+                    );
+                }
                 if block.is_local_block() {
                     result.owned_automatic_memory_by_block = insert_resource_index_entry(
                         &result.owned_automatic_memory_by_block,
@@ -1031,6 +1060,16 @@ impl ResourceContextIndex {
                 }
                 result.owned_memory_by_block =
                     remove_resource_index_entry(&result.owned_memory_by_block, &block, entry);
+                result.owned_hidden_memory_by_block = remove_resource_index_entry(
+                    &result.owned_hidden_memory_by_block,
+                    &block,
+                    entry,
+                );
+                result.owned_physical_memory_by_block = remove_resource_index_entry(
+                    &result.owned_physical_memory_by_block,
+                    &block,
+                    entry,
+                );
                 if block.is_local_block() {
                     result.owned_automatic_memory_by_block = remove_resource_index_entry(
                         &result.owned_automatic_memory_by_block,

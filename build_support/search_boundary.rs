@@ -105,7 +105,15 @@ impl Boundary<'_> {
             ));
         }
         if ((self.path == "src/kernel/functions/mixed_return_resources.rs"
-            && matches!(self.function.as_str(), "admit_clause" | "finish"))
+            && matches!(
+                self.function.as_str(),
+                "admit_clause"
+                    | "finish"
+                    | "take_returned_footprint"
+                    | "admit"
+                    | "finish_group"
+                    | "retain_frontier"
+            ))
             || (self.path == "src/kernel/functions.rs"
                 && matches!(
                     self.function.as_str(),

@@ -1461,13 +1461,49 @@ impl ResourceContext {
             return Unsupported;
         };
         let blocks = &self.storage.index.owned_memory_by_block;
+        // These local addresses never escape into pointer values. The producer
+        // maintains this coverage count as owners enter and leave the frame.
+        if matches!(
+            range.base().block,
+            PointerBlock::Symbolic(_)
+                | PointerBlock::LoadedPointer(_)
+                | PointerBlock::FunctionSymbolic(_)
+                | PointerBlock::ExternalArgument
+                | PointerBlock::ExternalObject(_)
+        ) && self.storage.index.owned_hidden_memory_generation
+            == Some(super::memory_state::never_address_taken_generation())
+            && self.storage.index.owned_hidden_memory_by_block.len() == blocks.len()
+        {
+            return Clear;
+        }
+        // A cold physical frame needs no graph registration of its members.
+        // Register only the query's checked read definition and select its
+        // maintained storage anchor. Stated aliases to a held local refuse
+        // this shortcut and continue through ordinary overlap checking.
+        if matches!(
+            range.base().block,
+            PointerBlock::Symbolic(_) | PointerBlock::LoadedPointer(_)
+        ) && self.storage.index.owned_automatic_memory_by_block.len() == blocks.len()
+            && !blocks.contains_key(&PointerBlock::ContractResult)
+            && !blocks.contains_key(&PointerBlock::ContractException)
+        {
+            let graph = graph_for_memory_query(_assumptions, range.base());
+            let anchor = graph.storage_address(range.base());
+            if !blocks.contains_key(&anchor.block) && graph.affine_addresses_complete(&anchor.block)
+            {
+                return Clear;
+            }
+        }
         // Physical automatic-storage identities remain distinct when facts
         // alias pointer values to them. The existing index certifies that no
         // opaque owner is hidden outside this storage partition. Result and
         // exception bookkeeping slots are not physical automatic objects.
         if matches!(
             range.base().block,
-            PointerBlock::ExternalArgument | PointerBlock::ExternalObject(_)
+            PointerBlock::ExternalArgument
+                | PointerBlock::ExternalObject(_)
+                | PointerBlock::Heap(_)
+                | PointerBlock::Temporary(_)
         ) && self.storage.index.owned_automatic_memory_by_block.len() == blocks.len()
             && !blocks.contains_key(&PointerBlock::ContractResult)
             && !blocks.contains_key(&PointerBlock::ContractException)
@@ -1484,6 +1520,23 @@ impl ResourceContext {
             && self.storage.index.owned_automatic_memory_by_block.len() == blocks.len()
             && !blocks.contains_key(&PointerBlock::ContractResult)
             && !blocks.contains_key(&PointerBlock::ContractException);
+        let physical_partition = matches!(
+            range.base().block,
+            PointerBlock::Concrete(_)
+                | PointerBlock::AutomaticLocal { .. }
+                | PointerBlock::StaticObject { .. }
+                | PointerBlock::AggregateReturn { .. }
+                | PointerBlock::ContractResult
+                | PointerBlock::ContractException
+                | PointerBlock::Heap(_)
+                | PointerBlock::Temporary(_)
+        ) && self.storage.index.owned_physical_memory_by_block.len()
+            == blocks.len();
+        let incoming_partition = matches!(
+            range.base().block,
+            PointerBlock::ExternalArgument | PointerBlock::ExternalObject(_)
+        ) && blocks.contains_key(&range.base().block)
+            && blocks.len() == self.storage.index.owned_automatic_memory_by_block.len() + 1;
         if matches!(range.base().block, PointerBlock::StringLiteral { .. }) {
             return Unsupported;
         }
@@ -1495,12 +1548,54 @@ impl ResourceContext {
         if start >= end {
             return Clear;
         }
+        let raw = &self.storage.index.memory_addresses;
+        let Some(bucket) = raw.classes.get(&range.base().block) else {
+            return if automatic_partition || physical_partition {
+                Clear
+            } else {
+                Unsupported
+            };
+        };
+        let Some(start) = AffineOffset::of(&range.start_pointer().offset)
+            .and_then(|offset| offset.checked_add(&bucket.origin))
+        else {
+            return Unsupported;
+        };
+        let Some(end) = AffineOffset::of(&range.end_pointer().offset)
+            .and_then(|offset| offset.checked_add(&bucket.origin))
+        else {
+            return Unsupported;
+        };
+        if let Some(entry) = bucket
+            .write_intervals
+            .first_overlap(&AddressCoordinate(start), &AddressCoordinate(end))
+        {
+            // One positive witness needs only its own coordinates. Unrelated
+            // unsupported owners cannot hide an already selected conflict.
+            if let Some((held_origin, held_start, held_end)) = self
+                .storage
+                .facts
+                .get(&entry)
+                .and_then(ResourceFact::memory_own_range)
+                .and_then(super::resource_algebra::constant_memory_coordinates)
+                && held_origin == origin
+                && held_start < held_end
+            {
+                let (_, query_start, query_end) =
+                    super::resource_algebra::constant_memory_coordinates(range)
+                        .expect("query coordinates selected above");
+                if held_start < query_end && query_start < held_end {
+                    return Overlap(entry);
+                }
+            }
+            return Unsupported;
+        }
         // Select only this storage block's intervals, never every allocation.
-        if blocks.len() != 1 && !automatic_partition {
+        if blocks.len() != 1 && !automatic_partition && !physical_partition && !incoming_partition {
             return Unsupported;
         }
         let Some(members) = blocks.get(&origin.block) else {
-            return if automatic_partition {
+            return if automatic_partition || physical_partition {
                 Clear
             } else {
                 Unsupported
@@ -1516,30 +1611,10 @@ impl ResourceContext {
         {
             return Unsupported;
         }
-        let raw = &self.storage.index.memory_addresses;
-        let Some(bucket) = raw.classes.get(&range.base().block) else {
-            return Unsupported;
-        };
         if raw.incomplete || bucket.write_intervals.len() != members.len() {
             return Unsupported;
         }
-        let Some(start) = AffineOffset::of(&range.start_pointer().offset)
-            .and_then(|offset| offset.checked_add(&bucket.origin))
-        else {
-            return Unsupported;
-        };
-        let Some(end) = AffineOffset::of(&range.end_pointer().offset)
-            .and_then(|offset| offset.checked_add(&bucket.origin))
-        else {
-            return Unsupported;
-        };
-        match bucket
-            .write_intervals
-            .first_overlap(&AddressCoordinate(start), &AddressCoordinate(end))
-        {
-            Some(entry) => Overlap(entry),
-            None => Clear,
-        }
+        Clear
     }
 
     /// A symbolic query may use an enclosing interval established by direct
@@ -1632,6 +1707,37 @@ impl ResourceContext {
                 .iter()
                 .next()
                 .expect("singleton owner");
+            if assumptions.contains_known(&Proposition::ResourceSeparate {
+                left: Box::new(Resource::Memory(held.clone())),
+                right: Box::new(Resource::Memory(range.clone())),
+            }) {
+                return Clear;
+            }
+            // A singleton supplies both explicit operands. Register their
+            // checked read definitions and footprint endpoints locally, never
+            // prepare or enumerate an ambient resource input. A complete
+            // class miss is the same negative check a published index makes.
+            if matches!(range.base().block, PointerBlock::LoadedPointer(_)) {
+                let mut selected = assumptions.clone();
+                selected.equality_graph = graph_for_memory_query(assumptions, held.base());
+                selected.equality_graph = graph_for_memory_query(&selected, range.base());
+                let graph = &selected.equality_graph;
+                MemoryQuery::Footprint(held).register(graph);
+                MemoryQuery::Footprint(range).register(graph);
+                if let (Some(left_start), Some(left_end), Some(right_start), Some(right_end)) = (
+                    graph.canonical_pointer(&held.start_pointer()),
+                    graph.canonical_pointer(&held.end_pointer()),
+                    graph.canonical_pointer(&range.start_pointer()),
+                    graph.canonical_pointer(&range.end_pointer()),
+                ) && left_start.representative == left_end.representative
+                    && right_start.representative == right_end.representative
+                    && left_start.representative != right_start.representative
+                    && graph.affine_addresses_complete(&left_start.representative)
+                    && graph.affine_addresses_complete(&right_start.representative)
+                {
+                    return Clear;
+                }
+            }
             // Existing structural storage separation needs no alias walk or
             // prepared graph, and is independent of interval endpoints.
             if held.base().blocks_proven_distinct(range.base()) {

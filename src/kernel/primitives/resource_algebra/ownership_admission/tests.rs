@@ -88,19 +88,17 @@ fn unsupported_admission_resumes_once_and_retains_occurrences() {
 }
 
 #[test]
-fn multi_block_cold_overlap_keeps_its_explicit_compatibility_boundary() {
+fn multi_block_cold_overlap_uses_a_positive_indexed_witness() {
     let facts = PureFactContext::new();
     let parent =
         ResourceContext::new().unchecked_with_facts([owner(at(0), 0, 4), owner(at(1), 0, 4)]);
-    let OwnershipAdmission::Unsupported(pending) = parent
-        .clone()
-        .admit_without_discovery([owner(at(0), 1, 3)], &facts)
-    else {
-        panic!("cold indexed coverage must not decide an overlap");
-    };
     assert!(matches!(
-        pending.resume_legacy_discovery(),
-        Err(ResourceContextValidityError::OverlappingOwnedMemoryResources { .. })
+        parent
+            .clone()
+            .admit_without_discovery([owner(at(0), 1, 3)], &facts),
+        OwnershipAdmission::Conflict(
+            ResourceContextValidityError::OverlappingOwnedMemoryResources { .. }
+        )
     ));
     assert!(
         parent
@@ -119,13 +117,16 @@ fn unsupported_batches_preserve_conflict_order_and_later_exclusive_checks() {
         .unchecked_with_fact(guard())
         .unchecked_with_fact(owner(at(1), 0, 4));
     for (start, end, overlap) in [(1, 3, true), (4, 8, false)] {
-        let OwnershipAdmission::Unsupported(pending) = parent
+        let error = match parent
             .clone()
             .admit_without_discovery([owner(at(0), start, end), guard()], &facts)
-        else {
-            panic!("the unresolved first output must precede later checks");
+        {
+            OwnershipAdmission::Conflict(error) if overlap => error,
+            OwnershipAdmission::Unsupported(pending) if !overlap => {
+                pending.resume_legacy_discovery().unwrap_err()
+            }
+            _ => panic!("the first overlap check must precede the later exclusive conflict"),
         };
-        let error = pending.resume_legacy_discovery().unwrap_err();
         if overlap {
             assert!(matches!(
                 error,
