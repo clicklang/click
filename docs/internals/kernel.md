@@ -661,8 +661,9 @@ its format, and its range is its format's: no range fact is filed for it.
 - Every narrow load is its own load at its own type: the read's variable is
   registered at its kind, the equality graph names it by its exact cell,
   and it is a load application of its state, address and kind
-  (`Application::NarrowLoad`), equal to a stored value of its width
-  (`CellRead::Narrow`). The `int8` and `uint8` reads of one byte are two
+  (`Application::NarrowLoad`). An explicit store equation supplies its value;
+  registration does not fetch that value from a cached cell. The `int8` and
+  `uint8` reads of one byte are two
   loads related by the 8-bit sign cast (byte R-mem). A read of a canonical
   projection is joined to the same read of its recorded source by one
   indexed edge (`Node::NarrowRead`), as a four-byte read is. Byte views
@@ -785,7 +786,7 @@ the widths a rule supports; it asks the module
 | Observation value relations (W) | `SharedMachineIntegerTerm::value_reading`, `machine_value_reading`, `IntegerTerm::value_read`, `SharedIntegerTerm::read_through`; the readers: Integer affine atoms (`collect_integer_affine_terms`), `ConditionTerm` identity of Integer comparisons, `range::observation_range`, `native_comparison_of_integer_observation`, `native_comparison_through_integer_operations`, `identity::mathematical`, `conversion::cast`, the Integer rewrite's occurrence match | `IntegerTerm::from_machine` builds an observation as written and folds no conversion; its value is related, not rewritten: `to_integer(widen(v)) == to_integer(v)` for a value-preserving widening at any width, `to_integer` of σ(x) at `int32` or `uint32` is `x` read at that format, and a conversion observed at a type containing its destination is observed at the destination. The reading is computed once per interned observation (at most three conversions) and per Integer node (`read_through`), cached on the node, so each reader's step is O(1) after the first; terms are printed as written |
 | Native narrow nodes | `CarrierWidth::Bits8`, `Bits16`, `CarrierWidth::native`, `is_native_narrow_operator`; `MachineTerm::narrow_constant`, `machine_binary`, `machine_unary`; the e-graph's `Node::MachineNarrow` and `narrow_constants` | an 8- or 16-bit operator `+ - * & \| ^ << ~`, constant, binder or load is a value of its own width, `(a op b) mod 2^N`; narrow constant atoms are keyed by their unsigned bits, a cast of a constant class folds to the destination's constant, and a narrow equation is decided by one class (true) or two different constants (false) |
 | Narrow-cast word (K7') | `representation::narrow_carrier_mask`; the e-graph's `narrow_cast_node`, `narrow_cast_word` | the 32-bit widening of `Cast(S -> F, x)` into an 8- or 16-bit `F` at `w`'s format meets `w & m`, or `((w & m) ^ s) - s` for a signed `F`, with `w` the operand's word (`int32` or `uint32`), a 64-bit operand's `uint32` low word, or a narrow operand's widening (its `uint32` one where the graph has only that, else its `int32` one); the other widening is interned only where a term names it, and is then σ of the first by the sibling relation, so its word is σ of the masked word |
-| Narrow loads and byte R-mem | `Application::NarrowLoad`, `CellRead::Narrow`, `Node::NarrowRead`, `enqueue_narrow_load`, `enqueue_signed_byte_read` | an 8- or 16-bit read is a load application of its state, address and kind, equal to a stored value of its width and, for a canonical projection, to the same read of its recorded source (one indexed edge); the `int8` read of a byte is `Cast(UInt8 -> Int8, u)` of its `uint8` read `u` |
+| Narrow loads and byte R-mem | `Application::NarrowLoad`, `store_value_equation`, `Node::NarrowRead`, `enqueue_narrow_load`, `enqueue_signed_byte_read` | an 8- or 16-bit read is a load application of its state, address and kind, equal to the value supplied by an explicit store equation and, for a canonical projection, to the same read of its recorded source (one indexed edge); the `int8` read of a byte is `Cast(UInt8 -> Int8, u)` of its `uint8` read `u` |
 | Promoted comparison reading | `comparison::integer_readings_with_promotions`, `integer_comparisons_of_widenings`; `integer_affine_claims` | a signed `int32` comparison whose sides are narrow widenings or constants is the Integer comparison of the sides' values (`0 <= widen(x)` is `0 <= to_integer(x)`); a native 8- or 16-bit comparison has the readings of its promoted spelling |
 | Native narrow comparison (one fact, K8) | `ConditionTerm::comparison_fact`, `as_fact_comparison`, `ComparisonSide`; `comparison::narrow_comparison_as_int32`, `narrow_fact_widening`, `native_narrow_comparison`; `condition_match_key`; the `adjust_*` wrappers of `PureFactContext` and `EqualityGraph::add_condition` | a specification or Rust comparison `a R b` of two values of one 8- or 16-bit format `S` is native at `S`, and is the same fact as the `int32` comparison of the operands' widenings (a constant side in `S`'s range reads as its value): identity, hashing, order and every structural fact key read both as one, in O(1) per side; the 32-bit indexes also file a native fact under its `int32` spelling. Terms are built and printed as written; C comparisons and a written `x as int32 R c` stay promoted |
 | Sign cast σ (K1 deleted) | `MachineTerm::sign_cast32`, `sign_cast32_operand`; the e-graph's `intern_conversion` and `convert_like` (σ an `Int32Unary::Cast` node); the difference graph's `link_parts` and `structural_interval`; `into_index_word32` (G1) | σ(x) between `int32` and `uint32` is a node of its own wherever a term is built: no constructor, observation, e-graph or difference-graph reader peels it. The e-graph relates it to `x` by R0 and R-dist (σ of a sign-free operator is the operator at the other format over σ of its operands; σ of a low word is that low word), the difference graph links either 32-bit reading of σ(x) to the same reading of `x` with offset 0, and an element index alone reads σ's operand in `int32` index coordinates. The constructor folds a constant and keeps σ of σ as written; R0 puts σ(σ(x)) in `x`'s class. Two smart-search readers see through one σ at a side's root: `σ(x) == x` is a vacuous rewrite and no rewrite candidate (`is_sign_cast32_of`, `equality_is_vacuous`, `connected_equalities`), and `σ(y) <=u c` below the sign bit is the signed range of `y` (`unsigned_upper_bound_below_sign_bit`) |
@@ -1750,33 +1751,36 @@ Resolving a load to a stored scalar requires
 the load's recorded width to match the stored value; a width-less term cannot
 choose a cell type implicitly.
 
-Call and loop behavior are explicit inputs to kernel execution. The common
-configurations are:
+Calls have one semantics. A call applies the callee's verified rule and never
+evaluates the callee's body; the body is checked once, against its contract,
+in its own proof. The one exception is a `static inline` helper (or a
+file-scope `static` function) with no Click contract, whose checked body runs
+at the call site on the caller's resources. A call to any other function
+without a verified rule fails rather than falling back to its body.
 
-- `ExecutionSemantics::EXECUTE_BODIES` evaluates callee bodies, verifies
-  annotated loops directly, and ignores available verified rules. Low-level C
-  evaluator tests use this mode.
-- `ExecutionSemantics::APPLY_VERIFIED_RULES` applies opaque function and loop
-  rules and never evaluates the corresponding bodies. Click execution proofs
-  use this mode.
+Loop behavior is an explicit input to kernel execution, `ExecutionSemantics`:
+
+- `ExecutionSemantics::APPLY_VERIFIED_RULES` applies verified loop rules and
+  never evaluates the corresponding bodies. Click execution proofs use this
+  mode.
+- `ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS` verifies the current
+  loop body directly. The loop-rule construction phase and low-level evaluator
+  tests use this mode.
 
 `ExecutionEnvironment` contains the function definitions and verified rules
 available to an execution; it does not select between these semantics. In
-particular, rule lookup is not a fallback mechanism. Applying verified rules
-without a matching rule fails, while direct body verification behaves the same
-whether or not a matching rule is present. `ExecutionSemantics` also exposes
-`APPLY_CALL_RULES_AND_VERIFY_LOOPS` for the loop-rule construction phase,
-where calls remain modular while the current loop body is verified directly.
+particular, rule lookup is not a fallback mechanism: applying verified rules
+without a matching rule fails.
 
-Concrete execution judgments and modular verification transitions are
-deliberately different propositions. `ProgramStatementExecutes` and
-`ProgramFunctionExecutes` describe outcomes produced by direct operational
-execution. `ProgramStatementVerifies` and `ProgramFunctionVerifies` describe abstract
+Every execution theorem the kernel produces is a verification transition:
+`ProgramStatementVerifies` and `ProgramFunctionVerifies` describe abstract
 branches admitted while checking partial correctness with loop or function
-summaries. A verification return branch means “if this computation returns,
-this is an allowed post-state”; it is not evidence that the return is
-reachable. Verified contract and loop rules cannot be converted into concrete
-execution or termination theorems.
+summaries, and a checked path proves only
+`ProgramFunctionPartiallySatisfiesSpecification`. A verification return branch
+means “if this computation returns, this is an allowed post-state”; it is not
+evidence that the return is reachable. Verified contract and loop rules cannot
+be converted into concrete execution or termination theorems; termination is
+the separate `VerifiedFunctionTerminationRule`.
 
 One driver steps statements and functions for both judgments
 (`execute_statement_paths` in `src/kernel/eval/statements.rs`, and
@@ -2060,6 +2064,13 @@ among the requirements and must rewrite the goal in the listed order.
 observation. Other families keep native value equality and ordering, including
 raw Boolean words, float bits, and native call-argument carrier distinctions.
 Its hash need only agree across equal stored keys; it is not a serialized ID.
+Boolean, float and algebraic local/outcome keys project common children rather
+than materializing an enclosing native value tree. Algebraic projections retain
+constructor field positions, match binding/body order and original call-argument
+carriers. Scalar algebraic fields and read addresses keep selected compatibility
+descriptors; memory keys and exact refresh remain separate consumers.
+Projection memos belong to one verification, with iterative construction,
+comparison and disposal for shared or deep algebraic structure.
 
 `StoredMemoryValue` preserves native `ProgramValue` structural equality, order,
 and hash stream. Replacing it with a local observation key would change the

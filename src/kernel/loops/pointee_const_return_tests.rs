@@ -20,7 +20,7 @@ fn pointee_const_return_rebinding_is_allowed_but_store_through_pointer_is_not() 
         &state,
         &program_assign("q", crate::kernel::program_expression::variable("p")),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&environment),
+        ExecutionContext::verify_loops(&environment),
         &mut ExecutionBudget::default(),
     )
     .unwrap();
@@ -41,7 +41,7 @@ fn pointee_const_return_rebinding_is_allowed_but_store_through_pointer_is_not() 
             crate::kernel::program_expression::int32_literal(1),
         ),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&environment),
+        ExecutionContext::verify_loops(&environment),
         &mut ExecutionBudget::default(),
     )
     .unwrap();
@@ -101,7 +101,7 @@ fn pointee_const_return_direct_and_callback_calls_preserve_const() {
     )
     .with_return_pointee_constant(true);
     let function_type = function.function_pointer_type();
-    let environment = ExecutionEnvironment::new().with_function(function);
+    let environment = ExecutionEnvironment::new().with_function((function).with_inline_body());
     let paths = call_then_assign_paths(
         ProgramType::UInt8Pointer,
         &ExecutionState::new(),
@@ -109,7 +109,7 @@ fn pointee_const_return_direct_and_callback_calls_preserve_const() {
         "text",
         &[],
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&environment),
+        ExecutionContext::verify_loops(&environment),
         &mut ExecutionBudget::default(),
     )
     .unwrap();
@@ -132,7 +132,7 @@ fn pointee_const_return_direct_and_callback_calls_preserve_const() {
         "callback",
         &[],
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&environment),
+        ExecutionContext::verify_loops(&environment),
         &mut ExecutionBudget::default(),
     )
     .unwrap();
@@ -150,7 +150,7 @@ fn pointee_const_return_direct_and_callback_calls_preserve_const() {
         "callback",
         &[],
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&environment),
+        ExecutionContext::verify_loops(&environment),
         &mut ExecutionBudget::default(),
     )
     .unwrap();
@@ -180,7 +180,7 @@ fn pointee_const_return_direct_and_callback_calls_preserve_const() {
         "callback",
         &[],
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&environment),
+        ExecutionContext::verify_loops(&environment),
         &mut ExecutionBudget::default(),
     )
     .unwrap();
@@ -326,7 +326,7 @@ fn pointee_const_return_symbolic_callback_checks_signature_and_destination() {
             "callback",
             &[],
             &assumptions,
-            ExecutionContext::execute_bodies(&environment),
+            ExecutionContext::verify_loops(&environment),
             &mut ExecutionBudget::default(),
         )
         .unwrap();

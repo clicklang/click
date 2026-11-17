@@ -98,7 +98,7 @@ fn wide_scalar_locals_declare_assign_and_return_without_word_truncation() {
         );
         let theorem =
             prove_execution_statement_execution(ExecutionState::new(), statement).unwrap();
-        let Proposition::ProgramStatementExecutes { outcome, .. } = theorem.proposition() else {
+        let Proposition::ProgramStatementVerifies { outcome, .. } = theorem.proposition() else {
             unreachable!()
         };
         let StatementOutcome::Return { value, state } = outcome else {
@@ -313,7 +313,7 @@ fn wide_scalar_function_parameters_and_returns_keep_caller_storage() {
             PureFactContext::new(),
         )
         .unwrap();
-        let Proposition::ProgramFunctionExecutes { outcome, .. } = theorem.proposition() else {
+        let Proposition::ProgramFunctionVerifies { outcome, .. } = theorem.proposition() else {
             unreachable!()
         };
         let FunctionOutcome::Return {
@@ -549,7 +549,7 @@ fn wide_cast_function_argument_widens_and_return_narrows_without_truncating_earl
     .unwrap();
     assert!(matches!(
         theorem.proposition(),
-        Proposition::ProgramFunctionExecutes {
+        Proposition::ProgramFunctionVerifies {
             outcome: FunctionOutcome::Return {
                 value,
                 ..

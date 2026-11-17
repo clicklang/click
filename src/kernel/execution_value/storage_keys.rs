@@ -293,6 +293,7 @@ pub(super) enum NativeStorageIdentity<'a> {
     Boolean(&'a BooleanStorageKey),
     Float32(&'a FloatStorageKey),
     Float64(&'a FloatStorageKey),
+    Algebraic(&'a AlgebraicStorageKey),
     Value(&'a ProgramValue),
 }
 impl NativeStorageIdentity<'_> {
@@ -301,6 +302,7 @@ impl NativeStorageIdentity<'_> {
             Self::Boolean(_) => 2,
             Self::Float32(_) => 13,
             Self::Float64(_) => 14,
+            Self::Algebraic(_) => 16,
             Self::Value(v) => native_rank(v),
         }
     }
@@ -311,6 +313,7 @@ impl Hash for NativeStorageIdentity<'_> {
         match self {
             Self::Boolean(v) => v.hash(state),
             Self::Float32(v) | Self::Float64(v) => v.hash(state),
+            Self::Algebraic(v) => v.hash(state),
             Self::Value(v) => v.hash(state),
         }
     }
@@ -329,6 +332,7 @@ impl Ord for NativeStorageIdentity<'_> {
                 (Self::Float32(a), Self::Float32(b)) | (Self::Float64(a), Self::Float64(b)) => {
                     a.cmp(b)
                 }
+                (Self::Algebraic(a), Self::Algebraic(b)) => a.cmp(b),
                 (Self::Value(a), Self::Value(b)) => a.cmp(b),
                 _ => unreachable!("each migrated family uses its projection"),
             })
@@ -357,6 +361,10 @@ impl Drop for ConditionStorageKey {
     }
 }
 
+mod algebraic;
+pub(in crate::kernel) use algebraic::AlgebraicStorageKey;
+pub(in crate::kernel) use algebraic::for_root as algebraic_for_root;
+
 mod float;
 pub(in crate::kernel) use float::FloatStorageKey;
 
@@ -368,6 +376,7 @@ thread_local! {
 pub(in crate::kernel) fn clear_session_key_memos() {
     CONDITION_KEYS.with(|keys| keys.borrow_mut().clear());
     float::clear_session_key_memos();
+    algebraic::clear_session_key_memos();
 }
 pub(in crate::kernel) fn condition_for_root(source: &KernelTerm) -> ConditionStorageKey {
     CONDITION_KEYS.with(|keys| {

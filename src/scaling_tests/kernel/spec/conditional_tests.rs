@@ -255,3 +255,65 @@ fn symbolic_comparisons_ignore_ambient_guard_facts() {
         }
     }
 }
+
+#[test]
+fn boolean_guard_comparisons_ignore_ambient_flag_facts() {
+    let mut baseline = None;
+    let mut expected = None;
+    for size in [0, 16, 64, 256] {
+        let _session = VerificationSession::enter();
+        let guard = ConditionTerm::Variable(Variable(999800));
+        let value =
+            |n| SpecExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(n)));
+        let proposition = SpecProposition::Comparison {
+            left: SpecExpression::If {
+                condition: Box::new(SpecProposition::Comparison {
+                    left: SpecExpression::Value(ProgramValue::of_bool(guard.clone())),
+                    operator: ComparisonOperator::Equal,
+                    right: SpecExpression::Value(ProgramValue::of_bool(ConditionTerm::Constant(
+                        true,
+                    ))),
+                }),
+                then_branch: Box::new(value(9)),
+                else_branch: Box::new(value(3)),
+            },
+            operator: ComparisonOperator::LessEqual,
+            right: value(100),
+        };
+        let state = ExecutionState::new();
+        let mut facts = PureFactContext::new();
+        for index in 0..size {
+            facts = facts.assume_condition(ConditionTerm::Variable(Variable(999810 + index)), true);
+        }
+        for truth in [None, Some(true), Some(false)] {
+            let mut branch_facts = facts.clone();
+            if let Some(truth) = truth {
+                branch_facts = branch_facts.assume_condition(guard.clone(), truth);
+            }
+            let exports = KernelTermExport::machine_export_count();
+            let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let mut execution = ExecutionBudget::new();
+                lower_spec_proposition_at_state_with_algebraic_bindings_in(
+                    SpecScope::unbound(&state, None),
+                    &proposition,
+                    &branch_facts,
+                    &mut SpecEvaluation::logical(&mut execution),
+                )
+                .unwrap()
+            });
+            assert_eq!(paths.len(), 1);
+            let actual = &paths[0].proposition;
+            assert!(
+                matches!(actual, Proposition::ConditionIs(ConditionTerm::Compare { left, .. }, true)
+                if matches!(left.as_ref(), MachineTerm::If { condition, .. } if condition.as_ref() == &guard))
+            );
+            assert_eq!(actual, expected.get_or_insert_with(|| actual.clone()));
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            let first = *baseline.get_or_insert(work);
+            assert!(
+                work <= first + 64,
+                "{size} unrelated facts, flag={truth:?}: {work}, baseline={first}"
+            );
+        }
+    }
+}

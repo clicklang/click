@@ -1605,6 +1605,7 @@ fn complete_void_fallthrough(
     }
 }
 
+#[cfg(test)]
 pub(super) fn execute_program_function_paths(
     state: &ExecutionState,
     function: &ProgramFunction,
@@ -1632,8 +1633,8 @@ pub(super) fn execute_program_function_paths(
 /// executes the body in that frame; the contract routes cross the resource
 /// boundary, so the views the contract declares become loans of this
 /// application and recovery returns them.
+/// The body runs under the concrete judgment, which unrolls loops.
 #[allow(clippy::too_many_arguments)]
-/// `ProgramFunctionExecutes` for `function` applied to `arguments`.
 pub(super) fn execute_program_function_paths_with_contract_resources(
     state: &ExecutionState,
     function: &ProgramFunction,
@@ -2164,36 +2165,33 @@ pub(super) fn execute_program_function_call_paths(
             "a binder map cannot select a contract for a `static inline` helper that has none: its body executes at the call site on the caller's resources; give the helper a Click contract, or step the call with `step()`",
         )]);
     }
+    // Every other callee is opaque: its verified rule is the call. Bodies
+    // are checked once, against their contracts, in their own proofs; a call
+    // never runs one.
     if !executes_inline_body {
-        match execution_context.semantics.calls {
-            CallSemantics::ExecuteBodies => {}
-            CallSemantics::ApplyVerifiedRules => {
-                let Some(rule) = execution_context
-                    .environment
-                    .get_verified_function_rule(function.name())
-                else {
-                    let error = if function.verified_direct_contract_supported() {
-                        RuntimeError::MissingVerifiedFunctionRule(function.name().to_string())
-                    } else {
-                        RuntimeError::UnsupportedOpaqueFunctionContract(function.name().to_string())
-                    };
-                    return Ok(vec![FunctionPath::new(
-                        FunctionOutcome::RuntimeError(error),
-                        Vec::new().into(),
-                        Vec::new(),
-                    )]);
-                };
-                let result = execute_verified_function_rule(
-                    caller_state,
-                    rule,
-                    arguments,
-                    assumptions,
-                    execution_context.environment,
-                    budget,
-                );
-                return result;
-            }
-        }
+        let Some(rule) = execution_context
+            .environment
+            .get_verified_function_rule(function.name())
+        else {
+            let error = if function.verified_direct_contract_supported() {
+                RuntimeError::MissingVerifiedFunctionRule(function.name().to_string())
+            } else {
+                RuntimeError::UnsupportedOpaqueFunctionContract(function.name().to_string())
+            };
+            return Ok(vec![FunctionPath::new(
+                FunctionOutcome::RuntimeError(error),
+                Vec::new().into(),
+                Vec::new(),
+            )]);
+        };
+        return execute_verified_function_rule(
+            caller_state,
+            rule,
+            arguments,
+            assumptions,
+            execution_context.environment,
+            budget,
+        );
     }
     budget.consume_function_call()?;
     if arguments.len() != function.parameters().len() {
@@ -2310,87 +2308,24 @@ pub(super) fn execute_program_function_call_paths(
             &arguments_path.facts,
             &argument_obligations,
         );
-        if function.has_inline_body() {
-            // An inline body is call-site code: it runs on the caller's own
-            // resources and leaves the caller whatever it did not consume.
-            // There is no contract boundary to transfer across. Under stable
-            // views that includes the caller's loan ledger: the body's stores
-            // are checked against the caller's active loans, its own view
-            // clauses lend nothing, and any call it makes plans from and
-            // recovers to the caller's ledger, whose evidence the path keeps.
-            let callee_state = callee_state.with_resource_context(caller_state.resources().clone());
-            let previous_inline_call = budget.inline_call_name.replace(function.name().to_string());
-            let body_paths = execute_program_function_body_paths(
-                &callee_state,
-                function,
-                &body_assumptions,
-                execution_context,
-                budget,
-            );
-            budget.inline_call_name = previous_inline_call;
-            for body_path in body_paths? {
-                let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
-                    &arguments_path.facts,
-                    &argument_obligations,
-                    &body_path.facts,
-                    &body_path.obligations,
-                    assumptions,
-                ) else {
-                    continue;
-                };
-                let return_assumptions =
-                    assumptions_with_path_context(assumptions, &facts, &obligations);
-                let (outcome, obligations) = function_outcome_from_body(
-                    caller_state,
-                    function,
-                    complete_void_fallthrough(function, body_path.outcome),
-                    obligations,
-                    &return_assumptions,
-                    None,
-                );
-                let mut outcome = outcome;
-                refresh_returned_local_bindings_from_stores(
-                    &mut outcome,
-                    &facts,
-                    &return_assumptions,
-                );
-                paths.push(FunctionPath {
-                    call_parameters: None,
-                    outcome,
-                    facts,
-                    obligations,
-                    loan_evidence: body_path.loan_evidence,
-                });
-            }
-            continue;
-        }
-        let resource_transfer = match prepare_function_resource_transfer(
-            caller_state,
-            &callee_state,
-            function,
-            &body_assumptions,
-            budget,
-            false,
-            ResourceTransitionPurpose::CallSite,
-        )? {
-            Ok(resource_transfer) => resource_transfer,
-            Err(error) => {
-                paths.push(FunctionPath::new(
-                    FunctionOutcome::RuntimeError(error),
-                    arguments_path.facts,
-                    argument_obligations,
-                ));
-                continue;
-            }
-        };
-        let callee_state = callee_state_with_resource_transfer(callee_state, &resource_transfer);
-        for body_path in execute_program_function_body_paths(
+        // An inline body is call-site code: it runs on the caller's own
+        // resources and leaves the caller whatever it did not consume.
+        // There is no contract boundary to transfer across. Under stable
+        // views that includes the caller's loan ledger: the body's stores
+        // are checked against the caller's active loans, its own view
+        // clauses lend nothing, and any call it makes plans from and
+        // recovers to the caller's ledger, whose evidence the path keeps.
+        let callee_state = callee_state.with_resource_context(caller_state.resources().clone());
+        let previous_inline_call = budget.inline_call_name.replace(function.name().to_string());
+        let body_paths = execute_program_function_body_paths(
             &callee_state,
             function,
             &body_assumptions,
             execution_context,
             budget,
-        )? {
+        );
+        budget.inline_call_name = previous_inline_call;
+        for body_path in body_paths? {
             let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                 &arguments_path.facts,
                 &argument_obligations,
@@ -2402,19 +2337,14 @@ pub(super) fn execute_program_function_call_paths(
             };
             let return_assumptions =
                 assumptions_with_path_context(assumptions, &facts, &obligations);
-            let (outcome, obligations, loan_evidence) =
-                function_outcome_from_body_with_resource_transfer(
-                    caller_state,
-                    function,
-                    body_path.outcome,
-                    obligations,
-                    &return_assumptions,
-                    &resource_transfer,
-                    &argument_values,
-                    true,
-                    budget,
-                )?;
-
+            let (outcome, obligations) = function_outcome_from_body(
+                caller_state,
+                function,
+                complete_void_fallthrough(function, body_path.outcome),
+                obligations,
+                &return_assumptions,
+                None,
+            );
             let mut outcome = outcome;
             refresh_returned_local_bindings_from_stores(&mut outcome, &facts, &return_assumptions);
             paths.push(FunctionPath {
@@ -2422,10 +2352,7 @@ pub(super) fn execute_program_function_call_paths(
                 outcome,
                 facts,
                 obligations,
-                loan_evidence: append_checked_loan_evidence(
-                    &body_path.loan_evidence,
-                    loan_evidence,
-                ),
+                loan_evidence: body_path.loan_evidence,
             });
         }
     }

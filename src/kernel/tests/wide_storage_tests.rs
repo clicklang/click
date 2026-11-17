@@ -59,7 +59,7 @@ fn wide_storage_exact_typed_store_and_load_preserve_all_bits() {
             ty,
         );
         let theorem = prove_execution_statement_execution(state, statement).unwrap();
-        let Proposition::ProgramStatementExecutes {
+        let Proposition::ProgramStatementVerifies {
             outcome: StatementOutcome::Normal(after),
             ..
         } = theorem.proposition()
@@ -371,7 +371,7 @@ fn wide_storage_external_access_needs_sixteen_bytes_of_authority() {
             ProgramType::UInt128,
         );
         let theorem = prove_execution_statement_execution(write_state, statement).unwrap();
-        let Proposition::ProgramStatementExecutes { outcome, .. } = theorem.proposition() else {
+        let Proposition::ProgramStatementVerifies { outcome, .. } = theorem.proposition() else {
             unreachable!()
         };
         assert_eq!(matches!(outcome, StatementOutcome::Normal(_)), bytes == 16);
