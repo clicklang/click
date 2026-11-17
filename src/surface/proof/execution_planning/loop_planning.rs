@@ -1038,6 +1038,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             })),
             iterations: Some(preservation.iterations().clone()),
             checks: invariant_checks.to_vec(),
+            entry_guard: condition.cloned().map(Arc::new),
             ranking_measures: ranking_measures.to_vec(),
             ranking_surfaces: loop_ranking_surfaces(environment, loop_index),
             structural_measure: structural_measure.map(str::to_string),
@@ -1375,12 +1376,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         let mut leaf = leaf;
         if is_terminal_return_exit || is_early_exit {
             // Nothing is closed on an exit path, so nothing is planned here.
-        } else if has_retained_invariant_body {
-            // A completed body is bound to this exact premise store. Validate
-            // it before skipping preplanning; a source close request alone
-            // is not evidence. Adding further `have`s would stale the body.
-            leaf.validate_loop_invariant_bundle(invariant_checks, ranking_measures)?;
-        } else if region_solve.is_some() {
+        } else if !has_retained_invariant_body && region_solve.is_some() {
             if invariant_surfaces.len() != invariant_checks.len() {
                 return Err(leaf.step_error(
                     "surface invariants do not align with the lowered invariant bundle",
@@ -1434,7 +1430,10 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 )
                 .and_then(|(proof, boundary)| {
                     proof
-                        .certify_loop_invariant_bundle(invariant_checks, ranking_measures)
+                        .certify_loop_invariant_bundle(
+                            invariant_checks,
+                            boundary.required_ranking_measures(ranking_measures),
+                        )
                         .map(|proof| (proof, Some(boundary)))
                 })
                 .map_err(|error| {
