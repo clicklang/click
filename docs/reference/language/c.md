@@ -3007,10 +3007,16 @@ These are not general C features yet:
   multidimensional file-scope and function-local static scalar arrays,
   file-scope globals with compatible `extern` declarations, and basic ASCII
   read-only string literals are documented above
-- `switch` case labels require integer or character literals, labels
-  must be direct children of the switch compound body, and duplicate labels are
-  rejected; arbitrary constant expressions and nested switch labels remain
-  unsupported. The narrow direct forward-`goto` and natural-cycle slices
+- `switch` supports selectors promoted to `int32` or `uint32`: narrow integer
+  and boolean selectors promote to `int`, while `unsigned int` and compatible
+  enums retain their unsigned type. Integer constant expressions in case labels
+  are represented as 32-bit patterns and compared in that promoted type, so
+  `case -1` matches `UINT_MAX` for an unsigned selector. See
+  `mdtests/c_switch.md`, `mdtests/c_unsigned_switch.md`, and
+  `mdtests/c_unsigned_switch_negative_label.md`. Labels must be direct
+  children of the switch compound body, and duplicate converted labels are
+  rejected. Wider selectors, case constants outside the supported 32-bit range,
+  and labels nested in another statement remain unsupported. The narrow direct forward-`goto` and natural-cycle slices
   documented above do not extend switch lowering
 - calls in conditional-expression branches are lowered through a lazy statement-level
   `if`; multiple calls, or a call combined with a potentially aliased mutable
