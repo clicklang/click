@@ -88,9 +88,10 @@ fn unsupported_admission_resumes_once_and_retains_occurrences() {
 }
 
 #[test]
-fn cold_overlap_is_unsupported_until_legacy_discovery_is_requested() {
+fn multi_block_cold_overlap_keeps_its_explicit_compatibility_boundary() {
     let facts = PureFactContext::new();
-    let parent = ResourceContext::new().unchecked_with_fact(owner(at(0), 0, 4));
+    let parent =
+        ResourceContext::new().unchecked_with_facts([owner(at(0), 0, 4), owner(at(1), 0, 4)]);
     let OwnershipAdmission::Unsupported(pending) = parent
         .clone()
         .admit_without_discovery([owner(at(0), 1, 3)], &facts)
@@ -115,7 +116,8 @@ fn unsupported_batches_preserve_conflict_order_and_later_exclusive_checks() {
     // the second conflicts with an exclusive resource the parent holds.
     let parent = ResourceContext::new()
         .unchecked_with_fact(owner(at(0), 0, 4))
-        .unchecked_with_fact(guard());
+        .unchecked_with_fact(guard())
+        .unchecked_with_fact(owner(at(1), 0, 4));
     for (start, end, overlap) in [(1, 3, true), (4, 8, false)] {
         let OwnershipAdmission::Unsupported(pending) = parent
             .clone()

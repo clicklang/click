@@ -706,7 +706,7 @@ fn checked_member_events_exchange_private_memory_and_reject_duplicate_birth() {
         &ResourceContext::new().unchecked_with_fact(member.clone()),
         &member,
         std::slice::from_ref(definition),
-        one.memory(),
+        &one.program_point(),
         facts.assumptions(),
     )
     .unwrap();

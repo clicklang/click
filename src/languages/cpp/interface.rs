@@ -17,13 +17,27 @@ pub(super) fn prepare(
     dispatches: &BTreeMap<String, String>,
     receiver_calls: &BTreeMap<String, Vec<(String, Option<String>)>>,
 ) -> Result<PreparedExecution, String> {
+    let shared_layouts = std::sync::Arc::new(layouts.clone());
     let mut functions = prepare_functions(import, selected, reachable, &layouts)?
         .into_iter()
-        .map(|function| match receiver_calls.get(function.name()) {
-            Some(calls) => function.with_receiver_calls(calls.clone()),
-            None => function,
+        .map(|mut function| {
+            crate::instrumentation::record_deterministic_work(1);
+            function.prepared_record_layouts = shared_layouts.clone();
+            match receiver_calls.get(function.name()) {
+                Some(calls) => function.with_receiver_calls(calls.clone()),
+                None => function,
+            }
         })
         .collect::<Vec<_>>();
+    if import.export().uses_ios_failure_factory() {
+        functions.push(crate::languages::interface::ImportedFunction::external(
+            InterfaceType::Parameter(crate::kernel::TypeParameterName::intern(
+                "std::ios_base::failure",
+            )),
+            super::standard_library::IOS_FAILURE_FACTORY.to_string(),
+            Vec::new(),
+        ));
+    }
     // A call through a reference to a class another derives from, to its
     // method that overrides another, names a dispatch with the method's
     // interface. Its contract is the sidecar's, or the method's.
@@ -490,13 +504,13 @@ fn function_interface(
                 carried_name.clone(),
                 function_pointer_signature(&parameter.value_type)?,
             )),
-            CppType::Pointer { pointee } if Scalar::pointer_element(pointee, false).is_some() =>
+            CppType::Pointer { pointee } if Scalar::pointer_element(pointee, true).is_some() =>
             {
                 Ok(crate::languages::interface::ImportedParameter::new(
-                    Scalar::pointer_element(pointee, false).unwrap().kind.pointer_proof_type().unwrap(),
+                    Scalar::pointer_element(pointee, true).unwrap().kind.pointer_proof_type().unwrap(),
                     carried_name.clone(),
                     None,
-                ))
+                ).with_pointee_constant(super::scalar::returns_constant_element(&parameter.value_type)))
             }
             _ => Err(format!(
                 "C++ declaration `{}` parameter `{}` is outside the supported bool/reference/pointer/record interface",
@@ -536,7 +550,7 @@ fn function_interface(
             .with_struct_return(name.clone(), layout.clone())
             .with_aggregate_return_mode(lowered.contract_interface().aggregate_return_mode());
     }
-    Ok(interface)
+    Ok(interface.with_nonthrowing_contract(source.declared_noexcept))
 }
 
 /// The signature of a function-pointer type in proof types, as a C
@@ -554,11 +568,12 @@ pub(super) fn function_pointer_signature(
     };
     let proof_type = |value_type: &CppType| match value_type {
         CppType::Void => Some(InterfaceType::Void),
-        CppType::Pointer { pointee } => Scalar::pointer_element(pointee, false)
+        CppType::Pointer { pointee } => Scalar::pointer_element(pointee, true)
             .and_then(|element| element.kind.pointer_proof_type()),
         _ => Scalar::mutable_kind(value_type).map(ScalarKind::proof_type),
     };
     let unsupported = || "C++ function-pointer type is outside the proof interface".to_string();
+    let return_constant = super::scalar::returns_constant_element(return_type);
     let return_type = proof_type(return_type).ok_or_else(unsupported)?;
     let parameters = parameters
         .iter()
@@ -567,7 +582,11 @@ pub(super) fn function_pointer_signature(
             proof_type(parameter)
                 .filter(|interface_type| *interface_type != InterfaceType::Void)
                 .map(|interface_type| {
-                    crate::languages::interface::CallbackParameter::new(interface_type, None, false)
+                    crate::languages::interface::CallbackParameter::new(
+                        interface_type,
+                        None,
+                        super::scalar::returns_constant_element(parameter),
+                    )
                 })
                 .ok_or_else(unsupported)
         })
@@ -576,6 +595,11 @@ pub(super) fn function_pointer_signature(
         return_type,
         None,
         parameters,
-        false,
+        return_constant,
     ))
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../scaling_tests/languages/cpp/interface/tests.rs");
 }

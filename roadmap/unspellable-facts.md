@@ -559,6 +559,45 @@ differences. The earlier slice records retain their distinct round-trip,
 conversion-domain, exact-state and explicit replay evidence. The closure document
 passed all 44 documentation checks. Nightly was not run.
 
+## Package 10: storage and compatibility cleanup
+
+Authorized initial sequence: 10a–10e, one PR per slice. Inventory baseline:
+`efa44df78`. The package-9 closure table remains the boundary inventory;
+this inventory assigns the storage behind those boundaries. Later slices are
+provisional until their consumers are inspected.
+
+### 10a Storage inventory and completion criteria
+
+| Storage / consumer | Current representation and dependency | Planned slice |
+| --- | --- | --- |
+| `execution_value.rs`: `ExecutionValue` | Native input or one shared root. Producer equality differs from storage equality; no parallel native field is owned by the shared variant. | Preserve throughout. |
+| `StoredExecutionValue::identity`, `StoredIdentity` | A lazy machine observation key already compares machine locals/outcomes without exporting. Boolean, float, algebraic and pointer keys still request a native descriptor. | 10b contracts; 10c machine key cleanup; 10d Boolean; 10e float; 10f–10g algebraic/pointer. |
+| `StoredMemoryValue` | Native structural Eq/Ord/Hash, including cross-type ordering and the exact native hash stream. Numeric cells remain native. This is a different contract from local machine observation identity. | 10i memory-key migration, after family keys. |
+| `SharedMachineIntegerTerm` (`primitives/integer.rs`) | Shared root plus lazy boxed and structural readings, or exact legacy payload. Observation IDs are already the lookup key; explicit native imports may seed the boxed cache. | 10c storage-key users; 10r cache/reverse-bridge removal after remaining readers migrate. |
+| `KernelTerm::TermData` | Shared node key, weak reverse Integer bridge, `MachineLeafCache` and lazy native argument descriptor. Produced calls may borrow their existing application descriptor. | 10r–10s; do not delete a cache before its reference-returning callers migrate. |
+| Boolean `boolean_argument_native` | Raw C variables retain their program type; logical roots use the existing Boolean identity leaf inside a native `BoolCast`. | 10d local/outcome keys; 10s compatibility cache. |
+| Float `float_native_value` | Exports a native float tree into `argument_leaf` for existing storage keys/APIs. Exact literal bits and carrier widths remain significant. | 10e local/outcome keys; 10s compatibility cache. |
+| Algebraic native value and complete pointer descriptors | Native key consumers and metadata/source readings remain. Exact producer payload is distinct from observation equality. | 10f–10h, then 10m. |
+| Integer results, deferred expressions, range endpoints | Native Integer trees remain in result/binding schemas and fold endpoints. | 10k–10l. |
+| Algebraic fields/matches, theorem/recorded bindings, resource fields | Native output schemas still request selected values. | 10m–10o. |
+| Sequence/resource descriptors and proposition outputs | Expression-bearing native fields remain alongside legitimate opaque state/type/function identities. | 10p–10q; subdivide by independent family. |
+
+10b records producer equality, local/outcome storage identity, memory structural
+identity, exact refresh comparison, certification syntax and mathematical
+observation separately. Eq, Ord and Hash must agree within each contract; no
+shared-root shortcut may broaden proof admission. 10c does not claim machine
+local keys are newly shared: it removes their remaining coupling to native-key
+selection. Memory structural keys remain assigned to 10i.
+
+Each family slice must retain existing equality classes, preserve deterministic
+ordering where consumers depend on it, avoid native materialization for supported
+shared key operations, and include mixed native/shared and growing-DAG checks.
+Native APIs, unsupported opaque forms and exact compatibility outputs remain
+explicit until their assigned consumers migrate. Completion of package 10 means
+every duplicate expression payload/cache and remaining native expression field
+has either been removed or accounted for with its live consumer and reason;
+it does not mean erasing memory, allocation, binder or type identities.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential

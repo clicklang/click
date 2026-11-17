@@ -2267,7 +2267,10 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
     // (an open composite still to fold) leaves the
     // body's own context in place.
     if !*resource_transition_applied
-        && matches!(outcome, FunctionOutcome::Return { .. })
+        && matches!(
+            outcome,
+            FunctionOutcome::Return { .. } | FunctionOutcome::Throw { .. }
+        )
         && !crate::kernel::program_function_return_resources_definitionally_established(
             pre_state,
             function,
@@ -2282,7 +2285,12 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
         *pending_resource_transition_error = Some(
             "the body outcome does not establish the contract's returned resources".to_string(),
         );
-    } else if !*resource_transition_applied && matches!(outcome, FunctionOutcome::Return { .. }) {
+    } else if !*resource_transition_applied
+        && matches!(
+            outcome,
+            FunctionOutcome::Return { .. } | FunctionOutcome::Throw { .. }
+        )
+    {
         match required_outcome(outcome_proof)?.apply_outcome_contract_resources(pre_state, function)
         {
             Ok(transitioned) => {
@@ -2458,9 +2466,6 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
             }
         }
         if !direct_resource_claims.is_empty() {
-            let FunctionOutcome::Return { .. } = &outcome else {
-                unreachable!("gated on a return outcome above");
-            };
             for (claim_index, _, _) in &direct_resource_claims {
                 let claim_label = function_claim_label(function_block, &claims[*claim_index]);
                 let checked = required_outcome(outcome_proof)?.check_outcome_resource_claim(completed_execution, claims[*claim_index]).map_err(|error| {
@@ -3797,7 +3802,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         // context. A body that still has to fold an open composite
                         // does not satisfy the guard here; the closing `solve` runs
                         // the same transition once that fold has happened.
-                        if matches!(outcome, FunctionOutcome::Return { .. })
+                        if matches!(outcome, FunctionOutcome::Return { .. } | FunctionOutcome::Throw { .. })
                             && crate::kernel::program_function_return_resources_definitionally_established(
                                 pre_state,
                                 function,
@@ -4264,7 +4269,11 @@ pub(super) fn finish_ordered_proof<'a>(
                                     .as_ref()
                                     .is_some_and(|opened| opened.introduces_scope)
                                     && !resource_transition_applied
-                                    && matches!(outcome, FunctionOutcome::Return { .. })
+                                    && matches!(
+                                        outcome,
+                                        FunctionOutcome::Return { .. }
+                                            | FunctionOutcome::Throw { .. }
+                                    )
                                     && claims.iter().enumerate().any(|(index, claim)| {
                                         !closures[index].is_closed()
                                             && matches!(
@@ -4560,7 +4569,11 @@ pub(super) fn finish_ordered_proof<'a>(
                                 if is_known
                                     && !resource_transition_applied
                                     && !known_transition_attempted
-                                    && matches!(outcome, FunctionOutcome::Return { .. })
+                                    && matches!(
+                                        outcome,
+                                        FunctionOutcome::Return { .. }
+                                            | FunctionOutcome::Throw { .. }
+                                    )
                                     && claims.iter().enumerate().any(|(index, claim)| {
                                         let clause = claim.clause();
                                         !closures[index].is_closed()

@@ -1579,3 +1579,41 @@ fn ordinary_contracts_cannot_call_independent_termination_adapters() {
         .is_ok()
     );
 }
+
+#[test]
+fn constructed_returns_and_selected_backings_cannot_restore_discovery() {
+    for (path, source) in [
+        (
+            "src/kernel/functions/mixed_return_resources.rs",
+            "fn build(c:C) { c.normalized(facts); }",
+        ),
+        (
+            "src/kernel/functions.rs",
+            "fn recover_candidate_stable_view_resources(c:C) { c.permitted_descriptions(loan); }",
+        ),
+        (
+            "src/kernel/functions/return_loan_backing.rs",
+            "fn select(c:C) { c.stable_views(); }",
+        ),
+        (
+            "src/kernel/functions/return_loan_backing.rs",
+            "fn select(c:C) { c.exact_pointer_aliases(p); }",
+        ),
+        (
+            "src/kernel/functions.rs",
+            "fn recover_candidate_stable_view_resources(c:C) { c.view_occurrences_for_fact(required, facts); }",
+        ),
+    ] {
+        assert!(
+            boundary::check_source(path, source).is_err(),
+            "accepted {source}"
+        );
+    }
+    assert!(
+        boundary::check_source(
+            "src/kernel/functions/mixed_return_resources.rs",
+            "fn build(c:C) { c.normalized_without_discovery(facts); }"
+        )
+        .is_ok()
+    );
+}

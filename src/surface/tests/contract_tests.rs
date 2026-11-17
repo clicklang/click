@@ -572,7 +572,7 @@ fn exceptional_contract_bindings_are_family_specific() {
                     exceptional ensures exception == 7;
                 }
             "#,
-            "requires `throws int32`",
+            "requires `throws`",
         ),
         (
             r#"
@@ -599,7 +599,7 @@ fn exceptional_contract_bindings_are_family_specific() {
                     ensures result == x;
                 }
             "#,
-            "payload type must be `int32`",
+            "exceptional payload",
         ),
         (
             r#"
@@ -610,7 +610,7 @@ fn exceptional_contract_bindings_are_family_specific() {
                     exceptional ensures exception == 7;
                 }
             "#,
-            "with resources or mutable effects",
+            "not resource transitions",
         ),
     ] {
         let error = verify_c_sources(source, &[("identity.c", c_source)])

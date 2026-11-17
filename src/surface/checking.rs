@@ -165,24 +165,24 @@ pub(super) fn prove_ensure_resource<'e>(
                 "resource claim has no checked execution path",
             ));
         }
-        let FunctionOutcome::Return {
-            value: result,
-            state: post_state,
-        } = outcome
-        else {
-            return Err(ClickError::new(format!(
-                "`{claim_label}` failed on path {path_index}: {}\n{}",
-                describe_function_outcome(outcome, parameter_binding),
-                describe_proof_context(
-                    &available_pure_facts
-                        .propositions()
-                        .cloned()
-                        .collect::<Vec<_>>(),
-                    pre_state.resources().facts(),
-                    parameter_binding,
-                    &execution_pure_facts()
-                )
-            )));
+        let (result, post_state) = match outcome {
+            FunctionOutcome::Return { value, state } => (value, state),
+            FunctionOutcome::Throw { value, state } if borrowed => (value, state),
+            _ => {
+                return Err(ClickError::new(format!(
+                    "`{claim_label}` failed on path {path_index}: {}\n{}",
+                    describe_function_outcome(outcome, parameter_binding),
+                    describe_proof_context(
+                        &available_pure_facts
+                            .propositions()
+                            .cloned()
+                            .collect::<Vec<_>>(),
+                        pre_state.resources().facts(),
+                        parameter_binding,
+                        &execution_pure_facts()
+                    )
+                )));
+            }
         };
         if guard_deferred {
             return Ok(CheckedResourceClaim::deferred(
