@@ -108,7 +108,7 @@ use crate::kernel::loans::LoanLedger;
 fn aggregate_copy_builds_one_loan_obligation_without_visiting_aliases_or_loans() {
     let _session = VerificationSession::enter();
     let (state, source, layout) = fixture(2);
-    let target = Memory::local_pointer("destination");
+    let target = SymbolicMemory::local_pointer("destination");
     let state = state.clone().with_memory(
         state
             .memory
