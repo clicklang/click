@@ -40,6 +40,17 @@ retains the reason directly as `TestFalse` or `Break`. Sequences, scopes and
 switches preserve a test exit; only its loop consumes it. Test temporaries end
 on either decision before its outcome is published.
 
+Preservation proofs use the frontier's typed exit reason before planning a
+bundle. Normal body completion retains its rebound state, the condition's
+feasible decisions, and the exit representation as `LoopBoundary`. Generated and
+written preservation proofs consume this same result. Compatible exits use
+the invariant-head summary. An established false-guard exit with a distinct
+resource partition retains its own state; a feasible continuing edge with
+different ownership is an error, never an exit signal. Bundle closure adds
+proof facts without repeating the rebound or ownership comparison.
+Preselecting a pure guard is a premise rather than a source transition, so it
+records the selected body's entry, not fabricated test-entry/exit states.
+
 Checked concrete loop entry records a structural `LoopEntry` event and explicit
 `continue` and `break` destinations. The event retains the entered source pass;
 it needs neither a `Skip` theorem nor a rewritten post-test loop. Each keeps

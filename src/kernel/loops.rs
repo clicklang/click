@@ -1689,31 +1689,54 @@ fn check_loop_guard_custody(
     Ok(())
 }
 
-/// Whether a post-body loop condition still has a feasible true path.
-///
-/// This is deliberately conservative for non-value condition outcomes: an
-/// unresolved condition is treated as potentially continuing, so callers do
-/// not export a state-changing body path as a final exit accidentally.
-pub(crate) fn loop_condition_may_continue(
+/// Feasible decisions at a loop head, independent of its ownership join.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LoopConditionFeasibility {
+    Unreachable,
+    TrueOnly,
+    FalseOnly,
+    Both,
+}
+
+impl LoopConditionFeasibility {
+    fn from_possible_outcomes(may_continue: bool, may_exit: bool) -> Self {
+        match (may_continue, may_exit) {
+            (false, false) => Self::Unreachable,
+            (true, false) => Self::TrueOnly,
+            (false, true) => Self::FalseOnly,
+            (true, true) => Self::Both,
+        }
+    }
+
+    pub(crate) fn may_continue(self) -> bool {
+        matches!(self, Self::TrueOnly | Self::Both)
+    }
+
+    pub(crate) fn may_exit(self) -> bool {
+        matches!(self, Self::FalseOnly | Self::Both)
+    }
+}
+
+/// Classify the selected condition once; an unresolved evaluation remains
+/// conservative and cannot itself certify an exit.
+pub(crate) fn classify_loop_condition(
     state: &ExecutionState,
     condition: &ProgramExpression,
     assumptions: &PureFactContext,
-) -> Result<bool, String> {
-    loop_condition_feasibility(state, condition, assumptions)
-        .map(|(may_continue, _)| may_continue)
-        .map_err(|limit| {
-            format!(
-                "could not classify the loop condition: it stopped at {}",
-                limit.describe()
-            )
-        })
+) -> Result<LoopConditionFeasibility, String> {
+    loop_condition_feasibility(state, condition, assumptions).map_err(|limit| {
+        format!(
+            "could not classify the loop condition: it stopped at {}",
+            limit.describe()
+        )
+    })
 }
 
 fn loop_condition_feasibility(
     state: &ExecutionState,
     condition: &ProgramExpression,
     assumptions: &PureFactContext,
-) -> ExecutionResult<(bool, bool)> {
+) -> ExecutionResult<LoopConditionFeasibility> {
     let mut budget = ExecutionBudget::beside_live_state().with_program_expression_cost(condition);
     let expression_paths =
         evaluate_program_condition_paths(state, condition, assumptions, &mut budget)?;
@@ -1741,7 +1764,10 @@ fn loop_condition_feasibility(
             }
         }
     }
-    Ok((may_continue, may_exit))
+    Ok(LoopConditionFeasibility::from_possible_outcomes(
+        may_continue,
+        may_exit,
+    ))
 }
 
 fn condition_path_is_ruled_out(
@@ -4318,11 +4344,13 @@ fn execute_program_loop_exit_paths(
         .map(ExecutionPureFact::new)
         .collect::<Vec<_>>();
 
-    let (initial_may_continue, initial_may_exit) = match condition {
-        None => (true, false),
-        Some(_) if final_exit_candidates.is_empty() => (true, true),
+    let initial_test = match condition {
+        None => LoopConditionFeasibility::TrueOnly,
+        Some(_) if final_exit_candidates.is_empty() => LoopConditionFeasibility::Both,
         Some(condition) => loop_condition_feasibility(state, condition, assumptions)?,
     };
+    let initial_may_continue = initial_test.may_continue();
+    let initial_may_exit = initial_test.may_exit();
     let mut paths = Vec::new();
     paths.append(&mut final_exit_paths);
     // Every `return` a checked preservation proof reached is one more way

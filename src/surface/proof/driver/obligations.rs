@@ -1010,7 +1010,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     }
 
     /// Prepare complete back-edge lowering evidence for the loop planner.
-    /// `None` denotes a checked do-while exit with no continuing back edge.
+    /// Return the checked boundary with the proof that closes its bundle.
     ///
     /// An exact completed closure body supplies both value and safety
     /// evidence. Automatic preservation plans that body through checked
@@ -1028,9 +1028,9 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         invariant_surfaces: &[ClickProposition],
         binders: &[crate::kernel::LoopBinder],
         composite_resource_definitions: &[CompositeResourceDefinition],
-    ) -> Result<Option<Proof<'a>>, ClickError> {
+    ) -> Result<(Proof<'a>, LoopBoundary), ClickError> {
         let driver_proof = self.proof;
-        driver_proof.check_loop_state_join(
+        let boundary = driver_proof.check_loop_boundary(
             loop_entry_state,
             loop_head_state,
             head_iterations,
@@ -1068,7 +1068,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 .apply_close_invariants_body(&[ProofTactic::Solve])?
         };
         proof.validate_loop_invariant_bundle(invariant_checks, ranking_measures)?;
-        Ok(Some(proof))
+        Ok((proof, boundary))
     }
 }
 

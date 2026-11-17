@@ -566,7 +566,7 @@ fn final_iteration_condition_can_use_the_pre_body_bound() {
         );
 
     assert!(
-        !loop_condition_may_continue(
+        !classify_loop_condition(
             &state,
             &crate::kernel::program_expression::less_than(
                 crate::kernel::program_expression::variable("i"),
@@ -575,6 +575,7 @@ fn final_iteration_condition_can_use_the_pre_body_bound() {
             &assumptions,
         )
         .expect("condition classification should stay within its expression budget")
+        .may_continue()
     );
 }
 

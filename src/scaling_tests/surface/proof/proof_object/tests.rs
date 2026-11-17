@@ -733,7 +733,7 @@ fn explicit_loop_have_checks_complete_invariant_bundle() {
             .unwrap();
         assert!(explicit.facts().contains(&body_kernel));
         assert!(joined.certify_loop_invariant_bundle(&checks, &[]).is_err());
-        let prepared = joined
+        let (prepared, _) = joined
             .driver()
             .prepare_loop_invariant_bundle(
                 &ExecutionState::new(),
@@ -747,7 +747,6 @@ fn explicit_loop_have_checks_complete_invariant_bundle() {
                 &[],
                 &[],
             )
-            .unwrap()
             .unwrap();
         let certified = prepared
             .certify_loop_invariant_bundle(&checks, &[])

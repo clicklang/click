@@ -160,3 +160,27 @@ fn iteration_phase_work_tracks_its_test_preparation() {
         );
     }
 }
+
+#[test]
+fn loop_guard_classification_ignores_unrelated_locals_and_tracks_its_expression() {
+    let mut baseline = None;
+    for size in [4_usize, 16, 64, 256] {
+        let state = (0..size).fold(
+            ExecutionState::new().with_local("gate", int32(1)),
+            |state, index| state.with_local(format!("unused_{index}"), int32(index as u32)),
+        );
+        let (decision, work) = crate::instrumentation::measure_deterministic_work(|| {
+            classify_loop_condition(&state, &variable("gate"), &PureFactContext::new()).unwrap()
+        });
+        assert_eq!(decision, LoopConditionFeasibility::TrueOnly);
+        let base = *baseline.get_or_insert(work);
+        assert!(work <= base + 8, "{size} locals: {work}, baseline {base}");
+        let expression = (0..size).fold(variable("gate"), |left, _| add(left, int32_literal(0)));
+        let (decision, work) = crate::instrumentation::measure_deterministic_work(|| {
+            classify_loop_condition(&state, &expression, &PureFactContext::new()).unwrap()
+        });
+        assert_eq!(decision, LoopConditionFeasibility::TrueOnly);
+        assert!(work >= size, "each selected operand is charged");
+        assert!(work <= base + 100 * size, "{size} operands: {work}");
+    }
+}

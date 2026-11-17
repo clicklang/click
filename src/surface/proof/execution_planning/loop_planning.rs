@@ -1397,26 +1397,27 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 leaf = proved.join()?;
             }
         }
-        let checked = if is_terminal_return_exit || is_early_exit {
-            leaf.clone()
+        let (checked, boundary) = if is_terminal_return_exit || is_early_exit {
+            (leaf.clone(), None)
         } else if invariant_checks.is_empty()
             && ranking_measures.is_empty()
             && structural_measure.is_none()
         {
-            leaf.check_loop_state_join(
-                preservation.loop_entry_state(),
-                preservation.state(),
-                preservation.iterations(),
-                condition,
-                &[],
-                preservation.binders(),
-                structural_measure,
-                environment.function.composite_resource_definitions(),
-            )
-            .map_err(|error| {
-                error.with_context(format!("`{claim_label}` (loop {loop_index} state join)"))
-            })?;
-            leaf.clone()
+            let boundary = leaf
+                .check_loop_boundary(
+                    preservation.loop_entry_state(),
+                    preservation.state(),
+                    preservation.iterations(),
+                    condition,
+                    &[],
+                    preservation.binders(),
+                    structural_measure,
+                    environment.function.composite_resource_definitions(),
+                )
+                .map_err(|error| {
+                    error.with_context(format!("`{claim_label}` (loop {loop_index} state join)"))
+                })?;
+            (leaf.clone(), Some(boundary))
         } else {
             leaf.driver()
                 .prepare_loop_invariant_bundle(
@@ -1431,12 +1432,10 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                     preservation.binders(),
                     environment.function.composite_resource_definitions(),
                 )
-                .and_then(|prepared| match prepared {
-                    Some(proof) => {
-                        proof.certify_loop_invariant_bundle(invariant_checks, ranking_measures)
-                    }
-                    // A do-while exit has no continuing back edge to certify.
-                    None => Ok(leaf.clone()),
+                .and_then(|(proof, boundary)| {
+                    proof
+                        .certify_loop_invariant_bundle(invariant_checks, ranking_measures)
+                        .map(|proof| (proof, Some(boundary)))
                 })
                 .map_err(|error| {
                     let error = error.with_context(format!(
@@ -1596,53 +1595,26 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             if seen_early_exits.is_new(exit.state(), exit.pure_facts(), &early_exits, &exit) {
                 early_exits.push(exit);
             }
-        } else {
-            // The body must return to the head it started from, which carries
-            // the loop's own resource context when the loop declares one.
+        } else if let Some(exit_state) = boundary
+            .as_ref()
+            .and_then(LoopBoundary::explicit_exit_state)
+        {
+            // This classified false-guard exit needs its own state; a
+            // head-compatible exit already has the invariant-head summary.
+            // A feasible continuing edge with different ownership was refused
+            // by the producer rather than reinterpreted as an exit.
             let join_assumptions = checked.back_edge_assumptions(&checked_execution);
-            let rebound = crate::kernel::loop_state_with_loop_binders_rebound(
-                preservation.state(),
-                &checked_execution.core.state,
-                preservation.binders(),
-                &join_assumptions,
-            );
-            let back_edge_fails = rebound.as_ref().map_or(true, |rebound| {
-                crate::kernel::loop_binder_state_components_match_at_back_edge(
-                    preservation.state(),
-                    rebound,
-                    preservation.binders(),
-                    &join_assumptions,
-                    environment.function.composite_resource_definitions(),
-                )
-                .is_err()
-            });
-            // A `do ... while` reads its guard after the body, so the state a
-            // body path ends in is the loop's only guard-false exit. Recording
-            // it only when the back edge fails to close exported no exit at
-            // all for a body that does close it, and every claim after the
-            // loop was then vacuous.
-            if back_edge_fails {
-                // The guard-false exit exports the loop's named instances at
-                // their final arguments, just as the checked kernel back edge
-                // does. Keeping a body-local fold name here loses the binder's
-                // model field when the enclosing proof resumes after the loop.
-                // An exit may deliberately consume a declared instance; in that
-                // case keep its actual state, without inventing ownership.
-                let (state, exit_facts) = preservation.restored_exit(
-                    &rebound.unwrap_or_else(|_| (*checked_execution.core.state).clone()),
-                    checked.facts(),
-                    &join_assumptions,
-                );
-                let candidate = LoopFinalExitCandidate::from_store(state, &exit_facts)
-                    .with_loan_evidence(checked_execution.core.loan_evidence().clone());
-                if seen_final_exits.is_new(
-                    candidate.state(),
-                    candidate.pure_facts(),
-                    &final_exit_candidates,
-                    &candidate,
-                ) {
-                    final_exit_candidates.push(candidate);
-                }
+            let (state, exit_facts) =
+                preservation.restored_exit(exit_state, checked.facts(), &join_assumptions);
+            let candidate = LoopFinalExitCandidate::from_store(state, &exit_facts)
+                .with_loan_evidence(checked_execution.core.loan_evidence().clone());
+            if seen_final_exits.is_new(
+                candidate.state(),
+                candidate.pure_facts(),
+                &final_exit_candidates,
+                &candidate,
+            ) {
+                final_exit_candidates.push(candidate);
             }
         }
         let closer_tactics = if is_terminal_return_exit
