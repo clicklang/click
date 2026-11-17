@@ -7383,6 +7383,15 @@ fn closed_bool_literal_comparison_lowering_retains_its_comparison() {
     }
 }
 
+fn bitwise_round_trip_operands(spelling: &str) -> [String; 4] {
+    [
+        format!("z & (7 as {spelling})"),
+        format!("z | (7 as {spelling})"),
+        format!("z ^ (7 as {spelling})"),
+        "~z".into(),
+    ]
+}
+
 #[test]
 fn bitwise_arm_conditionals_round_trip_after_rewrite() {
     use crate::kernel::MachineIntegerType as T;
@@ -7392,8 +7401,8 @@ fn bitwise_arm_conditionals_round_trip_after_rewrite() {
         (T::Int64, "int64"),
         (T::UInt64, "uint64"),
     ] {
-        for op in ["&", "|", "^"] {
-            let equality = format!("x == (z {op} (7 as {spelling}))");
+        for operand in bitwise_round_trip_operands(spelling) {
+            let equality = format!("x == ({operand})");
             for guard in ["flag", "not flag"] {
                 for reverse in [false, true] {
                     check_conditional_round_trip_using_equality(
@@ -7414,8 +7423,8 @@ fn bitwise_guard_conditionals_round_trip_after_rewrite() {
         (T::Int64, "int64"),
         (T::UInt64, "uint64"),
     ] {
-        for op in ["&", "|", "^"] {
-            let equality = format!("x == (z {op} (7 as {spelling}))");
+        for operand in bitwise_round_trip_operands(spelling) {
+            let equality = format!("x == ({operand})");
             for guard in [
                 "x < y", "x <= y", "x > y", "x >= y", "x == y", "x != y", "y < x", "y <= x",
                 "y > x", "y >= x", "y == x", "y != x",
@@ -7453,6 +7462,8 @@ fn intrinsically_decided_bitwise_guards_retain_their_conditionals() {
             format!("(z & (7 as {spelling})) < (100 as {spelling})"),
             format!("(z ^ (7 as {spelling})) == (z ^ (7 as {spelling}))"),
             format!("(z | (7 as {spelling})) < (z | (7 as {spelling}))"),
+            "(~z) == (~z)".into(),
+            "(~z) < (~z)".into(),
         ] {
             let text = format!("to_integer(if {guard} {{ y }} else {{ 3 as {spelling} }}) <= 100");
             let file = parser::parse(&format!(

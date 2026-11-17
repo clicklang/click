@@ -247,16 +247,30 @@ fn bitwise_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                 arithmetic =
                     KernelTerm::machine_binary_shared(format, O::Add, [arithmetic, literal(1)]);
             }
-            let cases = [O::BitwiseAnd, O::BitwiseOr, O::BitwiseXor].map(|op| {
+            let binary_cases = [O::BitwiseAnd, O::BitwiseOr, O::BitwiseXor].map(|op| {
                 (
                     KernelTerm::machine_binary_shared(format, op, [variable.clone(), literal(7)]),
                     KernelTerm::machine_binary_shared(format, op, [arithmetic.clone(), literal(7)]),
                     KernelTerm::machine_binary_shared(format, op, [literal(7), arithmetic.clone()]),
                 )
             });
+            let complement = |child| {
+                KernelTerm::machine_unary_shared(
+                    format,
+                    crate::kernel::MachineUnaryOp::BitwiseNot,
+                    child,
+                )
+            };
+            let unary_case = (
+                complement(variable.clone()),
+                complement(arithmetic.clone()),
+                complement(complement(variable.clone())),
+            );
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                for (hit, left_miss, right_miss) in &cases {
+                for (hit, left_miss, right_miss) in
+                    binary_cases.iter().chain(std::iter::once(&unary_case))
+                {
                     for operands in [
                         [V::Shared(hit), V::Shared(&other)],
                         [V::Shared(&other), V::Shared(hit)],
