@@ -210,6 +210,47 @@ fn mask_bound(a: &IntegerTerm, b: &IntegerTerm, available: &impl Fn(&Proposition
     false
 }
 
+fn bool_arm(
+    value: &ConditionTerm,
+    matches_arm: impl Fn(&ConditionTerm) -> bool,
+    available: &impl Fn(&Proposition) -> bool,
+) -> bool {
+    let ConditionTerm::BoolIf {
+        condition,
+        then_condition,
+        else_condition,
+    } = value
+    else {
+        return false;
+    };
+    [(true, then_condition), (false, else_condition)]
+        .into_iter()
+        .any(|(polarity, arm)| {
+            holds(&condition.truth_claim(polarity), available) && matches_arm(arm)
+        })
+}
+
+fn algebraic_arm(
+    value: &AlgebraicTerm,
+    other: &AlgebraicTerm,
+    available: &impl Fn(&Proposition) -> bool,
+) -> bool {
+    let AlgebraicTermNode::If {
+        condition,
+        then_term,
+        else_term,
+    } = &value.node
+    else {
+        return false;
+    };
+    value.algebraic_type == other.algebraic_type
+        && [(true, then_term), (false, else_term)]
+            .into_iter()
+            .any(|(polarity, arm)| {
+                arm.as_ref() == other && holds(&condition.truth_claim(polarity), available)
+            })
+}
+
 pub(crate) fn known_bridge_leaf(
     goal: &Proposition,
     available: &impl Fn(&Proposition) -> bool,
@@ -221,6 +262,21 @@ pub(crate) fn known_bridge_leaf(
         }
         Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a, b), true) => {
             mask_bound(a, b, available)
+        }
+        Proposition::ConditionIs(ConditionTerm::BoolEqual(a, b), true) => {
+            bool_arm(a, |arm| arm == b.as_ref(), available)
+                || bool_arm(b, |arm| arm == a.as_ref(), available)
+        }
+        Proposition::ConditionIs(condition @ ConditionTerm::BoolIf { .. }, truth) => bool_arm(
+            condition,
+            |arm| holds(&arm.truth_claim(*truth), available),
+            available,
+        ),
+        Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => {
+            algebraic_arm(a, b, available) || algebraic_arm(b, a, available)
+        }
+        Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(a, b), true) => {
+            algebraic_arm(a, b, available) || algebraic_arm(b, a, available)
         }
         _ => crate::kernel::proof::arithmetic_special::finite_float_reflexivity_premise(goal)
             .is_some_and(|premise| holds(&premise, available)),

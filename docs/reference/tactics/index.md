@@ -2245,6 +2245,13 @@ Binders and historical point expressions keep their scope and are not traversed.
 Arithmetic after selection uses ordinary emitters. Omitted guards remain
 unavailable to restricted solve, even when present in the ambient context.
 See [`nested_conditional_explicit_arm_equations.md`](https://github.com/clicklang/click/blob/master/mdtests/nested_conditional_explicit_arm_equations.md).
+Boolean and constructor-valued conditionals use the same arm equations.
+For example, from `flag == true`, `known()` proves
+`(if flag { Some(x) } else { None }) == Some(x)`. Nested selections expose
+one arm at a time and retain each proof as an explicit rewrite. A Boolean
+comparison with a literal can also use the selected arm's exact truth fact.
+See [the explicit arm proofs](https://github.com/clicklang/click/blob/master/mdtests/non_numeric_conditional_arm_equations.md).
+
 Scalar signed interval claims, operation bounds, and narrowed casts expand
 through selected Integer and machine-observation proofs, without `normalize()`.
 Their intermediate facts replay with implicit solving disabled. Widened unsigned

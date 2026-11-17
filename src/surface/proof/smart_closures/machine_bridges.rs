@@ -670,6 +670,9 @@ pub(super) fn conditional_candidates<'s>(
                 pending.push((b, mathematical, depth + 1));
                 pending.push((a, mathematical, depth + 1));
             }
+            E::AlgebraicConstructor { arguments, .. } => {
+                pending.extend(arguments.iter().rev().map(|arg| (arg, false, depth + 1)));
+            }
             E::Call { name, arguments } => {
                 let mathematical = matches!(
                     name.rsplit("::").next(),
@@ -688,6 +691,22 @@ pub(super) fn conditional_candidates<'s>(
     Ok(result)
 }
 
+pub(super) fn non_numeric_conditional_goal(goal: &Proposition) -> bool {
+    let goal = match goal {
+        Proposition::Not(body) => body.as_ref(),
+        _ => goal,
+    };
+    matches!(
+        goal,
+        Proposition::ConditionIs(
+            ConditionTerm::BoolEqual(..)
+                | ConditionTerm::BoolIf { .. }
+                | ConditionTerm::AlgebraicEqual(..),
+            _
+        ) | Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
+    )
+}
+
 // Branch selection emits local equations and rewrites. Arithmetic after
 // those rewrites remains in the existing ordinary proof emitters.
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
@@ -702,6 +721,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         let mathematical = integer_affine_claim(goal).is_some();
         if !mathematical
+            && !non_numeric_conditional_goal(goal)
             && !crate::kernel::machine_integer::comparison::integer_readings_with_promotions(goal)
                 .iter()
                 .any(|reading| integer_affine_claim(reading).is_some())
@@ -1061,5 +1081,89 @@ mod nested_conditional_tests {
         }"#;
         crate::surface::parse(source).unwrap();
         assert!(verify_c_sources(source, &[]).is_err());
+    }
+}
+
+#[cfg(test)]
+#[test]
+#[ignore = "nightly: Boolean and constructor conditional expansion and strict replay"]
+fn non_numeric_conditional_arms_expand_without_normalize() {
+    use crate::surface::{
+        expand_c_claim_source_by_label, verify_c_sources, without_implicit_solve,
+    };
+
+    let prelude =
+        "spec enum Choice { Missing, Present(int32), } spec enum Wrapper { Wrap(Choice), }";
+    for (parameters, premises, goal) in [
+        (
+            "g: Bool, a: Bool, b: Bool",
+            "g == true;",
+            "(if g { a } else { b }) == a",
+        ),
+        (
+            "g: Bool",
+            "g == false;",
+            "(if g { true } else { false }) == false",
+        ),
+        (
+            "g: Bool, a: Bool",
+            "g == true; a == true;",
+            "(if g { a } else { false }) == true",
+        ),
+        (
+            "g: Bool, h: Bool, a: Bool, b: Bool, c: Bool",
+            "g == true; h == false;",
+            "(if g { if h { a } else { b } } else { c }) == b",
+        ),
+        (
+            "g: Bool, x: int32",
+            "g == true;",
+            "(if g { Choice::Present(x) } else { Choice::Missing }) == Choice::Present(x)",
+        ),
+        (
+            "g: Bool, x: int32",
+            "g == false;",
+            "Choice::Missing == (if g { Choice::Present(x) } else { Choice::Missing })",
+        ),
+        (
+            "g: Bool, h: Bool, x: int32, y: int32",
+            "g == true; h == false;",
+            "(if g { if h { Choice::Present(x) } else { Choice::Present(y) } } else { Choice::Missing }) == Choice::Present(y)",
+        ),
+        (
+            "g: Bool, x: int32",
+            "g == true;",
+            "Wrapper::Wrap(if g { Choice::Present(x) } else { Choice::Missing }) == Wrapper::Wrap(Choice::Present(x))",
+        ),
+    ] {
+        let requirements = premises
+            .split(';')
+            .filter(|p| !p.trim().is_empty())
+            .map(|p| format!("requires {};", p.trim()))
+            .collect::<String>();
+        for tactic in [
+            format!("solve() using {{ {premises} }};"),
+            "solve();".into(),
+        ] {
+            let source = format!(
+                "{prelude} theorem selected({parameters}) {{ {requirements} ensures {goal} by {{ {tactic} }} }}"
+            );
+            let expanded = expand_c_claim_source_by_label(&source, &[], "selected.ensures_0")
+                .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
+            assert!(!expanded.contains("normalize("), "{expanded}");
+            assert!(!expanded.contains("solve("), "{expanded}");
+            without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+                .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+        }
+    }
+
+    for claim in [
+        "theorem omitted(g: Bool, a: Bool, b: Bool) { requires g == true; ensures (if g { a } else { b }) == a by { solve() using {}; } }",
+        "theorem omitted(g: Bool, x: int32) { requires g == true; ensures (if g { Choice::Present(x) } else { Choice::Missing }) == Choice::Present(x) by { solve() using {}; } }",
+        "theorem wrong(g: Bool, x: int32) { requires g == true; ensures (if g { Choice::Present(x) } else { Choice::Missing }) == Choice::Missing by known(); }",
+    ] {
+        let source = format!("{prelude} {claim}");
+        crate::surface::parse(&source).expect("conditional refusal should parse");
+        assert!(verify_c_sources(&source, &[]).is_err(), "{source}");
     }
 }

@@ -185,3 +185,81 @@ fn finite_float_reflexivity_uses_one_exact_classification() {
     }
     assert!(costs.windows(2).all(|p| p[1] <= 2 * p[0]), "{costs:?}");
 }
+
+#[test]
+fn non_numeric_arm_equations_use_only_the_written_guard() {
+    let _session = VerificationSession::enter();
+    let guard = ConditionTerm::Variable(Variable(998000));
+    let a = ConditionTerm::Variable(Variable(998001));
+    let b = ConditionTerm::Variable(Variable(998002));
+    let boolean = Proposition::ConditionIs(
+        ConditionTerm::bool_equal(ConditionTerm::bool_if(guard.clone(), a.clone(), b), a),
+        true,
+    );
+    let variants: std::sync::Arc<[AlgebraicVariantType]> = ["A", "B"]
+        .into_iter()
+        .map(|name| AlgebraicVariantType {
+            name: name.into(),
+            fields: vec![],
+        })
+        .collect::<Vec<_>>()
+        .into();
+    let key = AlgebraicValueType::Algebraic {
+        name: "ConditionalTest".into(),
+        arguments: vec![],
+    };
+    let ty = AlgebraicType {
+        rigid: false,
+        name: "ConditionalTest".into(),
+        arguments: vec![],
+        variants: variants.clone(),
+        schemas: std::sync::Arc::new(AlgebraicSchemas::new(std::collections::BTreeMap::from([(
+            key, variants,
+        )]))),
+    };
+    let constructor = |name: &str| AlgebraicTerm {
+        algebraic_type: ty.clone(),
+        node: AlgebraicTermNode::Constructor {
+            variant: name.into(),
+            fields: vec![],
+        },
+    };
+    let a = constructor("A");
+    let algebraic = Proposition::Equal(
+        Term::Algebraic(AlgebraicTerm::if_then_else(
+            guard.clone(),
+            a.clone(),
+            constructor("B"),
+        )),
+        Term::Algebraic(a),
+    );
+    let mut costs = Vec::new();
+    for size in [8, 32, 128, 512] {
+        let unrelated = (0..size)
+            .map(|index| ConditionTerm::Variable(Variable(998100 + index)).truth_claim(true))
+            .collect::<Vec<_>>();
+        let contexts = [None, Some(false), Some(true)].map(|polarity| {
+            let mut premises = unrelated.clone();
+            premises.extend(polarity.map(|polarity| guard.truth_claim(polarity)));
+            (polarity, PureFactStore::from_ordered(&premises))
+        });
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for (polarity, facts) in &contexts {
+                for goal in [&boolean, &algebraic] {
+                    assert_eq!(
+                        known_bridge_leaf(goal, &|premise| {
+                            assert!(
+                                premise == &guard.truth_claim(true)
+                                    || premise == &guard.truth_claim(false)
+                            );
+                            facts.pure_known_available(premise)
+                        }),
+                        *polarity == Some(true),
+                    );
+                }
+            }
+        });
+        costs.push(work);
+    }
+    assert!(costs.windows(2).all(|p| p[1] <= 2 * p[0]), "{costs:?}");
+}

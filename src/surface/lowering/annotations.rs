@@ -547,6 +547,19 @@ fn contract_expression_is_algebraic(
         | ContractExpression::At {
             expression: inner, ..
         } => contract_expression_is_algebraic(inner, functions, environment, lexical_bindings),
+        ContractExpression::If {
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            contract_expression_is_algebraic(then_branch, functions, environment, lexical_bindings)
+                || contract_expression_is_algebraic(
+                    else_branch,
+                    functions,
+                    environment,
+                    lexical_bindings,
+                )
+        }
         ContractExpression::AlgebraicMatch { arms, .. } => arms.first().is_some_and(|arm| {
             contract_expression_is_algebraic(&arm.body, functions, environment, lexical_bindings)
         }),
