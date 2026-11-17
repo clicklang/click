@@ -37,7 +37,7 @@ The external catalog symbols `memcmp` and `strlen` are verified in
 [`strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md`](strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md),
 `memcpy` in
 [`byte_representation_scalar_copy.md`](byte_representation_scalar_copy.md),
-and `memset`'s precondition is checked at a call in
+and `memset`'s fill conversion is checked at a call in
 [`c_builtin_memset_header_checks_its_contract.md`](c_builtin_memset_header_checks_its_contract.md).
 
 The external catalog symbol `__click_constant_p_unknown`, the value of the C

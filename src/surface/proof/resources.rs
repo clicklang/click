@@ -4507,13 +4507,20 @@ fn fold_composite_resources_on_outcome_with_facts(
                     )?);
                     // A witness bound to a semantic value is written as the proof
                     // would name that value here.
-                    let spelling_state =
-                        authority_closing_fact_state
-                            .as_ref()
-                            .unwrap_or(match &outcome {
-                                FunctionOutcome::Return { state, .. } => state,
-                                _ => pre_state,
-                            });
+                    // At a return, the returned value is `result`, as a
+                    // proof after the function exit names it.
+                    let returned_state;
+                    let spelling_state = match (&authority_closing_fact_state, &outcome) {
+                        (Some(state), _) => state,
+                        (None, FunctionOutcome::Return { state, value }) => {
+                            returned_state = state.as_ref().clone().with_local(
+                                crate::kernel::CONTRACT_RESULT,
+                                value.clone().into_native(),
+                            );
+                            &returned_state
+                        }
+                        (None, _) => pre_state,
+                    };
                     for expression in spelling_substitutions.values_mut() {
                         if let ContractExpression::ProgramExpression(ProgramExpression::Value(
                             value,

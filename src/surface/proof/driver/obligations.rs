@@ -603,11 +603,12 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             Ok(attempted) => attempted,
             Err(error) => {
                 let error = describe_invariant_closure_error(error);
+                // The ranking note continues the reason; it is not a prefix.
                 let detail = ranking_member_diagnostic(bundle);
                 let error = if detail.is_empty() {
                     error
                 } else {
-                    error.with_context(detail)
+                    error.with_rewritten_place(|reason| Some(format!("{reason}{detail}")))
                 };
                 return Err(error.with_search_failures(search.finish()));
             }

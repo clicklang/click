@@ -1,6 +1,48 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: negated resource-field expansion and cold replay"]
+fn negated_resource_fields_expand_and_cold_replay() {
+    let sources = [(
+        "probe.c",
+        "struct pair { int start; int end; }; void probe(struct pair *p, int index) {}",
+    )];
+    let source = r#"
+        verifying "probe.c";
+        resource saved(p: struct pair*) {
+            field start: int32;
+            field end: int32;
+            owns *p;
+            fact p->start == start;
+            fact p->end == end;
+        }
+        void probe(struct pair* p, int32 index) {
+            owns r: saved(p);
+            requires 0 <= r.start;
+            requires defined(r.start + index);
+            requires to_integer(r.start + index) < to_integer(r.end);
+        } by {
+            have -to_integer(r.start) == 0 - to_integer(r.start) by { normalize(); }
+            have -(-to_integer(r.start)) == to_integer(r.start) by { normalize(); }
+            let { start: s, end: e } = unfold(r);
+            have to_integer(s + index + 1) <= to_integer(e);
+            let r = fold(saved(p), { start: s, end: e });
+            step();
+            step();
+            solve();
+        }
+    "#;
+    verify_c_sources(source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    // The successor-bound proof also generates negated entry-state field
+    // expressions after `r` has been unfolded. They must elaborate on replay.
+    let expanded = expand_c_claim_source_by_label(source, &sources, "probe.contract").unwrap();
+    without_implicit_solve_for_claim("probe.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 fn computational_solve_expansions_use_known_without_implicit_search() {
     for (parameters, requirement, goal, tactic) in [
         ("x: Integer", "", "x + 1 > x", "solve()"),
@@ -16327,7 +16369,7 @@ int read(int* p) {
 "#;
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_70")]
+#[ignore = "nightly: expansion and recheck took 1.09s in isolation"]
 fn match_arm_closer_anchors_the_case_fact_at_entry_and_reverifies() {
     // The arm's case fact is a statement about the scrutinee at unchanged
     // function entry, but its recorded spelling was the unanchored
@@ -16623,7 +16665,7 @@ int spin(int n) {
 "#;
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_70")]
+#[ignore = "nightly: expansion and recheck took 3.96s in isolation"]
 fn each_smart_have_in_a_loop_initialize_script_expands_on_its_own() {
     // Reduced from the insert fixup loop in `examples/rbtree/rbtree-model`. The
     // per-invariant entry planner was handed the whole phase script as every
@@ -16657,7 +16699,7 @@ fn each_smart_have_in_a_loop_initialize_script_expands_on_its_own() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_70")]
+#[ignore = "nightly: expansion and recheck took 3.55s in isolation"]
 fn a_smart_loop_preserve_phase_tactic_expands_and_reverifies() {
     // `preserve by solve();` is one smart tactic standing for the whole phase,
     // like `initialize by solve();`. Every driver step under it is generated, so
@@ -16682,7 +16724,7 @@ fn a_smart_loop_preserve_phase_tactic_expands_and_reverifies() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_70")]
+#[ignore = "nightly: expansion and recheck took 2.99s in isolation"]
 fn a_helper_have_in_a_loop_initialize_script_is_expanded_once() {
     // The entry planner nested every sibling step inside every invariant's
     // proof, so expanding the closing `solve()` printed the helper once per
@@ -21895,12 +21937,6 @@ test_batches! {
         specification_conditional_branch_is_an_expanded_proof_step,
         integer_quantifiers_substitute_checked_mixed_atoms_and_expand,
         smart_closer_after_a_return_inside_an_open_scope_expands_and_reverifies,
-    ],
-    expansion_batch_70: [
-        match_arm_closer_anchors_the_case_fact_at_entry_and_reverifies,
-        each_smart_have_in_a_loop_initialize_script_expands_on_its_own,
-        a_smart_loop_preserve_phase_tactic_expands_and_reverifies,
-        a_helper_have_in_a_loop_initialize_script_is_expanded_once,
     ],
     expansion_batch_71: [
         loop_initialization_duplicate_clauses_keep_distinct_bodies,

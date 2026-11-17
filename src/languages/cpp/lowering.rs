@@ -291,6 +291,17 @@ fn lower_function(
         _ if matches!(source.return_type, CppType::Record { .. }) => ProgramType::Int32Pointer,
         _ => cpp_return_scalar_type(&source.return_type)?,
     };
+    // Falling off a void function is a return. Keep that semantic exit in
+    // the lowered body, as the C frontend does, so an explicit call-outcome
+    // split has a continuation even when the call is the last source statement.
+    let body = if return_type == ProgramType::Void {
+        program_seq(
+            body,
+            program_return(ProgramExpression::Value(crate::kernel::ProgramValue::Void)),
+        )
+    } else {
+        body
+    };
     let return_constant = scalar::returns_constant_element(&source.return_type);
     let mut function = program_function(
         return_type,
@@ -400,15 +411,16 @@ fn lower_parameter(
         pointer @ CppType::Pointer { .. } if scalar::record_pointee(pointer).is_some() => Ok(
             program_parameter(parameter.name.clone(), ProgramType::Int32Pointer),
         ),
-        CppType::Pointer { pointee } if Scalar::pointer_element(pointee, false).is_some() => {
+        CppType::Pointer { pointee } if Scalar::pointer_element(pointee, true).is_some() => {
             Ok(program_parameter(
                 parameter.name.clone(),
-                Scalar::pointer_element(pointee, false)
+                Scalar::pointer_element(pointee, true)
                     .unwrap()
                     .kind
                     .pointer_kernel_type()
                     .unwrap(),
-            ))
+            )
+            .with_pointee_constant(scalar::returns_constant_element(&parameter.value_type)))
         }
         _ => Err(format!(
             "C++ parameter `{}` is outside native scalar/reference/pointer and trivial record-value lowering",
@@ -846,7 +858,7 @@ impl LoweringContext<'_> {
                             false,
                             false,
                             Scalar::of(&local.value_type).is_some_and(|scalar| scalar.is_const),
-                            false,
+                            scalar::returns_constant_element(&local.value_type),
                         ),
                     ))
                 }
@@ -900,7 +912,7 @@ impl LoweringContext<'_> {
                             false,
                             false,
                             constant,
-                            false,
+                            scalar::returns_constant_element(&local.value_type),
                         ),
                     ))
                 }
@@ -1235,11 +1247,19 @@ impl LoweringContext<'_> {
                 value,
                 ..
             } => {
-                let (pointer, value_type) = self.lower_member_pointer(object, field)?;
+                let (pointer, value_type, pointee_constant) =
+                    self.lower_member_pointer(object, field)?;
                 let evaluation = self.normalize_scalar(ScalarInput::Value(value))?;
                 Ok(evaluate_then(
                     evaluation.prefix,
-                    program_typed_store(pointer, evaluation.value, value_type),
+                    crate::kernel::program_qualified_typed_store(
+                        pointer,
+                        evaluation.value,
+                        value_type,
+                        None,
+                        pointee_constant,
+                        false,
+                    ),
                 ))
             }
             CppStatement::Unreachable { span } => Ok(crate::kernel::program_labeled_assert(
@@ -1291,6 +1311,8 @@ impl LoweringContext<'_> {
             | CppStatement::Return { .. }
             | CppStatement::ReturnCall { .. }
             | CppStatement::Throw { .. }
+            | CppStatement::ThrowIosFailure { .. }
+            | CppStatement::ThrowAggregate { .. }
             | CppStatement::TryCatchInt32 { .. }
             | CppStatement::Scope { .. }
             | CppStatement::If { .. }
@@ -1552,6 +1574,56 @@ impl LoweringContext<'_> {
                     &state.exit(0).collect::<Vec<_>>(),
                     &state.exit(unwind_base).collect::<Vec<_>>(),
                 )
+            }
+            CppStatement::ThrowAggregate {
+                value_type, fields, ..
+            } => {
+                let CppType::Record { name, .. } = value_type else {
+                    unreachable!("checked aggregate exception")
+                };
+                let mut operation = self.lower_throwing_statement(
+                    ProgramStatement::ThrowOpaque(super::names::opaque_exception_type(name)),
+                    state.exit(unwind_base),
+                )?;
+                // Braced aggregate initialization is sequenced left to right.
+                // Discarding an opaque field never discards its reads or UB checks.
+                let initializers = fields
+                    .iter()
+                    .map(|field| self.lower_expression(&field.value))
+                    .collect::<Result<Vec<_>, _>>()?;
+                for expression in initializers.into_iter().rev() {
+                    operation = program_seq(
+                        ProgramStatement::StepValue {
+                            aggregate_layout: None,
+                            steps: Vec::new(),
+                            expression,
+                            value_type: None,
+                            pointee_constant: false,
+                        },
+                        operation,
+                    );
+                }
+                Ok(operation)
+            }
+            CppStatement::ThrowIosFailure { .. } => {
+                let capture = self.fresh_call_capture()?;
+                let payload = ProgramType::Parameter(crate::kernel::TypeParameterName::intern(
+                    "std::ios_base::failure",
+                ));
+                let construction = program_seq(
+                    program_declare(capture.clone(), payload),
+                    self.call_then_assign(
+                        capture.clone(),
+                        super::standard_library::IOS_FAILURE_FACTORY.to_string(),
+                        Vec::new(),
+                    ),
+                );
+                let throw =
+                    ProgramStatement::Throw(crate::kernel::program_expression::variable(capture));
+                Ok(program_seq(
+                    construction,
+                    self.lower_throwing_statement(throw, state.exit(unwind_base))?,
+                ))
             }
             CppStatement::Throw { value, .. } => {
                 let throw = ProgramStatement::Throw(self.lower_expression(value)?);
@@ -2004,6 +2076,10 @@ impl LoweringContext<'_> {
                     input.may_throw,
                 )
             }
+            CppExpression::PointerQualification { value, .. } => {
+                let input = self.normalize_expression(value)?;
+                (input.prefix, input.value, input.may_throw)
+            }
             CppExpression::BytePointerCast { value, .. } => {
                 let input = self.normalize_expression(value)?;
                 (
@@ -2190,6 +2266,35 @@ impl LoweringContext<'_> {
                     let (value_type, _) = self
                         .records
                         .resolve_path(&root.value_type, &place.projections)?;
+                    if matches!(value_type, CppType::Record { .. }) {
+                        // Keep each declared receiver projection, even when a
+                        // zero-offset child's address equals its parent's.
+                        // Expansion follows these explicit edges by index.
+                        let mut address =
+                            crate::kernel::program_expression::variable(self.variable_name(place));
+                        let mut parent = &root.value_type;
+                        for projection in &place.projections {
+                            let (child, offset) = self
+                                .records
+                                .resolve_path(parent, std::iter::once(projection.as_ref()))?;
+                            address = crate::kernel::program_expression::pointer_offset_bytes(
+                                address, offset,
+                            );
+                            if let CppType::Record { name, is_const, .. } = child {
+                                address = ProgramExpression::Cast {
+                                    expression: Box::new(address),
+                                    target_type: ProgramType::Int32Pointer,
+                                    integer_mode: crate::kernel::IntegerCastMode::Standard,
+                                    pointee_struct: Some(name.clone()),
+                                    pointee_volatile: false,
+                                    pointee_constant: *is_const,
+                                    explicit_qualification: false,
+                                };
+                            }
+                            parent = child;
+                        }
+                        return Ok(address);
+                    }
                     if let Some(element) = Scalar::pointer_element(value_type, true) {
                         let member_type = element.kind.kernel_type();
                         return Ok(crate::kernel::program_expression::checked_object_address(
@@ -2337,7 +2442,7 @@ impl LoweringContext<'_> {
                     CppType::Pointer {
                         pointee: value_pointee,
                     },
-                ) if Scalar::pointer_element(pointee, false).is_some()
+                ) if Scalar::pointer_element(pointee, true).is_some()
                     && scalar::same_scalar_type(pointee, value_pointee) =>
                 {
                     Ok(crate::kernel::program_expression::variable(
@@ -2466,15 +2571,17 @@ impl LoweringContext<'_> {
                 value_type,
                 ..
             } => {
-                let (pointer, field_type) = self.lower_member_pointer(object, field)?;
+                let (pointer, field_type, pointee_constant) =
+                    self.lower_member_pointer(object, field)?;
                 if cpp_scalar_kernel_type(value_type)? != field_type {
                     return Err(format!(
                         "C++ member `{}` load type disagrees with its record field",
                         field.name
                     ));
                 }
-                self.lower_typed_load(pointer, field_type)
+                self.lower_qualified_typed_load(pointer, field_type, pointee_constant)
             }
+            CppExpression::PointerQualification { value, .. } => self.lower_expression(value),
             CppExpression::BytePointerCast { value, .. } => {
                 Ok(crate::kernel::program_expression::cast(
                     self.lower_expression(value)?,
@@ -2534,30 +2641,43 @@ impl LoweringContext<'_> {
         pointer: ProgramExpression,
         value_type: ProgramType,
     ) -> Result<ProgramExpression, String> {
+        self.lower_qualified_typed_load(pointer, value_type, false)
+    }
+
+    fn lower_qualified_typed_load(
+        &mut self,
+        pointer: ProgramExpression,
+        value_type: ProgramType,
+        pointee_constant: bool,
+    ) -> Result<ProgramExpression, String> {
         let occurrence = self.next_load_occurrence;
         self.next_load_occurrence = self
             .next_load_occurrence
             .checked_add(1)
             .ok_or_else(|| "C++ load occurrence capacity exceeded".to_string())?;
-        Ok(crate::kernel::program_expression::typed_load_with_source(
-            pointer,
-            value_type,
-            Some(LoadSourceId {
-                owner: LoadSourceOwnerId {
-                    source_unit: self.source_unit.into(),
-                    function: self.function_name.into(),
-                },
-                occurrence,
-                reference_access: None,
-            }),
-        ))
+        Ok(
+            crate::kernel::program_expression::qualified_typed_load_with_source(
+                pointer,
+                value_type,
+                pointee_constant,
+                None,
+                Some(LoadSourceId {
+                    owner: LoadSourceOwnerId {
+                        source_unit: self.source_unit.into(),
+                        function: self.function_name.into(),
+                    },
+                    occurrence,
+                    reference_access: None,
+                }),
+            ),
+        )
     }
 
     fn lower_member_pointer(
         &self,
         object: &CppPlaceReference,
         field: &CppFieldReference,
-    ) -> Result<(ProgramExpression, ProgramType), String> {
+    ) -> Result<(ProgramExpression, ProgramType, bool), String> {
         let place = self.place(object)?;
         let (value_type, offset) = self.records.resolve_path(
             &place.value_type,
@@ -2573,6 +2693,7 @@ impl LoweringContext<'_> {
                 offset,
             ),
             cpp_scalar_kernel_type(value_type)?,
+            scalar::returns_constant_element(value_type),
         ))
     }
 
@@ -2668,6 +2789,7 @@ fn expression_contains_observer(expression: &CppExpression) -> bool {
         CppExpression::LogicalNot { value, .. }
         | CppExpression::IntegralCast { value, .. }
         | CppExpression::EnumCast { value, .. }
+        | CppExpression::PointerQualification { value, .. }
         | CppExpression::BytePointerCast { value, .. }
         | CppExpression::ReferenceBinding { address: value, .. }
         | CppExpression::Dereference { pointer: value, .. } => expression_contains_observer(value),

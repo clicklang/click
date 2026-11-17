@@ -10,8 +10,12 @@
 //!
 //! Setting `CLICK_FACT_STABILITY=<path>` lowers every checked proof
 //! proposition a second time with the same policy and no facts, and appends
-//! one line per lowering whose fact-free term differs. The check only
-//! observes; the lowering's own result is unchanged.
+//! one line per lowering whose fact-free result is not the same term: a
+//! `differs` line when it is another term, `paths:N` when it is several
+//! paths the facts chose among, and `refused` when it is refused. Only
+//! `differs` breaks the current rule; the other two are where facts still
+//! decide lowering instead of being obligations. The check only observes;
+//! the lowering's own result is unchanged.
 
 #[cfg(test)]
 use crate::kernel::{CompareRelation, MachineIntegerType};
@@ -54,7 +58,7 @@ pub(crate) enum FactFree {
     Term(Proposition),
     /// It produced this many paths, not one: under facts, the facts chose.
     Paths(usize),
-    /// It was refused, which facts are allowed to decide.
+    /// It was refused: facts decided that the lowering succeeds.
     Refused,
 }
 
@@ -71,6 +75,13 @@ pub(crate) fn shadow<T>(lower: impl FnOnce() -> T) -> T {
     crate::instrumentation::without_charging(lower)
 }
 
+/// Whether two lowered propositions are the same term up to the names of
+/// bound variables, the equality both lowering audits use.
+pub(crate) fn same_up_to_binders(left: &Proposition, right: &Proposition) -> bool {
+    left == right
+        || crate::kernel::api::contract_certification::propositions_alpha_equivalent(left, right)
+}
+
 /// Records `site` when its lowering under facts differs from its fact-free
 /// lowering.
 pub(crate) fn compare(site: &str, with_facts: &Proposition, fact_free: &FactFree) {
@@ -82,14 +93,17 @@ pub(crate) fn compare(site: &str, with_facts: &Proposition, fact_free: &FactFree
 
 fn compare_uncharged(site: &str, with_facts: &Proposition, fact_free: &FactFree) {
     let line = match fact_free {
-        FactFree::Term(term)
-            if crate::kernel::api::contract_certification::propositions_alpha_equivalent(
-                with_facts, term,
-            ) =>
-        {
+        FactFree::Term(term) if same_up_to_binders(with_facts, term) => {
             return;
         }
-        FactFree::Refused => return,
+        // Facts decided whether the lowering succeeds. The current rule
+        // admits this, but it is where definedness still lives inside
+        // lowering rather than in an obligation, so the audit counts it.
+        FactFree::Refused => format!(
+            "refused\t{site}\t{}\t\t{}\n",
+            bounded(with_facts),
+            thread_name()
+        ),
         FactFree::Term(term) => format!(
             "differs\t{site}\t{}\t{}\t{}\n",
             bounded(with_facts),
@@ -210,8 +224,9 @@ int32 id(int32 x) {
             compare("site", &written, &FactFree::Refused);
             compare("site", &written, &FactFree::Paths(2));
         });
-        assert_eq!(lines.len(), 2, "{lines:#?}");
+        assert_eq!(lines.len(), 3, "{lines:#?}");
         assert!(lines[0].starts_with("differs\tsite\t"), "{lines:#?}");
-        assert!(lines[1].starts_with("paths:2\tsite\t"), "{lines:#?}");
+        assert!(lines[1].starts_with("refused\tsite\t"), "{lines:#?}");
+        assert!(lines[2].starts_with("paths:2\tsite\t"), "{lines:#?}");
     }
 }

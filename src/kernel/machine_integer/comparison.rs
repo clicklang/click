@@ -225,9 +225,9 @@ fn closed_order_for_operand_views(
     })
 }
 
-/// A closed-guard conditional over fixed-size atoms is itself a fixed-size
+/// An order-guard conditional over literal or variable roots is a fixed-size
 /// native comparison atom. Read only these roots, never an arithmetic DAG.
-fn closed_order_conditional_atom(root: &crate::kernel::KernelTerm) -> Option<MachineTerm> {
+fn order_conditional_atom(root: &crate::kernel::KernelTerm) -> Option<MachineTerm> {
     use crate::kernel::{KernelTermNode as N, MachineOperandView as V};
     let N::MachineIf { arguments } = root.node() else {
         return None;
@@ -257,17 +257,17 @@ fn closed_order_conditional_atom(root: &crate::kernel::KernelTerm) -> Option<Mac
     {
         return None;
     }
-    let mut left = V::Shared(&guard[0]).literal()?;
-    let mut right = V::Shared(&guard[1]).literal()?;
-    if format.format().bits() == 32 {
-        left = left.into_word32();
-        right = right.into_word32();
-    }
     let atom = |root| {
         let view = V::Shared(root);
         view.literal()
             .or_else(|| view.variable().copied().map(MachineTerm::Variable))
     };
+    let mut left = atom(&guard[0])?;
+    let mut right = atom(&guard[1])?;
+    if format.format().bits() == 32 {
+        left = left.into_word32();
+        right = right.into_word32();
+    }
     Some(MachineTerm::If {
         condition: Box::new(ConditionTerm::Compare {
             format: *format,
@@ -369,7 +369,7 @@ pub(crate) fn condition_for_operand_views(
                     MachineTerm::Variable(*variable),
                 ))
             })
-            .or_else(|| closed_order_conditional_atom(root)),
+            .or_else(|| order_conditional_atom(root)),
         V::Legacy(_) => None,
     });
     let operands: [V<'_>; 2] = std::array::from_fn(|index| {

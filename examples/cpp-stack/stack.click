@@ -201,6 +201,7 @@ Stack<int>::~Stack() {
         }
     }
     unfold(list);
+    step();
     solve();
 }
 

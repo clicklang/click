@@ -1476,6 +1476,37 @@ impl MemorySplitOrigins {
 }
 
 impl ResourceContext {
+    /// Install transferred guard custody using its exact authority key.
+    /// The owning rule has consumed its supplier; this checks exclusivity
+    /// before updating the normal resource indexes.
+    pub(in crate::kernel) fn insert_transferred_mutex_guard(
+        mut self,
+        guard: MutexIdentity,
+    ) -> Result<Self, ResourceContextValidityError> {
+        let fact = ResourceFact::own(Resource::MutexGuard(guard));
+        if self.storage.index.by_resource.contains_key(fact.resource()) {
+            return Err(ResourceContextValidityError::DuplicateOwnedResourceFact(
+                fact,
+            ));
+        }
+        self.insert_fact(fact);
+        Ok(self)
+    }
+
+    /// Restore one checked loop occurrence, selecting by its nominal identity.
+    pub(in crate::kernel) fn insert_transferred_conditional_guard(
+        mut self,
+        guard: Arc<ConditionalMutexGuard>,
+    ) -> Result<Self, ResourceContextValidityError> {
+        if self.storage.index.instances.contains_key(&guard.identity) {
+            return Err(ResourceContextValidityError::DuplicateOwnedResourceFact(
+                ResourceFact::own(Resource::ConditionalMutexGuard(guard)),
+            ));
+        }
+        self.insert_fact(ResourceFact::own(Resource::ConditionalMutexGuard(guard)));
+        Ok(self)
+    }
+
     fn exclusive_validity_error(
         &self,
         fact: &ResourceFact,
@@ -7949,6 +7980,10 @@ impl ResourceContext {
         self,
         assumptions: &PureFactContext,
     ) -> Self {
+        #[cfg(test)]
+        let _fast = crate::kernel::search::FastOperationScope::enter(
+            "bounded constructed return normalization",
+        );
         self.normalized_with_byte_endpoints(assumptions, false, true)
     }
 
