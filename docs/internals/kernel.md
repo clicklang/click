@@ -2063,13 +2063,18 @@ among the requirements and must rewrite the goal in the listed order.
 observation. Other families keep native value equality and ordering, including
 raw Boolean words, float bits, and native call-argument carrier distinctions.
 Its hash need only agree across equal stored keys; it is not a serialized ID.
-Boolean, float and algebraic local/outcome keys project common children rather
+Boolean, float, algebraic and pointer local/outcome keys project common children rather
 than materializing an enclosing native value tree. Algebraic projections retain
 constructor field positions, match binding/body order and original call-argument
 carriers. Scalar algebraic fields and read addresses keep selected compatibility
 descriptors; memory keys and exact refresh remain separate consumers.
 Projection memos belong to one verification, with iterative construction,
 comparison and disposal for shared or deep algebraic structure.
+Pointer keys preserve the native address/designation/type/volatility/extent
+identity tuple. Offset DAGs use shared child keys and the existing native offset
+index handles, with iterative construction/comparison/disposal and per-session
+memos. Subobject widths retain their selected native structural descriptor;
+key operations do not request the enclosing native pointer value.
 
 `StoredMemoryValue` preserves native `ProgramValue` structural equality, order,
 and hash stream. Replacing it with a local observation key would change the

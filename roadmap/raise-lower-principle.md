@@ -693,6 +693,30 @@ including all 1,833 scaling checks. Seven exact regular algebraic fixtures
 passed with zero fact-stability differences; quality checks passed. Nightly
 was not run.
 
+### 10g Shared complete-pointer storage keys
+
+Local/outcome pointer keys preserve the complete native identity tuple:
+address, designation, view type, volatility, extent-known status, conditional
+opaque extent and subobject extent. Const/evidence annotations remain exact on
+producer payloads and ignored only where native pointer equality ignores them.
+Key operations no longer request the enclosing native pointer descriptor.
+
+Offset keys retain shared Add children, scales, signedness flags and the native
+index handles. Explicit pointer output and key construction share one existing
+index-carrier helper; no numeric observation policy is substituted. Offset
+construction/comparison/disposal are iterative, comparisons memoize selected
+pairs and key memos reset for each verification. Subobject width terms retain
+a selected native structural descriptor, separately from offset-index identity.
+
+All 40 focused execution-value/offset checks passed, including pairwise mixed
+carrier ordering, the complete pointer metadata tuple, deep small-stack keys
+and growing DAG/session controls with zero machine exports or enclosing native
+pointer cache use on the supported offset route.
+The final broad run passed all 3,346 selected checks, including all 1,835
+scaling checks, the distinct shared-offset comparison regression and all 44
+documentation checks. Seven exact regular pointer fixtures passed with zero
+fact-stability differences; quality checks passed. Nightly was not run.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential
