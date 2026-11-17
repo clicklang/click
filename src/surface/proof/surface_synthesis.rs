@@ -3107,11 +3107,25 @@ fn synthesize_surface_atomic_proposition(
         // read to int64 before an unsigned operation consumes it.
         let expression = if let ConditionTerm::Compare {
             format: format @ (MachineIntegerType::Int64 | MachineIntegerType::UInt64),
+            relation,
             ..
         } = condition
         {
             let root = crate::kernel::KernelTermImport::default().machine(*format, term);
-            raise_kernel_term(&root, parameter_binding, state, bound_variables)?
+            match root.node() {
+                // A 64-bit equality reads both words at its own format,
+                // so a call there is the call as declared: lowering
+                // `x == f(..)` reads `f`'s word at the equality's format
+                // itself. A narrower call would be a widening cast here,
+                // not a bare call, so no width changes. Casting the call
+                // to the format would lower to a cast node instead.
+                crate::kernel::KernelTermNode::Call { name, arguments }
+                    if *relation == CompareRelation::Equal =>
+                {
+                    raise_call(name, arguments, parameter_binding, state, bound_variables)?
+                }
+                _ => raise_kernel_term(&root, parameter_binding, state, bound_variables)?,
+            }
         } else {
             synthesize_surface_bitvector(term, parameter_binding, state, bound_variables)?
         };

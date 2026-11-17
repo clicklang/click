@@ -238,6 +238,22 @@ mod tests {
         );
     }
 
+    /// A 64-bit equality reads both words at its format, so a `uint64`
+    /// call in it raises as the call, not cast to `int64`, which would lower
+    /// to a different term.
+    #[test]
+    fn a_wide_call_result_equality_round_trips_without_a_cast() {
+        let lines = round_trips(
+            "a_wide_call_result_equality_raises_without_a_cast.md",
+            include_str!("../../../mdtests/a_wide_call_result_equality_raises_without_a_cast.md"),
+        );
+        let fact = "statement(0).call(add, 0).result == click::integer::uint64_wrapping_add(a, b)";
+        assert!(
+            lines.contains(&("same".to_string(), fact.to_string())),
+            "{lines:#?}"
+        );
+    }
+
     #[test]
     fn a_checked_step_records_how_each_added_fact_round_trips() {
         let fixture = crate::cli::parse_mdtest(
