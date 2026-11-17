@@ -25,5 +25,5 @@ int32 pointer_existential_deref_requires_loadable(int32* p) {
 ```
 
 ```expect
-fail: did not complete the retained existential Proof
+fail: did not complete the retained claim proof
 ```

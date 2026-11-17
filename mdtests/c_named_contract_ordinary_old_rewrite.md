@@ -14,8 +14,8 @@ contract void Target(int32* cells) {
 theorem lift(callback: void (*)(int32*)) {
     requires Source(callback);
     ensures Target(callback) by {
-        unfold(Source);
-        unfold(Target);
+        unfold(Source(callback));
+        unfold(Target(callback));
         have cells[0] == old(cells[1]) implies cells[0] >= old(cells[1]) by {
             intro();
             rewrite(cells[0], old(cells[1]));

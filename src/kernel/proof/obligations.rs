@@ -1059,7 +1059,6 @@ mod outcome_claim_goal_tests {
                 ProofObligation::FunctionOutcome(goal),
                 super::super::ProofBranchState {
                     facts: super::super::PureFactStore::from_ordered(&[]),
-                    unfolded_predicates: super::super::PersistentOrderedSet::default(),
                     execution: None,
                 },
             ),
@@ -1093,7 +1092,6 @@ mod outcome_claim_goal_tests {
                 ProofObligation::FunctionOutcome(goal),
                 ProofBranchState {
                     facts: PureFactStore::from_ordered(&[]),
-                    unfolded_predicates: PersistentOrderedSet::default(),
                     execution: None,
                 },
             )

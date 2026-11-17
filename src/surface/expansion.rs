@@ -1355,7 +1355,7 @@ pub(in crate::surface) fn verification_target_at_file(
 /// pointer has no source form. None of them is Click syntax, so an expansion
 /// that renders one cannot parse; expansion has to say which name it is
 /// missing instead of handing the parse error on.
-const UNSPELLABLE_POINTER_FORMS: [&str; 5] = [
+const UNRAISABLE_POINTER_FORMS: [&str; 5] = [
     // The ellipsis `describe_pointer` prints for a heap, temporary or
     // symbolic block no source names.
     "…",
@@ -1384,7 +1384,7 @@ fn unparseable_expansion_error_for_file(
     parse_error: ClickError,
     file: Option<&ClickFile>,
 ) -> ClickError {
-    if !UNSPELLABLE_POINTER_FORMS
+    if !UNRAISABLE_POINTER_FORMS
         .iter()
         .any(|form| replacement.contains(form))
     {
@@ -2195,8 +2195,7 @@ fn returning_then_arms(statement: &ProgramStatement) -> BTreeSet<usize> {
             | ProgramStatement::Continue
             | ProgramStatement::Goto { .. }
             | ProgramStatement::Throw(_)
-            | ProgramStatement::Switch { .. }
-            | ProgramStatement::ScalarReferenceScope(_) => None,
+            | ProgramStatement::Switch { .. } => None,
             _ => Some(false),
         }
     }

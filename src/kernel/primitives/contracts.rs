@@ -864,6 +864,7 @@ impl FunctionContractInterface {
             value_parameters: Vec::new(),
             resource_requires: Vec::new(),
             resource_ensures: Vec::new(),
+            resource_transfer_rule: Default::default(),
             resource_constructors: Vec::new(),
             contract_requires: Vec::new(),
             contract_requirement_sources: ContractRequirementSources::default(),
@@ -1388,6 +1389,9 @@ impl ProgramFunction {
     ) -> Self {
         Arc::make_mut(&mut self.contract_interface).resource_requires = requires;
         Arc::make_mut(&mut self.contract_interface).resource_ensures = ensures;
+        let rule =
+            super::super::functions::SummaryResourceTransferRule::compile(&self.contract_interface);
+        Arc::make_mut(&mut self.contract_interface).resource_transfer_rule = Arc::new(rule);
         self
     }
 
@@ -1776,7 +1780,20 @@ impl PredicateUnfolding {
             *resource_state_dependent |=
                 super::super::spec::predicate_dependencies::observes_resource_state(&body);
         }
-        Self { predicate, body }
+        Self {
+            predicate,
+            body,
+            requirement_source: PredicateRequirementSource::default(),
+        }
+    }
+
+    pub(crate) fn with_requirement_source(mut self, source: usize) -> Self {
+        self.requirement_source = PredicateRequirementSource(Some(source));
+        self
+    }
+
+    pub(crate) fn requirement_source(&self) -> Option<usize> {
+        self.requirement_source.0
     }
 
     pub fn predicate(&self) -> &SpecProposition {
@@ -3553,7 +3570,7 @@ impl FunctionContract {
     /// Automatic concrete-pointer formation may cross a proof-parameter
     /// contract, but only after it has separately established that the
     /// binding between the two declarations is forced. The explicit
-    /// `unfold(Name)` route keeps refusing proof parameters: its proof block
+    /// `unfold(Name(callback))` route keeps refusing proof parameters: its proof block
     /// has no way to introduce the instances.
     pub(crate) fn has_compatible_signature_and_composite_vocabulary(
         &self,

@@ -39,7 +39,7 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                 };
             }
             have identity->__rb_parent_color == at(before_child_change, identity->__rb_parent_color) by {
-                preserve(separate(statement(0).statement(0).statement(0).footprint, memory(identity->__rb_parent_color)));
+                preserve(memory(identity->__rb_parent_color), statement(0).statement(0).statement(0));
             }
             have identity->__rb_parent_color == address(grandparent) + (identity->__rb_parent_color & 1) by {
                 rewrite(identity->__rb_parent_color, at(before_child_change, identity->__rb_parent_color));
@@ -69,7 +69,7 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                         };
                     }
                     have identity->__rb_parent_color == at(before_child_change, identity->__rb_parent_color) by {
-                        preserve(separate(statement(0).statement(0).statement(1).footprint, memory(identity->__rb_parent_color)));
+                        preserve(memory(identity->__rb_parent_color), statement(0).statement(0).statement(1));
                     }
                     have identity->__rb_parent_color == address(grandparent) + (identity->__rb_parent_color & 1) by {
                         rewrite(identity->__rb_parent_color, at(before_child_change, identity->__rb_parent_color));
@@ -102,7 +102,7 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                         };
                     }
                     have identity->__rb_parent_color == at(before_child_change, identity->__rb_parent_color) by {
-                        preserve(separate(statement(0).statement(0).statement(1).footprint, memory(identity->__rb_parent_color)));
+                        preserve(memory(identity->__rb_parent_color), statement(0).statement(0).statement(1));
                     }
                     have identity->__rb_parent_color == address(grandparent) + (identity->__rb_parent_color & 1) by {
                         rewrite(identity->__rb_parent_color, at(before_child_change, identity->__rb_parent_color));

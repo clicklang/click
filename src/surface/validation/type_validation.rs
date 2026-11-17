@@ -3152,6 +3152,12 @@ fn validate_resource_subject_expression_types(
     context: &str,
 ) -> Result<(), ClickError> {
     match resource {
+        ResourceSubject::At { resource, .. } => validate_resource_subject_expression_types(
+            resource,
+            variables,
+            click_functions,
+            context,
+        ),
         ResourceSubject::Emp => Ok(()),
         ResourceSubject::Star(left, right) => {
             validate_resource_subject_expression_types(left, variables, click_functions, context)?;
@@ -3215,34 +3221,35 @@ fn validate_pure_theorem_tactics(
             ProofTactic::Synthetic(inner) => {
                 validate_pure_theorem_tactics(theorem_name, std::slice::from_ref(inner))?;
             }
-            ProofTactic::UnfoldPredicate(_)
-             |  ProofTactic::UnfoldFunction(_)
-             |  ProofTactic::PeelFunction { .. }
-             |  ProofTactic::Induct { .. }
-             |  ProofTactic::ApplyInduction { .. }
-             |  ProofTactic::ApplyInductionUsing { .. }
-             |  ProofTactic::ApplyTheorem(_)
-             |  ProofTactic::ApplyTheoremUsing { .. }
-             |  ProofTactic::CheckTerminationLocal(_)
-             |  ProofTactic::CheckTerminationComponent { .. }
-             |  ProofTactic::CheckTerminationCallbacks
-             |  ProofTactic::Known
-             |  ProofTactic::Extract(_)
-             |  ProofTactic::Normalize
-             |  ProofTactic::NormalizeUsing(_)
-             |  ProofTactic::ArithmeticUsing(_)
-             |  ProofTactic::Intro
-             |  ProofTactic::IntroAs(_) | ProofTactic::IntroBinder(_)
-             |  ProofTactic::Enumerate
-             |  ProofTactic::Contradiction(_)
-             |  ProofTactic::Preserve(_)
-             |  ProofTactic::Rewrite(_)
-             |  ProofTactic::InstantiateUsing { .. }
-             |  ProofTactic::Witness(_)
-             |  ProofTactic::LetSatisfy(_)
-             |  ProofTactic::Choose(_)
-             |  ProofTactic::Solve
-             |  ProofTactic::ImplicitSolve
+            ProofTactic::UnfoldProposition(_)
+            | ProofTactic::UnfoldFunction(_)
+            | ProofTactic::Induct { .. }
+            | ProofTactic::ApplyInduction { .. }
+            | ProofTactic::ApplyInductionUsing { .. }
+            | ProofTactic::ApplyFact(_)
+            | ProofTactic::ApplyFactUsing { .. }
+            | ProofTactic::ApplyTheorem(_)
+            | ProofTactic::ApplyTheoremUsing { .. }
+            | ProofTactic::CheckTerminationLocal(_)
+            | ProofTactic::CheckTerminationComponent { .. }
+            | ProofTactic::CheckTerminationCallbacks
+            | ProofTactic::Known
+            | ProofTactic::Normalize
+            | ProofTactic::NormalizeUsing(_)
+            | ProofTactic::ArithmeticUsing(_)
+            | ProofTactic::Intro
+            | ProofTactic::IntroAs(_)
+            | ProofTactic::IntroBinder(_)
+            | ProofTactic::Enumerate
+            | ProofTactic::Contradiction(_)
+            | ProofTactic::Preserve(_)
+            | ProofTactic::Rewrite(_)
+            | ProofTactic::Instantiate { .. }
+            | ProofTactic::Witness(_)
+            | ProofTactic::LetSatisfy(_)
+            | ProofTactic::Choose(_)
+            | ProofTactic::Solve
+            | ProofTactic::ImplicitSolve
             // `transport(P, Q) using { ... }` names its source, its target,
             // and every premise, so it needs no state: the explicit facts
             // decide it. The smart `transport(P, Q)` form still does not
@@ -3317,6 +3324,7 @@ fn validate_pure_theorem_tactics(
 
 pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
     match tactic {
+        ProofTactic::ApplyFact(_) | ProofTactic::ApplyFactUsing { .. } => "apply",
         ProofTactic::Synthetic(inner) => tactic_name(inner),
         ProofTactic::Mark(_) => "mark",
         ProofTactic::Step
@@ -3327,9 +3335,8 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::UserTactic(_) => "tactic",
         ProofTactic::SmartExecute => "implicit tail",
         ProofTactic::ExecuteUntil(_) => "step_until",
-        ProofTactic::UnfoldPredicate(_)
+        ProofTactic::UnfoldProposition(_)
         | ProofTactic::UnfoldFunction(_)
-        | ProofTactic::PeelFunction { .. }
         | ProofTactic::UnfoldResource(_)
         | ProofTactic::UnfoldWitnesses { .. } => "unfold",
         ProofTactic::FoldResource(_) => "fold",
@@ -3361,7 +3368,6 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::CheckTerminationComponent { .. } => "check_termination_component",
         ProofTactic::CheckTerminationCallbacks => "check_termination_callbacks",
         ProofTactic::Known => "known",
-        ProofTactic::Extract(_) => "extract",
         ProofTactic::Normalize => "normalize",
         ProofTactic::NormalizeUsing(_) => "normalize",
         ProofTactic::ArithmeticUsing(_) => "arithmetic",
@@ -3373,7 +3379,7 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::Preserve(_) => "preserve",
         ProofTactic::Rewrite(_) => "rewrite",
         ProofTactic::Transport { .. } | ProofTactic::TransportUsing { .. } => "transport",
-        ProofTactic::InstantiateUsing { .. } => "instantiate",
+        ProofTactic::Instantiate { .. } => "instantiate",
         ProofTactic::Solve => "solve",
         ProofTactic::ImplicitSolve => "implicit tail",
         ProofTactic::SolveUsing(_) => "solve",
@@ -5413,6 +5419,9 @@ fn validate_resource_subject_calls(
     context: &str,
 ) -> Result<(), ClickError> {
     match resource {
+        ResourceSubject::At { resource, .. } => {
+            validate_resource_subject_calls(resource, click_functions, context)
+        }
         ResourceSubject::Emp => Ok(()),
         ResourceSubject::Star(left, right) => {
             validate_resource_subject_calls(left, click_functions, context)?;

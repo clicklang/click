@@ -103,8 +103,8 @@ that every current implementation meets the checking-cost contract.
 
 | Argument needed | Rule reference | Explicit input to identify |
 | --- | --- | --- |
-| Reuse a fact or select a conjunct | [Available facts](../reference/tactics/index.md#available-facts), [extracting a fact](../reference/tactics/index.md#extracting-a-fact) | The available proposition and selected component |
-| Introduce an assumption or binder, split cases, or instantiate a universal fact | [Introducing a binder or premise](../reference/tactics/index.md#introducing-a-binder-or-premise), [explicit cases](../reference/tactics/index.md#explicit-cases), [instantiation with selected premises](../reference/tactics/index.md#instantiation-with-selected-premises) | The connective or quantified fact, witnesses, and branch obligations |
+| Reuse a fact or select a conjunct | [Available facts](../reference/tactics/index.md#available-facts), [intermediate facts](../reference/tactics/index.md#intermediate-facts) | The available proposition and selected component |
+| Introduce an assumption or binder, split cases, or instantiate a universal fact | [Introducing a binder or premise](../reference/tactics/index.md#introducing-a-binder-or-premise), [explicit cases](../reference/tactics/index.md#explicit-cases), [instantiation with selected premises](../reference/tactics/index.md#universal-instantiation) | The connective or quantified fact, witnesses, and branch obligations |
 | Replace an equal term | [Rewriting](../reference/tactics/index.md#rewriting) | The equality, direction, and expression being rewritten |
 | Evaluate a definition or computation | [Unfolding pure functions](../reference/tactics/index.md#unfolding-pure-functions), [context-free normalization](../reference/tactics/index.md#context-free-normalization) | The named definition/application or explicit expression |
 | Apply a mathematical or separation law | [Theorem application with selected premises](../reference/tactics/index.md#theorem-application-with-selected-premises), [library laws](../reference/library/index.md) | The named theorem, typed arguments, and each instantiated requirement |
@@ -132,7 +132,7 @@ If a documented rule already covers the link and refuses it, use
 
 ### One-step preservation must be fast
 
-Write `preserve(separate(region.footprint, B));` under a read-equality goal.
+Write `preserve(B, region);` under a read-equality goal.
 It establishes the after-to-before read equality. The execution-produced
 footprint includes writes, call effects and allocation release. Establish its
 separation with explicitly supplied evidence. When a checked call publishes

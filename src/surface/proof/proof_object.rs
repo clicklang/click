@@ -31,9 +31,6 @@ thread_local! {
     static FINALIZATION_VIEW_CONSTRUCTIONS: std::cell::Cell<usize> = const {
         std::cell::Cell::new(0)
     };
-    static CHOSEN_PROJECTION_WALK_WORK: std::cell::Cell<(usize, usize)> = const {
-        std::cell::Cell::new((0, 0))
-    };
     static TERMINAL_PUBLICATION_VISITS: std::cell::Cell<(usize, usize)> = const { std::cell::Cell::new((0, 0)) };
     static TERMINAL_JOIN_MATERIALIZED_FACTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static CHECKED_HAVE_OPERATIONS: std::cell::Cell<usize> = const {
@@ -115,7 +112,6 @@ pub(super) struct ExecutionSplitData<'a> {
     base_executions: [Option<Arc<ExecutionProofState>>; 2],
     path_facts: [Option<Vec<Proposition>>; 2],
     parent_facts: PureFactStore,
-    parent_unfolds: PersistentOrderedSet<String>,
     parent_execution: Arc<ExecutionProofState>,
     statement_index: usize,
     continuation_index: usize,
@@ -217,7 +213,6 @@ pub(super) struct ExecutionProofCaseSplitData<'a> {
     base_executions: [Arc<ExecutionProofState>; 2],
     path_facts: [Vec<Proposition>; 2],
     common_facts: PureFactStore,
-    parent_unfolds: PersistentOrderedSet<String>,
     parent_execution: Arc<ExecutionProofState>,
     execution_start_state: ExecutionState,
     /// The lexical scope at the split. Each arm starts in it: a `match` arm
@@ -251,7 +246,6 @@ struct CheckedExecutionJoinArm<'v> {
     /// What the arm appended to `effect_base`, taken when first read.
     introduced_effect_facts: std::cell::OnceCell<crate::kernel::ExecutionFacts>,
     introduced_derivations: Vec<Theorem>,
-    introduced_unfolds: Vec<String>,
     /// Frontier-local loops the arm proved inside its region. They are
     /// checked function-proof state, so a join carries them like unfolds.
     introduced_loop_clauses: Vec<StructuralClause>,
@@ -299,7 +293,6 @@ struct CheckedExecutionJoinParts {
     execution: ExecutionProofState,
     facts: PureFactStore,
     common_added_facts: Vec<Proposition>,
-    unfolded_predicates: PersistentOrderedSet<String>,
     step: ProofStep,
     /// A terminal join's outcome paths per arm, counted only while tracing.
     trace_arm_paths: Option<[usize; 2]>,
@@ -428,8 +421,6 @@ enum ProofScopeStructure {
     Have {
         proposition: ClickProposition,
         kernel: Proposition,
-        /// The initial unfolded goal, published only after the body closes.
-        retained_body: Option<(ClickProposition, Proposition)>,
     },
     Open {
         resource: ResourceClause,
@@ -465,12 +456,11 @@ impl CheckedFocusedTransition {
         }
     }
 
-    fn clear_chosen_projection(&mut self) {
+    fn clear_existential_projection(&mut self) {
         if let Some(branch) = self.branch.as_mut()
             && let Some(execution) = branch.state.execution.as_deref()
         {
             let mut execution = execution.clone();
-            execution.presentation.chosen_projection = None;
             execution.presentation.existential_projection = None;
             branch.state.execution = Some(Arc::new(execution));
         }
@@ -643,12 +633,6 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     /// since the split root, just like generated-load binding observations.
     pub(in crate::surface::proof) generated_load_source_events:
         PersistentSequence<crate::kernel::GeneratedLoadSourceEvent>,
-    /// The one selected existential whose body leaves may still be cited by
-    /// an enclosing `extract`.  A later `choose` replaces this active record;
-    /// nested `have`/scope boundaries start without one. This is
-    /// presentation-only provenance: the kernel's exact conjunct index remains
-    /// the authority for extraction.
-    pub(in crate::surface::proof) chosen_projection: Option<ChosenProjection>,
     /// The environment the last `loop` tactic on this path stepped its rule
     /// under, before that rule: its claim's environment holding the frontier
     /// loop rules of `rules`. The next `loop` adds the rules since instead
@@ -699,35 +683,6 @@ pub(in crate::surface::proof) struct ExistentialProjection {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface::proof) struct ExistentialProjectionLeaf {
     pub(in crate::surface::proof) connective_path: Vec<usize>,
-    pub(in crate::surface::proof) surface: ClickProposition,
-    pub(in crate::surface::proof) kernel: Proposition,
-}
-
-/// Surface spellings for the checked leaves of a selected existential body.
-/// The source requirement and state are retained alongside every checked
-/// leaf so a spelling cannot silently drift to the current heap after a C
-/// declaration.  This record is intentionally branch-local and is never a
-/// proof fact in its own right.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(in crate::surface::proof) struct ChosenProjection {
-    pub(in crate::surface::proof) source_id: RequirementSourceId,
-    pub(in crate::surface::proof) principal_fact_index: usize,
-    pub(in crate::surface::proof) source_token: ProjectionSourceToken,
-    pub(in crate::surface::proof) source_proposition: ClickProposition,
-    /// Exact source token selected before any checked predicate unfolding.
-    pub(in crate::surface::proof) source_requirement: Proposition,
-    /// The existential proposition after the active, checked unfolding path.
-    pub(in crate::surface::proof) checked_source: Proposition,
-    pub(in crate::surface::proof) chosen_name: String,
-    pub(in crate::surface::proof) chosen_variable: crate::kernel::Variable,
-    pub(in crate::surface::proof) source_memory_state: crate::kernel::MemoryStateIdentity,
-    pub(in crate::surface::proof) source_selector: ProgramPointSelector,
-    pub(in crate::surface::proof) leaves: Vec<ChosenProjectionLeaf>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(in crate::surface::proof) struct ChosenProjectionLeaf {
-    pub(in crate::surface::proof) source_token: ProjectionSourceToken,
     pub(in crate::surface::proof) surface: ClickProposition,
     pub(in crate::surface::proof) kernel: Proposition,
 }
@@ -910,7 +865,6 @@ impl ExecutionProofState {
                 generated_load_binding_events: PersistentSequence::default(),
                 generated_load_source_resolutions: PersistentMap::default(),
                 generated_load_source_events: PersistentSequence::default(),
-                chosen_projection: None,
                 existential_projection: None,
                 store_separation_misses: PersistentSequence::default(),
                 loop_rule_environment: None,
@@ -1154,7 +1108,6 @@ pub(super) struct ProofExecutionView<'p> {
     pub(super) frontier: &'p ExecutionFrontier,
     pub(super) execution: &'p ExecutionProofState,
     pub(super) context: &'p ExecutionProofContext<'p>,
-    pub(super) unfolded_predicates: &'p SharedVec<String>,
     pub(super) branch_path: &'p PersistentSequence<String>,
     outcome_provenance: &'p crate::kernel::proof::PersistentVector<OutcomeProvenance>,
 }
@@ -1477,7 +1430,7 @@ impl DiagnosticNaming {
 }
 
 /// The C values the proof's own binders name: `let`, `choose`, `obtain`
-/// and `unfold` bindings. Diagnostics and premise spelling both name values
+/// and `unfold` bindings. Diagnostics and premise raising both name values
 /// through these, so a report and a citation agree.
 fn proof_local_program_values(
     proof: &KernelProofHandle,
@@ -3038,15 +2991,6 @@ impl<'a> Proof<'a> {
     }
 
     /// The focused branch branch's path-local unfold delta.
-    pub(in crate::surface::proof) fn focused_branch_unfolds(
-        &self,
-    ) -> &PersistentOrderedSet<String> {
-        &self
-            .focused_branch()
-            .expect("unfold queries require an open goal")
-            .state
-            .unfolded_predicates
-    }
 
     /// The focused branch goal's path-local fact context. Every caller is a
     /// checked operation or search query on an open goal: `apply_step` and
@@ -3063,7 +3007,6 @@ impl<'a> Proof<'a> {
     fn refined_branch_state(&self, facts: PureFactStore) -> BranchState {
         BranchState {
             facts,
-            unfolded_predicates: self.focused_branch_unfolds().clone(),
             execution: self.branch_execution().cloned(),
         }
     }
@@ -3091,7 +3034,7 @@ impl<'a> Proof<'a> {
     }
 
     /// The spelling of a refined goal no written template carries over to:
-    /// the premise speller's, which lowers back to exactly `goal`. A goal is
+    /// the premise raiser's, which lowers back to exactly `goal`. A goal is
     /// stated at the current state, so it is spelled with no premise anchor
     /// and never searches recorded states. Smart refinements reconstruct
     /// their structural goal from indexed source names, without premise search.
@@ -3162,7 +3105,7 @@ impl<'a> Proof<'a> {
         let candidate = self.structural_proposition_candidate(goal)?;
         // This compares presentation, not proof authority: rewriting already
         // produced the successor. A spelling must retain its exact term.
-        self.lower_surface_proposition_direct(&candidate, "structural goal spelling")
+        self.lower_surface_proposition_direct(&candidate, "structural goal raising")
             .ok()
             .filter(|lowered| lowered == goal)
             .map(|_| candidate)
@@ -3339,7 +3282,6 @@ impl<'a> Proof<'a> {
                 KernelProofObject::root(self.state().locals().clone(), {
                     let context = BranchState {
                         facts,
-                        unfolded_predicates: self.focused_branch_unfolds().clone(),
                         execution: match &outcome {
                             Some(_) => self.branch_execution().cloned(),
                             None => None,
@@ -3420,25 +3362,6 @@ impl<'a> Proof<'a> {
         self.state
             .completed_proposition()
             .ok_or_else(|| self.step_error("completed proof is not a proposition judgment"))
-    }
-
-    pub(in crate::surface::proof) fn active_unfolded_predicates(&self) -> Vec<String> {
-        let inherited = match self.context.as_ref() {
-            ProofContext::Pure(_) => &[][..],
-            ProofContext::FixedState(context) => context.unfolded_predicates,
-            ProofContext::Execution(_) => self
-                .execution()
-                .map(|execution| execution.core.unfolded_predicates.as_slice())
-                .unwrap_or(&[]),
-        };
-        let mut names = inherited.to_vec();
-        let mut seen = inherited.iter().cloned().collect::<BTreeSet<_>>();
-        for name in self.focused_branch_unfolds() {
-            if seen.insert(name.clone()) {
-                names.push(name.clone());
-            }
-        }
-        names
     }
 
     pub(super) fn certificate(&self) -> ProofCertificate {
@@ -3828,12 +3751,12 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         | ProofStep::StepCall(_)
         | ProofStep::StepProved { .. } => "step",
         ProofStep::UserTactic(_) => "tactic application",
-        ProofStep::ApplyTheoremUsing { .. } => "apply",
+        ProofStep::ApplyFactUsing { .. } | ProofStep::ApplyTheoremUsing { .. } => "apply",
         ProofStep::ApplyInductionUsing { .. } => "apply",
         ProofStep::Induct { .. } => "induct",
         ProofStep::StructuralInduct { .. } => "induct",
         ProofStep::TransportUsing { .. } => "transport",
-        ProofStep::InstantiateUsing { .. } => "instantiate",
+        ProofStep::Instantiate { .. } => "instantiate",
         ProofStep::Have { .. } => "have",
         ProofStep::Open { .. } => "open",
         ProofStep::If { .. } => "if",
@@ -3842,14 +3765,12 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::CallOutcomes { .. } => "outcomes",
         ProofStep::Loop(_) => "loop",
         ProofStep::Rewrite(_) => "rewrite",
-        ProofStep::Extract(_) => "extract",
         ProofStep::Contradiction(_) => "contradiction",
         ProofStep::Witness(_) => "witness",
         ProofStep::LetSatisfy(_) => "obtain",
         ProofStep::Choose(_) => "choose",
-        ProofStep::UnfoldPredicate(_)
+        ProofStep::UnfoldProposition(_)
         | ProofStep::UnfoldFunction(_)
-        | ProofStep::PeelFunction { .. }
         | ProofStep::UnfoldResource(_)
         | ProofStep::UnfoldWitnesses { .. } => "unfold",
         ProofStep::FoldResource(_) => "fold",
@@ -3879,6 +3800,7 @@ mod provenance;
 pub(in crate::surface::proof) use provenance::ProofCheckpoint;
 pub(in crate::surface::proof) use provenance::ProofStepSite;
 use provenance::{ProofNode, ProofStepBlock, ProofStepOrigin};
+mod local_predicate_unfold;
 mod resource_steps;
 mod scope;
 mod splits_and_scopes;

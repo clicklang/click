@@ -69,10 +69,10 @@ void overwrite(struct node* p, struct node* q) {
         normalize() using { };
     }
     have p->word == at(before_word_0, p->word) by {
-        preserve(separate(statement(0).region(0).footprint, memory(p->word)));
+        preserve(memory(p->word), statement(0).region(0));
     }
     have *((&p->word) as (int32 **)) == at(before_word_0, *((&p->word) as (int32 **))) by {
-        preserve(separate(statement(0).region(0).footprint, memory(p->word)));
+        preserve(memory(p->word), statement(0).region(0));
     }
     mark before_word_1;
     step();
@@ -80,10 +80,10 @@ void overwrite(struct node* p, struct node* q) {
         normalize() using { };
     }
     have p->word == at(before_word_1, p->word) by {
-        preserve(separate(statement(0).region(1).footprint, memory(p->word)));
+        preserve(memory(p->word), statement(0).region(1));
     }
     have *((&p->word) as (int32 **)) == at(before_word_1, *((&p->word) as (int32 **))) by {
-        preserve(separate(statement(0).region(1).footprint, memory(p->word)));
+        preserve(memory(p->word), statement(0).region(1));
     }
     mark before_word_2;
     have separate(memory((&next->value)[0..1]), memory(p->word));
@@ -92,10 +92,10 @@ void overwrite(struct node* p, struct node* q) {
         normalize() using { separate(memory((&next->value)[0..1]), memory(p->word)); };
     }
     have p->word == at(before_word_2, p->word) by {
-        preserve(separate(statement(1).footprint, memory(p->word)));
+        preserve(memory(p->word), statement(1));
     }
     have *((&p->word) as (int32 **)) == at(before_word_2, *((&p->word) as (int32 **))) by {
-        preserve(separate(statement(1).footprint, memory(p->word)));
+        preserve(memory(p->word), statement(1));
     }
 
     have aligned(saved_next, 8) by known();
@@ -124,10 +124,10 @@ int32 caller(struct node* p, struct node* q) {
         normalize() using { };
     }
     have p->word == at(before_word_0, p->word) by {
-        preserve(separate(statement(0).region(0).footprint, memory(p->word)));
+        preserve(memory(p->word), statement(0).region(0));
     }
     have *((&p->word) as (int32 **)) == at(before_word_0, *((&p->word) as (int32 **))) by {
-        preserve(separate(statement(0).region(0).footprint, memory(p->word)));
+        preserve(memory(p->word), statement(0).region(0));
     }
     mark before_word_1;
     step();
@@ -135,10 +135,10 @@ int32 caller(struct node* p, struct node* q) {
         normalize() using { };
     }
     have p->word == at(before_word_1, p->word) by {
-        preserve(separate(statement(0).region(1).footprint, memory(p->word)));
+        preserve(memory(p->word), statement(0).region(1));
     }
     have *((&p->word) as (int32 **)) == at(before_word_1, *((&p->word) as (int32 **))) by {
-        preserve(separate(statement(0).region(1).footprint, memory(p->word)));
+        preserve(memory(p->word), statement(0).region(1));
     }
     mark before_word_2;
     have separate(memory((&next->value)[0..1]), memory(p->word));
@@ -147,10 +147,10 @@ int32 caller(struct node* p, struct node* q) {
         normalize() using { separate(memory((&next->value)[0..1]), memory(p->word)); };
     }
     have p->word == at(before_word_2, p->word) by {
-        preserve(separate(statement(1).footprint, memory(p->word)));
+        preserve(memory(p->word), statement(1));
     }
     have *((&p->word) as (int32 **)) == at(before_word_2, *((&p->word) as (int32 **))) by {
-        preserve(separate(statement(1).footprint, memory(p->word)));
+        preserve(memory(p->word), statement(1));
     }
 
     have next->value == 0 by solve();

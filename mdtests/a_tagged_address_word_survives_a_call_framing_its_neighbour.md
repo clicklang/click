@@ -72,7 +72,7 @@ void tag_then_count(struct node *p) {
                         };
                     }
                     have p->tag == at(before_call, p->tag) by {
-                        preserve(separate(statement(0).statement(1).footprint, memory(p->tag)));
+                        preserve(memory(p->tag), statement(0).statement(1));
                     }
                     have identity->tag == (address(identity) | 1) by {
                         rewrite(identity, p);

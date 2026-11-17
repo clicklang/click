@@ -33,7 +33,7 @@
     "shared-byte-split-at-pair-v1",
     "borrowed-iterator-forwarding-v1",
     "stable-extraction-output-metadata-v1",
-    "checked-closed-arm-scalar-reference-scopes-v6"
+    "rustc-checked-local-references-v1"
   ],
   "extractor_version": "0.1.279"
 }

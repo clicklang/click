@@ -271,7 +271,10 @@ pub(crate) fn canonical_value_load_memory(
     named
 }
 
-fn canonical_projected_load_memory(source: &SharedMemory, pointer: &Pointer) -> SharedMemory {
+pub(crate) fn canonical_projected_load_memory(
+    source: &SharedMemory,
+    pointer: &Pointer,
+) -> SharedMemory {
     let projected =
         crate::kernel::intern_memory(canonical_program_memory_for_pointer_load(source, pointer));
     record_canonical_load_projection(source, &projected, pointer);

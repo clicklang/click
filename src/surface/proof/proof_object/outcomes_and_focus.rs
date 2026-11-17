@@ -901,7 +901,7 @@ impl<'a> Proof<'a> {
             .filter(|edges| edges.len() == checked.paths().len());
         let branch_state = &self.focused_branch().expect("focused branch exists").state;
         let frontier_state = branch_state.execution.clone();
-        let frontier_unfolds = branch_state.unfolded_predicates.clone();
+
         let frontier_anchor = frontier_state
             .as_ref()
             .and_then(|execution| frontier_premise_anchor(execution));
@@ -1094,7 +1094,6 @@ impl<'a> Proof<'a> {
                 ),
                 BranchState {
                     facts,
-                    unfolded_predicates: frontier_unfolds.clone(),
                     execution: outcome_execution,
                 },
             ));

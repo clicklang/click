@@ -163,7 +163,7 @@ pub(super) fn refinement_route_proves(
 /// planning: it chose an index alignment, an arm, and a rewrite
 /// representative, and issued refinement authority from that choice with no
 /// record of it. Those choices now belong to the refinement theorem's proof,
-/// where `both`, `left`/`right`, `intro`, `extract`, and `rewrite` spell them
+/// where `both`, `left`/`right`, `intro`, `have`, and `rewrite` spell them
 /// and `click expand` prints them. See `prepare_contract_refinement_obligations`,
 /// which emits the refinement implication, and
 /// `api.rs::prove_program_function_contract_refinement`, which issues authority only
@@ -315,7 +315,8 @@ pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
             | SpecProposition::ExistsAlgebraic { .. }
             | SpecProposition::ExistsPointer { .. }
             | SpecProposition::IntegerComparison { .. } => Visit::Descend,
-            SpecProposition::Predicate { .. }
+            SpecProposition::MutexHeld(_)
+            | SpecProposition::Predicate { .. }
             | SpecProposition::ResourceSeparate { .. }
             | SpecProposition::ResourceViewable { .. }
             | SpecProposition::ResourceContains { .. }
@@ -1064,8 +1065,6 @@ pub(super) fn statement_writes_aggregate_parameter(
         }
         ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue

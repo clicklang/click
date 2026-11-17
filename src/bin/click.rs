@@ -1190,7 +1190,7 @@ int32 parent(int32 *a, int32 *visited, int32 cur) {
     have r != 0 by { solve(); }
     have defined(a[cur]) by { solve(); }
     have exists (z: int32) { z == a[cur] } by {
-        extract(exists (z: int32) { z == a[cur] });
+        known();
         known();
     }
     step(); solve();

@@ -27,7 +27,7 @@ void copy_n(char* dst, const char* src, uint64 n) {
     requires separate(memory(dst[0u64..n + 1u64]), memory(src[0u64..n]));
     ensures bytes::equal(dst, 0u64, src, 0u64, n);
 } by {
-    unfold(bytes::equal);
+    unfold(bytes::equal(dst, 0u64, src, 0u64, n));
     step();
     mark copied;
     step();

@@ -87,3 +87,28 @@ fn wide_address_symbolic_arrays_keep_typed_loads_and_bounded_work() {
         );
     }
 }
+
+#[test]
+fn complete_byte_array_address_check_costs_no_work_per_unread_byte() {
+    let mut costs = Vec::new();
+    for width in [16, 256, 4096, 65536] {
+        let state = normal(
+            ExecutionState::new(),
+            program_declare("bytes", ProgramType::UInt8Array(width)),
+        );
+        let checked = crate::kernel::program_expression::checked_object_address(
+            crate::kernel::program_expression::typed_load(
+                crate::kernel::program_expression::variable("bytes"),
+                ProgramType::UInt8Array(width),
+            ),
+        );
+        let (address, work) =
+            crate::instrumentation::measure_deterministic_work(|| value(&state, checked));
+        assert!(matches!(address, ProgramValue::Pointer(_)));
+        costs.push(work);
+    }
+    assert!(
+        costs.windows(2).all(|pair| pair[1] <= pair[0]),
+        "address formation walked unread byte contents: {costs:?}"
+    );
+}

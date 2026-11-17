@@ -26,7 +26,7 @@ void caller(struct node* child, int32* slot) { consumes list(child); owns *slot;
         contains(memory(*slot), memory(*slot));
     };
     have *slot == at(before_call, *slot) by {
-        preserve(separate(statement(0).footprint, memory(*slot)));
+        preserve(memory(*slot), statement(0));
     }
 }
 ```

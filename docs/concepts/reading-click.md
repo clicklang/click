@@ -73,11 +73,11 @@ Only after you understand the claim should you read the proof script:
 <!-- verified-example: mdtests/sorted_predicate.md -->
 ```click
 by {
-    unfold(sorted);
+    unfold(sorted(p, n));
 }
 ```
 
-This script makes the predicate `sorted` transparent, and the implicit tail
+This script opens the selected `sorted(p, n)` application, and the implicit tail
 that ends every script runs the C and closes the claim. Most simple proofs
 omit the proof clause. A script usually means the proof needs a named
 predicate unfolded, an existential witness, a loop VC, or explicit frame

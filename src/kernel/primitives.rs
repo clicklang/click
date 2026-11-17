@@ -31,15 +31,13 @@ pub(crate) const SAME_OBJECT_PREDICATE_NAME: &str = "__click_same_object";
 /// `element_width`-byte elements: `{prefix}{element_width}(start, from, to)`
 /// (`design/pointer-subobject-extents.md`, Phase C).
 pub(crate) const SUBOBJECT_COVERS_PREDICATE_PREFIX: &str = "__click_subobject_covers_";
-pub(crate) const MUTEX_HELD_PREDICATE_NAME: &str = "__click_mutex_held";
 
-/// The Click spelling of the kernel predicate `name`: `held` and
-/// `same_object` for the built-ins, the declared name for a contract or a
+/// The Click spelling of the kernel predicate `name`: `same_object`
+/// for the built-in, the declared name for a contract or a
 /// user predicate. `None` marks verifier bookkeeping under the reserved
 /// `__click_` prefix, which no Click proposition lowers to.
 pub(crate) fn predicate_source_name(name: &str) -> Option<&str> {
     match name {
-        MUTEX_HELD_PREDICATE_NAME => Some("held"),
         SAME_OBJECT_PREDICATE_NAME => Some("same_object"),
         LITTLE_ENDIAN_PREDICATE_NAME => Some("little_endian"),
         _ => FunctionContract::surface_name_from_predicate(name)
@@ -51,7 +49,7 @@ impl Proposition {
     /// Whether this is kernel authority rather than a proof-state fact: a
     /// resource composition, or a predicate with no Click spelling. The
     /// kernel holds and checks it like any fact; no surface view presents or
-    /// cites it (`docs/internals/spellability.md`).
+    /// cites it (`docs/internals/raise-lower-principle.md`).
     pub(crate) fn is_kernel_authority(&self) -> bool {
         match self {
             Self::ResourceComposition(_) => true,
@@ -2384,7 +2382,6 @@ struct PointerQualifiers {
     /// checked against it.
     object_class: Option<crate::kernel::effective_type::CAccessClass>,
     object_type_evidence: Option<ObjectTypeEvidence>,
-    local_reference: Option<super::loans::LocalScalarReference>,
 }
 
 /// Exact non-address metadata shared by native and retained certification.
@@ -2397,7 +2394,6 @@ pub(in crate::kernel) struct RetainedPointerMetadata<'a> {
     extent_known: bool,
     declared_class: Option<&'a crate::kernel::effective_type::CAccessClass>,
     evidence: Option<&'a ObjectTypeEvidence>,
-    local_reference: Option<&'a super::loans::LocalScalarReference>,
 }
 
 /// The subobject a pointer was formed from, narrower than its complete
@@ -2587,6 +2583,26 @@ impl PointerValue {
             .with_designation(origin)
     }
 
+    /// The read that introduced this complete pointer's opaque domain when
+    /// its numeric address alone names a different read version. This is
+    /// producer provenance, not an address-alias or preservation query.
+    pub(crate) fn complete_read_source(&self) -> Option<(SharedMemory, Pointer)> {
+        if self.opaque_extent() != Some(self.designation())
+            || self.pointer.object_identity() == *self.designation()
+        {
+            return None;
+        }
+        let address_read = self.pointer.as_loaded_value()?;
+        let origin = self.designation().as_loaded_value()?;
+        if address_read.displacement != PointerOffsetTerm::Constant(0)
+            || origin.displacement != PointerOffsetTerm::Constant(0)
+            || address_read.defining_address != origin.defining_address
+        {
+            return None;
+        }
+        Some((origin.defining_memory, origin.defining_address))
+    }
+
     pub(crate) fn designation(&self) -> &Pointer {
         &self.designation
     }
@@ -2659,7 +2675,6 @@ impl PointerValue {
                 .as_ref()
                 .and_then(|q| q.object_class.as_ref()),
             evidence: self.object_origin_evidence(),
-            local_reference: self.local_reference(),
         }
     }
 
@@ -2694,19 +2709,6 @@ impl PointerValue {
             Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).constant =
                 pointee_constant;
         }
-        self
-    }
-
-    pub(in crate::kernel) fn local_reference(&self) -> Option<&super::loans::LocalScalarReference> {
-        self.qualifiers.as_ref()?.local_reference.as_ref()
-    }
-
-    pub(in crate::kernel) fn with_local_reference(
-        mut self,
-        reference: super::loans::LocalScalarReference,
-    ) -> Self {
-        Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).local_reference =
-            Some(reference);
         self
     }
 
@@ -2893,7 +2895,6 @@ impl PointerValue {
         bool,
         Option<&Pointer>,
         Option<&SubobjectExtent>,
-        Option<super::loans::LocalReferenceId>,
     ) {
         (
             &self.pointer,
@@ -2907,7 +2908,6 @@ impl PointerValue {
                 self.opaque_extent()
             },
             self.extent(),
-            self.local_reference().map(|reference| reference.id()),
         )
     }
 }
@@ -3737,7 +3737,6 @@ impl ExceptionalSignature {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct LValue {
-    pub(super) local_reference: Option<super::loans::LocalScalarReference>,
     pub(super) storage: LValueStorage,
     pub(super) value_type: ProgramType,
     pub(super) volatile: bool,
@@ -5462,6 +5461,8 @@ pub enum SpecProposition {
         program_type: ProgramType,
         body: Box<SpecProposition>,
     },
+    /// Observe this state's mutex protocol without conferring ownership.
+    MutexHeld(Box<SpecExpression>),
     Predicate {
         name: String,
         arguments: Vec<SpecPredicateArgument>,
@@ -5729,9 +5730,6 @@ pub enum ProgramStatement {
         pointer: ProgramExpression,
         value: ProgramExpression,
     },
-    /// Consume one live source lease at its checked ending frontier.
-    EndScalarReference(super::ScalarReferenceEnd),
-    ScalarReferenceScope(super::ScalarReferenceScope),
     TypedStore {
         pointer: ProgramExpression,
         value: ProgramExpression,
@@ -6591,6 +6589,7 @@ pub struct FunctionContractInterface {
     pub(crate) value_parameters: Vec<ProgramParameter>,
     pub(crate) resource_requires: Vec<ResourceSpec>,
     pub(crate) resource_ensures: Vec<ResourceSpec>,
+    pub(super) resource_transfer_rule: Arc<super::functions::SummaryResourceTransferRule>,
     pub(crate) resource_constructors: Vec<ResourceSpec>,
     pub(crate) contract_requires: Vec<SpecProposition>,
     /// For each lowered contract requirement, the originating source
@@ -6777,10 +6776,35 @@ impl Ord for ContractRequirementSources {
     }
 }
 
+// Declaration provenance is retained through instantiation but does not alter
+// a definition's semantic identity, just like ContractRequirementSources.
+#[derive(Clone, Debug, Default)]
+pub(super) struct PredicateRequirementSource(Option<usize>);
+impl PartialEq for PredicateRequirementSource {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+impl Eq for PredicateRequirementSource {}
+impl std::hash::Hash for PredicateRequirementSource {
+    fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
+}
+impl PartialOrd for PredicateRequirementSource {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for PredicateRequirementSource {
+    fn cmp(&self, _: &Self) -> std::cmp::Ordering {
+        std::cmp::Ordering::Equal
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct PredicateUnfolding {
     pub(super) predicate: SpecProposition,
     pub(super) body: SpecProposition,
+    pub(super) requirement_source: PredicateRequirementSource,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -10737,15 +10761,6 @@ impl ResourceOccurrenceId {
             Self { arena, ordinal }
         })
     }
-}
-
-/// Exact ownership withheld by a scalar-reference birth. Only the resource
-/// partition constructor can create this reservation; pointer values carry
-/// its reference id, never this payload or a resource context.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(in crate::kernel) struct ReservedLocalScalarOwner {
-    fact: ResourceFact,
-    occurrence: ResourceOccurrenceId,
 }
 
 /// An immutable resource composition state.
@@ -14723,6 +14738,8 @@ pub struct PureFactContext {
     /// each lowering path and planning probe, so an extension must copy
     /// only a search path, not the whole set.
     pub(super) prop_facts: super::fact_collections::FactSet<Proposition>,
+    /// Persistent exact Boolean propagation, maintained only at fact admission.
+    pub(super) exact_propagation: super::assumptions::exact_propagation::Index,
     pub(super) comparison_views: PersistentMap<
         super::assumptions::observation_comparisons::PropositionKey,
         crate::persistent::PersistentSet<Proposition>,

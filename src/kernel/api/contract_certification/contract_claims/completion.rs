@@ -235,7 +235,6 @@ impl WholeContractProof {
                 goal,
                 ProofBranchState {
                     facts: PureFactStore::default(),
-                    unfolded_predicates: Default::default(),
                     execution: None,
                 },
             )
@@ -523,7 +522,6 @@ mod tests {
                 crate::kernel::proof::ProofObligation::FunctionOutcome(goal),
                 ProofBranchState {
                     facts: PureFactStore::from_ordered(&[]),
-                    unfolded_predicates: PersistentOrderedSet::default(),
                     execution: None,
                 },
             ),
@@ -656,7 +654,6 @@ mod tests {
                 crate::kernel::proof::ProofObligation::FunctionOutcome(goal.clone()),
                 ProofBranchState {
                     facts: PureFactStore::from_ordered(std::slice::from_ref(&fact)),
-                    unfolded_predicates: PersistentOrderedSet::default(),
                     execution: None,
                 },
             ),

@@ -13,7 +13,7 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, n: int32, hi: int32) {
     ensures 0 <= unmarked(v, lo, hi) by {
         induct(hi) as ih;
         if hi <= lo {
-            peel(unmarked(v, lo, hi)) using { hi <= lo; };
+            unfold(unmarked(v, lo, hi));
             solve();
         } else {
             have 0 <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
@@ -29,10 +29,7 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, n: int32, hi: int32) {
             };
             have to_integer(lo) <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
             have to_integer(hi - 1) < 2147483647 by { solve() using { 0 <= lo; lo < hi; }; }
-            peel(unmarked(v, lo, hi)) using {
-                to_integer(lo) <= to_integer(hi - 1);
-                to_integer(hi - 1) < 2147483647;
-            };
+            unfold(unmarked(v, lo, hi));
             have 0 <= (if v[hi - 1] == 0 { 1 } else { 0 });
             have to_integer(0) <= to_integer((if v[hi - 1] == 0 { 1 } else { 0 }));
             have 0 <= unmarked(v, lo, hi - 1)
@@ -68,8 +65,8 @@ theorem unmarked_frame(
     ensures unmarked(a, lo, hi) == unmarked(b, lo, hi) by {
         induct(hi) as ih;
         if hi <= lo {
-            peel(unmarked(a, lo, hi)) using { hi <= lo; };
-            peel(unmarked(b, lo, hi)) using { hi <= lo; };
+            unfold(unmarked(a, lo, hi));
+            unfold(unmarked(b, lo, hi));
             solve();
         } else {
             have 0 <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
@@ -90,19 +87,14 @@ theorem unmarked_frame(
                 forall (k: int32) { lo <= k and k < m implies a[k] == b[k] };
             };
             have a[hi - 1] == b[hi - 1] by {
+                have lo <= (hi - 1) and (hi - 1) < m;
                 instantiate(forall (k: int32) {
                     lo <= k and k < m implies a[k] == b[k]
-                }, hi - 1) using { to_integer(lo) <= to_integer(hi - 1); to_integer(hi - 1) < to_integer(m); };
+                }, hi - 1);
                 known();
             }
-            peel(unmarked(a, lo, hi)) using {
-                to_integer(lo) <= to_integer(hi - 1);
-                to_integer(hi - 1) < 2147483647;
-            };
-            peel(unmarked(b, lo, hi)) using {
-                to_integer(lo) <= to_integer(hi - 1);
-                to_integer(hi - 1) < 2147483647;
-            };
+            unfold(unmarked(a, lo, hi));
+            unfold(unmarked(b, lo, hi));
             have to_integer(if a[hi - 1] == 0 { 1 } else { 0 })
                 == to_integer(if b[hi - 1] == 0 { 1 } else { 0 }) by {
                 solve() using { a[hi - 1] == b[hi - 1]; };
@@ -177,14 +169,8 @@ theorem unmarked_point_update(
                 };
                 have a[hi - 1] == 0 by { solve() using { a[j] == 0; to_integer(j) == to_integer(hi - 1); }; }
                 have b[hi - 1] != 0 by { solve() using { b[j] != 0; to_integer(j) == to_integer(hi - 1); }; }
-                peel(unmarked(a, lo, hi)) using {
-                    to_integer(lo) <= to_integer(hi - 1);
-                    to_integer(hi - 1) < 2147483647;
-                };
-                peel(unmarked(b, lo, hi)) using {
-                    to_integer(lo) <= to_integer(hi - 1);
-                    to_integer(hi - 1) < 2147483647;
-                };
+                unfold(unmarked(a, lo, hi));
+                unfold(unmarked(b, lo, hi));
                 have (if a[hi - 1] == 0 { 1 } else { 0 }) == 1 by {
                     normalize() using { a[hi - 1] == 0; };
                 }
@@ -234,19 +220,14 @@ theorem unmarked_point_update(
                     forall (k: int32) { j < k and k < n implies a[k] == b[k] };
                 };
                 have a[hi - 1] == b[hi - 1] by {
+                    have j < (hi - 1) and (hi - 1) < n;
                     instantiate(forall (k: int32) {
                         j < k and k < n implies a[k] == b[k]
-                    }, hi - 1) using { to_integer(j) < to_integer(hi - 1); to_integer(hi - 1) < to_integer(n); };
+                    }, hi - 1);
                     known();
                 }
-                peel(unmarked(a, lo, hi)) using {
-                    to_integer(lo) <= to_integer(hi - 1);
-                    to_integer(hi - 1) < 2147483647;
-                };
-                peel(unmarked(b, lo, hi)) using {
-                    to_integer(lo) <= to_integer(hi - 1);
-                    to_integer(hi - 1) < 2147483647;
-                };
+                unfold(unmarked(a, lo, hi));
+                unfold(unmarked(b, lo, hi));
                 have to_integer(if a[hi - 1] == 0 { 1 } else { 0 })
                     == to_integer(if b[hi - 1] == 0 { 1 } else { 0 }) by {
                     solve() using { a[hi - 1] == b[hi - 1]; };

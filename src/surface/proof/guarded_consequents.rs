@@ -4,13 +4,13 @@
 //! or a return keeps its no-overflow condition as the antecedent of the
 //! equality it states: `defined(old(st.live) + result) implies st.live ==
 //! old(st.live) + result`. The kernel does not harvest such a consequent on
-//! its own; the checked `extract` rule does once the guard is an available
-//! fact. This closer selects the guarded comparisons whose consequent shares
+//! its own; explicit implication application does once the guard is an
+//! available fact. This closer selects the guarded comparisons whose consequent shares
 //! an operand with the goal, proves each guard with an ordinary nested
 //! `solve` (the bounded overflow-interval reasoning decides it from the
-//! operands' bounds), extracts the consequent, and continues the closure.
+//! operands' bounds), applies the implication, and continues the closure.
 //! Expansion therefore renders the discharge as `have defined(..) by { .. }`
-//! followed by `extract(..)`. An implication under an ordinary condition is
+//! followed by `apply(fact) using { .. }`. An implication under an ordinary condition is
 //! not selected here: its antecedent is never proved by a nested search. The
 //! direct logical closure applies one only when its antecedent is already
 //! exactly available (`try_discharged_consequent_closure`).
@@ -53,9 +53,9 @@ impl Drop for GuardedConsequentScope {
 }
 
 impl<'a> Proof<'a> {
-    /// Spell the guard and the consequent of one selected guarded equality
+    /// Raise the guard and the consequent of one selected guarded equality
     /// so each lowers back to exactly its kernel form. Terms read from the
-    /// model fields the goal names are spelled through those fields at the
+    /// model fields the goal names are raised through those fields at the
     /// current state, the function entry, or a recorded state; other terms
     /// take the ordinary bounded synthesis. A candidate that does not lower
     /// back to its kernel form is not offered.
@@ -64,8 +64,8 @@ impl<'a> Proof<'a> {
         guard: &Proposition,
         consequent: &Proposition,
     ) -> Option<(ClickProposition, ClickProposition)> {
-        let (surface_guard, surface_consequent) = self.with_guarded_term_speller(|speller| {
-            Some((speller.guard(guard)?, speller.comparison(consequent)?))
+        let (surface_guard, surface_consequent) = self.with_guarded_term_raiser(|raiser| {
+            Some((raiser.guard(guard)?, raiser.comparison(consequent)?))
         })?;
         let surface_consequent =
             super::smart_closures::observed_native_arithmetic(consequent, &surface_consequent);
@@ -74,16 +74,16 @@ impl<'a> Proof<'a> {
         .then_some((surface_guard, surface_consequent))
     }
 
-    /// Spell one order or equality comparison from the current state's
-    /// names, accepted only when the spelling lowers back to `kernel`. Solve
-    /// uses it for a selected bound that has no recorded spelling of its
-    /// own: a leaf conjunct of a written fact, whose recorded spelling is the
+    /// Raise one order or equality comparison from the current state's
+    /// names, accepted only when the Surface form lowers back to `kernel`. Solve
+    /// uses it for a selected bound that has no recorded Surface form of its
+    /// own: a leaf conjunct of a written fact, whose recorded Surface form is the
     /// whole conjunction, or a branch condition's negation.
-    pub(super) fn spelled_comparison_surface(
+    pub(super) fn raised_comparison_surface(
         &self,
         kernel: &Proposition,
     ) -> Option<ClickProposition> {
-        let surface = self.with_guarded_term_speller(|speller| speller.comparison(kernel))?;
+        let surface = self.with_guarded_term_raiser(|raiser| raiser.comparison(kernel))?;
         self.surface_lowers_to(&surface, kernel).then_some(surface)
     }
 
@@ -98,9 +98,9 @@ impl<'a> Proof<'a> {
             })
     }
 
-    fn with_guarded_term_speller<R>(
+    fn with_guarded_term_raiser<R>(
         &self,
-        spell: impl FnOnce(&GuardedTermSpeller) -> Option<R>,
+        raise: impl FnOnce(&GuardedTermRaiser) -> Option<R>,
     ) -> Option<R> {
         let view = self
             .outcome_fixed_state_view()
@@ -123,10 +123,10 @@ impl<'a> Proof<'a> {
                     .collect::<BTreeMap<_, _>>()
             })
             .unwrap_or_default();
-        spell(&GuardedTermSpeller {
+        raise(&GuardedTermRaiser {
             view: &view,
             accesses: &accesses,
-            retained_states: view.fixed_state.recorded_states.recent(MAX_SPELLING_STATES),
+            retained_states: view.fixed_state.recorded_states.recent(MAX_RAISING_STATES),
             bound,
         })
     }
@@ -181,7 +181,7 @@ fn overflow_operands(
 }
 
 /// The recorded states consulted for an earlier model-field value.
-const MAX_SPELLING_STATES: usize = 16;
+const MAX_RAISING_STATES: usize = 16;
 
 /// The distinct model-field accesses written in a goal.
 fn collect_goal_field_accesses(
@@ -235,7 +235,7 @@ fn collect_goal_field_accesses(
     }
 }
 
-struct GuardedTermSpeller<'v, 'p> {
+struct GuardedTermRaiser<'v, 'p> {
     view: &'v FixedStateOperationView<'p>,
     accesses: &'v [ResourceFieldAccess],
     retained_states: Vec<(&'p ProgramPointSelector, &'p ExecutionState)>,
@@ -243,7 +243,7 @@ struct GuardedTermSpeller<'v, 'p> {
     bound: BTreeMap<Variable, SurfaceBinder>,
 }
 
-impl GuardedTermSpeller<'_, '_> {
+impl GuardedTermRaiser<'_, '_> {
     fn guard(&self, guard: &Proposition) -> Option<ClickProposition> {
         // Complete ordinary range guards name the same operation as the
         // former private overflow query. Keep model-field state names on
@@ -271,7 +271,7 @@ impl GuardedTermSpeller<'_, '_> {
         let Proposition::ConditionIs(condition, value) = proposition else {
             return None;
         };
-        // The ordinary synthesis spells a comparison over current names and
+        // The ordinary synthesis raises a comparison over current names and
         // the enclosing binders whole; the pieces below cover what it cannot
         // name (an earlier model field, a local out of scope).
         if !self.bound.is_empty()
@@ -387,7 +387,7 @@ impl GuardedTermSpeller<'_, '_> {
 
     /// A model field the goal names, read at the current state, at function
     /// entry, or at the newest recorded state that holds this value.
-    fn field_spelling(&self, term: &MachineTerm) -> Option<ContractExpression> {
+    fn field_surface(&self, term: &MachineTerm) -> Option<ContractExpression> {
         let named = |access: &ResourceFieldAccess| {
             Box::new(ContractExpression::ResourceField(access.clone()))
         };
@@ -422,7 +422,7 @@ impl GuardedTermSpeller<'_, '_> {
                 ProgramExpression::Variable((name.clone()).into()),
             ));
         }
-        if let Some(field) = self.field_spelling(term) {
+        if let Some(field) = self.field_surface(term) {
             return Some(field);
         }
         let binary = |left: &MachineTerm, right: &MachineTerm| {
@@ -481,7 +481,7 @@ impl GuardedTermSpeller<'_, '_> {
             })
     }
 
-    /// Named marks first: they are the author's own stable spelling.
+    /// Named marks first: they are the author's own stable Surface form.
     fn preferred_states(&self) -> impl Iterator<Item = &(&ProgramPointSelector, &ExecutionState)> {
         self.retained_states
             .iter()

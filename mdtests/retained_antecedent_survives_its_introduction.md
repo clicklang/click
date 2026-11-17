@@ -23,7 +23,7 @@ int32 retained_antecedent(int32 n) {
         intro();
         intro();
         intro();
-        extract(n / k == n);
+        have n / k == n;
         normalize();
     }
     solve();

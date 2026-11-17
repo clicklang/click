@@ -67,14 +67,14 @@ int32 owned_string_push(struct owned_string* owner, int32 value) {
         solve();
     }
     have terminated_at(owner->data, owner->len) by {
-        unfold(terminated_at);
+        unfold(terminated_at(owner->data, owner->len));
         solve();
     }
     have owner->data[old(owner->len)] == value by {
         solve();
     }
     have owner->data[owner->len] == 0 by {
-        unfold(terminated_at);
+        unfold(terminated_at(owner->data, owner->len));
         known();
     }
     fold(owned_string(owner));

@@ -1,76 +1,15 @@
 use super::*;
 
-pub(in crate::surface) fn unfold_available_predicate_facts(
-    spec_definitions: SpecDefinitions<'_>,
-    unfolded_predicates: &[String],
-    available_pure_facts: &[Proposition],
-) -> Result<Vec<Proposition>, String> {
-    let mut facts = available_pure_facts.to_vec();
-    facts.extend(unfold_available_predicate_fact_delta(
-        spec_definitions,
-        unfolded_predicates,
-        available_pure_facts,
-    )?);
-    Ok(facts)
-}
-
-pub(in crate::surface) fn unfold_available_predicate_fact_delta(
-    spec_definitions: SpecDefinitions<'_>,
-    unfolded_predicates: &[String],
-    available: &(impl crate::kernel::proof::PropositionSource + ?Sized),
-) -> Result<Vec<Proposition>, String> {
-    if unfolded_predicates.is_empty() {
-        return Ok(Vec::new());
-    }
-    let facts = available.fact_store();
-    let mut delta = Vec::new();
-    for proposition in facts.propositions().filter(|proposition| {
-        proposition_contains_named_predicate(proposition, unfolded_predicates)
-    }) {
-        let unfolded = unfold_predicates_in_proposition(
-            spec_definitions,
-            unfolded_predicates,
-            proposition,
-            facts.assumptions(),
-        )?;
-        if &unfolded != proposition
-            && !facts.contains_presented(&unfolded)
-            && !delta.contains(&unfolded)
-        {
-            delta.push(unfolded);
-        }
-    }
-    Ok(delta)
-}
-
-fn proposition_contains_named_predicate(proposition: &Proposition, names: &[String]) -> bool {
-    match proposition {
-        Proposition::Predicate { name, .. } => names
-            .iter()
-            .any(|candidate| predicate_instance_name_matches(name, candidate)),
-        Proposition::And(left, right)
-        | Proposition::Or(left, right)
-        | Proposition::Implies(left, right) => {
-            proposition_contains_named_predicate(left, names)
-                || proposition_contains_named_predicate(right, names)
-        }
-        Proposition::Not(body)
-        | Proposition::ForAll { body, .. }
-        | Proposition::Exists { body, .. } => proposition_contains_named_predicate(body, names),
-        _ => false,
-    }
-}
-
 pub(in crate::surface) fn unfold_predicates_in_proposition(
     spec_definitions: SpecDefinitions<'_>,
-    unfolded_predicates: &[String],
+    selected_definitions: &[String],
     proposition: &Proposition,
     assumptions: &PureFactContext,
 ) -> Result<Proposition, String> {
     let mut active = BTreeSet::new();
     unfold_predicates_in_proposition_with_active(
         spec_definitions,
-        unfolded_predicates,
+        selected_definitions,
         proposition,
         assumptions,
         &mut active,
@@ -79,21 +18,21 @@ pub(in crate::surface) fn unfold_predicates_in_proposition(
 
 pub(in crate::surface) fn unfold_predicates_in_proposition_with_active(
     spec_definitions: SpecDefinitions<'_>,
-    unfolded_predicates: &[String],
+    selected_definitions: &[String],
     proposition: &Proposition,
     assumptions: &PureFactContext,
     active: &mut BTreeSet<String>,
 ) -> Result<Proposition, String> {
     match proposition {
         Proposition::Predicate { name, arguments }
-            if unfolded_predicates
+            if selected_definitions
                 .iter()
                 .any(|predicate| predicate_instance_name_matches(name, predicate)) =>
         {
             if !active.insert(name.clone()) {
                 return Err(format!("recursive unfold of predicate `{name}`"));
             }
-            let source_name = unfolded_predicates
+            let source_name = selected_definitions
                 .iter()
                 .find(|candidate| predicate_instance_name_matches(name, candidate))
                 .expect("the predicate guard selected a source name");
@@ -113,27 +52,20 @@ pub(in crate::surface) fn unfold_predicates_in_proposition_with_active(
                 assumptions,
                 spec_definitions,
             )?;
-            let unfolded = unfold_predicates_in_proposition_with_active(
-                spec_definitions,
-                unfolded_predicates,
-                &unfolded,
-                assumptions,
-                active,
-            )?;
             active.remove(name);
             Ok(unfolded)
         }
         Proposition::And(left, right) => Ok(Proposition::And(
             Box::new(unfold_predicates_in_proposition_with_active(
                 spec_definitions,
-                unfolded_predicates,
+                selected_definitions,
                 left,
                 assumptions,
                 active,
             )?),
             Box::new(unfold_predicates_in_proposition_with_active(
                 spec_definitions,
-                unfolded_predicates,
+                selected_definitions,
                 right,
                 assumptions,
                 active,
@@ -142,14 +74,14 @@ pub(in crate::surface) fn unfold_predicates_in_proposition_with_active(
         Proposition::Or(left, right) => Ok(Proposition::Or(
             Box::new(unfold_predicates_in_proposition_with_active(
                 spec_definitions,
-                unfolded_predicates,
+                selected_definitions,
                 left,
                 assumptions,
                 active,
             )?),
             Box::new(unfold_predicates_in_proposition_with_active(
                 spec_definitions,
-                unfolded_predicates,
+                selected_definitions,
                 right,
                 assumptions,
                 active,
@@ -158,7 +90,7 @@ pub(in crate::surface) fn unfold_predicates_in_proposition_with_active(
         Proposition::Not(body) => Ok(Proposition::Not(Box::new(
             unfold_predicates_in_proposition_with_active(
                 spec_definitions,
-                unfolded_predicates,
+                selected_definitions,
                 body,
                 assumptions,
                 active,
@@ -167,7 +99,7 @@ pub(in crate::surface) fn unfold_predicates_in_proposition_with_active(
         Proposition::Implies(left, right) => {
             let left = unfold_predicates_in_proposition_with_active(
                 spec_definitions,
-                unfolded_predicates,
+                selected_definitions,
                 left,
                 assumptions,
                 active,
@@ -175,7 +107,7 @@ pub(in crate::surface) fn unfold_predicates_in_proposition_with_active(
             let right_assumptions = assumptions.clone().assume_proposition(left.clone());
             let right = unfold_predicates_in_proposition_with_active(
                 spec_definitions,
-                unfolded_predicates,
+                selected_definitions,
                 right,
                 &right_assumptions,
                 active,
@@ -193,7 +125,7 @@ pub(in crate::surface) fn unfold_predicates_in_proposition_with_active(
             name: name.clone(),
             body: Box::new(unfold_predicates_in_proposition_with_active(
                 spec_definitions,
-                unfolded_predicates,
+                selected_definitions,
                 body,
                 assumptions,
                 active,
@@ -210,7 +142,7 @@ pub(in crate::surface) fn unfold_predicates_in_proposition_with_active(
             sort: sort.clone(),
             body: Box::new(unfold_predicates_in_proposition_with_active(
                 spec_definitions,
-                unfolded_predicates,
+                selected_definitions,
                 body,
                 assumptions,
                 active,

@@ -17,7 +17,7 @@ int32 narrow(int32 *p, int32 lo, int32 hi, int32 k) {
 } by {
     have forall (j: int32) { lo <= j and j < hi implies defined(p[j]) } by { known(); }
     have defined(p[k]) by {
-        instantiate(forall (j: int32) { lo <= j and j < hi implies defined(p[j]) }, k) using { lo <= k; k < hi; };
+        instantiate(forall (j: int32) { lo <= j and j < hi implies defined(p[j]) }, k);
         known();
     }
 }
@@ -29,7 +29,7 @@ int32 wide(uint8 *p, uint64 lo, uint64 k, uint64 i) {
 } by {
     have forall (j: uint64) { lo <= j and j < k implies defined(p[j]) } by { known(); }
     have defined(p[i]) by {
-        instantiate(forall (j: uint64) { lo <= j and j < k implies defined(p[j]) }, i) using { lo <= i; i < k; };
+        instantiate(forall (j: uint64) { lo <= j and j < k implies defined(p[j]) }, i);
         known();
     }
 }
@@ -41,7 +41,7 @@ int32 pointers(int32 **p, int32 n, int32 k) {
 } by {
     have forall (j: int32) { 0 <= j and j < n implies defined(p[j]) } by { known(); }
     have defined(p[k]) by {
-        instantiate(forall (j: int32) { 0 <= j and j < n implies defined(p[j]) }, k) using { 0 <= k; k < n; };
+        instantiate(forall (j: int32) { 0 <= j and j < n implies defined(p[j]) }, k);
         known();
     }
 }

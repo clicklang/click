@@ -3194,7 +3194,20 @@ impl CppFunction {
                         require_object_pointer_value(&local.value_type, "automatic pointer local")?;
                     }
                     CppType::LvalueReference { pointee } => {
-                        require_native_pointer_element(pointee, true, "automatic reference local")?;
+                        if let CppType::Record {
+                            declaration_id,
+                            name,
+                            ..
+                        } = pointee.as_ref()
+                        {
+                            validate_record_reference(records, declaration_id, name)?;
+                        } else {
+                            require_native_pointer_element(
+                                pointee,
+                                true,
+                                "automatic reference local",
+                            )?;
+                        }
                     }
                     CppType::FunctionPointer { .. } => {
                         require_function_pointer(&local.value_type, "function-pointer local")?;
@@ -4907,10 +4920,24 @@ impl CppExpression {
                         projection.span().validate(logical_source)?;
                     }
                     let (field_type, root_const) = resolve_reference_type(root, place, records)?;
-                    require_native_pointer_element(field_type, false, "addressed record field")?;
+                    if let CppType::Record {
+                        declaration_id,
+                        name,
+                        ..
+                    } = field_type
+                    {
+                        validate_record_reference(records, declaration_id, name)?;
+                    } else {
+                        require_native_pointer_element(
+                            field_type,
+                            false,
+                            "addressed record field",
+                        )?;
+                    }
                     let mut effective_type = field_type.clone();
                     if let CppType::Integer { is_const, .. }
-                    | CppType::Enumeration { is_const, .. } = &mut effective_type
+                    | CppType::Enumeration { is_const, .. }
+                    | CppType::Record { is_const, .. } = &mut effective_type
                     {
                         *is_const |= root_const;
                     }
@@ -4925,10 +4952,21 @@ impl CppExpression {
                 let object_type = validate_place_reference(place, places, logical_source)?;
                 let pointee = match object_type {
                     CppType::LvalueReference { pointee } => pointee.as_ref(),
-                    CppType::Integer { .. } | CppType::Enumeration { .. } => object_type,
+                    CppType::Integer { .. }
+                    | CppType::Enumeration { .. }
+                    | CppType::Record { .. } => object_type,
                     _ => return Err("C++ address-of requires a native scalar object".into()),
                 };
-                require_native_pointer_element(pointee, true, "addressed object type")?;
+                if let CppType::Record {
+                    declaration_id,
+                    name,
+                    ..
+                } = pointee
+                {
+                    validate_record_reference(records, declaration_id, name)?;
+                } else {
+                    require_native_pointer_element(pointee, true, "addressed object type")?;
+                }
                 let CppType::Pointer { pointee: result } = value_type else {
                     return Err("C++ address-of result must be a pointer".into());
                 };
@@ -4947,13 +4985,35 @@ impl CppExpression {
                 let CppType::LvalueReference { pointee } = value_type else {
                     return Err("C++ reference binding requires a reference result type".into());
                 };
-                require_native_pointer_element(pointee, true, "reference result pointee")?;
+                if let CppType::Record {
+                    declaration_id,
+                    name,
+                    ..
+                } = pointee.as_ref()
+                {
+                    validate_record_reference(records, declaration_id, name)?;
+                } else {
+                    require_native_pointer_element(pointee, true, "reference result pointee")?;
+                }
                 let CppType::Pointer { pointee: source } = address.value_type() else {
                     return Err(
                         "C++ reference binding requires an address, not a scalar value".into(),
                     );
                 };
-                require_native_pointer_element(source, true, "reference binding address pointee")?;
+                if let CppType::Record {
+                    declaration_id,
+                    name,
+                    ..
+                } = source.as_ref()
+                {
+                    validate_record_reference(records, declaration_id, name)?;
+                } else {
+                    require_native_pointer_element(
+                        source,
+                        true,
+                        "reference binding address pointee",
+                    )?;
+                }
                 // Qualification may be added, never removed; widths remain exact.
                 if !super::scalar::reference_binds(source, pointee) {
                     return Err(

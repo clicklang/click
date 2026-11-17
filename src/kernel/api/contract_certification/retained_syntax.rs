@@ -609,9 +609,7 @@ mod tests {
                 .with_object_type_evidence(Some(ObjectTypeEvidence::parameter(class, 3, 2, false))),
             base.clone()
                 .with_declared_object_class(Some(CAccessClass::Scalar(CScalarClass::Short))),
-            base.with_local_reference(
-                crate::kernel::loans::LocalScalarReference::fresh_for_payload_test(),
-            ),
+            base,
         ];
         for a in &values {
             for b in &values {

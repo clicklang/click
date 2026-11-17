@@ -26,7 +26,7 @@ void copy_u(uint8* dst, const uint8* src) {
     requires separate(memory(dst[0..5]), memory(src[0..4]));
     ensures bytes::equal(dst, 0u64, src, 0u64, 4u64);
 } by {
-    unfold(bytes::equal);
+    unfold(bytes::equal(dst, 0u64, src, 0u64, 4u64));
     step();
     mark copied;
     step();
@@ -39,7 +39,7 @@ void copy_u(uint8* dst, const uint8* src) {
         have separate(statement(1).footprint, memory(dst[0u64 + k])) by {
             normalize() using { separate(memory(dst[4]), memory(dst[0u64 + k])); };
         }
-        preserve(separate(statement(1).footprint, memory(dst[0u64 + k])));
+        preserve(memory(dst[0u64 + k]), statement(1));
     }
     have bytes::equal(dst, 0u64, src, 0u64, 4u64) by {
         transport(

@@ -91,19 +91,19 @@ void rotate(struct node* parent) {
                                         normalize() using { separate(memory(sibling->left), memory(sid->right)); };
                                     }
                                     have sid->right == at(before_link_0, sid->right) by {
-                                        preserve(separate(loop(0).statement(3).footprint, memory(sid->right)));
+                                        preserve(memory(sid->right), loop(0).statement(3));
                                     }
                                     have separate(loop(0).statement(3).footprint, memory(iid->left)) by {
                                         normalize() using { separate(memory(sibling->left), memory(iid->left)); };
                                     }
                                     have iid->left == at(before_link_0, iid->left) by {
-                                        preserve(separate(loop(0).statement(3).footprint, memory(iid->left)));
+                                        preserve(memory(iid->left), loop(0).statement(3));
                                     }
                                     have separate(loop(0).statement(3).footprint, memory(parent->left)) by {
                                         normalize() using { separate(memory(sibling->left), memory(parent->left)); };
                                     }
                                     have parent->left == at(before_link_0, parent->left) by {
-                                        preserve(separate(loop(0).statement(3).footprint, memory(parent->left)));
+                                        preserve(memory(parent->left), loop(0).statement(3));
                                     }
                                     have sid->left == tmp1;
                                     mark before_link_1;
@@ -116,7 +116,7 @@ void rotate(struct node* parent) {
                                         normalize() using { separate(memory(tmp2->right), memory(sid->right)); };
                                     }
                                     have sid->right == at(before_link_1, sid->right) by {
-                                        preserve(separate(loop(0).statement(4).footprint, memory(sid->right)));
+                                        preserve(memory(sid->right), loop(0).statement(4));
                                     }
                                     have sid->right == at(inner_inputs, sid->right) by {
                                         rewrite(sid->right, at(before_link_1, sid->right));
@@ -126,7 +126,7 @@ void rotate(struct node* parent) {
                                         normalize() using { separate(memory(tmp2->right), memory(iid->left)); };
                                     }
                                     have iid->left == at(before_link_1, iid->left) by {
-                                        preserve(separate(loop(0).statement(4).footprint, memory(iid->left)));
+                                        preserve(memory(iid->left), loop(0).statement(4));
                                     }
                                     have iid->left == at(inner_inputs, iid->left) by {
                                         rewrite(iid->left, at(before_link_1, iid->left));
@@ -136,7 +136,7 @@ void rotate(struct node* parent) {
                                         normalize() using { separate(memory(tmp2->right), memory(parent->left)); };
                                     }
                                     have parent->left == at(before_link_1, parent->left) by {
-                                        preserve(separate(loop(0).statement(4).footprint, memory(parent->left)));
+                                        preserve(memory(parent->left), loop(0).statement(4));
                                     }
                                     have parent->left == at(inner_inputs, parent->left) by {
                                         rewrite(parent->left, at(before_link_1, parent->left));
@@ -146,7 +146,7 @@ void rotate(struct node* parent) {
                                         normalize() using { separate(memory(tmp2->right), memory(sid->left)); };
                                     }
                                     have sid->left == at(before_link_1, sid->left) by {
-                                        preserve(separate(loop(0).statement(4).footprint, memory(sid->left)));
+                                        preserve(memory(sid->left), loop(0).statement(4));
                                     }
                                     have iid->right == sid;
                                     have defined(iid->right) by { rewrite(iid, tmp2); normalize(); }
@@ -161,7 +161,7 @@ void rotate(struct node* parent) {
                                         normalize() using { separate(memory(parent->right), memory(sid->right)); };
                                     }
                                     have sid->right == at(before_parent_store, sid->right) by {
-                                        preserve(separate(loop(0).statement(5).footprint, memory(sid->right)));
+                                        preserve(memory(sid->right), loop(0).statement(5));
                                     }
                                     have sid->right == at(inner_inputs, sid->right) by {
                                         rewrite(sid->right, at(before_parent_store, sid->right));
@@ -171,7 +171,7 @@ void rotate(struct node* parent) {
                                         normalize() using { separate(memory(parent->right), memory(iid->left)); };
                                     }
                                     have iid->left == at(before_parent_store, iid->left) by {
-                                        preserve(separate(loop(0).statement(5).footprint, memory(iid->left)));
+                                        preserve(memory(iid->left), loop(0).statement(5));
                                     }
                                     have iid->left == at(inner_inputs, iid->left) by {
                                         rewrite(iid->left, at(before_parent_store, iid->left));
@@ -181,7 +181,7 @@ void rotate(struct node* parent) {
                                         normalize() using { separate(memory(parent->right), memory(parent->left)); };
                                     }
                                     have parent->left == at(before_parent_store, parent->left) by {
-                                        preserve(separate(loop(0).statement(5).footprint, memory(parent->left)));
+                                        preserve(memory(parent->left), loop(0).statement(5));
                                     }
                                     have parent->left == at(inner_inputs, parent->left) by {
                                         rewrite(parent->left, at(before_parent_store, parent->left));
@@ -191,7 +191,7 @@ void rotate(struct node* parent) {
                                         normalize() using { separate(memory(parent->right), memory(sid->left)); };
                                     }
                                     have sid->left == at(before_parent_store, sid->left) by {
-                                        preserve(separate(loop(0).statement(5).footprint, memory(sid->left)));
+                                        preserve(memory(sid->left), loop(0).statement(5));
                                     }
                                     have sid->left == at(before_link_1, sid->left) by {
                                         rewrite(sid->left, at(before_parent_store, sid->left));
@@ -201,10 +201,10 @@ void rotate(struct node* parent) {
                                         normalize() using { separate(memory(parent->right), memory(iid->right)); };
                                     }
                                     have defined(iid->right) by {
-                                        preserve(separate(loop(0).statement(5).footprint, memory(iid->right)));
+                                        preserve(memory(iid->right), loop(0).statement(5));
                                     }
                                     have iid->right == at(before_parent_store, iid->right) by {
-                                        preserve(separate(loop(0).statement(5).footprint, memory(iid->right)));
+                                        preserve(memory(iid->right), loop(0).statement(5));
                                     }
                                     have parent->right == iid;
                                     have iid->right == sid;

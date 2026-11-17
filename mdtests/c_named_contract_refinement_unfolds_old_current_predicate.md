@@ -31,8 +31,8 @@ void increment_cell(int32* cell) {
 
 theorem increment_cell_makes_progress() {
     ensures MakesProgress(&increment_cell) by {
-        unfold(MakesProgress);
-        unfold(Increased);
+        unfold(MakesProgress(&increment_cell));
+        unfold(Increased(old(cell[0]), cell[0]));
         solve();
     }
 }

@@ -1274,7 +1274,7 @@ pub enum ContractEntryFactOrigin {
     /// The facts of the instance arm the requirements select.
     Publication,
     /// The identity of a registered predicate whose body the entry holds.
-    PredicateIdentity,
+    PredicateIdentity(Option<usize>),
     /// A fact of `requires` clause `index` where that clause is the body of
     /// a registered predicate: what the predicate says once unfolded.
     PredicateBody(usize),
@@ -1443,19 +1443,20 @@ pub fn program_function_contract_entry(
                 continue;
             };
             if PureFactContext::settles_exactly(&assumptions, &body) {
-                identities.push(predicate);
+                identities.push((predicate, unfolding.requirement_source()));
             }
         }
     }
-    let assumptions = identities
-        .into_iter()
-        .fold(assumptions, |assumptions, identity| {
-            entry_facts.assume(
-                assumptions,
-                ContractEntryFactOrigin::PredicateIdentity,
-                identity,
-            )
-        });
+    let assumptions =
+        identities
+            .into_iter()
+            .fold(assumptions, |assumptions, (identity, source)| {
+                entry_facts.assume(
+                    assumptions,
+                    ContractEntryFactOrigin::PredicateIdentity(source),
+                    identity,
+                )
+            });
     let stated = entry_facts
         .0
         .iter()
@@ -2840,7 +2841,7 @@ pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions
             crate::kernel::functions::expand_all_composite_resource_facts_with_composites(
                 left,
                 composite_resource_definitions,
-                left_memory,
+                &crate::kernel::ProgramPoint::of_memory(left_memory),
                 assumptions,
             )
         },
@@ -2853,7 +2854,7 @@ pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions
             crate::kernel::functions::expand_all_composite_resource_facts_with_composites(
                 right,
                 composite_resource_definitions,
-                right_memory,
+                &crate::kernel::ProgramPoint::of_memory(right_memory),
                 assumptions,
             )
         },
@@ -3971,7 +3972,6 @@ mod entry_authority_tests {
                 ProofObligation::FunctionOutcome(goal),
                 ProofBranchState {
                     facts: PureFactStore::default(),
-                    unfolded_predicates: Default::default(),
                     execution: None,
                 },
             ),

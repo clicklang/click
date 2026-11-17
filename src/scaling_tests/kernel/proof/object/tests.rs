@@ -22,7 +22,6 @@ fn invariant_body_evidence_requires_exact_complete_root_and_context() {
                 ProofObligation::Frontier(FrontierObligation),
                 ProofBranchState {
                     facts,
-                    unfolded_predicates: PersistentOrderedSet::default(),
                     execution: Some(Arc::new(ProofExecutionState::new(core, ()))),
                 },
             ),
@@ -176,7 +175,6 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
                 ProofObligation::Frontier(FrontierObligation),
                 ProofBranchState {
                     facts,
-                    unfolded_predicates: PersistentOrderedSet::default(),
                     execution: Some(Arc::new(ProofExecutionState::new(core, ()))),
                 },
             ),
@@ -396,7 +394,6 @@ fn pure_match_and_payload_freshening_ignore_unrelated_facts() {
                 )),
                 ProofBranchState {
                     facts,
-                    unfolded_predicates: PersistentOrderedSet::default(),
                     execution: None,
                 },
             ),
@@ -435,7 +432,6 @@ fn pure_match_constructor_obligation_work_is_linear_in_the_family() {
                 )),
                 ProofBranchState {
                     facts: PureFactStore::from_ordered(&[]),
-                    unfolded_predicates: PersistentOrderedSet::default(),
                     execution: None,
                 },
             ),
@@ -488,7 +484,6 @@ fn typed_universal_intro_adds_fresh_bounds_without_scanning_ambient_facts() {
                 ProofObligation::Proposition(PropositionObligation::new(goal.clone(), ())),
                 ProofBranchState {
                     facts: PureFactStore::from_ordered(&ambient),
-                    unfolded_predicates: PersistentOrderedSet::default(),
                     execution: None,
                 },
             ),
@@ -614,6 +609,248 @@ fn known_computation_work_is_linear_in_shared_integer_terms() {
         costs[0] > 0 && costs.windows(2).all(|pair| pair[1] <= pair[0] * 3),
         "{costs:?}"
     );
+}
+
+#[test]
+fn apply_fact_uses_only_selected_implication_and_evidence() {
+    type TestProof = ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()>;
+    let atom = |name: String| Proposition::Predicate {
+        name,
+        arguments: vec![],
+    };
+    let antecedent = atom("selected_antecedent".into());
+    let conclusion = atom("selected_conclusion".into());
+    let implication =
+        Proposition::Implies(Box::new(antecedent.clone()), Box::new(conclusion.clone()));
+    let mut samples = Vec::new();
+    for size in [4, 16, 64, 256] {
+        let mut facts = vec![antecedent.clone(), implication.clone()];
+        for index in 0..size {
+            facts.push(atom(format!("unrelated_{index}")));
+            // Grow the exact same consequent bucket, so a hidden source
+            // search cannot pass by merely ignoring unrelated facts.
+            facts.push(Proposition::Implies(
+                Box::new(atom(format!("other_antecedent_{index}"))),
+                Box::new(conclusion.clone()),
+            ));
+        }
+        let root: TestProof = ProofObject::root(
+            (),
+            ProofBranch::new(
+                ProofObligation::Proposition(PropositionObligation::new(conclusion.clone(), ())),
+                ProofBranchState {
+                    facts: PureFactStore::from_ordered(&facts),
+                    execution: None,
+                },
+            ),
+        );
+        let (((), work), maps) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                assert!(
+                    root.apply_fact(&implication, std::slice::from_ref(&antecedent))
+                        .unwrap()
+                        .is_complete()
+                );
+                assert!(root.apply_fact(&implication, &[]).is_err());
+                assert!(
+                    root.apply_fact(&implication, &[atom("missing".into())])
+                        .is_err()
+                );
+                let missing = Proposition::Implies(
+                    Box::new(atom("missing".into())),
+                    Box::new(conclusion.clone()),
+                );
+                assert!(
+                    root.apply_fact(&missing, std::slice::from_ref(&antecedent))
+                        .is_err()
+                );
+                assert!(
+                    !root.is_complete(),
+                    "application must leave the persistent input unchanged"
+                );
+            })
+        });
+        samples.push((work, maps));
+    }
+    assert!(
+        samples
+            .iter()
+            .all(|(work, _)| *work <= samples[0].0 * 3 + 16),
+        "work: {samples:?}"
+    );
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1].1 <= pair[0].1 * 2 + 16,
+            "persistent work: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn known_quantified_identity_uses_selected_keys() {
+    type TestProof = ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()>;
+    let quantified = |binder, index| Proposition::ForAll {
+        var: Variable(binder),
+        sort: crate::kernel::Sort::ProgramInt32,
+        body: Box::new(Proposition::Predicate {
+            name: "quantified_identity".into(),
+            arguments: vec![
+                Term::ProgramValue(crate::kernel::ProgramValue::Int32(MachineTerm::Variable(
+                    Variable(binder),
+                ))),
+                Term::ProgramValue(crate::kernel::ProgramValue::Int32(MachineTerm::constant(
+                    index,
+                ))),
+            ],
+        }),
+        name: Default::default(),
+    };
+    let mut samples = Vec::new();
+    for size in [4u32, 16, 64, 256] {
+        let mut facts = vec![quantified(1, 0)];
+        for index in 1..=size {
+            facts.push(quantified(1, index));
+            facts.push(Proposition::Predicate {
+                name: format!("unrelated_{index}"),
+                arguments: vec![],
+            });
+        }
+        let facts = PureFactStore::from_ordered(&facts);
+        let root = |goal| -> TestProof {
+            ProofObject::root(
+                (),
+                ProofBranch::new(
+                    ProofObligation::Proposition(PropositionObligation::new(goal, ())),
+                    ProofBranchState {
+                        facts: facts.clone(),
+                        execution: None,
+                    },
+                ),
+            )
+        };
+        let hit = root(quantified(999, 0));
+        let miss = root(quantified(999, 9999));
+        let (((), work), maps) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                assert!(
+                    hit.apply_known(PropositionKnownContext::Materialized)
+                        .ok()
+                        .unwrap()
+                        .is_complete()
+                );
+                assert!(
+                    miss.apply_known(PropositionKnownContext::Materialized)
+                        .is_err()
+                );
+            })
+        });
+        samples.push((work, maps));
+    }
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1].0 <= pair[0].0 * 2 + 16,
+            "identity work: {samples:?}"
+        );
+        assert!(
+            pair[1].1 <= pair[0].1 * 2 + 16,
+            "identity map work: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn apply_fact_quantified_sources_use_selected_alpha_keys() {
+    type TestProof = ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()>;
+    let guard = Proposition::Predicate {
+        name: "selected_guard".into(),
+        arguments: vec![],
+    };
+    let quantified = |binder, value| Proposition::Exists {
+        name: Default::default(),
+        var: Variable(binder),
+        sort: crate::kernel::Sort::ProgramInt32,
+        body: Box::new(Proposition::Predicate {
+            name: "selected_body".into(),
+            arguments: vec![
+                Term::ProgramValue(crate::kernel::ProgramValue::Int32(MachineTerm::Variable(
+                    Variable(binder),
+                ))),
+                Term::ProgramValue(crate::kernel::ProgramValue::Int32(MachineTerm::constant(
+                    value,
+                ))),
+            ],
+        }),
+    };
+    let implication = |body| Proposition::Implies(Box::new(guard.clone()), Box::new(body));
+    let mut samples = Vec::new();
+    for size in [4u32, 16, 64, 256] {
+        let goal = quantified(1, 0);
+        let mut facts = vec![guard.clone(), implication(goal.clone())];
+        for index in 1..=size {
+            // Same guard and quantified shape, but a different free value.
+            facts.push(implication(quantified(1, index)));
+            facts.push(Proposition::Predicate {
+                name: format!("unrelated_{index}"),
+                arguments: vec![],
+            });
+        }
+        let root: TestProof = ProofObject::root(
+            (),
+            ProofBranch::new(
+                ProofObligation::Proposition(PropositionObligation::new(goal, ())),
+                ProofBranchState {
+                    facts: PureFactStore::from_ordered(&facts),
+                    execution: None,
+                },
+            ),
+        );
+        let (((), work), maps) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                let successor = root
+                    .apply_fact(
+                        &implication(quantified(999, 0)),
+                        std::slice::from_ref(&guard),
+                    )
+                    .unwrap();
+                // Exact propagation may have published the original binder
+                // spelling already, allowing apply itself to close the goal.
+                let successor = if successor.is_complete() {
+                    successor
+                } else {
+                    successor
+                        .apply_known(PropositionKnownContext::Pure)
+                        .unwrap_or_else(|_| {
+                            panic!(
+                                "the applied existential must be available up to binder renaming"
+                            )
+                        })
+                };
+                assert!(successor.is_complete());
+                assert!(
+                    root.apply_fact(
+                        &implication(quantified(999, u32::MAX)),
+                        std::slice::from_ref(&guard)
+                    )
+                    .is_err()
+                );
+                assert!(
+                    root.apply_fact(&implication(quantified(999, 0)), &[])
+                        .is_err()
+                );
+                assert!(!root.is_complete());
+            })
+        });
+        samples.push((work, maps));
+    }
+    assert!(
+        samples
+            .iter()
+            .all(|(work, _)| *work <= samples[0].0 * 3 + 16),
+        "{samples:?}"
+    );
+    for pair in samples.windows(2) {
+        assert!(pair[1].1 <= pair[0].1 * 2 + 16, "{samples:?}");
+    }
 }
 
 #[test]

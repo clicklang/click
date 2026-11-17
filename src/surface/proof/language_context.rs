@@ -96,7 +96,6 @@ pub(in crate::surface::proof) struct FixedStateProofContext<'a> {
     pub(in crate::surface::proof) surface_propositions: &'a SurfacePropositionMap,
     pub(in crate::surface::proof) spec_definitions: SpecDefinitions<'a>,
     pub(in crate::surface::proof) theorem_environment: &'a TheoremEnvironment,
-    pub(in crate::surface::proof) unfolded_predicates: &'a [String],
     pub(in crate::surface::proof) effect_facts: ExecutionFacts,
     /// The facts a recorded surface lowering must name to be reused here:
     /// the phase's facts with its state's observable resource facts.

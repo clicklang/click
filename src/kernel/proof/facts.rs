@@ -102,113 +102,6 @@ mod constant_truth_tests {
 }
 
 #[cfg(test)]
-mod disjunction_projection_tests {
-    use super::*;
-
-    fn value(id: u64, constant: u32) -> Proposition {
-        Proposition::ConditionIs(
-            ConditionTerm::equal(
-                MachineTerm::Variable(Variable(id)),
-                MachineTerm::constant(constant),
-            ),
-            true,
-        )
-    }
-    fn and(left: Proposition, right: Proposition) -> Proposition {
-        Proposition::And(Box::new(left), Box::new(right))
-    }
-    fn or(left: Proposition, right: Proposition) -> Proposition {
-        Proposition::Or(Box::new(left), Box::new(right))
-    }
-
-    #[test]
-    fn projection_checks_every_arm_and_every_conjunct_of_the_goal() {
-        let source = or(and(value(1, 1), value(3, 3)), and(value(2, 2), value(3, 3)));
-        let facts = PureFactStore::from_ordered(&[source]);
-        let goal = or(value(1, 1), value(2, 2));
-        assert!(facts.contains_disjunction_projection(&goal));
-        assert!(facts.contains_disjunction_projection(&and(goal.clone(), value(3, 3))));
-        assert!(facts.contains_disjunction_projection(&value(3, 3)));
-        assert!(!facts.contains_disjunction_projection(&or(value(1, 1), value(2, 9))));
-        assert!(!facts.contains_disjunction_projection(&and(goal, value(1, 1))));
-    }
-
-    #[test]
-    fn projection_uses_scoped_equalities() {
-        let alias = Proposition::ConditionIs(
-            ConditionTerm::equal(
-                MachineTerm::Variable(Variable(1)),
-                MachineTerm::Variable(Variable(4)),
-            ),
-            true,
-        );
-        let source = or(value(1, 1), value(2, 2));
-        let goal = or(value(4, 1), value(2, 2));
-        let root = PureFactStore::from_ordered(&[alias]);
-        let child = root.with_fact(source.clone());
-        assert!(child.contains_disjunction_projection(&goal));
-        assert!(!root.contains_disjunction_projection(&goal));
-        let wide = Proposition::ConditionIs(
-            ConditionTerm::uint64_equal(
-                MachineTerm::Variable(Variable(1)),
-                MachineTerm::uint64_constant(1),
-            ),
-            true,
-        );
-        assert!(!child.contains_disjunction_projection(&or(wide, value(2, 2))));
-    }
-
-    #[test]
-    fn an_impossible_arm_does_not_contaminate_the_other_arm_or_parent() {
-        let facts = PureFactStore::from_ordered(&[value(7, 1), or(value(7, 0), value(8, 1))]);
-        assert!(!facts.assumptions().is_inconsistent());
-        assert!(!facts.contains_disjunction_projection(&or(value(7, 0), value(8, 2))));
-        assert!(facts.contains_disjunction_projection(&value(8, 1)));
-        assert!(!facts.assumptions().is_inconsistent());
-        assert!(!facts.assumptions().contains_known(&value(7, 0)));
-        assert!(!facts.assumptions().contains_known(&value(8, 1)));
-    }
-
-    #[test]
-    fn projection_respects_changed_read_states() {
-        let pointer = Pointer {
-            block: "projection-cell".into(),
-            offset: PointerOffsetTerm::Constant(0),
-        };
-        let before = Memory::new().with_block("projection-cell", 4).store(
-            pointer.clone(),
-            ProgramValue::Int32(MachineTerm::Variable(Variable(10))),
-        );
-        let after = before.clone().store(
-            pointer.clone(),
-            ProgramValue::Int32(MachineTerm::Variable(Variable(11))),
-        );
-        let read = |memory| {
-            Proposition::ConditionIs(
-                ConditionTerm::equal(
-                    MachineTerm::MemoryLoad(
-                        ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
-                        Box::new(pointer.clone()),
-                        LoadKind::Int32,
-                    ),
-                    MachineTerm::constant(0),
-                ),
-                true,
-            )
-        };
-        let source = or(read(before.clone()), value(2, 2));
-        let facts = PureFactStore::from_ordered(&[source]);
-        assert!(facts.contains_disjunction_projection(&or(read(before), value(2, 2))));
-        assert!(!facts.contains_disjunction_projection(&or(read(after), value(2, 2))));
-    }
-
-    #[cfg(test)]
-    mod scaling_tests {
-        include!("../../scaling_tests/kernel/proof/facts/disjunction_projection_tests.rs");
-    }
-}
-
-#[cfg(test)]
 thread_local! {
     static INDEXED_FACT_ENTRIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static STATEMENT_PRIORITY_ENTRIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -325,7 +218,7 @@ pub(crate) struct PureFactStore {
     /// carrier choice; they retain state, argument order and type keys.
     call_payloads: PersistentSet<CallPayloadKey>,
     /// Every strict subtree of an available top-level conjunction. This is
-    /// the exact structural authority for `extract`; top-level facts are not
+    /// used for selected conjunction sources; top-level facts are not
     /// included merely because they are independently available.
     proper_conjuncts: PersistentSet<PropositionKey>,
     /// The quantified atomic conjuncts of available conjunctions, keyed by
@@ -370,6 +263,10 @@ pub(crate) struct PureFactStore {
         PersistentMap<AlgebraicTerm, PersistentSequence<Arc<Proposition>>>,
     by_quantified_equivalence:
         PersistentMap<QuantifiedEquivalenceKey, PersistentSequence<Arc<Proposition>>>,
+    /// Full snapshot-aware alpha identities for explicit quantified inputs.
+    /// Built with each fact, so a simple lookup never forces a deferred
+    /// assumptions index or visits a related-fact bucket.
+    by_quantified_identity: PersistentMap<super::PropositionIdentityKey, Arc<Proposition>>,
     /// Guarded universals whose conclusion is a conjunction, keyed by the
     /// alpha form of each proper sub-conjunction restated under the same
     /// binder and guards: `forall k { G implies A and B }` is found under
@@ -966,15 +863,13 @@ pub(crate) trait PropositionSource {
         self.propositions()
             .any(|fact| exact_fact_contains_conjunct(fact, required))
     }
-    /// Available propositions and their maintained reasoning state. Retained
-    /// sources clone their store; explicit input sequences construct a scope.
-    fn fact_store(&self) -> PureFactStore {
-        PureFactStore::from_source_retaining_reservations(self, None)
-    }
-    /// Presentation for an ordered occurrence view. Proof stores present
-    /// each proposition once; explicit sequences and lists keep repetitions.
     fn ordered_fact_store(&self) -> PureFactStore {
         self.fact_store()
+    }
+    /// Retain a source's available facts and reasoning state directly.
+    /// Explicit input sequences construct a scope; retained sources share one.
+    fn fact_store(&self) -> PureFactStore {
+        PureFactStore::from_source_retaining_reservations(self, None)
     }
 }
 impl<T: PropositionSource + ?Sized> PropositionSource for &T {
@@ -1251,6 +1146,7 @@ impl PureFactStore {
         let mut finite_classifications_by_key = PersistentMap::default();
         let mut algebraic_equalities_by_term = PersistentMap::default();
         let mut by_quantified_equivalence = PersistentMap::default();
+        let mut by_quantified_identity = PersistentMap::default();
         let mut quantified_conjunct_projections = PersistentMap::default();
         let mut implications_by_consequent = PersistentMap::default();
         let mut implications_by_quantified_consequent = PersistentMap::default();
@@ -1281,6 +1177,7 @@ impl PureFactStore {
             ordered.push(Arc::clone(fact));
             top_level_exact = top_level_exact.with_value(Arc::clone(fact));
             by_quantified_equivalence = index_quantified_fact(by_quantified_equivalence, fact);
+            by_quantified_identity = index_quantified_identity(by_quantified_identity, fact);
             quantified_conjunct_projections =
                 index_quantified_conjunct_projections(quantified_conjunct_projections, fact);
             (
@@ -1300,6 +1197,8 @@ impl PureFactStore {
                     let conjunct = Arc::new(conjunct);
                     quantified_proper_conjuncts =
                         index_quantified_fact(quantified_proper_conjuncts, &conjunct);
+                    by_quantified_identity =
+                        index_quantified_identity(by_quantified_identity, &conjunct);
                     quantified_conjunct_projections = index_quantified_conjunct_projections(
                         quantified_conjunct_projections,
                         &conjunct,
@@ -1340,7 +1239,7 @@ impl PureFactStore {
                 index_implicit_transport_context(implicit_transport_assumptions, fact.as_ref());
         }
         let reserved_variables = commit_reserved_variables(reserved_variables, pending_variables);
-        Self {
+        let mut result = Self {
             ordered,
             reserved_variables,
             reserved_states,
@@ -1358,13 +1257,22 @@ impl PureFactStore {
             finite_classifications_by_key,
             algebraic_equalities_by_term,
             by_quantified_equivalence,
+            by_quantified_identity,
             quantified_conjunct_projections,
             implications_by_consequent,
             implications_by_quantified_consequent,
             assumptions,
             implicit_transport_assumptions,
             by_predicate,
+        };
+        let consequences = result
+            .assumptions
+            .propagation_consequences_since(&PureFactContext::new());
+        for consequence in consequences {
+            let assumptions = result.assumptions.clone();
+            result = result.with_indexed_fact(consequence.clone(), assumptions);
         }
+        result
     }
 
     pub(crate) fn with_reserved_variables(
@@ -1386,6 +1294,24 @@ impl PureFactStore {
             || call_payload_identity_key(fact).is_some_and(|key| self.call_payloads.contains(&key))
             || crate::kernel::comparison_form(fact)
                 .is_some_and(|comparison| self.exact.contains(&comparison))
+    }
+
+    /// Exact alpha membership of one explicitly selected quantified fact.
+    /// Conjunctions consist of the selected leaves, each an indexed query.
+    pub(crate) fn contains_quantified_identity(&self, fact: &Proposition) -> bool {
+        if self.contains(fact) {
+            return true;
+        }
+        if let Proposition::And(left, right) = fact {
+            return self.contains_quantified_identity(left)
+                && self.contains_quantified_identity(right);
+        }
+        if !quantified_identity_shape(fact) {
+            return false;
+        }
+        super::proposition_identity_key(fact)
+            .and_then(|key| self.by_quantified_identity.get(&key))
+            .is_some_and(|candidate| super::propositions_are_alpha_equal(candidate, fact))
     }
 
     /// Semantic availability for checking a requested premise or goal, as
@@ -1446,10 +1372,29 @@ impl PureFactStore {
         if self.top_level_exact.contains(&fact) {
             return self.clone();
         }
+        let fact = Arc::new(fact);
+        let assumptions = self
+            .assumptions
+            .clone()
+            .assume_shared_proposition(fact.clone());
+        let consequences = assumptions.propagation_consequences_since(&self.assumptions);
+        let mut result = self.with_indexed_fact(fact, assumptions);
+        for consequence in consequences {
+            let assumptions = result.assumptions.clone();
+            result = result.with_indexed_fact(consequence.clone(), assumptions);
+        }
+        result
+    }
+
+    /// Publish a fact already constructed by admission, without asking the
+    /// fact store to derive or validate that same consequence again.
+    fn with_indexed_fact(&self, fact: Arc<Proposition>, assumptions: PureFactContext) -> Self {
+        if self.top_level_exact.contains(&fact) {
+            return self.clone();
+        }
         #[cfg(test)]
         INDEXED_FACT_ENTRIES.with(|count| count.set(count.get() + 1));
-        // The one copy of this fact. Every index below shares it.
-        let fact = Arc::new(fact);
+        // Every index shares the proposition already admitted to the context.
         let mut exact = self.exact.clone();
         let mut call_payloads = self.call_payloads.clone();
         let mut proper_conjuncts = self.proper_conjuncts.clone();
@@ -1461,6 +1406,8 @@ impl PureFactStore {
         let mut algebraic_equalities_by_term = self.algebraic_equalities_by_term.clone();
         let by_quantified_equivalence =
             index_quantified_fact(self.by_quantified_equivalence.clone(), &fact);
+        let mut by_quantified_identity =
+            index_quantified_identity(self.by_quantified_identity.clone(), &fact);
         let mut quantified_conjunct_projections = index_quantified_conjunct_projections(
             self.quantified_conjunct_projections.clone(),
             &fact,
@@ -1479,6 +1426,8 @@ impl PureFactStore {
                 let conjunct = Arc::new(conjunct);
                 quantified_proper_conjuncts =
                     index_quantified_fact(quantified_proper_conjuncts, &conjunct);
+                by_quantified_identity =
+                    index_quantified_identity(by_quantified_identity, &conjunct);
                 quantified_conjunct_projections = index_quantified_conjunct_projections(
                     quantified_conjunct_projections,
                     &conjunct,
@@ -1558,13 +1507,11 @@ impl PureFactStore {
             finite_classifications_by_key,
             algebraic_equalities_by_term,
             by_quantified_equivalence,
+            by_quantified_identity,
             quantified_conjunct_projections,
             implications_by_consequent,
             implications_by_quantified_consequent,
-            assumptions: self
-                .assumptions
-                .clone()
-                .assume_shared_proposition(fact.clone()),
+            assumptions,
             implicit_transport_assumptions,
             by_predicate: index_predicate_fact(self.by_predicate.clone(), &fact),
         }
@@ -1891,50 +1838,6 @@ impl PureFactStore {
                 .any(|form| self.proper_conjuncts.contains(&PropositionKey::new(form)))
     }
 
-    /// Project a known disjunction without naming its discarded conjuncts.
-    /// Select only operand-adjacent stated facts, then check every arm using
-    /// the existing direct logical rule and this scope's equality closure.
-    /// No unfolding, implication extraction, or recursive case search.
-    pub(crate) fn contains_disjunction_projection(&self, required: &Proposition) -> bool {
-        let keys =
-            crate::kernel::reasoning::variable_collection::collect_atomic_connection_keys(required);
-        let mut seen = std::collections::HashSet::new();
-        for key in keys {
-            for disjunction in self.assumptions.disjunctions_connected_to(&key) {
-                crate::instrumentation::record_deterministic_work(1);
-                if !seen.insert(disjunction as *const Proposition as usize) {
-                    continue;
-                }
-                let mut cases = vec![disjunction];
-                let mut complete = true;
-                while let Some(case) = cases.pop() {
-                    crate::instrumentation::record_deterministic_work(1);
-                    if let Proposition::Or(left, right) = case {
-                        cases.push(right);
-                        cases.push(left);
-                        continue;
-                    }
-                    let context = self
-                        .assumptions
-                        .clone()
-                        .assume_proposition(crate::kernel::clone_proposition_iteratively(case));
-                    if first_unavailable_connective_side(required, &|side| {
-                        context.contains_known(side)
-                    })
-                    .is_some()
-                    {
-                        complete = false;
-                        break;
-                    }
-                }
-                if complete {
-                    return true;
-                }
-            }
-        }
-        false
-    }
-
     /// The available proper conjunct that `required` names up to the
     /// renaming of its quantifier binders, selected by its alpha bucket.
     pub(crate) fn alpha_equivalent_proper_conjunct(
@@ -2092,7 +1995,7 @@ impl PureFactStore {
     /// also distinguishes local suffix work in the test instrumentation.
     pub(crate) fn with_statement_facts_retaining_prefix(
         &self,
-        facts: Vec<Proposition>,
+        mut facts: Vec<Proposition>,
         _prefix: &ExecutionFacts,
     ) -> Self {
         let ordered = self.ordered.clone();
@@ -2116,6 +2019,18 @@ impl PureFactStore {
             successor = successor.with_fact(instance.clone());
             if successor.fact_count() != before {
                 introduced.push(instance);
+            }
+        }
+        let additions = successor
+            .ordered
+            .suffix_since(&ordered)
+            .expect("statement facts extend the ordered prefix");
+        let mut listed = facts.iter().cloned().collect::<BTreeSet<_>>();
+        introduced.clear();
+        for fact in additions {
+            introduced.push(fact.as_ref().clone());
+            if listed.insert(fact.as_ref().clone()) {
+                facts.push(fact.as_ref().clone());
             }
         }
         successor.ordered = ordered;
@@ -2375,7 +2290,7 @@ impl PureFactStore {
 
     /// An implication whose antecedents are all available and whose
     /// consequent is a conjunction with `required` among its conjuncts: the
-    /// implication fact itself and that whole consequent. `extract` states
+    /// implication fact itself and that whole consequent. `apply(fact)` states
     /// the whole consequent from the fact, and `required` is then a proper
     /// conjunct of an available fact.
     pub(crate) fn discharged_implication_containing(
@@ -2405,6 +2320,43 @@ impl PureFactStore {
                     });
             Some((fact, whole.clone()))
         })
+    }
+
+    /// Sources for an expandable implication application. The capability
+    /// keeps candidate enumeration out of checked operations.
+    pub(crate) fn implication_sources_for_search(
+        &self,
+        required: &Proposition,
+        _permission: crate::SearchPermission,
+    ) -> Vec<Proposition> {
+        let ordinary = self
+            .implications_by_consequent
+            .get(&memory_erased_proposition_key(required));
+        let quantified = quantified_equivalence_index_key(required)
+            .and_then(|key| self.implications_by_quantified_consequent.get(&key));
+        ordinary
+            .into_iter()
+            .chain(quantified)
+            .flat_map(|bucket| bucket.iter())
+            .take(64)
+            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+            .filter(|candidate| {
+                candidate.consequent == *required
+                    || quantified_binder_equivalent(required, &candidate.consequent)
+            })
+            .map(|candidate| {
+                candidate.antecedents.iter().rev().fold(
+                    candidate
+                        .whole
+                        .as_ref()
+                        .unwrap_or(&candidate.consequent)
+                        .clone(),
+                    |rest, antecedent| {
+                        Proposition::Implies(Box::new(antecedent.clone()), Box::new(rest))
+                    },
+                )
+            })
+            .collect()
     }
 
     /// Availability of one premise a `using` list names.
@@ -3219,7 +3171,7 @@ fn index_guarded_implication_fact(
         return index;
     }
     // Only a definedness guard: applying an ambient implication under an
-    // ordinary condition stays an explicit `extract`
+    // ordinary condition stays an explicit `apply(fact)`
     // (`verified_call_ensure_premise_needs_its_discharge.md`), while a
     // no-overflow guard is a side condition of the arithmetic the
     // consequent states.
@@ -3716,6 +3668,33 @@ fn collect_pointer_offset_bitvector_atoms(
     atoms: &mut BTreeSet<BitvectorEqualityAtomKey>,
 ) {
     offset.for_each_scaled_operand(|value| selected_atoms::collect(value, atoms));
+}
+
+fn quantified_identity_shape(mut fact: &Proposition) -> bool {
+    while let Proposition::Implies(_, body) = fact {
+        fact = body;
+    }
+    matches!(
+        fact,
+        Proposition::ForAll { .. } | Proposition::Exists { .. }
+    )
+}
+
+fn index_quantified_identity(
+    index: PersistentMap<super::PropositionIdentityKey, Arc<Proposition>>,
+    fact: &Arc<Proposition>,
+) -> PersistentMap<super::PropositionIdentityKey, Arc<Proposition>> {
+    if !quantified_identity_shape(fact) {
+        return index;
+    }
+    let Some(key) = super::proposition_identity_key(fact) else {
+        return index;
+    };
+    if index.get(&key).is_some() {
+        index
+    } else {
+        index.with_inserted(key, fact.clone())
+    }
 }
 
 fn index_quantified_fact(
@@ -5590,6 +5569,47 @@ mod retained_match_root_tests {
             crate::kernel::KernelTermExport::machine_export_count(),
             exports
         );
+    }
+}
+
+#[cfg(test)]
+mod propagated_fact_publication_tests {
+    use super::*;
+    fn atom(name: &str) -> Proposition {
+        Proposition::Predicate {
+            name: name.into(),
+            arguments: vec![],
+        }
+    }
+    fn rule() -> Proposition {
+        Proposition::Implies(Box::new(atom("trigger")), Box::new(atom("result")))
+    }
+
+    #[test]
+    fn propagation_is_published_in_root_updates_and_statement_batches() {
+        let root = PureFactStore::from_ordered(&[rule()]);
+        assert!(!root.contains(&atom("result")));
+        for child in [
+            root.with_fact(atom("trigger")),
+            root.with_statement_facts(vec![atom("trigger")]),
+            PureFactStore::from_ordered(&[rule(), atom("trigger")]),
+        ] {
+            assert!(child.contains(&atom("result")));
+            assert!(child.propositions().any(|p| p == &atom("result")));
+            assert!(Arc::ptr_eq(
+                child.top_level_exact.get(&atom("result")).unwrap(),
+                &child
+                    .assumptions()
+                    .shared_assumed_proposition(&atom("result"))
+                    .unwrap(),
+            ));
+            assert!(!root.contains(&atom("result")));
+        }
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!("../../scaling_tests/kernel/proof/facts/propagated_publication.rs");
     }
 }
 

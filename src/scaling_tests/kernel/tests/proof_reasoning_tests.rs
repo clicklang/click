@@ -1092,7 +1092,7 @@ fn direct_constant_lookup_declines_chains_until_the_endpoint_is_stated() {
 /// by the consequent's operands: a goal naming `a` finds the one guarded
 /// equality about `a`, and the lookup's work does not grow with unrelated
 /// guarded equalities. An implication under an ordinary condition is not
-/// indexed: applying it stays an explicit `extract`.
+/// indexed: applying it stays an explicit `apply(fact)`.
 #[test]
 fn guarded_implication_lookup_is_keyed_by_consequent_operands() {
     for shared in [false, true] {

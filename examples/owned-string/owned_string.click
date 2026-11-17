@@ -118,7 +118,7 @@ int32 owned_string_init(
     have owner->len == 0;
     have data[0] == 0;
     have terminated_at(owner->data, owner->len) by {
-        unfold(terminated_at);
+        unfold(terminated_at(owner->data, owner->len));
         rewrite(owner->data, data);
         rewrite(owner->len, 0);
         known();
@@ -174,7 +174,7 @@ int32 owned_string_set(
     ensures owner->data[index] == value;
 } by {
     unfold(owned_string(owner));
-    unfold(terminated_at);
+    unfold(terminated_at(owner->data, owner->len));
     step();
     have separate(
         memory(*owner),
@@ -223,7 +223,7 @@ int32 owned_string_push(struct owned_string* owner, int32 value) {
         solve();
     }
     have terminated_at(owner->data, owner->len) by {
-        unfold(terminated_at);
+        unfold(terminated_at(owner->data, owner->len));
         solve();
     }
     fold(owned_string(owner));
@@ -282,7 +282,7 @@ int32 owned_string_pop(struct owned_string* owner) {
     step();
     step();
     have terminated_at(owner->data, owner->len) by {
-        unfold(terminated_at);
+        unfold(terminated_at(owner->data, owner->len));
         normalize();
     }
     fold(owned_string(owner));

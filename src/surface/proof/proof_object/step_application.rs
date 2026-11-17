@@ -345,10 +345,6 @@ fn chosen_step_text(step: &ProofStep) -> Option<String> {
         ProofStep::ApplyTheoremUsing { .. }
             | ProofStep::ApplyInductionUsing { .. }
             | ProofStep::TransportUsing { .. }
-            | ProofStep::InstantiateUsing {
-                premises: Some(_),
-                ..
-            }
     ) {
         return None;
     }
@@ -359,12 +355,12 @@ fn chosen_step_text(step: &ProofStep) -> Option<String> {
 }
 
 impl<'a> Proof<'a> {
-    /// Under `CLICK_SPELLABILITY_CENSUS`, records whether each fact this step
-    /// added, and the goal it leaves focused, has a checked Click spelling.
-    fn record_spellability_census(&self, next: &Self, tactic: &str) {
-        use crate::surface::proof::spellability_census as census;
+    /// Under `CLICK_RAISE_LOWER_CENSUS`, records whether each fact this step
+    /// added, and the goal it leaves focused, raises to a checked Surface form.
+    fn record_raise_lower_census(&self, next: &Self, tactic: &str) {
+        use crate::surface::proof::raise_lower_census as census;
         // A step that closes its goal leaves no proof state to hold its
-        // facts, and spelling reads the focused goal's facts.
+        // facts, and raising reads the focused goal's facts.
         if next.focused_branch().is_none() || next.focused_discharged() {
             return;
         }
@@ -383,7 +379,7 @@ impl<'a> Proof<'a> {
         {
             // The census charges no tactic budget and keeps no search note,
             // so the proof and its report are the run's without it.
-            let scope = crate::surface::proof::attempt::search_scope("spellability census");
+            let scope = crate::surface::proof::attempt::search_scope("raise-lower census");
             let spelled = crate::instrumentation::without_charging(|| {
                 crate::kernel::search::ProofSearch::resolve_solve_premises(
                     next,
@@ -419,7 +415,7 @@ impl<'a> Proof<'a> {
     /// again, and records how the round trip ended.
     fn record_raise_lower_audit(&self, next: &Self, tactic: &str) {
         use crate::surface::proof::raise_lower_audit::{self as audit, RoundTrip};
-        use crate::surface::proof::spellability_census::kind;
+        use crate::surface::proof::raise_lower_census::kind;
         if next.focused_branch().is_none() || next.focused_discharged() {
             return;
         }
@@ -1633,13 +1629,13 @@ impl<'a> Proof<'a> {
             context.spec_definitions,
         )?;
         self.state
-            .apply_instantiate(
+            .apply_induction_instance(
                 quantified,
                 crate::kernel::proof::fact_reasoning::InstanceArgument::Machine(argument),
-                Some(&explicit_premises),
+                &explicit_premises,
             )
             .map(|state| {
-                // `apply_instantiate` has performed the complete kernel
+                // `apply_induction_instance` has performed the complete kernel
                 // premise/order/conclusion check. Publish its exact fact
                 // delta through the same Proof transition used by ordinary
                 // quantified instantiation.
@@ -1661,11 +1657,12 @@ impl<'a> Proof<'a> {
                 PropositionCloseError::NotProposition => {
                     self.step_error("induction application requires a proposition goal")
                 }
-                PropositionCloseError::InstantiatePremiseUnavailable(_, premise) => self
-                    .step_error(format!(
+                PropositionCloseError::InductionPremiseUnavailable(premise) => {
+                    self.step_error(format!(
                         "induction premise is not exactly available: {}",
                         self.render_diagnostic_proposition(&premise)
-                    )),
+                    ))
+                }
                 PropositionCloseError::InstantiateQuantifiedUnavailable => {
                     self.step_error("induction hypothesis is not exactly available")
                 }
@@ -1876,8 +1873,7 @@ fn describe_known_goal(goal: &Proposition) -> &'static str {
     }
 }
 
-/// A step that adds a fact closes a proposition goal it added, as `extract`
-/// does. A goal that was already available before the step stays open.
+/// A step that adds a fact closes a proposition goal it added. A goal that was already available before the step stays open.
 fn close_goal_from_added_fact(state: KernelProofHandle) -> KernelProofHandle {
     state.closed_if_goal_was_added().unwrap_or(state)
 }

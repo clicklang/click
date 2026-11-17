@@ -35,7 +35,7 @@ void apply_step(void (*step)(int32*), int32* cell) {
 
 theorem proposed_consume_cell_contract() {
     ensures Preserve(&consume_cell) by {
-        unfold(Preserve);
+        unfold(Preserve(&consume_cell));
         solve();
     }
 }

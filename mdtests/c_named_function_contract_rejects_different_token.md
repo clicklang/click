@@ -48,7 +48,7 @@ int32 apply_token(
 
 theorem proposed_use_other_token_contract() {
     ensures UseKey(&use_other_token) by {
-        unfold(UseKey);
+        unfold(UseKey(&use_other_token));
         solve();
     }
 }

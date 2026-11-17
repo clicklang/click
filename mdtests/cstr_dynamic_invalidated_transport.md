@@ -24,8 +24,8 @@ uint64 read_terminator(uint8 bytes[], uint64 known_len) {
     requires viewable(bytes[0..known_len + 1u64]);
     owns bytes[0..known_len + 1u64];
     ensures result < 18446744073709551615u64 by {
-        unfold(click::cstr::readable);
-        unfold(click::cstr::readable_len);
+        unfold(click::cstr::readable(bytes));
+        unfold(click::cstr::readable_len(bytes, known_len));
         step();
         have exists (len: uint64) {
             len < 18446744073709551615u64 and

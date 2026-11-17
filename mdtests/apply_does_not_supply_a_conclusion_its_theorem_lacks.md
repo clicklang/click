@@ -13,12 +13,12 @@ theorem lower_bound(x: int32) {
     requires small(x);
 
     ensures x >= 0 by {
-        unfold(small);
+        unfold(small(x));
         solve();
     }
 
     ensures x <= 10 by {
-        unfold(small);
+        unfold(small(x));
         solve();
     }
 }

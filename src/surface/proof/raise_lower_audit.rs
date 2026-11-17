@@ -1,17 +1,16 @@
 //! A check that lowering undoes raising.
 //!
 //! Every kernel term a proof state holds must satisfy `lower(raise(x)) == x`
-//! (`docs/internals/spellability.md#the-raise-lower-principle`). Setting
+//! (`docs/internals/raise-lower-principle.md#the-raise-lower-principle`). Setting
 //! `CLICK_RAISE_LOWER=<path>` raises each fact a checked step adds, and the
 //! goal it leaves focused, with the canonical raiser
 //! (`synthesize_surface_proposition`) at the step's fixed state. It lowers
 //! that spelling again in the same proof and appends one line saying how the
 //! round trip ended. `scripts/raise-lower.sh` runs the corpus under it.
 //!
-//! This measures the raiser alone. The premise speller searches recorded
-//! spellings first and keeps a candidate only when it lowers back, so its
-//! misses (the spellability census) and this audit's mismatches differ: a
-//! mismatch here is a term the raiser spells as some other term.
+//! This checks the canonical Surface form. The raise-lower census separately
+//! measures facts that cannot be raised; a mismatch here is a raised form
+//! that lowers to a different term.
 //!
 //! The audit only observes: it charges no budget, records no search note,
 //! and does not change the proof or its report.

@@ -97,7 +97,7 @@ void two_puts(struct pool* pool, struct slot* first, struct slot* second) {
         contains(memory(first->at), memory(first->at));
     };
     have first->at == at(m1, first->at) by {
-        preserve(separate(statement(1).footprint, memory(first->at)));
+        preserve(memory(first->at), statement(1));
     }
     have pool->data == at(m1, pool->data);
     apply(separation::contains_refl(memory(at(m1, pool->data + first_at)[0])));
@@ -107,7 +107,7 @@ void two_puts(struct pool* pool, struct slot* first, struct slot* second) {
         contains(memory(at(m1, pool->data + first_at)[0]), memory(at(m1, pool->data + first_at)[0]));
     };
     have (let saved: int32* = at(m1, pool->data + first_at); saved[0]) == at(m1, pool->data[first_at]) by {
-        preserve(separate(statement(1).footprint, memory(at(m1, pool->data + first_at)[0])));
+        preserve(memory(at(m1, pool->data + first_at)[0]), statement(1));
     }
     have first->at == first_at by { known(); }
     have pool->data[first->at] == 11 by {

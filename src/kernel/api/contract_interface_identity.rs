@@ -642,6 +642,7 @@ impl Names {
                 self.expression(left);
                 self.expression(right);
             }
+            MutexHeld(e) => self.expression(e),
             Defined(e) | FloatClassification { expression: e, .. } => self.expression(e),
             And(a, b) | Or(a, b) | Implies(a, b) => {
                 self.proposition(a);

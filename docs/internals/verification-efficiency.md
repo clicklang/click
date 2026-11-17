@@ -111,8 +111,8 @@ Distinguish these producer boundaries:
 | Producer or caller | Ownership evidence and current boundary |
 | --- | --- |
 | Instance unfold | `unfold_instance_body` consumes the selected parent and exposes its constructed body in the retained frame. It checks exclusive identities without rediscovering memory overlap. Evaluating the body description earlier is a separate operation. |
-| Return-clause evaluation | `EvaluatedReturnResources::admit_clause` records emitted occurrences and their origins, but still validates the growing output group through compatibility admission. This precedes restoration; a flat restoration measurement does not cover this earlier validation. |
-| Return composition | `restore_entry_borrows` uses selected entry borrows, consumed-cell transfers, and fresh-allocation provenance to construct the recognized outputs in the residual frame. `PreparedReturnComposition::finish` sends the remaining descriptions through compatibility admission. `ValidateDescriptions` deliberately does not turn a role marker into transfer evidence. |
+| Return-clause evaluation | Executed-body returns consume each output from one persistent body context. Summary returns retain a clause-level rule for unchanged flat footprints, bind it to selected entry reservations, and record those outputs and checked entry borrows directly. Unjustified descriptions still use compatibility admission. |
+| Return composition | An executed body's `ConstructedBodyReturn` retains its constructed output group and captured caller frame; `finish` installs it directly. Summary paths restore selected entry borrows, consumed-cell transfers, and fresh-allocation outputs, then send remaining descriptions through compatibility admission. `ValidateDescriptions` deliberately does not turn a role marker into transfer evidence. |
 | Produced composite boundary | Construction of the body's internal partition does not itself record a transfer against the destination frame. `produced_composite_frontier_conflict` checks that boundary through indexed admission or legacy discovery. Audit the producer's frame evidence before removing this check. |
 | Iterated `take` and `scatter` | These consume or update an iterated owner and expose selected memory, but still pass the exposed memory through compatibility admission. Their checked exchange and retained frame are the starting point for removing rediscovery; no complete-operation fast bound follows from not enumerating the iterated range. |
 | Local-reference and loan recovery | A reserved owner or escrow supplies provenance, but `ReservedLocalScalarOwner::restore_into`, temporary local access, and stable-view recovery still use compatibility admission. Trace the reservation, intervening operations, and destination frame together. |
@@ -125,9 +125,114 @@ and [`functions.rs`](https://github.com/clicklang/click/blob/master/src/kernel/f
 The regressions `raw_description_mode_never_authorizes_restoration_from_a_role_marker`
 and `a_consumed_cell_cannot_supply_two_return_occurrences` preserve the
 distinction between a description and a selected, single-use transfer.
-The alias diagnostic `raw_ownership_admission_must_not_search_ambient_pointer_aliases`
+The active regression `raw_ownership_admission_must_not_search_ambient_pointer_aliases`
 measures raw insertion separately from instance unfold. It does not establish
 the cost or necessity of every caller above.
+
+#### Early return-group evidence
+
+On the summary and description-only paths, `admit_clause` checks the returned descriptions together before
+`restore_entry_borrows` constructs their destination occurrences. A
+`FreshAllocationReturn` records the allocation's identity, not a consumed
+slice or a partition of its outputs. Two descriptions of the same fresh cell
+can both carry that provenance. The regression
+`fresh_return_group_checks_sibling_overlap_before_restoration` exercises
+adjacent and duplicate slices from an actual allocation: early admission
+rejects the duplicate, and the body's separate
+`jointly_consume_returned_resource_units` check cannot supply it twice either.
+Freshness alone therefore does not justify skipping group construction. A
+body-return construction retains the outputs of joint consumption rather
+than reconstructing ownership from independent descriptions and checking it again.
+
+Fresh measurements against `da5639eb1d`, with two fixed descriptors and
+4, 16, and 64 exact pointer aliases, distinguish indexed intervals from the
+symbolic-endpoint fallback. Setup of the ambient alias facts is outside the
+measurement; early-group work includes construction of its context and both
+admissions.
+
+| Measured operation | Adjacent slices: work at 4 / 16 / 64 aliases | Overlap refusal: work at 4 / 16 / 64 aliases |
+| --- | --- | --- |
+| Raw insertion into a prepared frame, constant endpoints | 228 / 228 / 228 | 74 / 74 / 74 |
+| Early return group, constant endpoints | 261 / 261 / 261 | 93 / 93 / 93 |
+| Early return group, symbolic upper endpoint | 337 / 349 / 397 | 382 / 550 / 1222 |
+
+The symbolic case returns `q[1..n]` beside `p[0..1]` on success, or
+`q[0..n]` beside `p[0..1]` on refusal, with `p == q` and `2 <= n <= 16`.
+Additional aliases change neither the two descriptors nor the result. The
+diagnostic `symbolic_return_group_admission_work` retains both semantic
+controls and prints the counts; it does not assert that the fallback meets
+the fast-part contract. The constant-endpoint regression is
+`constant_return_group_admission_ignores_ambient_aliases`. Both live in
+[`the return scaling tests`](https://github.com/clicklang/click/blob/master/src/scaling_tests/kernel/functions/mixed_return_resources.rs).
+These measurements cover admission of evaluated descriptions, not a complete
+source call, and do not establish an impractical real-world proof workload.
+
+#### Executed-body return construction
+
+`ReturnResourceComposition::BodyReturn` captures the actual body state and
+the call's retained frame. Contract read views remain an evaluation aid, not
+a source of owned units. `construct_clause` consumes each evaluated output
+from the cursor left by earlier outputs using the same ownership-consumption
+rules as the joint body-return check. It records the output occurrence only
+after consumption succeeds. Missing custody, overlapping slices and duplicate
+exclusive units fail with the joint-return refusal; no early raw-group
+overlap search runs for this path.
+
+`ConstructedBodyReturn` carries this output group with its captured frame to
+`ResourceContext::return_constructed_body`. Installation assigns destination
+occurrences directly and retains the source-to-destination mapping. It does
+not repeat consumption, discover overlap, or revalidate the produced group.
+The old Boolean joint-custody pass is not run again after construction.
+
+Folded heads can describe memory through post-call reads. Their existing
+composite-footprint boundary rule remains, against the retained frame and
+the flat siblings constructed in this return. Owning a head alone is not a
+new proof about that post-memory footprint. The separate definitional
+contract-claim checker retains its existing path. This change does not establish a bound for every consumption or
+composite-expansion route.
+
+The end-to-end regression
+`executed_body_return_constructs_splits_and_refuses_duplicate_custody` checks
+actual allocation returns, partial-range splitting, duplicate refusal and
+retained caller ownership. The executed-body scaling regressions grow
+cross-block and same-block aliases, unrelated body/frame owners, and selected
+return splits at 4/16/64. The composite post-memory refusal is exercised for
+both summary and executed-body returns.
+
+#### Summary transfer construction
+
+`FunctionContractInterface` retains a `SummaryResourceTransferRule` compiled
+from its resource clauses. It pairs each unguarded produced flat footprint
+with one consumed clause having the same base parameter, element width, and
+literal or parameter bounds. Each input is paired once. The rule is shared
+with the interface, replaced when resource clauses change, and rebuilt after
+substitution. It neither examines caller facts nor infers alias relationships.
+
+Application binds those input clauses to the actual checked entry reservation.
+Only a selected flat owner supplies this construction. The output retains the
+checked input footprint and its source ownership occurrence, without another
+post-state footprint evaluation or early description admission. Composition
+returns it to the reservation's residual frame and retains the emitted
+source-to-destination map. Checked entry borrows likewise record their already
+selected output without early group readmission. They still retain the existing
+composite post-memory boundary rule.
+
+This is a rule for unchanged footprints, not a blanket license from a verified
+contract to insert arbitrary descriptions. New or changed footprints,
+memory-dependent expressions, guarded effects, and unmatched outputs retain
+admission. The description-only mode ignores transfer provenance and establishes
+the missing relationship to its destination. Raw outputs are checked against
+the restored frame even when they precede a justified output in clause order.
+Composite children retain their existing selected fixed-footprint transfer and
+post-memory boundary paths.
+
+`summary_transfer_construction_scales_with_clauses_not_retained_owners_or_aliases`
+measures complete summary return construction at 4/16/64 retained owners,
+cross-block aliases, same-block aliases, and selected clauses. The first three
+axes require bounded work; growing the clauses permits output-proportional work.
+The summary-return regressions cover symbolic endpoints, persistent branches,
+verified call application, duplicate outputs, raw aliases in either clause
+order, stale rule replacement, and description-only refusal.
 
 These are current implementation boundaries, not exceptions to construction
 without re-validation. Remove repeated checking where the producer already
@@ -849,8 +954,8 @@ generate at least four sizes, normally `N`, `2N`, `4N`, and `8N`, and measure
 verifier work rather than host time. Each sample records work attributed to
 named verifier operations and tactic kinds, and a failed curve reports those
 named curves; wall-clock profiler attribution is corroboration. Exact
-repeated-sample comparisons measure the named operation itself
-(`choose_projection_walk_is_deterministic_across_selected_body_sizes`).
+repeated-sample comparisons measure the named operation itself, with proof
+setup and persistent-index allocations reported separately.
 
 The scaling suite covers independent axes:
 

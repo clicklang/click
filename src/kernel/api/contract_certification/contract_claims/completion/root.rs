@@ -330,7 +330,6 @@ mod tests {
                 crate::kernel::proof::ProofObligation::FunctionOutcome(goal),
                 ProofBranchState {
                     facts: PureFactStore::default(),
-                    unfolded_predicates: Default::default(),
                     execution: None,
                 },
             ),

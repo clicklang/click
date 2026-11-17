@@ -91,7 +91,7 @@ int32 count_run(int32 n) {
                             normalize() using { i <= 2; };
                         }
                         (2 <= i and to_integer(2 + run) == to_integer(i)) => {
-                            extract(to_integer(2 + run) == to_integer(i));
+                            have to_integer(2 + run) == to_integer(i);
                             known();
                         }
                     }

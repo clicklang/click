@@ -33,12 +33,12 @@ void mark_other(int32 a[], int32 b[], int32 n, int32 j) {
 } by {
     have 0 <= 0;
     have icount(a, 0, 0) == 0 by {
-        peel(icount(a, 0, 0)) using { 0 <= 0; };
+        unfold(icount(a, 0, 0));
         normalize();
     }
     have to_integer(a[0]) == 5 by { solve() using { a[0] == 5; }; }
     have icount(a, 0, 1) == 5 by {
-        peel(icount(a, 0, 1)) using { 0 <= 0; 0 < 2147483647; };
+        unfold(icount(a, 0, 1));
         solve() using { icount(a, 0, 0) == 0; to_integer(a[0]) == 5; };
     }
     have contains(memory(b[0..n]), memory(b[j])) by {

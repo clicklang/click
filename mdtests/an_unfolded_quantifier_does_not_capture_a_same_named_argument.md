@@ -27,11 +27,11 @@ int32 f(int32 p[2], int32 i) {
     ensures allpos(p, i);
 } by {
     step_until(function.exit);
-    unfold(allpos);
+    unfold(allpos(p, i));
     solve();
 }
 ```
 
 ```expect
-fail: unclosed goal
+fail: did not complete the retained claim proof
 ```

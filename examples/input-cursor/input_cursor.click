@@ -152,7 +152,7 @@ int32 input_cursor_clone(
         normalize() using { separate(memory(target->pos), memory(source->data)); };
     }
     have source->data == at(before_copy, source->data) by {
-        preserve(separate(statement(0).footprint, memory(source->data)));
+        preserve(memory(source->data), statement(0));
     }
     mark after_pos;
     step();
@@ -161,7 +161,7 @@ int32 input_cursor_clone(
     }
     have source->data == at(before_copy, source->data) by {
         have source->data == at(after_pos, source->data) by {
-            preserve(separate(statement(1).footprint, memory(source->data)));
+            preserve(memory(source->data), statement(1));
         }
         rewrite(source->data, at(after_pos, source->data));
         known();
@@ -173,7 +173,7 @@ int32 input_cursor_clone(
     }
     have source->data == at(before_copy, source->data) by {
         have source->data == at(after_len, source->data) by {
-            preserve(separate(statement(2).footprint, memory(source->data)));
+            preserve(memory(source->data), statement(2));
         }
         rewrite(source->data, at(after_len, source->data));
         known();

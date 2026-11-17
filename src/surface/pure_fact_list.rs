@@ -297,12 +297,14 @@ mod tests {
     }
 
     #[test]
-    fn indexed_conflicts_agree_with_the_pairwise_rule() {
+    fn indexed_conflicts_agree_with_the_pairwise_rule_for_published_facts() {
         let shapes = shapes();
         for listed in shapes.chunks(5) {
             let list = PureFactList::from(listed.to_vec());
             for fact in &shapes {
-                let expected = listed.iter().any(|available| {
+                // Propagation publishes ordinary facts beyond the input list.
+                // The pairwise rule ranges over that complete presentation.
+                let expected = list.iter().any(|available| {
                     crate::kernel::proof::fact_reasoning::exact_facts_directly_conflict(
                         available, fact,
                     )
@@ -314,6 +316,17 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn propagated_double_negation_has_an_exact_conflict_without_explosion() {
+        let positive = Proposition::ConditionIs(condition(1), true);
+        let negative = Proposition::ConditionIs(condition(1), false);
+        let source = Proposition::Not(Box::new(Proposition::Not(Box::new(negative.clone()))));
+        let list = PureFactList::from(vec![source]);
+        assert!(list.contains(&negative));
+        assert!(list.directly_conflicts_with(&positive));
+        assert!(!list.directly_conflicts_with(&Proposition::ConditionIs(condition(2), true)));
     }
 
     #[test]

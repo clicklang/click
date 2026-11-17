@@ -18,7 +18,6 @@ int32 pick(int32 a, int32 b) {
 verifying "pick.c";
 
 int32 pick(int32 a, int32 b) {
-    requires a > b or a == b;
     ensures result >= a;
 } by {
     if a > b {

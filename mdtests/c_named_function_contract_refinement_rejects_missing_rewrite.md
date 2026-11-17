@@ -38,13 +38,13 @@ void decrement(int32* state) {
 
 theorem decrement_is_decrease() {
     ensures Decrease(&decrement) by {
-        unfold(Decrease);
+        unfold(Decrease(&decrement));
         intro();
         both {
             known();
         } and {
             intro();
-            extract(*cell == (old(*cell) - 1));
+            have *cell == (old(*cell) - 1);
             both {
                 known();
             } and {

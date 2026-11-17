@@ -37,7 +37,7 @@ theorem lift(callback: int32 (*)(int32*, int32))
         unfold(Cell(cell));
         step(Raw);
         if result != 0 {
-            have cell[0] == item by { extract(cell[0] == item); known(); }
+            have cell[0] == item by { apply(result != 0 implies cell[0] == item) using { result != 0; }; }
             if item == 0 {
                 if item != 0 {
                     have cell[0] == 123;
@@ -55,9 +55,7 @@ theorem lift(callback: int32 (*)(int32*, int32))
             }
             fold(Cell(cell)); solve();
         } else {
-            have cell[0] == old(cell[0]) by {
-                extract(cell[0] == old(cell[0])); known();
-            }
+            have cell[0] == old(cell[0]) by { apply(result == 0 implies cell[0] == old(cell[0])) using { result == 0; }; }
             fold(Cell(cell)); solve();
         }
     }
@@ -75,7 +73,7 @@ int32 check_update(int32 (*callback)(int32*, int32), int32* cell, int32 value) {
     step(Buffered);
     unfold(Cell(cell));
     if c(status) != 0 {
-        have cell[0] == value by { extract(cell[0] == value); known(); }
+        have cell[0] == value by solve();
         step_until(function.exit); fold(Cell(cell));
     } else {
         have cell[0] == c(before);

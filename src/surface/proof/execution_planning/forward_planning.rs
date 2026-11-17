@@ -282,7 +282,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                                     .unwrap_or_default()
                                     .iter()
                                     .filter(|tactic| {
-                                        matches!(tactic, ProofTactic::UnfoldPredicate(_))
+                                        matches!(tactic, ProofTactic::UnfoldProposition(_))
                                     })
                                     .cloned()
                                     .collect::<Vec<_>>();

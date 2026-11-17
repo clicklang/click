@@ -52,7 +52,7 @@ int32 apply_bundle(
 
 theorem proposed_use_other_bundle_contract() {
     ensures UseBundle(&use_other_bundle) by {
-        unfold(UseBundle);
+        unfold(UseBundle(&use_other_bundle));
         solve();
     }
 }

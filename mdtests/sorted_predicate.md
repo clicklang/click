@@ -2,7 +2,7 @@
 
 This checks that Click can define and explicitly unfold a general quantified
 `sorted(p, n)` predicate. The predicate is still opaque unless the proof script
-uses `unfold(sorted)`.
+uses `unfold(sorted(p, n))`.
 
 ```c filename=sorted_predicate.c
 int32 sorted_predicate(int32 p[], int32 n) {
@@ -26,7 +26,7 @@ int32 sorted_predicate(int32 p[], int32 n) {
     requires viewable(p[0..n]);
     requires sorted(p, n);
     ensures still_sorted: sorted(p, n) by {
-        unfold(sorted);
+        unfold(sorted(p, n));
     }
 }
 ```

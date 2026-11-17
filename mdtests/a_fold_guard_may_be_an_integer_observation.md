@@ -5,7 +5,7 @@ exact Integers, so `n - k < 18446744073709551615u64` is Integer subtraction
 and does not state the `uint64` guard the append law needs for the endpoint
 `n - k`. The guard over that machine value is written as an Integer
 observation, `to_integer(n - k) < 18446744073709551615`, which holds exactly
-when the native comparison does. `peel` reads a listed observation as that
+when the native comparison does. `unfold` reads a listed observation as that
 native guard.
 
 ```click
@@ -18,10 +18,7 @@ theorem step(n: uint64, k: uint64) {
     requires 0 <= to_integer(n - k);
     requires to_integer(n - k) < 18446744073709551615;
     ensures total(0u64, (n - k) + 1u64) == total(0u64, n - k) + to_integer(n - k) by {
-        peel(total(0u64, (n - k) + 1u64)) using {
-            0 <= to_integer(n - k);
-            to_integer(n - k) < 18446744073709551615;
-        };
+        unfold(total(0u64, (n - k) + 1u64));
         solve();
     }
 }
