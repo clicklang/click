@@ -1667,7 +1667,12 @@ impl<'a> Proof<'a> {
         witness: &ProofWitness,
     ) -> Result<CheckedFocusedTransition, ClickError> {
         if matches!(self.context.as_ref(), ProofContext::Pure(_)) {
-            return match self.proposition_goal("`witness` requires a proposition goal")? {
+            let goal =
+                self.proposition_goal("`witness` requires an existential proposition goal")?;
+            if !matches!(goal, Proposition::Exists { .. }) {
+                return Err(self.step_error("`witness` requires an existential proposition goal"));
+            }
+            return match goal {
                 Proposition::Exists {
                     sort: Sort::Algebraic(_),
                     ..
@@ -1681,7 +1686,13 @@ impl<'a> Proof<'a> {
                         | Sort::ProgramObjectPointer(_, _),
                     ..
                 } => self.apply_pure_machine_witness(witness),
-                _ => self.apply_pure_integer_witness(witness),
+                Proposition::Exists {
+                    sort: Sort::Integer,
+                    ..
+                } => self.apply_pure_integer_witness(witness),
+                _ => {
+                    Err(self.step_error("`witness` does not support this existential binder type"))
+                }
             };
         }
         let view = match self.context.as_ref() {
@@ -1712,22 +1723,15 @@ impl<'a> Proof<'a> {
         let (values, array_refs) =
             contract_environment_at_state(&values, &array_refs, view.fixed_state.state);
         let checked_witness = ProofWitness::single(
-            witness.name().to_string(),
             self.substitute_fixed_state_locals_in_expression(witness.value())?,
         );
         if let Proposition::Exists {
-            name,
+            name: _,
             var,
             sort: Sort::Algebraic(algebraic_type),
             body,
         } = &goal
         {
-            if !name.is_empty() && name != witness.name() {
-                return Err(self.step_error(format!(
-                    "`witness` binds `{name}`, but proof provided `{}`",
-                    witness.name()
-                )));
-            }
             let names = contract_expression_referenced_names(checked_witness.value());
             let algebraic_values = names
                 .into_iter()
@@ -1759,12 +1763,7 @@ impl<'a> Proof<'a> {
                     body, *var, &value,
                 );
             let surface_goal = match self.surface_goal() {
-                Some(ClickProposition::Exists {
-                    name,
-                    written_name,
-                    body,
-                    ..
-                }) if name.matches_witness_label(written_name.as_deref(), witness.name()) => {
+                Some(ClickProposition::Exists { name, body, .. }) => {
                     let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
                     Some(
                         substitute_click_proposition(body, &substitutions).map_err(|message| {
@@ -1797,21 +1796,9 @@ impl<'a> Proof<'a> {
             view.spec_definitions,
             view.fixed_state.recorded_states,
         )?;
-        let goal = apply_witness_tactic(
-            &checked_witness,
-            value,
-            goal,
-            view.claim_label,
-            0,
-            view.tactic_index,
-        )?;
+        let goal = apply_witness_tactic(value, goal, view.claim_label, 0, view.tactic_index)?;
         let surface_goal = match self.surface_goal() {
-            Some(ClickProposition::Exists {
-                name,
-                written_name,
-                body,
-                ..
-            }) if name.matches_witness_label(written_name.as_deref(), witness.name()) => {
+            Some(ClickProposition::Exists { name, body, .. }) => {
                 let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
                 Some(
                     substitute_click_proposition(body, &substitutions).map_err(|message| {
@@ -1825,9 +1812,9 @@ impl<'a> Proof<'a> {
                 start,
                 end,
                 item,
-                written_item,
                 body,
-            }) if item.matches_witness_label(written_item.as_deref(), witness.name()) => {
+                ..
+            }) => {
                 let substitutions = BTreeMap::from([(item.clone(), witness.value().clone())]);
                 let start =
                     substitute_contract_expression(start, &substitutions).map_err(|message| {
@@ -1891,7 +1878,6 @@ impl<'a> Proof<'a> {
             .proposition_goal("`witness` requires a proposition goal")?
             .clone();
         let checked_witness = ProofWitness::single(
-            witness.name().to_owned(),
             self.substitute_fixed_state_locals_in_expression(witness.value())?,
         );
         let non_machine_type = match checked_witness.value() {
@@ -1924,7 +1910,10 @@ impl<'a> Proof<'a> {
             };
             return Err(self.step_error(format!(
                 "witness `{}` has the wrong type: expected {}, got {actual}",
-                witness.name(),
+                match &goal {
+                    Proposition::Exists { name, .. } => name.as_str(),
+                    _ => unreachable!(),
+                },
                 describe_interface_type(
                     crate::surface::generics::interface_type_from_program_type(expected)
                 ),
@@ -1982,13 +1971,9 @@ impl<'a> Proof<'a> {
             &BTreeSet::new(),
         )
         .map_err(|message| {
-            self.step_error(format!(
-                "could not evaluate witness `{}`: {message}",
-                witness.name(),
-            ))
+            self.step_error(format!("could not evaluate witness value: {message}"))
         })?;
         let proposition = apply_witness_tactic(
-            &checked_witness,
             value,
             goal,
             self.claim_label(),
@@ -1997,12 +1982,7 @@ impl<'a> Proof<'a> {
         )
         .map_err(|error| self.attach_step_diagnostic(error))?;
         let surface_goal = match self.surface_goal() {
-            Some(ClickProposition::Exists {
-                name,
-                written_name,
-                body,
-                ..
-            }) if name.matches_witness_label(written_name.as_deref(), witness.name()) => {
+            Some(ClickProposition::Exists { name, body, .. }) => {
                 let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
                 Some(
                     substitute_click_proposition(body, &substitutions).map_err(|message| {
@@ -2031,22 +2011,14 @@ impl<'a> Proof<'a> {
             .proposition_goal("`witness` requires a proposition goal")?
             .clone();
         let Proposition::Exists {
-            name,
+            name: _,
             var,
             sort: Sort::Integer,
             body,
         } = goal
         else {
-            return Err(self.step_error(
-                "pure `witness` currently requires an Integer existential proposition",
-            ));
+            return Err(self.step_error("`witness` requires an Integer existential proposition"));
         };
-        if !name.is_empty() && name != witness.name() {
-            return Err(self.step_error(format!(
-                "`witness` binds `{name}`, but proof provided `{}`",
-                witness.name()
-            )));
-        }
         let value = self.capture_pure_integer_witness(witness.value())?;
         let proposition =
             crate::kernel::substitute_integer_variable_in_pure_proposition(&body, var, &value)
@@ -2054,12 +2026,7 @@ impl<'a> Proof<'a> {
                     self.step_error(format!("could not apply Integer witness: {error}"))
                 })?;
         let surface_goal = match self.surface_goal() {
-            Some(ClickProposition::Exists {
-                name,
-                written_name,
-                body,
-                ..
-            }) if name.matches_witness_label(written_name.as_deref(), witness.name()) => {
+            Some(ClickProposition::Exists { name, body, .. }) => {
                 let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
                 Some(
                     substitute_click_proposition(body, &substitutions).map_err(|message| {
@@ -2088,7 +2055,7 @@ impl<'a> Proof<'a> {
             .proposition_goal("`witness` requires a proposition goal")?
             .clone();
         let Proposition::Exists {
-            name,
+            name: _,
             var,
             sort: Sort::Algebraic(algebraic_type),
             body,
@@ -2098,12 +2065,6 @@ impl<'a> Proof<'a> {
                 "pure algebraic `witness` requires an algebraic existential proposition",
             ));
         };
-        if !name.is_empty() && name != witness.name() {
-            return Err(self.step_error(format!(
-                "`witness` binds `{name}`, but proof provided `{}`",
-                witness.name()
-            )));
-        }
         let value = self.capture_pure_algebraic_witness(witness.value())?;
         if value.algebraic_type != algebraic_type {
             return Err(self.step_error("algebraic witness has the wrong datatype"));
@@ -2112,12 +2073,7 @@ impl<'a> Proof<'a> {
             &body, var, &value,
         );
         let surface_goal = match self.surface_goal() {
-            Some(ClickProposition::Exists {
-                name,
-                written_name,
-                body,
-                ..
-            }) if name.matches_witness_label(written_name.as_deref(), witness.name()) => {
+            Some(ClickProposition::Exists { name, body, .. }) => {
                 let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
                 Some(
                     substitute_click_proposition(body, &substitutions).map_err(|message| {

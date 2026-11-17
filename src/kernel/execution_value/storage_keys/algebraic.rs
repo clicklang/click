@@ -227,12 +227,11 @@ impl Ord for AlgebraicStorageKey {
 impl Drop for AlgebraicStorageKey {
     fn drop(&mut self) {
         fn take(key: &mut AlgebraicStorageKey, pending: &mut Vec<AlgebraicStorageKey>) {
-            if let Some(data) = Arc::get_mut(&mut key.0) {
-                if let Node::List(children) =
+            if let Some(data) = Arc::get_mut(&mut key.0)
+                && let Node::List(children) =
                     std::mem::replace(&mut data.node, Node::Atom(Atom::Tag(0)))
-                {
-                    pending.extend(children);
-                }
+            {
+                pending.extend(children);
             }
         }
         let mut pending = Vec::new();

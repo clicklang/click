@@ -130,7 +130,7 @@ An `extern` head is written the same way in each language:
 (`tests/cpp_import.rs::axiomatic_member_function_extern_heads_are_cpp_declarations`),
 and `extern fn extern_functions::clamp_reading(raw: i32) -> i32` in Rust
 ([`design/charon-trial/extern-functions`](https://github.com/clicklang/click/blob/master/design/charon-trial/extern-functions/ffi.click)).
-The Rust spellings are in [the Rust reference](../rust.md), the C ones in
+The Rust syntax is in [the Rust reference](../rust.md), the C syntax in
 [C](c.md).
 
 ## File shape
@@ -155,10 +155,10 @@ parameters, pure-function and predicate parameters, typed `let` bindings, and
 
 ### Signature types
 
-A signature uses the C types Click models, by their C spellings (`int`,
+A signature uses the C types Click models, by their C names (`int`,
 `unsigned char`, `size_t`, `int32_t`, ...) or Click's own names (`int8`,
 `uint16`, `int32`, `uint64`, ...), with pointers, `struct name*` parameters,
-and array-parameter spellings such as `int32 p[]` and `uint8 bytes[]`; the
+and array-parameter forms such as `int32 p[]` and `uint8 bytes[]`; the
 complete list is [Supported C](c.md). C typedefs may alias these modeled
 types. `void` is not an object or parameter type. A `void` contract has
 no `result` binding; it may still state resource transfer and return-state
@@ -235,7 +235,7 @@ See `mdtests/contract_float_pointer_casts.md` for reads and pointer strides.
 
 The numeric targets `float` and `double` use the existing C binary32 and
 binary64 conversion rules, including integer rounding, width conversion,
-signed zero, infinities, and NaNs. Like integer targets, these Click spellings
+signed zero, infinities, and NaNs. Like integer targets, these Click forms
 cast the value observed by their operand, including `old(...)` and `at(...)`.
 They do not add a conversion from mathematical `Integer` or 128-bit integers.
 Float-to-integer casts keep their existing finite/range obligations. Checked
@@ -380,7 +380,7 @@ self-recursive function, any pure `int32`, unsigned, or mathematical
 `Integer` expression, or a parenthesized lexicographic tuple of them. Functions
 and resources share one namespace, so that classification happens after name
 resolution rather than from a keyword; there is no `decreases resource`
-spelling. Measure arithmetic is exact Integer arithmetic: `decreases a + b;`
+form. Measure arithmetic is exact Integer arithmetic: `decreases a + b;`
 ranks by `to_integer(a) + to_integer(b)` without a machine-overflow obligation.
 A function-level measure ranks recursive calls:
 
@@ -507,7 +507,7 @@ verified as its own judgment, so the descent there is owed by the loop's proof
 rather than by a step of the function's, and Click certifies every loop of a
 function that declares a measure under that function's anchor: the call in the
 body raises the same members, against the same function-entry M0. Loop phases
-read `old(...)` at the function entry too, so `old(...)` spells M0 inside a
+read `old(...)` at the function entry too, so `old(...)` names M0 inside a
 `preserve by { ... }` exactly as it does in the contract proof, and what
 relates the iteration's state to the entry is an invariant the user writes,
 such as `invariant n <= old(n)`. See
@@ -608,7 +608,7 @@ one component strictly smaller while keeping all earlier components equal. For
 example, `decreases n - i` ranks a loop that increments `i` toward `n`.
 
 A pure function of the cells the loop writes ranks a loop whose real measure
-has no C spelling:
+cannot be written in C:
 
 <!-- verified-example: mdtests/loop_decreases_pure_expression.md -->
 ```click
@@ -683,7 +683,7 @@ Integers. A lexicographic tuple may mix the carriers, because a pivot arm only
 ever compares one component's two readings. The strictness is the same one an
 int32 measure owes: `mdtests/loop_decreases_integer_measure_must_decrease.md`.
 State the two members as `have`s before the body's last step, where they are
-ordinary Integer goals with a source spelling, and the closer then has them as
+ordinary Integer goals with a Surface form, and the closer then has them as
 exact facts.
 
 A loop's ranking obligations are members of the back-edge invariant bundle,
@@ -705,7 +705,7 @@ precondition, and invariant facts it needs. A missed member's diagnostic
 names the ranking obligations the bundle carries.
 
 The iteration's entry values are available as `at(region(N).entry, x)`, the
-same spelling loop-body premises use. `solve()` at the back edge reads the
+same form loop-body premises use. `solve()` at the back edge reads the
 facts in scope: the loop's declared invariants and guard at
 iteration entry, the function's preconditions, and the C branch conditions
 this path took to reach the back edge are among them.
@@ -719,7 +719,7 @@ loop {
     ...
 }
 ```
-A C `if` the body took leaves its condition as a fact on that path, spelled
+A C `if` the body took leaves its condition as a fact on that path, written
 at the branching statement's entry as `at(region(N).entry, x)`. A measure
 that depends on which arm ran closes from it: `stop_at_zero` leaves through a `break` inside an `if`, so the
 only path that reaches the back edge is the one where `i == 0` was false, and
@@ -912,7 +912,7 @@ function reaches its return frontier:
 ```click
 step_until(function.exit);
 have exists (k: int32) { k == result } by {
-    witness { k: result };
+    witness(result);
     solve();
 }
 solve();
@@ -1092,7 +1092,7 @@ a theorem, a pure function body or a specification expression alike:
 ``untyped `let s` does arithmetic on a machine value; arithmetic takes its
 meaning from the type its result is used at, so write `let s: Integer = ...;`
 for the exact value or `let s: int32 = ...;` for the C operation``, naming the
-operand's machine type where its spelling shows it
+operand's machine type where its source text shows it
 (`mdtests/an_untyped_let_of_machine_arithmetic_is_refused.md`). So a value
 never changes meaning when it is moved into a `let`. An untyped `let` has
 its value's type, and an earlier `let` in scope (a contract's or theorem's,
@@ -1156,7 +1156,7 @@ injective and preserves order: the kernel states it in that one form
 Built-in checks that read machine facts, such as resource quantities and the
 definedness of a population count, therefore accept the Integer premise
 (`mdtests/an_integer_bound_supplies_a_member_quantity.md`), and the fact is
-exactly as strong in either spelling
+exactly as strong in either form
 (`mdtests/an_integer_premise_files_no_stronger_machine_fact.md`). The same
 holds through an in-range machine `+` or `-`: `have a <= 4294967295u32 - b`
 records `to_integer(a) <= 4294967295 - to_integer(b)`, which discharges
@@ -1196,7 +1196,7 @@ selects Integer equalities over machine observations as rewrite candidates,
 as it selects native equalities. An Integer count premise at entry serves a
 `fold` over the grown count as its machine form does
 (`mdtests/an_integer_entry_count_premise_folds_a_grown_count.md`).
-A population's count at function entry is spelled `old(count(R(p, _)))`
+A population's count at function entry is written `old(count(R(p, _)))`
 in checked certificates, so a fact the kernel records about it, such as the
 bound `count >= 1` a consumed member places on it, is cited like a written
 premise
@@ -1262,7 +1262,7 @@ theorem preserves_assumption(x: int32) {
 ```
 
 Like every Click-native declaration, theorem parameters use `name: type`
-spelling. A symbolic callback uses a nameless C function-pointer declarator
+syntax. A symbolic callback uses a nameless C function-pointer declarator
 as its type, for example `step: void (*)(int32*)`; the bound value remains an
 ordinary function pointer, and behavioral knowledge remains an explicit
 `Contract(step)` proposition. A theorem body uses the same contract-block shape as C function
@@ -1363,8 +1363,9 @@ theorem countdown_is_zero(n: int32) {
 }
 ```
 
-`induct` must be the first tactic and the current requirements must establish
-that its parameter is nonnegative. `ih(m)` is available only in that proof and
+Scalar `induct` may follow earlier helper proofs while the original theorem
+goal remains focused. The facts available at that step must establish that
+its parameter is nonnegative. `ih(m)` is available after that declaration and
 requires `m` to be nonnegative and strictly smaller, plus all theorem
 requirements after substituting `m` for the induction parameter. Other theorem
 parameters remain fixed. This is a pure proposition rule, not C execution or
@@ -1603,7 +1604,7 @@ including an impossible arm and a shared continuation containing another case.
 A callback theorem has one nongeneric callback parameter, one
 target-contract conclusion, and one or more source-contract premises for that
 same pointer; additional theorem parameters are refused.
-Const-qualified pointer returns and parameters use the same C spelling in
+Const-qualified pointer returns and parameters use the same C syntax in
 callbacks, named contracts, and execution proofs.
 
 ### Names in an execution proof
@@ -1620,7 +1621,7 @@ introduce names:
 Every other name in the block is one of those, a theorem parameter, or
 `result`.
 
-The `executes` arguments use C parameter spelling and match the callback
+The `executes` arguments use C parameter syntax and match the callback
 signature. They are bound only inside the execution proof; they cannot escape
 into theorem premises or conclusions. Their names must be distinct from the
 callback and from `result`; a return-valued callback parameter also cannot be
@@ -1643,7 +1644,7 @@ theorem lift(callback: int32 (*)()) executes callback() {
 ```
 
 `k` is the only name for that instance inside the block, and the theorem proves
-the refinement for an arbitrary such instance. The target's own spelling `cell`
+the refinement for an arbitrary such instance. The target's own name `cell`
 is not in scope. Every target handle must be named exactly once, and
 an introduced name cannot shadow the callback, the call arguments, a theorem
 local name, or `result`. The names do not escape the block. A target with no
@@ -1694,10 +1695,10 @@ route for a target contract with resource handles, which `unfold(Name(callback))
 The [modeled-instance variant](https://github.com/clicklang/click/blob/master/mdtests/c_contract_executes_concrete_model.md)
 carries a tree instance through the same two maps.
 
-A concrete `static inline` callback uses its ordinary source spelling in both
+A concrete `static inline` callback uses its ordinary source name in both
 forms of refinement theorem. The contract fact refers to the same
 translation-unit-local function as a C initializer or call. If multiple
-translation units define that spelling, Click does not choose one or identify
+translation units define that name, Click does not choose one or identify
 their function pointers. The [inline callback regression](https://github.com/clicklang/click/blob/master/mdtests/c_contract_inline_callback.md)
 checks both refinement forms and a static const callback table.
 
@@ -1761,7 +1762,7 @@ consumes p[0..1];
 proposition, and an unmet one is reported by its text. An `ensures` label
 names its postcondition claim. A loop `invariant` may be labeled the same
 way, and the label names it where a failure reports it: "loop 0 invariant
-`bounded` entry" for `invariant bounded: i <= n;`. To open an available existential precondition, spell its
+`bounded` entry" for `invariant bounded: i <= n;`. To open an available existential precondition, write its
 proposition with `obtain (...) { ... };`.
 
 `viewable(base[start..end])` and `memory(base[start..end])` use half-open
@@ -1780,7 +1781,7 @@ See `mdtests/saved_memory_bases_keep_current_indices.md` and
 
 `viewable(R)` is a pure, point-dependent proposition for a resource
 descriptor `R`, including resource parameters, named resources, and separating
-conjunctions. It grants no ownership. The legacy segment spelling
+conjunctions. It grants no ownership. The legacy segment form
 `viewable(base[start..end])` is equivalent to
 `viewable(memory(base[start..end]))`. Use it where Click expects a proposition,
 such as a composite resource `fact`. The axiom
@@ -1990,7 +1991,7 @@ abstract resource open_fd(fd: int32);
 ```
 
 An abstract resource has no locally visible body and must use the explicit
-`abstract resource` spelling. After declaration, `owns open_fd(fd)`,
+`abstract resource` syntax. After declaration, `owns open_fd(fd)`,
 `views open_fd(fd)`, `consumes open_fd(fd)`, and `produces open_fd(fd)` use the
 same resource context. Arguments are type checked. Repeated equal owned units
 form a quantity; a requirement for two units cannot be satisfied by one.
@@ -2423,7 +2424,7 @@ let root = fold(tree(p), { model: old(root.model) }, { left: l, right: r });
 
 `let { ... } = unfold(root)` consumes `root`, exposes its immediate memory,
 and introduces folded children. It is the one form that names what an unfold
-opens; the trailing `unfold(root) as { ... }` spelling is refused with that
+opens; the trailing `unfold(root) as { ... }` form is refused with that
 advice (`mdtests/unfold_names_its_pieces_on_the_left.md`). No parent handle or `root.left` path remains.
 Child-field equations and the aliases they establish are local to each match
 arm; another arm may reuse the child name with different parent fields.
@@ -2802,7 +2803,7 @@ evaluated at entry for exactly this reason, so `owns t: tree_at(root);` names
 the caller's tree however the body used `root`. A proof tactic reads its own
 resource arguments at the cursor it stands on, so a body that reassigns such a
 parameter has to refold the borrowed instance before that assignment; the
-entry position has no spelling inside a `fold`.
+entry position cannot be written inside a `fold`.
 
 A function whose result sits somewhere the caller cannot name that way says so
 directly. A resource argument may be the C null pointer constant `0` at a
@@ -2823,7 +2824,7 @@ through a cell the contract owns. A produced clause's cell reads are taken in
 the exit state, so when the contract owns `root->rb_node`, `produces u:
 rb_at(root->rb_node);` is the whole tree at the position the body linked, and
 the caller reading that same owned cell after the call sees the same object.
-This is the spelling for the Linux insert fixup, which returns nothing and
+This is the form for the Linux insert fixup, which returns nothing and
 reassigns its `node` parameter as it climbs
 (`mdtests/rb_produces_through_the_root_cell.md`). A parameter the body
 reassigned cannot stand there: it means the caller's actual, and a caller
@@ -2855,7 +2856,7 @@ by `owns`, `consumes`, and `produces`.
 Fixed-size heap objects add the built-in owned resource
 `allocation(base, bytes)`. It is exclusive authority and responsibility for
 one live heap lifetime; it does not authorize memory access. Complete access is
-spelled separately with `*base`. Allocation authority cannot be
+written separately with `*base`. Allocation authority cannot be
 `views`-ed or duplicated, and a verified function may not silently drop it:
 the authority must be returned (possibly inside a composite resource) or
 consumed by an actual `free`.
@@ -2911,7 +2912,7 @@ iteration freed cannot be read through
 Composite and token arguments are compared using proved scalar and pointer
 equalities. Thus a held `list(node->next)` can satisfy `list(tail)` after the
 proof establishes `node->next == tail`; the resource does not depend on one
-particular syntactic spelling of that pointer.
+particular syntactic form of that pointer.
 
 A call can pass a covered subrange, such as consuming `p[0..1]` from a caller
 that owns `p[0..2]`; Click keeps the residue and rejoins adjacent returned
@@ -2963,7 +2964,7 @@ them, and every question about one element reads that element's guard cell.
 The declaration is checked once:
 
 - the `where` proposition must be `lo <= k and k < hi` (in any of the
-  equivalent comparison spellings) with bounds that do not mention `k`;
+  equivalent comparison forms) with bounds that do not mention `k`;
 - the guard must be `g[k] == v` or `g[k] != v` over `int32` cells, and every
   guard cell must be owned by the same body, so no one else can change it
   while the resource is folded
@@ -3522,7 +3523,7 @@ constructor arms established on the path
 (`mdtests/user_tactic_recursion_uses_a_structural_measure.md`). Anonymous resource measures use the same retained finite-witness evidence
 as ordinary calls.
 
-Tactic parameters use Click's `name: type` spelling and are C scalars and
+Tactic parameters use Click's `name: type` syntax and are C scalars and
 pointers in this release. The literal `0` supplies a typed null pointer at a
 pointer parameter; other integers and integer variables do not implicitly
 convert to pointers (`mdtests/user_tactic_accepts_null_pointer_arguments.md`).
@@ -3539,7 +3540,7 @@ for the kernel rule.
 values are `true` and `false`; it has no integer value and no order. A
 `Bool` pure function's application, a `Bool` parameter of a pure function or
 theorem, and a proposition used as a value are `Bool` values, and so is a C,
-C++ or Rust `bool`: a function head keeps its language's spelling (`bool` or
+C++ or Rust `bool`: a function head keeps its language's type name (`bool` or
 `_Bool` in C, `bool` in C++ and Rust), and each means `Bool`. In Click's own
 code, `function`, `predicate` and `theorem` signatures, `let` annotations,
 fields and type arguments, the type is written `Bool`; a lowercase `bool`
@@ -3563,13 +3564,13 @@ theorem three_is_in_range() {
 }
 ```
 
-- **Literals.** `true` and `false` are literals wherever no C name of that
-  spelling is in scope. C's `true` and `false` are conveniences rather than
+- **Literals.** `true` and `false` are literals wherever no C binding of that
+  name is in scope. C's `true` and `false` are conveniences rather than
   reserved words, so a C parameter, local or global named `true` keeps its C
   meaning inside its function's contract
   (`mdtests/a_c_name_spelled_true_keeps_its_c_meaning.md`). A Click binder
   (a Click parameter, `let`, or quantifier variable) may not use either
-  spelling (`mdtests/a_click_binder_spelled_true_is_refused.md`).
+  name (`mdtests/a_click_binder_spelled_true_is_refused.md`).
 - **Typing.** `Bool` has equality and nothing else. Two `Bool` values are
   equal when they have the same truth. A `Bool` compared with an integer,
   ordered, or used in arithmetic, an implicit promotion included, is an
@@ -3588,7 +3589,7 @@ theorem three_is_in_range() {
   for a C function returning `bool`, and `ensures in_range(3);` for a call
   of a `Bool` pure function. `b == true` and `b != false` are the same
   claim, and `not b`, `b == false` and `b != true` are its negation, with no
-  lemma between the spellings
+  lemma between the forms
   (`mdtests/bool_negation_and_disequality_agree.md`). The value must be a
   `Bool`; an integer is not read with C's nonzero truth, so `requires count;`
   for an `int` is refused
@@ -3620,7 +3621,7 @@ theorem three_is_in_range() {
   the branch the code took with no comparison with zero
   (`mdtests/a_c_bool_parameter_is_a_claim.md`). A `bool` object is one byte
   holding 1 or 0; see [C](c.md).
-- **Rust.** A Rust sidecar spells the type `bool` as Rust does, and a
+- **Rust.** A Rust sidecar writes the type `bool` as Rust does, and a
   parenthesized comparison there is a `Bool` value, `result == (x > 3)`
   ([Rust](../rust.md#signatures-in-rust-syntax)). In a C or C++ sidecar
   that operand is refused
@@ -3678,7 +3679,8 @@ such as `exists (k: int32) { lo <= k and k < hi and p[k] == x }` does not let
 the earlier conjunct guard the later memory read during lowering.
 
 Existential goals are proved explicitly in proof scripts with `witness`.
-The witness name must match the existential binder. Pure theorem scripts also
+Values follow the outermost existential binders in declaration order, and
+may supply one binder or several with `witness(value, ...)`. Pure theorem scripts also
 support `int32` and pointer witnesses, alongside `Integer` and algebraic
 witnesses. The value must have the binder's type, and the instantiated body
 still needs a proof. A declaration-level `let` alias can be a witness value;
@@ -3690,7 +3692,7 @@ For a symbolic `.any`, the range item name is the existential binder:
 ```click
 ensures found: (lo..hi).any(|k| { p[k] == result }) by {
     step_until(function.exit);
-    witness { k: lo };
+    witness(lo);
     solve();
 }
 ```
@@ -3864,7 +3866,7 @@ Existing unqualified references and `verifying "file.c";` remain unchanged.
 
 `c(name)` explicitly refers to the binding named `name` in the verified C
 program. It is distinct from Click built-ins and contract bindings with the
-same spelling. In particular, bare `result` is the function's contract result,
+same name. In particular, bare `result` is the function's contract result,
 while `c(result)` is a C parameter or local named `result`. The contract return
 value has a separate internal binding, so a postcondition can use both names.
 After function exit, a parameter reference denotes its logical input value.
@@ -3881,7 +3883,7 @@ result == at(region(2).entry, c(result))
 
 The AST retains this distinction; `c(result)` is not converted to an ordinary
 string variable and cannot be reinterpreted as contract `result`. Expansion
-uses this spelling when an explicit proof must name an overlapping C
+uses this form when an explicit proof must name an overlapping C
 binding.
 
 The same holds for every Click value name: in a loop's clauses and phases bare
@@ -4120,7 +4122,7 @@ function parameter names retain their ordinary contract meaning.
 same labeled loop code region. It evaluates `expression` at the loop's entry
 point, just before the loop region starts, and uses that value for invariant
 entry and preservation checks. Inside an explicit `preserve` proof, the same
-spelling continues to denote the value at that pre-loop point; the value at
+form continues to denote the value at that pre-loop point; the value at
 the arbitrary loop-head iteration being checked is the ordinary unwrapped
 expression.
 
@@ -4273,7 +4275,7 @@ let k: int32 where k == x;
 
 ensures result_matches_witness: result == k by {
     step_until(function.exit);
-    witness { k: x };
+    witness(x);
 }
 ```
 
@@ -4332,8 +4334,8 @@ pair of source-level `int32` fields. Use `owner->field` for one field and
 `*owner` for the complete object. When a proof exposes the object's
 cells, wide integer fields take their own type while pointer fields are
 held as pointer-width words that read back as pointers; the field's source
-spelling is unaffected. Explicit ranges such as
-`p[0..count]` remain the normal spelling for array storage.
+text is unaffected. Explicit ranges such as
+`p[0..count]` remain the usual syntax for array storage.
 
 `owns *p` and `views *p` cover every field of the object, including the
 padding after each field, an embedded struct's fields and an inline array
@@ -4377,7 +4379,7 @@ the entry-state pointer, while `old(load_int32(p))` reads entry-state memory.
 Both require the corresponding read permission and initialized storage.
 
 `address(pointer)` is the `uint64` integer representation of an object pointer
-under the LP64 profile. It is the spec spelling of the C cast
+under the LP64 profile. It is the spec form of the C cast
 `(unsigned long) pointer` and denotes the same kernel term: the address keeps
 the exact source pointer. `address(p) == address(q)` holds when `p == q`
 does, but not conversely: it is what a C comparison between pointers states,
@@ -4527,7 +4529,7 @@ old two-cell tail after `owner->len` changes. Footprint matching uses proven
 pointer equalities, including unchanged field loads across a finite chain of
 certified memory effects.
 
-A narrow write inside a composite the function owns is spelled as ownership
+A narrow write inside a composite the function owns is written as ownership
 of the whole plus a promise about the cells it leaves alone; an owned piece
 inside a viewed composite is not a footprint, because the composite's facts
 may depend on that piece:
@@ -4559,7 +4561,7 @@ Resource slices of global and static arrays use the array's declared element
 width, so `owns bytes[0..1]` on a `uint8` array covers one byte.
 
 A loop may declare resources of its own beside its invariants, in the same
-`owns` and `views` spellings a contract uses:
+`owns` and `views` forms a contract uses:
 
 <!-- verified-example: mdtests/loop_owns_preserves_symbolic_index.md -->
 ```click

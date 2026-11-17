@@ -3162,7 +3162,7 @@ fn expand_declared_resource_expression(
     let mut expanded = expanded?;
     while let Some((name, click_type, value, _)) = lets.pop() {
         expanded = ContractExpression::Let {
-            name: name.into(),
+            name,
             click_type,
             value: Box::new(value),
             body: Box::new(expanded),

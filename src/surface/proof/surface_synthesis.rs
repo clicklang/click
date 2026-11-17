@@ -2258,12 +2258,9 @@ fn synthesize_surface_bool(
     match condition {
         ConditionTerm::Constant(value) => Some(bool_literal(*value)),
         ConditionTerm::Variable(variable) => {
-            if let Some(name) = folds::binder_name(false, *variable).or_else(|| {
-                bound_variables
-                    .get(variable)
-                    .cloned()
-                    .map(SurfaceBinder::from)
-            }) {
+            if let Some(name) = folds::binder_name(false, *variable)
+                .or_else(|| bound_variables.get(variable).cloned())
+            {
                 return Some(name.reference());
             }
             synthesize_surface_bitvector(
@@ -3701,13 +3698,8 @@ fn raise_kernel_term_dispatch(
         Node::IntegerLiteral(value) => SurfaceTerm::IntegerLiteral(value.to_string()),
         Node::Variable(variable) if term.ty() == &KernelType::Integer => {
             match folds::binder_name(true, *variable)
-                .or_else(|| {
-                    bound_variables
-                        .get(variable)
-                        .cloned()
-                        .map(SurfaceBinder::from)
-                })
-                .or_else(|| proof_binder_name(*variable).map(SurfaceBinder::from))
+                .or_else(|| bound_variables.get(variable).cloned())
+                .or_else(|| proof_binder_name(*variable))
                 // A name the loop phase gives a variable it binds, such as
                 // the head's pass count `iterations`.
                 .or_else(|| {
@@ -3715,7 +3707,6 @@ fn raise_kernel_term_dispatch(
                         slot.borrow()
                             .as_ref()
                             .and_then(|names| names.get(variable).cloned())
-                            .map(SurfaceBinder::from)
                     })
                 }) {
                 Some(name) => name.reference(),
@@ -4839,12 +4830,8 @@ fn synthesize_surface_bitvector(
         return None;
     }
     if let MachineTerm::Variable(variable) = term
-        && let Some(name) = folds::binder_name(false, *variable).or_else(|| {
-            bound_variables
-                .get(variable)
-                .cloned()
-                .map(SurfaceBinder::from)
-        })
+        && let Some(name) =
+            folds::binder_name(false, *variable).or_else(|| bound_variables.get(variable).cloned())
     {
         return Some(ContractExpression::ProgramExpression(
             ProgramExpression::Variable((name.clone()).into()),
@@ -6424,12 +6411,8 @@ fn synthesize_surface_pointer(
     // A pointer a proof binder names, such as a match arm's payload.
     if let (PointerBlock::Symbolic(variable), PointerOffsetTerm::Constant(0)) =
         (&pointer.block, &pointer.offset)
-        && let Some(name) = folds::binder_name(false, *variable).or_else(|| {
-            bound_variables
-                .get(variable)
-                .cloned()
-                .map(SurfaceBinder::from)
-        })
+        && let Some(name) =
+            folds::binder_name(false, *variable).or_else(|| bound_variables.get(variable).cloned())
     {
         return Some(ProgramExpression::Variable((name.clone()).into()));
     }
@@ -6842,6 +6825,16 @@ fn synthesize_surface_pointer_expression(
         |value| matches!(value, ProgramValue::Pointer(held) if held.pointer() == pointer),
     ) {
         return Some(result);
+    }
+    // A pointer an earlier call returned, which no local here holds, is that
+    // call's result.
+    if let Some(region) = SYNTHESIS_RECORDED_POINTS.with(|points| {
+        points
+            .borrow()
+            .as_ref()?
+            .call_result_naming_pointer(pointer)
+    }) {
+        return Some(ContractExpression::RegionResult(region));
     }
     if parameter_binding.arguments.iter().any(|argument| {
         matches!(

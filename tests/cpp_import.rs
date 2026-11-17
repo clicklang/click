@@ -2726,11 +2726,9 @@ fn scalar_int32_profile_emits_function_scope_cleanup_edges_for_escaping_throws()
         edges: &mut Vec<(&'a ProgramStatement, &'a ProgramStatement)>,
     ) {
         match statement {
-            ProgramStatement::TryCatchInt32 {
-                try_body,
-                handler,
-                cleanup_unwind: true,
-                ..
+            ProgramStatement::UnwindCleanup {
+                body: try_body,
+                cleanup: handler,
             } => {
                 edges.push((try_body, handler));
                 collect_unwind_edges(try_body, edges);
@@ -2766,12 +2764,10 @@ fn scalar_int32_profile_emits_function_scope_cleanup_edges_for_escaping_throws()
         2,
         "both exceptional operations need cleanup edges"
     );
-    for (_, handler) in &edges {
+    for (_, cleanup) in &edges {
         assert!(
-            matches!(handler, ProgramStatement::Seq(sequence)
-                if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Restore::~Restore")
-                    && matches!(rethrow.as_ref(), ProgramStatement::Throw(_)) }),
-            "each escaping edge must run the live destructor before rethrowing"
+            contains_call(cleanup, "Restore::~Restore"),
+            "each escaping edge must run the live destructor before the exception continues"
         );
     }
     assert!(
@@ -9373,12 +9369,8 @@ fn direct_return_calls_keep_guarded_try_returns_unsupported_and_emit_uncaught_cl
     let lowered = lower_import(&load_import(&escaping.config()).unwrap()).unwrap();
     fn has_unwind_cleanup(statement: &ProgramStatement) -> bool {
         match statement {
-            ProgramStatement::TryCatchInt32 {
-                handler,
-                cleanup_unwind: true,
-                ..
-            } => {
-                matches!(handler.as_ref(), ProgramStatement::Seq(sequence) if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Restore::~Restore") && matches!(rethrow.as_ref(), ProgramStatement::Throw(_)) })
+            ProgramStatement::UnwindCleanup { cleanup, .. } => {
+                contains_call(cleanup, "Restore::~Restore")
             }
             ProgramStatement::Seq(statements) => statements
                 .iter()
@@ -14847,14 +14839,8 @@ int choose(int* slot, bool fail) { Guard guard(slot); if (predicate(fail)) { *sl
             ProgramStatement::Seq(statements) => statements
                 .iter()
                 .any(|statement| guarded_condition(statement)),
-            ProgramStatement::TryCatchInt32 {
-                try_body,
-                handler,
-                cleanup_unwind: true,
-                ..
-            } => {
-                contains_call(try_body, "predicate")
-                    && matches!(handler.as_ref(), ProgramStatement::Seq(sequence) if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), ProgramStatement::Throw(_)) })
+            ProgramStatement::UnwindCleanup { body, cleanup } => {
+                contains_call(body, "predicate") && contains_call(cleanup, "Guard::~Guard")
             }
             _ => false,
         }
@@ -15558,15 +15544,8 @@ fn converted_call_initializers_emit_active_guard_cleanup_before_rethrow() {
             ProgramStatement::Seq(statements) => {
                 statements.iter().any(|statement| has_cleanup(statement))
             }
-            ProgramStatement::TryCatchInt32 {
-                try_body,
-                handler,
-                cleanup_unwind: true,
-                ..
-            } => {
-                contains_call(try_body, "helper")
-                    && matches!(handler.as_ref(), ProgramStatement::Seq(sequence)
-                    if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), ProgramStatement::Throw(_)) })
+            ProgramStatement::UnwindCleanup { body, cleanup } => {
+                contains_call(body, "helper") && contains_call(cleanup, "Guard::~Guard")
             }
             _ => false,
         }
@@ -16020,15 +15999,8 @@ fn converted_return_calls_emit_active_object_cleanup_on_exception() {
             ProgramStatement::Seq(statements) => {
                 statements.iter().any(|statement| has_cleanup(statement))
             }
-            ProgramStatement::TryCatchInt32 {
-                try_body,
-                handler,
-                cleanup_unwind: true,
-                ..
-            } => {
-                contains_call(try_body, "helper")
-                    && matches!(handler.as_ref(), ProgramStatement::Seq(sequence)
-                    if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), ProgramStatement::Throw(_)) })
+            ProgramStatement::UnwindCleanup { body, cleanup } => {
+                contains_call(body, "helper") && contains_call(cleanup, "Guard::~Guard")
             }
             _ => false,
         }
@@ -20892,14 +20864,12 @@ fn check_noexcept_cleanup(profile: &str, declaration: &str, thrown: &str) {
     project.write_config_with_exception_behavior("probe", "cleanup.cpp", true, profile);
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let source = format!(
-        r#"verifying "cleanup.cpp";
-    Guard::Guard(int32* p) {{ owns this->slot; owns p[0]; ensures this->slot == p; ensures separate(memory(*this), memory(this->slot[0..1])); }}
-    Guard::~Guard() {{ requires separate(memory(*this), memory(this->slot[0..1])); views this->slot; owns this->slot[0]; ensures this->slot[0] == 9; }}
-    int32 fallible(bool fail) {{ requires fail == false; ensures result == 4; }}
-    int32 probe(int32* slot, bool fail) {{ requires fail == false; owns slot[0]; ensures slot[0] == 9; ensures result == 4; }}
-    "#
-    );
+    let source = r#"verifying "cleanup.cpp";
+    Guard::Guard(int32* p) { owns this->slot; owns p[0]; ensures this->slot == p; ensures separate(memory(*this), memory(this->slot[0..1])); }
+    Guard::~Guard() { requires separate(memory(*this), memory(this->slot[0..1])); views this->slot; owns this->slot[0]; ensures this->slot[0] == 9; }
+    int32 fallible(bool fail) { requires fail == false; ensures result == 4; }
+    int32 probe(int32* slot, bool fail) { requires fail == false; owns slot[0]; ensures slot[0] == 9; ensures result == 4; }
+    "#.to_string();
     click::surface::with_proof_trace("probe", || {
         check_noexcept_replay_all(&project, &import, &source)
     });

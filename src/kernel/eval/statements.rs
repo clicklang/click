@@ -4,6 +4,8 @@ use crate::kernel::loans::{CheckedLoanCallEvidenceSequence, empty_checked_loan_e
 #[cfg(test)]
 mod aggregate_results;
 mod scalar_arrays;
+#[cfg(test)]
+mod unsigned_switch_tests;
 
 #[cfg(test)]
 pub(in crate::kernel) fn execute_execution_statement(
@@ -3374,6 +3376,7 @@ fn collect_scope_declared_names(statement: &ProgramStatement, names: &mut Vec<Bi
         | ProgramStatement::Loop { .. }
         | ProgramStatement::Switch { .. }
         | ProgramStatement::TryCatchInt32 { .. }
+        | ProgramStatement::UnwindCleanup { .. }
         // Everything else declares nothing.
         | ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
@@ -3816,6 +3819,7 @@ fn verification_operation_name(statement: &ProgramStatement) -> &'static str {
             "verification statement: throw"
         }
         ProgramStatement::TryCatchInt32 { .. } => "verification statement: int32 handler",
+        ProgramStatement::UnwindCleanup { .. } => "verification statement: unwind cleanup",
         ProgramStatement::Store { .. } => "verification statement: store",
         ProgramStatement::TypedStore { .. } => "verification statement: typed store",
         ProgramStatement::Update { .. } => "verification statement: update",
@@ -4702,6 +4706,45 @@ fn execute_execution_statement_leaf_paths(
             }
             paths
         }
+        // On an int32 exceptional exit, the cleanup runs in the thrown state
+        // and the same exception continues: `cleanup; throw <payload>`.
+        ProgramStatement::UnwindCleanup { body, cleanup } => {
+            let mut paths = Vec::new();
+            for body_path in execute_statement_paths(
+                state,
+                body,
+                assumptions,
+                execution_context,
+                budget,
+                judgment,
+            )? {
+                if let StatementOutcome::Throw {
+                    value,
+                    state: thrown_state,
+                } = &body_path.outcome
+                    && value.program_type() == ProgramType::Int32
+                {
+                    let unwinding = crate::kernel::program_unwind_continuation(
+                        cleanup,
+                        ProgramExpression::Value(value.clone().into_native()),
+                    );
+                    paths.extend(execute_statement_paths_with_prefix(
+                        thrown_state,
+                        &unwinding,
+                        assumptions,
+                        execution_context,
+                        &body_path.facts,
+                        &body_path.obligations,
+                        &body_path.loan_evidence,
+                        budget,
+                        judgment,
+                    )?);
+                } else {
+                    paths.push(body_path);
+                }
+            }
+            paths
+        }
         ProgramStatement::Store { pointer, value } => execute_program_lvalue_assignment_paths(
             state,
             &ProgramExpression::Load(Box::new(pointer.clone())),
@@ -4973,8 +5016,14 @@ fn execute_program_switch_paths(
         } = selector_path;
         match outcome {
             ExpressionOutcome::Value(value) => {
-                let Some(selector) = promote_program_path_value(value, MachineIntegerType::Int32)
-                else {
+                // Integer promotion keeps unsigned int unsigned. Narrower
+                // integers and bool still promote to int on the supported ABI.
+                let selector_type = if value.program_type() == ProgramType::UInt32 {
+                    MachineIntegerType::UInt32
+                } else {
+                    MachineIntegerType::Int32
+                };
+                let Some(selector) = promote_program_path_value(value, selector_type) else {
                     paths.push(StatementExecutionPath::new(
                         StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
                         facts,
@@ -4985,6 +5034,7 @@ fn execute_program_switch_paths(
                 paths.extend(execute_program_switch_dispatch_paths(
                     state,
                     &selector,
+                    selector_type,
                     cases,
                     0,
                     facts,
@@ -5013,6 +5063,7 @@ fn execute_program_switch_paths(
 fn execute_program_switch_dispatch_paths(
     state: &ExecutionState,
     selector: &MachineTerm,
+    selector_type: MachineIntegerType,
     cases: &[SwitchCase],
     case_index: usize,
     facts: ExecutionFacts,
@@ -5049,6 +5100,7 @@ fn execute_program_switch_dispatch_paths(
         return execute_program_switch_dispatch_paths(
             state,
             selector,
+            selector_type,
             cases,
             case_index + 1,
             facts,
@@ -5059,7 +5111,13 @@ fn execute_program_switch_dispatch_paths(
             judgment,
         );
     };
-    let condition = ConditionTerm::equal(selector.clone(), MachineTerm::constant(value));
+    // A case label holds its 32-bit pattern after conversion to the promoted
+    // selector type, including -1 becoming UINT_MAX for an unsigned selector.
+    let condition = if selector_type == MachineIntegerType::UInt32 {
+        ConditionTerm::uint32_equal(selector.clone(), MachineTerm::uint32_constant(value))
+    } else {
+        ConditionTerm::equal(selector.clone(), MachineTerm::constant(value))
+    };
     let mut paths = Vec::new();
     for condition_path in
         condition_as_program_int32_paths(condition, facts, obligations, assumptions)
@@ -5088,6 +5146,7 @@ fn execute_program_switch_dispatch_paths(
             paths.extend(execute_program_switch_dispatch_paths(
                 state,
                 selector,
+                selector_type,
                 cases,
                 case_index + 1,
                 facts,

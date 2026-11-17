@@ -1409,6 +1409,9 @@ impl ProgramLayouts {
                         record(binding, None, false);
                         pending.extend([try_body.as_ref(), handler.as_ref()]);
                     }
+                    ProgramStatement::UnwindCleanup { body, cleanup } => {
+                        pending.extend([body.as_ref(), cleanup.as_ref()]);
+                    }
                     ProgramStatement::Seq(sequence) => {
                         pending.extend(sequence.iter().map(|s| s.as_ref()))
                     }
@@ -3909,7 +3912,7 @@ impl Parser {
                         );
                     }
                     witnesses.push(ResourceWitness {
-                        name: binding.name.into(),
+                        name: binding.name,
                         interface_type,
                     });
                     facts.push(condition);
@@ -11294,32 +11297,20 @@ impl Parser {
                 }
             }
             "witness" => {
-                // `witness { k: value, ... }`: a value for each named binder
-                // of the existential goal, in order.
-                self.expect(Token::LBrace)?;
-                let mut bindings: Vec<(String, ContractExpression)> = Vec::new();
-                while self.peek() != Some(&Token::RBrace) {
-                    let name = self.expect_ident("witness binder name")?;
-                    if bindings.iter().any(|(bound, _)| bound == &name) {
-                        return Err(self.error(format!("duplicate witness for `{name}`")));
-                    }
-                    self.expect(Token::Colon)?;
-                    let value = self.parse_contract_expression()?;
-                    bindings.push((name, value));
+                self.expect(Token::LParen)?;
+                let mut values = Vec::new();
+                while self.peek() != Some(&Token::RParen) {
+                    values.push(self.parse_contract_expression()?);
                     if self.peek() != Some(&Token::Comma) {
                         break;
                     }
                     self.position += 1;
                 }
-                self.expect(Token::RBrace)?;
-                if bindings.is_empty() {
-                    return Err(self.error("`witness` needs at least one `binder: value`"));
+                self.expect(Token::RParen)?;
+                if values.is_empty() {
+                    return Err(self.error("`witness` needs at least one value"));
                 }
-                if self.peek() != Some(&Token::Semicolon) {
-                    return Err(self.error("expected `;` after `witness { ... }`"));
-                }
-                self.position += 1;
-                return Ok(ProofTactic::Witness(ProofWitness::new(bindings)));
+                ProofTactic::Witness(ProofWitness::new(values))
             }
             "obtain" => return self.parse_obtain(),
             "check_termination_local" => {
@@ -18124,6 +18115,34 @@ mod tactic_classification_tests {
     use super::*;
     use crate::surface::proof_certificate::certificate_step_class;
 
+    #[test]
+    fn witness_accepts_only_nonempty_positional_values() {
+        for (source, count) in [
+            ("witness(3);", 1),
+            ("witness(3, 4);", 2),
+            ("witness(3, 4,);", 2),
+        ] {
+            let ProofTactic::Witness(witness) =
+                Parser::new(source).unwrap().parse_proof_tactic().unwrap()
+            else {
+                panic!("expected witness: {source}");
+            };
+            assert_eq!(witness.values().count(), count);
+        }
+        for source in [
+            "witness();",
+            "witness { x: 3 };",
+            "witness(x: 3);",
+            "witness(3,,4);",
+            "witness(3)",
+        ] {
+            assert!(
+                Parser::new(source).unwrap().parse_proof_tactic().is_err(),
+                "{source}"
+            );
+        }
+    }
+
     /// One written instance of every public tactic form. The parser is given
     /// a contract `Contract`, a callee `f`, and a user tactic `name`, each
     /// declaring one supplied binder `cell`, and a held instance `c`.
@@ -18196,7 +18215,7 @@ mod tactic_classification_tests {
             "loop { invariant x == 1; initialize by { normalize(); } preserve by { normalize(); } }",
         ),
         ("observe-resource", "observe(reference(p));"),
-        ("witness", "witness { x: 1 };"),
+        ("witness", "witness(1);"),
         ("obtain", "obtain (x: Integer) { x == x }"),
         ("known", "known();"),
         ("normalize", "normalize();"),
@@ -18465,7 +18484,8 @@ mod preserve_syntax_tests {
             let expected = parser(evidence).parse_proposition().unwrap();
             assert_eq!(tactic, ProofTactic::Preserve(expected));
             let printed =
-                crate::surface::printing::format_proof_tactics(&[tactic.clone()]).unwrap();
+                crate::surface::printing::format_proof_tactics(std::slice::from_ref(&tactic))
+                    .unwrap();
             assert!(!printed.contains("preserve(separate("), "{printed}");
             let reparsed = parser(&printed).parse_proof_clause_or_default().unwrap();
             let SourceProof::Script(reparsed) = reparsed else {

@@ -319,7 +319,7 @@ mod tests {
             let premise = Proposition::ConditionIs(guard.clone(), truth);
             assert!(known(
                 &equality(value.clone(), arm.clone()),
-                &[premise.clone()]
+                std::slice::from_ref(&premise)
             ));
             assert!(!known(&equality(value.clone(), wrong), &[premise]));
             assert!(!known(&equality(value.clone(), arm), &[]));

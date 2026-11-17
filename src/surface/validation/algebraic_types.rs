@@ -3175,7 +3175,7 @@ impl ScopedTypes {
             Self::index(
                 &mut types.program_value_types,
                 &mut types.integers,
-                &name,
+                name,
                 Some(value),
             );
         }

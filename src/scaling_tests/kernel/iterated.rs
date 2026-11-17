@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
     for scatter in [false, true] {
-        for axis in ["owners", "aliases", "same-block aliases"] {
+        for axis in ["owners", "aliases", "same-block aliases", "range premises"] {
             let mut samples = Vec::new();
             let mut preparation = Vec::new();
             for count in [4_u64, 16, 64] {
@@ -37,7 +37,7 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                             (32 + index as u32 * 2).into(),
                             (33 + index as u32 * 2).into(),
                         )));
-                    } else {
+                    } else if axis != "range premises" {
                         let alias = if axis == "aliases" {
                             Pointer::symbolic(Variable(9_980_000 + index))
                         } else {
@@ -93,6 +93,37 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                 let state = ExecutionState::new()
                     .with_memory(memory)
                     .with_resource_context(resources);
+                if scatter && axis == "range premises" {
+                    for premise in 0..count {
+                        let var = Variable(9_990_000);
+                        let index = MachineTerm::Variable(var);
+                        let lower = ConditionTerm::signed_less_equal(1u32.into(), index.clone());
+                        let upper = ConditionTerm::signed_less_than(
+                            index.clone(),
+                            (32 + premise as u32).into(),
+                        );
+                        let cell = guard_cell_value(&state, &template, &index, &facts).unwrap();
+                        facts = facts.assume_proposition(Proposition::ForAll {
+                            name: Default::default(),
+                            var,
+                            sort: Sort::ProgramInt32,
+                            body: Box::new(Proposition::Implies(
+                                Box::new(Proposition::And(
+                                    Box::new(Proposition::ConditionIs(lower, true)),
+                                    Box::new(Proposition::ConditionIs(upper, true)),
+                                )),
+                                Box::new(Proposition::ConditionIs(
+                                    ConditionTerm::equal(cell, 0u32.into()),
+                                    true,
+                                )),
+                            )),
+                        });
+                    }
+                    assert!(
+                        prepare_iterated_scatter(&state, &template, &facts).is_err(),
+                        "a different range is not the explicit whole-range premise"
+                    );
+                }
                 if scatter {
                     // Scatter's explicit whole-range premise: a selected
                     // element's known value alone does not prove every guard.
@@ -187,6 +218,10 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
             }
             eprintln!(
                 "iterated exposure scatter={scatter}, {axis}: {samples:?}; guard preparation={preparation:?}"
+            );
+            assert!(
+                preparation.iter().all(|work| *work <= preparation[0] + 32),
+                "scatter guard preparation {axis}: {preparation:?}"
             );
             assert!(
                 samples.iter().all(|work| *work <= samples[0] + 64),

@@ -3961,22 +3961,30 @@ fn joint_planner_lends_from_the_owner_beside_an_unbound_view_description() {
 #[test]
 fn active_child_dependency_blocks_parent_close_until_child_ends() {
     let (ledger, owner, reader) = participants();
-    let parent = lend_test(&ledger, owner, owner, owned("parent"));
+    let borrower = ledger.fresh_participant().unwrap();
+    let parent = lend_test(&ledger, owner, reader, owned("parent"));
     let ledger = ledger.apply(&parent.transition).unwrap();
-    let child = lend_test(&ledger, owner, reader, owned("child"));
+    let binding = LoanViewBinding {
+        loan: parent.loan,
+        scope: parent.scope,
+        share: parent.root_share,
+        support: parent.description.support,
+        viewed: parent.description.viewed.clone(),
+        hold: None,
+    };
+    // A reborrow registers its scope as a dependency of the parent scope.
+    let child = ledger.reborrow(binding, reader, borrower).unwrap();
     let ledger = ledger.apply(&child.transition).unwrap();
-    let dependency = ledger
-        .register_dependency(parent.scope, child.scope, owner)
-        .unwrap();
-    let ledger = ledger.apply(&dependency).unwrap();
     assert_eq!(
         ledger.end(parent.scope, owner),
         Err(LoanRefusal::ActiveDependency)
     );
-    let child_return = ledger.transfer(child.root_share, reader, owner).unwrap();
+    let child_return = ledger.transfer(child.root_share, borrower, reader).unwrap();
     let ledger = ledger.apply(&child_return).unwrap();
-    let child_end = ledger.end(child.scope, owner).unwrap();
+    let child_end = ledger.end(child.scope, reader).unwrap();
     let ledger = ledger.apply(&child_end).unwrap();
+    let parent_return = ledger.transfer(parent.root_share, reader, owner).unwrap();
+    let ledger = ledger.apply(&parent_return).unwrap();
     assert!(ledger.end(parent.scope, owner).is_ok());
 }
 
@@ -4800,5 +4808,52 @@ fn a_failed_selected_return_permission_does_not_retry_a_wider_description() {
     assert_eq!(
         ledger.selected_return_permission(opening.loan, &preferred, &preferred, &facts),
         Some(preferred)
+    );
+}
+
+#[test]
+fn returned_view_recovery_preserves_output_support_and_refuses_escrow_overlap() {
+    let assumptions = PureFactContext::new();
+    let owner = memory(0, 8, true);
+    let caller_resources = ResourceContext::new().unchecked_with_fact(owner.clone());
+    let (ledger, caller, callee) = participants();
+    let plan = plan_stable_view_transfer(
+        &caller_resources,
+        &[checked(memory(0, 8, false))],
+        &assumptions,
+        &ledger,
+        caller,
+        callee,
+    )
+    .unwrap();
+    let output = memory(8, 12, true);
+    let observation = memory(8, 12, false);
+    let (outputs, inserted) = ResourceContext::new_with_equalities(&assumptions)
+        .unchecked_with_facts_and_occurrences([output.clone()]);
+    let source = inserted[0].1;
+    let outputs = outputs.unchecked_with_supported_facts(&output, [observation.clone()]);
+    let recovery = plan
+        .clone()
+        .recover_returned_views(outputs, &assumptions, &BTreeMap::new(), &[])
+        .unwrap();
+    assert_eq!(
+        recovery.resources.owned_fact_for_occurrence(source),
+        Some(&output)
+    );
+    assert!(recovery.resources.contains_exact_representation(&owner));
+    let consumed = recovery
+        .resources
+        .without_exact_representation_for_occurrence(source)
+        .unwrap();
+    assert!(!consumed.contains_exact_representation(&observation));
+    assert!(
+        plan.recover_returned_views(
+            ResourceContext::new_with_equalities(&assumptions)
+                .unchecked_with_fact(memory(4, 12, true)),
+            &assumptions,
+            &BTreeMap::new(),
+            &[],
+        )
+        .is_err()
     );
 }

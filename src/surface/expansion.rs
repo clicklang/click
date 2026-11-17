@@ -2179,6 +2179,17 @@ fn returning_then_arms(statement: &ProgramStatement) -> BTreeSet<usize> {
                 let handler_returns = visit(handler, index, returns, catches_exceptions);
                 body_returns.zip(handler_returns).map(|(a, b)| a && b)
             }
+            // Numbered as the source layout numbers it: the body, then the
+            // cleanup and the point where the exception continues.
+            ProgramStatement::UnwindCleanup { body, cleanup } => {
+                let body_returns = visit(body, index, returns, true);
+                let unwinding = crate::kernel::program_unwind_continuation(
+                    cleanup,
+                    crate::kernel::program_expression::int32_literal(0),
+                );
+                let cleanup_returns = visit(&unwinding, index, returns, catches_exceptions);
+                body_returns.zip(cleanup_returns).map(|(a, b)| a && b)
+            }
             ProgramStatement::Return(_) => Some(true),
             // A throwing call can resume in the enclosing handler before
             // the return this sequence would otherwise reach.

@@ -178,13 +178,13 @@ fragments, pure `if`, `let`, `.fold`, and explicit fixed-memory loads. This is
 why an invariant can unfold `permutation` and then evaluate the `.fold` inside
 stdlib `count` without pretending that the fold is executable C.
 
-## Source spelling
+## Source syntax
 
 There is no public `ref<int32>` syntax yet. For now, parameters written as
 `p: int32[]`, `p: int32*`, `p: uint8[]`, or `p: uint8*` in pure Click `function`
 and `predicate` definitions are treated as Click array-ref parameters.
 
-The type spellings follow the corresponding C parameter types:
+The type syntax follows the corresponding C parameter types:
 
 <!-- verified-example: mdtests/pure_array_ref_parameter_spellings.md -->
 ```click
@@ -193,9 +193,9 @@ function count_matches(p: int32[], lo: int32, hi: int32, x: int32) -> int32 { ..
 predicate sorted(p: int32*, n: int32) { ... }
 ```
 
-The parameter spelling fixes the array-ref element type. A pure Click function
-or predicate declared with `p: uint8[]` indexes one byte at a time and returns
-`uint8` values from `p[k]`.
+The parameter's written type fixes the array-ref element type. A pure Click
+function or predicate declared with `p: uint8[]` indexes one byte at a time and
+returns `uint8` values from `p[k]`.
 
 Ordinary postcondition and predicate/function evaluation use typed
 `ClickArrayRef` values. Loop-invariant spec lowering uses typed
@@ -204,7 +204,7 @@ Ordinary postcondition and predicate/function evaluation use typed
 nodes, so byte-aware pure helpers can appear in invariants and inside
 `old(...)`.
 
-In C function signatures, the same spelling still means an ordinary C pointer.
+In C function signatures, the same syntax still means an ordinary C pointer.
 The array-ref interpretation only applies while lowering pure Click functions
 and predicates.
 

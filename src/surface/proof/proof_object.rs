@@ -2295,7 +2295,7 @@ impl Proof<'_> {
                 .and_then(|view| view.fixed_state.native_result()),
         };
         source_types.extend(result.as_deref().and_then(|value| {
-            diagnostic_value_variable(&value).map(|variable| (variable, value.program_type()))
+            diagnostic_value_variable(value).map(|variable| (variable, value.program_type()))
         }));
         let source_names = match self.context.as_ref() {
             ProofContext::Pure(context) => {
@@ -2989,8 +2989,6 @@ impl<'a> Proof<'a> {
     fn branch_execution(&self) -> Option<&Arc<ExecutionProofState>> {
         self.focused_branch()?.state.execution.as_ref()
     }
-
-    /// The focused branch branch's path-local unfold delta.
 
     /// The focused branch goal's path-local fact context. Every caller is a
     /// checked operation or search query on an open goal: `apply_step` and

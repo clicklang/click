@@ -69,7 +69,7 @@ void mark_at(int32 *v, int32 *m, int32 n) {
 } by {
     mark entry;
     have exists (end: int32) { end == at(entry, m[0]) } by {
-        witness { end: at(entry, m[0]) };
+        witness(at(entry, m[0]));
         known();
     }
     obtain (end: int32) { end == at(entry, m[0]) };

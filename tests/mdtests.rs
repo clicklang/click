@@ -44,6 +44,8 @@ const QUARANTINED: &[(&str, &str)] = &[];
 /// one with `MDTEST_FILTER=<name>`.
 const NIGHTLY: &[&str] = &[
     "aligned_address_word_library.md", // 0.9s focused: 36 explicit word and scalar-pointer law applications
+    "scalar_induction_after_helper_facts.md", // 0.78s in the parallel induction fixture selection
+    "witness_mixed_type_values.md",    // 1.36s focused: pointer, Integer, and machine binders
     "modeled_pthread_copied_handle.md", // 0.6s focused: forwarded handle and retained equality
     "modeled_pthread_copied_handle_join_twice.md", // forwarded handle must consume one right
     "shared_loop_test_and_update.md",  // 1.2s focused: ranked pre/post-test call proofs

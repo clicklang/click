@@ -264,7 +264,7 @@ pub(crate) use termination::{
 };
 pub use termination::{
     TerminationRefusal, TerminationVerdicts, UnsuitableCallback, program_function_callees,
-    program_termination_height_plan, program_verified_function_termination_rules,
+    program_termination_height_plan,
 };
 
 mod prelude {

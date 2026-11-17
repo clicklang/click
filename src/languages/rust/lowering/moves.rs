@@ -90,6 +90,10 @@ pub(super) fn region_count(statement: &ProgramStatement) -> usize {
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
         } => 1 + region_count(try_body) + region_count(handler),
+        // Its cleanup, then the point where the exception continues.
+        ProgramStatement::UnwindCleanup { body, cleanup } => {
+            1 + region_count(body) + region_count(cleanup) + 1
+        }
         _ => 1,
     }
 }
@@ -379,6 +383,15 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     program_return(crate::kernel::program_expression::variable("__rust_mir_0"))
                 }
             }
+            // The value MIR wrote to its return place, returned as written.
+            T::ReturnValue { value } => {
+                let (checks, value) = cx.prepared_expr(value)?;
+                let return_type = scalar_type(&f.return_type)?.to_kernel_type();
+                program_seq(
+                    checks,
+                    program_return(crate::kernel::program_expression::cast(value, return_type)),
+                )
+            }
             T::Unreachable => program_assert(crate::kernel::program_expression::int32_literal(0)),
             T::Panic { message } => program_labeled_assert(
                 crate::kernel::program_expression::int32_literal(0),
@@ -449,7 +462,8 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
             T::Drop { local, record, .. } => {
                 check(local, record)?;
                 let r = cx.records.get(record.as_str()).ok_or("unknown drop type")?;
-                let cleanup = match &r.destructor {
+
+                match &r.destructor {
                     Some(dtor) if cx.functions.contains_key(dtor.as_str()) => program_call(
                         dtor,
                         vec![crate::kernel::program_expression::cast(
@@ -461,8 +475,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                         return Err("destructor body missing from prepared Rust input".into());
                     }
                     None => program_skip(),
-                };
-                cleanup
+                }
             }
             T::Call {
                 function,

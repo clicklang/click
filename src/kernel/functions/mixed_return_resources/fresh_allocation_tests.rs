@@ -88,7 +88,7 @@ pub(super) fn fresh_return_facts(pointer: &Pointer, cells: u32) -> [ResourceFact
 }
 
 #[test]
-fn fresh_return_group_checks_sibling_overlap_before_restoration() {
+fn fresh_return_group_refuses_sibling_overlap() {
     for overlap in [false, true] {
         let _session = crate::kernel::VerificationSession::enter();
         let facts = PureFactContext::new();
@@ -141,6 +141,31 @@ fn fresh_return_group_checks_sibling_overlap_before_restoration() {
             ),
             !overlap,
         );
+        // Description admission checks the returned group before any
+        // destination occurrence is constructed.
+        let described = evaluate_contract_return_resource_context(
+            function.contract_interface(),
+            &[],
+            &[],
+            &[],
+            &entry,
+            &post,
+            2,
+            &[],
+            ReturnResourceComposition::ValidateDescriptions,
+            &facts,
+            &mut ExecutionBudget::beside_live_state(),
+        )
+        .unwrap();
+        assert_eq!(
+            matches!(
+                described,
+                Err(RuntimeError::OverlappingOwnedMemoryResources { .. })
+            ),
+            overlap,
+            "{:?}",
+            described.err()
+        );
         let result = evaluate_contract_return_resource_context(
             function.contract_interface(),
             &[],
@@ -150,36 +175,44 @@ fn fresh_return_group_checks_sibling_overlap_before_restoration() {
             &post,
             2,
             &[],
-            ReturnResourceComposition::BodyAllocations {
-                consumed: None,
-                creator: &creator,
-                events,
+            ReturnResourceComposition::BodyReturn {
+                state: &post,
+                frame: caller.resources(),
+                allocations: Some((&creator, events)),
+                consumed: &ConsumedCellReturns::default(),
             },
             &facts,
             &mut ExecutionBudget::beside_live_state(),
         )
         .unwrap();
+        let restored = result
+            .map_err(|error| format!("{error:?}"))
+            .and_then(|evaluated| {
+                assert_eq!(evaluated.occurrences.len(), 2);
+                evaluated
+                    .restore_entry_borrows(
+                        caller.resources().clone(),
+                        ReturnResourceComposition::BodyReturn {
+                            state: &post,
+                            frame: caller.resources(),
+                            allocations: Some((&creator, events)),
+                            consumed: &ConsumedCellReturns::default(),
+                        },
+                        &facts,
+                    )
+                    .map_err(|error| format!("{error:?}"))?
+                    .finish(&facts)
+                    .map_err(|error| format!("{error:?}"))
+            });
         if overlap {
-            assert!(matches!(
-                result,
-                Err(RuntimeError::OverlappingOwnedMemoryResources { .. })
-            ));
+            // Restoration constructs each returned unit from the body's
+            // actual custody, so the second claim on the cell is refused.
+            assert!(
+                matches!(&restored, Err(error) if error.contains("joint returned resource units")),
+                "the same cell was returned twice: {restored:?}"
+            );
         } else {
-            let evaluated = result.unwrap();
-            assert_eq!(evaluated.occurrences.len(), 2);
-            let (resources, transfers) = evaluated
-                .restore_entry_borrows(
-                    caller.resources().clone(),
-                    ReturnResourceComposition::BodyAllocations {
-                        consumed: None,
-                        creator: &creator,
-                        events,
-                    },
-                    &facts,
-                )
-                .unwrap()
-                .finish(&facts)
-                .unwrap();
+            let (resources, transfers) = restored.unwrap();
             assert_eq!(transfers.len(), 2);
             assert_eq!(
                 resources.facts().len(),
@@ -207,10 +240,11 @@ fn allocator_provenance_is_attached_to_each_emitted_ownership_occurrence() {
         &post,
         2,
         &[],
-        ReturnResourceComposition::BodyAllocations {
-            consumed: None,
-            creator: &creator,
-            events,
+        ReturnResourceComposition::BodyReturn {
+            state: &post,
+            frame: caller.resources(),
+            allocations: Some((&creator, events)),
+            consumed: &ConsumedCellReturns::default(),
         },
         &facts,
         &mut ExecutionBudget::beside_live_state(),
@@ -228,10 +262,11 @@ fn allocator_provenance_is_attached_to_each_emitted_ownership_occurrence() {
         let (result, mappings) = evaluated
             .restore_entry_borrows(
                 caller.resources().clone(),
-                ReturnResourceComposition::BodyAllocations {
-                    consumed: None,
-                    creator: &creator,
-                    events,
+                ReturnResourceComposition::BodyReturn {
+                    state: &post,
+                    frame: caller.resources(),
+                    allocations: Some((&creator, events)),
+                    consumed: &ConsumedCellReturns::default(),
                 },
                 &facts,
             )
@@ -357,10 +392,11 @@ fn composite_children_use_only_actual_allocation_provenance() {
             &evaluated,
             std::slice::from_ref(&definition),
             &post,
-            ReturnResourceComposition::BodyAllocations {
-                consumed: None,
-                creator,
-                events: post.population_effects.creation.as_ref().unwrap(),
+            ReturnResourceComposition::BodyReturn {
+                state: &post,
+                frame: entry.resources(),
+                allocations: Some((creator, post.population_effects.creation.as_ref().unwrap())),
+                consumed: &ConsumedCellReturns::default(),
             },
             &facts,
         )
@@ -411,10 +447,14 @@ fn one_composite_can_mix_selected_consumed_and_fresh_children() {
             .contract_interface()
             .composite_resource_definitions(),
         &post,
-        ReturnResourceComposition::BodyAllocations {
-            consumed: Some(&transfer.consumed_cell_returns),
-            creator: entry.population_effects.creation.as_ref().unwrap(),
-            events: post.population_effects.creation.as_ref().unwrap(),
+        ReturnResourceComposition::BodyReturn {
+            state: &post,
+            frame: &ResourceContext::new_with_equalities(&facts),
+            allocations: Some((
+                entry.population_effects.creation.as_ref().unwrap(),
+                post.population_effects.creation.as_ref().unwrap(),
+            )),
+            consumed: &transfer.consumed_cell_returns,
         },
         &facts,
     )

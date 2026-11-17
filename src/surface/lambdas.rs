@@ -412,7 +412,7 @@ mod tests {
             (
                 "function some(p: fn(int32) -> Prop, lo: int32, hi: int32) -> Prop { (lo..hi).any(p) }",
                 "some(|i: int32| -> Prop { i == lo }, lo, hi)",
-                "by { witness { item: lo }; solve(); }",
+                "by { witness(lo); solve(); }",
             ),
         ] {
             let source = format!(
@@ -549,16 +549,16 @@ mod tests {
                 "by { intro() as k; intro(); solve(); }",
             ),
             (
-                "theorem test(lo: int32, hi: int32) { let p = |x: int32| -> Prop { x == lo }; requires lo < hi; ensures (lo..hi).any(p) by { witness { item: lo }; solve(); } }",
-                "by { witness { item: lo }; solve(); }",
+                "theorem test(lo: int32, hi: int32) { let p = |x: int32| -> Prop { x == lo }; requires lo < hi; ensures (lo..hi).any(p) by { witness(lo); solve(); } }",
+                "by { witness(lo); solve(); }",
             ),
             (
                 "theorem test(p: int32*, lo: int32, hi: int32) { let zero = |i: int32| -> Prop { p[i] == 0 }; requires viewable(p[lo..hi]); requires (lo..hi).all(|i| { p[i] == 0 }); ensures (lo..hi).all(zero) by { intro() as k; intro(); solve(); } }",
                 "by { intro() as k; intro(); solve(); }",
             ),
             (
-                "theorem test(p: int32*, lo: int32, hi: int32) { let zero = |i: int32| -> Prop { p[i] == 0 }; requires lo < hi; requires viewable(p[lo..hi]); requires p[lo] == 0; ensures (lo..hi).any(zero) by { witness { item: lo }; solve(); } }",
-                "by { witness { item: lo }; solve(); }",
+                "theorem test(p: int32*, lo: int32, hi: int32) { let zero = |i: int32| -> Prop { p[i] == 0 }; requires lo < hi; requires viewable(p[lo..hi]); requires p[lo] == 0; ensures (lo..hi).any(zero) by { witness(lo); solve(); } }",
+                "by { witness(lo); solve(); }",
             ),
         ];
         for (source, proof) in cases {

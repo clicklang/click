@@ -8325,9 +8325,8 @@ fn atomic_derivation_memo_is_keyed_by_the_dag_modes() {
     );
 }
 
-/// Instantiating universals for a condition reads the universal facts, not
-/// every proposition fact: unrelated facts of other kinds cost nothing. The
-/// old scan visited each proposition fact to skip the non-universal ones.
+/// Selecting a whole-range equality uses the retained alpha/load key.
+/// Unrelated proposition facts do not enter the query.
 #[test]
 fn universal_consequents_ignore_unrelated_propositions() {
     let bound = Variable(94_000);
@@ -8375,9 +8374,21 @@ fn universal_consequents_ignore_unrelated_propositions() {
                     child: Box::new(Resource::Memory(memory_range(unrelated, 0, 1))),
                 });
             }
-            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                assumptions.instantiated_universal_consequents(&query.0, &query.1)
+            let (selected, work) = crate::instrumentation::measure_deterministic_work(|| {
+                assumptions.selected_universal_equality_value(
+                    Variable(94_002),
+                    Proposition::ConditionIs(
+                        ConditionTerm::signed_less_than(query.0.clone(), 0u32.into()),
+                        true,
+                    ),
+                    &query.0,
+                    &query.1,
+                )
             });
+            assert_eq!(
+                selected,
+                Some((MachineTerm::Variable(Variable(94_001)), true))
+            );
             work
         })
         .collect::<Vec<_>>();
@@ -8388,9 +8399,8 @@ fn universal_consequents_ignore_unrelated_propositions() {
     );
 }
 
-/// The fast instantiation sites read the universals filed under their
-/// goal's conclusion shape (`UniversalConclusionKey`): an equality goal does
-/// not try universals that conclude an order. They once read every universal.
+/// Selected range equalities and the other instantiation sites ignore
+/// universals that only conclude orders.
 #[test]
 fn universal_instantiation_ignores_universals_of_other_shapes() {
     let ordered = |index: u32| {
@@ -8439,9 +8449,14 @@ fn universal_instantiation_ignores_universals_of_other_shapes() {
                 facts.assume_proposition(ordered(index))
             });
             let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
-                !assumptions
-                    .instantiated_universal_consequents(&cell, &MachineTerm::constant(7))
-                    .is_empty()
+                assumptions
+                    .selected_universal_equality_value(
+                        bound,
+                        Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+                        &cell,
+                        &MachineTerm::constant(7),
+                    )
+                    .is_some()
                     || assumptions
                         .select_forall_int32_instantiation_evidence(&goal)
                         .is_some()
@@ -8608,4 +8623,60 @@ fn complete_pointer_read_source_retains_the_domain_version() {
         .expect("the domain's introducing read");
     assert_eq!(source, after.unchanged_bytes_source());
     assert_eq!(source_cell, cell);
+}
+
+#[test]
+fn selected_universal_equality_keeps_bounds_orientation_and_branch_context() {
+    let bound = Variable(96_990);
+    let query_bound = Variable(96_991);
+    let cell = |var| {
+        MachineTerm::add(
+            MachineTerm::Variable(var),
+            MachineTerm::Variable(Variable(96_992)),
+        )
+    };
+    let bounds = |var, lower: u32| {
+        Proposition::And(
+            Box::new(Proposition::ConditionIs(
+                ConditionTerm::signed_less_equal(lower.into(), MachineTerm::Variable(var)),
+                true,
+            )),
+            Box::new(Proposition::ConditionIs(
+                ConditionTerm::signed_less_than(MachineTerm::Variable(var), 4u32.into()),
+                true,
+            )),
+        )
+    };
+    let source = |truth| Proposition::ForAll {
+        name: Default::default(),
+        var: bound,
+        sort: Sort::ProgramInt32,
+        body: Box::new(Proposition::Implies(
+            Box::new(bounds(bound, 0)),
+            Box::new(Proposition::ConditionIs(
+                ConditionTerm::equal(7u32.into(), cell(bound)),
+                truth,
+            )),
+        )),
+    };
+    let parent = PureFactContext::new();
+    let branch = parent.clone().assume_proposition(source(true));
+    let select = |facts: &PureFactContext, lower, expected| {
+        facts.selected_universal_equality_value(
+            query_bound,
+            bounds(query_bound, lower),
+            &cell(query_bound),
+            &MachineTerm::constant(expected),
+        )
+    };
+    assert_eq!(select(&branch, 0, 7), Some((7u32.into(), true)));
+    assert_eq!(select(&branch, 0, 8), Some((7u32.into(), true)));
+    assert_eq!(
+        select(&branch, 1, 7),
+        None,
+        "different bounds need their antecedent established"
+    );
+    assert_eq!(select(&parent, 0, 7), None);
+    let negative = parent.assume_proposition(source(false));
+    assert_eq!(select(&negative, 0, 7), Some((7u32.into(), false)));
 }

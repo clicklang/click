@@ -3539,8 +3539,7 @@ impl<'a> Proof<'a> {
                 source_backed_direct_caller_requirement(requirement, step, execution, context);
             let candidate = match &direct_caller {
                 Some((predicate_name, _)) => {
-                    let mut unfolded = Vec::<String>::new();
-                    unfolded.push(predicate_name.clone());
+                    let unfolded = vec![predicate_name.clone()];
                     unfold_surface_predicates(
                         context.spec_definitions.predicates,
                         &registry_surface.proposition,
@@ -4211,16 +4210,11 @@ fn source_backed_call_requirement_surface(
         "smart retained-have call source",
     )
     .ok()?;
-    // A frontend's cleanup edge (a C++ local with a destructor) wraps the
-    // source call; the call is its body.
+    // A call made while a C++ local with a destructor lives carries that
+    // destructor for its exceptional exit; the call is its body.
     let mut statement = &statement;
-    while let ProgramStatement::TryCatchInt32 {
-        try_body,
-        cleanup_unwind: true,
-        ..
-    } = statement
-    {
-        statement = try_body;
+    while let ProgramStatement::UnwindCleanup { body, .. } = statement {
+        statement = body;
     }
     let (callee, arguments) = match statement {
         ProgramStatement::Call {

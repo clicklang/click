@@ -47,7 +47,7 @@ work expands into simple tactics:
   facts do not decide into paths that each run to function exit, then closes
   every open goal on every path with the implicit closer: direct closure, then
   `solve`'s search, and on a returned path that holds the body of a resource
-  the contract `produces`, a fold of that resource. It has no spelling of its
+  the contract `produces`, a fold of that resource. It has no syntax of its
   own. The same closer proves a requirement that a bare `step()` or `fold`
   left open, and is reported as `implicit closer` there.
 - At a loop back edge, the closure of the invariant bundle runs `solve()` on

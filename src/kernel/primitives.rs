@@ -5532,7 +5532,7 @@ pub enum SpecResource {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct SwitchCase {
     /// `None` is the default case; integer values are represented in the
-    /// promoted int32 bit pattern used by C.
+    /// promoted int32 or uint32 bit pattern used by C.
     pub value: Option<u32>,
     pub body: Box<ProgramStatement>,
 }
@@ -5722,10 +5722,15 @@ pub enum ProgramStatement {
         try_body: Box<ProgramStatement>,
         binding: BindingName,
         handler: Box<ProgramStatement>,
-        /// This is an implementation cleanup edge inserted by a frontend,
-        /// rather than a source-level handler. Its handler runs cleanup and
-        /// rethrows the original payload.
-        cleanup_unwind: bool,
+    },
+    /// `body`, which may exit by throwing while destructible objects are
+    /// live, as a C++ call made in their scope can. On an int32 exceptional
+    /// exit, `cleanup` (their destructors) runs and the same exception
+    /// continues to propagate; every other outcome is `body`'s own. It is
+    /// not a source handler: nothing is caught, and no binding is introduced.
+    UnwindCleanup {
+        body: Box<ProgramStatement>,
+        cleanup: Box<ProgramStatement>,
     },
     Store {
         pointer: ProgramExpression,
@@ -14538,6 +14543,13 @@ pub struct PureFactContext {
     pub(super) universals_by_conclusion: crate::persistent::PersistentMap<
         super::assumptions::UniversalConclusionKey,
         crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
+    >,
+    /// One retained source per alpha/load identity of an explicit universal
+    /// equality or its selected operand. Range-guard checking never enumerates
+    /// the context's equality universals.
+    pub(super) universal_equality_sources: crate::persistent::PersistentMap<
+        crate::kernel::proof::PropositionIdentityKey,
+        (std::sync::Arc<Proposition>, bool),
     >,
     pub(super) condition_facts: super::fact_collections::FactMap<ConditionTerm, bool>,
     pub(super) signed_variable_chains: super::assumptions::variable_chains::VariableChains,

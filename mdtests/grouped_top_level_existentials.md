@@ -19,7 +19,7 @@ int32 identity(int32 x) {
 } by {
     obtain (k: int32) { k == x }
     step_until(function.exit);
-    witness { j: k };
+    witness(k);
     solve();
 }
 ```
