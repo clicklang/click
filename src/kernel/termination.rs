@@ -1379,8 +1379,6 @@ fn collect_address_taken_locals(statement: &ProgramStatement, names: &mut BTreeS
         |expression: &ProgramExpression| expression_address_taken_locals(expression, names);
     match statement {
         ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -1809,8 +1807,6 @@ fn statement_calls_visiting(
         }
 
         ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -1888,8 +1884,6 @@ fn statement_declared_variables(statement: &ProgramStatement, names: &mut BTreeS
         }
 
         ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -3576,8 +3570,6 @@ fn collect_loops_in_order<'a>(
         // loops only while they descend into the same statements, so a new
         // statement kind must be placed in both.
         ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -3847,8 +3839,6 @@ fn collect_loops<'a>(statement: &'a ProgramStatement, loops: &mut Vec<&'a Progra
         }
 
         ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -4093,8 +4083,6 @@ fn visit_loop_obligations(
         }
 
         ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -4381,8 +4369,6 @@ fn statement_function_addresses(statement: &ProgramStatement, taken: &mut BTreeS
         |expression: &ProgramExpression| expression_function_addresses(expression, taken);
     match statement {
         ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -4752,8 +4738,6 @@ fn self_call_loop_indices(
         // number the same loops only while they descend into the same
         // statements, so a new statement kind must be placed in all of them.
         ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue

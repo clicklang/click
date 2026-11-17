@@ -112,8 +112,6 @@ pub(super) fn statement_expressions<'a>(
 
         ProgramStatement::Seq(statements) => statement_expressions(statements.first(), expressions),
         ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }

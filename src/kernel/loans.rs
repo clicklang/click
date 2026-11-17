@@ -8,14 +8,11 @@
 
 mod active_footprint;
 mod exclusive_calls;
-mod local_references;
 pub(crate) mod mutex_calls;
 
 mod return_backing;
 use crate::kernel::{bits32_constant, constant_u32};
 use exclusive_calls::{ExclusiveCallBinding, ExclusiveCallId, ExclusiveCallRecord};
-use local_references::{LocalReferenceBinding, LocalReferenceRecord};
-pub(in crate::kernel) use local_references::{LocalReferenceId, LocalScalarReference};
 use return_backing::PermittedDescriptions;
 
 use super::functions::CheckedResourceFact;
@@ -903,12 +900,6 @@ struct LoanLedgerData {
     arena: u64,
     exclusive_calls: PersistentMap<ExclusiveCallId, ExclusiveCallRecord>,
     exclusive_holders: PersistentMap<LoanParticipantId, ExclusiveCallId>,
-    local_references: PersistentMap<LocalReferenceId, LocalReferenceRecord>,
-    local_reference_roots: PersistentMap<ResourceOccurrenceId, LocalReferenceId>,
-    local_reference_holders: PersistentMap<LoanParticipantId, u64>,
-    source_local_references:
-        PersistentMap<(LoanParticipantId, crate::kernel::ScalarReferencePlanKey), LocalReferenceId>,
-    local_reference_scope: Option<Arc<local_references::scopes::LocalReferenceScope>>,
     next_scope: u64,
     next_loan: u64,
     next_share: u64,
@@ -1516,10 +1507,6 @@ impl LoanRefusal {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum LoanTransitionEvidence {
-    RegisterLocalReference(LocalReferenceBinding),
-    BorrowLocalReference(LocalReferenceBinding),
-    RecoverLocalReference(LocalReferenceBinding),
-    RetireLocalReferenceRoot(LocalReferenceBinding),
     OpenExclusiveCall(ExclusiveCallBinding),
     ReturnExclusiveCall {
         binding: ExclusiveCallBinding,
@@ -1958,11 +1945,7 @@ impl StableViewRecovery {
         self.transitions
             .last()
             .map(|transition| match &transition.evidence {
-                LoanTransitionEvidence::RegisterLocalReference(_)
-                | LoanTransitionEvidence::BorrowLocalReference(_)
-                | LoanTransitionEvidence::RecoverLocalReference(_)
-                | LoanTransitionEvidence::RetireLocalReferenceRoot(_)
-                | LoanTransitionEvidence::OpenExclusiveCall(_)
+                LoanTransitionEvidence::OpenExclusiveCall(_)
                 | LoanTransitionEvidence::ReturnExclusiveCall { .. } => LoanRefusalSubject::none(),
                 LoanTransitionEvidence::Lend {
                     scope,
@@ -2827,9 +2810,6 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
     split_reborrowed_views: bool,
     same_thread_protocol_effect: bool,
 ) -> Result<StableViewTransferPlan, StableViewPlanError> {
-    if ledger.holder_has_local_references(caller) {
-        return Err(StableViewPlanError::InvalidRequirement);
-    }
     if same_thread_protocol_effect && split_reborrowed_views {
         return Err(StableViewPlanError::InvalidRequirement);
     }
@@ -4438,11 +4418,6 @@ impl LoanLedger {
                     arena,
                     exclusive_calls: PersistentMap::default(),
                     exclusive_holders: PersistentMap::default(),
-                    local_references: PersistentMap::default(),
-                    local_reference_roots: PersistentMap::default(),
-                    local_reference_holders: PersistentMap::default(),
-                    source_local_references: PersistentMap::default(),
-                    local_reference_scope: None,
                     next_scope: 0,
                     next_loan: 0,
                     next_share: 0,
@@ -4476,14 +4451,7 @@ impl LoanLedger {
 
     pub(crate) fn is_pristine(&self) -> bool {
         let data = &self.storage.data;
-        if data.local_reference_scope.is_some()
-            || !data.exclusive_calls.is_empty()
-            || !data.exclusive_holders.is_empty()
-            || !data.local_references.is_empty()
-            || !data.local_reference_roots.is_empty()
-            || !data.local_reference_holders.is_empty()
-            || !data.source_local_references.is_empty()
-        {
+        if !data.exclusive_calls.is_empty() || !data.exclusive_holders.is_empty() {
             return false;
         }
         data.next_scope == 0
@@ -6172,20 +6140,7 @@ impl LoanLedger {
     ) -> Result<LoanLedgerData, LoanRefusal> {
         crate::instrumentation::record_deterministic_work(1);
         let mut data = self.storage.data.clone();
-        self.advance_local_reference_scope(&mut data, evidence)?;
         match evidence {
-            LoanTransitionEvidence::RegisterLocalReference(binding) => {
-                self.apply_local_reference_registration(&mut data, binding)?
-            }
-            LoanTransitionEvidence::BorrowLocalReference(binding) => {
-                self.apply_local_reference_borrow(&mut data, binding)?
-            }
-            LoanTransitionEvidence::RecoverLocalReference(binding) => {
-                self.apply_local_reference_recovery(&mut data, binding)?
-            }
-            LoanTransitionEvidence::RetireLocalReferenceRoot(binding) => {
-                self.apply_local_reference_retirement(&mut data, binding)?
-            }
             LoanTransitionEvidence::OpenExclusiveCall(binding) => {
                 self.apply_exclusive_open(&mut data, binding)?
             }
@@ -7130,7 +7085,7 @@ impl LoanLedger {
 
     #[cfg(test)]
     pub(in crate::kernel) fn invariant_holds(&self) -> bool {
-        if !self.exclusive_calls_invariant() || !self.local_references_invariant() {
+        if !self.exclusive_calls_invariant() {
             return false;
         }
         let data = &self.storage.data;

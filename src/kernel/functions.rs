@@ -2006,16 +2006,6 @@ pub(super) fn execute_program_function_call_paths(
     execution_context: ExecutionContext<'_>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<FunctionPath>> {
-    if caller_state.has_local_scalar_references() || caller_state.has_local_reference_scope() {
-        return Ok(vec![FunctionPath::new(
-            FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(Box::new(
-                crate::kernel::loans::LoanRefusal::UnsupportedResource
-                    .diagnostic(crate::kernel::LoanRefusalOperation::Plan),
-            ))),
-            Vec::new().into(),
-            Vec::new(),
-        )]);
-    }
     if contract_reaches_population(function.contract_interface())
         && execution_context
             .environment

@@ -1059,8 +1059,6 @@ pub(super) fn statement_writes_aggregate_parameter(
             }
         }
         ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue

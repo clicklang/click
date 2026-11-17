@@ -18,7 +18,6 @@ pub(crate) struct KernelPointerQualifiers {
     pub(crate) extent_known: bool,
     pub(crate) object_class: Option<crate::kernel::effective_type::CAccessClass>,
     pub(crate) object_type_evidence: Option<ObjectTypeEvidence>,
-    pub(in crate::kernel) local_reference: Option<crate::kernel::loans::LocalScalarReference>,
 }
 #[derive(Clone, Debug)]
 pub(crate) struct KernelPointerValue {
@@ -69,7 +68,6 @@ impl SharedPointerValue {
             extent_known: qualifiers.is_some_and(|q| q.extent_known),
             declared_class: qualifiers.and_then(|q| q.object_class.as_ref()),
             evidence: qualifiers.and_then(|q| q.object_type_evidence.as_ref()),
-            local_reference: qualifiers.and_then(|q| q.local_reference.as_ref()),
         }
     }
     /// Rebind only the declaration's type and cv qualifiers. Expression
@@ -137,7 +135,6 @@ impl SharedPointerValue {
             && a.constant == b.constant
             && a.extent_known == b.extent_known
             && a.object_class == b.object_class
-            && a.local_reference == b.local_reference
             && extent_matches
             && evidence_matches
     }
@@ -185,7 +182,6 @@ impl SharedPointerValue {
                     extent_known: q.extent_known,
                     object_class: q.object_class.clone(),
                     object_type_evidence: q.object_type_evidence.clone(),
-                    local_reference: q.local_reference,
                 })
             }),
         })
@@ -221,7 +217,6 @@ impl SharedPointerValue {
                         extent_known: q.extent_known,
                         object_class: q.object_class.clone(),
                         object_type_evidence: q.object_type_evidence.clone(),
-                        local_reference: q.local_reference,
                     }))
                 })
                 .transpose()?,
@@ -387,9 +382,6 @@ mod tests {
                 extent_known: true,
                 object_class: Some(class.clone()),
                 object_type_evidence: Some(ObjectTypeEvidence::parameter(class, 3, 1000006, false)),
-                local_reference: Some(
-                    crate::kernel::loans::LocalScalarReference::fresh_for_payload_test(),
-                ),
             })),
         }
     }
@@ -404,7 +396,6 @@ mod tests {
         let before = source.qualifiers.as_ref().unwrap();
         let after = output.qualifiers.as_ref().unwrap();
         assert_eq!(before.constant, after.constant);
-        assert_eq!(before.local_reference, after.local_reference);
         assert_eq!(before.object_class, after.object_class);
         assert_eq!(before.object_type_evidence, after.object_type_evidence);
         assert!(!after.object_type_evidence.as_ref().unwrap().checked);

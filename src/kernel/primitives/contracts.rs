@@ -3600,8 +3600,6 @@ fn statement_contains_internal_throw(statement: &ProgramStatement) -> bool {
             .iter()
             .any(|case| statement_contains_internal_throw(&case.body)),
         ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue

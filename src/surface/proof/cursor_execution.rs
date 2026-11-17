@@ -4341,8 +4341,6 @@ fn describe_call_bindings(
 pub(super) fn describe_statement_head(statement: &ProgramStatement) -> String {
     match statement {
         ProgramStatement::Seq(statements) => describe_statement_head(statements.first()),
-        ProgramStatement::EndScalarReference(_) => "borrow end".to_string(),
-        ProgramStatement::ScalarReferenceScope(_) => "borrow scope".to_string(),
         ProgramStatement::Skip => "skip".to_string(),
         ProgramStatement::Break => "break".to_string(),
         ProgramStatement::Continue => "continue".to_string(),

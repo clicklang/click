@@ -10,17 +10,11 @@ pub mod program_expression;
 mod region_footprint;
 pub use region_footprint::RegionFootprint;
 mod source_access;
-mod source_loans;
 pub(crate) use source_access::{
     ExecutedReferenceAccess, ExecutedReferenceBoundary, ReferenceAccessKind,
     ReferenceAccessSourceId, ReferenceBorrowSourceId,
 };
 pub use source_access::{StatementAssignSource, StatementStoreSource};
-pub use source_loans::{ScalarReferenceEnd, ScalarReferenceScope};
-pub(crate) use source_loans::{
-    ScalarReferencePlanFamily, ScalarReferencePlanKey, ScalarReferenceScopeKey,
-    ScalarReferenceScopePlan, ScalarReferenceSourcePlan,
-};
 
 /// Version of the resource and stable-view semantics used by proof
 /// artifacts.  This is deliberately separate from source and compiler

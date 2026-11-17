@@ -625,8 +625,6 @@ pub(in crate::surface::proof) fn statement_contains_call(statement: &ProgramStat
         }
 
         ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }

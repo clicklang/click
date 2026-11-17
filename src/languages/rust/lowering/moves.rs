@@ -375,11 +375,6 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
         }
         declarations = program_seq(declarations, program_declare(flag, ProgramType::Int32));
     }
-    let leases = super::scalar_leases::prepare(
-        f,
-        cx.import_identity.as_deref(),
-        flow.loops.is_empty().then_some(flow.joins.as_slice()),
-    );
     let mut nodes = vec![None; mir.blocks.len()];
     let check = |local: &str, record: &str| -> Result<&str, String> {
         if records.get(local).copied() != Some(record) {
@@ -706,7 +701,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
             } else {
                 BTreeMap::new()
             };
-            let mut statement = match s {
+            let statement = match s {
                 S::Site { site: next } => {
                     site = Some(*next);
                     continue;
@@ -1100,32 +1095,15 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                 S::Initialize { fields, .. } => fields.iter().collect(),
                 _ => Vec::new(),
             };
-            if let Some(forest) = &leases {
-                super::scalar_leases::decorate(
-                    forest,
-                    super::super::borrow_frontiers::MirPoint {
-                        block,
-                        statement: statement_index,
-                    },
-                    &mut statement,
-                )?;
-            }
             statements = statements.then(Sited::at(
                 site,
                 program_seq(accesses(&inputs, &live), statement),
             ));
         }
-        let prefix = leases.as_ref().map_or_else(program_skip, |forest| {
-            super::scalar_leases::endings(
-                forest,
-                super::super::borrow_frontiers::MirPoint {
-                    block,
-                    statement: 0,
-                },
-            )
-        });
         let terminal = Sited::at(mir.blocks[block].terminator_site, terminal);
-        nodes[block] = Some(Sited::unsited(prefix).then(statements.then(terminal)));
+        // Each block keeps its leading unsited step, so proofs' region
+        // numbers stay where they were when it held borrow endings.
+        nodes[block] = Some(Sited::unsited(program_skip()).then(statements.then(terminal)));
     }
     let mut emitted = vec![false; mir.blocks.len()];
     let structured = region(
@@ -1135,7 +1113,6 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
         &flow,
         &mut emitted,
         0..mir.blocks.len(),
-        leases.as_ref(),
         None,
     )?;
     Ok(Sited::unsited(declarations).then(structured))
@@ -1357,7 +1334,6 @@ fn region(
     flow: &flow::Flow,
     emitted: &mut [bool],
     bounds: std::ops::Range<usize>,
-    leases: Option<&super::scalar_leases::Prepared>,
     exits: Option<&LoopExits<'_>>,
 ) -> Result<Sited, String> {
     let mut block = bounds.start;
@@ -1398,7 +1374,6 @@ fn region(
                 flow,
                 emitted,
                 loop_.body..block,
-                leases,
                 loop_.breaks.then_some(&inner),
             )?;
             // A header that calls runs before its test each pass, so the test
@@ -1446,7 +1421,6 @@ fn region(
                     flow,
                     emitted,
                     loop_.after..mir.blocks.len(),
-                    leases,
                     Some(&inner),
                 )?;
                 Sited::looping(
@@ -1521,38 +1495,9 @@ fn region(
                 } else {
                     flow.joins[block]
                 };
-                let yes = region(
-                    cx,
-                    mir,
-                    nodes,
-                    flow,
-                    emitted,
-                    *then_target..join,
-                    leases,
-                    exits,
-                )?;
-                let no = region(
-                    cx,
-                    mir,
-                    nodes,
-                    flow,
-                    emitted,
-                    *else_target..join,
-                    leases,
-                    exits,
-                )?;
-                let branch =
-                    if let Some(scope) = leases.and_then(|leases| leases.scopes.get(&block)) {
-                        Sited::unsited(scope.operation(false)).then(Sited::branch(
-                            site,
-                            cx.condition(condition)?,
-                            yes.then(Sited::unsited(scope.operation(true))),
-                            no.then(Sited::unsited(scope.operation(true))),
-                        ))
-                    } else {
-                        Sited::branch(site, cx.condition(condition)?, yes, no)
-                    };
-                result = result.then(branch);
+                let yes = region(cx, mir, nodes, flow, emitted, *then_target..join, exits)?;
+                let no = region(cx, mir, nodes, flow, emitted, *else_target..join, exits)?;
+                result = result.then(Sited::branch(site, cx.condition(condition)?, yes, no));
                 block = join;
             }
             T::Switch {
@@ -1566,8 +1511,7 @@ fn region(
                     flow.joins[block]
                 };
                 result = result.then(switch(
-                    cx, mir, nodes, flow, emitted, scrutinee, cases, *otherwise, join, leases,
-                    exits, site,
+                    cx, mir, nodes, flow, emitted, scrutinee, cases, *otherwise, join, exits, site,
                 )?);
                 block = join;
             }
@@ -1597,7 +1541,6 @@ fn switch(
     cases: &[crate::languages::rust::schema::SwitchCase],
     otherwise: Option<usize>,
     join: usize,
-    leases: Option<&super::scalar_leases::Prepared>,
     exits: Option<&LoopExits<'_>>,
     site: Option<u32>,
 ) -> Result<Sited, String> {
@@ -1616,16 +1559,7 @@ fn switch(
     }
     let mut bodies = Vec::with_capacity(groups.len());
     for (target, _) in &groups {
-        bodies.push(region(
-            cx,
-            mir,
-            nodes,
-            flow,
-            emitted,
-            *target..join,
-            leases,
-            exits,
-        )?);
+        bodies.push(region(cx, mir, nodes, flow, emitted, *target..join, exits)?);
     }
     // A match on an enum field of an enum, `Err(ParseError::Empty)`, tests a
     // local bound to that field, so the test splits as one on any enum local.
@@ -1957,7 +1891,6 @@ mod tests {
                 },
                 &mut emitted,
                 0..mir.blocks.len(),
-                None,
                 None,
             )
             .unwrap();

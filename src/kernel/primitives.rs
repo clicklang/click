@@ -2376,7 +2376,6 @@ struct PointerQualifiers {
     /// checked against it.
     object_class: Option<crate::kernel::effective_type::CAccessClass>,
     object_type_evidence: Option<ObjectTypeEvidence>,
-    local_reference: Option<super::loans::LocalScalarReference>,
 }
 
 /// Exact non-address metadata shared by native and retained certification.
@@ -2389,7 +2388,6 @@ pub(in crate::kernel) struct RetainedPointerMetadata<'a> {
     extent_known: bool,
     declared_class: Option<&'a crate::kernel::effective_type::CAccessClass>,
     evidence: Option<&'a ObjectTypeEvidence>,
-    local_reference: Option<&'a super::loans::LocalScalarReference>,
 }
 
 /// The subobject a pointer was formed from, narrower than its complete
@@ -2651,7 +2649,6 @@ impl PointerValue {
                 .as_ref()
                 .and_then(|q| q.object_class.as_ref()),
             evidence: self.object_origin_evidence(),
-            local_reference: self.local_reference(),
         }
     }
 
@@ -2686,19 +2683,6 @@ impl PointerValue {
             Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).constant =
                 pointee_constant;
         }
-        self
-    }
-
-    pub(in crate::kernel) fn local_reference(&self) -> Option<&super::loans::LocalScalarReference> {
-        self.qualifiers.as_ref()?.local_reference.as_ref()
-    }
-
-    pub(in crate::kernel) fn with_local_reference(
-        mut self,
-        reference: super::loans::LocalScalarReference,
-    ) -> Self {
-        Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).local_reference =
-            Some(reference);
         self
     }
 
@@ -2885,7 +2869,6 @@ impl PointerValue {
         bool,
         Option<&Pointer>,
         Option<&SubobjectExtent>,
-        Option<super::loans::LocalReferenceId>,
     ) {
         (
             &self.pointer,
@@ -2899,7 +2882,6 @@ impl PointerValue {
                 self.opaque_extent()
             },
             self.extent(),
-            self.local_reference().map(|reference| reference.id()),
         )
     }
 }
@@ -3722,7 +3704,6 @@ impl ExceptionalSignature {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct LValue {
-    pub(super) local_reference: Option<super::loans::LocalScalarReference>,
     pub(super) storage: LValueStorage,
     pub(super) value_type: ProgramType,
     pub(super) volatile: bool,
@@ -5711,9 +5692,6 @@ pub enum ProgramStatement {
         pointer: ProgramExpression,
         value: ProgramExpression,
     },
-    /// Consume one live source lease at its checked ending frontier.
-    EndScalarReference(super::ScalarReferenceEnd),
-    ScalarReferenceScope(super::ScalarReferenceScope),
     TypedStore {
         pointer: ProgramExpression,
         value: ProgramExpression,
@@ -10723,15 +10701,6 @@ impl ResourceOccurrenceId {
             Self { arena, ordinal }
         })
     }
-}
-
-/// Exact ownership withheld by a scalar-reference birth. Only the resource
-/// partition constructor can create this reservation; pointer values carry
-/// its reference id, never this payload or a resource context.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(in crate::kernel) struct ReservedLocalScalarOwner {
-    fact: ResourceFact,
-    occurrence: ResourceOccurrenceId,
 }
 
 /// An immutable resource composition state.

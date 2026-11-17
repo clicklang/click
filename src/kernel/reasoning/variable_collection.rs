@@ -972,8 +972,6 @@ pub(in crate::kernel) fn collect_execution_statement_bitvector_variables(
 ) {
     match statement {
         ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
         | ProgramStatement::Continue
