@@ -9800,6 +9800,50 @@ impl ExecutionState {
     /// the iterated-ownership store rule (`plan_iterated_guard_store`) to its
     /// one store. Every other transition keeps the conservative rule.
     pub(crate) fn set_memory_with_checked_stores(&mut self, memory: Memory, stores_checked: bool) {
+        self.replace_memory(memory, stores_checked);
+        let steps = self.memory.pending_steps.take();
+        self.point = self
+            .point
+            .after(super::intern_memory_ref(&self.memory), steps);
+    }
+
+    /// Take `source`'s memory, with [`Self::set_memory`]'s resource
+    /// invalidation, and stand where `source` stands: the steps that made
+    /// that memory were taken on `source`'s path, so this state's path
+    /// continues from there.
+    pub(crate) fn set_memory_of(&mut self, source: &Self) {
+        self.set_memory_continuing(source, source.memory.clone());
+    }
+
+    /// [`Self::set_memory_of`], by value.
+    pub(crate) fn with_memory_of(mut self, source: &Self) -> Self {
+        self.set_memory_of(source);
+        self
+    }
+
+    /// Take `memory`, made from `from`'s memory by the steps in its own log,
+    /// with [`Self::set_memory`]'s resource invalidation: this state's path
+    /// continues from `from`'s point through those steps.
+    pub(crate) fn set_memory_continuing(&mut self, from: &Self, memory: Memory) {
+        let base = from.program_point();
+        self.replace_memory(memory, false);
+        let steps = self.memory.pending_steps.take();
+        let shared = super::intern_memory_ref(&self.memory);
+        self.point = if steps.is_none() && base.shared_memory() == &shared {
+            base.path_link().clone()
+        } else {
+            base.path_link().after(shared, steps)
+        };
+    }
+
+    /// [`Self::set_memory_continuing`], by value.
+    pub(crate) fn with_memory_continuing(mut self, from: &Self, memory: Memory) -> Self {
+        self.set_memory_continuing(from, memory);
+        self
+    }
+
+    /// Replace memory, dropping the resource projections it touches.
+    fn replace_memory(&mut self, memory: Memory, stores_checked: bool) {
         self.resources = self
             .resources
             .clone()
@@ -9809,10 +9853,6 @@ impl ExecutionState {
             self.resources.loan_dependency_state(),
         );
         self.memory = memory;
-        let steps = self.memory.pending_steps.take();
-        self.point = self
-            .point
-            .after(super::intern_memory_ref(&self.memory), steps);
     }
 
     /// The point this state stands at on its path.
