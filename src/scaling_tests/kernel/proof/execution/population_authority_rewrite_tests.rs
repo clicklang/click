@@ -55,7 +55,7 @@ fn private_member_facts_cannot_use_ambient_cell_ownership() {
         crate::kernel::functions::instantiate_composite_resource_facts(
             &member,
             std::slice::from_ref(&definition),
-            &memory,
+            &crate::kernel::ProgramPoint::of_memory(&memory),
             &resources,
             &assumptions,
         )

@@ -595,7 +595,7 @@ fn member_body_facts_require_checked_birth_and_reject_forged_consumption_facts()
     let body_facts = crate::kernel::functions::instantiate_composite_resource_facts(
         &member,
         std::slice::from_ref(&definition),
-        one.memory(),
+        &one.program_point(),
         zero.resources(),
         facts.assumptions(),
     )

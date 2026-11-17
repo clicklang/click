@@ -2945,6 +2945,7 @@ impl CheckedResourceObservation {
             .unwrap_or(observed);
         let projects_body =
             observed.is_view() || observed.has_proven_positive_quantity(assumptions);
+        let observed_at = after_state.program_point();
         let (children, raw_children) = if !projects_body {
             (Vec::new(), Vec::new())
         } else {
@@ -2956,7 +2957,7 @@ impl CheckedResourceObservation {
                     &temporary,
                     &definition_authority,
                     function.composite_resource_definitions(),
-                    &after_state.program_point(),
+                    &observed_at,
                     assumptions,
                 )
                 .ok_or("the observed composite body could not be instantiated")?;
@@ -3020,7 +3021,7 @@ impl CheckedResourceObservation {
                 crate::kernel::functions::evaluate_composite_resource_relation_propositions(
                     &relation_authority,
                     function.composite_resource_definitions(),
-                    &after_state.program_point(),
+                    &observed_at,
                     assumptions,
                 )
         {
@@ -3042,7 +3043,7 @@ impl CheckedResourceObservation {
                 crate::kernel::functions::evaluate_composite_resource_fact_propositions(
                     observation_authority,
                     function.composite_resource_definitions(),
-                    after_state.memory(),
+                    &observed_at,
                     &child_context,
                     assumptions,
                 )
@@ -7425,7 +7426,7 @@ fn retain_return_context(
                     crate::kernel::functions::evaluate_composite_resource_fact_propositions(
                         &authority,
                         definition,
-                        &Memory::new(),
+                        &crate::kernel::ProgramPoint::of_memory(&Memory::new()),
                         &ResourceContext::new(),
                         &PureFactContext::new().require_owned_expression_loads(),
                     )

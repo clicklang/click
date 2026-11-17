@@ -184,7 +184,7 @@ pub(super) fn expand_all_composite_resource_facts_and_propositions_with_state(
         let instantiated = instantiate_composite_resource_facts_with_state(
             &composite,
             definitions,
-            memory,
+            at,
             &expanded,
             &fact_assumptions,
             population_state,
@@ -617,11 +617,11 @@ pub(in crate::kernel) fn evaluate_composite_resource_loadable_propositions(
 pub(in crate::kernel) fn evaluate_composite_resource_fact_propositions(
     composite: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    at: &ProgramPoint,
     resources: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> Option<Vec<Proposition>> {
-    instantiate_composite_resource_facts(composite, definitions, memory, resources, assumptions)
+    instantiate_composite_resource_facts(composite, definitions, at, resources, assumptions)
         .map(|instantiated| instantiated.propositions)
 }
 
@@ -636,14 +636,14 @@ pub(crate) struct InstantiatedCompositeResourceFacts {
 pub(crate) fn instantiate_composite_resource_facts(
     composite: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    at: &ProgramPoint,
     resources: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> Option<InstantiatedCompositeResourceFacts> {
     instantiate_composite_resource_facts_with_state(
         composite,
         definitions,
-        memory,
+        at,
         resources,
         assumptions,
         None,
@@ -659,16 +659,11 @@ pub(crate) fn instantiate_private_member_body_facts(
     state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Option<InstantiatedCompositeResourceFacts> {
-    let memory = state.memory();
+    let at = state.program_point();
     let definitions = std::slice::from_ref(definition);
     let singleton = ResourceContext::new().unchecked_with_fact(composite.clone());
-    let body = expand_composite_resource_fact(
-        &singleton,
-        composite,
-        definitions,
-        &crate::kernel::ProgramPoint::of_memory(memory),
-        assumptions,
-    )?;
+    let body =
+        expand_composite_resource_fact(&singleton, composite, definitions, &at, assumptions)?;
     // Keep the current verification model and population state, but bind only
     // this definition's parameters. Mutating a cloned caller-local map would
     // copy the whole frame for every member fact instantiation.
@@ -677,7 +672,7 @@ pub(crate) fn instantiate_private_member_body_facts(
     instantiate_composite_resource_facts_with_state(
         composite,
         definitions,
-        memory,
+        &at,
         &body,
         &assumptions.clone().require_owned_expression_loads(),
         Some(&fact_state),
@@ -687,7 +682,7 @@ pub(crate) fn instantiate_private_member_body_facts(
 pub(super) fn instantiate_composite_resource_facts_with_state(
     composite: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    at: &ProgramPoint,
     resources: &ResourceContext,
     assumptions: &PureFactContext,
     population_state: Option<&ExecutionState>,
@@ -701,11 +696,15 @@ pub(super) fn instantiate_composite_resource_facts_with_state(
     if definition.parameters().len() != arguments.len() {
         return None;
     }
-    let mut state = population_state
-        .cloned()
-        .unwrap_or_else(ExecutionState::new)
-        .with_memory(memory.clone())
-        .with_resource_context(resources.clone());
+    // Evaluating the body binds definition parameters at an existing point.
+    // Installing its memory as a transition would mint an unrelated point
+    // every time the same facts were instantiated.
+    let point_state = ExecutionState::at_point(at);
+    let mut state = match population_state {
+        Some(state) => state.clone().with_memory_of(&point_state),
+        None => point_state,
+    }
+    .with_resource_context(resources.clone());
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
         let argument = argument.as_program_value()?;
         if parameter.program_type() != argument.program_type() {

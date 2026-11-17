@@ -1893,12 +1893,14 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             describe_resource_clause(resource)
         ))
     })?;
-    let fact_state = observation_pre_state.clone().with_memory(memory.clone());
+    let fact_state = observation_pre_state
+        .clone()
+        .with_memory_continuing(&observation_pre_state, memory.clone());
     let instantiated = if body_projected {
         Some(crate::kernel::instantiate_composite_resource_facts(
             &abstract_resource,
             function.composite_resource_definitions(),
-            &memory,
+            &fact_state.program_point(),
             &contained_resources,
             &assumptions,
         )
@@ -2069,7 +2071,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
     }
     Ok((
         state
-            .with_memory(memory)
+            .with_memory_of(&fact_state)
             .with_resource_context_and_loan_dependencies(resources, dependency_bindings),
         abstract_resource,
     ))
