@@ -604,13 +604,6 @@ impl EvaluatedReturnResources {
                     (ReturnResourceComposition::ValidateDescriptions, _) => {
                         ReturnOwnershipOrigin::Description
                     }
-                    (
-                        ReturnResourceComposition::BodyAllocations { .. },
-                        ReturnOwnershipOrigin::FreshAllocation(_),
-                    ) => entry.origin,
-                    (ReturnResourceComposition::BodyAllocations { .. }, _) => {
-                        ReturnOwnershipOrigin::Description
-                    }
                     _ => entry.origin,
                 },
             })

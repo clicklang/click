@@ -999,6 +999,10 @@ pub(in crate::kernel) fn collect_execution_statement_bitvector_variables(
         }
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
+        }
+        | ProgramStatement::UnwindCleanup {
+            body: try_body,
+            cleanup: handler,
         } => {
             collect_execution_statement_bitvector_variables(try_body, variables);
             collect_execution_statement_bitvector_variables(handler, variables);

@@ -212,7 +212,7 @@ fn borrowed_parameter_bounded_bodies_keep_entry_footprint_provenance() {
         &evaluated,
         &[definition()],
         &state,
-        ReturnResourceComposition::RestoreEntryBorrows,
+        ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
         &facts,
     )
     .unwrap();
@@ -237,7 +237,7 @@ fn borrowed_parameter_bounded_bodies_keep_entry_footprint_provenance() {
         &evaluated,
         &[guarded],
         &state,
-        ReturnResourceComposition::RestoreEntryBorrows,
+        ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
         &facts,
     )
     .unwrap();

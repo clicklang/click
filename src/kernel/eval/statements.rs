@@ -3376,6 +3376,7 @@ fn collect_scope_declared_names(statement: &ProgramStatement, names: &mut Vec<Bi
         | ProgramStatement::Loop { .. }
         | ProgramStatement::Switch { .. }
         | ProgramStatement::TryCatchInt32 { .. }
+        | ProgramStatement::UnwindCleanup { .. }
         // Everything else declares nothing.
         | ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
@@ -3818,6 +3819,7 @@ fn verification_operation_name(statement: &ProgramStatement) -> &'static str {
             "verification statement: throw"
         }
         ProgramStatement::TryCatchInt32 { .. } => "verification statement: int32 handler",
+        ProgramStatement::UnwindCleanup { .. } => "verification statement: unwind cleanup",
         ProgramStatement::Store { .. } => "verification statement: store",
         ProgramStatement::TypedStore { .. } => "verification statement: typed store",
         ProgramStatement::Update { .. } => "verification statement: update",
@@ -4700,6 +4702,45 @@ fn execute_execution_statement_leaf_paths(
                     )?);
                 } else {
                     paths.push(try_path);
+                }
+            }
+            paths
+        }
+        // On an int32 exceptional exit, the cleanup runs in the thrown state
+        // and the same exception continues: `cleanup; throw <payload>`.
+        ProgramStatement::UnwindCleanup { body, cleanup } => {
+            let mut paths = Vec::new();
+            for body_path in execute_statement_paths(
+                state,
+                body,
+                assumptions,
+                execution_context,
+                budget,
+                judgment,
+            )? {
+                if let StatementOutcome::Throw {
+                    value,
+                    state: thrown_state,
+                } = &body_path.outcome
+                    && value.program_type() == ProgramType::Int32
+                {
+                    let unwinding = crate::kernel::program_unwind_continuation(
+                        cleanup,
+                        ProgramExpression::Value(value.clone().into_native()),
+                    );
+                    paths.extend(execute_statement_paths_with_prefix(
+                        thrown_state,
+                        &unwinding,
+                        assumptions,
+                        execution_context,
+                        &body_path.facts,
+                        &body_path.obligations,
+                        &body_path.loan_evidence,
+                        budget,
+                        judgment,
+                    )?);
+                } else {
+                    paths.push(body_path);
                 }
             }
             paths

@@ -57,6 +57,9 @@ pub(in crate::surface) fn count_loop_regions(
             ProgramStatement::TryCatchInt32 {
                 try_body, handler, ..
             } => pending.extend([try_body.as_ref(), handler.as_ref()]),
+            ProgramStatement::UnwindCleanup { body, cleanup } => {
+                pending.extend([body.as_ref(), cleanup.as_ref()])
+            }
             ProgramStatement::Loop {
                 test: loop_test,
                 update,
@@ -576,9 +579,24 @@ impl SourceExecutionLayout {
                 ProgramStatement::Switch { .. } => Err(ClickError::new(
                     "typed-frontend source layout does not yet support switch statements",
                 )),
-                ProgramStatement::TryCatchInt32 {
-                    try_body, handler, ..
-                } => {
+                ProgramStatement::TryCatchInt32 { .. } | ProgramStatement::UnwindCleanup { .. } => {
+                    // An unwind cleanup's exceptional path is its cleanup and
+                    // then the point where the exception continues, numbered
+                    // as the statements it steps.
+                    let unwinding;
+                    let (try_body, handler) = match statement {
+                        ProgramStatement::TryCatchInt32 {
+                            try_body, handler, ..
+                        } => (try_body.as_ref(), handler.as_ref()),
+                        ProgramStatement::UnwindCleanup { body, cleanup } => {
+                            unwinding = crate::kernel::program_unwind_continuation(
+                                cleanup,
+                                crate::kernel::program_expression::int32_literal(0),
+                            );
+                            (body.as_ref(), &unwinding)
+                        }
+                        _ => unreachable!("matched a try or an unwind cleanup"),
+                    };
                     let statement_index = *next_statement_index;
                     *next_statement_index += 1;
                     let try_statement_index = *next_statement_index;
@@ -2028,12 +2046,8 @@ fn collect_kernel_automatic_exits(
                     declarations(statement, names);
                 }
             }
-            // Implementation cleanup does not introduce a lexical scope.
-            ProgramStatement::TryCatchInt32 {
-                try_body,
-                cleanup_unwind: true,
-                ..
-            } => declarations(try_body, names),
+            // An unwind cleanup does not introduce a lexical scope.
+            ProgramStatement::UnwindCleanup { body, .. } => declarations(body, names),
             _ => {}
         }
     }
@@ -2101,26 +2115,38 @@ fn collect_kernel_automatic_exits(
                 tails
             }
             ProgramStatement::TryCatchInt32 {
-                try_body,
-                handler,
-                cleanup_unwind,
-                ..
+                try_body, handler, ..
             } => {
                 let mut tails = vec![head];
-                if *cleanup_unwind {
-                    tails.extend(visit(try_body, index, scopes, layout, return_parameters));
-                } else {
-                    tails.extend(scope(
-                        try_body,
-                        index,
-                        scopes,
-                        None,
-                        layout,
-                        return_parameters,
-                    ));
-                }
+                tails.extend(scope(
+                    try_body,
+                    index,
+                    scopes,
+                    None,
+                    layout,
+                    return_parameters,
+                ));
                 tails.extend(scope(
                     handler,
+                    index,
+                    scopes,
+                    None,
+                    layout,
+                    return_parameters,
+                ));
+                tails
+            }
+            // The body is in the enclosing scope; the exceptional path is
+            // numbered as the layout numbers it.
+            ProgramStatement::UnwindCleanup { body, cleanup } => {
+                let mut tails = vec![head];
+                tails.extend(visit(body, index, scopes, layout, return_parameters));
+                let unwinding = crate::kernel::program_unwind_continuation(
+                    cleanup,
+                    crate::kernel::program_expression::int32_literal(0),
+                );
+                tails.extend(scope(
+                    &unwinding,
                     index,
                     scopes,
                     None,

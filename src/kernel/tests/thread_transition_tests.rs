@@ -1,8 +1,9 @@
 use super::*;
+use crate::kernel::VerifiedFunctionTerminationRule;
+use crate::kernel::termination::program_verified_function_termination_rules;
 use crate::kernel::threads::{
     JoinRuntimeAssumption, PendingThreadCreate, ThreadContext, ThreadHandle,
 };
-use crate::kernel::{VerifiedFunctionTerminationRule, program_verified_function_termination_rules};
 
 fn pointer(index: usize) -> Pointer {
     Pointer {

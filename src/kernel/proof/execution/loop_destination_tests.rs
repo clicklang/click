@@ -56,7 +56,6 @@ fn nested_loop(
             try_body: Box::new(control.clone()),
             binding: "caught".into(),
             handler: Box::new(ProgramStatement::Skip),
-            cleanup_unwind: false,
         }
     } else {
         control.clone()
@@ -154,10 +153,9 @@ fn nested_loop(
                 remaining: None,
                 next_statement_index: 4,
                 exceptional: Some(ExceptionalContinuation {
-                    binding: "caught".into(),
+                    entry: ExceptionalEntry::Catch("caught".into()),
                     handler: Arc::new(ProgramStatement::Skip),
                     handler_first_index: 5,
-                    cleanup_unwind: false,
                 }),
             });
     }

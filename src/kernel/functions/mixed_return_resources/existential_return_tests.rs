@@ -116,7 +116,7 @@ fn existential_witness_memory_does_not_receive_parameter_borrow_custody() {
         &evaluated,
         &[existential_definition(1)],
         &ExecutionState::new(),
-        ReturnResourceComposition::RestoreEntryBorrows,
+        ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
         &facts,
     )
     .unwrap();
@@ -190,7 +190,7 @@ fn viewed_existential_children_keep_their_binding_and_never_gain_owned_custody()
             &evaluated,
             &[existential_definition(1), parent],
             &ExecutionState::new(),
-            ReturnResourceComposition::RestoreEntryBorrows,
+            ReturnResourceComposition::ApplyTransfers(&ConsumedCellReturns::default()),
             &facts,
         )
         .unwrap();

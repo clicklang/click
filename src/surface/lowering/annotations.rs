@@ -1554,6 +1554,10 @@ pub(in crate::surface) fn kernel_loop_by_index<'a>(
             .or_else(|| kernel_loop_by_index(else_branch, target, next_loop_index)),
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
+        }
+        | ProgramStatement::UnwindCleanup {
+            body: try_body,
+            cleanup: handler,
         } => kernel_loop_by_index(try_body, target, next_loop_index)
             .or_else(|| kernel_loop_by_index(handler, target, next_loop_index)),
         ProgramStatement::Switch { cases, .. } => cases
@@ -1742,6 +1746,10 @@ fn count_kernel_loops(statement: &ProgramStatement) -> usize {
         } => count_kernel_loops(then_branch) + count_kernel_loops(else_branch),
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
+        }
+        | ProgramStatement::UnwindCleanup {
+            body: try_body,
+            cleanup: handler,
         } => count_kernel_loops(try_body) + count_kernel_loops(handler),
         ProgramStatement::Switch { cases, .. } => cases
             .iter()
@@ -3094,6 +3102,10 @@ fn collect_local_pointer_element_types(
 
             ProgramStatement::TryCatchInt32 {
                 try_body, handler, ..
+            }
+            | ProgramStatement::UnwindCleanup {
+                body: try_body,
+                cleanup: handler,
             } => pending.extend([try_body.as_ref(), handler.as_ref()]),
             ProgramStatement::Switch { cases, .. } => {
                 pending.extend(cases.iter().map(|case| case.body.as_ref()))
@@ -3871,15 +3883,22 @@ impl AnnotationLowerer<'_> {
                 try_body,
                 binding,
                 handler,
-                cleanup_unwind,
             } => {
                 self.next_statement_index();
-                crate::kernel::program_try_catch_int32_with_cleanup(
+                crate::kernel::program_try_catch_int32(
                     self.lower_kernel_statement(try_body)?,
                     binding.clone(),
                     self.lower_kernel_statement(handler)?,
-                    *cleanup_unwind,
                 )
+            }
+            ProgramStatement::UnwindCleanup { body, cleanup } => {
+                self.next_statement_index();
+                let body = self.lower_kernel_statement(body)?;
+                let cleanup = self.lower_kernel_statement(cleanup)?;
+                // The point where the exception continues after the cleanup
+                // is numbered as the layout numbers it.
+                self.next_statement_index();
+                crate::kernel::program_unwind_cleanup(body, cleanup)
             }
             _ => {
                 self.next_statement_index();

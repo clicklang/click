@@ -6200,15 +6200,39 @@ impl ExecutionFrontier {
     }
 }
 
-/// One entered `try` body tracked for evidence order validation: the
-/// handler to resume at if unwinding reaches it, and the source tail after
-/// the `try` for normal completion.
+/// How an exceptional exit enters the statements that handle it.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum ExceptionalEntry {
+    /// A source `try`: the handler starts by binding the int32 payload.
+    Catch(BindingName),
+    /// An [`ProgramStatement::UnwindCleanup`]: its cleanup runs, then the
+    /// same exception continues ([`crate::kernel::program_unwind_continuation`]).
+    /// The cleanup it was entered with identifies it.
+    Unwind(Arc<ProgramStatement>),
+}
+
+impl ExceptionalEntry {
+    fn binding(&self) -> Option<&BindingName> {
+        match self {
+            Self::Catch(binding) => Some(binding),
+            Self::Unwind(_) => None,
+        }
+    }
+    fn is_unwind(&self) -> bool {
+        matches!(self, Self::Unwind(_))
+    }
+}
+
+/// One entered `try` body or unwind cleanup body tracked for evidence order
+/// validation: the statements to resume at if an exception reaches it, and
+/// the source tail after it for normal completion. An unwind frame's
+/// `handler` is its cleanup until an exception enters it, and then its
+/// cleanup followed by that exception continuing.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct EvidenceTryFrame {
-    pub(crate) binding: BindingName,
+    pub(crate) entry: ExceptionalEntry,
     pub(crate) handler: Arc<ProgramStatement>,
     pub(crate) tail_after_try: Option<Arc<ProgramStatement>>,
-    pub(crate) cleanup_unwind: bool,
 }
 
 /// The complete evidence successors issued while entering a source loop.
@@ -6294,10 +6318,9 @@ impl ProofExecutionContinuation {
 /// carries one of these.
 #[derive(Clone)]
 pub(crate) struct ExceptionalContinuation {
-    pub(crate) binding: BindingName,
+    pub(crate) entry: ExceptionalEntry,
     pub(crate) handler: Arc<ProgramStatement>,
     pub(crate) handler_first_index: usize,
-    pub(crate) cleanup_unwind: bool,
 }
 
 /// A returned path of a summarized loop, already checked while the loop's
@@ -8613,30 +8636,43 @@ impl ExecutionProofCore {
         } else {
             None
         };
-        if let StatementOutcome::Throw { .. } = &outcome
+        if let StatementOutcome::Throw { value, .. } = &outcome
             && let Some(exceptional) = self
                 .frontier
                 .continuations
                 .iter()
                 .filter_map(|continuation| continuation.exceptional.as_ref())
                 .next_back()
-            && self
-                .evidence_try_stack
-                .last()
-                .is_none_or(|frame| frame.binding != exceptional.binding)
         {
-            self.evidence_try_stack.push(EvidenceTryFrame {
-                binding: exceptional.binding.clone(),
-                handler: exceptional.handler.clone(),
-                tail_after_try: self
-                    .frontier
-                    .continuations
-                    .iter()
-                    .filter(|continuation| continuation.exceptional.is_some())
-                    .rfind(|continuation| continuation.exceptional.is_some())
-                    .and_then(|continuation| continuation.remaining.clone()),
-                cleanup_unwind: exceptional.cleanup_unwind,
-            });
+            // An unwind cleanup entered by this exception runs its cleanup
+            // and then continues with exactly this payload.
+            let handler = match &exceptional.entry {
+                ExceptionalEntry::Catch(_) => exceptional.handler.clone(),
+                ExceptionalEntry::Unwind(cleanup) => {
+                    Arc::new(crate::kernel::program_unwind_continuation(
+                        cleanup,
+                        ProgramExpression::Value(value.clone().into_native()),
+                    ))
+                }
+            };
+            match self.evidence_try_stack.last_mut() {
+                Some(frame) if frame.entry == exceptional.entry => {
+                    if frame.entry.is_unwind() {
+                        frame.handler = handler;
+                    }
+                }
+                _ => self.evidence_try_stack.push(EvidenceTryFrame {
+                    entry: exceptional.entry.clone(),
+                    handler,
+                    tail_after_try: self
+                        .frontier
+                        .continuations
+                        .iter()
+                        .filter(|continuation| continuation.exceptional.is_some())
+                        .rfind(|continuation| continuation.exceptional.is_some())
+                        .and_then(|continuation| continuation.remaining.clone()),
+                }),
+            }
         }
         match outcome {
             StatementOutcome::Normal(next_state) => {
@@ -9367,11 +9403,14 @@ impl ExecutionProofCore {
         let next_tail = self.next_source_statement_and_tail(function);
         // Binding micro-steps and handler heads are meaningful only while
         // a `try` frame is open; without one there is nothing to route to.
-        let frame_binding_matches = |frame: &EvidenceTryFrame| match proved_statement {
-            ProgramStatement::Declare { name, .. } => name.binding() == &frame.binding,
-            ProgramStatement::Assign { name, .. } => name == &frame.binding,
-            _ => false,
-        };
+        let frame_binding_matches =
+            |frame: &EvidenceTryFrame| match (frame.entry.binding(), proved_statement) {
+                (Some(binding), ProgramStatement::Declare { name, .. }) => {
+                    name.binding() == binding
+                }
+                (Some(binding), ProgramStatement::Assign { name, .. }) => name == binding,
+                _ => false,
+            };
         if let Some(frame) = self.evidence_try_stack.last()
             && frame_binding_matches(frame)
         {
@@ -9383,7 +9422,7 @@ impl ExecutionProofCore {
         // while the surface frontier remains outside the original source.
         if next_tail.is_none() {
             if self.evidence_try_stack.last().is_some_and(|frame| {
-                frame.cleanup_unwind
+                frame.entry.is_unwind()
                     && matches!(
                         split_shared_source(&frame.handler).0.as_ref(),
                         ProgramStatement::Throw(_)
@@ -9439,20 +9478,13 @@ impl ExecutionProofCore {
                 }
                 return None;
             }
-            if let ProgramStatement::TryCatchInt32 {
-                try_body,
-                binding,
-                handler,
-                cleanup_unwind,
-            } = next
-            {
+            if let Some((try_body, entry, handler)) = exceptional_region(next) {
                 let (body_head, body_tail) = split_shared_source(try_body);
                 if statements_have_same_source(&body_head, proved_statement) {
                     self.evidence_try_stack.push(EvidenceTryFrame {
-                        binding: binding.clone(),
-                        handler: Arc::new((**handler).clone()),
+                        entry,
+                        handler,
                         tail_after_try: tail.clone(),
-                        cleanup_unwind: *cleanup_unwind,
                     });
                     return Some(body_tail);
                 }
@@ -9464,7 +9496,7 @@ impl ExecutionProofCore {
                         .evidence_try_stack
                         .last()
                         .expect("handler frame just matched");
-                    let cleanup_rethrows = frame.cleanup_unwind
+                    let cleanup_rethrows = frame.entry.is_unwind()
                         && handler_tail.as_ref().is_some_and(|tail| {
                             let (tail_head, tail_tail) = split_shared_source(tail);
                             matches!(tail_head.as_ref(), ProgramStatement::Throw(_))
@@ -9503,20 +9535,13 @@ impl ExecutionProofCore {
             // begins with the theorem, as two calls are while a destructible
             // local's unwind cleanup wraps each: leave this `try` normally
             // and enter that one, as the linear rule above enters a `try`.
-            if let ProgramStatement::TryCatchInt32 {
-                try_body,
-                binding,
-                handler,
-                cleanup_unwind,
-            } = tail_head.as_ref()
-            {
+            if let Some((try_body, entry, handler)) = exceptional_region(tail_head.as_ref()) {
                 let (body_head, body_tail) = split_shared_source(try_body);
                 if statements_have_same_source(&body_head, proved_statement) {
                     let entered = EvidenceTryFrame {
-                        binding: binding.clone(),
-                        handler: Arc::new((**handler).clone()),
+                        entry,
+                        handler,
                         tail_after_try: tail_tail,
-                        cleanup_unwind: *cleanup_unwind,
                     };
                     self.evidence_try_stack.pop();
                     self.evidence_try_stack.push(entered);
@@ -12530,3 +12555,28 @@ mod checked_callee_dependency_tests;
 
 #[cfg(test)]
 mod loop_destination_tests;
+
+/// A source `try` or unwind cleanup: its body, how an exception enters its
+/// handling statements, and those statements as known before any exception
+/// (an unwind cleanup's cleanup, to which the exception's continuation is
+/// added when one enters it).
+pub(crate) fn exceptional_region(
+    statement: &ProgramStatement,
+) -> Option<(&ProgramStatement, ExceptionalEntry, Arc<ProgramStatement>)> {
+    match statement {
+        ProgramStatement::TryCatchInt32 {
+            try_body,
+            binding,
+            handler,
+        } => Some((
+            try_body,
+            ExceptionalEntry::Catch(binding.clone()),
+            Arc::new((**handler).clone()),
+        )),
+        ProgramStatement::UnwindCleanup { body, cleanup } => {
+            let cleanup = Arc::new((**cleanup).clone());
+            Some((body, ExceptionalEntry::Unwind(cleanup.clone()), cleanup))
+        }
+        _ => None,
+    }
+}

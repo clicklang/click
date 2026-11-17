@@ -710,28 +710,29 @@ fn deep_split_read_join_work_scales_with_explicit_tree_delta() {
 fn dependency_updates_scale_with_changed_scope_entries() {
     let mut samples = Vec::new();
     for size in [16_usize, 32, 64, 128] {
-        let (mut ledger, owner, _reader) = participants();
-        let parent_fact = owned("dependency-parent");
-        let parent = ledger
-            .lend(owner, owner, backing(&parent_fact), parent_fact)
-            .unwrap();
-        ledger = ledger.apply(&parent.transition).unwrap();
-        let mut children = Vec::with_capacity(size);
+        let (mut ledger, owner, reader) = participants();
+        let borrower = ledger.fresh_participant().unwrap();
+        let mut bindings = Vec::with_capacity(size);
         for index in 0..size {
-            let child_fact = owned(&format!("dependency-child-{index}"));
-            let child = ledger
-                .lend(owner, owner, backing(&child_fact), child_fact)
-                .unwrap();
-            ledger = ledger.apply(&child.transition).unwrap();
-            children.push(child);
+            let fact = owned(&format!("dependency-parent-{index}"));
+            let parent = ledger.lend(owner, reader, backing(&fact), fact).unwrap();
+            ledger = ledger.apply(&parent.transition).unwrap();
+            bindings.push(LoanViewBinding {
+                loan: parent.loan,
+                scope: parent.scope,
+                share: parent.root_share,
+                support: parent.description.support,
+                viewed: parent.description.viewed.clone(),
+                hold: None,
+            });
         }
+        // Each reborrow adds one dependency to its own parent scope among
+        // `size` unrelated open scopes.
         let (((), work), persistent_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
-                for child in &children {
-                    let transition = ledger
-                        .register_dependency(parent.scope, child.scope, owner)
-                        .unwrap();
-                    ledger = ledger.apply(&transition).unwrap();
+                for binding in &bindings {
+                    let child = ledger.reborrow(binding.clone(), reader, borrower).unwrap();
+                    ledger = ledger.apply(&child.transition).unwrap();
                 }
             })
         });
