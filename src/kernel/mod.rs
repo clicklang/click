@@ -38,7 +38,7 @@ pub(crate) mod fact_stability;
 mod fold_read_summary;
 mod functions;
 mod owned_footprint_reach;
-mod pointer_designations;
+mod pointer_provenance;
 mod population_access;
 // Population authority: checked anchor lifetimes, registrations and the C
 // creation ledger.
@@ -96,7 +96,7 @@ pub(crate) use separation_laws::{
 };
 mod loops;
 pub(crate) mod machine_integer;
-mod memory_provenance;
+mod memory_history;
 pub(crate) mod model_fields;
 mod mutexes;
 mod named_authority;
@@ -144,9 +144,8 @@ pub(crate) use assumptions::current_memory_loads_in_term;
 pub(crate) use assumptions::proposition_has_free_bitvector_variable;
 pub(crate) use assumptions::{
     PureFactContextIdScope, SelectedFacts, arm_frame_composite_definitions,
-    capture_implicit_reasoning_provenance, collect_reasoning_provenance,
-    finite_forall_goal_instances, record_implicit_reasoning_provenance,
-    with_search_attempt_rollback,
+    capture_implicit_consulted_premises, collect_consulted_premises, finite_forall_goal_instances,
+    record_implicit_consulted_premises, with_search_attempt_rollback,
 };
 pub(crate) use equality_graph::{
     ReadEqualityCheckpoint, ReadEqualityDelta, logical_pointer_read_term,
@@ -232,7 +231,7 @@ pub(crate) use loops::{
 // Used through other modules' glob imports of `crate::kernel`, which the unused
 // import lint does not see once nothing here is `pub`.
 #[allow(unused_imports)]
-pub(crate) use memory_provenance::*;
+pub(crate) use memory_history::*;
 pub(crate) use model_fields::algebraic_value_variable;
 pub(crate) use primitives::ABSTRACT_VALUE_WIDTH;
 pub(crate) use primitives::resource_context_has_symbolic_range_read;
@@ -404,8 +403,8 @@ impl VerificationSession {
             fold_read_summary::clear_fold_read_summaries();
             eval::clear_load_canonicalization_caches();
             eval::pointer_tags::clear_tag_bound_cache();
-            memory_provenance::clear_canonical_form_caches();
-            memory_provenance::clear_provenance_memos();
+            memory_history::clear_canonical_form_caches();
+            memory_history::clear_load_equality_memos();
             reasoning::memory_resolution::clear_canonical_memory_cache();
             reasoning::memory_resolution::clear_memory_resolution_memos();
             assumptions::clear_assumption_memos();
@@ -481,8 +480,8 @@ impl VerificationSession {
         primitives::restore_block_registries(&state.blocks);
         fold_read_summary::restore_fold_read_summaries(&state.fold_reads);
         eval::clear_load_canonicalization_caches();
-        memory_provenance::clear_canonical_form_caches();
-        memory_provenance::clear_provenance_memos();
+        memory_history::clear_canonical_form_caches();
+        memory_history::clear_load_equality_memos();
         reasoning::memory_resolution::clear_canonical_memory_cache();
         reasoning::memory_resolution::clear_memory_resolution_memos();
         assumptions::clear_assumption_memos();
@@ -508,7 +507,7 @@ impl VerificationSession {
 pub fn clear_memory_resolution_memos_and_caches() {
     reasoning::memory_resolution::clear_memory_resolution_memos();
     reasoning::memory_resolution::clear_canonical_memory_cache();
-    memory_provenance::clear_provenance_memos();
+    memory_history::clear_load_equality_memos();
     assumptions::clear_assumption_memos();
 }
 

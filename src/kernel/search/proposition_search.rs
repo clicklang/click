@@ -180,7 +180,7 @@ impl super::ProofSearch<PureFactContext> {
         {
             let proof = proposition_derivation(proposition, rule);
             if proof.check(context) {
-                record_implicit_reasoning_provenance(context, proposition);
+                record_implicit_consulted_premises(context, proposition);
                 return true;
             }
         }
@@ -296,7 +296,7 @@ impl super::ProofSearch<PureFactContext> {
                 },
             );
         if proved {
-            record_implicit_reasoning_provenance(context, proposition);
+            record_implicit_consulted_premises(context, proposition);
         }
         proved
     }

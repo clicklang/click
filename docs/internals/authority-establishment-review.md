@@ -283,7 +283,7 @@ ending the anchor lifetime.
 The abstract kernel checks the creation-environment and once-per-lifetime
 restrictions. A separate C event ledger records successful heap creation and
 actual automatic declarations, uses distinct caller/callee environments, and
-clears provenance on direct free, scope exit, and checked contract retirement.
+clears creation records on direct free, scope exit, and checked contract retirement.
 It retains per-storage family history: once a member existed, transferring it
 away cannot make later establishment appear empty. Pending heap outcomes carry
 that history to the resolved allocation. The first query accepts an exact heap

@@ -710,7 +710,7 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
                 false
             });
     if covered {
-        crate::kernel::record_implicit_reasoning_provenance(assumptions, goal);
+        crate::kernel::record_implicit_consulted_premises(assumptions, goal);
     }
     covered
 }
@@ -3249,7 +3249,15 @@ pub(crate) fn condition_holds_by_memory_resolution(
     value: bool,
 ) -> bool {
     match (condition, value) {
-        (ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right }, true) => {
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
+            true,
+        ) => {
             names_of_one_cell_framed(left, right, assumptions)
                 || int32_values_proven_equal_for_memory_resolution(left, right, assumptions)
                 || assumptions
@@ -3271,7 +3279,15 @@ pub(crate) fn condition_holds_by_memory_resolution(
         // A 64-bit read (an `unsigned long` word) is framed the way a 32-bit
         // one is: the recorded history shows one version of the cell. The
         // remaining 32-bit routes read the int32 graph and stay 32-bit only.
-        (ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, left, right }, true) => {
+        (
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
+            true,
+        ) => {
             names_of_one_cell_framed(left, right, assumptions)
                 || assumptions.proves_order_condition_for_memory_resolution(condition, value)
                 || assumptions.has_matching_condition_fact_for_memory_resolution(condition, value)
@@ -3279,19 +3295,18 @@ pub(crate) fn condition_holds_by_memory_resolution(
         // Two complete reads of one cell carry one value even where each spells
         // its coordinate from its own base (`n + 8` and `old(n) + 8`), as the
         // state-modulo condition matchers already accept.
-        (ConditionTerm::PointerValueEqual(left, right), true) => {
-            assumptions.contains_known(&Proposition::ConditionIs(condition.clone(), true))
-                || (assumptions.pointer_designations_match(left, right)
-                    && (pointers_proven_equal_for_memory_resolution(
-                        left.pointer(),
-                        right.pointer(),
-                        assumptions,
-                    ) || crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
-                        left.pointer(),
-                        right.pointer(),
-                        assumptions,
-                    )))
-        }
+        (ConditionTerm::PointerValueEqual(left, right), true) => assumptions
+            .contains_known(&Proposition::ConditionIs(condition.clone(), true))
+            || (assumptions.pointer_provenance_match(left, right)
+                && (pointers_proven_equal_for_memory_resolution(
+                    left.pointer(),
+                    right.pointer(),
+                    assumptions,
+                ) || crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
+                    left.pointer(),
+                    right.pointer(),
+                    assumptions,
+                ))),
         (ConditionTerm::PointerEqual(left, right), true) => {
             pointers_proven_equal_for_memory_resolution(left, right, assumptions)
                 || assumptions.pointers_known_equal(left, right)

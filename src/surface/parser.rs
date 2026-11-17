@@ -10023,7 +10023,6 @@ impl Parser {
             "let" => self.parse_let_proof_tactic(),
             "both" => self.parse_both_proof_tactic(),
             "if" => self.parse_if_proof_tactic(),
-            "induct" if !self.tactic_names.contains(&name) => self.parse_induct_proof_tactic(),
             _ => self.parse_other_proof_tactic(name),
         }
     }
@@ -10987,80 +10986,6 @@ impl Parser {
         })
     }
 
-    // Structural induction retains a child proof parser. Its syntax
-    // temporaries must not share the large leaf-tactic dispatch frame.
-    #[inline(never)]
-    fn parse_induct_proof_tactic(&mut self) -> Result<ProofTactic, ClickError> {
-        self.expect(Token::LParen)?;
-        let parameter = self.expect_ident("induction parameter")?;
-        self.expect(Token::RParen)?;
-        self.expect_ident_spelling("as")?;
-        let hypothesis = self.expect_ident("induction hypothesis name")?;
-        self.refuse_cast_type_binder(&hypothesis)?;
-        if self.peek() != Some(&Token::LBrace) {
-            return Err(self.error("scalar induction uses `let ih = induct(n);`"));
-        }
-        self.position += 1;
-        let mut arms = Vec::new();
-        while self.peek() != Some(&Token::RBrace) {
-            let type_name = self.expect_ident("induction pattern datatype")?;
-            self.expect(Token::ColonColon)?;
-            let variant = self.expect_ident("induction pattern variant")?;
-            let mut bindings = Vec::new();
-            if self.peek() == Some(&Token::LParen) {
-                self.position += 1;
-                if self.peek() != Some(&Token::RParen) {
-                    loop {
-                        bindings.push(self.expect_ident("induction pattern binding")?);
-                        match self.peek() {
-                            Some(Token::Comma) => self.position += 1,
-                            Some(Token::RParen) => break,
-                            Some(token) => {
-                                return Err(self.error(format!(
-                                    "expected `,` or `)` after induction binding, got {}",
-                                    token.describe()
-                                )));
-                            }
-                            None => {
-                                return Err(self.error("expected `)` after induction bindings"));
-                            }
-                        }
-                    }
-                }
-                self.expect(Token::RParen)?;
-            }
-            self.expect(Token::FatArrow)?;
-            let newly_bound = bindings
-                .iter()
-                .filter(|binding| {
-                    self.names
-                        .insert(NameKind::ContractBinding, (*binding).clone())
-                })
-                .cloned()
-                .collect::<Vec<_>>();
-            let tactics = self.parse_possibly_empty_tactic_block();
-            for binding in newly_bound {
-                self.names.remove(NameKind::ContractBinding, &binding);
-            }
-            arms.push(ProofInductionArm {
-                type_name,
-                variant,
-                bindings,
-                tactics: tactics?,
-            });
-            if self.peek() == Some(&Token::Comma) {
-                self.position += 1;
-            }
-        }
-        self.expect(Token::RBrace)?;
-        self.skip_redundant_semicolon();
-        Ok(ProofTactic::StructuralInduct {
-            parameter,
-            hypothesis,
-            arms,
-        })
-    }
-
     // Keep the large leaf-tactic dispatch frame out of recursive proof-body
     // parsing. Expanded both/if/closure scopes can nest while reading terms.
     #[inline(never)]
@@ -11497,7 +11422,7 @@ impl Parser {
                 self.expect(Token::RParen)?;
                 ProofTactic::ConstructResource(resource)
             }
-            "induct" => return self.parse_induct_proof_tactic(),
+            "induct" => return Err(self.error("induction uses `let ih = induct(value);`; follow structural induction with `match value { ... }`")),
             _ if let Some(refusal) = removed_tactic_refusal(&name) => {
                 return Err(self.error(refusal));
             }
@@ -14110,8 +14035,8 @@ impl Parser {
         }
     }
 
-    /// A name an `as` clause binds may not be a cast's type name: `e as T`
-    /// is a cast, so `induct(x) as uint32` would read as one.
+    /// Keep binding names disjoint from cast type names: in particular,
+    /// `verifying "f.c" as uint32` would otherwise read as a cast.
     fn refuse_cast_type_binder(&self, name: &str) -> Result<(), ClickError> {
         if rust_syntax::click_numeric_cast_type(name).is_some()
             || (self.verifies_rust() && rust_syntax::rust_scalar_type(name).is_some())
@@ -18013,11 +17938,11 @@ mod integer_quantifier_parser_tests {
     }
 
     #[test]
-    fn c_shadow_preserves_wide_literal_provenance_for_validation() {
+    fn c_shadow_preserves_wide_literal_source_for_validation() {
         let mut rejected =
             Parser::new("forall (z: Integer) { exists (z: int32) { z == 100000000000000000000 } }")
                 .unwrap();
-        // Literal provenance is retained through parsing.  The C-range
+        // Literal source text is retained through parsing.  The C-range
         // rejection belongs to semantic lowering, where the binder type is
         // available, rather than to the parser's context-sensitive grammar.
         assert!(rejected.parse_proposition().is_ok());
@@ -18193,13 +18118,15 @@ mod tactic_classification_tests {
                 "{source}"
             );
         }
-        assert!(matches!(
-            Parser::new("induct(xs) as ih { List::Nil => {} }")
-                .unwrap()
-                .parse_proof_tactic()
-                .unwrap(),
-            ProofTactic::StructuralInduct { .. }
-        ));
+        for source in [
+            "induct(xs) as ih { List::Nil => {} }",
+            "induct(xs) { List::Nil => {} }",
+        ] {
+            assert!(
+                Parser::new(source).unwrap().parse_proof_tactic().is_err(),
+                "{source}"
+            );
+        }
     }
 
     #[test]
@@ -18261,10 +18188,6 @@ mod tactic_classification_tests {
         ("scatter-resource", "scatter(reference(p));"),
         ("construct-resource", "construct(reference(p));"),
         ("induct", "let ih = induct(n);"),
-        (
-            "structural-induct",
-            "induct(xs) as ih { List::Nil => { normalize(); } }",
-        ),
         (
             "proof-match",
             "match value { List::Nil => { normalize(); } }",

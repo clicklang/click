@@ -78,7 +78,7 @@ mod tests {
     }
 
     #[test]
-    fn selected_address_base_preserves_c_designation_qualifiers_and_debts() {
+    fn selected_address_base_preserves_c_provenance_qualifiers_and_debts() {
         let _session = VerificationSession::enter();
         let first = Memory::global_pointer("first");
         let second = Memory::global_pointer("second");

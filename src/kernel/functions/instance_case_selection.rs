@@ -859,7 +859,7 @@ pub fn decide_resource_model_arm(
     // Cite what decided the arm, so an expansion of the selected arm names the
     // premises a reader would look for.
     if let [(variant, premise)] = witnessed.iter().collect::<Vec<_>>().as_slice() {
-        super::super::assumptions::record_reasoning_provenance(assumptions, premise);
+        super::super::assumptions::record_consulted_premises(assumptions, premise);
         return ResourceModelArmDecision::Selected(ResourceModelArmSelection::Variant(
             (**variant).to_owned(),
         ));
@@ -886,7 +886,7 @@ pub fn decide_resource_model_arm(
         ),
     };
     for premise in excluded.values() {
-        super::super::assumptions::record_reasoning_provenance(assumptions, premise);
+        super::super::assumptions::record_consulted_premises(assumptions, premise);
     }
     decision
 }

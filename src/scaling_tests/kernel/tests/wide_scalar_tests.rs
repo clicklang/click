@@ -73,14 +73,14 @@ fn wide_cached_load_canonicalization_ignores_unrelated_cells() {
             Box::new(pointer),
             LoadKind::Bits64,
         );
-        crate::kernel::memory_provenance::clear_canonical_form_caches();
-        crate::kernel::memory_provenance::reset_atomic_canonicalization_term_visits();
+        crate::kernel::memory_history::clear_canonical_form_caches();
+        crate::kernel::memory_history::reset_atomic_canonicalization_term_visits();
         let (result, work) = crate::persistent::measure_persistent_work(|| {
             crate::kernel::api::canonicalize_atomic_loads(&load)
         });
         assert_eq!(result, bits);
         samples.push((
-            crate::kernel::memory_provenance::atomic_canonicalization_term_visits(),
+            crate::kernel::memory_history::atomic_canonicalization_term_visits(),
             work,
         ));
     }
@@ -115,7 +115,7 @@ fn selected_wide_read_value_keeps_alias_authority_and_scales_with_unrelated_cell
         CallKeptRanges::new(ResourceContext::new(), Vec::new(), None),
         &selected,
     );
-    let matches = crate::kernel::memory_provenance::wide_read_has_recorded_value;
+    let matches = crate::kernel::memory_history::wide_read_has_recorded_value;
     let mut previous = None;
     for count in [16, 64, 256, 1024] {
         let mut memory = Memory::new();
@@ -137,7 +137,7 @@ fn selected_wide_read_value_keeps_alias_authority_and_scales_with_unrelated_cell
             Box::new(read_pointer.clone()),
             LoadKind::Bits64,
         );
-        crate::kernel::memory_provenance::clear_canonical_form_caches();
+        crate::kernel::memory_history::clear_canonical_form_caches();
         let (found, work) =
             crate::instrumentation::measure_deterministic_work(|| matches(&load, &bits, &selected));
         assert!(found, "{count} unrelated cells");
@@ -203,9 +203,9 @@ fn selected_wide_read_value_bounds_unselected_call_history() {
             Box::new(pointer.clone()),
             LoadKind::Bits64,
         );
-        crate::kernel::memory_provenance::clear_canonical_form_caches();
+        crate::kernel::memory_history::clear_canonical_form_caches();
         let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
-            crate::kernel::memory_provenance::wide_read_has_recorded_value(&load, &bits, &selected)
+            crate::kernel::memory_history::wide_read_has_recorded_value(&load, &bits, &selected)
         });
         assert!(
             !found,
@@ -228,7 +228,7 @@ fn selected_wide_read_congruence_preserves_history_width_and_scales() {
     let owned_pointer = Pointer::symbolic(Variable(81_103));
     let callee = Pointer::symbolic(Variable(81_104));
     let alias = ConditionTerm::pointer_equal(read_pointer.clone(), owned_pointer.clone());
-    let matches = crate::kernel::memory_provenance::wide_read_has_recorded_value;
+    let matches = crate::kernel::memory_history::wide_read_has_recorded_value;
     let mut previous_work = None;
     for count in [4u32, 16, 64, 256] {
         let mut selected = PureFactContext::new().assume_condition(alias.clone(), true);
@@ -275,7 +275,7 @@ fn selected_wide_read_congruence_preserves_history_width_and_scales() {
         let current = read(&after, &read_pointer, LoadKind::Bits64);
         let same_state = read(&after, &owned_pointer, LoadKind::Bits64);
         let earlier = read(&memory, &owned_pointer, LoadKind::Bits64);
-        crate::kernel::memory_provenance::clear_canonical_form_caches();
+        crate::kernel::memory_history::clear_canonical_form_caches();
         let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
             matches(&current, &same_state, &selected) && matches(&current, &earlier, &selected)
         });

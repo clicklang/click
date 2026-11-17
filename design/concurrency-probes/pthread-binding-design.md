@@ -300,7 +300,7 @@ declarations. This path runs on any host while retaining the
 the stated create/join assumptions, for any C library that implements them.
 
 The modeled record contains the target and ABI, exact built-in header
-provenance/digest, resolved external declarations and canonical types, the
+origin/digest, resolved external declarations and canonical types, the
 trusted specification version/digest, supported null-attribute/null-result
 restrictions, and scoped valid-join-success assumption. Select it explicitly;
 the target directive, an include spelling, or a same-named function alone must

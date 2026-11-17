@@ -484,6 +484,29 @@ mod tests {
         assert!(frame.memory().same_storage_roots(moved.memory()));
     }
 
+    /// A state that takes another state's memory continues that state's
+    /// path, through the steps that made the memory, not its own.
+    #[test]
+    fn taking_another_states_memory_continues_its_path() {
+        let start = ExecutionState::default().with_memory(memory_holding(0));
+        let elsewhere = stored(&start, 1);
+        let taken = elsewhere
+            .memory()
+            .clone()
+            .store(slot(), ProgramValue::Int32(MachineTerm::constant(2)));
+        let mut here = start.clone();
+        here.set_memory_continuing(&elsewhere, taken);
+        assert_eq!(
+            here.program_point().predecessor_ids(),
+            vec![elsewhere.program_point().id().unwrap()]
+        );
+        assert!(here.path_link().steps().is_some());
+
+        let mut same = start.clone();
+        same.set_memory_of(&elsewhere);
+        assert_eq!(same.program_point().id(), elsewhere.program_point().id());
+    }
+
     /// A path is a chain of points; dropping a long one must not recurse
     /// once per link.
     #[test]

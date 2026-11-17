@@ -111,7 +111,7 @@ fn fresh_return_group_refuses_sibling_overlap() {
             second_start.into(),
             (second_start + 1).into(),
         ));
-        // Allocation provenance is valid for either piece separately, even
+        // Allocation origin is valid for either piece separately, even
         // when both descriptions name the same cell. It is not a partition.
         assert_eq!(
             FreshAllocationReturn::from_created_owner(&first, &creator, events),
@@ -223,7 +223,7 @@ fn fresh_return_group_refuses_sibling_overlap() {
 }
 
 #[test]
-fn allocator_provenance_is_attached_to_each_emitted_ownership_occurrence() {
+fn allocator_origin_is_attached_to_each_emitted_ownership_occurrence() {
     let _session = crate::kernel::VerificationSession::enter();
     let facts = PureFactContext::new();
     let (caller, entry, post, pointer) = allocated_call(16);
@@ -369,7 +369,7 @@ fn raw_description_validation_does_not_exercise_a_fresh_allocation_annotation() 
 }
 
 #[test]
-fn composite_children_use_only_actual_allocation_provenance() {
+fn composite_children_use_only_actual_allocation_origin() {
     let facts = PureFactContext::new();
     let (_, entry, post, pointer) = allocated_call(16);
     let (_, wrong_entry, _, _) = allocated_call(16);

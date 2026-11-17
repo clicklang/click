@@ -363,7 +363,7 @@ fn loads_unchanged(left: &MachineTerm, right: &MachineTerm, assumptions: &PureFa
     }
     let right_at_left_address =
         MachineTerm::MemoryLoad(right_memory.clone(), left_pointer.clone(), *right_kind);
-    crate::kernel::memory_provenance::explicit_atomic_equality_from_memory_derivations(
+    crate::kernel::memory_history::explicit_atomic_equality_from_memory_derivations(
         left,
         &right_at_left_address,
         assumptions,

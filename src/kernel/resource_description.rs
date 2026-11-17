@@ -405,7 +405,7 @@ mod tests {
         assert!(
             !ResourceDescription::from_instance(&wrapper).matches_instance(&wrong, &assumptions)
         );
-        assert!(!crate::kernel::memory_provenance::resources_directly_match(
+        assert!(!crate::kernel::memory_history::resources_directly_match(
             &Resource::Instance(wrapper.clone()),
             &Resource::Instance(wrong.clone()),
             &assumptions,

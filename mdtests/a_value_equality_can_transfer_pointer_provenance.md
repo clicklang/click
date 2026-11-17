@@ -1,4 +1,4 @@
-# A contract value equality carries pointer designation
+# A contract value equality carries pointer provenance
 
 ```c filename=probe.c
 int32 read_equal(int32* q, int32* p) {

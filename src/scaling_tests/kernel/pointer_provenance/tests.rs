@@ -1,9 +1,9 @@
-// Deterministic scaling coverage for the independent designation index.
+// Deterministic scaling coverage for the independent provenance index.
 use super::*;
 use crate::kernel::*;
 
 #[test]
-fn designation_queries_ignore_unrelated_origins() {
+fn provenance_queries_ignore_unrelated_origins() {
     let mut measurements = Vec::new();
     for size in [16u64, 64, 256, 1024] {
         let mut classes = ValueClasses::<u64>::default();
@@ -54,13 +54,13 @@ fn typed_access_does_not_search_unrelated_address_equalities_or_ranges() {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             assert!(resources.permits_designated_memory_read(
                 b.pointer(),
-                Some(b.access_designation()),
+                Some(b.access_provenance()),
                 4,
                 &context
             ));
             assert!(!resources.permits_designated_memory_read(
                 a.pointer(),
-                Some(a.access_designation()),
+                Some(a.access_provenance()),
                 4,
                 &context
             ));
@@ -170,10 +170,10 @@ fn packed_word_contract_lookup_and_scope_ignore_unrelated_words() {
             ));
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            assert!(!parent.pointer_designations_match(&source, &target));
+            assert!(!parent.pointer_provenance_match(&source, &target));
             let child = parent.clone().assume_proposition(relation.clone());
-            assert!(child.pointer_designations_match(&source, &target));
-            assert!(!parent.pointer_designations_match(&source, &target));
+            assert!(child.pointer_provenance_match(&source, &target));
+            assert!(!parent.pointer_provenance_match(&source, &target));
         });
         measurements.push(work);
     }
@@ -270,14 +270,14 @@ fn recent_pointer_read_origin_avoids_older_alias_histories() {
         let missing = missing.assume_proposition(preservation);
         let target = read(&intern_memory_ref(&after), &selected);
         let (matched, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.pointer_designations_match(&target, &value)
+            context.pointer_provenance_match(&target, &value)
         });
         assert!(matched);
         samples.push(work);
-        assert!(!missing.pointer_designations_match(&target, &value));
+        assert!(!missing.pointer_provenance_match(&target, &value));
         let overwritten = after.store(selected.clone(), ProgramValue::UInt32(0u32.into()));
         let partial = read(&intern_memory_ref(&overwritten), &selected);
-        assert!(!context.pointer_designations_match(&partial, &value));
+        assert!(!context.pointer_provenance_match(&partial, &value));
     }
     eprintln!("recent pointer origin work: {samples:?}");
     assert!(

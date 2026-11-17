@@ -189,7 +189,7 @@ impl VariableChains {
 
 impl PureFactContext {
     pub(super) fn decide_from_variable_chain(&self, condition: &ConditionTerm) -> Option<bool> {
-        if implicit_reasoning_provenance_capturing() {
+        if implicit_consulted_premises_capturing() {
             return None;
         }
         use crate::kernel::{

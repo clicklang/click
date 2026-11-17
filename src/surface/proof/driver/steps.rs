@@ -4,7 +4,7 @@ use crate::surface::proof::driver::ProofDriver;
 
 impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     /// Checks one explicit proof step and atomically returns the checked
-    /// successor with that exact step retained as provenance.
+    /// successor with that exact step retained as evidence.
     ///
     /// Failure allocates no reachable successor: `self` and all of its other
     /// descendants continue to share the unchanged ancestor state.
@@ -440,7 +440,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         } else {
             step
         };
-        let provenance_step = step.clone();
+        let evidence_step = step.clone();
         let checked_proposition_successor = match &step {
             ProofStep::CheckTerminationLocal(function) => Some(
                 driver_proof.apply_termination_check(crate::kernel::TerminationCheck::Local(
@@ -496,7 +496,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 node: ProofNode::step_child(
                     &driver_proof.node,
                     driver_proof.focused_branch_id(),
-                    Arc::new(provenance_step),
+                    Arc::new(evidence_step),
                 ),
             });
         }
@@ -728,7 +728,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     /// Applies one explicit `Have` through the same owned scope operations as
     /// a source `have` block. Each body step advances the scope's persistent
     /// child `Proof`; joining publishes only the checked proposition and
-    /// retains the body's exact surface operations as provenance. A failed
+    /// retains the body's exact surface operations as evidence. A failed
     /// body leaves this immutable root untouched.
     pub(in crate::surface::proof) fn apply_have_step(
         &self,

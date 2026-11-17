@@ -9173,16 +9173,21 @@ fn direct_return_calls_keep_internal_capture_names_fresh_and_reject_false_result
     let project = Project::with_fixture(
         "relay.cpp",
         "relay",
-        "int echo(int value) noexcept { return value; } int relay(int __click_cpp_return_value) noexcept { return echo(__click_cpp_return_value); }",
+        // A source local named `result`, the capture's own name, keeps it;
+        // the capture takes the next free spelling.
+        "int echo(int value) noexcept { return value; } int relay(int value) noexcept { int result = value; return echo(result); }",
     );
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "relay.cpp";
 int32 echo(int32 value) { ensures result == value; }
-int32 relay(int32 __click_cpp_return_value) { ensures result == __click_cpp_return_value; }
+int32 relay(int32 value) { ensures result == value; }
 "#;
     check_selected_claim_certificate(&project, &import, source);
-    let hostile = source.replace("result == __click_cpp_return_value", "result == 7");
+    let hostile = source.replace(
+        "int32 relay(int32 value) { ensures result == value; }",
+        "int32 relay(int32 value) { ensures result == 7; }",
+    );
     fs::write(project.directory.join("bad.click"), &hostile).unwrap();
     let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
     assert!(verify_program_prepared_project(&parsed, &import).is_err());
@@ -12718,7 +12723,7 @@ template<bool Debug, class T> constexpr T&& check(T&& condition, const Location&
 "#;
 
 #[test]
-fn consteval_library_metadata_keeps_proof_obligations_and_compiler_provenance() {
+fn consteval_library_metadata_keeps_proof_obligations_and_compiler_origin() {
     let cpp = "#include \"gate.h\"\nint guarded(int n) noexcept { Gate(n > 0); return n; }";
     let project = consteval_library_fixture(CONSTEVAL_LIBRARY_HEADER, cpp);
     refresh_import(&project.config()).unwrap();
@@ -12844,7 +12849,7 @@ int32 guarded(int32& memory, int32 n) { owns memory; requires memory == 7; requi
 
 #[test]
 #[ignore = "nightly: 0.9s in the parallel gate"]
-fn consteval_library_metadata_offline_checker_rejects_forged_provenance_and_kind() {
+fn consteval_library_metadata_offline_checker_rejects_forged_origin_and_kind() {
     use sha2::{Digest, Sha256};
     let cpp = "#include \"gate.h\"\nint guarded(int n) noexcept { Gate(n > 0); return n; }";
     for change in ["file", "function", "specialization", "too_many", "kind"] {

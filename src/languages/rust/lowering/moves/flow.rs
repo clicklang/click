@@ -534,6 +534,7 @@ mod tests {
             core_method: None,
             span: span.clone(),
             mir: Some(MirBody {
+                return_place: "__rust_mir_0".into(),
                 locals: vec![Place {
                     name: "marker".into(),
                     value_type: Type::I32,
@@ -626,6 +627,7 @@ mod tests {
             right: Box::new(local("size")),
         };
         let mut mir = MirBody {
+            return_place: "__rust_mir_0".into(),
             locals: vec![],
             blocks: vec![
                 MirBlock {
@@ -892,6 +894,7 @@ mod tests {
             .map(str::to_string)
             .collect::<BTreeSet<_>>();
         let mut mir = MirBody {
+            return_place: "__rust_mir_0".into(),
             locals: vec![],
             blocks: vec![MirBlock {
                 terminator_site: None,

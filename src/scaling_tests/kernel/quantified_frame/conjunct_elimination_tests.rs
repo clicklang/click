@@ -61,7 +61,7 @@ fn conjunct_elimination_is_flat_against_unrelated_history_and_facts() {
                         value_type,
                     },
                     Proposition::MemoryReadDefined { memory: after, .. },
-                ) => crate::kernel::memory_provenance::typed_read_has_same_memory_source(
+                ) => crate::kernel::memory_history::typed_read_has_same_memory_source(
                     before,
                     after,
                     pointer,

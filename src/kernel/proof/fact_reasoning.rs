@@ -489,7 +489,7 @@ fn normalize_condition_selection(
         },
         true,
     )) = crate::kernel::spec::proposition_as_single_condition(goal)
-        && crate::kernel::memory_provenance::wide_read_has_recorded_value(&left, &right, &selected)
+        && crate::kernel::memory_history::wide_read_has_recorded_value(&left, &right, &selected)
     {
         return Ok(());
     }
@@ -508,9 +508,7 @@ fn normalize_condition_selection(
         },
         true,
     )) = crate::kernel::spec::proposition_as_single_condition(goal)
-        && crate::kernel::memory_provenance::narrow_read_has_recorded_value(
-            &left, &right, &selected,
-        )
+        && crate::kernel::memory_history::narrow_read_has_recorded_value(&left, &right, &selected)
     {
         return Ok(());
     }
@@ -519,7 +517,7 @@ fn normalize_condition_selection(
         pointer,
         value_type,
     } = goal
-        && crate::kernel::memory_provenance::read_is_of_a_recorded_store(
+        && crate::kernel::memory_history::read_is_of_a_recorded_store(
             memory,
             pointer,
             *value_type,
@@ -530,9 +528,7 @@ fn normalize_condition_selection(
     }
     if let Some((ConditionTerm::PointerEqual(left, right), true)) =
         crate::kernel::spec::proposition_as_single_condition(goal)
-        && crate::kernel::memory_provenance::pointer_read_has_recorded_value(
-            &left, &right, &selected,
-        )
+        && crate::kernel::memory_history::pointer_read_has_recorded_value(&left, &right, &selected)
     {
         return Ok(());
     }
@@ -810,7 +806,7 @@ pub(crate) enum ForallInstantiationError {
 
 /// The value `instantiate` specializes a universal at, in the binder's own
 /// carrier: a machine integer, a mathematical `Integer`, or a pointer value
-/// with its subobject designation.
+/// with its subobject provenance.
 #[derive(Clone, Debug)]
 pub(crate) enum InstanceArgument {
     Machine(MachineTerm),
@@ -1221,7 +1217,7 @@ fn expand_load_variables_shallow(bits: &MachineTerm) -> MachineTerm {
 fn expand_offset_load_variables_shallow(value: &PointerOffsetTerm) -> PointerOffsetTerm {
     match value {
         PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-            let next = crate::kernel::memory_provenance::map_shared_pointer_index_with_descent(
+            let next = crate::kernel::memory_history::map_shared_pointer_index_with_descent(
                 value,
                 |leaf| Some(expand_load_variables_shallow(leaf)),
                 crate::kernel::proof::equality_rewrite::rebuild_transported_machine_node,
@@ -3156,7 +3152,7 @@ impl<'a> OriginsUnchanged<'a> {
         // pointer spellings identify this cell. The read kind is preserved.
         left_kind == right_kind
             && ((left_pointer.block != right_pointer.block
-                && crate::kernel::memory_provenance::checked_origin_load_equality(
+                && crate::kernel::memory_history::checked_origin_load_equality(
                     left,
                     right,
                     self.assumptions,

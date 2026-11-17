@@ -141,10 +141,10 @@ impl<'a> Value<'a> {
             Self::Shared(value) => Address::Shared(&value.node().address),
         }
     }
-    fn designation(self) -> Address<'a> {
+    fn provenance(self) -> Address<'a> {
         match self {
-            Self::Native(value) => Address::Native(value.designation()),
-            Self::Shared(value) => Address::Shared(&value.node().designation),
+            Self::Native(value) => Address::Native(value.provenance()),
+            Self::Shared(value) => Address::Shared(&value.node().provenance),
         }
     }
     fn opaque_extent(self) -> Option<Address<'a>> {
@@ -253,7 +253,7 @@ impl Comparison {
     fn pointer_values(&mut self, a: Value<'_>, b: Value<'_>) -> bool {
         if a.metadata() != b.metadata()
             || !self.addresses(a.address(), b.address())
-            || !self.addresses(a.designation(), b.designation())
+            || !self.addresses(a.provenance(), b.provenance())
         {
             return false;
         }

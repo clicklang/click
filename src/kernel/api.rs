@@ -8,7 +8,7 @@ use super::loans::{
     BorrowedContractInputBacking, LoanLedger, LoanRefusal, LoanRefusalDiagnostic,
     LoanRefusalOperation, LoanRefusalSubject, LoanViewBinding, LoanViewBindings,
 };
-pub(super) use super::memory_provenance::*;
+pub(super) use super::memory_history::*;
 use super::prelude::*;
 pub(super) use super::resource_tracker::cell_source::*;
 use crate::instrumentation::ArtifactReuseRejection;
@@ -402,7 +402,7 @@ pub(crate) fn program_condition_fact_target_reaches_in_context(
     };
     // The source is fully represented by this context (or is a tautology).
     // Different reflexive source spellings must not repeat the same failed
-    // target question. Successes still run and record their own provenance.
+    // target question. Successes still run and record their own consulted premises.
     super::closure_memoized_fact_check(
         super::ClosureFactCheck::ConditionTarget,
         &[target],
@@ -422,15 +422,15 @@ pub fn prove_program_condition_fact_target_transport(
     target: &Proposition,
     assumptions: &PureFactContext,
 ) -> Option<Theorem> {
-    let (proved, premises) = crate::kernel::collect_reasoning_provenance(|| {
-        crate::kernel::capture_implicit_reasoning_provenance(|| {
+    let (proved, premises) = crate::kernel::collect_consulted_premises(|| {
+        crate::kernel::capture_implicit_consulted_premises(|| {
             program_condition_fact_target_reaches_in_context(source, target, assumptions)
         })
     });
     if !proved {
         return None;
     }
-    // Provenance collection proposes an output-sized premise set; it is not
+    // Consulted-premise collection proposes an output-sized premise set; it is not
     // itself authority. Recheck against only that set plus the explicit
     // source, so an unrecorded ambient dependency can only make construction
     // fail, never disappear into the exported theorem.
@@ -653,31 +653,30 @@ impl LoopFinalExitCandidate {
     }
 }
 
-/// One certified body path that left the loop through `break`.
+/// One certified iteration path that exits instead of reaching the back edge.
 ///
-/// A `break` is an exit, not a back edge: the invariants are not closed on
-/// it and no measure is required to decrease. The proof layer supplies the
-/// state the path reached and the facts retained there; the loop rule joins
-/// every break exit with the guard-false exit into the single successor the
-/// enclosing frontier continues from, so no way out of the loop is dropped.
+/// Written breaks, false tests and checked natural exits carry the state and
+/// facts they reached. They owe no back-edge invariant closure or decrease.
+/// The loop rule joins these paths with its direct guard-false exit into the
+/// single successor the enclosing frontier continues from.
 #[derive(Clone, Debug)]
-pub(crate) struct LoopBreakExit {
+pub(crate) struct LoopEarlyExit {
     state: ExecutionState,
     /// A checked exit is copied into the loop rule; its facts stay shared.
     pure_facts: LoopExitFacts,
     loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
 }
 
-impl PartialEq for LoopBreakExit {
+impl PartialEq for LoopEarlyExit {
     fn eq(&self, other: &Self) -> bool {
         self.state == other.state
             && self.pure_facts == other.pure_facts
             && self.loan_evidence == other.loan_evidence
     }
 }
-impl Eq for LoopBreakExit {}
+impl Eq for LoopEarlyExit {}
 
-impl LoopBreakExit {
+impl LoopEarlyExit {
     pub(crate) fn new(state: ExecutionState, pure_facts: Vec<Proposition>) -> Self {
         crate::instrumentation::record_deterministic_work(pure_facts.len());
         Self {
@@ -3178,7 +3177,7 @@ pub fn program_lower_spec_proposition_at_state(
     assumptions: &PureFactContext,
 ) -> Result<(Proposition, Vec<Proposition>, Vec<Proposition>), String> {
     let (proposition, facts, obligations, _) =
-        program_lower_spec_proposition_at_state_with_provenance(
+        program_lower_spec_proposition_at_state_with_head_origins(
             state,
             proposition,
             entry_state,
@@ -3187,13 +3186,13 @@ pub fn program_lower_spec_proposition_at_state(
     Ok((proposition, facts, obligations))
 }
 
-/// [`program_lower_spec_proposition_at_state`], also reporting the head chain of
-/// the lowered proposition: which of its outermost nodes this lowering
-/// inserted as a guard, which were written, and the exact kernel variable
+/// [`program_lower_spec_proposition_at_state`], also reporting the origin of
+/// each node in the lowered proposition's head chain: which of its outermost
+/// nodes this lowering inserted as a guard, which were written, and the exact kernel variable
 /// each written universal bound its written name to. A proof that
 /// introduces the head of this goal reads the record instead of inferring
 /// the correspondence from the shape the written syntax happens to share.
-pub fn program_lower_spec_proposition_at_state_with_provenance(
+pub fn program_lower_spec_proposition_at_state_with_head_origins(
     state: &ExecutionState,
     proposition: &SpecProposition,
     entry_state: Option<&ExecutionState>,
@@ -5080,6 +5079,7 @@ pub(crate) fn prove_symbolic_execution_statement_verification_paths_with_environ
 fn statement_outcome_memory(outcome: &StatementOutcome) -> Option<&Memory> {
     match outcome {
         StatementOutcome::Normal(state)
+        | StatementOutcome::LoopTestFalse(state)
         | StatementOutcome::Break(state)
         | StatementOutcome::Continue(state)
         | StatementOutcome::Jump { state, .. } => Some(state.memory()),
@@ -5101,7 +5101,7 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases(
     initialization_proven: bool,
     preservation_proven: bool,
     final_exit_candidates: Vec<LoopFinalExitCandidate>,
-    break_exits: Vec<LoopBreakExit>,
+    early_exits: Vec<LoopEarlyExit>,
     return_exits: Vec<LoopReturnExit>,
 ) -> (SymbolicExecution, Option<VerifiedLoopRule>) {
     let mut budget = ExecutionBudget::for_new_execution().with_execution_statement_cost(&statement);
@@ -5113,7 +5113,7 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases(
         initialization_proven,
         preservation_proven,
         final_exit_candidates,
-        break_exits,
+        early_exits,
         return_exits,
         &mut budget,
     )
@@ -5127,7 +5127,7 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases_using_budget(
     initialization_proven: bool,
     preservation_proven: bool,
     final_exit_candidates: Vec<LoopFinalExitCandidate>,
-    break_exits: Vec<LoopBreakExit>,
+    early_exits: Vec<LoopEarlyExit>,
     return_exits: Vec<LoopReturnExit>,
     budget: &mut ExecutionBudget,
 ) -> (SymbolicExecution, Option<VerifiedLoopRule>) {
@@ -5155,7 +5155,7 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases_using_budget(
         initialization_proven,
         preservation_proven,
         &final_exit_candidates,
-        &break_exits,
+        &early_exits,
         &return_exits,
         budget,
         &mut variables,

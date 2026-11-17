@@ -118,7 +118,7 @@ pub(crate) fn clear_state_operand_keys() {
 pub(crate) struct MemoryErasedPointerValueKey {
     program_type: ProgramType,
     address: MemoryErasedPointerKey,
-    designation: MemoryErasedPointerKey,
+    provenance: MemoryErasedPointerKey,
     opaque_extent: Option<MemoryErasedPointerKey>,
     extent: Option<(MemoryErasedPointerKey, MemoryErasedBitvectorKey)>,
     extent_known: bool,
@@ -127,7 +127,7 @@ pub(crate) struct MemoryErasedPointerValueKey {
 impl MemoryErasedPointerValueKey {
     fn requires_checked_match(&self) -> bool {
         self.address.requires_checked_match()
-            || self.designation.requires_checked_match()
+            || self.provenance.requires_checked_match()
             || self
                 .opaque_extent
                 .as_ref()
@@ -142,7 +142,7 @@ fn memory_erased_pointer_value_key(pointer: &PointerValue) -> MemoryErasedPointe
     MemoryErasedPointerValueKey {
         program_type: pointer.program_type(),
         address: memory_erased_pointer_key(pointer.pointer()),
-        designation: memory_erased_pointer_key(pointer.designation()),
+        provenance: memory_erased_pointer_key(pointer.provenance()),
         opaque_extent: if pointer.extent_is_known() {
             None
         } else {
@@ -922,7 +922,7 @@ enum AlphaProgramValueKey {
         pointee_volatile: bool,
         pointee_constant: bool,
         pointer: AlphaPointerKey,
-        designation: AlphaPointerKey,
+        provenance: AlphaPointerKey,
         extent_known: bool,
         opaque_extent: Option<AlphaPointerKey>,
         /// The subobject extent's start key and byte width.
@@ -2279,8 +2279,8 @@ fn alpha_program_value_key_with_bindings<const ALLOW_LOADS: bool>(
                 bindings,
                 next_binder,
             )?,
-            designation: alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
-                pointer.designation(),
+            provenance: alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
+                pointer.provenance(),
                 bindings,
                 next_binder,
             )?,
@@ -4715,7 +4715,7 @@ mod memory_state_alpha_tests {
             4,
             &memory,
         );
-        // The load registry keeps the provenance-projected state used by
+        // The load registry keeps the history-projected state used by
         // the minted variable.  Use those exact identities for the explicit
         // forms below; the original `memory` may project to a different DAG
         // version even though it names the same source cell.

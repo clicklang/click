@@ -329,7 +329,7 @@ fn order_equality_and_access_checks_cannot_restore_candidate_enumeration() {
 #[test]
 fn checked_provenance_cannot_restore_alias_bucket_search() {
     for (function, method) in [
-        ("designations_equal", "direct_aliases"),
+        ("provenance_equal", "direct_aliases"),
         ("opaque_extents_equal", "direct_aliases"),
         (
             "known_value_of_framed_pointer_read",

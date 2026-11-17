@@ -1308,7 +1308,7 @@ fn single_solve_call_and_block_have_the_same_frontier_semantics() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_09")]
-fn every_claim_proof_form_retains_expandable_provenance() {
+fn every_claim_proof_form_retains_expandable_evidence() {
     let c_source = r#"
             int32 clamp(int32 p[1], int32 x) {
                 if (x < 0) {
@@ -1335,7 +1335,7 @@ fn every_claim_proof_form_retains_expandable_provenance() {
             .expanded_proof_certificate()
             .unwrap_or_else(|error| {
                 panic!(
-                    "a verified claim must retain surface-expressible provenance: {}",
+                    "a verified claim must retain surface-expressible evidence: {}",
                     error.message()
                 )
             });
@@ -2127,7 +2127,7 @@ fn leading_logical_have_decomposition_stays_on_one_proof() {
 
     let expanded = verified[0]
         .expanded_proof_tactics()
-        .expect("the checked logical scopes should expose retained provenance");
+        .expect("the checked logical scopes should expose retained evidence");
     let expanded_debug = format!("{expanded:#?}");
     for operation in ["Have", "Known", "Intro", "Cases", "If"] {
         assert!(
@@ -2209,7 +2209,7 @@ fn leading_universal_have_scopes_stay_on_one_proof() {
 
     let expanded = verified[0]
         .expanded_proof_tactics()
-        .expect("the checked universal scopes should expose retained provenance");
+        .expect("the checked universal scopes should expose retained evidence");
     let expanded_debug = format!("{expanded:#?}");
     for operation in ["Intro", "Instantiate", "Enumerate"] {
         assert!(
@@ -3565,7 +3565,7 @@ test_batches! {
         unfolds_general_sorted_predicate,
         verifies_click_proposition_logic,
         single_solve_call_and_block_have_the_same_frontier_semantics,
-        every_claim_proof_form_retains_expandable_provenance,
+        every_claim_proof_form_retains_expandable_evidence,
     ],
     logical_tactics_batch_10: [
         mid_execution_witness_solve_have_expands_to_a_simple_certificate,

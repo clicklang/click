@@ -11,7 +11,7 @@ lower(raise(x)) = x
 ```
 
 Raising preserves types, bindings, value identity, and snapshot identity. It
-uses names and provenance retained where values are introduced; it does not
+uses names and origins retained where values are introduced; it does not
 try historical states until a candidate happens to lower correctly. Printing
 then converts that Surface AST to source text. Printing chooses syntax and
 layout; it does not discover names or reconstruct missing semantic information.
@@ -51,7 +51,7 @@ checked. Each one costs completeness, expansion, or a readable report.
   `None`, or to dropping the fact.
 - **Name a value where it is introduced.** A step that introduces a fresh
   value or memory state (a call result, a havoc, an allocation, a state
-  between recorded points) gives it a name from its provenance at that
+  between recorded points) gives it a name from its origin at that
   point. Do not recover a name later from whatever locals happen to hold the
   value. A non-void call's result is `<region>.result`, including calls whose
   source discards the return value. The checked call transition retains the
@@ -371,7 +371,7 @@ Baseline (2026-11-16, ordinary mdtest corpus, both runs passing):
   Integer and other comparisons round-trip about 77% of the time, pointer
   comparisons about 31%: pointer reads named by the memory they were read in
   rather than their version point, and pointer values with no recorded
-  provenance, account for most of the rest. Before the audit used recorded
+  origin, account for most of the rest. Before the audit used recorded
   points (2026-11-16) it reported 9,343 `same` of 54,642 records, because no
   `at(point, ..)` or `old(..)` spelling was available to it. Recurring
   `differs` shapes: an entry read raised through a current name (`old(*result) ==
@@ -405,23 +405,28 @@ the one the text names.
   value. The version walk below is that case.
 - Not allowed: substituting a known-equal term, constant-folding a
   comparison the facts decide, dropping a decided guard or disjunct, or
-  choosing a term by known provenance. Equalities stay in the equality graph
+  choosing a term by known origin. Equalities stay in the equality graph
   and the comparison form, which every check consults.
 
-Closed native order comparisons at 8, 16, 32, and 64 bits retain their comparison
+Closed native comparisons at 8, 16, 32, and 64 bits retain their comparison
 node, format, and literal operands during logical lowering. Their truth is
 established by checking, including when exact rewriting removed the last
 variable before the comparison was printed. This does not change literal
-arithmetic evaluation or the existing 32-bit equality normal forms. Closed
-64-bit equalities retain their comparison node at the native `Int64` word
-equality format, with their literal operand payloads.
+arithmetic evaluation. Comparisons of
+the same variable at 32/64 bits also retain their comparison node: recognition
+compares the two variable IDs, without consulting facts or walking expression
+trees. Closed 64-bit equalities retain their comparison node at the native
+`Int64` word equality format, with their literal operand payloads.
 
-Machine conditionals with closed 32/64-bit order guards or closed 64-bit
-equality guards retain their `if` node and guard during logical lowering. Their arm domains remain guarded, including
+Machine conditionals with closed 32/64-bit order guards, closed 64-bit equality
+guards, or same-variable 32/64-bit comparison guards retain their `if` node and
+guard during logical lowering. Their arm domains remain guarded, including
 unselected reads and invalid shifts. Checking selects the arm when needed.
 The comparison boundary recognizes conditionals guarded by a Boolean variable
 or a 32/64-bit comparison over literal/variable operands, with literal/variable
-arms, as fixed-size native atoms. Negated Boolean variables use the same guard
+arms or one bitwise operation (`&`, `|`, `^`) over literal/variable arm operands,
+as fixed-size native atoms. Bitwise recognition reads only the operation and
+its immediate leaves. Negated Boolean variables use the same guard
 with swapped arms. It retains the comparison family without exporting arithmetic
 DAGs or selecting an arm from ambient facts. Other result families retain their existing
 selected-arm behavior; literal Boolean and closed 32-bit equality guards keep
@@ -451,7 +456,7 @@ remain opaque instead of acquiring an invented value.
 Logical object-pointer reads now retain their version names, including when
 memory stores a complete pointer at the cell. The read's complete stored value
 is related through `EqualityGraph::register_logical_read_values` and the
-producer's read equations; its address, bounds, and designation are not folded
+producer's read equations; its address, bounds, and provenance are not folded
 into the lowered term. The cached-prefix route also excludes logical reads
 from fact-supported recovery, even outside specification scope.
 
@@ -543,7 +548,7 @@ term ([the raise-lower principle](#the-raise-lower-principle)).
 kind, and groups the differences by where the two terms first diverge. It
 does not observe C execution, which may depend on facts.
 Historical defects included comparisons folded using facts, pointer and aliased
-reads resolved through known values, comparison kinds chosen by provenance,
+reads resolved through known values, comparison kinds chosen by origin,
 and decided guards dropped. Such equalities belong in checking, not in the
 term lowering produces.
 
@@ -671,7 +676,7 @@ The census sorts a miss into one of three gaps, each with its own fix:
   have names, but the legacy raising search misses it: reflexive pointer
   equalities such as `p == p`, `viewable(p[0..1])` after an `unfold`, an
   applied theorem's conclusion such as `cd(n - 1) == 0`, and goals with no
-  recorded presentation. The fix is total raising from retained provenance.
+  recorded presentation. The fix is total raising from retained origins.
 - **A value with no name.** The fact mentions a value or address nothing
   names, printed `<unnamed A>` or `<pointer A>`: a callee's result, a havoc,
   an allocation. The fix is naming at introduction.

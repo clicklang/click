@@ -2854,11 +2854,11 @@ fn pointer_frame_through_seeded_cells_ignores_run_length() {
         let mut work = Vec::new();
         for _ in 0..3 {
             let (equal, units) = crate::instrumentation::measure_deterministic_work(|| {
-                crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+                crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
                     &before,
                     &seeded_read,
                     &context,
-                ) && crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+                ) && crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
                     &seeded_read,
                     &after,
                     &context,
@@ -2878,7 +2878,7 @@ fn pointer_frame_through_seeded_cells_ignores_run_length() {
                     .store(address, ProgramValue::Int32(9u32.into())),
             );
             assert!(
-                !crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+                !crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
                     &before,
                     &Pointer::loaded_value(&changed, &field),
                     &context,
@@ -2894,14 +2894,14 @@ fn pointer_frame_through_seeded_cells_ignores_run_length() {
             ),
         ));
         assert!(
-            !crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+            !crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
                 &before,
                 &Pointer::loaded_value(&changed, &field),
                 &context,
             )
         );
         assert!(
-            !crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+            !crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
                 &before,
                 &after.offset_by_bytes(4),
                 &context,
@@ -3081,7 +3081,7 @@ fn cold_pointer_frame_refusals_do_not_scan_history() {
             let before = Pointer::loaded_value(&initial, &field);
             let after = Pointer::loaded_value(&current, &field);
             let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
-                crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+                crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
                     &before, &after, &facts,
                 )
             });
@@ -3239,7 +3239,7 @@ fn pointer_read_naming_samples(with_history: bool, same_cell: bool) -> Vec<(u32,
         for ((address, read), value) in reads.iter().zip(values.iter()) {
             assert_eq!(value.pointer(), read);
             let exact = Pointer::loaded_value(&current, address);
-            assert_eq!(value.designation(), &exact);
+            assert_eq!(value.provenance(), &exact);
             assert_eq!(value.opaque_extent(), Some(&exact));
         }
         samples.push((size, work));

@@ -119,8 +119,8 @@ fn partial_owned_borrow_returns_only_its_slice_with_the_callers_opaque_domain() 
     assert_eq!(returned_range.start(), &1u32.into());
     assert_eq!(returned_range.end(), &2u32.into());
     assert_eq!(
-        returned_range.access_designation(),
-        owner.memory_own_range().unwrap().access_designation()
+        returned_range.access_provenance(),
+        owner.memory_own_range().unwrap().access_provenance()
     );
     assert!(!plan.callee_resources.satisfies_fact(&owner, &assumptions));
     let restored = plan
@@ -4101,7 +4101,7 @@ fn joint_planner_partitions_disjoint_write_and_view_ranges_in_any_clause_order()
         caller,
         callee,
     )
-    .expect("a residual fragment of the unique owner retains its provenance");
+    .expect("a residual fragment of the unique owner retains its source occurrence");
     assert!(
         reverse
             .callee_resources

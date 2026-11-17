@@ -36,7 +36,7 @@ removed, so it has to stay small.
 | Symbolic execution | Run statements, calls, and loops on a symbolic state | fast | `src/kernel/eval*`, `src/kernel/functions.rs`, `src/kernel/loops.rs`, `src/kernel/proof/execution.rs` |
 | Fact store | Hold the path's facts in persistent indexes, with the equality closure and the difference graph | fast | `PureFactStore` in `src/kernel/proof/facts.rs`, its `PureFactContext` component in `src/kernel/assumptions.rs`, `src/kernel/equality_graph*`, `src/kernel/difference_graph.rs` |
 | Condition decision | Decide one condition (order, overflow, equality, consistency) from the facts | fast | `PureFactContext::decide`, `src/kernel/assumptions/condition_reasoning/` |
-| Memory | Memory states, the memory derivation DAG, and load and store resolution | fast | `src/kernel/primitives/cell_store.rs`, `src/kernel/reasoning/memory_resolution.rs`, `src/kernel/memory_provenance.rs` |
+| Memory | Memory states, the memory derivation DAG, and load and store resolution | fast | `src/kernel/primitives/cell_store.rs`, `src/kernel/reasoning/memory_resolution.rs`, `src/kernel/memory_history.rs` |
 | Resources | Ownership, views, loans, folds, and separation | fast | `src/kernel/primitives/resource_algebra.rs`, `src/kernel/resource_tracker/`, `src/kernel/loans.rs` |
 | Simple tactics | Apply one checked step to a persistent proof state | fast | `src/kernel/proof/object.rs`, `src/surface/proof/proof_object/`, `src/surface/proof/checked_drivers/` |
 | Proof construction | Construct ordinary proof steps and check local arithmetic primitives | fast | `src/kernel/proof/{object,fact_reasoning,arithmetic_special}.rs`, `src/surface/proof_certificate.rs` |
@@ -148,7 +148,7 @@ range and canonical frame identity. Adding a different range invalidates the old
 match. Footprint preparation belongs to ownership deltas, and explicit-premise
 indexing pays for the written proposition.
 
-Checked call returns retain entry-borrow provenance beside each emitted resource
+Checked call returns retain entry-borrow origin beside each emitted resource
 occurrence, including after guarded clauses are skipped or dependent clauses
 are deferred. Restore these borrows before admitting the other outputs. Produced
 composite frontiers are checked against the restored frame plus the existing
@@ -161,7 +161,7 @@ An entry-borrow marker is recorded only when evaluation retrieves the checked
 entry occurrence; an unmatched or deferred description keeps ordinary admission.
 
 Return construction captures each source occurrence ID from admission alongside
-its entry-borrow provenance. Composition pairs that ID with the destination ID
+its entry-borrow origin. Composition pairs that ID with the destination ID
 returned by restoration or admission. Core projection selects the owned source
 by its occurrence ID and attaches observations to the paired destination; it does
 not enumerate equal descriptions or reconstruct occurrence ranks. Equal resource
@@ -182,11 +182,11 @@ Whole-scalar consumption also requires uniqueness, established by inspecting at
 most two indexed entries. Explicit footprint composition retains its separate
 output-sensitive interface. The resource checker cannot import or call the raw
 access-candidate API. Object-provenance queries use the object-identity index's
-nonempty witness or singleton symbolic supplier. Designation/opaque-extent
+nonempty witness or singleton symbolic supplier. Provenance/opaque-extent
 fallback comparisons use a singleton direct alias after indexed equality fails.
 Framed pointer-value recovery requires one address alias and one full-pointer
 source in that address bucket; multiple states do not authorize a hidden
-source search. Complete-read, state, designation and extent checks still
+source search. Complete-read, state, provenance and extent checks still
 apply to the selected source. The direct order, supplier, and provenance-source
 lookup stages have their own `CheckingWorkScope`, charged to one explicit query
 key. These scopes do not excuse scans or cover general memory-history traversal.
@@ -662,12 +662,12 @@ subtraction and multiplication, then exact conversion to the indexed byte
 cursor; native pieces are never narrowed to 32 bits. An unrepresentable length
 or coordinate refuses composition without entering the candidate fallback.
 For a native request, each selected supplier must satisfy its typed access
-designation, as the previous whole-range entailment route required.
+provenance, as the previous whole-range entailment route required.
 A constant native request may have symbolic intermediate partition points.
 When its nominated supplier has symbolic bounds, consumption follows unique
 exact-start entries, applying the existing binary range-composition rule.
 Every selected piece must lie inside the request; a gap, ambiguous successor,
-cycle, wrong designation, or non-unit owner refuses without trying alternatives.
+cycle, wrong provenance, or non-unit owner refuses without trying alternatives.
 Consumption and non-consuming queries share this persistent operation. Scaling
 controls grow unrelated same-base fragments beside a fixed symbolic partition.
 Symbolic unit-owned requests use the same singleton supplier and exact-endpoint
@@ -694,7 +694,7 @@ preserve parent ownership and branch isolation. A structurally known shorter
 selected footprint skips whole-supplier coverage before adjacent composition;
 byte lengths include element widths, with no order-premise or pointer-offset
 search to establish that refusal. Typed queries check each selected piece's
-access designation for both narrow and native coordinates; narrow byte
+access provenance for both narrow and native coordinates; narrow byte
 transfers retain their suppliers' carriers instead. After the first
 piece, constant fragment composition requires exact adjacency and refuses
 selected overlapping suppliers. Other-quantity memory satisfaction routes

@@ -820,8 +820,8 @@ mod compound_observation_lookup_tests {
         );
         let native_guard = guard(native.clone(), false);
         let native_context = PureFactContext::new().assume_proposition(native_guard.clone());
-        let (proved, sources) = collect_reasoning_provenance(|| {
-            capture_implicit_reasoning_provenance(|| native_context.proves_exact(&shared_guard))
+        let (proved, sources) = collect_consulted_premises(|| {
+            capture_implicit_consulted_premises(|| native_context.proves_exact(&shared_guard))
         });
         assert!(proved);
         assert_eq!(sources, vec![native_guard.clone()]);
@@ -870,7 +870,7 @@ impl PureFactContext {
                 })
                 .and_then(|sources| sources.iter().next())
             {
-                record_implicit_reasoning_provenance(self, source);
+                record_implicit_consulted_premises(self, source);
                 return Some(truth);
             }
         }
@@ -891,7 +891,7 @@ impl PureFactContext {
         }
         for truth in [true, false] {
             if let Some(source) = self.selected_comparison_source(condition, truth) {
-                record_implicit_reasoning_provenance(self, source);
+                record_implicit_consulted_premises(self, source);
                 return Some(truth);
             }
         }
@@ -1037,12 +1037,12 @@ mod resource_relation_tests {
                 ] {
                     assert!(!facts.proves_exact(&relation(different, pointer.clone(), separate)));
                 }
-                let different_designation = pointer
+                let different_provenance = pointer
                     .clone()
-                    .with_designation(std::sync::Arc::new(address.offset_by_bytes(4)));
+                    .with_provenance(std::sync::Arc::new(address.offset_by_bytes(4)));
                 assert!(!facts.proves_exact(&relation(
                     MachineTerm::Variable(name),
-                    different_designation,
+                    different_provenance,
                     separate
                 )));
                 let different_pointer =

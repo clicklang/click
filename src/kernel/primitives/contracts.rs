@@ -2394,7 +2394,7 @@ impl MemoryRange {
         Self {
             opaque_extent: carrier.opaque_extent.clone(),
             carrier_extent_known: carrier.extent_is_known(),
-            designation: std::sync::Arc::new(base.object_identity()),
+            provenance: std::sync::Arc::new(base.object_identity()),
             typed_carrier: false,
             base,
             start_bound: start,
@@ -2433,7 +2433,7 @@ impl MemoryRange {
     pub(in crate::kernel) fn pointer_carrier(&self) -> PointerValue {
         PointerValue {
             pointer: self.base.clone(),
-            designation: self.designation.clone(),
+            provenance: self.provenance.clone(),
             opaque_extent: self.opaque_extent.clone(),
             program_type: ProgramType::VoidPointer,
             qualifiers: self.carrier_extent_known.then(|| {
@@ -2446,7 +2446,7 @@ impl MemoryRange {
     }
 
     pub(in crate::kernel) fn with_pointer_carrier(mut self, value: &PointerValue) -> Self {
-        self.designation = value.designation.clone();
+        self.provenance = value.provenance.clone();
         self.opaque_extent = value.opaque_extent.clone();
         self.carrier_extent_known = value.extent_is_known();
         self.typed_carrier = true;
@@ -2463,11 +2463,11 @@ impl MemoryRange {
         self
     }
 
-    pub(in crate::kernel) fn with_designation(
+    pub(in crate::kernel) fn with_provenance(
         mut self,
-        designation: std::sync::Arc<Pointer>,
+        provenance: std::sync::Arc<Pointer>,
     ) -> Self {
-        self.designation = designation;
+        self.provenance = provenance;
         self
     }
 
@@ -2477,7 +2477,7 @@ impl MemoryRange {
     }
 
     pub(in crate::kernel) fn with_carrier_of(mut self, source: &Self) -> Self {
-        self.designation = source.designation.clone();
+        self.provenance = source.provenance.clone();
         self.formation_coverage = source.formation_coverage.clone();
         self.typed_carrier = source.typed_carrier;
         self.opaque_extent = source.opaque_extent.clone();
@@ -2485,9 +2485,9 @@ impl MemoryRange {
         self
     }
 
-    pub(in crate::kernel) fn access_designation(&self) -> (&Pointer, Option<&Pointer>) {
+    pub(in crate::kernel) fn access_provenance(&self) -> (&Pointer, Option<&Pointer>) {
         (
-            &self.designation,
+            &self.provenance,
             if self.carrier_extent_known {
                 None
             } else {
@@ -2500,7 +2500,7 @@ impl MemoryRange {
     /// view performs no inference, normalization, or proof-state traversal.
     pub(crate) fn diagnostic_pointer_metadata(&self) -> (&Pointer, Option<&Pointer>, bool) {
         (
-            &self.designation,
+            &self.provenance,
             self.opaque_extent.as_deref(),
             self.carrier_extent_known,
         )
@@ -2662,7 +2662,7 @@ impl MemoryRange {
         Self {
             kind: self.kind,
             formation_coverage: self.formation_coverage.clone(),
-            designation: self.designation.clone(),
+            provenance: self.provenance.clone(),
             typed_carrier: self.typed_carrier,
             opaque_extent: self.opaque_extent.clone(),
             carrier_extent_known: self.carrier_extent_known,
@@ -3968,10 +3968,10 @@ impl ExecutionEnvironment {
             { return false; }
             // A rule stepped under the very context it was certified under
             // finds each prerequisite exactly there: the two hold the same
-            // fact sets by identity. Asking each still records reasoning
-            // provenance, so a capture asks them all.
+            // fact sets by identity. Asking each still records consulted
+            // premises, so a capture asks them all.
             let same_context = || {
-                !crate::kernel::assumptions::implicit_reasoning_provenance_capturing()
+                !crate::kernel::assumptions::implicit_consulted_premises_capturing()
                     && rule.required_assumptions.holds_the_facts_of(assumptions)
             };
             let assumptions_match = || same_context() || rule

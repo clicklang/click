@@ -49,7 +49,8 @@ function length(xs: List<int32>) -> Integer
 
 theorem length_nonnegative(xs: List<int32>) {
     ensures length(xs) >= 0 by {
-        induct(xs) as ih {
+        let ih = induct(xs);
+        match xs {
             List::Nil => {
                 unfold(length(List<int32>::Nil));
                 solve();

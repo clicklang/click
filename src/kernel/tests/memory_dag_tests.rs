@@ -340,7 +340,7 @@ fn checked_call_event_equality_requires_one_proof_owned_event_and_exact_query() 
 }
 
 #[test]
-fn checked_load_equality_retains_canonical_projection_provenance() {
+fn checked_load_equality_retains_canonical_projection_derivation() {
     let source = Memory::new()
         .with_block_without_derivation("arg-memory", 16)
         .with_block_without_derivation("local:i", 4);
@@ -842,7 +842,7 @@ fn entry_separation_does_not_frame_a_store_after_its_bases_become_equal() {
         right: Box::new(Resource::Memory(right_range.clone())),
     };
     let entry_assumptions = PureFactContext::new().assume_proposition(separation);
-    let retained = crate::kernel::memory_provenance::typed_store_separated_ranges_evidence(
+    let retained = crate::kernel::memory_history::typed_store_separated_ranges_evidence(
         &left,
         4,
         &right,
@@ -878,7 +878,7 @@ fn entry_separation_does_not_frame_a_store_after_its_bases_become_equal() {
         "a stale entry partition cannot prove overlapping ranges separate"
     );
     assert!(
-        crate::kernel::memory_provenance::typed_store_separated_ranges_evidence(
+        crate::kernel::memory_history::typed_store_separated_ranges_evidence(
             &left,
             4,
             &right,
@@ -1366,7 +1366,7 @@ fn loop_kept_frame_preserves_only_complete_pointer_reads() {
         "different retained frames need different states"
     );
     let unchanged = |after: &Memory| {
-        crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+        crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
             &Pointer::loaded_value(&before, &field),
             &Pointer::loaded_value(&crate::kernel::intern_memory_ref(after), &field),
             &PureFactContext::new(),
@@ -2206,10 +2206,10 @@ fn canonical_form_resolves_loads_at_any_depth() {
                 Box::new(MachineTerm::constant(1))
             );
         }
-        crate::kernel::memory_provenance::clear_canonical_form_caches();
-        crate::kernel::memory_provenance::reset_atomic_canonicalization_term_visits();
+        crate::kernel::memory_history::clear_canonical_form_caches();
+        crate::kernel::memory_history::reset_atomic_canonicalization_term_visits();
         let canonical = crate::kernel::api::canonicalize_atomic_loads(&term);
-        let visits = crate::kernel::memory_provenance::atomic_canonicalization_term_visits();
+        let visits = crate::kernel::memory_history::atomic_canonicalization_term_visits();
         assert!(
             visits <= 2 * depth + 2,
             "canonicalization should visit each explicit term node once: depth={depth}, visits={visits}",
@@ -2427,7 +2427,7 @@ fn a_session_reset_empties_the_block_epoch_memo() {
         "the walk should have recorded its epoch"
     );
 
-    crate::kernel::memory_provenance::clear_canonical_form_caches();
+    crate::kernel::memory_history::clear_canonical_form_caches();
     assert_eq!(
         crate::kernel::resource_tracker::block_version_memo_len(),
         0,
@@ -2681,7 +2681,7 @@ fn a_store_inside_a_read_refutes_the_load_equality_at_every_offset() {
                 .store(write, crate::kernel::uint8(7))
         };
         let history_about = |after: &Memory| {
-            crate::kernel::memory_provenance::recorded_load_history(
+            crate::kernel::memory_history::recorded_load_history(
                 &crate::kernel::intern_memory_ref(&base),
                 &crate::kernel::intern_memory_ref(after),
                 &read,
@@ -2701,13 +2701,13 @@ fn a_store_inside_a_read_refutes_the_load_equality_at_every_offset() {
             let after = byte_written_at(offset);
             assert_eq!(
                 with_extended_dag_bridging(|| history_about(&after)),
-                crate::kernel::memory_provenance::LoadHistory::DifferentVersions,
+                crate::kernel::memory_history::LoadHistory::DifferentVersions,
                 "a one-byte write {offset} bytes into a {read_bytes}-byte read is a byte that \
                  read returns, so the history holds two versions of the cell"
             );
             assert_eq!(
                 with_extended_dag_bridging(|| history_about(&after)),
-                crate::kernel::memory_provenance::LoadHistory::DifferentVersions,
+                crate::kernel::memory_history::LoadHistory::DifferentVersions,
                 "the memoized answer to the repeated question is the same answer"
             );
             assert!(
@@ -2728,7 +2728,7 @@ fn a_store_inside_a_read_refutes_the_load_equality_at_every_offset() {
         let past_the_end = byte_written_at(i64::from(read_bytes));
         assert_ne!(
             with_extended_dag_bridging(|| history_about(&past_the_end)),
-            crate::kernel::memory_provenance::LoadHistory::DifferentVersions,
+            crate::kernel::memory_history::LoadHistory::DifferentVersions,
             "a write past the read's last byte writes none of its bytes"
         );
         assert!(
@@ -2919,7 +2919,7 @@ fn a_differing_cell_inside_a_read_stops_the_two_states_matching() {
         };
         for offset in 1..i64::from(read_bytes) {
             assert!(
-                !crate::kernel::memory_provenance::memories_directly_match_for_pointer_load(
+                !crate::kernel::memory_history::memories_directly_match_for_pointer_load(
                     &cell_holding(offset, 1),
                     &cell_holding(offset, 2),
                     &read,
@@ -2930,7 +2930,7 @@ fn a_differing_cell_inside_a_read_stops_the_two_states_matching() {
             );
         }
         assert!(
-            crate::kernel::memory_provenance::memories_directly_match_for_pointer_load(
+            crate::kernel::memory_history::memories_directly_match_for_pointer_load(
                 &cell_holding(i64::from(read_bytes), 1),
                 &cell_holding(i64::from(read_bytes), 2),
                 &read,
@@ -3211,7 +3211,7 @@ fn direct_pointer_reads_retain_their_projection_definitions() {
     let address = Pointer::symbolic(Variable(98_340));
     let alias = Pointer::symbolic(Variable(98_341));
     let source = intern_memory(Memory::new().with_block_without_derivation("local:projection", 4));
-    let projected = crate::kernel::memory_provenance::canonical_value_load_memory(
+    let projected = crate::kernel::memory_history::canonical_value_load_memory(
         &source,
         &address,
         crate::kernel::C_POINTER_BYTE_WIDTH,
@@ -3573,8 +3573,8 @@ fn initialization_metadata_keeps_complete_pointer_identity_without_access_author
     };
     let facts = PureFactContext::new();
     let original = read(&before);
-    assert_eq!(original.designation(), read(&after).designation());
-    assert!(facts.pointer_designations_match(&original, &read(&after)));
+    assert_eq!(original.provenance(), read(&after).provenance());
+    assert!(facts.pointer_provenance_match(&original, &read(&after)));
     assert!(facts.pointers_known_equal(original.pointer(), read(&after).pointer()));
     assert!(!ResourceContext::new().permits_memory_read(&address, 8, &facts));
 
@@ -3584,7 +3584,7 @@ fn initialization_metadata_keeps_complete_pointer_identity_without_access_author
             .clone()
             .store(address.offset_by_bytes(4), crate::kernel::uint8(1u32)),
     );
-    assert!(!facts.pointer_designations_match(&original, &read(&overwritten)));
+    assert!(!facts.pointer_provenance_match(&original, &read(&overwritten)));
     assert!(!facts.pointers_known_equal(original.pointer(), read(&overwritten).pointer()));
 }
 
@@ -3688,7 +3688,7 @@ fn a_stored_value_resolves_only_a_read_of_its_own_address_and_width() {
             Box::new(read.clone()),
             crate::kernel::LoadKind::Int32,
         );
-        let resolved = crate::kernel::memory_provenance::resolve_load_along_memory_derivations(
+        let resolved = crate::kernel::memory_history::resolve_load_along_memory_derivations(
             memory,
             read,
             crate::kernel::LoadKind::Int32,
@@ -4194,7 +4194,7 @@ fn full_pointer_read_survives_a_join_of_stores_to_its_sibling() {
         panic!("complete pointer observations");
     };
     let preserved = facts.clone().assume_proposition(equality);
-    assert!(preserved.pointer_designations_match(&old, &new));
+    assert!(preserved.pointer_provenance_match(&old, &new));
     let earlier = Pointer::loaded_value(&before, q.pointer());
     let upper_half = Pointer {
         block: q.pointer().block.clone(),
@@ -4202,7 +4202,7 @@ fn full_pointer_read_survives_a_join_of_stores_to_its_sibling() {
     };
     let changed = intern_memory(joined.memory().clone().store(upper_half, int32(5)));
     let projection = intern_memory(
-        crate::kernel::memory_provenance::canonical_program_memory_for_pointer_load(
+        crate::kernel::memory_history::canonical_program_memory_for_pointer_load(
             &changed,
             q.pointer(),
         ),
@@ -4210,26 +4210,24 @@ fn full_pointer_read_survives_a_join_of_stores_to_its_sibling() {
     crate::kernel::reasoning::record_canonical_load_projection(&changed, &projection, q.pointer());
     let overwritten = Pointer::loaded_value(&projection, q.pointer());
     assert!(
-        !crate::kernel::memory_provenance::pointer_read_designations_equal(
+        !crate::kernel::memory_history::pointer_read_provenance_equal(
             &earlier,
             &overwritten,
             &facts
         )
     );
-    assert!(
-        !crate::kernel::memory_provenance::pointer_read_extents_equal(
-            &earlier,
-            &overwritten,
-            &facts
-        )
-    );
+    assert!(!crate::kernel::memory_history::pointer_read_extents_equal(
+        &earlier,
+        &overwritten,
+        &facts
+    ));
 }
 
 /// Caching a scalar read of the predecessor is not a write, including when
 /// the access exactly matches the seeded slot's address and width.
 #[test]
 fn seeded_scalar_read_keeps_its_predecessor_cell_version() {
-    use crate::kernel::memory_provenance::{LoadHistory, recorded_load_history};
+    use crate::kernel::memory_history::{LoadHistory, recorded_load_history};
     let assumptions = PureFactContext::new();
     for (ty, bytes, kind) in [
         (ProgramType::Int32, 4, crate::kernel::LoadKind::Int32),
@@ -4306,7 +4304,7 @@ fn numeric_address_byte_gaps_preserve_cache_and_read_history() {
         if shift >= 8 {
             let missing = PureFactContext::new();
             assert!(
-                crate::kernel::memory_provenance::indexed_store_byte_separation_evidence(
+                crate::kernel::memory_history::indexed_store_byte_separation_evidence(
                     &q, 8, &p, 8, &missing,
                 )
                 .is_none()
@@ -4332,7 +4330,7 @@ fn anchored_byte_separation_checks_full_width_and_scope() {
     };
     let context = PureFactContext::new().assume_proposition(separation.clone());
     let check = |context: &PureFactContext, bytes| {
-        crate::kernel::memory_provenance::indexed_store_byte_separation_evidence(
+        crate::kernel::memory_history::indexed_store_byte_separation_evidence(
             &q, 8, &p, bytes, context,
         )
         .is_some()
@@ -4392,7 +4390,7 @@ fn owned_byte_separation_survives_an_unknown_numeric_displacement() {
         LoadHistory::OneVersion(_)
     ));
     assert!(
-        crate::kernel::memory_provenance::indexed_store_byte_separation_evidence(
+        crate::kernel::memory_history::indexed_store_byte_separation_evidence(
             &q, 8, &p, 8, &address
         )
         .is_none()
@@ -4816,7 +4814,7 @@ fn abstract_reads_follow_address_equalities_in_the_shared_graph() {
     let source = intern_memory(
         Memory::new().with_block_without_derivation("local:abstract-read-projection", 4),
     );
-    let projected = crate::kernel::memory_provenance::canonical_value_load_memory(
+    let projected = crate::kernel::memory_history::canonical_value_load_memory(
         &source,
         &left,
         crate::kernel::ABSTRACT_VALUE_WIDTH,

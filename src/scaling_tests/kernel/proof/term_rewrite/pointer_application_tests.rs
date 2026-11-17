@@ -220,7 +220,7 @@ fn displaced_full_pointer_rewrite_scales_with_the_selected_offset() {
                     delta
                 ))
             );
-            assert_eq!(result.designation(), target.designation());
+            assert_eq!(result.provenance(), target.provenance());
             assert_eq!(result.opaque_extent(), target.opaque_extent());
             assert!(
                 work >= usize::try_from(size).unwrap(),

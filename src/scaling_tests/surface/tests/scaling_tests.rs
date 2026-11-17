@@ -2412,7 +2412,8 @@ fn model_ranked_loops(loop_count: usize) -> (String, String) {
          \n\
          theorem chain_len_is_nonnegative(m: Chain) {\n\
          \x20   ensures 0 <= chain_len(m) by {\n\
-         \x20       induct(m) as ih {\n\
+         \x20       let ih = induct(m);\n\
+         \x20       match m {\n\
          \x20           Chain::Nil => {\n\
          \x20               unfold(chain_len(Chain::Nil));\n\
          \x20               normalize();\n\
@@ -3471,7 +3472,7 @@ fn an_array_fact_carried_across_local_stores_scales_linearly() {
 /// members.
 ///
 /// This is the shape that pays for
-/// `memory_provenance::owned_composition_store_separated_evidence`: it runs
+/// `memory_history::owned_composition_store_separated_evidence`: it runs
 /// per surviving cell per store, and looks each side up in the composition's
 /// own block bucket, so a context holding many owned ranges is exactly where
 /// a per-member scan would show.
@@ -10568,6 +10569,7 @@ fn conjunction_projection_transport_scales_with_written_source() {
 }
 
 #[test]
+#[ignore = "nightly: 10s focused, full expansion and replay scaling audit"]
 fn conjunction_selection_transport_scales_with_sources_targets_and_premises() {
     fn balanced(leaves: &[String]) -> String {
         if leaves.len() == 1 {
@@ -10696,6 +10698,7 @@ fn implication_transport_replay_scales_with_explicit_links() {
 }
 
 #[test]
+#[ignore = "nightly: 15s focused, full expansion and replay scaling audit"]
 fn compound_implication_transport_scales_with_reads_and_logical_depth() {
     fn tree(leaves: &[String], op: &str, skewed: bool) -> String {
         if leaves.len() == 1 {

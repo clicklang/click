@@ -531,7 +531,7 @@ impl Default for ProofLocals {
 
 /// Execution data whose unchanged pieces can be shared by checked `Proof`
 /// successors. Pure facts live in `ProofState::facts`; this contains only the
-/// frontier state, certificate-construction metadata, and persistent branch provenance.
+/// frontier state, certificate-construction metadata, and persistent branch evidence.
 #[derive(Clone)]
 pub(in crate::surface::proof) struct ExecutionProofPresentation {
     pub(in crate::surface::proof) loop_return_proofs: PersistentMap<usize, PlannedLoopReturns>,
@@ -604,12 +604,12 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     /// Decisions on the currently focused branch execution lineage. Forks
     /// share history and add only the new decision and its index entry.
     branch_decisions: ExecutionBranchDecisions,
-    /// Path-local provenance aligned with terminal execution candidates.
+    /// Path-local evidence aligned with terminal execution candidates.
     /// Keeping each outcome's lineage, Surface lowerings, and recorded-state
     /// states in one record makes their correspondence structural rather
     /// than an invariant across parallel vectors. The record is output-sized
-    /// Proof provenance; its persistent roots do not copy semantic state.
-    outcome_provenance: crate::kernel::proof::PersistentVector<OutcomeProvenance>,
+    /// Proof evidence; its persistent roots do not copy semantic state.
+    outcome_evidence: crate::kernel::proof::PersistentVector<OutcomeEvidence>,
     outcome_fact_root: Option<Arc<PureFactStore>>,
     pub(in crate::surface::proof) checked_leaf_facts: Option<Arc<CheckedLeafFacts>>,
     /// The facts of the last checked statement with every effect the path
@@ -697,7 +697,7 @@ impl ExecutionProofState {
     ) -> Option<&Arc<LoopReturnProof>> {
         if let Some(proof) = self
             .presentation
-            .outcome_provenance
+            .outcome_evidence
             .get(path_index)
             .and_then(|p| p.loop_return.as_ref())
         {
@@ -726,13 +726,13 @@ impl ExecutionProofState {
                 "terminal loop return outcomes do not align with their preservation proofs",
             ));
         }
-        let mut provenance = (0..execution.paths().len())
-            .map(|index| self.provenance_for_outcome(index))
+        let mut outcome_evidence = (0..execution.paths().len())
+            .map(|index| self.evidence_for_outcome(index))
             .collect::<Vec<_>>();
-        for (path, returned) in provenance.iter_mut().zip(returns) {
+        for (path, returned) in outcome_evidence.iter_mut().zip(returns) {
             path.loop_return = Some(returned.clone());
         }
-        self.presentation.outcome_provenance = provenance.into();
+        self.presentation.outcome_evidence = outcome_evidence.into();
         Ok(())
     }
 
@@ -743,28 +743,28 @@ impl ExecutionProofState {
         point: ProgramPointRef,
     ) {
         let state = Arc::new(state);
-        self.presentation.outcome_provenance = cases
+        self.presentation.outcome_evidence = cases
             .into_iter()
             .enumerate()
             .map(|(index, facts)| {
-                let mut provenance = self.provenance_for_outcome(index);
-                provenance.terminal_statement_case = Some(Arc::new(TerminalStatementCase {
+                let mut outcome_evidence = self.evidence_for_outcome(index);
+                outcome_evidence.terminal_statement_case = Some(Arc::new(TerminalStatementCase {
                     facts,
                     state: state.clone(),
                     point: point.clone(),
                 }));
-                provenance
+                outcome_evidence
             })
             .collect::<Vec<_>>()
             .into();
     }
 
-    fn provenance_for_outcome(&self, path_index: usize) -> OutcomeProvenance {
+    fn evidence_for_outcome(&self, path_index: usize) -> OutcomeEvidence {
         self.presentation
-            .outcome_provenance
+            .outcome_evidence
             .get(path_index)
             .cloned()
-            .unwrap_or_else(|| OutcomeProvenance {
+            .unwrap_or_else(|| OutcomeEvidence {
                 terminal_statement_case: None,
                 checked_leaf_facts: self.presentation.checked_leaf_facts.clone(),
                 loop_return: self.loop_return_proof(path_index).cloned(),
@@ -794,7 +794,7 @@ impl ExecutionProofState {
     }
 
     /// The execution state at a proof's entry: the frontier's C state and
-    /// effect facts with no branch provenance yet.
+    /// effect facts with no branch decisions yet.
     pub(in crate::surface::proof) fn at_entry(
         state: ExecutionState,
         frontier: ExecutionFrontier,
@@ -857,7 +857,7 @@ impl ExecutionProofState {
                 branch_path,
                 branch_surface_facts: PersistentOrderedSet::default(),
                 branch_decisions: ExecutionBranchDecisions::default(),
-                outcome_provenance: Default::default(),
+                outcome_evidence: Default::default(),
                 outcome_fact_root: None,
                 checked_leaf_facts: None,
                 effect_leaf: None,
@@ -1109,7 +1109,7 @@ pub(super) struct ProofExecutionView<'p> {
     pub(super) execution: &'p ExecutionProofState,
     pub(super) context: &'p ExecutionProofContext<'p>,
     pub(super) branch_path: &'p PersistentSequence<String>,
-    outcome_provenance: &'p crate::kernel::proof::PersistentVector<OutcomeProvenance>,
+    outcome_evidence: &'p crate::kernel::proof::PersistentVector<OutcomeEvidence>,
 }
 
 impl ProofExecutionView<'_> {
@@ -1118,7 +1118,7 @@ impl ProofExecutionView<'_> {
         path_index: usize,
     ) -> Result<Vec<SurfacePathChoice>, String> {
         let Some(case) = self
-            .outcome_provenance
+            .outcome_evidence
             .get(path_index)
             .and_then(|path| path.terminal_statement_case.as_ref())
         else {
@@ -1163,25 +1163,25 @@ impl ProofExecutionView<'_> {
         &self,
         path_index: usize,
     ) -> &PersistentMap<crate::kernel::Variable, crate::kernel::GeneratedLoadBinding> {
-        self.outcome_provenance
+        self.outcome_evidence
             .get(path_index)
-            .map(|provenance| &provenance.generated_load_bindings)
+            .map(|outcome_evidence| &outcome_evidence.generated_load_bindings)
             .unwrap_or(&self.execution.presentation.generated_load_bindings)
     }
 
     /// Selects the leaf of a retained surface certificate that one checked
     /// outcome reaches, following each terminal surface `if` the way
     /// [`append_surface_step_to_leaves`] does. Decisions are the same typed
-    /// split provenance [`Self::surface_branch_path`] reads.
+    /// split outcome_evidence [`Self::surface_branch_path`] reads.
     pub(super) fn surface_step_branch_path(
         &self,
         path_index: usize,
         steps: &[ProofStep],
     ) -> Option<Vec<bool>> {
         let mut decisions = self
-            .outcome_provenance
+            .outcome_evidence
             .get(path_index)
-            .map(|provenance| &provenance.branch_decisions)
+            .map(|outcome_evidence| &outcome_evidence.branch_decisions)
             .unwrap_or(&self.execution.presentation.branch_decisions)
             .iter();
         let mut path = Vec::new();
@@ -1209,7 +1209,7 @@ impl ProofExecutionView<'_> {
     /// The proof-level case decisions recorded on one outcome path, in
     /// decision order: each is a surface condition and the arm taken.
     /// Selects the retained surface branch skeleton for one checked outcome.
-    /// Decisions are Proof provenance recorded at the typed splits; expansion
+    /// Decisions are Proof outcome_evidence recorded at the typed splits; expansion
     /// reads them without reconstructing semantic facts from the post-state.
     pub(super) fn surface_branch_path(
         &self,
@@ -1222,13 +1222,13 @@ impl ProofExecutionView<'_> {
         // been skipped, so every path through more than one surface `if`
         // reported no branch path at all and its closer was stitched onto
         // every leaf instead of its own.
-        let provenance = self.outcome_provenance.get(path_index);
-        let mut decisions = provenance
-            .map(|provenance| &provenance.branch_decisions)
+        let outcome_evidence = self.outcome_evidence.get(path_index);
+        let mut decisions = outcome_evidence
+            .map(|outcome_evidence| &outcome_evidence.branch_decisions)
             .unwrap_or(&self.execution.presentation.branch_decisions)
             .iter();
-        let mut call_routes = provenance
-            .map(|provenance| provenance.call_routes.as_slice())
+        let mut call_routes = outcome_evidence
+            .map(|outcome_evidence| outcome_evidence.call_routes.as_slice())
             .unwrap_or(&[])
             .iter();
         let mut path = Vec::new();
@@ -1340,7 +1340,7 @@ struct TerminalStatementCase {
 }
 
 #[derive(Clone)]
-struct OutcomeProvenance {
+struct OutcomeEvidence {
     terminal_statement_case: Option<Arc<TerminalStatementCase>>,
     checked_leaf_facts: Option<Arc<CheckedLeafFacts>>,
     loop_return: Option<Arc<LoopReturnProof>>,
@@ -2743,7 +2743,7 @@ impl OpenBranchConstruction for OpenBranch {
 /// An equality with an `old(...)` or `at(label, ...)` operand can use that
 /// state expression's reflexivity as an explicit transport source. Keep
 /// this selector intentionally syntactic: the fixed-state checker remains the
-/// authority for whether execution effects and result provenance permit the
+/// authority for whether execution effects and result derivation permit the
 /// transport.
 pub(in crate::surface::proof) fn old_reflexive_transport_source(
     goal: &ClickProposition,
@@ -3318,7 +3318,7 @@ impl<'a> Proof<'a> {
 
     /// Lowers and selects one externally owned Surface Click obligation from
     /// a fixed-state proof context. The returned proof shares every accumulated checked
-    /// fact but owns fresh provenance for that obligation's closing steps.
+    /// fact but owns a fresh lineage for that obligation's closing steps.
     pub(super) fn focus_fixed_state_surface_goal(
         &self,
         goal: &ClickProposition,
@@ -3342,7 +3342,7 @@ impl<'a> Proof<'a> {
         self.state.is_complete()
     }
 
-    /// Extracts Surface provenance only after the kernel has witnessed that
+    /// Extracts Surface lineage only after the kernel has witnessed that
     /// every checked obligation is discharged.
     pub(super) fn completed_certificate(&self) -> Result<ProofCertificate, ClickError> {
         self.state
@@ -3364,7 +3364,7 @@ impl<'a> Proof<'a> {
 
     pub(super) fn certificate(&self) -> ProofCertificate {
         self.certificate_after_node(None)
-            .expect("checked provenance reaches its own root and records only certificate steps")
+            .expect("checked lineage reaches its own root and records only certificate steps")
     }
 
     /// Retains an output-sensitive certificate suffix from an exact ancestor.
@@ -3384,7 +3384,7 @@ impl<'a> Proof<'a> {
         self.certificate_after_node(Some(&checkpoint.node))
     }
 
-    /// Captures the current provenance position without sharing semantic
+    /// Captures the current lineage position without sharing semantic
     /// execution state.
     pub(super) fn checkpoint(&self) -> ProofCheckpoint<'a> {
         ProofCheckpoint {
@@ -3611,7 +3611,7 @@ impl<'a> Proof<'a> {
 
     /// The same proof, attributing its next step to the claim's `index`th
     /// source tactic occurrence. This is diagnostic addressing only: no goal,
-    /// fact, execution state, or provenance node changes.
+    /// fact, execution state, or lineage node changes.
     pub(in crate::surface::proof) fn at_source_tactic(&self, index: usize) -> Self {
         if index != usize::MAX {
             crate::surface::note_ambient_source_tactic(self.context.claim_label(), index);
@@ -3752,7 +3752,6 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::ApplyFactUsing { .. } | ProofStep::ApplyTheoremUsing { .. } => "apply",
         ProofStep::ApplyInductionUsing { .. } => "apply",
         ProofStep::Induct { .. } => "induct",
-        ProofStep::StructuralInduct { .. } => "induct",
         ProofStep::TransportUsing { .. } => "transport",
         ProofStep::Instantiate { .. } => "instantiate",
         ProofStep::Have { .. } => "have",
@@ -3793,11 +3792,11 @@ pub(in crate::surface::proof) use execution_statements::implicit_solve_disabled;
 pub use execution_statements::without_implicit_solve;
 mod fact_index;
 mod fixed_state_steps;
+mod lineage;
 mod outcomes_and_focus;
-mod provenance;
-pub(in crate::surface::proof) use provenance::ProofCheckpoint;
-pub(in crate::surface::proof) use provenance::ProofStepSite;
-use provenance::{ProofNode, ProofStepBlock, ProofStepOrigin};
+pub(in crate::surface::proof) use lineage::ProofCheckpoint;
+pub(in crate::surface::proof) use lineage::ProofStepSite;
+use lineage::{ProofNode, ProofStepBlock, ProofStepOrigin};
 mod local_predicate_unfold;
 mod resource_steps;
 mod scope;

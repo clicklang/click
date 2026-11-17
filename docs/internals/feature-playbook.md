@@ -91,7 +91,7 @@ Prefer deterministic, narrow rules. Good examples:
 Avoid broad heuristic search unless it lives behind `solve` or the implicit
 closer, advances proof
 state only through checked operations, and retains surface-expressible
-provenance when possible.
+evidence when possible.
 
 ## Adding standard library definitions
 

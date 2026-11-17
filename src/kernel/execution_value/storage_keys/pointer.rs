@@ -14,7 +14,7 @@ struct PointerData {
 #[derive(Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 struct PointerIdentity {
     address: AddressKey,
-    designation: AddressKey,
+    provenance: AddressKey,
     program_type: ProgramType,
     volatile: bool,
     extent_known: bool,
@@ -53,7 +53,7 @@ impl PointerStorageKey {
     pub(in crate::kernel) fn native(value: &PointerValue) -> Self {
         Self::new(PointerIdentity {
             address: AddressKey::native(value.pointer()),
-            designation: AddressKey::native(value.designation()),
+            provenance: AddressKey::native(value.provenance()),
             program_type: value.program_type(),
             volatile: value.pointee_volatile(),
             extent_known: value.extent_is_known(),
@@ -71,7 +71,7 @@ impl PointerStorageKey {
         let extent_known = q.is_some_and(|q| q.extent_known);
         Self::new(PointerIdentity {
             address: AddressKey::shared(&value.address),
-            designation: AddressKey::shared(&value.designation),
+            provenance: AddressKey::shared(&value.provenance),
             program_type: value.program_type,
             volatile: q.is_some_and(|q| q.volatile),
             extent_known,

@@ -32,7 +32,8 @@ function depth_ok(t: Tree) -> int32 {
 
 theorem depth_ok_of(t: Tree) {
     ensures depth_ok(t) == 1 by {
-        induct(t) as ih {
+        let ih = induct(t);
+        match t {
             Tree::Empty => {
                 unfold(depth_ok(Tree::Empty));
                 normalize();

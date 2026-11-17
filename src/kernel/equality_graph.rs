@@ -1608,14 +1608,14 @@ impl EqualityGraph {
         equal
     }
 
-    pub(in crate::kernel) fn designations_equal(&self, left: &Pointer, right: &Pointer) -> bool {
+    pub(in crate::kernel) fn provenance_equal(&self, left: &Pointer, right: &Pointer) -> bool {
         if left == right {
             return true;
         }
         let mut state = self.state.lock().expect("equality graph");
         self.register_logical_read_values(&mut state, [left, right]);
         state.register_blocks([left.block.clone(), right.block.clone()]);
-        let equal = state.terms.designations_equal(left, right);
+        let equal = state.terms.provenance_equal(left, right);
         state.close(Vec::new());
         equal
     }
@@ -1643,7 +1643,7 @@ impl EqualityGraph {
         let mut state = self.state.lock().expect("equality graph");
         let origins_changed = state
             .terms
-            .merge_designations(left.designation(), right.designation());
+            .merge_provenance(left.provenance(), right.provenance());
         let changed = state.terms.add_pointer_value_equality(left, right) || origins_changed;
         state.close(Vec::new());
         if changed {

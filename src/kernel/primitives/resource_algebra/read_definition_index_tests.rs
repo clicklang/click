@@ -157,7 +157,7 @@ fn memory_direct_support_preserves_held_identity_and_authority() {
                 );
                 let wrong = ResourceFact::view_memory(
                     range(1, 3)
-                        .with_designation(std::sync::Arc::new(Pointer::symbolic(Variable(976_301))))
+                        .with_provenance(std::sync::Arc::new(Pointer::symbolic(Variable(976_301))))
                         .with_typed_carrier(),
                 );
                 assert!(context.directly_supporting_fact(&wrong, &facts).is_none());

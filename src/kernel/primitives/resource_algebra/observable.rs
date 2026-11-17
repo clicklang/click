@@ -46,7 +46,7 @@ impl ResourceContext {
         composition
     }
 
-    /// Keep upstream's admission provenance for a filtered observation. An
+    /// Keep upstream's admission record for a filtered observation. An
     /// ignored private delta retains its existing storage and checkpoint;
     /// changed visible facts receive the current unfiltered source.
     fn retain_observable_source(&self, composition: &mut Self) {

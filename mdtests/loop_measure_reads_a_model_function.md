@@ -49,7 +49,8 @@ function chain_len(m: Chain) -> Integer
 
 theorem chain_len_is_nonnegative(m: Chain) {
     ensures 0 <= chain_len(m) by {
-        induct(m) as ih {
+        let ih = induct(m);
+        match m {
             Chain::Nil => {
                 unfold(chain_len(Chain::Nil));
                 normalize();

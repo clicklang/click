@@ -18,7 +18,8 @@ function rev_onto(xs: List<int32>, acc: List<int32>) -> List<int32>
 theorem rev_onto_length_transport(xs: List<int32>, a: List<int32>, b: List<int32>) {
     requires list::length(a) == list::length(b);
     ensures list::length(rev_onto(xs, a)) == list::length(rev_onto(xs, b)) by {
-        induct(xs) as ih {
+        let ih = induct(xs);
+        match xs {
             List::Nil => {
                 unfold(rev_onto(List<int32>::Nil, a));
                 unfold(rev_onto(List<int32>::Nil, b));

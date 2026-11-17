@@ -1501,9 +1501,6 @@ path = "reference/tactics/index.md#resources-and-transport"
 id = "tactic-form.induct"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
-id = "tactic-form.structural-induct"
-path = "reference/tactics/index.md#proposition-reasoning"
-[[item]]
 id = "tactic-form.proof-match"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
@@ -3594,8 +3591,8 @@ id = "glossary.proof-branch"
 path = "reference/glossary.md#proof-branch"
 
 [[item]]
-id = "glossary.proof-provenance"
-path = "reference/glossary.md#proof-provenance"
+id = "glossary.proof-lineage"
+path = "reference/glossary.md#proof-lineage"
 
 [[item]]
 id = "glossary.resource-projection"

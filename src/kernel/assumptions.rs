@@ -610,7 +610,7 @@ pub fn conditions_equal_ignoring_memories(left: &ConditionTerm, right: &Conditio
         (left, right)
     {
         // Candidate selection only. The context's state bridge separately
-        // compares both complete designations before accepting this candidate.
+        // compares both complete provenances before accepting this candidate.
         return a.program_type() == c.program_type()
             && b.program_type() == d.program_type()
             && pointers_equal_with_load_atoms(
@@ -901,85 +901,82 @@ thread_local! {
         const { RefCell::new(BTreeSet::new()) };
     static CONDITION_DECISIONS_IN_PROGRESS: RefCell<BTreeSet<(Option<MachineIntegerType>, ConditionTerm)>> =
         const { RefCell::new(BTreeSet::new()) };
-    static REASONING_PROVENANCE_STACK: RefCell<Vec<ReasoningProvenanceFrame>> =
+    static CONSULTED_PREMISES_STACK: RefCell<Vec<ConsultedPremisesFrame>> =
         const { RefCell::new(Vec::new()) };
-    static RECORDING_REASONING_PROVENANCE: Cell<bool> = const { Cell::new(false) };
-    static CAPTURING_IMPLICIT_REASONING_PROVENANCE: Cell<usize> = const { Cell::new(0) };
+    static RECORDING_CONSULTED_PREMISES: Cell<bool> = const { Cell::new(false) };
+    static CAPTURING_IMPLICIT_CONSULTED_PREMISES: Cell<usize> = const { Cell::new(0) };
 }
 
 #[derive(Default)]
-struct ReasoningProvenanceFrame {
+struct ConsultedPremisesFrame {
     premises: BTreeSet<Proposition>,
     queries: BTreeSet<Proposition>,
 }
 
-struct ReasoningProvenanceCollectionGuard {
+struct ConsultedPremisesCollectionGuard {
     active: bool,
 }
 
-impl ReasoningProvenanceCollectionGuard {
+impl ConsultedPremisesCollectionGuard {
     fn start() -> Self {
-        REASONING_PROVENANCE_STACK.with(|stack| {
-            stack.borrow_mut().push(ReasoningProvenanceFrame::default());
+        CONSULTED_PREMISES_STACK.with(|stack| {
+            stack.borrow_mut().push(ConsultedPremisesFrame::default());
         });
         Self { active: true }
     }
 
     fn finish(mut self) -> BTreeSet<Proposition> {
-        let frame = REASONING_PROVENANCE_STACK.with(|stack| {
+        let frame = CONSULTED_PREMISES_STACK.with(|stack| {
             stack
                 .borrow_mut()
                 .pop()
-                .expect("reasoning provenance collection stack")
+                .expect("consulted-premise collection stack")
         });
         self.active = false;
         frame.premises
     }
 }
 
-impl Drop for ReasoningProvenanceCollectionGuard {
+impl Drop for ConsultedPremisesCollectionGuard {
     fn drop(&mut self) {
         if self.active {
-            REASONING_PROVENANCE_STACK.with(|stack| {
+            CONSULTED_PREMISES_STACK.with(|stack| {
                 stack.borrow_mut().pop();
             });
         }
     }
 }
 
-struct ReasoningProvenanceRecordingGuard;
+struct ConsultedPremisesRecordingGuard;
 
-impl ReasoningProvenanceRecordingGuard {
+impl ConsultedPremisesRecordingGuard {
     fn start() -> Self {
-        RECORDING_REASONING_PROVENANCE.with(|recording| recording.set(true));
+        RECORDING_CONSULTED_PREMISES.with(|recording| recording.set(true));
         Self
     }
 }
 
-impl Drop for ReasoningProvenanceRecordingGuard {
+impl Drop for ConsultedPremisesRecordingGuard {
     fn drop(&mut self) {
-        RECORDING_REASONING_PROVENANCE.with(|recording| recording.set(false));
+        RECORDING_CONSULTED_PREMISES.with(|recording| recording.set(false));
     }
 }
 
 /// Collects the exact premises consumed by successful reasoning
 /// during `body`. This is certificate-planning metadata only: it does not
 /// enter execution paths, theorems, obligations, or fresh-name budgets.
-pub(crate) fn collect_reasoning_provenance<T>(body: impl FnOnce() -> T) -> (T, Vec<Proposition>) {
-    let guard = ReasoningProvenanceCollectionGuard::start();
+pub(crate) fn collect_consulted_premises<T>(body: impl FnOnce() -> T) -> (T, Vec<Proposition>) {
+    let guard = ConsultedPremisesCollectionGuard::start();
     let result = body();
     let premises = guard.finish();
     (result, premises.into_iter().collect())
 }
 
-pub(crate) fn record_reasoning_provenance(
-    assumptions: &PureFactContext,
-    proposition: &Proposition,
-) {
-    if RECORDING_REASONING_PROVENANCE.with(Cell::get) {
+pub(crate) fn record_consulted_premises(assumptions: &PureFactContext, proposition: &Proposition) {
+    if RECORDING_CONSULTED_PREMISES.with(Cell::get) {
         return;
     }
-    let should_derive = REASONING_PROVENANCE_STACK.with(|stack| {
+    let should_derive = CONSULTED_PREMISES_STACK.with(|stack| {
         let mut stack = stack.borrow_mut();
         let Some(active) = stack.last_mut() else {
             return false;
@@ -989,7 +986,7 @@ pub(crate) fn record_reasoning_provenance(
     if !should_derive {
         return;
     }
-    let _recording = ReasoningProvenanceRecordingGuard::start();
+    let _recording = ConsultedPremisesRecordingGuard::start();
     // Exact facts already identify their own certificate premise. The
     // general derivation builder used to fill in the rest, but it left the
     // kernel with the rest of the proposition search, and asking it for a
@@ -1020,7 +1017,7 @@ pub(crate) fn record_reasoning_provenance(
     } else {
         Vec::new()
     };
-    REASONING_PROVENANCE_STACK.with(|stack| {
+    CONSULTED_PREMISES_STACK.with(|stack| {
         let mut stack = stack.borrow_mut();
         let Some(active) = stack.last_mut() else {
             return;
@@ -1029,33 +1026,33 @@ pub(crate) fn record_reasoning_provenance(
     });
 }
 
-pub(crate) fn capture_implicit_reasoning_provenance<T>(body: impl FnOnce() -> T) -> T {
+pub(crate) fn capture_implicit_consulted_premises<T>(body: impl FnOnce() -> T) -> T {
     struct Guard;
     impl Drop for Guard {
         fn drop(&mut self) {
-            CAPTURING_IMPLICIT_REASONING_PROVENANCE.with(|depth| depth.set(depth.get() - 1));
+            CAPTURING_IMPLICIT_CONSULTED_PREMISES.with(|depth| depth.set(depth.get() - 1));
         }
     }
 
-    CAPTURING_IMPLICIT_REASONING_PROVENANCE.with(|depth| depth.set(depth.get() + 1));
+    CAPTURING_IMPLICIT_CONSULTED_PREMISES.with(|depth| depth.set(depth.get() + 1));
     let _guard = Guard;
     body()
 }
 
-pub(crate) fn record_implicit_reasoning_provenance(
+pub(crate) fn record_implicit_consulted_premises(
     assumptions: &PureFactContext,
     proposition: &Proposition,
 ) {
-    if CAPTURING_IMPLICIT_REASONING_PROVENANCE.with(|depth| depth.get() != 0) {
-        record_reasoning_provenance(assumptions, proposition);
+    if CAPTURING_IMPLICIT_CONSULTED_PREMISES.with(|depth| depth.get() != 0) {
+        record_consulted_premises(assumptions, proposition);
     }
 }
 
-/// Whether implicit reasoning provenance is being captured on this thread:
-/// a rule that would skip a question whose answer records provenance must
+/// Whether implicit consulted premises are being captured on this thread:
+/// a rule that would skip a question whose answer records consulted premises must
 /// ask it while this holds.
-pub(crate) fn implicit_reasoning_provenance_capturing() -> bool {
-    CAPTURING_IMPLICIT_REASONING_PROVENANCE.with(|depth| depth.get() != 0)
+pub(crate) fn implicit_consulted_premises_capturing() -> bool {
+    CAPTURING_IMPLICIT_CONSULTED_PREMISES.with(|depth| depth.get() != 0)
 }
 
 /// True while any condition decision is in progress on this thread. Deep
@@ -2603,6 +2600,7 @@ fn collect_term_memory_loads(
         },
         Term::StatementOutcome(outcome) => match outcome.as_ref() {
             StatementOutcome::Normal(state)
+            | StatementOutcome::LoopTestFalse(state)
             | StatementOutcome::Break(state)
             | StatementOutcome::Continue(state)
             | StatementOutcome::Jump { state, .. } => {
@@ -3892,43 +3890,39 @@ impl PureFactContext {
         self.equality_graph.add_equality(left, right);
     }
 
-    pub(in crate::kernel) fn designations_equal(&self, left: &Pointer, right: &Pointer) -> bool {
+    pub(in crate::kernel) fn provenance_equal(&self, left: &Pointer, right: &Pointer) -> bool {
         left == right
             || self
                 .equality_graph
                 .admitted
-                .designation_graph
+                .provenance_graph
                 .equal(left, right)
-            || self.equality_graph.designations_equal(left, right)
-            || crate::kernel::memory_provenance::pointer_read_designations_equal(left, right, self)
+            || self.equality_graph.provenance_equal(left, right)
+            || crate::kernel::memory_history::pointer_read_provenance_equal(left, right, self)
             || self
                 .equality_graph
                 .admitted
-                .designation_graph
+                .provenance_graph
                 .unique_direct_alias(right)
                 .is_some_and(|alias| {
                     crate::instrumentation::record_deterministic_work(1);
-                    crate::kernel::memory_provenance::pointer_read_designations_equal(
-                        left, alias, self,
-                    )
+                    crate::kernel::memory_history::pointer_read_provenance_equal(left, alias, self)
                 })
             || self
                 .equality_graph
                 .admitted
-                .designation_graph
+                .provenance_graph
                 .unique_direct_alias(left)
                 .is_some_and(|alias| {
                     crate::instrumentation::record_deterministic_work(1);
-                    crate::kernel::memory_provenance::pointer_read_designations_equal(
-                        alias, right, self,
-                    )
+                    crate::kernel::memory_history::pointer_read_provenance_equal(alias, right, self)
                 })
     }
 
     pub(in crate::kernel) fn opaque_extents_equal(&self, a: &Pointer, b: &Pointer) -> bool {
         self.equality_graph.admitted.extent_graph.equal(a, b)
             || self.equality_graph.opaque_extents_equal(a, b)
-            || crate::kernel::memory_provenance::pointer_read_extents_equal(a, b, self)
+            || crate::kernel::memory_history::pointer_read_extents_equal(a, b, self)
             || self
                 .equality_graph
                 .admitted
@@ -3936,7 +3930,7 @@ impl PureFactContext {
                 .unique_direct_alias(b)
                 .is_some_and(|alias| {
                     crate::instrumentation::record_deterministic_work(1);
-                    crate::kernel::memory_provenance::pointer_read_extents_equal(a, alias, self)
+                    crate::kernel::memory_history::pointer_read_extents_equal(a, alias, self)
                 })
             || self
                 .equality_graph
@@ -3945,11 +3939,11 @@ impl PureFactContext {
                 .unique_direct_alias(a)
                 .is_some_and(|alias| {
                     crate::instrumentation::record_deterministic_work(1);
-                    crate::kernel::memory_provenance::pointer_read_extents_equal(alias, b, self)
+                    crate::kernel::memory_history::pointer_read_extents_equal(alias, b, self)
                 })
     }
 
-    pub(in crate::kernel) fn access_designations_match(
+    pub(in crate::kernel) fn access_provenance_match(
         &self,
         required: (&Pointer, Option<&Pointer>),
         available: &MemoryRange,
@@ -3957,7 +3951,7 @@ impl PureFactContext {
         pointer_checks::access_match(
             required,
             (
-                &available.designation,
+                &available.provenance,
                 available.opaque_extent.as_deref(),
                 available.carrier_extent_known,
             ),
@@ -3965,34 +3959,34 @@ impl PureFactContext {
         )
     }
 
-    pub(in crate::kernel) fn pointer_designations_match(
+    pub(in crate::kernel) fn pointer_provenance_match(
         &self,
         left: &PointerValue,
         right: &PointerValue,
     ) -> bool {
         // A complete read can carry a pointer copied from a different cell.
         // Compare the producer's entire stored value once; scalar address
-        // aliases and partial stores cannot supply its designation or bounds.
+        // aliases and partial stores cannot supply its provenance or bounds.
         let stored_value = |value: &PointerValue| {
             // A cast or member selection has already chosen its own view.
             // Recover only the untouched opaque value of a complete read.
             if value.extent_is_known()
                 || value.extent().is_some()
-                || value.opaque_extent() != Some(value.designation())
+                || value.opaque_extent() != Some(value.provenance())
             {
                 return None;
             }
-            crate::kernel::memory_provenance::complete_pointer_read_value(value.designation(), self)
+            crate::kernel::memory_history::complete_pointer_read_value(value.provenance(), self)
         };
         pointer_checks::complete_match(
             left,
             right,
-            |a, b| self.pointer_designations_match_without_stored_values(a, b),
+            |a, b| self.pointer_provenance_match_without_stored_values(a, b),
             stored_value,
         )
     }
 
-    fn pointer_designations_match_without_stored_values(
+    fn pointer_provenance_match_without_stored_values(
         &self,
         left: &PointerValue,
         right: &PointerValue,
@@ -4026,14 +4020,14 @@ impl PureFactContext {
             .admitted
             .pointer_value_classes
             .representative(value);
-        let representative = super::pointer_designations::prefer_pointer(
+        let representative = super::pointer_provenance::prefer_pointer(
             &representative,
             &self.equality_graph.pointer_value_representative(value),
         );
         let mut framed_address = None;
         let representative = if !representative.extent_is_known()
-            && value.designation().as_loaded_value().is_some()
-            && value.opaque_extent() == Some(value.designation())
+            && value.provenance().as_loaded_value().is_some()
+            && value.opaque_extent() == Some(value.provenance())
         {
             self.known_value_of_framed_pointer_read(value)
                 .inspect(|known| {
@@ -4052,7 +4046,7 @@ impl PureFactContext {
         }
         let adopted = value
             .clone()
-            .with_designation(std::sync::Arc::new(representative.designation().clone()))
+            .with_provenance(std::sync::Arc::new(representative.provenance().clone()))
             .with_extent(representative.extent().cloned())
             .with_opaque_extent(
                 representative
@@ -4108,7 +4102,7 @@ impl PureFactContext {
             if read.pointer() != value.pointer()
                 || read.extent_is_known()
                 || read.extent().is_some()
-                || read.opaque_extent() != Some(read.designation())
+                || read.opaque_extent() != Some(read.provenance())
             {
                 continue;
             }
@@ -4117,20 +4111,20 @@ impl PureFactContext {
                 .admitted
                 .pointer_value_classes
                 .representative(read);
-            let representative = super::pointer_designations::prefer_pointer(
+            let representative = super::pointer_provenance::prefer_pointer(
                 &representative,
                 &self.equality_graph.pointer_value_representative(read),
             );
             if !representative.extent_is_known() {
                 continue;
             }
-            if crate::kernel::memory_provenance::pointer_read_designations_equal(
-                value.designation(),
-                read.designation(),
+            if crate::kernel::memory_history::pointer_read_provenance_equal(
+                value.provenance(),
+                read.provenance(),
                 self,
-            ) && crate::kernel::memory_provenance::pointer_read_extents_equal(
-                value.designation(),
-                read.designation(),
+            ) && crate::kernel::memory_history::pointer_read_extents_equal(
+                value.provenance(),
+                read.provenance(),
                 self,
             ) {
                 return Some(representative);
@@ -4156,9 +4150,9 @@ impl PureFactContext {
             .admitted
             .pointer_value_equalities
             .with_value(key);
-        self.equality_graph.admitted.designation_graph.insert(
-            left.designation(),
-            right.designation(),
+        self.equality_graph.admitted.provenance_graph.insert(
+            left.provenance(),
+            right.provenance(),
             |a, _| a.clone(),
         );
         if left.extent().is_none()
@@ -4175,7 +4169,7 @@ impl PureFactContext {
         self.equality_graph.admitted.pointer_value_classes.insert(
             left,
             right,
-            super::pointer_designations::prefer_pointer,
+            super::pointer_provenance::prefer_pointer,
         );
         self.equality_graph.add_pointer_value_equality(left, right);
     }
@@ -4481,7 +4475,7 @@ impl PureFactContext {
                         bytes,
                     ) == Some(crate::kernel::reasoning::AccessByteOverlap::Separate)
                 })
-                    || crate::kernel::memory_provenance::indexed_store_byte_separation_evidence(
+                    || crate::kernel::memory_history::indexed_store_byte_separation_evidence(
                         write,
                         value.byte_width(),
                         address,
@@ -4960,7 +4954,7 @@ impl PureFactContext {
         self.equality_graph.admitted.pointer_offset_aliases_by_root =
             crate::persistent::PersistentMap::default();
         self.equality_graph.admitted.pointer_address_sources = Default::default();
-        self.equality_graph.admitted.designation_graph = Default::default();
+        self.equality_graph.admitted.provenance_graph = Default::default();
         self.equality_graph.admitted.extent_graph = Default::default();
         self.equality_graph.admitted.pointer_value_classes = Default::default();
         self.equality_graph.admitted.pointer_value_equalities = Default::default();
@@ -5990,7 +5984,7 @@ impl PureFactContext {
             .iter()
             .next()
             .map(|(premise, constructor)| (premise.clone(), constructor.clone()))?;
-        record_reasoning_provenance(self, &premise);
+        record_consulted_premises(self, &premise);
         Some(constructor)
     }
 
@@ -6023,12 +6017,12 @@ impl PureFactContext {
                             })
                     }) =>
             {
-                record_reasoning_provenance(self, premise);
+                record_consulted_premises(self, premise);
                 Some(constructor.clone())
             }
             _ => {
                 let constructor = self.equality_graph.known_algebraic_constructor(value)?;
-                record_reasoning_provenance(
+                record_consulted_premises(
                     self,
                     &Proposition::Equal(
                         Term::Algebraic(value.clone()),
@@ -6708,7 +6702,7 @@ impl PureFactContext {
                     .zip(source.partition_memory_member_at(right, !borrowed, &contains_right))
                     && !self.memory_ranges_overlap_after_base_equality(a, b)
                 {
-                    record_implicit_reasoning_provenance(
+                    record_implicit_consulted_premises(
                         self,
                         &Proposition::ResourceComposition(source.clone()),
                     );
@@ -7298,14 +7292,14 @@ impl PureFactContext {
                 })
                 .and_then(|sources| sources.iter().next())
         {
-            record_implicit_reasoning_provenance(
+            record_implicit_consulted_premises(
                 self,
                 &Proposition::ConditionIs(source.clone(), true),
             );
             return true;
         }
         if self.contains_assumed_exact(proposition) {
-            record_implicit_reasoning_provenance(self, proposition);
+            record_implicit_consulted_premises(self, proposition);
             return true;
         }
         // Compound comparison identities select a held source, not a newly
@@ -7327,14 +7321,14 @@ impl PureFactContext {
                 .get(&observation_comparisons::PropositionKey::new(proposition))
                 .and_then(|sources| sources.iter().next())
         {
-            record_implicit_reasoning_provenance(self, source);
+            record_implicit_consulted_premises(self, source);
             return true;
         }
         false
     }
 
     /// Exact membership in the explicitly assumed fact set, without builtin
-    /// solving or proof-provenance side effects. This is the indexed analogue
+    /// solving or consulted-premise side effects. This is the indexed analogue
     /// of searching an ambient proposition slice for an atomic conjunct.
     pub(crate) fn contains_assumed_exact(&self, proposition: &Proposition) -> bool {
         match proposition {
@@ -7361,7 +7355,7 @@ impl PureFactContext {
     /// Semantic availability through the shared scoped equality graph and
     /// indexed stated separation and exact native Integer observations.
     /// Exact membership remains separate for
-    /// provenance and admission.
+    /// consulted premises and admission.
     /// This performs no unfolding, implication search, or state transport.
     pub(crate) fn contains_known(&self, proposition: &Proposition) -> bool {
         // An indexed conflict among checked scalar equalities makes this
@@ -7394,7 +7388,7 @@ impl PureFactContext {
                     .admitted
                     .pointer_value_classes
                     .equal(left, right)
-                    || (self.designations_equal(left.designation(), right.designation())
+                    || (self.provenance_equal(left.provenance(), right.provenance())
                         && left.extent() == right.extent()
                         && self.pointers_known_equal(left.pointer(), right.pointer()))
             }
@@ -7426,7 +7420,7 @@ impl PureFactContext {
                 ) else {
                     return false;
                 };
-                record_implicit_reasoning_provenance(self, &source);
+                record_implicit_consulted_premises(self, &source);
                 true
             }
             Proposition::Not(body) => match body.as_ref() {
@@ -7441,7 +7435,7 @@ impl PureFactContext {
 
     fn knows_condition_or_stated_separation(&self, condition: &ConditionTerm, value: bool) -> bool {
         if let Some(source) = self.observation_comparisons.source(condition, value) {
-            record_implicit_reasoning_provenance(self, source);
+            record_implicit_consulted_premises(self, source);
             return true;
         }
         self.equality_graph.knows_condition(condition, value)
@@ -7485,7 +7479,7 @@ impl PureFactContext {
         let Some(source) = self.equality_graph.address_separation_source(condition) else {
             return false;
         };
-        record_implicit_reasoning_provenance(self, &source);
+        record_implicit_consulted_premises(self, &source);
         true
     }
 
@@ -9738,7 +9732,7 @@ pub(in crate::kernel) fn bitvector_index_in_range_shallow_views(
                 return false;
             };
             for step in path {
-                record_implicit_reasoning_provenance(assumptions, &step.premise);
+                record_implicit_consulted_premises(assumptions, &step.premise);
             }
             true
         };
@@ -9800,16 +9794,16 @@ pub(in crate::kernel) fn bitvector_index_in_range_shallow_views(
             && assumptions.difference_graph_proves_order_views(index, end, true);
     if lower_bound_is_exact && upper_bound_is_exact {
         // The bounds were read off exact facts along some indexed path; a
-        // provenance collection wants the facts behind them, whichever arm
+        // consulted-premise collection wants the facts behind them, whichever arm
         // found them.
-        record_implicit_reasoning_provenance(
+        record_implicit_consulted_premises(
             assumptions,
             &Proposition::ConditionIs(
                 index_comparison(CompareRelation::LessEqual, start, index),
                 true,
             ),
         );
-        record_implicit_reasoning_provenance(
+        record_implicit_consulted_premises(
             assumptions,
             &Proposition::ConditionIs(
                 index_comparison(CompareRelation::LessThan, index, end),
@@ -9875,7 +9869,7 @@ pub(in crate::kernel) fn element_delta_in_range_by_affine_arithmetic_views(
                 return false;
             };
             for step in path {
-                record_implicit_reasoning_provenance(assumptions, &step.premise);
+                record_implicit_consulted_premises(assumptions, &step.premise);
             }
             true
         };
@@ -10116,8 +10110,8 @@ fn pointer_in_range_shallow(
             true,
         )
     {
-        record_implicit_reasoning_provenance(assumptions, &lower.premise);
-        record_implicit_reasoning_provenance(assumptions, &upper.premise);
+        record_implicit_consulted_premises(assumptions, &lower.premise);
+        record_implicit_consulted_premises(assumptions, &upper.premise);
         return true;
     }
     let Some(count) = affine_range_element_count(start, end) else {
@@ -10463,7 +10457,7 @@ impl ExecutionPureFact {
                     return;
                 }
                 // A complete value equation simplifies to address equality
-                // when its designation and bounds already match. Retain that
+                // when its provenance and bounds already match. Retain that
                 // exact producer conclusion without adding object authority.
                 Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => {
                     context
@@ -10625,8 +10619,7 @@ impl ExecutionPureFact {
         value: ProgramValue,
         authorized_range: Option<MemoryRange>,
     ) -> Self {
-        let value_equation =
-            super::memory_provenance::store_value_equation(&after, &pointer, &value);
+        let value_equation = super::memory_history::store_value_equation(&after, &pointer, &value);
         Self {
             proposition: std::sync::Arc::new(Proposition::MemoryMutatesOnly {
                 before: before.clone(),
@@ -11751,7 +11744,7 @@ mod integer_observation_tests {
     }
 
     #[test]
-    fn shared_bound_provenance_selects_written_source() {
+    fn shared_bound_premise_selects_written_source() {
         use crate::kernel::machine_integer::comparison::condition_for_operand_views;
         use crate::kernel::{KernelTermImport, MachineOperandView};
         let _session = crate::kernel::VerificationSession::enter();
@@ -11785,8 +11778,8 @@ mod integer_observation_tests {
         assert_eq!(select(&parent), None);
         assert_eq!(select(&child), Some(source.clone()));
         for _ in 0..2 {
-            let (_, used) = collect_reasoning_provenance(|| {
-                record_reasoning_provenance(&child, &Proposition::ConditionIs(goal.clone(), true));
+            let (_, used) = collect_consulted_premises(|| {
+                record_consulted_premises(&child, &Proposition::ConditionIs(goal.clone(), true));
             });
             assert_eq!(used, vec![source.clone()]);
         }
@@ -12818,7 +12811,7 @@ mod annotated_numeric_pointer_condition_tests {
         for value in [false, true] {
             let context = PureFactContext::new().assume_condition(source.clone(), value);
             assert_eq!(context.fast_leaf_decision(&target, &[]), Some(value));
-            assert!(!context.pointer_designations_match(
+            assert!(!context.pointer_provenance_match(
                 &PointerValue::new(p.clone(), ProgramType::Int32Pointer),
                 &PointerValue::new(q.clone(), ProgramType::Int32Pointer)
             ));

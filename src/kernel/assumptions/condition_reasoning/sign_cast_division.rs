@@ -355,8 +355,8 @@ mod tests {
                             left.clone(),
                             right.clone(),
                         );
-                        let (expected, native_used) = collect_reasoning_provenance(|| {
-                            capture_implicit_reasoning_provenance(|| {
+                        let (expected, native_used) = collect_consulted_premises(|| {
+                            capture_implicit_consulted_premises(|| {
                                 context.sign_cast_division_equivalent(&native).map(&shape)
                             })
                         });
@@ -372,8 +372,8 @@ mod tests {
                         );
                         assert!(shared.names_sign_cast_division());
                         let exports = KernelTermExport::machine_export_count();
-                        let (actual, used) = collect_reasoning_provenance(|| {
-                            capture_implicit_reasoning_provenance(|| {
+                        let (actual, used) = collect_consulted_premises(|| {
+                            capture_implicit_consulted_premises(|| {
                                 context.sign_cast_division_equivalent(&shared)
                             })
                         });

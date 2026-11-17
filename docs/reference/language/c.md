@@ -222,7 +222,7 @@ execute its body (`mdtests/a_program_definition_of_strlen_is_refused.md`,
 
 The modeled `memcpy`, `memcmp` and `memset` take native object pointers through
 their `void *` parameters without source-level byte casts. Lowering supplies
-the byte view their contracts use, retaining pointer designation, subobject
+the byte view their contracts use, retaining pointer provenance, subobject
 bounds and qualifiers. For example, `memcpy(&out, &value, sizeof(out))` copies
 a scalar's representation directly (`mdtests/memcpy_typed_scalar_arguments.md`).
 The ordinary ownership, initialized-source, separation and destination-write
@@ -2457,6 +2457,21 @@ zero-initialized, and too many elements are rejected. Automatic `unsigned int`
 multidimensional arrays; each explicit value converts to the unsigned element
 type and omitted elements become zero
 (`mdtests/c_unsigned_array_initializer.md`).
+
+For supported scalar and pointer local-array initializer types, the outer
+bound may be omitted when a non-empty brace initializer determines it:
+`int values[] = {10, 20};` completes to two `int` elements. Runtime initializer
+expressions remain runtime expressions and execute once; only the bound is
+inferred. A completed array's `sizeof` and access bounds use that inferred
+length (`mdtests/c_local_array_initializer_infers_length.md`,
+`mdtests/c_local_array_initializer_inferred_size.md`,
+`mdtests/c_local_array_initializer_inferred_once.md`). Fixed trailing dimensions
+are allowed, as in `int values[][3] = {{1}, {2, 3}};`, and omitted elements
+within each row remain zero-initialized
+(`mdtests/c_local_array_initializer_inferred_nested.md`). An incomplete local
+array without a usable initializer, a missing inner bound, and `sizeof` of
+the array before its type is complete are rejected. Inferred automatic struct
+arrays, string initializers, and designated initializers are not supported.
 
 Scalar local arrays may have multiple fixed dimensions, such as
 `int32 matrix[3][4]`. Click lowers their storage in row-major order while

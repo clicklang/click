@@ -1,4 +1,4 @@
-//! Provenance of C storage created by the executing proof environment.
+//! Creation history of C storage created by the executing proof environment.
 //!
 //! This optional event ledger binds abstract population authority to checked
 //! C storage creation. It grants no C memory permission, and assumed
@@ -3640,7 +3640,7 @@ impl CreationEvents {
         })))
     }
 
-    /// End of an automatic or heap lifetime removes its provenance. Future
+    /// End of an automatic or heap lifetime removes its creation record. Future
     /// reuse at the same address needs an independently checked creation.
     pub(in crate::kernel) fn retired(&self, block: &PointerBlock) -> Result<Self, CreationRefusal> {
         if !self.0.creators.contains_key(block) {

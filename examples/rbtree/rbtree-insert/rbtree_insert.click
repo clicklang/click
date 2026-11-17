@@ -37,7 +37,8 @@ theorem ctx_rb_red_focus_not_top(ctx: Context, bh: Nat) {
     requires ctx_rb(ctx, bh, Color::Red) == 1;
 
     ensures ctx != Context::Top by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => {
                 have ctx_rb(Context::Top, bh, Color::Red) != 1 by {
                     unfold(ctx_rb(Context::Top, bh, Color::Red));
@@ -60,7 +61,8 @@ theorem color_bit_zero_is_red(color: Color) {
     requires color_bit(color) == 0;
 
     ensures color == Color::Red by {
-        induct(color) as ih {
+        let ih = induct(color);
+        match color {
             Color::Red => {
                 normalize();
             }
@@ -76,7 +78,8 @@ theorem color_bit_one_is_black(color: Color) {
     requires color_bit(color) == 1;
 
     ensures color == Color::Black by {
-        induct(color) as ih {
+        let ih = induct(color);
+        match color {
             Color::Red => {
                 have color_bit(Color::Red) != 1;
                 contradiction(color_bit(Color::Red) == 1);
@@ -93,7 +96,8 @@ theorem rb_root_black_node_color_bit(node: struct rb_node*, parent: struct rb_no
     requires rb_root_black(RbTree::Node(node, parent, color, left, right)) == 1;
 
     ensures color_bit(color) == 1 by {
-        induct(color) as ih {
+        let ih = induct(color);
+        match color {
             Color::Red => {
                 have rb_root_black(RbTree::Node(node, parent, Color::Red, left, right)) != 1 by {
                     unfold(rb_root_black(RbTree::Node(node, parent, Color::Red, left, right)));
@@ -135,7 +139,8 @@ theorem rb_has_parent_same(sub: RbTree, q: struct rb_node*, p: struct rb_node*) 
     requires rb_has_parent(sub, p) == 1;
 
     ensures p == q by {
-        induct(sub) as ih {
+        let ih = induct(sub);
+        match sub {
             RbTree::Empty => {
                 have rb_has_parent(RbTree::Empty, q) != 1;
                 contradiction(rb_has_parent(RbTree::Empty, q) == 1);
@@ -195,7 +200,8 @@ theorem ctx_node_is_from_parent(ctx: Context, sub: RbTree, p: struct rb_node*) {
     requires rb_has_parent(sub, p) == 1;
 
     ensures ctx_node_is(ctx, p) == 1 by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => {
                 apply(ctx_holds_top_parent(sub));
                 apply(rb_has_parent_same(sub, 0, p));
@@ -316,7 +322,8 @@ theorem ctx_reroot_fixed(ctx: Context, p: struct rb_node*) {
     requires ctx_node_is(ctx, p) == 1;
 
     ensures ctx == ctx_reroot(ctx, p) by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => {
                 apply(ctx_reroot_top_fixed(p));
                 known();
@@ -349,7 +356,8 @@ function ctx_depth(ctx: Context) -> Integer
 
 theorem ctx_depth_is_nonnegative(ctx: Context) {
     ensures 0 <= ctx_depth(ctx) by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => {
                 unfold(ctx_depth(Context::Top));
                 normalize();
@@ -371,7 +379,8 @@ theorem ctx_depth_is_nonnegative(ctx: Context) {
 theorem rb_parent_consistent_parent_is(t: RbTree, p: struct rb_node*) {
     requires rb_parent_consistent(t, p) == 1;
     ensures rb_parent_is(t, p) == 1 by {
-        induct(t) as ih {
+        let ih = induct(t);
+        match t {
             RbTree::Empty => {
                 unfold(rb_parent_is(RbTree::Empty, p));
                 normalize();

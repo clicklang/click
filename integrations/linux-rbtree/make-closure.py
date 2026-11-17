@@ -31,12 +31,12 @@ def sha256(data: bytes) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--linux-tree", required=True, type=Path)
-    parser.add_argument("--provenance", type=Path, default=HERE / "provenance.json")
+    parser.add_argument("--manifest", type=Path, default=HERE / "manifest.json")
     parser.add_argument("--output", type=Path, default=HERE / "input-closure.tar.gz")
     args = parser.parse_args()
 
-    provenance = json.loads(args.provenance.read_text())
-    expected = {entry["path"]: entry for entry in provenance["closure"]["files"]}
+    manifest = json.loads(args.manifest.read_text())
+    expected = {entry["path"]: entry for entry in manifest["closure"]["files"]}
     members = {}
     for path, entry in expected.items():
         data = (args.linux_tree / path).read_bytes()

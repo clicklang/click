@@ -334,9 +334,9 @@ fact or resource fact required by the following `step()` or `fold(resource)`.
 Applications after function exit remain path-local, so `result` and post-state
 expressions are interpreted separately for each completed path.
 
-A successful implicit tail retains surface-expressible transition provenance
+A successful implicit tail retains surface-expressible transition evidence
 when the current tactic language can express the argument. Expansion can
-render that provenance as an explicit proof.
+render that evidence as an explicit proof.
 
 An execution proof tracks an execution frontier: the current point,
 symbolic state, and enclosing continuation stack. Proof scripts can start at

@@ -1348,7 +1348,7 @@ impl<'a> Proof<'a> {
     /// returns, for a frontier that has no successor to read them.
     /// The persistent fact set is owned by `Proof`; it retains exact
     /// historical premises and extraction spellings without publishing
-    /// unrelated arm-local predicate or resource provenance.
+    /// unrelated arm-local predicate or resource evidence.
     pub(super) fn merge_branch_surface_facts(
         &self,
         execution: &mut ExecutionProofState,
@@ -1601,7 +1601,7 @@ impl<'a> Proof<'a> {
                     && arm.introduced_facts.iter().all(|fact| {
                         completed.common_facts_contain(&ExecutionPureFact::new(fact.clone()))
                     })
-                    && (!arm.execution.presentation.outcome_provenance.is_empty()
+                    && (!arm.execution.presentation.outcome_evidence.is_empty()
                         || completed.path_count() == 1)
             });
         #[cfg(test)]
@@ -1619,7 +1619,7 @@ impl<'a> Proof<'a> {
                 },
             ));
         });
-        let (outcomes, execution_evidence, outcome_provenance) = if can_share_publication {
+        let (outcomes, execution_evidence, outcome_evidence) = if can_share_publication {
             let outcomes = crate::kernel::concat_retained_function_candidates(
                 execution_start_state.clone(),
                 completed_arms,
@@ -1627,23 +1627,23 @@ impl<'a> Proof<'a> {
             );
             let mut evidence = arms[0].execution.core.execution_evidence.clone();
             evidence.append_shared(&arms[1].execution.core.execution_evidence);
-            let arm_provenance = |arm: &CheckedExecutionJoinArm<'_>| {
-                if arm.execution.presentation.outcome_provenance.is_empty() {
-                    vec![arm.execution.provenance_for_outcome(0)].into()
+            let arm_evidence = |arm: &CheckedExecutionJoinArm<'_>| {
+                if arm.execution.presentation.outcome_evidence.is_empty() {
+                    vec![arm.execution.evidence_for_outcome(0)].into()
                 } else {
-                    arm.execution.presentation.outcome_provenance.clone()
+                    arm.execution.presentation.outcome_evidence.clone()
                 }
             };
-            let mut provenance: crate::kernel::proof::PersistentVector<OutcomeProvenance> =
-                arm_provenance(&arms[0]);
-            provenance.append_shared(&arm_provenance(&arms[1]));
-            (outcomes, evidence, provenance)
+            let mut outcome_evidence: crate::kernel::proof::PersistentVector<OutcomeEvidence> =
+                arm_evidence(&arms[0]);
+            outcome_evidence.append_shared(&arm_evidence(&arms[1]));
+            (outcomes, evidence, outcome_evidence)
         } else {
             #[cfg(test)]
             let materialized_before = crate::kernel::assumptions::materialized_execution_facts();
             let mut paths = Vec::new();
             let mut execution_evidence = Vec::new();
-            let mut outcome_provenance: Vec<OutcomeProvenance> = Vec::new();
+            let mut outcome_evidence: Vec<OutcomeEvidence> = Vec::new();
             for (arm_index, arm) in arms.iter().enumerate() {
                 let completed = arm
                     .execution
@@ -1678,24 +1678,24 @@ impl<'a> Proof<'a> {
                     })
                 });
                 for (arm_path_index, path) in completed.paths().iter().enumerate() {
-                    let mut provenance = arm.execution.provenance_for_outcome(arm_path_index);
-                    if provenance
+                    let mut path_evidence = arm.execution.evidence_for_outcome(arm_path_index);
+                    if path_evidence
                         .checked_leaf_facts
                         .as_deref()
                         .is_some_and(|(candidate, _, _)| !candidate.shares_record_with(path))
                     {
-                        provenance.checked_leaf_facts = None;
+                        path_evidence.checked_leaf_facts = None;
                     }
 
-                    if provenance.call_routes.is_empty()
+                    if path_evidence.call_routes.is_empty()
                         && let Some(edges) = arm_call_edges
                     {
-                        provenance.call_routes.push(edges[arm_path_index]);
+                        path_evidence.call_routes.push(edges[arm_path_index]);
                     }
                     if call_outcomes {
                         // An `outcomes` nested in this arm was joined first, so
                         // its edge follows this one.
-                        provenance.call_routes.insert(0, arm_index == 0);
+                        path_evidence.call_routes.insert(0, arm_index == 0);
                     }
                     // A returned path of a summarized loop carries what the arm
                     // had established when its loop was summarized, not what the
@@ -1717,9 +1717,9 @@ impl<'a> Proof<'a> {
                     // The arm's checked introduction delta is true on every
                     // descendant leaf. Preserve its checked context through
                     // publication; summarized loop returns keep their own base.
-                    if provenance.loop_return.is_some() {
-                        provenance.checked_leaf_facts = None;
-                    } else if let Some(cache) = &mut provenance.checked_leaf_facts
+                    if path_evidence.loop_return.is_some() {
+                        path_evidence.checked_leaf_facts = None;
+                    } else if let Some(cache) = &mut path_evidence.checked_leaf_facts
                         // A leaf already holding the delta, as each of a run
                         // of returns does, is shared rather than copied.
                         && introduced
@@ -1750,7 +1750,7 @@ impl<'a> Proof<'a> {
                         }
                     }
                     // Equal-looking outcomes can carry different checked case
-                    // evidence. Retain every leaf with its own provenance rather
+                    // evidence. Retain every leaf with its own path_evidence rather
                     // than discarding the evidence of a coincident outcome.
                     let published =
                         crate::kernel::program_function_execution_candidate_with_additional_facts(
@@ -1759,7 +1759,7 @@ impl<'a> Proof<'a> {
                         );
                     // A path this join republishes unchanged keeps its
                     // record, and its leaf is shared rather than copied.
-                    if let Some(cache) = &mut provenance.checked_leaf_facts
+                    if let Some(cache) = &mut path_evidence.checked_leaf_facts
                         && !cache.0.shares_record_with(&published)
                     {
                         let (candidate, _, _) = Arc::make_mut(cache);
@@ -1774,7 +1774,7 @@ impl<'a> Proof<'a> {
                     // opens, so this path already shares the complete ordered
                     // case history. A join must not rebuild its nested suffix.
                     if let Some(route) = terminal_route {
-                        provenance.branch_decisions.record_route(
+                        path_evidence.branch_decisions.record_route(
                             route,
                             Arc::clone(
                                 route_decision
@@ -1783,7 +1783,7 @@ impl<'a> Proof<'a> {
                             ),
                         );
                     }
-                    outcome_provenance.push(provenance);
+                    outcome_evidence.push(path_evidence);
                 }
             }
 
@@ -1800,11 +1800,7 @@ impl<'a> Proof<'a> {
                 context.arguments.to_vec(),
                 paths,
             );
-            (
-                outcomes,
-                execution_evidence.into(),
-                outcome_provenance.into(),
-            )
+            (outcomes, execution_evidence.into(), outcome_evidence.into())
         };
         let mut execution = parent_execution.clone();
         execution.core.has_empty_execution_branch_leaf |= arms
@@ -1816,7 +1812,7 @@ impl<'a> Proof<'a> {
             [arms[0].execution, arms[1].execution],
             // Both arms ended at function exit: nothing runs after this
             // join to cite an arm's condition, and each terminal path keeps
-            // its own spellings in its outcome provenance.
+            // its own spellings in its outcome evidence.
             false,
         )?;
         execution.core.state = execution_start_state.clone().into();
@@ -1836,11 +1832,11 @@ impl<'a> Proof<'a> {
         execution.core.evidence_source = None;
         execution.presentation.branch_decisions =
             parent_execution.presentation.branch_decisions.clone();
-        execution.presentation.outcome_provenance = outcome_provenance;
+        execution.presentation.outcome_evidence = outcome_evidence;
         if call_outcomes {
             execution.presentation.call_outcome_edges = execution
                 .presentation
-                .outcome_provenance
+                .outcome_evidence
                 .iter()
                 .map(|path| path.call_routes.first().copied())
                 .collect();
@@ -1996,7 +1992,7 @@ impl<'a> Proof<'a> {
         // Terminal arm tactics are source-order cursors, not semantic state.
         // Preserve only the append-only suffix each checked arm added after
         // the split root, nested under the exact condition this audited join
-        // retained in its `If` provenance. Ordered finalization later asks
+        // retained in its `If` record. Ordered finalization later asks
         // each focused branch outcome Proof to select one arm and apply those
         // ordinary operations; the joined execution frontier gains no facts,
         // C state, resources, or successor authority from this tree.

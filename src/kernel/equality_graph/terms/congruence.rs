@@ -19,11 +19,11 @@ pub(super) enum ArgumentTag {
     Value(ProgramType),
     Array((u32, u32), ProgramType),
     Algebraic,
-    DesignationRead((u32, u32)),
+    ProvenanceRead((u32, u32)),
     PointerExtentRead((u32, u32)),
     PointerRootExtent,
     PointerSubobjectExtent,
-    PointerCallDesignation,
+    PointerCallProvenance,
     PointerCallExtent,
     Integer,
 }
@@ -1295,12 +1295,12 @@ impl TermClasses {
                         // Address, allocation origin and selected extent are
                         // distinct congruence operands. Only a complete value
                         // equality merges the latter two domains.
-                        let root = self.designation_node(pointer.designation());
+                        let root = self.provenance_node(pointer.provenance());
                         let extent = self.extent_node(pointer);
                         let metadata = pointer
                             .clone()
                             .with_address(crate::kernel::Pointer::null())
-                            .with_designation(std::sync::Arc::new(crate::kernel::Pointer::null()))
+                            .with_provenance(std::sync::Arc::new(crate::kernel::Pointer::null()))
                             .with_root_extent();
                         let head = self.opaque_argument(&A::Value(ProgramValue::Pointer(metadata)));
                         let node = self.intern_node(Node::Apply(head, root));
@@ -1649,8 +1649,8 @@ impl TermClasses {
         b: &crate::kernel::PointerValue,
     ) -> bool {
         let roots = (
-            self.designation_node(a.designation()),
-            self.designation_node(b.designation()),
+            self.provenance_node(a.provenance()),
+            self.provenance_node(b.provenance()),
         );
         let extents = (self.extent_node(a), self.extent_node(b));
         let a = self.intern_expression(
@@ -1687,10 +1687,7 @@ impl TermClasses {
         // Merge just the domain nodes that selected consumers already named;
         // later consumers select the retained domain representative directly.
         let mut pending = Vec::new();
-        for nodes in [
-            &mut self.read_designation_nodes,
-            &mut self.read_extent_nodes,
-        ] {
+        for nodes in [&mut self.read_provenance_nodes, &mut self.read_extent_nodes] {
             let a = nodes.get(&left).copied();
             let b = nodes.get(&right).copied();
             nodes.remove(&left);
@@ -1706,23 +1703,23 @@ impl TermClasses {
         true
     }
 
-    pub(in crate::kernel::equality_graph) fn merge_designations(
+    pub(in crate::kernel::equality_graph) fn merge_provenance(
         &mut self,
         a: &crate::kernel::Pointer,
         b: &crate::kernel::Pointer,
     ) -> bool {
-        let a = self.designation_node(a);
-        let b = self.designation_node(b);
+        let a = self.provenance_node(a);
+        let b = self.provenance_node(b);
         self.close(vec![(a, b)])
     }
 
-    pub(in crate::kernel::equality_graph) fn designations_equal(
+    pub(in crate::kernel::equality_graph) fn provenance_equal(
         &mut self,
         a: &crate::kernel::Pointer,
         b: &crate::kernel::Pointer,
     ) -> bool {
-        let a = self.designation_node(a);
-        let b = self.designation_node(b);
+        let a = self.provenance_node(a);
+        let b = self.provenance_node(b);
         self.register_pending_loads();
         self.root(a) == self.root(b)
     }
@@ -1756,7 +1753,7 @@ impl TermClasses {
             .pointer_values
             .get(&root)
             .map_or(value.clone(), |previous| {
-                crate::kernel::pointer_designations::prefer_pointer(previous, &value)
+                crate::kernel::pointer_provenance::prefer_pointer(previous, &value)
             });
         self.pointer_values.insert(root, value);
     }
@@ -1810,14 +1807,14 @@ impl TermClasses {
         } else if value.extent_is_known() {
             self.intern_node(Node::ArgumentTag(ArgumentTag::PointerRootExtent))
         } else {
-            self.opaque_extent_node(value.opaque_extent().unwrap_or(value.designation()))
+            self.opaque_extent_node(value.opaque_extent().unwrap_or(value.provenance()))
         };
         let root = self.root(node);
         let witness = self
             .extent_values
             .get(&root)
             .map_or(value.clone(), |previous| {
-                crate::kernel::pointer_designations::prefer_pointer(previous, value)
+                crate::kernel::pointer_provenance::prefer_pointer(previous, value)
             });
         self.extent_values.insert(root, witness);
         node
@@ -1881,9 +1878,9 @@ impl TermClasses {
         self.root(a) == self.root(b)
     }
 
-    fn designation_node(&mut self, origin: &crate::kernel::Pointer) -> u64 {
-        let node = self.designation_node_without_calls(origin);
-        self.retain_pointer_call_component(origin, node, ArgumentTag::PointerCallDesignation);
+    fn provenance_node(&mut self, origin: &crate::kernel::Pointer) -> u64 {
+        let node = self.provenance_node_without_calls(origin);
+        self.retain_pointer_call_component(origin, node, ArgumentTag::PointerCallProvenance);
         node
     }
 
@@ -1900,7 +1897,7 @@ impl TermClasses {
             return;
         };
         // This internal constructor names numeric coordinates only. Equal
-        // words cannot identify the designation or bounds of their casts.
+        // words cannot identify the provenance or bounds of their casts.
         if application.integer_address_bits().is_some() {
             return;
         }
@@ -1919,12 +1916,12 @@ impl TermClasses {
         self.close_with_affine_definition(vec![(component, projected)], true);
     }
 
-    fn designation_node_without_calls(&mut self, origin: &crate::kernel::Pointer) -> u64 {
+    fn provenance_node_without_calls(&mut self, origin: &crate::kernel::Pointer) -> u64 {
         // Congruence here uses the cell a complete pointer was read from.
         // Equality of the loaded pointer's numeric address never merges this
         // node with a different value origin.
         let origin = self.read_domains.representative(origin);
-        if let Some(node) = self.read_designation_nodes.get(&origin) {
+        if let Some(node) = self.read_provenance_nodes.get(&origin) {
             return *node;
         }
         if let crate::kernel::PointerBlock::LoadedPointer(identity) = &origin.block
@@ -1933,11 +1930,11 @@ impl TermClasses {
             let source = crate::kernel::prelude::canonical_load_projection_source(&memory, &cell)
                 .unwrap_or(memory);
             let cell = self.address(cell.block, cell.offset).0;
-            let head = self.intern_node(Node::ArgumentTag(ArgumentTag::DesignationRead(
+            let head = self.intern_node(Node::ArgumentTag(ArgumentTag::ProvenanceRead(
                 source.read_identity(),
             )));
             let node = self.intern_node(Node::Apply(head, cell));
-            self.read_designation_nodes.insert(origin, node);
+            self.read_provenance_nodes.insert(origin, node);
             return node;
         }
         self.opaque_argument(&A::Value(ProgramValue::Pointer(

@@ -1456,7 +1456,10 @@ pub(super) fn project_initial_resource_facts(
         spec_definitions,
     )
     .map_err(|message| ClickError::new(format!("`{claim_label}` setup failed: {message}")))?;
-    Ok(PureFactList::from_store(&facts.facts))
+    // Entry source origins address the incoming fact occurrences, including
+    // repeated requirements and guards. Retain their positions while carrying
+    // the producer's appended resource facts and indexes.
+    Ok(PureFactList::from_produced_store(facts.facts))
 }
 
 pub(super) fn project_outcome_resource_facts(

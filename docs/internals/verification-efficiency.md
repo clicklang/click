@@ -57,7 +57,7 @@ violation is touching the other thousand facts, functions, states, or
 resources that the operation did not name.
 
 Work must also be deterministic. Candidate buckets and index reconstruction
-iterate in admission order (pointer-class fact sources, pointer designations,
+iterate in admission order (pointer-class fact sources, pointer provenances,
 and opaque-extent aliases each retain an admission ordinal); allocation
 addresses and state hash order never decide which candidate a
 short-circuit search tries first, because that changes charged work between
@@ -152,7 +152,7 @@ On the summary and description-only paths, `admit_clause` checks the returned de
 `restore_entry_borrows` constructs their destination occurrences. A
 `FreshAllocationReturn` records the allocation's identity, not a consumed
 slice or a partition of its outputs. Two descriptions of the same fresh cell
-can both carry that provenance. The regression
+can both carry that origin. The regression
 `fresh_return_group_refuses_sibling_overlap` exercises adjacent and duplicate
 slices from an actual allocation: description admission rejects the
 duplicate, the body's `jointly_consume_returned_resource_units` check cannot
@@ -237,7 +237,7 @@ composite post-memory boundary rule.
 This is a rule for unchanged footprints, not a blanket license from a verified
 contract to insert arbitrary descriptions. New or changed footprints,
 memory-dependent expressions, guarded effects, and unmatched outputs retain
-admission. The description-only mode ignores transfer provenance and establishes
+admission. The description-only mode ignores transfer origins and establishes
 the missing relationship to its destination. Raw outputs are checked against
 the restored frame even when they precede a justified output in clause order.
 The same rule records selected input clauses for children of finite one-level
@@ -499,7 +499,7 @@ charged to visible semantic output rather than hidden ambient state:
   additions; loop-invariant checking carries a prepared context between
   declarations and receives only the delta.
 - Completed early-return paths retain shared fact prefixes and persistent
-  candidate, evidence, and provenance vectors; terminal joins concatenate
+  candidate, evidence, and outcome-evidence vectors; terminal joins concatenate
   them instead of copying returned paths, finishing reads each retained trace
   by reference, and whole-claim expansion writes sequential returns one after
   another rather than nesting them

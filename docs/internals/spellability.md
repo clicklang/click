@@ -37,7 +37,7 @@ checked. Each one costs completeness, expansion, or a readable report.
   `None`, or to dropping the fact.
 - **Name a value where it is introduced.** A step that introduces a fresh
   value or memory state (a call result, a havoc, an allocation, a state
-  between recorded points) gives it a name from its provenance at that
+  between recorded points) gives it a name from its origin at that
   point. Do not recover a name later from whatever locals happen to hold the
   value. A non-void call's result is `<region>.result`, including calls whose
   source discards the return value. The checked call transition retains the
@@ -372,7 +372,7 @@ the one the text names.
   value. The version walk below is that case.
 - Not allowed: substituting a known-equal term, constant-folding a
   comparison the facts decide, dropping a decided guard or disjunct, or
-  choosing a term by known provenance. Equalities stay in the equality graph
+  choosing a term by known origin. Equalities stay in the equality graph
   and the comparison form, which every check consults.
 
 Lowering never folds a comparison of two literals.
@@ -440,7 +440,7 @@ remain opaque instead of acquiring an invented value.
 Logical object-pointer reads now retain their version names, including when
 memory stores a complete pointer at the cell. The read's complete stored value
 is related through `EqualityGraph::register_logical_read_values` and the
-producer's read equations; its address, bounds, and designation are not folded
+producer's read equations; its address, bounds, and provenance are not folded
 into the lowered term. The cached-prefix route also excludes logical reads
 from fact-supported recovery, even outside specification scope.
 
@@ -532,7 +532,7 @@ term ([the raise-lower principle](#the-raise-lower-principle)).
 kind, and groups the differences by where the two terms first diverge. It
 does not observe C execution, which may depend on facts.
 Historical defects included comparisons folded using facts, pointer and aliased
-reads resolved through known values, comparison kinds chosen by provenance,
+reads resolved through known values, comparison kinds chosen by origin,
 and decided guards dropped. Such equalities belong in checking, not in the
 term lowering produces.
 

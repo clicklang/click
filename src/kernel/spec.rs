@@ -8119,8 +8119,8 @@ fn refine_object_pointer_argument_with_null(
             .equality_graph
             .has_object_type(pointer.pointer(), object_class)
             // A modular result may have a symbolic address while its checked
-            // designation already names the actual declared object.
-            || [pointer.pointer(), pointer.designation()]
+            // provenance already names the actual declared object.
+            || [pointer.pointer(), pointer.provenance()]
                 .into_iter()
                 .any(|object| {
                     object.offset == PointerOffsetTerm::Constant(0)
@@ -8967,10 +8967,29 @@ fn evaluate_spec_if_paths_in(
             &condition_path.obligations,
         );
         // A retained comparison guard is part of the conditional's syntax even
-        // when its two literal operands determine its truth. Checking may
+        // when its operands determine its truth intrinsically. Checking may
         // select an arm; logical lowering retains both guarded values.
         let retained_comparison = !budget.machine_result_production_disabled
             && match &condition_path.proposition {
+                Proposition::ConditionIs(
+                    ConditionTerm::Compare {
+                        format,
+                        left,
+                        right,
+                        ..
+                    },
+                    _,
+                ) if matches!(
+                    format,
+                    MachineIntegerType::Int32
+                        | MachineIntegerType::UInt32
+                        | MachineIntegerType::Int64
+                        | MachineIntegerType::UInt64
+                ) && matches!((left.as_ref(), right.as_ref()), (MachineTerm::Variable(left), MachineTerm::Variable(right)) if left == right) =>
+                {
+                    true
+                }
+
                 Proposition::ConditionIs(
                     ConditionTerm::Compare {
                         format,
@@ -10361,7 +10380,7 @@ fn program_value_uint64_term(value: &ProgramValue) -> Option<MachineTerm> {
 mod integer_budget_tests;
 
 #[cfg(test)]
-mod lowering_provenance_tests;
+mod lowering_head_origin_tests;
 
 #[cfg(test)]
 mod spec_pointer_subtraction_tests;

@@ -1625,7 +1625,6 @@ fn expand_declared_resource_tactic(
         | ProofTactic::If(_)
         | ProofTactic::Match(_)
         | ProofTactic::Cases(_)
-        | ProofTactic::StructuralInduct { .. }
         | ProofTactic::Branch(_)
         | ProofTactic::Loop(_)) => {
             expand_declared_resource_tactic_with_nested_proofs(tactic, resource_definitions)
@@ -2064,38 +2063,6 @@ fn expand_declared_resource_tactic_with_nested_proofs(
             )?;
             resource_definitions.finish_alternatives(alternatives);
             Ok(ProofTactic::Cases(proof_cases))
-        }
-        ProofTactic::StructuralInduct {
-            parameter,
-            hypothesis,
-            arms,
-        } => {
-            let constructors = &resource_definitions.constructors;
-            let scrutinee = constructors.variable_type(&parameter);
-            let alternatives = resource_definitions.begin_alternatives();
-            let arms = arms
-                .into_iter()
-                .map(|arm| {
-                    let types = constructors.proof_arm_binding_types(scrutinee.as_ref(), &arm);
-                    let tactics = constructors.with_bindings(&arm.bindings, types, || {
-                        resource_definitions.arm(&alternatives, || {
-                            expand_declared_resource_script(arm.tactics, resource_definitions)
-                        })
-                    })?;
-                    Ok(ProofInductionArm {
-                        type_name: arm.type_name,
-                        variant: arm.variant,
-                        bindings: arm.bindings,
-                        tactics,
-                    })
-                })
-                .collect::<Result<Vec<_>, ClickError>>()?;
-            resource_definitions.finish_alternatives(alternatives);
-            Ok(ProofTactic::StructuralInduct {
-                arms,
-                parameter,
-                hypothesis,
-            })
         }
         ProofTactic::Match(proof_match) => {
             let proof_match = std::sync::Arc::unwrap_or_clone(proof_match);

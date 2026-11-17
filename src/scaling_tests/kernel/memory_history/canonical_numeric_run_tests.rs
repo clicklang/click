@@ -1,4 +1,4 @@
-// Scaling tests of `src/kernel/memory_provenance.rs` (module `canonical_numeric_run_tests`): deterministic work measured at several
+// Scaling tests of `src/kernel/memory_history.rs` (module `canonical_numeric_run_tests`): deterministic work measured at several
 // input sizes. Included into its `scaling_tests` module; see "Scaling
 // tests" in `docs/internals/testing.md`.
 

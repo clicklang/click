@@ -138,10 +138,10 @@ fn expanded_loop_phase_proofs_are_certificates() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_00")]
 fn nested_conjunction_extraction_precedes_explicit_arithmetic_certificate() {
-    let (click, sources) = loop_fixture("arithmetic_conjunction_provenance");
+    let (click, sources) = loop_fixture("arithmetic_conjunction_extraction");
     let sources = borrowed_sources(&sources);
     let expanded = expand_function_proof_source(&click, &sources, "drain")
-        .expect("nested conjunction provenance should expand");
+        .expect("nested conjunction evidence should expand");
     assert!(expanded.contains("have n >= 0 by"), "{expanded}");
     // The extracted conjunct is the initialization's own fact; the
     // decrease and the exit equality are explicit arithmetic certificates.
@@ -880,7 +880,7 @@ fn individual_loop_proof_has_no_whole_claim_acceptance_check() {
     )));
     verified[0]
         .expanded_proof_certificate()
-        .expect("the compatibility proof should retain expansion provenance");
+        .expect("the compatibility proof should retain expansion evidence");
 
     let rewritten = expand_c_claim_source(
         click_source,

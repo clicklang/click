@@ -18,7 +18,7 @@ use crate::kernel::{
     ExecutionEnvironment, ExecutionPureFact, ExecutionSemantics, ExecutionState, ExpressionOutcome,
     FunctionContract, FunctionContractClaim, FunctionContractClaimKey, FunctionContractClaimTarget,
     FunctionContractExecutionMode, FunctionExecutionCandidates, FunctionOutcome,
-    FunctionSpecification, LoopBreakExit, LoopEffect, LoopEffectCheck, LoopEffectSpan,
+    FunctionSpecification, LoopEarlyExit, LoopEffect, LoopEffectCheck, LoopEffectSpan,
     LoopFinalExitCandidate, LoopInvariantCheck, LoopReturnExit, MachineTerm, Memory, MemoryRange,
     MemorySegment, Pointer, PointerBlock, PointerOffsetTerm, ProgramExpression, ProgramFunction,
     ProgramStatement, ProgramType, ProgramValue, ProofObligation, Proposition,
@@ -5776,7 +5776,7 @@ pub struct CertifiedStatementTransition {
     pub(crate) prerequisite_derivations: Vec<PropositionDerivation>,
     /// Exact entry-state facts consumed while planning this
     /// transition. Kept outside the kernel theorem so collecting certificate
-    /// provenance cannot perturb execution paths or fresh identities.
+    /// premises cannot perturb execution paths or fresh identities.
     pub(crate) planning_premises: Vec<Proposition>,
     pub(crate) fact_transports: Vec<CertifiedFactTransport>,
     /// Kernel-produced load equation metadata from this exact transition.
@@ -5849,11 +5849,6 @@ pub enum ProofTactic {
     Induct {
         parameter: String,
         hypothesis: String,
-    },
-    StructuralInduct {
-        parameter: String,
-        hypothesis: String,
-        arms: Vec<ProofInductionArm>,
     },
     ApplyInduction {
         hypothesis: String,
@@ -6085,7 +6080,6 @@ pub enum ControlTactic {
     Open,
     If,
     Cases,
-    StructuralInduct,
     Branch,
     CallOutcomes,
     Loop,
@@ -6221,13 +6215,8 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "induct",
-        syntax: "let ih = induct(n)",
+        syntax: "let ih = induct(value)",
         class: "simple",
-    },
-    PublicTacticForm {
-        id: "structural-induct",
-        syntax: "induct(xs) as ih { Type::Variant(fields)",
-        class: "control",
     },
     PublicTacticForm {
         id: "proof-match",
@@ -6461,10 +6450,6 @@ impl ProofTactic {
                     .map(|entry| Obligation(Source(&entry.have.proof)))
                     .collect(),
             },
-            Self::StructuralInduct { arms, .. } => arms
-                .iter()
-                .map(|arm| Continuing(Script(&arm.tactics)))
-                .collect(),
             Self::Have(have) => vec![Obligation(Source(&have.proof))],
             Self::Open(open) => {
                 let mut children = vec![Continuing(Script(&open.tactics))];
@@ -6529,7 +6514,6 @@ impl ProofTactic {
             }
             Self::Iterated(_) => TacticClass::Simple(SimpleTactic::IteratedOwnership),
             Self::Induct { .. } => TacticClass::Simple(SimpleTactic::Induct),
-            Self::StructuralInduct { .. } => TacticClass::Control(ControlTactic::StructuralInduct),
             Self::ApplyInduction { .. } => {
                 TacticClass::Smart(SmartSite::Elided(ElidedArgument::InductionPremises))
             }
@@ -6955,7 +6939,7 @@ pub struct ProofSolveUsing {
 
 /// The checked signed-int32 arithmetic rule family. Surface nodes retain
 /// source expressions so explicit certificates round-trip without erasing
-/// provenance before the kernel performs its independent validation.
+/// their source origin before the kernel performs its independent validation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SignedIntervalPlan {
     pub nodes: Vec<SignedArithmeticStep>,
@@ -8380,7 +8364,7 @@ pub struct ProofSelection {
     pub assumed_functions: Vec<String>,
     /// Explicit runtime specifications on which this conditional artifact depends.
     pub runtime_assumptions: Vec<String>,
-    /// Checked provenance, canonical types, and specification identity for
+    /// Checked origin, canonical types, and specification identity for
     /// the selected modeled pthread projection, when present.
     pub modeled_pthread_binding: Option<crate::languages::c::thread_runtime::ModeledPthreadBinding>,
 }
@@ -8425,7 +8409,7 @@ impl std::fmt::Debug for TheoremProofCompletion {
 }
 
 // Public theorem equality compares the declaration and its checked
-// presentation, as before. Opaque retained proof handles are provenance,
+// presentation, as before. Opaque retained proof handles are evidence,
 // not a new structural equality or cache key for the verifier.
 impl PartialEq for VerifiedPureTheorem {
     fn eq(&self, other: &Self) -> bool {
@@ -10244,7 +10228,7 @@ impl VerifiedPureTheorem {
         if let Some(TheoremProofCompletion::StructuralInduction(completions)) =
             &self.checked_completion
             && !matches!(self.proof.as_ref().map(ProofCertificate::steps),
-                Some([ProofStep::StructuralInduct { arms, .. }]) if arms.len() == completions.len())
+                Some([ProofStep::Induct { .. }, ProofStep::Match { arms, .. }]) if arms.len() == completions.len())
         {
             return Err(ClickError::new(
                 "structural induction presentation lost its checked arms",
