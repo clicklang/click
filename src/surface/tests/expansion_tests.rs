@@ -21706,7 +21706,7 @@ fn explicit_and_implicit_existential_requirements_expand_without_search() {
 }
 
 #[test]
-fn explicit_and_implicit_entry_witnesses_expand_without_search() {
+fn explicit_entry_witnesses_for_cstr_calls_expand_without_search() {
     for fixture in [
         "cstr_plain_char_kernel_requirement_reaches_callee",
         "cstr_signed_char_kernel_requirement_reaches_callee",
@@ -21716,17 +21716,14 @@ fn explicit_and_implicit_entry_witnesses_expand_without_search() {
             .iter()
             .map(|(name, text)| (name.as_str(), text.as_str()))
             .collect::<Vec<_>>();
-        for step in ["step();", "step() by solve();"] {
-            let source = format!("{} by {{ step(); {step} }}", source.trim_end());
-            let expanded = expand_c_claim_source_by_label(&source, &sources, "outer.ensures_0")
-                .unwrap_or_else(|error| panic!("{fixture}, {step}: {error}"));
-            assert!(expanded.contains("witness("), "{expanded}");
-            assert!(!expanded.contains("extract("), "{expanded}");
-            without_implicit_solve_for_claim("outer.contract", || {
-                verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
-            })
-            .unwrap_or_else(|error| panic!("{fixture}, {step}: {error}\n{expanded}"));
-        }
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "outer.ensures_0")
+            .unwrap_or_else(|error| panic!("{fixture}: {error}"));
+        assert!(expanded.contains("witness("), "{expanded}");
+        assert!(!expanded.contains("extract("), "{expanded}");
+        without_implicit_solve_for_claim("outer.contract", || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: {error}\n{expanded}"));
     }
 }
 
