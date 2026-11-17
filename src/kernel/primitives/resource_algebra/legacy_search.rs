@@ -1,7 +1,6 @@
 //! Existing slow dependencies extracted without changing their decisions.
 //! Each entry remains reachable only through its inventoried compatibility caller.
 use super::*;
-use crate::kernel::primitives::memory_equality_index::ConstantOwnedOverlap;
 
 impl ResourceContext {
     /// Compatibility admission: indexed checking first, then explicitly
@@ -114,32 +113,6 @@ impl ResourceContext {
                 resource_family_algebra(left.family()).pair_validity_error(left, right, assumptions)
             {
                 return Some((error, left.clone()));
-            }
-        }
-        None
-    }
-
-    /// Check only the new boundary of an already constructed return body.
-    /// Unsupported memory geometry explicitly retains legacy discovery.
-    pub(in crate::kernel) fn returned_boundary_conflict_with_legacy_discovery(
-        &self,
-        frontier: &[ResourceFact],
-        assumptions: &PureFactContext,
-    ) -> Option<(ResourceFact, ResourceFact)> {
-        for piece in frontier {
-            crate::instrumentation::record_deterministic_work(1);
-            if let Some(entry) = self.exclusive_boundary_owner(piece) {
-                return Some((piece.clone(), self.fact(entry).clone()));
-            }
-            let held = match self.constant_owned_overlap(piece, assumptions) {
-                ConstantOwnedOverlap::Clear => None,
-                ConstantOwnedOverlap::Overlap(entry) => Some(self.fact(entry).clone()),
-                ConstantOwnedOverlap::Unsupported => self
-                    .legacy_memory_boundary_conflict(piece, self.storage.next_entry_id, assumptions)
-                    .map(|(_, held)| held),
-            };
-            if let Some(held) = held {
-                return Some((piece.clone(), held));
             }
         }
         None

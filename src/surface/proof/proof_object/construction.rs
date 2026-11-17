@@ -8,7 +8,7 @@ impl<'a> Proof<'a> {
     ///
     /// A goal constructor receives an already lowered proposition, so the
     /// record arrives beside it. Installing it is presentation only: the
-    /// checked proposition, facts, and provenance node are unchanged, and
+    /// checked proposition, facts, and lineage node are unchanged, and
     /// `None` (no lowering performed for this goal) leaves the goal in the
     /// unrecorded state where introductions refine the written form
     /// structurally.
@@ -79,7 +79,7 @@ impl<'a> Proof<'a> {
         )
     }
     /// Reattributes subsequent execution-structure diagnostics to the source
-    /// tactic that owns them without changing proof state or provenance.
+    /// tactic that owns them without changing proof state or lineage.
     ///
     /// Simple steps carry their own origins. Structural operations span
     /// several checked transitions, so a long-lived function Proof updates
@@ -105,7 +105,7 @@ impl<'a> Proof<'a> {
     }
 
     /// Names `step_tactic_name` as the source tactic of the statement steps
-    /// checked from this proof, without changing proof state or provenance:
+    /// checked from this proof, without changing proof state or lineage:
     /// the implicit tail, advancing statement by statement, is refused as
     /// `step()`, the step that refused.
     pub(in crate::surface::proof) fn with_execution_step_tactic_name(
@@ -139,7 +139,7 @@ impl<'a> Proof<'a> {
     }
 
     /// Restores an ancestor's source site and execution diagnostic context
-    /// after a nested structural operation. The descendant check is provenance-based;
+    /// after a nested structural operation. The descendant check is lineage-based;
     /// this changes no goals, facts, execution state, or proof nodes.
     pub(in crate::surface::proof) fn restore_execution_tactic_attribution(
         &self,

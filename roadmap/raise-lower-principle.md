@@ -542,7 +542,7 @@ CI and the merge queue also check each delivered slice.
 | `SpecCallArgument::into_payload`, disabled-retention evaluation and unsupported/native scalar branches | Typed shared call assembly uses `into_typed_call_operand`; native call consumers and parity controls keep explicit payload conversion. Unsupported forms retain their established refusal, rather than gaining inferred types or new semantics. 9l–9q cover retained/native parity, conversion bounds, raw words and complete pointer casts. |
 | `retained_syntax.rs`: mixed algebraic Call/Read arguments | Selected imports preserve the existing common-root argument comparison, which differs from native syntax comparison. 9t explicitly tests that distinction and constant-work refusal of unsupported growing payloads. |
 | `retained_syntax/pointers.rs`: extent widths and opaque index leaves | Width certification preserves native-syntax admission; opaque leaves preserve the old exporter's reading. 9u tests complete metadata, captured memory, unsupported width/index refusal and shared-address DAG scaling. |
-| `contract_claims.rs`, `execution_value.rs`: memory/provenance equality, exceptional-signature checks, exact outcome refresh | These selected consumers retain their existing native equality/admission policies. Storage identity is not substituted for exact native syntax. 9v–9w cover native binding parity, exact refresh refusal, publication ownership and constant-work retained result handoffs. |
+| `contract_claims.rs`, `execution_value.rs`: memory/history equality, exceptional-signature checks, exact outcome refresh | These selected consumers retain their existing native equality/admission policies. Storage identity is not substituted for exact native syntax. 9v–9w cover native binding parity, exact refresh refusal, publication ownership and constant-work retained result handoffs. |
 | `FixedStateFrame`, fixed-state/resource lowering and native theorem bindings | Frames borrow the retained carrier; native allocation/resource/embedded-value consumers request a compatibility view. 9w–9x cover unchanged native outputs, guards, explicit expansion/replay and zero-export retained capture. |
 | `program_evaluate_speprogram_expression_at_state`, strict resource evaluation, resource-field storage | The public native API retains its signature. Strict resource evaluation keeps its distinct checked-load contract. 9y removes the superseded private capture entry point after the final resource-field caller uses the common path, preserving obligations and wrong-type refusal. |
 | Cached native values, native Eq/Ord/Hash and opaque leaves | The 8ad inventory still applies to exact raw C words, complete pointer-integer records, unknown untyped intrinsics and observation descriptors. Removing duplicate native storage and migrating its key consumers is package 10; it is not claimed complete here. |
@@ -696,7 +696,7 @@ was not run.
 ### 10g Shared complete-pointer storage keys
 
 Local/outcome pointer keys preserve the complete native identity tuple:
-address, designation, view type, volatility, extent-known status, conditional
+address, provenance, view type, volatility, extent-known status, conditional
 opaque extent and subobject extent. Const/evidence annotations remain exact on
 producer payloads and ignored only where native pointer equality ignores them.
 Key operations no longer request the enclosing native pointer descriptor.
@@ -720,6 +720,29 @@ A queue run hit the existing 30-second containment cap while one test combined
 independent skewed/balanced conjunction curves. Those curves now run separately,
 retaining every size, replay check and work bound. Both separated tests passed;
 no timeout, deterministic budget or proof fixture changed.
+
+### 10i Retained memory-value key hashing
+
+Boolean, float, algebraic and pointer cells cache structural family keys across
+immutable cell clones. Hashing, equality and ordering read these keys without
+requesting an enclosing native descriptor. Native value equality/order and
+collision checking are preserved. Numeric cells retain their existing native
+carrier and structural keys; local machine observation identities are not
+substituted for memory identity. Selected scalar adapters remain explicit.
+
+The native hash-byte compatibility constraint was removed with user approval.
+Snapshot interning and incremental content hashing remain unchanged; their
+hash numbers and resulting state ordering can change. A bounded red regression
+measured 152 / 632 / 10,232 hash-input bytes for 3 / 5 / 9 shared float nodes.
+The fixed route emits nine bytes at each size without populating the enclosing
+native cache. Growing DAG controls cover cold construction, cloned-cell warm
+hashing and fresh-verification isolation. Mixed native/shared family matrices,
+forced outer hash collisions and a numeric-call carrier distinction guard the
+existing equality classes. The focused suite passed all 41 checks.
+All 8,508 nonignored library checks passed, including all 1,855 scaling checks.
+The full regular mdtest corpus and examples passed unchanged. Corpus-wide
+fact-stability auditing recorded zero changed terms, zero fact-selected paths
+and 371 refusals without facts. Quality checks passed; Nightly was not run.
 
 ## Chunk 3: machine-valued pure-function results
 
@@ -836,7 +859,7 @@ changes before implementing them.
 | 8f | Boolean identity and fact keys | Preserve native/common matching and comparison-format equivalences. |
 | 8g | Pointer-offset equality | Retain shared offset operands. |
 | 8h | Raw pointer equality | Retain shared address operands. |
-| 8i | Complete-pointer equality | Preserve designation, extent and complete-payload distinctions. |
+| 8i | Complete-pointer equality | Preserve provenance, extent and complete-payload distinctions. |
 | 8j | Overflow conditions | Retain typed operands and existing operation/width rules. |
 | 8k | Boolean reads | Retain state and shared address. |
 | 8l | Boolean pure calls | Retain common arguments and result structure. |
@@ -946,7 +969,7 @@ are covered. The shared Boolean matcher also restores the native exact-equality
 precedence before load authority: an identical guard, including comparison-format
 equivalences, does not need permission to match its own read. That preliminary
 check reuses the existing immutable machine syntax memo. All 1,679 selected tests
-passed, including every scaling test, memory provenance and shared load-atom
+passed, including every scaling test, memory history and shared load-atom
 comparison selections, with exit status 0. The CI-quality check passed.
 
 8g (merged [PR #2813](https://github.com/clicklang/click/pull/2813)) replaces the whole-condition pointer-offset equality fallback with a typed
@@ -994,16 +1017,16 @@ raw-pointer constructor/substitution parity, block and state identity,
 load authority, read ordering, dependency modes and frame transport. The
 CI-quality check passed.
 
-8i (merged [PR #2818](https://github.com/clicklang/click/pull/2818)) retains complete-pointer equality operands, including designation, opaque
+8i (merged [PR #2818](https://github.com/clicklang/click/pull/2818)) retains complete-pointer equality operands, including provenance, opaque
 extent, explicit extent and exact qualifiers/evidence. Its observation identity
 uses the native logical fields without changing the producer payload. Memory state
 selectors and dependency readers use shared address roles directly; extent widths
 retain each reader's existing admission policy. Load matching still accepts exact
 identity only. Framed condition transport reuses the existing complete-pointer
-transporter, preserving its reconstructed-word designation policy.
+transporter, preserving its reconstructed-word provenance policy.
 
 Bitvector substitution maps addresses while preserving extent widths. Formal
-pointer substitution keeps the native complete-value designation and opaque-domain
+pointer substitution keeps the native complete-value provenance and opaque-domain
 replacement rules, followed by the existing address canonicalization and equality
 constructor reductions. Surface output keeps its explicit compatibility adapter.
 
@@ -1089,7 +1112,7 @@ preserve the producer root. A byte write that assembles a wider integer keeps
 that integer result, and changed-type conversions keep their existing behavior.
 General native output and replacement of compatibility keys remain later work.
 Validation: all 1,898 integration tests passed, including every scaling test,
-preservation proofs and memory provenance,
+preservation proofs and memory history,
 Boolean storage key agreement, actual statement stores and memory reloads,
 temporary result receipts, byte-view cases and existing pointer handoffs.
 Growing-prefix storage and retrieval perform no operand traversal or numeric
@@ -1457,7 +1480,7 @@ that every compatibility tree or every `Legacy` node has disappeared:
 
 | Boundary | Remaining native payload and reason |
 | --- | --- |
-| `KernelTermImport::argument` | Noncanonical/raw C Boolean word carriers retain exact width and bits; `Void` has no children; complete `PointerInteger` records retain package-7 designation/evidence; non-pointer array-reference descriptors retain their existing refusal input. Logical Boolean, algebraic, typed float, complete-pointer, array-reference and numeric expressions use common nodes. |
+| `KernelTermImport::argument` | Noncanonical/raw C Boolean word carriers retain exact width and bits; `Void` has no children; complete `PointerInteger` records retain package-7 provenance/evidence; non-pointer array-reference descriptors retain their existing refusal input. Logical Boolean, algebraic, typed float, complete-pointer, array-reference and numeric expressions use common nodes. |
 | `KernelTermImport::machine` | Unrecognized untyped `PureFunctionApplication` intrinsics, wrong-sort float inputs, and read/address descriptors outside the admitted result/address forms retain exact native inputs. Recognized conversions, numeric operators, typed Click calls, folds, matches and admitted reads/addresses use structural nodes. |
 | `KernelTermImport::float` / `float_atom` | Recognized arithmetic/conversions, typed Click calls, literals, variables and correctly typed reads are structural. Unknown untyped intrinsic calls and other native-only carriers (including raw conditionals, folds/matches and wrong-sort inputs without a migrated float producer) retain exact input. This does not add float conditional semantics or infer missing call signatures. |
 | `retained_native_machine_operand` | Selected already-native checker inputs can retain exact producer payloads at a shared parent. They do not acquire another producer's auxiliary pointer metadata from observation equality. |
@@ -1526,12 +1549,12 @@ Routine ordering refinements do not change this scope.
 | --- | --- | --- |
 | 7a | Shared offsets | Preserve constant/variable/addition shape, scale, index width and signedness; retain shared numeric children. |
 | 7b | Shared addresses | Retain block identity and shared displacement without a parallel native address tree. |
-| 7c | Complete pointer payloads | Preserve designation, opaque extent, qualifiers, subobject bounds and evidence, including metadata ignored by logical equality. |
+| 7c | Complete pointer payloads | Preserve provenance, opaque extent, qualifiers, subobject bounds and evidence, including metadata ignored by logical equality. |
 | 7d | Dependency readers | Collect variables, capture and memory dependencies through shared children. |
 | 7e | Substitution | Rewrite selected children with capture and metadata preservation. |
 | 7f | Memory state transport | Retain historical read and state identity during transport. |
 | 7g | Identity and fact keys | Preserve existing matching keys while separating exact payload identity from logical equality. |
-| 7h | Checking consumers | Preserve equality, designation, extent and access evidence requirements. |
+| 7h | Checking consumers | Preserve equality, provenance, extent and access evidence requirements. |
 | 7i | Address Surface boundary | Raise/lower offsets in their address context using existing syntax. |
 | 7j | Complete-pointer Surface boundary | Existing names and spellings retain complete metadata and historical identity. |
 | 7k | Scalar read addresses | Numeric loads retain common addresses. |
@@ -1559,7 +1582,7 @@ remains in 7p. Address identity compares only handles; explicit native output
 preserves the original address shape. Producers remain inactive in this slice.
 
 7c prepares complete pointer payloads with shared addresses and common numeric
-subobject widths. Qualifiers, designation, opaque extent, object-type evidence
+subobject widths. Qualifiers, provenance, opaque extent, object-type evidence
 and local-reference custody survive explicit round trips, including metadata
 ignored by logical pointer equality. Exact producer handles do not coalesce
 those payloads. Persistent evidence is retained without premise traversal;
@@ -1595,7 +1618,7 @@ the later slices.
 
 7h shares the existing origin, extent, access and complete-read fallback policy
 between native and common pointer views. Existing checked relations remain the
-authority; numeric address aliases cannot supply designation or root-extent
+authority; numeric address aliases cannot supply provenance or root-extent
 evidence. Shared load-atom comparison visits offset pairs once, preserves the
 narrow/wide distinction, and consults load authority even for identical narrow
 read roots. Native graph/read adapters remain at the producer compatibility
@@ -1653,7 +1676,7 @@ Surface spelling and dependency readers retain their prior payload policies.
 
 7o retains numeric pointer address observations with their exact object-class
 annotations. Explicit numeric projection of a complete pointer-to-integer value
-produces a common observation; its provenance record remains execution metadata.
+produces a common observation; its origin record remains execution metadata.
 Numeric observation identity still ignores annotations, while complete-value
 transport preserves them. Pointer differences keep the existing same-object/stride
 checker and common numeric result admission. Native index admission is unchanged;
@@ -2435,7 +2458,7 @@ The traits cannot yet be deleted. In particular:
   checking-only simplifier memoizes shared DAG nodes; it does not change lowering.
 - Difference-graph offset equality/residue, variable-chain index recognition,
   alignment factor inspection, store-gap roots and scope roots use operand views.
-  Memory/binder walkers select retained leaves; memory provenance preserves
+  Memory/binder walkers select retained leaves; memory history preserves
   first-occurrence candidate order. Proof-fact atom collection reuses its shared
   collector. Load-presence queries use syntax summaries, without enumerating
   growing free-variable sets.
@@ -2581,7 +2604,7 @@ The remaining locations divide into these concrete groups:
 
 | Group | Remaining routes | Disposition |
 | --- | --- | --- |
-| Read/address checking | `memory_resolution` offset matching, exact-index materialization and selected read payloads; `memory_provenance` framed transport and exact-load normalization are closed below | Live checker migration; shared outer arithmetic does not eliminate native address children |
+| Read/address checking | `memory_resolution` offset matching, exact-index materialization and selected read payloads; `memory_history` framed transport and exact-load normalization are closed below | Live checker migration; shared outer arithmetic does not eliminate native address children |
 | Wide indices and shallow pointer checks | Wide access reconstruction, strided-region membership, offset transport and fold-read summaries are closed below; state equivalence and `pointer_block_bounds` remain | Retain width, signedness and exactness rules while closing the remaining callers |
 | Pointer fact/rewrite payloads | `arithmetic_special`, `equality_rewrite`, `fact_reasoning`, pointer-offset substitution and execution facts; state-blind and alpha pointer-index fact keys are closed below | Mixed construction/checking boundaries; migrate expression children without changing pointer semantics |
 | Resource and state construction | quantified cells, memory-base roots, initialized-byte spelling, havoc identity, memory-load range collection | Mixed producer/checker boundaries, not merely printing |
@@ -2911,7 +2934,7 @@ and refusal paths. Cold repeated-child DAGs at 16, 64 and 256 nodes retain
 near-linear deterministic work with zero machine-tree exports through the actual
 pointer-offset entry point, for signed 32-bit and signed/unsigned wide indices.
 The broader selected run passed 1,713 tests, including all nonignored scaling
-tests, memory provenance, rewriting, transport API, documentation and search
+tests, memory history, rewriting, transport API, documentation and search
 boundaries, using the gate's existing 8 MiB test-thread stack. Formatting and
 documentation rendering passed; advisory Vale lint was unavailable. The full
 integration gate and nightly suite were not run locally; CI and the merge queue
@@ -2931,7 +2954,7 @@ exporting their shared arithmetic; rebuilding its normalized chain charges work
 for the selected atoms and produced nodes.
 
 Validation: all 1,721 selected tests passed on the rebased change, including all
-nonignored scaling tests, memory provenance, equality/term rewriting, transport
+nonignored scaling tests, memory history, equality/term rewriting, transport
 API, documentation and search-boundary checks. The run used the existing 8 MiB
 test-thread stack; compilation took 5m07s and tests took 116s (two slow notices).
 The five new regressions cover native constructor parity, state/kind/context
@@ -3175,7 +3198,7 @@ model; states and resources need not become expression nodes.
 | Mathematical Integer | `SharedIntegerNode` retains `IntegerTerm` plus a cached `KernelTerm`. Arithmetic, calls and conditionals have common children. Folds and algebraic matches still need typed common children and binder metadata. Remove the parallel native node storage after its readers migrate. |
 | Machine values | `MachineTerm` and native `CValue` payloads remain producer/result carriers. Shared arithmetic, casts, machine conditionals and read descriptors are common nodes; fold, application, algebraic-match, pointer-address and floating payloads still use generic bridges on some routes. |
 | Logical Bool | Comparisons, calls, equality and conditionals have common nodes. `LegacyBool` still carries pointer/offset/complete-pointer comparisons, algebraic equality, overflow and floating conditions, and Boolean loads. |
-| Complete pointers and read addresses | Keep address, designation, opaque extent, qualifiers, subobject extent and access/evidence metadata. Expression children must migrate; state, allocation and execution-event identities may remain semantic atoms. A wrapper around the existing complete pointer tree is not closure. |
+| Complete pointers and read addresses | Keep address, provenance, opaque extent, qualifiers, subobject extent and access/evidence metadata. Expression children must migrate; state, allocation and execution-event identities may remain semantic atoms. A wrapper around the existing complete pointer tree is not closure. |
 | Algebraic values and array references | `KernelTermImport::argument` still uses the generic legacy argument boundary. Constructors, matches and scalar children need typed common nodes; array-reference state identity remains an atom. |
 | Raising/lowering | `raise_kernel_term` visits common arithmetic, casts, observations, machine/Integer conditionals and Boolean children directly. Shared arithmetic uses the existing local-name index before expanding children; it preserves current-local spelling without exporting the query or scanning unrelated locals. Legacy payload dispatch, native fact/goal synthesis, certificate-only lowering and the general evaluator-backed lowering path remain distinct boundaries until consolidated. |
 

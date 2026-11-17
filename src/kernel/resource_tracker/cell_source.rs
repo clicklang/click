@@ -10,7 +10,7 @@
 
 #[cfg(test)]
 use crate::kernel::binary_node;
-use crate::kernel::memory_provenance::*;
+use crate::kernel::memory_history::*;
 use crate::kernel::primitives::*;
 use crate::kernel::reasoning::*;
 use crate::kernel::{CompareRelation, MachineIntegerType, StoredMemoryValue};
@@ -1228,7 +1228,7 @@ impl PointerInRangeEvidence {
                         let membership = Self::for_pointer_direct(alias, range, assumptions)?;
                         let condition =
                             ConditionTerm::pointer_equal(pointer.clone(), alias.clone());
-                        crate::kernel::record_implicit_reasoning_provenance(
+                        crate::kernel::record_implicit_consulted_premises(
                             assumptions,
                             &Proposition::ConditionIs(condition.clone(), true),
                         );
@@ -1252,7 +1252,7 @@ impl PointerInRangeEvidence {
                         }
                         let shifted = range.base().offset_by_bytes(bytes);
                         let membership = Self::for_pointer_direct(&shifted, range, assumptions)?;
-                        crate::kernel::record_implicit_reasoning_provenance(
+                        crate::kernel::record_implicit_consulted_premises(
                             assumptions,
                             &Proposition::ConditionIs(
                                 ConditionTerm::pointer_equal(base.clone(), range.base().clone()),
@@ -1430,7 +1430,7 @@ impl PointerInRangeEvidence {
         if let Self::UnsignedIndexed { index, upper } = self {
             return unsigned_index_in_range(pointer, range).is_some_and(|(found, guards)| {
                 (found == *index
-                    || crate::kernel::memory_provenance::pointer_index_syntax_equal(&found, index))
+                    || crate::kernel::memory_history::pointer_index_syntax_equal(&found, index))
                     && guards.iter().any(|guard| {
                         if guard == upper {
                             return true;
@@ -1743,7 +1743,7 @@ fn memory_dag_cell_source_walk_inner(
         // not jump past it and demand a frame across an older loop havoc.
         // This reads one named predecessor and one exact address, never a
         // cache bucket or an alternate pointer spelling.
-        if crate::kernel::memory_provenance::extended_dag_bridging_active()
+        if crate::kernel::memory_history::extended_dag_bridging_active()
             && path.len() < max_hops
             && let Some(derivation) = current.derivation()
             && let MemoryDerivation::CellsForgotten { base } = derivation.as_ref()
@@ -2066,7 +2066,7 @@ mod separated_range_frame_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let (before, after, field, memory, context, facts) = model_start_frame();
         assert!(
-            crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+            crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
                 &before, &after, &context
             )
         );
@@ -2077,7 +2077,7 @@ mod separated_range_frame_tests {
                 .cloned()
                 .fold(PureFactContext::new(), PureFactContext::assume_proposition);
             assert!(
-                !crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+                !crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
                     &before, &after, &without
                 ),
                 "without {missing:?}"
@@ -2091,7 +2091,7 @@ mod separated_range_frame_tests {
         );
         let overwritten = Pointer::loaded_value(&partial, &field);
         assert!(
-            !crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+            !crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
                 &before,
                 &overwritten,
                 &context

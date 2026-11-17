@@ -57,7 +57,7 @@ violation is touching the other thousand facts, functions, states, or
 resources that the operation did not name.
 
 Work must also be deterministic. Candidate buckets and index reconstruction
-iterate in admission order (pointer-class fact sources, pointer designations,
+iterate in admission order (pointer-class fact sources, pointer provenances,
 and opaque-extent aliases each retain an admission ordinal); allocation
 addresses and state hash order never decide which candidate a
 short-circuit search tries first, because that changes charged work between
@@ -113,7 +113,7 @@ Distinguish these producer boundaries:
 | Instance unfold | `unfold_instance_body` consumes the selected parent and exposes its constructed body in the retained frame. It checks exclusive identities without rediscovering memory overlap. Evaluating the body description earlier is a separate operation. |
 | Return-clause evaluation | Executed-body returns consume each output from one persistent body context. Summary returns retain a clause-level rule for unchanged flat footprints, bind it to selected entry reservations, and record those outputs and checked entry borrows directly. Unjustified descriptions still use compatibility admission. |
 | Return composition | An executed body's `ConstructedBodyReturn` retains its constructed output group and captured caller frame; `finish` installs it directly. Summary paths restore selected entry borrows, consumed-cell transfers, and fresh-allocation outputs, then send remaining descriptions through compatibility admission. `ValidateDescriptions` deliberately does not turn a role marker into transfer evidence. |
-| Produced composite boundary | A retained child rule binds unchanged one-level parameter footprints to selected consumed inputs. Unguarded borrowed parameter-only children retain entry provenance. Those children leave no new boundary; unmatched children and post-memory footprints still pass through `produced_composite_frontier_conflict`. |
+| Produced composite boundary | A retained child rule binds unchanged one-level parameter footprints to selected consumed inputs. Unguarded borrowed parameter-only children retain entry origin. Those children leave no new boundary; unmatched children and post-memory footprints still pass through `produced_composite_frontier_conflict`. |
 | Iterated `take` and `scatter` | The checked hole/guard transition or hole-free whole-range consumption constructs the exposed memory directly in the same frame. Neither operation readmits it or normalizes the surrounding block. Source selection, guard reasoning, and the explicit hole list have separate costs. |
 | Call and suspended-loan recovery | `recover_returned_views` constructs recovery directly in the actual return residual, retaining output occurrences and supported cores. Each escrow is admitted once against that destination; publication receives its constructed context and explicit recovered hold occurrence IDs. There is no discarded entry-frame reconstruction or second insertion. Suspended recovery likewise uses today's parent frame. An unmatched output's relationship to withheld escrow remains a real boundary obligation, with compatibility discovery for unsupported geometry. |
 | Worker completion and loop-frame exchange | `compose_checked_outputs` checks only the checked worker group's boundary with today's parent frame, and retains output occurrences, projection support, loan dependencies and cached expansions in the resulting construction. It does not recheck output/output memory pairs. `restore_frame_after_exchange` admits the changed loop partition directly with the exit's selected occurrence IDs and retains that successor; it no longer checks a temporary context and reinserts the same facts. Newly described output must still establish its boundary with the current or withheld frame. Unsupported geometry retains compatibility discovery. |
@@ -145,7 +145,7 @@ On the summary and description-only paths, `admit_clause` checks the returned de
 `restore_entry_borrows` constructs their destination occurrences. A
 `FreshAllocationReturn` records the allocation's identity, not a consumed
 slice or a partition of its outputs. Two descriptions of the same fresh cell
-can both carry that provenance. The regression
+can both carry that origin. The regression
 `fresh_return_group_refuses_sibling_overlap` exercises adjacent and duplicate
 slices from an actual allocation: description admission rejects the
 duplicate, the body's `jointly_consume_returned_resource_units` check cannot
@@ -230,7 +230,7 @@ composite post-memory boundary rule.
 This is a rule for unchanged footprints, not a blanket license from a verified
 contract to insert arbitrary descriptions. New or changed footprints,
 memory-dependent expressions, guarded effects, and unmatched outputs retain
-admission. The description-only mode ignores transfer provenance and establishes
+admission. The description-only mode ignores transfer origins and establishes
 the missing relationship to its destination. Raw outputs are checked against
 the restored frame even when they precede a justified output in clause order.
 The same rule records selected input clauses for children of finite one-level
@@ -492,7 +492,7 @@ charged to visible semantic output rather than hidden ambient state:
   additions; loop-invariant checking carries a prepared context between
   declarations and receives only the delta.
 - Completed early-return paths retain shared fact prefixes and persistent
-  candidate, evidence, and provenance vectors; terminal joins concatenate
+  candidate, evidence, and outcome-evidence vectors; terminal joins concatenate
   them instead of copying returned paths, finishing reads each retained trace
   by reference, and whole-claim expansion writes sequential returns one after
   another rather than nesting them

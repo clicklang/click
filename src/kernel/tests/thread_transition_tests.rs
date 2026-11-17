@@ -1770,6 +1770,7 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
     for outcome in [
         StatementOutcome::Normal(Box::new(state.clone())),
         StatementOutcome::Break(Box::new(state.clone())),
+        StatementOutcome::LoopTestFalse(Box::new(state.clone())),
         StatementOutcome::Continue(Box::new(state.clone())),
         StatementOutcome::Return {
             value: int32(0).into(),

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Rebuild the supplemental, unchanged SpanReader input closure.
 
-Use the Bitcoin checkout at the commit in streams-input-provenance.json,
+Use the Bitcoin checkout at the commit in streams-input-manifest.json,
 the original libstdc++ Debian package, and the pinned Clang resource directory.
 The existing base archive is retained byte-for-byte. Verification consumes the
 archives offline; this script is only for maintainers regenerating the fixture.
@@ -28,7 +28,7 @@ def main():
     parser.add_argument("--clang-resource", type=Path, required=True)
     args = parser.parse_args()
     destination = Path(__file__).resolve().parent
-    manifest = json.loads((destination / "streams-input-provenance.json").read_text())
+    manifest = json.loads((destination / "streams-input-manifest.json").read_text())
     if subprocess.check_output(["git", "-C", str(args.bitcoin_src), "rev-parse", "HEAD"], text=True).strip() != manifest["bitcoin_commit"]:
         raise ValueError("Bitcoin checkout differs from the pinned commit")
     if subprocess.check_output(["git", "-C", str(args.bitcoin_src), "status", "--porcelain", "--untracked-files=no"]):

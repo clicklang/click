@@ -63,7 +63,7 @@ A full pointer-value query also registers its two numeric addresses against
 the current affine block representatives before checking value congruence.
 Earlier address nodes may predate a block alias; without these bridges, the
 query can miss an established equality depending on premise admission order.
-Designation and retained extent remain separate value operands: refreshing
+Provenance and retained extent remain separate value operands: refreshing
 addresses does not establish either identity. The cursor-chain regressions in
 `src/kernel/equality_graph/fact_congruence_tests.rs` combine symbolic loop
 values, a native argument, signed prefix counts and native lengths, with
@@ -74,6 +74,30 @@ Conditional normalization admits cited conditions and their mirrored forms in
 source order while retaining an indexed map for condition lookup. Bounded
 pointer closure can retain different coordinates after a block merge; a hash
 table's iteration order must not choose whether an emitted certificate checks.
+
+## Read-only pointer domains
+
+`PureFactContext::pointer_domain` returns `Unknown`, `Root`, or a selected
+subobject extent without changing the pointer value. Intrinsic bounds are
+read directly. An opaque domain uses its retained origin to find an already
+registered extent node and the cached witness of its equality class. The query
+registers no terms or reads, runs no closure, and recovers no memory history.
+Complete-pointer equality supplies domain knowledge; numeric address equality
+and equality of widened byte views do not supply the original domain.
+
+Access matching uses a cached selected domain when the offered
+range retains known bounds, has the same object identity, and lies entirely
+inside that selected domain. Both endpoints are checked in their original
+32-bit or native-width coordinates. A wider enclosing range cannot stand for
+the selected domain. This supplies domain compatibility, not ownership,
+initialization, liveness or permission to dereference a one-past pointer.
+Pointer arithmetic and other extent consumers still retain their existing
+checks and value-adoption path pending their separate migration.
+
+The domain unit tests and deterministic scaling tests in
+`assumptions/pointer_domains.rs` cover cold queries after late equality
+admission, growing related aliases and unrelated facts, branch isolation,
+full-width bounds, and an unregistered read with growing memory history.
 
 ## Checked object-type evidence
 
@@ -217,7 +241,7 @@ in that selector, while other arguments and memory versions remain. Matching
 checks all pointer arguments through equality closure with equal C types and
 all other arguments exactly, including the complete C state. This supplies
 pointer substitution only, without unfolding or state transport. Exact
-membership still controls admission and provenance.
+membership still controls admission and consulted premises.
 
 The same bucket mechanism indexes nominal callback witnesses by contract name.
 Call selection checks the declared contract's exact function signature, as
@@ -335,7 +359,7 @@ another pointer alias nested in a packed parent/color equation.
 
 `PureFactContext::contains_known` is the semantic lookup used by proof-fact
 availability and `known`. Exact membership remains a separate operation
-for premise admission and provenance checks. Lookup first checks
+for premise admission and consulted-premise checks. Lookup first checks
 the exact index, then asks the same scoped graph used by equality consumers.
 It performs no unfolding or implication search.
 
@@ -1596,7 +1620,7 @@ Producer families publish as follows:
 | Stable-view planning and loan entailment | Fresh callee and single-supplier contexts start published. Binding checks that intentionally exclude ambient facts use one empty proof context for both construction and entailment. |
 | Kernel execution certificates and population authority exchanges | Checked temporary child, authority, and support contexts start published under the certificate's local facts. Path preparation publishes explicitly substituted exit resources once before individual claims query the output. |
 | Loop body reset and borrowed contract input installation | Fresh live contexts capture the current assumptions; selected-view/instance deltas retain their parent's publication. |
-| Surface dynamic view dependencies, checked returned-resource receipts, and compact composition propositions | Fresh contexts capture the same assumptions used to check their occurrences or receipts. Existing occurrence and loan provenance is preserved. |
+| Surface dynamic view dependencies, checked returned-resource receipts, and compact composition propositions | Fresh contexts capture the same assumptions used to check their occurrences or receipts. Existing occurrence and loan source is preserved. |
 
 Existing checked constructors in composite projection, owned-frontier expansion,
 frontier coverage, mutex transfer, and object-comparison support remain unchanged.
@@ -1825,7 +1849,7 @@ roots. Folding uses application dependency hooks and reindexes affected uses
 when a class learns a literal. Ordinary integer operators use those same applications for nonliteral
 congruence, with typed curried applications for the remaining conversions and
 wide operators. Full-width constant discovery first asks the shared class engine;
-contextual folding and implicit-provenance collection retain exact source
+contextual folding and implicit consulted-premise collection retain exact source
 premises. None of these operations grants memory access or state transport.
 
 Restriction resets the closure and refiles only the selected facts. Branch clones
@@ -1901,7 +1925,7 @@ Complete C pointer-to-integer copies retain nominal type receipts in the
 retains access-class annotation only: its annotation is excluded from numeric
 identity and cannot establish nominal type evidence. Recovering a typed pointer
 from those coordinates still needs the current scope's checked type facts.
-This does not recover a designation, bounds, or memory permission from numbers.
+This does not recover a provenance, bounds, or memory permission from numbers.
 
 ### Numeric coordinates of logical word casts
 
@@ -1910,12 +1934,12 @@ that constructor joins its numeric address to `bits` in the uint64 classes,
 using the existing iterative dependency worklist once per constructor. Byte
 displacements and compatible same-state reads therefore use the same
 classes as the original word. Complete pointer-value applications use the numeric
-address as one operand, alongside independent designation and extent operands;
-address equality cannot merge those other operands. Complete-value comparisons whose designation and
+address as one operand, alongside independent provenance and extent operands;
+address equality cannot merge those other operands. Complete-value comparisons whose provenance and
 bounds already match reduce the remaining zero-offset constructor comparison to
 uint64 equality. The internal constructor does not enter the result-domain
 congruence used for actual pointer-returning pure functions. Numeric definitions
-alone establish no designation, bounds, object type, or memory authority.
+alone establish no provenance, bounds, object type, or memory authority.
 The explicit source control is `tagged_pointer_explicit_round_trip.md`; branch
-scope, displaced addresses, state distinctions, and designation
+scope, displaced addresses, state distinctions, and provenance
 separation are covered by the equality-graph unit tests.

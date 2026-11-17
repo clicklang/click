@@ -74,7 +74,7 @@ in-order node list. Unfold consumes the parent; no named open handle remains.
   proofs, including order and multiplicity.
 - **Memory-range states.** Project a readable symbolic typed range to an
   exact state List without enumeration. Reject missing readability
-  and claims that ignore writes; preserve provenance through old and named
+  and claims that ignore writes; preserve memory history through old and named
   states.
 
 ## Violated invariant and acceptance criteria

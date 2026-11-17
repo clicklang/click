@@ -376,7 +376,7 @@ mod tests {
                 },
                 ProgramType::VoidPointer,
             )
-            .with_designation(loaded.clone())
+            .with_provenance(loaded.clone())
             .with_opaque_extent(Some(loaded.clone()));
             assert!(source.pointer().integer_address_bits().is_none());
             let shared = SharedPointerValue::import(&source);
@@ -384,7 +384,7 @@ mod tests {
                 .expect("ordinary origin requires no new complete-word evidence");
             let output = transport_pointer(&shared, &after, None).unwrap();
             assert_eq!(output.export().unwrap(), expected);
-            assert_eq!(output.node().designation, shared.node().designation);
+            assert_eq!(output.node().provenance, shared.node().provenance);
             assert_eq!(output.node().opaque_extent, shared.node().opaque_extent);
         }
     }
@@ -405,7 +405,7 @@ mod tests {
             )),
             ProgramType::VoidPointer,
         )
-        .with_designation(loaded.clone())
+        .with_provenance(loaded.clone())
         .with_opaque_extent(Some(loaded));
         let shared = SharedPointerValue::import(&source);
         let context = PureFactContext::new();
@@ -422,5 +422,5 @@ mod tests {
 }
 #[cfg(test)]
 mod scaling_tests {
-    include!("../../scaling_tests/kernel/memory_provenance/shared_pointer_transport.rs");
+    include!("../../scaling_tests/kernel/memory_history/shared_pointer_transport.rs");
 }

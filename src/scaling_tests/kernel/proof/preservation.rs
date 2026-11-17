@@ -468,3 +468,36 @@ fn preservation_separation_orientations_use_exact_indexes() {
         }
     }
 }
+
+#[test]
+fn wide_resource_field_preservation_scales_with_explicit_steps_not_ambient_instances() {
+    for format in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
+        let mut baseline = None;
+        for instances in [4, 16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let value = MachineTerm::Variable(Variable(8_390_901));
+            let (preservation, goal) =
+                tests::resource_fixture_with_values(instances, format, value.clone(), value);
+            for steps in [1, 4, 16, 64] {
+                let exports = KernelTermExport::machine_export_count();
+                let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    for _ in 0..steps {
+                        assert_eq!(
+                            preservation
+                                .apply(|p| p == &preservation.separation)
+                                .unwrap(),
+                            goal
+                        );
+                    }
+                });
+                assert_eq!(KernelTermExport::machine_export_count(), exports);
+                let one = *baseline.get_or_insert(work);
+                assert_eq!(
+                    work,
+                    one * steps,
+                    "{format:?}: {instances} instances, {steps} steps"
+                );
+            }
+        }
+    }
+}

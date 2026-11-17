@@ -42,7 +42,7 @@ fn overflow_conditions_reuse_shared_numeric_dags() {
                 Some(nested)
             );
             assert_eq!(
-                crate::kernel::memory_provenance::transport_framed_common_condition(
+                crate::kernel::memory_history::transport_framed_common_condition(
                     &source,
                     &crate::kernel::Memory::new(),
                     None

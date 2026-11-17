@@ -3814,7 +3814,7 @@ impl ConditionTerm {
             Self::PointerEqual(a, b) if a.block == b.block => Some((&a.offset, &b.offset)),
             Self::PointerValueEqual(a, b)
                 if a.block == b.block
-                    && a.designation() == b.designation()
+                    && a.provenance() == b.provenance()
                     && a.extent() == b.extent() =>
             {
                 Some((&a.offset, &b.offset))
@@ -3824,7 +3824,7 @@ impl ConditionTerm {
     }
 
     pub(crate) fn pointer_value_equal(left: PointerValue, right: PointerValue) -> Self {
-        if (left.designation() == right.designation()
+        if (left.provenance() == right.provenance()
             && left.extent() == right.extent()
             && left.extent_is_known() == right.extent_is_known()
             && (left.extent_is_known() || left.opaque_extent() == right.opaque_extent()))
@@ -3834,7 +3834,7 @@ impl ConditionTerm {
             // With the complete pointer domain already identical, only the
             // numeric coordinates remain. A logical word cast's coordinates
             // use the same uint64 classes as its original word. Keep this
-            // reduction out of raw pointer equality, which designation checks
+            // reduction out of raw pointer equality, which provenance checks
             // also use: numbers alone must never supply a pointer domain.
             if left.pointer().integer_address_bits().is_some()
                 || right.pointer().integer_address_bits().is_some()
@@ -4682,7 +4682,7 @@ impl LValue {
             constant: false,
             pointee_constant: false,
             extent: None,
-            designation: None,
+            provenance: None,
             extent_known: false,
             opaque_extent: None,
             access_class: None,
@@ -4712,7 +4712,7 @@ impl LValue {
             constant: false,
             pointee_constant: false,
             extent: None,
-            designation: None,
+            provenance: None,
             extent_known: false,
             opaque_extent: None,
             access_class: None,
@@ -4734,15 +4734,15 @@ impl LValue {
     /// class of the object it designates.
     pub(in crate::kernel) fn with_extent_of(mut self, pointer: &PointerValue) -> Self {
         self.extent = pointer.extent().cloned().map(std::sync::Arc::new);
-        self.designation = Some(std::sync::Arc::new(pointer.designation().clone()));
+        self.provenance = Some(std::sync::Arc::new(pointer.provenance().clone()));
         self.extent_known = pointer.extent_is_known();
         self.opaque_extent = pointer.opaque_extent.clone();
         self.object_class = pointer.object_class();
         self
     }
 
-    pub(in crate::kernel) fn access_designation(&self) -> Option<(&Pointer, Option<&Pointer>)> {
-        self.designation.as_deref().map(|root| {
+    pub(in crate::kernel) fn access_provenance(&self) -> Option<(&Pointer, Option<&Pointer>)> {
+        self.provenance.as_deref().map(|root| {
             (
                 root,
                 if self.extent_known {
@@ -4912,7 +4912,7 @@ impl Pointer {
     }
 
     /// Numeric LP64 reconstruction. This application is only an address;
-    /// a complete C word carries its independent designation beside it.
+    /// a complete C word carries its independent provenance beside it.
     pub(in crate::kernel) fn integer_address(bits: MachineTerm) -> Self {
         if bits.uint64_as_const() == Some(0) {
             return Self::null();
@@ -5024,14 +5024,14 @@ impl Pointer {
 
     /// A logical read with the whole pointer value when the read is a
     /// value the memory already holds for the cell (its own materialized
-    /// read, or static storage's symbolic initial contents), designation and
+    /// read, or static storage's symbolic initial contents), provenance and
     /// extent included; otherwise the named read, as `Err`.
     pub(crate) fn version_read_value(
         memory: &SharedMemory,
         address: &Pointer,
     ) -> Result<PointerValue, Self> {
         let source = memory.unchanged_bytes_source();
-        let canonical = crate::kernel::memory_provenance::canonical_value_load_memory(
+        let canonical = crate::kernel::memory_history::canonical_value_load_memory(
             &source,
             address,
             crate::kernel::C_POINTER_BYTE_WIDTH,

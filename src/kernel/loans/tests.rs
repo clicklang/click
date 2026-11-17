@@ -119,8 +119,8 @@ fn partial_owned_borrow_returns_only_its_slice_with_the_callers_opaque_domain() 
     assert_eq!(returned_range.start(), &1u32.into());
     assert_eq!(returned_range.end(), &2u32.into());
     assert_eq!(
-        returned_range.access_designation(),
-        owner.memory_own_range().unwrap().access_designation()
+        returned_range.access_provenance(),
+        owner.memory_own_range().unwrap().access_provenance()
     );
     assert!(!plan.callee_resources.satisfies_fact(&owner, &assumptions));
     let restored = plan
@@ -3377,10 +3377,7 @@ fn escaping_borrow_keeps_the_loan_open_until_the_composite_is_consumed() {
             .recheck(&ledger, Some(caller), &planned_ledger, Some(callee))
             .is_ok()
     );
-    assert!(
-        recovery.recovered_escrows.is_empty(),
-        "the owner stays escrowed"
-    );
+    assert!(recovery.restorations.is_empty(), "the owner stays escrowed");
     assert!(!recovery.resources.satisfies_fact(&owner_fact, &assumptions));
     assert_eq!(recovery.escaped_holds.len(), 1);
     let escaped = &recovery.escaped_holds[0];
@@ -3469,10 +3466,9 @@ fn escaping_borrow_keeps_the_loan_open_until_the_composite_is_consumed() {
         (Some(caller), Some(recovered_ledger.clone())),
         "pristine-root summaries follow the same recovery chain"
     );
-    assert_eq!(
-        recovered.recovered_escrows,
-        vec![(owner_fact.clone(), None)]
-    );
+    assert_eq!(recovered.restorations.len(), 1);
+    assert_eq!(recovered.restorations[0].fact(), &owner_fact);
+    assert!(recovered.restorations[0].binding().is_none());
     assert!(
         recovered
             .resources
@@ -4101,7 +4097,7 @@ fn joint_planner_partitions_disjoint_write_and_view_ranges_in_any_clause_order()
         caller,
         callee,
     )
-    .expect("a residual fragment of the unique owner retains its provenance");
+    .expect("a residual fragment of the unique owner retains its source occurrence");
     assert!(
         reverse
             .callee_resources
@@ -4834,7 +4830,16 @@ fn returned_view_recovery_preserves_output_support_and_refuses_escrow_overlap() 
     let outputs = outputs.unchecked_with_supported_facts(&output, [observation.clone()]);
     let recovery = plan
         .clone()
-        .recover_returned_views(outputs, &assumptions, &BTreeMap::new(), &[])
+        .recover_returned_views(
+            outputs,
+            &crate::kernel::functions::EscrowRecoveryBoundary::from_raw_outputs([(
+                output.clone(),
+                source,
+            )]),
+            &assumptions,
+            &BTreeMap::new(),
+            &[],
+        )
         .unwrap();
     assert_eq!(
         recovery.resources.owned_fact_for_occurrence(source),
@@ -4846,14 +4851,83 @@ fn returned_view_recovery_preserves_output_support_and_refuses_escrow_overlap() 
         .without_exact_representation_for_occurrence(source)
         .unwrap();
     assert!(!consumed.contains_exact_representation(&observation));
+    let (overlapping, entries) = ResourceContext::new_with_equalities(&assumptions)
+        .unchecked_with_facts_and_occurrences([memory(4, 12, true)]);
+    let boundary = crate::kernel::functions::EscrowRecoveryBoundary::from_raw_outputs(entries);
     assert!(
-        plan.recover_returned_views(
-            ResourceContext::new_with_equalities(&assumptions)
-                .unchecked_with_fact(memory(4, 12, true)),
-            &assumptions,
-            &BTreeMap::new(),
-            &[],
-        )
-        .is_err()
+        plan.recover_returned_views(overlapping, &boundary, &assumptions, &BTreeMap::new(), &[],)
+            .is_err()
     );
+}
+
+#[test]
+fn escrow_receipt_preserves_selected_occurrence_through_both_recoveries() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let assumptions = PureFactContext::new();
+    let owner = memory(0, 8, true);
+    let resources =
+        ResourceContext::new_with_equalities(&assumptions).unchecked_with_fact(owner.clone());
+    let source = resources
+        .unique_owned_occurrence_for_fact(&owner)
+        .unwrap()
+        .0;
+    let (ledger, caller, callee) = participants();
+    let plan = plan_stable_view_transfer(
+        &resources,
+        &[checked(memory(0, 8, false))],
+        &assumptions,
+        &ledger,
+        caller,
+        callee,
+    )
+    .unwrap();
+    let _fast = crate::kernel::search::FastOperationScope::enter("escrow receipt test");
+    let recovery = plan
+        .recover_stable_views(&assumptions, &BTreeMap::new(), &[])
+        .unwrap();
+    assert_eq!(
+        recovery.resources.owned_fact_for_occurrence(source),
+        Some(&owner)
+    );
+    let (returned, bindings) = recovery
+        .restore_returned_escrows(
+            ResourceContext::new_with_equalities(&assumptions),
+            &crate::kernel::functions::EscrowRecoveryBoundary::default(),
+            &assumptions,
+        )
+        .unwrap();
+    assert_eq!(returned.owned_fact_for_occurrence(source), Some(&owner));
+    assert!(bindings.is_empty());
+    // An already installed occurrence is stale evidence, not a description
+    // that may silently suppress one of two owners.
+    assert!(
+        recovery
+            .restore_returned_escrows(
+                returned,
+                &crate::kernel::functions::EscrowRecoveryBoundary::default(),
+                &assumptions
+            )
+            .is_err()
+    );
+}
+
+#[test]
+fn materialized_escrow_receipts_keep_distinct_children_and_their_source() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let facts = PureFactContext::new();
+    let head = owned("adapter_head");
+    let source = backing(&head);
+    let children = [owned("adapter_child"), owned("adapter_child")];
+    let receipts = RecoveredEscrow::materialized(source, &children);
+    assert_ne!(receipts[0].occurrence(), receipts[1].occurrence());
+    let mut restored = ResourceContext::new_with_equalities(&facts);
+    for member in &receipts {
+        assert_eq!(member.source, source);
+        restored = restored.restore_checked_escrow(member, &facts).unwrap();
+        assert_eq!(
+            restored.owned_fact_for_occurrence(member.occurrence()),
+            Some(member.fact())
+        );
+    }
+    assert_eq!(restored.facts().len(), 2);
 }

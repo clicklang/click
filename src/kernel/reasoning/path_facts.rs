@@ -188,7 +188,7 @@ pub(in crate::kernel) fn public_execution_pure_facts(
 pub(in crate::kernel) fn memory_effect_execution_facts(
     facts: &(impl ExecutionFactSource + ?Sized),
 ) -> ExecutionFacts {
-    // Internal memory effects and their theorem-backed provenance must
+    // Internal memory effects and their theorem-backed derivations must
     // survive the public-fact projection. The latter is planning metadata,
     // not an additional path premise, and is consumed when Click constructs
     // the corresponding explicit transport step.
@@ -597,7 +597,7 @@ pub(in crate::kernel) fn shared_element_index_from_offset_with_facts(
             for (alias, fact) in assumptions.exact_uint64_equalities_view(value.operand_view()) {
                 crate::instrumentation::record_deterministic_work(1);
                 if bounded(V::Legacy(alias)) {
-                    crate::kernel::assumptions::record_implicit_reasoning_provenance(
+                    crate::kernel::assumptions::record_implicit_consulted_premises(
                         assumptions,
                         &Proposition::ConditionIs(fact.clone(), true),
                     );
@@ -624,7 +624,7 @@ pub(in crate::kernel) fn shared_element_index_from_offset_with_facts(
                             crate::kernel::KernelTerm::retained_machine_operand(T::UInt64, right),
                         );
                     if bounded(V::Shared(&candidate)) {
-                        crate::kernel::assumptions::record_implicit_reasoning_provenance(
+                        crate::kernel::assumptions::record_implicit_consulted_premises(
                             assumptions,
                             &Proposition::ConditionIs(fact.clone(), true),
                         );
@@ -1541,7 +1541,7 @@ fn bare_condition_is_decided(assumptions: &PureFactContext, proposition: &Propos
         && *value
         && assumptions.uint64_values_known_equal(left, right)
     {
-        crate::kernel::assumptions::record_implicit_reasoning_provenance(assumptions, proposition);
+        crate::kernel::assumptions::record_implicit_consulted_premises(assumptions, proposition);
         return true;
     }
     if PureFactContext::decide_intrinsically(condition) == Some(*value) {
@@ -1715,7 +1715,7 @@ fn selected_obligation_is_stated(assumptions: &PureFactContext, proposition: &Pr
             let Some(source) = assumptions.selected_comparison_source(condition, *truth) else {
                 return false;
             };
-            crate::kernel::assumptions::record_implicit_reasoning_provenance(assumptions, source);
+            crate::kernel::assumptions::record_implicit_consulted_premises(assumptions, source);
             true
         }
         Proposition::And(left, right) => {
@@ -2413,7 +2413,7 @@ mod mandatory_integer_obligation_tests {
         assert!(
             under_path[0].call_requirement_site().is_some()
                 && under_path[1].call_requirement_site().is_some(),
-            "conflicting duplicate provenance must remain source-bearing"
+            "conflicting duplicate call sites must remain source-bearing"
         );
         assert_eq!(under_path.len(), 2);
 
@@ -2658,7 +2658,7 @@ mod native_observation_guard_tests {
     #[test]
     fn explicit_obligations_reuse_selected_comparison_sources() {
         use crate::kernel::assumptions::{
-            capture_implicit_reasoning_provenance, collect_reasoning_provenance,
+            capture_implicit_consulted_premises, collect_consulted_premises,
         };
         use crate::kernel::machine_integer::comparison::condition_for_operand_views;
         use crate::kernel::{
@@ -2718,8 +2718,8 @@ mod native_observation_guard_tests {
                         obligations
                     };
                     let exports = KernelTermExport::machine_export_count();
-                    let (obligations, used) = collect_reasoning_provenance(|| {
-                        capture_implicit_reasoning_provenance(|| discharge(&context, query.clone()))
+                    let (obligations, used) = collect_consulted_premises(|| {
+                        capture_implicit_consulted_premises(|| discharge(&context, query.clone()))
                     });
                     assert!(obligations.is_empty(), "{format:?} {relation:?} {truth}");
                     assert!(used.contains(&source));

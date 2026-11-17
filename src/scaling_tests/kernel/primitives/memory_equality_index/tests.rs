@@ -87,7 +87,7 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
         assert!(work < 2000, "size={size}, work={work}");
         samples.push(work);
         assert_eq!(
-            crate::kernel::memory_provenance::checked_pointer_read_endpoint(&current, &context),
+            crate::kernel::memory_history::checked_pointer_read_endpoint(&current, &context),
             Some(source.clone()),
             "the complete-cell certificate must recover this exact stored value",
         );
@@ -390,29 +390,24 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
         let permits = |resources: &ResourceContext,
                        query: &Pointer,
                        facts: &PureFactContext,
-                       designation: (&Pointer, Option<&Pointer>)| {
-            resources.permits_designated_pointer_position(query, &cursor, designation, facts)
+                       provenance: (&Pointer, Option<&Pointer>)| {
+            resources.permits_designated_pointer_position(query, &cursor, provenance, facts)
         };
         let (permitted, work) = crate::instrumentation::measure_deterministic_work(|| {
-            permits(
-                &resources,
-                &query,
-                &facts,
-                cursor_value.access_designation(),
-            )
+            permits(&resources, &query, &facts, cursor_value.access_provenance())
         });
         assert!(permitted, "the advancing cursor keeps its native bounds");
         assert!(!permits(
             &ResourceContext::new(),
             &query,
             &facts,
-            cursor_value.access_designation()
+            cursor_value.access_provenance()
         ));
         assert!(!permits(
             &resources,
             &query,
             &aliases,
-            cursor_value.access_designation()
+            cursor_value.access_provenance()
         ));
         assert!(!permits(
             &resources,
@@ -432,13 +427,13 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
                 true
             ),
             &facts,
-            cursor_value.access_designation()
+            cursor_value.access_provenance()
         ));
         assert!(!permits(
             &resources,
             &cursor.offset_by_typed_elements(advance, 2, true, true),
             &facts,
-            cursor_value.access_designation()
+            cursor_value.access_provenance()
         ));
         samples.push(work);
     }
@@ -910,4 +905,62 @@ fn constant_owner_overlap_does_not_scan_covering_views() {
 #[test]
 fn constant_owner_overlap_merges_class_payload_without_scanning_it() {
     check_constant_owner_overlap_population(false, true);
+}
+
+#[test]
+fn cold_singleton_return_checks_do_not_enumerate_loaded_pointer_alias_stars() {
+    let mut samples = Vec::new();
+    for count in [4u64, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Pointer::symbolic(Variable(9_980_000));
+        let memory = crate::kernel::intern_memory_ref(
+            &Memory::new().with_block(field.block.clone(), C_POINTER_BYTE_WIDTH),
+        );
+        let query = Pointer::loaded_value(&memory, &field);
+        let held = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(9_980_001)), 4),
+        };
+        let mut facts = PureFactContext::new();
+        for index in 0..count {
+            facts = facts.assume_condition(
+                ConditionTerm::pointer_equal(
+                    query.clone(),
+                    Pointer::symbolic(Variable(9_981_000 + index)),
+                ),
+                true,
+            );
+        }
+        let range =
+            |pointer, end| MemoryRange::new_with_element_width(pointer, 0u32.into(), end, 1);
+        let frame = ResourceContext::new()
+            .unchecked_with_fact(ResourceFact::own_memory(range(held.clone(), 4u32.into())));
+        let new_owner = ResourceFact::own_memory(range(
+            query.clone(),
+            MachineTerm::Variable(Variable(9_980_002)),
+        ));
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let _fast = crate::kernel::search::FastOperationScope::enter(
+                "cold singleton returned frontier",
+            );
+            assert!(matches!(
+                frame.constant_owned_overlap(&new_owner, &facts),
+                ConstantOwnedOverlap::Clear
+            ));
+        });
+        samples.push(work);
+        let aliased =
+            facts.assume_condition(ConditionTerm::pointer_equal(query.clone(), held), true);
+        assert!(matches!(
+            frame.constant_owned_overlap(
+                &ResourceFact::own_memory(range(query, 4u32.into())),
+                &aliased
+            ),
+            ConstantOwnedOverlap::Overlap(_)
+        ));
+    }
+    assert!(
+        samples[2] <= samples[0] * 3 + 128,
+        "loaded pointer stars: {samples:?}"
+    );
 }

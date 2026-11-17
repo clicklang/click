@@ -10,7 +10,7 @@ The representation repair is implemented: composite unfolds observe complete
 pointer cells, symbolic storage uses the same `LoadedPointer` identity as an
 ordinary read, and same-source pointer observation runs preserve bytes in the
 memory-history checker. The named-cell rule compares the full typed read,
-including designation and extent. Scalar load handles no longer double as
+including provenance and extent. Scalar load handles no longer double as
 pointer parameters in symbolic arrays.
 
 Composite fields and ranges take their canonical typed observations from the
@@ -23,7 +23,7 @@ before following its byte identity, so a checked loop frame does not lose a
 restored pointer value when observation-only states are skipped.
 
 Regression coverage checks complete pointer cells, cached/ordinary read identity,
-upper-half writes, wrong read provenance, and no-write witnesses for pointer
+upper-half writes, wrong read origin, and no-write witnesses for pointer
 runs. The retained-field Markdown fixture also checks a bare before/after read
 equality after unfolding, sibling stores, and a retaining call. Pointer-run
 framing stays bounded as run sizes grow from 16 to 65,536 cells; observation
@@ -154,7 +154,7 @@ removed shape: same block, `Int32Scaled` load word. With both changes the lib
 suite passes, but the corpus shows a spelling split:
 
 - `symbolic_storage_cell_value` spells a pointer read as
-  `Symbolic(load variable)` with the read as its designation; an ordinary load
+  `Symbolic(load variable)` with the read as its provenance; an ordinary load
   names it as the `LoadedPointer` itself.
 - With whole pointer cells, the two spellings meet in one cell. Instance
   rewrite checking then fails with "the resource context is not the exchange

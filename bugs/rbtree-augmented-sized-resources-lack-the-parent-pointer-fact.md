@@ -3,7 +3,7 @@
 Soundness: incomplete. Existing checked proofs are refused; nothing false is
 accepted.
 
-#1245 (`2cee79c02`, pointer designation) added
+#1245 (`2cee79c02`, pointer provenance) added
 `fact ((p->__rb_parent_color & ~3) as (struct rb_node *)) == parent;` to `rb_at`
 and `ctx_at` in `examples/rbtree/rbtree-model`, and made numeric word facts such as
 `(old(*p) & ~3) == parent as uint64` stop implying the pointer equality. The
@@ -81,12 +81,12 @@ resources already state the parent-pointer facts described above. Keep this
 report open: the remaining sidecars and full-directory audit have not met the
 acceptance criteria.
 
-## Rotation helper parent designation
+## Rotation helper parent provenance
 
 `rbtree_size_rotate_set_parents.click` now verifies both selected proofs. Its
 contract requires the explicit masked parent-pointer equality, matching the
 ordinary rbtree helper: equality of the packed numeric word does not establish
-pointer designation. The non-root proof branches rewrite that premise through
+pointer provenance. The non-root proof branches rewrite that premise through
 `sized_context_parent` before reading the C local `parent`. All 22 smart sites
 pass expansion audit. The C and postconditions are unchanged.
 

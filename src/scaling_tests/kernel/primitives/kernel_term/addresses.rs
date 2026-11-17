@@ -107,13 +107,12 @@ fn raw_pointer_conditions_keep_shared_displacements_through_rewrites_and_transpo
                         &Pointer::symbolic(Variable(999703)),
                     )
                     .unwrap();
-                let transported =
-                    crate::kernel::memory_provenance::transport_framed_common_condition(
-                        &source,
-                        &crate::kernel::Memory::new(),
-                        None,
-                    )
-                    .unwrap();
+                let transported = crate::kernel::memory_history::transport_framed_common_condition(
+                    &source,
+                    &crate::kernel::Memory::new(),
+                    None,
+                )
+                .unwrap();
                 (bits, pointers, transported)
             });
         assert_eq!(bits, source);
@@ -180,7 +179,7 @@ fn complete_pointer_conditions_keep_shared_domains_through_rewrites_and_observat
                 )
                 .unwrap();
             assert_eq!(
-                crate::kernel::memory_provenance::transport_framed_common_condition(
+                crate::kernel::memory_history::transport_framed_common_condition(
                     &root,
                     &crate::kernel::Memory::new(),
                     None

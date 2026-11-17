@@ -3224,7 +3224,7 @@ fn named_pointer_cell_requires_its_complete_read_and_provenance() {
         ProgramValue::Pointer(
             pointer
                 .clone()
-                .with_designation(std::sync::Arc::new(address.clone())),
+                .with_provenance(std::sync::Arc::new(address.clone())),
         ),
     ] {
         assert!(!super::cell_value_is_exactly_load(&wrong, &name));

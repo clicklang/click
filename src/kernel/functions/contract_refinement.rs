@@ -136,6 +136,7 @@ pub(super) fn checked_access_mode_refinement_adapter(
         .with_resource_context(function_resources);
     let ContractReturnResources {
         output_resources: _,
+        escrow_boundary,
         return_resources: returned,
         ensured_views: returned_views,
         produced_borrowing_pieces,
@@ -164,6 +165,7 @@ pub(super) fn checked_access_mode_refinement_adapter(
         &callee,
         &transfer,
         returned,
+        escrow_boundary,
         assumptions,
         assumptions,
         &[],
@@ -695,7 +697,7 @@ pub(super) fn project_refinement_effects(
         return Ok(Ok(FunctionMemoryEffectProjection {
             ranges,
             evidence_facts: evidence_facts.into(),
-            // Explicit segments carry no requirement provenance.
+            // Explicit segments carry no requirement source.
             range_sources: Vec::new(),
         }));
     }

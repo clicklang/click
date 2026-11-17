@@ -131,7 +131,7 @@ absence of an exposed guard does not establish `not held(mu)`, and opaque entry
 heldness is not interpreted as false. A concrete preserved guard requirement
 selects the entry acquisition, even if a later state contains a replacement
 acquisition at the same address. Concrete atoms retain their acquisition
-address as immutable provenance for source-level missing-resource diagnostics.
+address as immutable diagnostic metadata for source-level missing-resource diagnostics.
 
 Every successful modeled initialization has a fresh internal identity,
 independent of the mutex address and protected resource. Lock/unlock retain it;

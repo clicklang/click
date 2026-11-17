@@ -467,7 +467,7 @@ fn goto_slice_rejects_unknown_backward_duplicate_and_unsupported_targets() {
 #[test]
 fn imported_variadic_prototype_is_retained_without_becoming_callable() {
     let prototype = "# 1 \"include/linux/report.h\" 1\nvoid report(const char *format, ...);\n# 1 \"lib/tu.c\" 2\n";
-    let (source, map) = provenance::CSourceMap::decode(&format!(
+    let (source, map) = source_map::CSourceMap::decode(&format!(
         "{prototype}int32 keep(int32 x) {{ return x; }}\n"
     ))
     .expect("line markers should decode");
@@ -483,7 +483,7 @@ fn imported_variadic_prototype_is_retained_without_becoming_callable() {
     assert!(unit.function_declarations.contains_key("report"));
     assert_eq!(unit.functions.len(), 1);
 
-    let (source, map) = provenance::CSourceMap::decode(&format!(
+    let (source, map) = source_map::CSourceMap::decode(&format!(
         "{prototype}void run(void) {{\n    report(\"x\");\n}}\n"
     ))
     .expect("line markers should decode");
@@ -506,7 +506,7 @@ fn imported_variadic_prototype_is_retained_without_becoming_callable() {
 
 #[test]
 fn imported_parser_errors_keep_original_header_location() {
-    let (source, map) = provenance::CSourceMap::decode(
+    let (source, map) = source_map::CSourceMap::decode(
         "# 1 \"generated/header.h\" 1\nint32 broken(int32 x) { return x + ...; }\n",
     )
     .expect("line marker should decode");
@@ -524,7 +524,7 @@ fn imported_parser_errors_keep_original_header_location() {
 
 #[test]
 fn imported_parser_does_not_apply_legacy_macro_name_shortcuts() {
-    let (source, map) = provenance::CSourceMap::decode(
+    let (source, map) = source_map::CSourceMap::decode(
         "# 1 \"tu.c\" 1\nint32 READ_ONCE(int32 x) { return x + 1; }\nint32 use(int32 x) { return READ_ONCE(x); }\n",
     )
     .unwrap();
@@ -545,7 +545,7 @@ fn imported_statement_calls_do_not_apply_legacy_store_shortcuts() {
         let input = format!(
             "# 1 \"tu.c\" 1\nint {name}(int x, int y) {{ return x + y; }}\nint use(int x) {{ {name}(x, 1); return x; }}\n"
         );
-        let (source, map) = provenance::CSourceMap::decode(&input).unwrap();
+        let (source, map) = source_map::CSourceMap::decode(&input).unwrap();
         let unit = syntax::parse_translation_unit_for_import(
             &source,
             "tu.c",
@@ -561,7 +561,7 @@ fn imported_statement_calls_do_not_apply_legacy_store_shortcuts() {
 
 #[test]
 fn imported_static_inline_helpers_use_tu_identity_and_shared_origin() {
-    let (source, map) = provenance::CSourceMap::decode(
+    let (source, map) = source_map::CSourceMap::decode(
         "# 1 \"include/helper.h\" 1\nstatic inline int32 add_one(int32 value) { return value + 1; }\nint32 run(int32 value) { return add_one(value); }\n",
     )
     .unwrap();
@@ -581,7 +581,7 @@ fn imported_static_inline_helpers_use_tu_identity_and_shared_origin() {
     .unwrap();
     assert_ne!(alpha.functions[0].name(), beta.functions[0].name());
 
-    let (bad_source, bad_map) = provenance::CSourceMap::decode(
+    let (bad_source, bad_map) = source_map::CSourceMap::decode(
         "# 1 \"include/helper.h\" 1\nint32 broken(int32 value) { return value + ...; }\n",
     )
     .unwrap();
@@ -4420,7 +4420,7 @@ int probe(struct callbacks *table) {
 
 #[test]
 fn imported_call_lowering_diagnostics_use_original_header_line() {
-    let (source, map) = provenance::CSourceMap::decode(
+    let (source, map) = source_map::CSourceMap::decode(
         "# 1 \"include/alloc.h\" 1\nint32 caller() { return malloc(1); }\n",
     )
     .unwrap();
@@ -13923,7 +13923,7 @@ fn c_syntax_has_no_wide_literals_or_flexible_struct_arrays() {
 }
 
 fn parse_import_with(source: &str, promises: syntax::PromiseAttributes) -> Result<(), String> {
-    let (source, map) = provenance::CSourceMap::decode(&format!("# 1 \"lib/tu.c\"\n{source}"))
+    let (source, map) = source_map::CSourceMap::decode(&format!("# 1 \"lib/tu.c\"\n{source}"))
         .expect("line markers should decode");
     syntax::parse_translation_unit_for_import(&source, "tu.c", &map, promises)
         .map(|_| ())
@@ -14758,7 +14758,7 @@ fn c_builtin_types_compatible_preserves_c_identity() {
 #[test]
 fn c_builtin_types_compatible_refuses_erased_or_unsupported_identity() {
     for operands in [
-        "typeof(*(int*)(void*)p), struct A", // Layout provenance is not the cast type.
+        "typeof(*(int*)(void*)p), struct A", // Layout origin is not the cast type.
         "typeof(n), int", // May be an enum, whose identity the expression type erased.
         "typeof(p), struct A*", // Nested qualifiers are not all retained by typeof.
         "typeof(*p)*, struct A*", // A new pointer must not erase source qualifiers.
@@ -14960,7 +14960,7 @@ fn library_function_declarations_must_match_the_library_prototype() {
         "{error}"
     );
 
-    let (source, map) = provenance::CSourceMap::decode(
+    let (source, map) = source_map::CSourceMap::decode(
         "# 1 \"main.c\"\nint strlen(int s);\nunsigned long last_index(const char *s) { return 0; }\n",
     )
     .unwrap();
@@ -15318,4 +15318,41 @@ fn static_declarations_keep_linkage_and_redeclaration_identity() {
     assert_ne!(file, other[0].globals()["file_value"].kernel_name());
     assert!(!format!("{:?}", functions[0].body()).contains("#static"));
     assert!(!format!("{:?}", functions[0].body()).contains("#file-static"));
+}
+
+#[test]
+fn c_inferred_local_arrays_refuse_incomplete_and_oversized_shapes() {
+    for (source, expected) in [
+        (
+            "int f() { int a[]; return 0; }",
+            "require a brace initializer",
+        ),
+        (
+            "int f() { int a[] = {}; return 0; }",
+            "require a non-empty initializer",
+        ),
+        (
+            "int f() { int a[2][] = {{1}, {2}}; return 0; }",
+            "only the outer local array bound",
+        ),
+        (
+            "int f() { int a[][2] = {{1, 2, 3}}; return 0; }",
+            "too many initializers",
+        ),
+        (
+            "int f() { int a[] = {sizeof(a)}; return 0; }",
+            "`sizeof` requires a complete array type",
+        ),
+        (
+            "int f() { int a[] = {sizeof(__typeof__(a))}; return 0; }",
+            "GNU `typeof` of an incomplete array",
+        ),
+        (
+            "int f() { int a[][1073741823] = {{1}, {2}}; return 0; }",
+            "dimensions are too large",
+        ),
+    ] {
+        let error = syntax::parse_function(source).expect_err("invalid inferred local shape");
+        assert!(error.message().contains(expected), "{source}: {error:?}");
+    }
 }

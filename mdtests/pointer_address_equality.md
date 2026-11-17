@@ -1,7 +1,7 @@
 # Address equality follows C pointer comparison
 
 Two address words compare equal exactly when their pointers compare equal in C.
-Full specification pointer equality also compares designation; the distinct-node
+Full specification pointer equality also compares provenance; the distinct-node
 control therefore states address inequality explicitly. A node whose
 word holds its own address is self-parented; a node whose word holds a
 distinct node's address is not. This is the `RB_EMPTY_NODE` shape.

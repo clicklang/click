@@ -106,7 +106,8 @@ function length<T>(xs: List<T>) -> Integer
 
 theorem length_nonnegative<T>(xs: List<T>) {
     ensures length(xs) >= 0 by {
-        induct(xs) as ih {
+        let ih = induct(xs);
+        match xs {
             List::Nil => {
                 unfold(length(List<T>::Nil));
                 solve();

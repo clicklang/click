@@ -29,7 +29,8 @@ function erase_spine_depth(ctx: EraseSpine) -> Integer
 
 theorem erase_spine_depth_is_nonnegative(ctx: EraseSpine) {
     ensures 0 <= erase_spine_depth(ctx) by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             EraseSpine::Top => {
                 unfold(erase_spine_depth(EraseSpine::Top));
                 normalize();
@@ -46,7 +47,8 @@ theorem erase_spine_depth_is_nonnegative(ctx: EraseSpine) {
 theorem erase_parent_consistent_parent_is(t: RbTree, p: struct rb_node*) {
     requires rb_parent_consistent(t, p) == 1;
     ensures rb_parent_is(t, p) == 1 by {
-        induct(t) as ih {
+        let ih = induct(t);
+        match t {
             RbTree::Empty => {
                 unfold(rb_parent_is(RbTree::Empty, p));
                 normalize();
@@ -64,7 +66,8 @@ theorem erase_parent_consistent_parent_is(t: RbTree, p: struct rb_node*) {
 theorem erase_spine_minimum(spine: EraseSpine, tree: RbTree) {
     requires tree != RbTree::Empty;
     ensures rb_minimum(plug(erase_context(spine), tree)) == rb_minimum(tree) by {
-        induct(spine) as ih {
+        let ih = induct(spine);
+        match spine {
             EraseSpine::Top => {
                 unfold(erase_context(EraseSpine::Top));
                 unfold(plug(Context::Top, tree)); normalize();
@@ -88,7 +91,8 @@ theorem erase_spine_remove_min_blackened(spine: EraseSpine, tree: RbTree) {
     requires tree != RbTree::Empty;
     ensures rb_remove_min_blackened(plug(erase_context(spine), tree))
         == plug(erase_context(spine), rb_remove_min_blackened(tree)) by {
-        induct(spine) as ih {
+        let ih = induct(spine);
+        match spine {
             EraseSpine::Top => {
                 unfold(erase_context(EraseSpine::Top));
                 unfold(plug(Context::Top, tree));
@@ -119,7 +123,8 @@ function erase_spine_parent(spine: EraseSpine, anchor: struct rb_node*) -> struc
 theorem erase_spine_focus_parent_consistent(spine: EraseSpine, tree: RbTree, anchor: struct rb_node*) {
     requires rb_parent_consistent(plug(erase_context(spine), tree), anchor) == 1;
     ensures rb_parent_consistent(tree, erase_spine_parent(spine, anchor)) == 1 by {
-        induct(spine) as ih {
+        let ih = induct(spine);
+        match spine {
             EraseSpine::Top => {
                 unfold(erase_spine_parent(EraseSpine::Top, anchor));
                 have plug(erase_context(EraseSpine::Top), tree) == tree by {
@@ -164,7 +169,8 @@ function erase_minimum_color(minimum: RbMinimum) -> Color {
 theorem erase_spine_min_parent(spine: EraseSpine, tree: RbTree) {
     requires tree != RbTree::Empty;
     ensures rb_min_parent(plug(erase_context(spine), tree)) == rb_min_parent(tree) by {
-        induct(spine) as ih {
+        let ih = induct(spine);
+        match spine {
             EraseSpine::Top => {
                 unfold(erase_context(EraseSpine::Top));
                 unfold(plug(Context::Top, tree)); normalize();
@@ -186,7 +192,8 @@ theorem erase_spine_min_context(spine: EraseSpine, tree: RbTree, outer: Context)
     requires tree != RbTree::Empty;
     ensures rb_min_context(plug(erase_context(spine), tree), outer)
         == rb_min_context(tree, ctx_concat(erase_context(spine), outer)) by {
-        induct(spine) as ih {
+        let ih = induct(spine);
+        match spine {
             EraseSpine::Top => {
                 unfold(erase_context(EraseSpine::Top));
                 unfold(plug(Context::Top, tree));
@@ -220,7 +227,8 @@ function erase_spine_links(spine: EraseSpine, anchor: struct rb_node*) -> int32
 theorem erase_spine_links_from_tree(spine: EraseSpine, tree: RbTree, anchor: struct rb_node*) {
     requires rb_parent_consistent(plug(erase_context(spine), tree), anchor) == 1;
     ensures erase_spine_links(spine, anchor) == 1 by {
-        induct(spine) as ih {
+        let ih = induct(spine);
+        match spine {
             EraseSpine::Top => { unfold(erase_spine_links(EraseSpine::Top, anchor)); normalize(); }
             EraseSpine::Left(identity, parent, color, sibling, up) => {
                 have plug(erase_context(EraseSpine::Left(identity, parent, color, sibling, up)), tree)
@@ -245,7 +253,8 @@ theorem erase_spine_context_parent(spine: EraseSpine, anchor: struct rb_node*, p
         color: Color, sibling: RbTree, above: Context) {
     ensures ctx_node_is(ctx_concat(erase_context(spine), Context::Left(anchor, parent, color, sibling, above)),
         erase_spine_parent(spine, anchor)) == 1 by {
-        induct(spine) as ih {
+        let ih = induct(spine);
+        match spine {
             EraseSpine::Top => {
                 unfold(erase_context(EraseSpine::Top));
                 unfold(erase_spine_parent(EraseSpine::Top, anchor));
@@ -264,7 +273,8 @@ theorem erase_spine_context_parent(spine: EraseSpine, anchor: struct rb_node*, p
     ensures ctx_concat(erase_context(spine), Context::Left(anchor, parent, color, sibling, above))
         == ctx_reroot(ctx_concat(erase_context(spine), Context::Left(anchor, parent, color, sibling, above)),
             erase_spine_parent(spine, anchor)) by {
-        induct(spine) as ih {
+        let ih = induct(spine);
+        match spine {
             EraseSpine::Top => {
                 unfold(erase_context(EraseSpine::Top));
                 unfold(erase_spine_parent(EraseSpine::Top, anchor));
@@ -309,7 +319,8 @@ theorem erase_context_parent(ctx: Context, node: struct rb_node*, parent: struct
     color: Color, left: RbTree, right: RbTree) {
     requires ctx_consistent(ctx, RbTree::Node(node, parent, color, left, right), 0) == 1;
     ensures ctx_node_is(ctx, parent) == 1 by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => {
                 apply(ctx_consistent_top(RbTree::Node(node, parent, color, left, right), 0));
                 apply(rb_parent_consistent_node_fixes_parent(node, parent, color, left, right, 0));
@@ -331,7 +342,8 @@ theorem erase_context_parent(ctx: Context, node: struct rb_node*, parent: struct
         }
     }
     ensures ctx == ctx_reroot(ctx, parent) by {
-        induct(ctx) as ih {
+        let ih = induct(ctx);
+        match ctx {
             Context::Top => {
                 apply(ctx_consistent_top(RbTree::Node(node, parent, color, left, right), 0));
                 apply(rb_parent_consistent_node_fixes_parent(node, parent, color, left, right, 0));

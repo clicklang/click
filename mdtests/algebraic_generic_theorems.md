@@ -28,7 +28,8 @@ function append<T>(xs: TestList<T>, ys: TestList<T>) -> TestList<T>
 
 theorem append_right_identity<T>(xs: TestList<T>) {
     ensures append(xs, TestList<T>::Nil) == xs by {
-        induct(xs) as ih {
+        let ih = induct(xs);
+        match xs {
             TestList::Nil => {
                 unfold(append(TestList<T>::Nil, TestList<T>::Nil));
                 solve();

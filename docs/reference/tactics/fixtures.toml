@@ -93,11 +93,6 @@ path = "mdtests/pure_induction_countdown.md"
 needle = "let ih = induct(n);"
 
 [[form]]
-id = "structural-induct"
-path = "mdtests/algebraic_structural_induction.md"
-needle = "induct(xs) as ih {"
-
-[[form]]
 id = "apply-induction"
 path = "mdtests/pure_induction_countdown.md"
 needle = "apply(ih(n - 1));"

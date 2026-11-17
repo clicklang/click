@@ -66,7 +66,7 @@ impl Clone for ProgramStatement {
 impl ProgramStatement {
     // Sequence roots are persistent. Only the directly boxed children need
     // placeholders for the visitor; all other fields retain ordinary clone
-    // semantics, including source provenance, loop contracts and call data.
+    // semantics, including source origin, loop contracts and call data.
     fn clone_shell(&self) -> Self {
         match self {
             Self::Skip => Self::Skip,

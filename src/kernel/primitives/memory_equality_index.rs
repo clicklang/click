@@ -35,7 +35,7 @@ fn graph_for_memory_query(assumptions: &PureFactContext, pointer: &Pointer) -> E
             offset: PointerOffsetTerm::Constant(0),
         };
         if let Some(stored) =
-            crate::kernel::memory_provenance::checked_pointer_read_stored_value(&read, assumptions)
+            crate::kernel::memory_history::checked_pointer_read_stored_value(&read, assumptions)
         {
             graph.add_checked_read_equality(&read, &stored);
         }
@@ -58,10 +58,8 @@ fn graph_for_memory_query(assumptions: &PureFactContext, pointer: &Pointer) -> E
         if assumptions
             .retained_pointer_read_application(&selected)
             .is_some()
-            && let Some(endpoint) = crate::kernel::memory_provenance::checked_pointer_read_endpoint(
-                &selected,
-                assumptions,
-            )
+            && let Some(endpoint) =
+                crate::kernel::memory_history::checked_pointer_read_endpoint(&selected, assumptions)
         {
             graph.add_checked_read_equality(&selected, &endpoint);
         }
@@ -1295,7 +1293,7 @@ impl MemoryFactEntries {
                             block: root.block,
                             offset: PointerOffsetTerm::add(
                                 root.offset,
-                                crate::kernel::memory_provenance::rebuild_scaled_pointer_index(
+                                crate::kernel::memory_history::rebuild_scaled_pointer_index(
                                     end,
                                     i64::from(available.element_width()),
                                     Some(true),
@@ -1338,7 +1336,7 @@ impl MemoryFactEntries {
 impl MemoryFactCandidates {
     /// Restate one selected supplier in the query's checked byte coordinates.
     /// This uses the same query-local graph as requirement alignment; it does
-    /// not publish an equality or change object designation/validity metadata.
+    /// not publish an equality or change object provenance/validity metadata.
     pub(super) fn supplier_at_base(
         &self,
         entry: ResourceEntryId,
@@ -1447,20 +1445,97 @@ impl MemoryQuery<'_> {
 impl ResourceContext {
     /// The raw producer already maintains interval trees and origin counts.
     /// When every held owner is in this exact block and has this exact origin,
-    /// no graph preparation or alias recovery is needed. Other blocks remain
-    /// unsupported here: a loaded query can acquire a cross-block definition.
+    /// no graph preparation or alias recovery is needed. A partition consisting
+    /// only of physical automatic owners also selects by storage identity.
+    /// Other mixed blocks remain unsupported: a loaded query can acquire a
+    /// cross-block definition.
     fn structural_owned_overlap(
         &self,
         fact: &ResourceFact,
-        assumptions: &PureFactContext,
+        _assumptions: &PureFactContext,
     ) -> ConstantOwnedOverlap {
         use ConstantOwnedOverlap::*;
         let Some(range) = fact.memory_own_range() else {
             return Unsupported;
         };
-        if assumptions.has_pointer_block_aliases()
-            || matches!(range.base().block, PointerBlock::StringLiteral { .. })
+        let blocks = &self.storage.index.owned_memory_by_block;
+        // These local addresses never escape into pointer values. The producer
+        // maintains this coverage count as owners enter and leave the frame.
+        if matches!(
+            range.base().block,
+            PointerBlock::Symbolic(_)
+                | PointerBlock::LoadedPointer(_)
+                | PointerBlock::FunctionSymbolic(_)
+                | PointerBlock::ExternalArgument
+                | PointerBlock::ExternalObject(_)
+        ) && self.storage.index.owned_hidden_memory_generation
+            == Some(super::memory_state::never_address_taken_generation())
+            && self.storage.index.owned_hidden_memory_by_block.len() == blocks.len()
         {
+            return Clear;
+        }
+        // A cold physical frame needs no graph registration of its members.
+        // Register only the query's checked read definition and select its
+        // maintained storage anchor. Stated aliases to a held local refuse
+        // this shortcut and continue through ordinary overlap checking.
+        if matches!(
+            range.base().block,
+            PointerBlock::Symbolic(_) | PointerBlock::LoadedPointer(_)
+        ) && self.storage.index.owned_automatic_memory_by_block.len() == blocks.len()
+            && !blocks.contains_key(&PointerBlock::ContractResult)
+            && !blocks.contains_key(&PointerBlock::ContractException)
+        {
+            let graph = graph_for_memory_query(_assumptions, range.base());
+            let anchor = graph.storage_address(range.base());
+            if !blocks.contains_key(&anchor.block) && graph.affine_addresses_complete(&anchor.block)
+            {
+                return Clear;
+            }
+        }
+        // Physical automatic-storage identities remain distinct when facts
+        // alias pointer values to them. The existing index certifies that no
+        // opaque owner is hidden outside this storage partition. Result and
+        // exception bookkeeping slots are not physical automatic objects.
+        if matches!(
+            range.base().block,
+            PointerBlock::ExternalArgument
+                | PointerBlock::ExternalObject(_)
+                | PointerBlock::Heap(_)
+                | PointerBlock::Temporary(_)
+        ) && self.storage.index.owned_automatic_memory_by_block.len() == blocks.len()
+            && !blocks.contains_key(&PointerBlock::ContractResult)
+            && !blocks.contains_key(&PointerBlock::ContractException)
+        {
+            // Every held block is physical automatic storage, which the
+            // structural rule separates from incoming argument memory.
+            return Clear;
+        }
+        let automatic_partition = range.base().block.is_local_block()
+            && !matches!(
+                range.base().block,
+                PointerBlock::ContractResult | PointerBlock::ContractException
+            )
+            && self.storage.index.owned_automatic_memory_by_block.len() == blocks.len()
+            && !blocks.contains_key(&PointerBlock::ContractResult)
+            && !blocks.contains_key(&PointerBlock::ContractException);
+        let physical_partition = matches!(
+            range.base().block,
+            PointerBlock::Concrete(_)
+                | PointerBlock::AutomaticLocal { .. }
+                | PointerBlock::StaticObject { .. }
+                | PointerBlock::AggregateReturn { .. }
+                | PointerBlock::ContractResult
+                | PointerBlock::ContractException
+                | PointerBlock::Heap(_)
+                | PointerBlock::Temporary(_)
+        ) && self.storage.index.owned_physical_memory_by_block.len()
+            == blocks.len();
+        let incoming_partition = matches!(
+            range.base().block,
+            PointerBlock::ExternalArgument | PointerBlock::ExternalObject(_)
+        ) && blocks.contains_key(&range.base().block)
+            && blocks.len() == self.storage.index.owned_automatic_memory_by_block.len() + 1;
+        if matches!(range.base().block, PointerBlock::StringLiteral { .. }) {
             return Unsupported;
         }
         let Some((origin, start, end)) =
@@ -1471,12 +1546,58 @@ impl ResourceContext {
         if start >= end {
             return Clear;
         }
-        let blocks = &self.storage.index.owned_memory_by_block;
-        if blocks.len() != 1 {
+        let raw = &self.storage.index.memory_addresses;
+        let Some(bucket) = raw.classes.get(&range.base().block) else {
+            return if automatic_partition || physical_partition {
+                Clear
+            } else {
+                Unsupported
+            };
+        };
+        let Some(start) = AffineOffset::of(&range.start_pointer().offset)
+            .and_then(|offset| offset.checked_add(&bucket.origin))
+        else {
+            return Unsupported;
+        };
+        let Some(end) = AffineOffset::of(&range.end_pointer().offset)
+            .and_then(|offset| offset.checked_add(&bucket.origin))
+        else {
+            return Unsupported;
+        };
+        if let Some(entry) = bucket
+            .write_intervals
+            .first_overlap(&AddressCoordinate(start), &AddressCoordinate(end))
+        {
+            // One positive witness needs only its own coordinates. Unrelated
+            // unsupported owners cannot hide an already selected conflict.
+            if let Some((held_origin, held_start, held_end)) = self
+                .storage
+                .facts
+                .get(&entry)
+                .and_then(ResourceFact::memory_own_range)
+                .and_then(super::resource_algebra::constant_memory_coordinates)
+                && held_origin == origin
+                && held_start < held_end
+            {
+                let (_, query_start, query_end) =
+                    super::resource_algebra::constant_memory_coordinates(range)
+                        .expect("query coordinates selected above");
+                if held_start < query_end && query_start < held_end {
+                    return Overlap(entry);
+                }
+            }
+            return Unsupported;
+        }
+        // Select only this storage block's intervals, never every allocation.
+        if blocks.len() != 1 && !automatic_partition && !physical_partition && !incoming_partition {
             return Unsupported;
         }
         let Some(members) = blocks.get(&origin.block) else {
-            return Unsupported;
+            return if automatic_partition || physical_partition {
+                Clear
+            } else {
+                Unsupported
+            };
         };
         if self
             .storage
@@ -1488,30 +1609,10 @@ impl ResourceContext {
         {
             return Unsupported;
         }
-        let raw = &self.storage.index.memory_addresses;
-        let Some(bucket) = raw.classes.get(&range.base().block) else {
-            return Unsupported;
-        };
         if raw.incomplete || bucket.write_intervals.len() != members.len() {
             return Unsupported;
         }
-        let Some(start) = AffineOffset::of(&range.start_pointer().offset)
-            .and_then(|offset| offset.checked_add(&bucket.origin))
-        else {
-            return Unsupported;
-        };
-        let Some(end) = AffineOffset::of(&range.end_pointer().offset)
-            .and_then(|offset| offset.checked_add(&bucket.origin))
-        else {
-            return Unsupported;
-        };
-        match bucket
-            .write_intervals
-            .first_overlap(&AddressCoordinate(start), &AddressCoordinate(end))
-        {
-            Some(entry) => Overlap(entry),
-            None => Clear,
-        }
+        Clear
     }
 
     /// A symbolic query may use an enclosing interval established by direct
@@ -1588,8 +1689,162 @@ impl ResourceContext {
         {
             return Clear;
         }
+        if matches!(range.base().block, PointerBlock::StringLiteral { .. }) {
+            return Unsupported;
+        }
         if let decided @ (Clear | Overlap(_)) = self.structural_owned_overlap(fact, assumptions) {
             return decided;
+        }
+        // A singleton is a bounded source, even when its endpoints are symbolic.
+        // Exact bases and widths put both intervals in the same coordinates;
+        // only written endpoint equality or direct indexed order is needed.
+        // Do not iterate a larger base bucket looking for this special case.
+        if self.flat_owned_memory_ranges().len() == 1 {
+            let (held, ()) = self
+                .flat_owned_memory_ranges()
+                .iter()
+                .next()
+                .expect("singleton owner");
+            if assumptions.contains_known(&Proposition::ResourceSeparate {
+                left: Box::new(Resource::Memory(held.clone())),
+                right: Box::new(Resource::Memory(range.clone())),
+            }) {
+                return Clear;
+            }
+            // A singleton supplies both explicit operands. Register their
+            // checked read definitions and footprint endpoints locally, never
+            // prepare or enumerate an ambient resource input. A complete
+            // class miss is the same negative check a published index makes.
+            if matches!(range.base().block, PointerBlock::LoadedPointer(_)) {
+                let mut selected = assumptions.clone();
+                selected.equality_graph = graph_for_memory_query(assumptions, held.base());
+                selected.equality_graph = graph_for_memory_query(&selected, range.base());
+                let graph = &selected.equality_graph;
+                MemoryQuery::Footprint(held).register(graph);
+                MemoryQuery::Footprint(range).register(graph);
+                if let (Some(left_start), Some(left_end), Some(right_start), Some(right_end)) = (
+                    graph.canonical_pointer(&held.start_pointer()),
+                    graph.canonical_pointer(&held.end_pointer()),
+                    graph.canonical_pointer(&range.start_pointer()),
+                    graph.canonical_pointer(&range.end_pointer()),
+                ) && left_start.representative == left_end.representative
+                    && right_start.representative == right_end.representative
+                    && left_start.representative != right_start.representative
+                    && graph.affine_addresses_complete(&left_start.representative)
+                    && graph.affine_addresses_complete(&right_start.representative)
+                {
+                    return Clear;
+                }
+            }
+            // Existing structural storage separation needs no alias walk or
+            // prepared graph, and is independent of interval endpoints.
+            if held.base().blocks_proven_distinct(range.base()) {
+                return Clear;
+            }
+            let selected_entry = || {
+                self.storage
+                    .index
+                    .owned_memory_by_block
+                    .get(&held.base().block)
+                    .and_then(|entries| entries.iter().next())
+                    .copied()
+            };
+            if let (
+                Some((left_origin, left_start, left_end)),
+                Some((right_origin, right_start, right_end)),
+            ) = (
+                super::resource_algebra::constant_memory_coordinates(held),
+                super::resource_algebra::constant_memory_coordinates(range),
+            ) && left_origin == right_origin
+            {
+                if left_start >= left_end
+                    || right_start >= right_end
+                    || left_end <= right_start
+                    || right_end <= left_start
+                {
+                    return Clear;
+                }
+                if let Some(entry) = selected_entry() {
+                    return Overlap(entry);
+                }
+            }
+            // Register only the two explicit ranges, never the ambient frame.
+            let graph = &assumptions.equality_graph;
+            let held_class = graph.footprint_class(held);
+            let query_class = graph.footprint_class(range);
+            let nonempty = |range: &MemoryRange| {
+                if read_extent(&ResourceFact::own_memory(range.clone()))
+                    .is_some_and(|bytes| bytes > 0)
+                {
+                    return true;
+                }
+                let Some((start, end)) = range.int32_bounds() else {
+                    return false;
+                };
+                if assumptions.exact_condition_value(&ConditionTerm::signed_less_than(
+                    start.clone(),
+                    end.clone(),
+                )) == Some(true)
+                {
+                    return true;
+                }
+                let interval = |term: &MachineTerm| {
+                    term.as_const()
+                        .map(|value| {
+                            let value = i64::from(value as i32);
+                            (value, value)
+                        })
+                        .or_else(|| assumptions.indexed_constant_interval(term))
+                };
+                matches!((interval(start), interval(end)), (Some((_, upper)), Some((lower, _))) if upper < lower)
+            };
+            if held_class.is_some()
+                && held_class == query_class
+                && nonempty(held)
+                && nonempty(range)
+                && let Some(entry) = selected_entry()
+            {
+                return Overlap(entry);
+            }
+            if let (Some(ls), Some(le), Some(rs), Some(re)) = (
+                graph.canonical_pointer(&held.start_pointer()),
+                graph.canonical_pointer(&held.end_pointer()),
+                graph.canonical_pointer(&range.start_pointer()),
+                graph.canonical_pointer(&range.end_pointer()),
+            ) && ls.representative == le.representative
+                && ls.representative == rs.representative
+                && ls.representative == re.representative
+            {
+                let left_end = le.offset.constant_difference(&rs.offset);
+                let right_end = re.offset.constant_difference(&ls.offset);
+                let left_length = le.offset.constant_difference(&ls.offset);
+                let right_length = re.offset.constant_difference(&rs.offset);
+                if left_length.is_some_and(|length| length <= 0)
+                    || right_length.is_some_and(|length| length <= 0)
+                {
+                    return Clear;
+                }
+                if left_end.is_some_and(|end| end <= 0) || right_end.is_some_and(|end| end <= 0) {
+                    return Clear;
+                }
+                if left_length.is_some_and(|length| length > 0)
+                    && right_length.is_some_and(|length| length > 0)
+                    && left_end.is_some_and(|end| end > 0)
+                    && right_end.is_some_and(|end| end > 0)
+                    && let Some(entry) = selected_entry()
+                {
+                    return Overlap(entry);
+                }
+            }
+            if held.base() == range.base()
+                && held.element_width() == range.element_width()
+                && let (Some((left_start, left_end)), Some((right_start, right_end))) =
+                    (held.int32_bounds(), range.int32_bounds())
+                && (direct_endpoint_separation(left_end, right_start, assumptions)
+                    || direct_endpoint_separation(right_end, left_start, assumptions))
+            {
+                return Clear;
+            }
         }
         let Some(extent) = read_extent(fact) else {
             // This recursive query has constant endpoints and cannot repeat
@@ -1665,11 +1920,10 @@ impl ResourceContext {
             return Unsupported;
         }
         let Some(bucket) = index.addresses.classes.get(&start.representative) else {
-            return if start.offset.is_constant() && end.offset.is_constant() {
-                Clear
-            } else {
-                Unsupported
-            };
+            // Complete registration and affine coverage were established above.
+            // No held memory has this representative, so the query's offset
+            // need not be constant to establish this empty boundary.
+            return Clear;
         };
         if bucket.general_coordinates != 0 || bucket.write_intervals.len() != bucket.owners.len() {
             return Unsupported;
@@ -2617,10 +2871,9 @@ impl ResourceContext {
         // The derived numeric union is confined to this selected query.
         // Coverage and ownership still check the live supplier before use.
         let graph = assumptions.equality_graph.clone();
-        if let Some(endpoint) = crate::kernel::memory_provenance::checked_pointer_read_endpoint(
-            range.base(),
-            assumptions,
-        ) {
+        if let Some(endpoint) =
+            crate::kernel::memory_history::checked_pointer_read_endpoint(range.base(), assumptions)
+        {
             graph.add_checked_read_equality(range.base(), &endpoint);
         }
         let index =
@@ -3216,5 +3469,34 @@ mod tests {
     #[cfg(test)]
     mod scaling_tests {
         include!("../../scaling_tests/kernel/primitives/memory_equality_index/tests.rs");
+    }
+}
+
+/// Exact facts and direct extrema only: never ask the general condition
+/// decision engine to reconstruct an order path for ownership admission.
+fn direct_endpoint_separation(
+    end: &MachineTerm,
+    start: &MachineTerm,
+    assumptions: &PureFactContext,
+) -> bool {
+    if end == start
+        || assumptions.exact_condition_value(&ConditionTerm::signed_less_equal(
+            end.clone(),
+            start.clone(),
+        )) == Some(true)
+    {
+        return true;
+    }
+    let interval = |term: &MachineTerm| {
+        term.as_const()
+            .map(|value| {
+                let value = i64::from(value as i32);
+                (value, value)
+            })
+            .or_else(|| assumptions.indexed_constant_interval(term))
+    };
+    match (interval(end), interval(start)) {
+        (Some((_, upper)), Some((lower, _))) => upper <= lower,
+        _ => false,
     }
 }

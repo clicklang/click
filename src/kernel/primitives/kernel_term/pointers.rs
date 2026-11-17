@@ -22,7 +22,7 @@ pub(crate) struct KernelPointerQualifiers {
 #[derive(Clone, Debug)]
 pub(crate) struct KernelPointerValue {
     pub(crate) address: SharedPointerAddress,
-    pub(crate) designation: SharedPointerAddress,
+    pub(crate) provenance: SharedPointerAddress,
     pub(crate) opaque_extent: Option<SharedPointerAddress>,
     pub(crate) program_type: ProgramType,
     pub(crate) qualifiers: Option<Arc<KernelPointerQualifiers>>,
@@ -105,7 +105,7 @@ impl SharedPointerValue {
         }
         let (a, b) = (self.node(), other.node());
         if a.address != b.address
-            || a.designation != b.designation
+            || a.provenance != b.provenance
             || a.opaque_extent != b.opaque_extent
             || a.program_type != b.program_type
         {
@@ -143,7 +143,7 @@ impl SharedPointerValue {
     pub(crate) fn addresses(&self) -> impl Iterator<Item = &SharedPointerAddress> {
         let value = self.node();
         std::iter::once(&value.address)
-            .chain(std::iter::once(&value.designation))
+            .chain(std::iter::once(&value.provenance))
             .chain(value.opaque_extent.as_ref())
             .chain(
                 value
@@ -165,7 +165,7 @@ impl SharedPointerValue {
     ) -> Self {
         Self::new(KernelPointerValue {
             address: address(&value.pointer),
-            designation: address(&value.designation),
+            provenance: address(&value.provenance),
             opaque_extent: value.opaque_extent.as_ref().map(|pointer| address(pointer)),
             program_type: value.program_type,
             qualifiers: value.qualifiers.as_ref().map(|q| {
@@ -190,7 +190,7 @@ impl SharedPointerValue {
         let value = self.node();
         Ok(PointerValue {
             pointer: value.address.export()?,
-            designation: Arc::new(value.designation.export()?),
+            provenance: Arc::new(value.provenance.export()?),
             opaque_extent: value
                 .opaque_extent
                 .as_ref()
@@ -369,7 +369,7 @@ mod tests {
         let class = CAccessClass::Scalar(CScalarClass::Int);
         PointerValue {
             pointer: Pointer::symbolic(Variable(1000001)),
-            designation: Arc::new(Pointer::symbolic(Variable(1000002))),
+            provenance: Arc::new(Pointer::symbolic(Variable(1000002))),
             opaque_extent: Some(Arc::new(Pointer::symbolic(Variable(1000003)))),
             program_type: ProgramType::VoidPointer,
             qualifiers: Some(Arc::new(PointerQualifiers {

@@ -434,30 +434,30 @@ impl<'a> Proof<'a> {
         let goal = next.goal().map(|goal| ("goal", goal));
         for (role, original) in facts.chain(goal) {
             let scope = crate::surface::proof::attempt::search_scope("raise-lower audit");
-            let (outcome, spelling, lowered) = crate::instrumentation::without_charging(|| {
+            let (outcome, raised, lowered) = crate::instrumentation::without_charging(|| {
                 if next.premise_fixed_state_view().is_none() {
                     return (RoundTrip::NoState, String::new(), String::new());
                 }
                 // Raise as goal presentation does: with the path's recorded
                 // points and its entry state, so `at(point, ..)`, `old(..)`
-                // and `<call>.result` spellings are available.
+                // and `<call>.result` forms are available.
                 let Some(surface) = next.structural_proposition_candidate(original) else {
                     return (RoundTrip::Unraised, String::new(), String::new());
                 };
-                let spelling = crate::surface::printing::source_click_proposition(&surface);
+                let raised = crate::surface::printing::source_click_proposition(&surface);
                 let lowered =
                     crate::surface::proof::execution_planning::without_open_obligation_probe(
                         || next.lower_surface_proposition_direct(&surface, "raise-lower audit"),
                     );
                 match lowered {
-                    Err(_) => (RoundTrip::Unlowered, spelling, String::new()),
+                    Err(_) => (RoundTrip::Unlowered, raised, String::new()),
                     Ok(lowered) => match audit::classify(original, &lowered) {
                         RoundTrip::Differs => (
                             RoundTrip::Differs,
-                            spelling,
+                            raised,
                             next.render_diagnostic_proposition(&lowered),
                         ),
-                        outcome => (outcome, spelling, String::new()),
+                        outcome => (outcome, raised, String::new()),
                     },
                 }
             });
@@ -469,7 +469,7 @@ impl<'a> Proof<'a> {
                 self.claim_label(),
                 tactic,
                 &next.render_diagnostic_proposition(original),
-                &spelling,
+                &raised,
                 &lowered,
             );
         }
@@ -1304,7 +1304,7 @@ impl<'a> Proof<'a> {
                         }
                         surface.and_then(written_universal_body).map(Arc::new)
                     }
-                    // No lowering provenance was recorded for this goal, so
+                    // No lowering head chain was recorded for this goal, so
                     // refine the written form structurally, as before.
                     (None, PropositionIntroduction::Implication, Some(surface)) => {
                         surface_implication_parts(surface)
@@ -1340,7 +1340,7 @@ impl<'a> Proof<'a> {
                         }
                         Some(Arc::new(body.as_ref().clone()))
                     }
-                    // A range quantifier stated where no lowering provenance
+                    // A range quantifier stated where no lowering head chain
                     // was recorded (a `have` at an execution frontier) names
                     // its variable like a written `forall`. Its range guard
                     // is the next introduction, so the remaining written goal

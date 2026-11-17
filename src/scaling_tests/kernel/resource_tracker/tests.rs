@@ -254,7 +254,7 @@ fn fresh_cell_offsets_share_the_whole_block_version_prefix() {
 #[test]
 fn forgotten_cell_recovery_ignores_older_history_and_unrelated_cache_entries() {
     use super::super::cell_source::{CellWalkStop, memory_dag_cell_source_with_stop};
-    crate::kernel::memory_provenance::with_extended_dag_bridging(|| {
+    crate::kernel::memory_history::with_extended_dag_bridging(|| {
         let mut samples = Vec::new();
         for size in [4, 16, 64] {
             let pointer = at(block("global:g"), 0);
@@ -324,7 +324,7 @@ fn loop_kept_pointer_frame_ignores_unrelated_owners_and_ambiguous_buckets() {
         ));
         let context = PureFactContext::new();
         let query = |address: &Pointer| {
-            crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+            crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
                 &Pointer::loaded_value(&before, address),
                 &Pointer::loaded_value(&after, address),
                 &context,

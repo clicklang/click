@@ -267,7 +267,7 @@ pub const MUTEX_DESTROY_CONTRACT: MutexContractDescriptor = MutexContractDescrip
 
 /// Retained identity of the selected pthread declarations and trusted
 /// modeled specification. A verifier attaches this only after checking
-/// declaration provenance and call shapes.
+/// declaration origin and call shapes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ModeledPthreadBinding {
     pub target: super::target::CTarget,

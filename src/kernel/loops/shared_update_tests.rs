@@ -180,3 +180,61 @@ fn direct_and_prepared_tests_keep_placement_and_continue_semantics() {
         }
     }
 }
+
+#[test]
+fn loop_test_false_is_distinct_from_break_and_propagates_to_its_loop() {
+    let state = ExecutionState::new().with_local("after", int32(0));
+    let test = ProgramStatement::LoopTest {
+        condition: int32_literal(0),
+        aggregate_steps: Vec::new(),
+    };
+    let evaluate = |statement: &ProgramStatement| {
+        crate::kernel::eval::execute_execution_statement(&state, statement, &PureFactContext::new())
+            .expect("one checked successor")
+    };
+    assert!(matches!(
+        evaluate(&test),
+        StatementOutcome::LoopTestFalse(_)
+    ));
+    assert!(matches!(
+        evaluate(&ProgramStatement::Break),
+        StatementOutcome::Break(_)
+    ));
+    let true_test = ProgramStatement::LoopTest {
+        condition: int32_literal(1),
+        aggregate_steps: Vec::new(),
+    };
+    assert!(matches!(evaluate(&true_test), StatementOutcome::Normal(_)));
+
+    // A switch consumes its own written break, but must preserve a test exit.
+    let switch = |body| {
+        program_switch(
+            int32_literal(0),
+            vec![SwitchCase {
+                value: Some(0),
+                body: Box::new(body),
+            }],
+        )
+    };
+    assert!(matches!(
+        evaluate(&switch(ProgramStatement::Break)),
+        StatementOutcome::Normal(_)
+    ));
+    let pass = program_seq(switch(test), program_assign("after", int32_literal(1)));
+    let StatementOutcome::LoopTestFalse(exited) = evaluate(&pass) else {
+        panic!("the switch and sequence must preserve the test's exit reason");
+    };
+    assert_eq!(
+        exited.locals.get_native("after").as_deref(),
+        Some(&int32(0))
+    );
+    let loop_statement = program_while(int32_literal(1), Vec::new(), pass)
+        .with_loop_update(program_assign("after", int32_literal(2)));
+    let StatementOutcome::Normal(exited) = evaluate(&loop_statement) else {
+        panic!("the loop consumes its own test exit");
+    };
+    assert_eq!(
+        exited.locals.get_native("after").as_deref(),
+        Some(&int32(0))
+    );
+}

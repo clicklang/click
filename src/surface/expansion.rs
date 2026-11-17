@@ -5785,25 +5785,12 @@ fn collect_tactic_block_spans<'t>(
                     spans,
                 )?;
             }
-            ProofTactic::StructuralInduct { arms, .. } => {
-                let arm_blocks = tokens.child_blocks(&token_range);
-                if arm_blocks.len() != arms.len() {
-                    return Err(ClickError::new(format!(
-                        "source proof match has {} arm(s), but the parsed tactic has {}",
-                        arm_blocks.len(),
-                        arms.len()
-                    )));
-                }
-                for (arm, (arm_open, arm_close)) in arms.iter().zip(arm_blocks) {
-                    collect_tactic_block_spans(tokens, arm_open, arm_close, &arm.tactics, spans)?;
-                }
-            }
             ProofTactic::Match(proof_match) => {
                 let arms = &proof_match.arms;
                 let arm_blocks = tokens.child_blocks(&token_range);
                 if arm_blocks.len() != arms.len() {
                     return Err(ClickError::new(format!(
-                        "source structural induction has {} arm(s), but the parsed tactic has {}",
+                        "source proof match has {} arm(s), but the parsed tactic has {}",
                         arm_blocks.len(),
                         arms.len()
                     )));

@@ -40,12 +40,12 @@ fn shared_wide_constant_capture_scales_with_dag_and_selected_sources() {
             let operand = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
             let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
                 let read = |context: &PureFactContext| {
-                    capture_implicit_reasoning_provenance(|| {
+                    capture_implicit_consulted_premises(|| {
                         context.wide_constant_from_equalities_view(operand.operand_view())
                     })
                 };
                 assert_eq!(read(&parent), None);
-                let (value, sources) = collect_reasoning_provenance(|| read(&child));
+                let (value, sources) = collect_consulted_premises(|| read(&child));
                 assert_eq!(value, Some(2u64.wrapping_pow(size)));
                 assert!(sources.contains(&source));
                 assert_eq!(read(&parent), None);

@@ -7,7 +7,7 @@ use super::*;
 
 impl<'a> Proof<'a> {
     /// Creates an execution-frontier proof whose C state, check metadata,
-    /// facts, and provenance are structurally shared by checked descendants.
+    /// facts, and outcome_evidence are structurally shared by checked descendants.
     #[allow(clippy::too_many_arguments)]
     pub(in crate::surface::proof) fn for_execution_frontier(
         claim_label: &'a str,
@@ -42,8 +42,8 @@ impl<'a> Proof<'a> {
         {
             execution.presentation.outcome_fact_root = Some(Arc::new(facts.clone()));
             execution.presentation.checked_leaf_facts = None;
-            for provenance in execution.presentation.outcome_provenance.iter_mut() {
-                provenance.checked_leaf_facts = None;
+            for outcome_evidence in execution.presentation.outcome_evidence.iter_mut() {
+                outcome_evidence.checked_leaf_facts = None;
             }
         }
         Self {
@@ -197,7 +197,7 @@ impl<'a> Proof<'a> {
             execution,
             context,
             branch_path: &execution.presentation.branch_path,
-            outcome_provenance: &execution.presentation.outcome_provenance,
+            outcome_evidence: &execution.presentation.outcome_evidence,
         })
     }
 
@@ -237,7 +237,7 @@ impl<'a> Proof<'a> {
             execution,
             context,
             branch_path: &execution.presentation.branch_path,
-            outcome_provenance: &execution.presentation.outcome_provenance,
+            outcome_evidence: &execution.presentation.outcome_evidence,
         })
     }
 

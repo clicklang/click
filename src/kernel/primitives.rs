@@ -1,7 +1,7 @@
 use super::api::{
     int8, int16, int32, normalize_exact_memory_loads_in_pointer_offset, uint8, uint16, uint32,
 };
-use super::memory_provenance::{AtomicMemoryLoadEqualityEvidence, PointerOffsetEqualityEvidence};
+use super::memory_history::{AtomicMemoryLoadEqualityEvidence, PointerOffsetEqualityEvidence};
 use super::reasoning::{
     collect_or_cases, instantiate_range_fold_step, memory_states_proven_equal_at_pointer,
     pointers_proven_equal_for_memory_resolution, resource_context_has_read,
@@ -824,7 +824,7 @@ pub enum MachineTerm {
     /// different values, so they are different terms. See [`LoadKind`].
     MemoryLoad(ProgramPoint, Box<Pointer>, LoadKind),
     /// The physical LP64 address bits of an object pointer. This numeric
-    /// observation carries no designation or selected extent. Complete C
+    /// observation carries no provenance or selected extent. Complete C
     /// integer copies retain that information separately in PointerInteger.
     /// Checked tag identities can recover address bits, never pointer bounds.
     /// The annotation retains the source object class for a later cast and
@@ -2362,7 +2362,7 @@ pub struct PointerValue {
     pointer: Pointer,
     /// The object designated when this value entered. Address aliases never
     /// replace this component; only value transport or substitution maps it.
-    designation: Arc<Pointer>,
+    provenance: Arc<Pointer>,
     /// The opaque containing extent retained through narrowing. A byte/void
     /// view clears it, so that wider view cannot authorize the original input.
     opaque_extent: Option<Arc<Pointer>>,
@@ -2547,7 +2547,7 @@ impl PointerValue {
         };
         Self {
             opaque_extent: (!known_root).then(|| Arc::new(root.clone())),
-            designation: Arc::new(root),
+            provenance: Arc::new(root),
             pointer,
             program_type,
             qualifiers: known_root.then(|| {
@@ -2582,20 +2582,20 @@ impl PointerValue {
         let origin = Arc::new(Pointer::loaded_value(&source, cell));
         value
             .with_opaque_extent(Some(origin.clone()))
-            .with_designation(origin)
+            .with_provenance(origin)
     }
 
     /// The read that introduced this complete pointer's opaque domain when
     /// its numeric address alone names a different read version. This is
-    /// producer provenance, not an address-alias or preservation query.
+    /// the producing read, not an address-alias or preservation query.
     pub(crate) fn complete_read_source(&self) -> Option<(SharedMemory, Pointer)> {
-        if self.opaque_extent() != Some(self.designation())
-            || self.pointer.object_identity() == *self.designation()
+        if self.opaque_extent() != Some(self.provenance())
+            || self.pointer.object_identity() == *self.provenance()
         {
             return None;
         }
         let address_read = self.pointer.as_loaded_value()?;
-        let origin = self.designation().as_loaded_value()?;
+        let origin = self.provenance().as_loaded_value()?;
         if address_read.displacement != PointerOffsetTerm::Constant(0)
             || origin.displacement != PointerOffsetTerm::Constant(0)
             || address_read.defining_address != origin.defining_address
@@ -2605,8 +2605,8 @@ impl PointerValue {
         Some((origin.defining_memory, origin.defining_address))
     }
 
-    pub(crate) fn designation(&self) -> &Pointer {
-        &self.designation
+    pub(crate) fn provenance(&self) -> &Pointer {
+        &self.provenance
     }
 
     pub(in crate::kernel) fn opaque_extent(&self) -> Option<&Pointer> {
@@ -2636,9 +2636,9 @@ impl PointerValue {
         )
     }
 
-    pub(in crate::kernel) fn access_designation(&self) -> (&Pointer, Option<&Pointer>) {
+    pub(in crate::kernel) fn access_provenance(&self) -> (&Pointer, Option<&Pointer>) {
         (
-            self.designation(),
+            self.provenance(),
             if self.extent_is_known() {
                 None
             } else {
@@ -2647,8 +2647,8 @@ impl PointerValue {
         )
     }
 
-    pub(in crate::kernel) fn with_designation(mut self, designation: Arc<Pointer>) -> Self {
-        self.designation = designation;
+    pub(in crate::kernel) fn with_provenance(mut self, provenance: Arc<Pointer>) -> Self {
+        self.provenance = provenance;
         self
     }
 
@@ -2691,7 +2691,7 @@ impl PointerValue {
     pub(crate) fn with_type(self, program_type: ProgramType) -> Self {
         Self {
             pointer: self.pointer,
-            designation: self.designation,
+            provenance: self.provenance,
             opaque_extent: self.opaque_extent,
             program_type,
             qualifiers: self.qualifiers,
@@ -2818,9 +2818,9 @@ impl PointerValue {
     pub(crate) fn map_pointers(&self, mut map: impl FnMut(&Pointer) -> Pointer) -> Self {
         let mut result = self.clone();
         result.pointer = map(&self.pointer);
-        let designation = map(&self.designation);
-        if designation != *self.designation {
-            result.designation = Arc::new(designation);
+        let provenance = map(&self.provenance);
+        if provenance != *self.provenance {
+            result.provenance = Arc::new(provenance);
         }
         result.opaque_extent = self.opaque_extent().map(|origin| Arc::new(map(origin)));
         if let Some(extent) = self.extent() {
@@ -2837,7 +2837,7 @@ impl PointerValue {
         mut map: impl FnMut(&Pointer) -> Option<Pointer>,
     ) -> Option<Self> {
         let pointer = map(&self.pointer)?;
-        let designation = map(&self.designation)?;
+        let provenance = map(&self.provenance)?;
         let opaque_extent = match self.opaque_extent() {
             Some(origin) => Some(Arc::new(map(origin)?)),
             None => None,
@@ -2852,7 +2852,7 @@ impl PointerValue {
         Some(
             self.clone()
                 .with_address(pointer)
-                .with_designation(Arc::new(designation))
+                .with_provenance(Arc::new(provenance))
                 .with_extent(extent)
                 .with_opaque_extent(opaque_extent),
         )
@@ -2861,14 +2861,14 @@ impl PointerValue {
     /// Re-spell physical addresses without changing the value's origin.
     pub(in crate::kernel) fn map_addresses(&self, map: impl FnMut(&Pointer) -> Pointer) -> Self {
         self.map_pointers(map)
-            .with_designation(self.designation.clone())
+            .with_provenance(self.provenance.clone())
             .with_opaque_extent(self.opaque_extent.clone())
     }
 
     /// Every address the value mentions, for variable collection.
     pub(crate) fn pointers(&self) -> impl Iterator<Item = &Pointer> {
         std::iter::once(&self.pointer)
-            .chain(std::iter::once(self.designation.as_ref()))
+            .chain(std::iter::once(self.provenance.as_ref()))
             .chain(self.opaque_extent())
             .chain(self.extent().map(|extent| &extent.start))
     }
@@ -2900,7 +2900,7 @@ impl PointerValue {
     ) {
         (
             &self.pointer,
-            &self.designation,
+            &self.provenance,
             &self.program_type,
             self.pointee_volatile(),
             self.extent_is_known(),
@@ -3772,7 +3772,7 @@ pub struct LValue {
     pub(super) extent_known: bool,
     pub(super) opaque_extent: Option<Arc<Pointer>>,
     pub(super) extent: Option<Arc<SubobjectExtent>>,
-    pub(super) designation: Option<Arc<Pointer>>,
+    pub(super) provenance: Option<Arc<Pointer>>,
     /// The class of the lvalue's type, which the access uses, when the
     /// frontend supplied one.
     pub(super) access_class: Option<crate::kernel::effective_type::CAccessClass>,
@@ -3803,7 +3803,7 @@ pub enum IntegerCastMode {
     /// specification's checked conversion.
     CConversion,
     /// An inserted byte/void view changes the carrier while retaining the
-    /// source pointer's designation and bounds. Authored pointer casts use
+    /// source pointer's provenance and bounds. Authored pointer casts use
     /// the separate explicit conversion rule.
     PointerCoercion,
     /// Legacy exact uint64-to-int64 boundary.
@@ -3922,7 +3922,7 @@ pub enum ProgramExpression {
         /// The class of the lvalue's C type, which the access uses, when the
         /// frontend supplied one (`design/effective-types.md`).
         access_class: Option<crate::kernel::effective_type::CAccessClass>,
-        /// Source provenance is presentation metadata only. Its comparison
+        /// Source origin is presentation metadata only. Its comparison
         /// traits intentionally ignore the value.
         source: ExpressionLoadSource,
     },
@@ -3960,7 +3960,7 @@ pub enum ProgramExpression {
     },
 }
 
-/// Optional source provenance attached to a typed load. Two expressions that
+/// Optional source origin attached to a typed load. Two expressions that
 /// differ only in this metadata remain equal in kernel collections and caches.
 #[derive(Clone, Debug)]
 pub struct ExpressionLoadSource(Option<Arc<LoadSourceId>>);
@@ -4187,7 +4187,7 @@ pub enum SpecExpression {
     /// format), the operator's native node, `(a op b) mod 2^N`. Over operands
     /// of another type the operator keeps its promoted reading.
     NarrowArithmetic(Box<SpecExpression>, MachineIntegerType),
-    /// An implicit pointer conversion retains the complete designation.
+    /// An implicit pointer conversion retains the complete provenance.
     PointerCoercion(Box<SpecExpression>, ProgramType),
     If {
         condition: Box<SpecProposition>,
@@ -4252,7 +4252,7 @@ pub enum SpecExpression {
 }
 
 /// The C place operations around a specification-evaluated address base.
-/// Steps are stored outside-in, preserving C subobject designation formation.
+/// Steps are stored outside-in, preserving C subobject provenance formation.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SpecAddressStep {
     Subobject { width: u32 },
@@ -4287,7 +4287,7 @@ impl SpecObjectAddress {
     }
 
     /// Feed the selected base value to the ordinary C address operation.
-    /// All place steps remain syntax, so member designation is formed by the
+    /// All place steps remain syntax, so member provenance is formed by the
     /// same checked transition as a program address, without a fake variable.
     pub(crate) fn program_expression(&self, base: ProgramValue) -> ProgramExpression {
         let mut pointer = ProgramExpression::Value(base);
@@ -4859,7 +4859,7 @@ impl AlgebraicTermNode {
     ) -> ProgramValue {
         // A value is named by the point its cell was last written, so a
         // read after unrelated stores is the read before them.
-        let memory = crate::kernel::memory_provenance::canonical_value_load_memory(
+        let memory = crate::kernel::memory_history::canonical_value_load_memory(
             &memory,
             &pointer,
             ABSTRACT_VALUE_WIDTH,
@@ -5773,7 +5773,7 @@ pub enum ProgramStatement {
         volatile: bool,
         /// The destination pointer cell's declared pointee qualification.
         pointee_constant: bool,
-        /// Source provenance only; checked memory authority is still required.
+        /// Source origin only; checked memory authority is still required.
         source: super::StatementStoreSource,
     },
     /// Evaluate a compound-assignment or increment target as one lvalue,
@@ -5871,7 +5871,7 @@ pub struct LoopEffectCheck {
     pub(super) effect: LoopEffect,
     pub(super) span: LoopEffectSpan,
     pub(super) context: Option<String>,
-    /// Semantic provenance is typed so diagnostics cannot be mistaken for
+    /// The semantic origin is typed so diagnostics cannot be mistaken for
     /// authority.  Inherited resource frames are replaced by
     /// `validated_ranges` at the function entry before loop proof starts.
     pub(super) origin: LoopEffectOrigin,
@@ -5957,10 +5957,10 @@ impl Ord for SegmentValueRuns {
 pub struct MemoryRange {
     pub(super) base: Pointer,
     /// Origin of the value naming the range, independent of address aliases.
-    pub(super) designation: Arc<Pointer>,
-    /// A typed clause also demands this carrier's designation. Raw kernel
+    pub(super) provenance: Arc<Pointer>,
+    /// A typed clause also demands this carrier's provenance. Raw kernel
     /// intervals ask only about physical authority; both retain supplier
-    /// designations through resource algebra and subsequent C access checks.
+    /// provenances through resource algebra and subsequent C access checks.
     pub(super) typed_carrier: bool,
     pub(super) carrier_extent_known: bool,
     pub(super) opaque_extent: Option<Arc<Pointer>>,
@@ -6000,7 +6000,7 @@ impl MemoryRange {
     ) {
         (
             &self.base,
-            &self.designation,
+            &self.provenance,
             self.opaque_extent.as_deref(),
             &self.start_bound,
             &self.end_bound,
@@ -6594,7 +6594,7 @@ impl AggregateLayout {
 /// A [`ProgramFunction`] keeps the implementation body and storage alongside this
 /// value, but all typed call parameters/result metadata, proof binders,
 /// logical clauses, normalized resource terms, effect information, and source
-/// provenance live here.  Keeping this carrier separate from the body is
+/// origins live here.  Keeping this carrier separate from the body is
 /// important for opaque calls: applying a checked summary must not implicitly
 /// execute (or even inspect) the concrete body.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -6771,7 +6771,7 @@ impl ProgramFunction {
     }
 }
 
-/// Source provenance is planning metadata, not part of a function's checked
+/// Source origin is planning metadata, not part of a function's checked
 /// semantic identity. Its vector remains available through the function
 /// accessor, while equality, hashing, and ordering stay neutral so adding a
 /// source map cannot invalidate semantic caches or certificates.
@@ -6808,7 +6808,7 @@ impl Ord for ContractRequirementSources {
     }
 }
 
-// Declaration provenance is retained through instantiation but does not alter
+// Declaration origin is retained through instantiation but does not alter
 // a definition's semantic identity, just like ContractRequirementSources.
 #[derive(Clone, Debug, Default)]
 pub(super) struct PredicateRequirementSource(Option<usize>);
@@ -7357,7 +7357,7 @@ impl VerifiedFunctionRule {
 #[derive(Clone, Debug)]
 pub struct FunctionContract {
     pub(super) name: String,
-    /// Source-name provenance retained only for diagnostics. It is not part
+    /// Source-name origin retained only for diagnostics. It is not part
     /// of the contract identity and cannot alter callback behavior.
     pub(super) callee_name: String,
     pub(super) interface: FunctionContractInterface,
@@ -8088,7 +8088,7 @@ pub enum RuntimeError {
 }
 
 /// The written clause of a refused composite assembly, with the parameter
-/// values at that call. Diagnostic provenance only; it supplies no evidence.
+/// values at that call. Diagnostic metadata only; it supplies no evidence.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct ResourceBodyFactSource {
     pub spelling: String,
@@ -8441,6 +8441,8 @@ pub(super) enum LValueOutcome {
 pub enum StatementOutcome {
     Normal(Box<ExecutionState>),
     Break(Box<ExecutionState>),
+    /// The loop's own test was false; distinct from a written `break`.
+    LoopTestFalse(Box<ExecutionState>),
     Continue(Box<ExecutionState>),
     /// A checked source edge awaiting resumption at its function-owned target.
     Jump {
@@ -8640,7 +8642,7 @@ pub struct ForgottenKnowledge {
     /// something can never re-intern as the state it forgot it from.
     pub(super) forgotten_from: Option<ForgottenFrom>,
     /// Inputs of the most recent branch abstraction. Their exact arena
-    /// identities prevent first-wins provenance from mixing different joins;
+    /// identities prevent first-wins read naming from mixing different joins;
     /// their content hashes keep read names reproducible across sessions.
     /// The persistent set caches its hash and does not retain recursive
     /// state contents. Read projections must retain this identity.
@@ -10472,7 +10474,7 @@ pub(super) struct PopulationEffects {
     /// cannot supply resources to an execution or resource rewrite.
     pub(super) predicate_count_permissions: Option<PredicateCountPermissions>,
 
-    /// Creation provenance is shared out-of-line to keep ExecutionState's recursive
+    /// Creation history is shared out-of-line to keep ExecutionState's recursive
     /// checker stack footprint unchanged. Legacy states use None.
     pub(super) creation: Option<super::population_authority::storage_creation::CreationEvents>,
 }
@@ -10834,7 +10836,7 @@ impl Clone for ResourceContext {
 }
 
 impl ResourceContext {
-    /// Diagnostic provenance only; this never grants ownership or supplies a fact.
+    /// Diagnostic metadata only; this never grants ownership or supplies a fact.
     pub(crate) fn instance_consumption(&self, identity: Variable) -> Option<&InstanceConsumption> {
         self.instance_consumptions.as_ref()?.get(&identity)
     }
@@ -11178,6 +11180,9 @@ pub(super) struct ResourceContextIndex {
     pub(super) owned_memory_by_block: PersistentMap<PointerBlock, ResourceEntryIds>,
     /// Automatic memory owners, indexed independently of external and global
     /// holdings. Addressability is checked when projecting observable facts.
+    pub(super) owned_hidden_memory_generation: Option<u64>,
+    pub(super) owned_physical_memory_by_block: PersistentMap<PointerBlock, ResourceEntryIds>,
+    pub(super) owned_hidden_memory_by_block: PersistentMap<PointerBlock, ResourceEntryIds>,
     pub(super) owned_automatic_memory_by_block: PersistentMap<PointerBlock, ResourceEntryIds>,
     /// The blocks holding two or more owned memory ranges. Only those can
     /// contribute same-block separation candidates, so projecting a
@@ -11646,7 +11651,7 @@ impl PublicationRight {
 pub struct MutexIdentity {
     /// `None` is an unbound description at abstract contract entry.
     pub(in crate::kernel) epoch: Option<u64>,
-    /// Bound addresses are immutable diagnostic provenance; only an
+    /// Bound addresses are immutable diagnostic metadata; only an
     /// unbound description's address participates in substitution.
     pub(in crate::kernel) mutex: Pointer,
 }
@@ -11671,7 +11676,7 @@ impl ConditionalMutexGuard {
 }
 
 /// Opaque identity of one use-share resource occurrence. The pointer is
-/// diagnostic provenance, not a constructor for loan authority. Substitution
+/// diagnostic metadata, not a constructor for loan authority. Substitution
 /// must preserve this identity just as it preserves a concrete acquisition.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct MutexUseIdentity {
@@ -11821,6 +11826,8 @@ impl ResourceInstance {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ResourceContextValidityError {
+    /// The bounded checker lacks indexed evidence; this is not an overlap claim.
+    UnsupportedOwnershipBoundary,
     InvalidExclusiveAccess(ResourceFact),
     DuplicateOwnedResourceFact(ResourceFact),
     OverlappingOwnedMemoryResources {
@@ -11832,6 +11839,7 @@ pub enum ResourceContextValidityError {
 impl std::fmt::Display for ResourceContextValidityError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
+            Self::UnsupportedOwnershipBoundary => "ownership separation is outside the indexed checking fragment; provide explicit separation or a supported resource frontier",
             Self::InvalidExclusiveAccess(_) => {
                 "field-bearing resource instances and mutex guards require exclusive ownership with quantity one"
             }
@@ -12863,7 +12871,7 @@ impl ResourceSpec {
     }
 }
 
-// Clause positions are diagnostic provenance, not part of a resource's
+// Clause positions are diagnostic metadata, not part of a resource's
 // identity.  In particular, the same normalized term may occur in a
 // precondition and a postcondition (or in two separately expanded source
 // clauses); changing its source position must not change contract identity,
@@ -14924,7 +14932,7 @@ pub struct ProofObligation {
     pub(super) introductions: Option<Arc<super::LoweringIntroductions>>,
 }
 
-/// Provenance describes the proposition; it never distinguishes two
+/// This metadata describes the proposition; it never distinguishes two
 /// obligations. Comparison, ordering, and hashing therefore read the
 /// checked fields only, so an obligation carrying a recorded chain still
 /// deduplicates against the same obligation built without one.
@@ -14990,12 +14998,12 @@ pub struct ExecutionPureFact {
     pub(super) reference_observation: super::source_access::ReferenceObservationSource,
 }
 
-/// Source events are execution provenance, not part of the proposition's
+/// Source events are execution derivation, not part of the proposition's
 /// semantic identity. Keep them beside the fact while making fact equality
 /// and hashing remain proposition-oriented. Allocate the event list only for
 /// facts carrying source events; ordinary pure facts keep one optional pointer.
 #[derive(Clone, Debug, Default)]
-#[allow(clippy::box_collection)] // Pure facts retain only one optional provenance pointer.
+#[allow(clippy::box_collection)] // Pure facts retain only one optional source-event pointer.
 pub(crate) struct GeneratedLoadSourceEvents(Option<Box<Vec<GeneratedLoadSourceEvent>>>);
 
 impl GeneratedLoadSourceEvents {

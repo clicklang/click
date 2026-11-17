@@ -1661,14 +1661,14 @@ impl Parser {
     /// `expr as T` in a Rust sidecar is the scalar cast `(T)expr`. It binds
     /// tighter than a binary operator and looser than a unary one, as in
     /// Rust. `as` followed by anything but a scalar type is left for the
-    /// clause that owns it (structural `induct(xs) as ih { ... }`).
+    /// clause that owns it (for example `verifying "f.c" as f`).
     #[inline(never)]
     /// The casts after a unary operand, `e as T`, left to right. Click's
     /// cast is written after its operand: an integer target bare,
     /// `x as uint32`, a pointer target parenthesized, `p as (uint8 *)` or
     /// `p as (struct node *)`. A Rust source's sidecar also writes Rust's
     /// scalar names, `x as u32`. An `as` followed by anything else is left
-    /// for the clause that owns it (structural `induct(xs) as ih { ... }`).
+    /// for the clause that owns it (for example `verifying "f.c" as f`).
     pub(super) fn parse_casts(
         &mut self,
         mut operand: ContractExpression,

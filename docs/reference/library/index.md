@@ -211,7 +211,8 @@ uses Nat induction and explicit, locally checked linear certificates.
 ```click
 theorem to_integer_add(n: Nat, m: Nat) {
     ensures to_integer(nat::add(n, m)) == to_integer(n) + to_integer(m) by {
-        induct(n) as ih {
+        let ih = induct(n);
+        match n {
             Nat::Zero => {
                 unfold(nat::add(Nat::Zero, m));
                 apply(nat::to_integer_zero());
@@ -238,7 +239,8 @@ theorem to_integer_add(n: Nat, m: Nat) {
 ```click
 theorem add_right_identity(n: Nat) {
     ensures nat::add(n, Nat::Zero) == n by {
-        induct(n) as ih {
+        let ih = induct(n);
+        match n {
             Nat::Zero => {
                 unfold(nat::add(Nat::Zero, Nat::Zero));
                 normalize();
@@ -261,7 +263,8 @@ theorem add_right_identity(n: Nat) {
 ```click
 theorem add_succ_right(n: Nat, m: Nat) {
     ensures nat::add(n, Nat::Succ(m)) == Nat::Succ(nat::add(n, m)) by {
-        induct(n) as ih {
+        let ih = induct(n);
+        match n {
             Nat::Zero => {
                 unfold(nat::add(Nat::Zero, Nat::Succ(m)));
                 unfold(nat::add(Nat::Zero, m));
@@ -286,7 +289,8 @@ theorem add_succ_right(n: Nat, m: Nat) {
 ```click
 theorem add_associative(a: Nat, b: Nat, c: Nat) {
     ensures nat::add(nat::add(a, b), c) == nat::add(a, nat::add(b, c)) by {
-        induct(a) as ih {
+        let ih = induct(a);
+        match a {
             Nat::Zero => {
                 unfold(nat::add(Nat::Zero, b));
                 unfold(nat::add(Nat::Zero, nat::add(b, c)));
@@ -315,7 +319,8 @@ theorem add_associative(a: Nat, b: Nat, c: Nat) {
 ```click
 theorem add_commutative(a: Nat, b: Nat) {
     ensures nat::add(a, b) == nat::add(b, a) by {
-        induct(a) as ih {
+        let ih = induct(a);
+        match a {
             Nat::Zero => {
                 unfold(nat::add(Nat::Zero, b));
                 apply(nat::add_right_identity(b));
@@ -413,7 +418,8 @@ theorem append_left_identity<T>(xs: List<T>) {
 ```click
 theorem append_right_identity<T>(xs: List<T>) {
     ensures list::append(xs, List<T>::Nil) == xs by {
-        induct(xs) as ih {
+        let ih = induct(xs);
+        match xs {
             List::Nil => {
                 unfold(list::append(List<T>::Nil, List<T>::Nil));
                 normalize();
@@ -451,7 +457,8 @@ theorem append_cons<T>(head: T, tail: List<T>, ys: List<T>) {
 theorem append_associative<T>(xs: List<T>, ys: List<T>, zs: List<T>) {
     ensures list::append(list::append(xs, ys), zs)
         == list::append(xs, list::append(ys, zs)) by {
-        induct(xs) as ih {
+        let ih = induct(xs);
+        match xs {
             List::Nil => {
                 unfold(list::append(List<T>::Nil, ys));
                 unfold(list::append(List<T>::Nil, list::append(ys, zs)));
@@ -508,7 +515,8 @@ theorem contains_cons<T>(head: T, tail: List<T>, value: T) {
 theorem contains_append<T>(xs: List<T>, ys: List<T>, value: T) {
     ensures list::contains(list::append(xs, ys), value)
         == if list::contains(xs, value) { true } else { list::contains(ys, value) } by {
-        induct(xs) as ih {
+        let ih = induct(xs);
+        match xs {
             List::Nil => {
                 unfold(list::append(List<T>::Nil, ys));
                 unfold(list::contains(List<T>::Nil, value));
@@ -596,7 +604,8 @@ theorem length_cons<T>(head: T, tail: List<T>) {
 ```click
 theorem length_append<T>(xs: List<T>, ys: List<T>) {
     ensures list::length(list::append(xs, ys)) == nat::add(list::length(xs), list::length(ys)) by {
-        induct(xs) as ih {
+        let ih = induct(xs);
+        match xs {
             List::Nil => {
                 unfold(list::append(List<T>::Nil, ys));
                 unfold(list::length(List<T>::Nil));

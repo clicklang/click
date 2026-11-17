@@ -74,11 +74,6 @@ pub enum ProofStep {
         parameter: String,
         hypothesis: String,
     },
-    StructuralInduct {
-        parameter: String,
-        hypothesis: String,
-        arms: Vec<CertificateInductionArm>,
-    },
     ApplyInductionUsing {
         hypothesis: String,
         arguments: Vec<ContractExpression>,
@@ -198,7 +193,6 @@ pub enum CertificatePathSegment {
     ThrewBranch,
     LeftCase,
     RightCase,
-    InductionArm(usize),
     LoopInitialize,
     LoopPreserve,
     LoopItem(usize),
@@ -263,18 +257,18 @@ impl ProofCertificate {
         std::sync::Arc::ptr_eq(&self.steps, &other.steps)
     }
 
-    /// Serializes checked proof provenance as a certificate.
+    /// Serializes checked proof lineage as a certificate.
     ///
     /// This is the same admission rule [`Self::from_proof_tactics`] applies to
     /// source tactics: a certificate leaf must be surface-expressible and
     /// simple, and a structured step must own complete explicit child proofs.
     /// The two constructors share [`certificate_step_class`] and
-    /// [`CertificateError`] so provenance cannot smuggle in a leaf that source
+    /// [`CertificateError`] so lineage cannot smuggle in a leaf that source
     /// text could not spell.
     pub(crate) fn from_steps(steps: Vec<ProofStep>) -> Result<Self, ClickError> {
         validate_certificate_steps(&steps, &mut Vec::new()).map_err(|error| {
             ClickError::new(format!(
-                "proof provenance produced {error} as a certificate step, which no explicit \
+                "proof lineage produced {error} as a certificate step, which no explicit \
                  proof can spell"
             ))
         })?;
@@ -299,7 +293,7 @@ impl ProofCertificate {
     ) -> Result<Self, ClickError> {
         validate_certificate_steps(&steps, &mut Vec::new()).map_err(|error| {
             ClickError::new(format!(
-                "proof provenance produced {error} as a certificate step, which no explicit \
+                "proof lineage produced {error} as a certificate step, which no explicit \
                  proof can spell"
             ))
         })?;
@@ -408,7 +402,7 @@ pub(crate) fn proof_step_contains_arithmetic_using(step: &ProofStep) -> bool {
         while let Some(step) = pending.pop() {
             match step {
                 ProofStep::ArithmeticUsing(_) => return true,
-                ProofStep::Match { arms, .. } | ProofStep::StructuralInduct { arms, .. } => {
+                ProofStep::Match { arms, .. } => {
                     for arm in arms {
                         pending.extend(arm.proof.steps.iter());
                     }
@@ -550,28 +544,6 @@ impl ProofStep {
                 ensuring: proof_match.ensuring.clone(),
                 arms: proof_match
                     .arms
-                    .iter()
-                    .map(|arm| CertificateInductionArm {
-                        type_name: arm.type_name.clone(),
-                        variant: arm.variant.clone(),
-                        bindings: arm.bindings.clone(),
-                        proof: Box::new(ProofCertificate::from_validated_steps(
-                            arm.tactics
-                                .iter()
-                                .map(Self::from_validated_tactic)
-                                .collect(),
-                        )),
-                    })
-                    .collect(),
-            },
-            ProofTactic::StructuralInduct {
-                parameter,
-                hypothesis,
-                arms,
-            } => Self::StructuralInduct {
-                parameter: parameter.clone(),
-                hypothesis: hypothesis.clone(),
-                arms: arms
                     .iter()
                     .map(|arm| CertificateInductionArm {
                         type_name: arm.type_name.clone(),
@@ -872,23 +844,6 @@ impl ProofStep {
                     })
                     .collect(),
             })),
-            Self::StructuralInduct {
-                parameter,
-                hypothesis,
-                arms,
-            } => ProofTactic::StructuralInduct {
-                parameter: parameter.clone(),
-                hypothesis: hypothesis.clone(),
-                arms: arms
-                    .iter()
-                    .map(|arm| ProofInductionArm {
-                        type_name: arm.type_name.clone(),
-                        variant: arm.variant.clone(),
-                        bindings: arm.bindings.clone(),
-                        tactics: arm.proof.to_proof_tactics(),
-                    })
-                    .collect(),
-            },
             Self::ApplyInductionUsing {
                 hypothesis,
                 arguments,
@@ -1077,7 +1032,6 @@ impl CertificateError {
                 CertificatePathSegment::ThrewBranch => "threw branch".to_string(),
                 CertificatePathSegment::LeftCase => "left case".to_string(),
                 CertificatePathSegment::RightCase => "right case".to_string(),
-                CertificatePathSegment::InductionArm(index) => format!("induction arm {index}"),
                 CertificatePathSegment::LoopInitialize => "loop `initialize`".to_string(),
                 CertificatePathSegment::LoopPreserve => "loop `preserve`".to_string(),
                 CertificatePathSegment::LoopItem(index) => format!("loop item {index}"),
@@ -1174,7 +1128,6 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::If { .. } => TacticClass::Control(ControlTactic::If),
         ProofStep::Cases { .. } => TacticClass::Control(ControlTactic::Cases),
         ProofStep::Match { .. } => TacticClass::Control(ControlTactic::Match),
-        ProofStep::StructuralInduct { .. } => TacticClass::Control(ControlTactic::StructuralInduct),
         ProofStep::Branch { .. } => TacticClass::Control(ControlTactic::Branch),
         ProofStep::CallOutcomes { .. } => TacticClass::Control(ControlTactic::CallOutcomes),
         ProofStep::Loop(_) => TacticClass::Control(ControlTactic::Loop),
@@ -1379,21 +1332,6 @@ pub(super) fn validate_certificate_tactics(
                     let mut result = Ok(());
                     for (index, arm) in proof_match.arms.iter().enumerate() {
                         path.push(CertificatePathSegment::MatchArm(index));
-                        result = validate_certificate_tactics(&arm.tactics, path);
-                        path.pop();
-                        if result.is_err() {
-                            break;
-                        }
-                    }
-                    result
-                }
-                TacticClass::Control(ControlTactic::StructuralInduct) => {
-                    let ProofTactic::StructuralInduct { arms, .. } = tactic else {
-                        unreachable!("tactic class and variant must agree")
-                    };
-                    let mut result = Ok(());
-                    for (arm_index, arm) in arms.iter().enumerate() {
-                        path.push(CertificatePathSegment::InductionArm(arm_index));
                         result = validate_certificate_tactics(&arm.tactics, path);
                         path.pop();
                         if result.is_err() {

@@ -26,7 +26,7 @@ pub(crate) fn same_import_apart_from_build(
     left: &std::collections::BTreeMap<PathBuf, Vec<u8>>,
     right: &std::collections::BTreeMap<PathBuf, Vec<u8>>,
 ) -> bool {
-    fn without_build_provenance(value: &mut serde_json::Value) {
+    fn without_build_metadata(value: &mut serde_json::Value) {
         match value {
             serde_json::Value::Object(fields) => {
                 for (name, field) in fields.iter_mut() {
@@ -43,17 +43,17 @@ pub(crate) fn same_import_apart_from_build(
                             let path = record.get("path").cloned();
                             *field = serde_json::json!({ "path": path });
                         }
-                        _ => without_build_provenance(field),
+                        _ => without_build_metadata(field),
                     }
                 }
             }
-            serde_json::Value::Array(items) => items.iter_mut().for_each(without_build_provenance),
+            serde_json::Value::Array(items) => items.iter_mut().for_each(without_build_metadata),
             _ => {}
         }
     }
     let normalized = |bytes: &[u8]| {
         let mut value = serde_json::from_slice::<serde_json::Value>(bytes).ok()?;
-        without_build_provenance(&mut value);
+        without_build_metadata(&mut value);
         Some(value)
     };
     left.len() == right.len()

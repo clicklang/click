@@ -43,7 +43,7 @@ fn boolean_reads_keep_shared_indices_through_rewrites_and_observations() {
                 Some(root.clone())
             );
             assert!(
-                crate::kernel::memory_provenance::transport_framed_common_condition(
+                crate::kernel::memory_history::transport_framed_common_condition(
                     &root,
                     memory.memory(),
                     None

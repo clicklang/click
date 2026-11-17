@@ -369,14 +369,14 @@ fn direct_composite_int32_argument_uses_graph_with_state_scope() {
     let branch = parent.clone().assume_condition(premise.clone(), true);
     let _scope = branch.enter_id_scope();
     PureFactContext::reset_bitvector_equality_index_fact_visits();
-    assert!(crate::kernel::memory_provenance::resources_directly_match(
+    assert!(crate::kernel::memory_history::resources_directly_match(
         &left, &right, &branch,
     ));
     assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
-    assert!(!crate::kernel::memory_provenance::resources_directly_match(
+    assert!(!crate::kernel::memory_history::resources_directly_match(
         &left, &later, &branch,
     ));
-    assert!(!crate::kernel::memory_provenance::resources_directly_match(
+    assert!(!crate::kernel::memory_history::resources_directly_match(
         &left, &right, &parent,
     ));
 }
@@ -428,14 +428,14 @@ fn resource_instance_int32_field_uses_graph_with_state_scope() {
     let branch = parent.clone().assume_condition(premise.clone(), true);
     let _scope = branch.enter_id_scope();
     PureFactContext::reset_bitvector_equality_index_fact_visits();
-    assert!(crate::kernel::memory_provenance::resources_directly_match(
+    assert!(crate::kernel::memory_history::resources_directly_match(
         &left, &right, &branch,
     ));
     assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
-    assert!(!crate::kernel::memory_provenance::resources_directly_match(
+    assert!(!crate::kernel::memory_history::resources_directly_match(
         &left, &later, &branch,
     ));
-    assert!(!crate::kernel::memory_provenance::resources_directly_match(
+    assert!(!crate::kernel::memory_history::resources_directly_match(
         &left, &right, &parent,
     ));
 }
@@ -739,7 +739,7 @@ fn complete_pointer_equalities_supply_only_their_true_numeric_consequences() {
             .contains(&var(941_002))
     );
     let numeric = PureFactContext::new().assume_condition(eq(&var(941_001), &var(941_002)), true);
-    assert!(!numeric.pointer_designations_match(&left, &right));
+    assert!(!numeric.pointer_provenance_match(&left, &right));
 }
 
 #[test]

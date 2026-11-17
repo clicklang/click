@@ -35,7 +35,6 @@ impl Parser {
             }
             _ => unreachable!("array initializer called for a scalar type"),
         };
-        let zero = zero_initializer(element_type);
         let dimensions = array_shape
             .map(ToOwned::to_owned)
             .unwrap_or_else(|| vec![length]);
@@ -48,6 +47,20 @@ impl Parser {
             &mut written,
             &mut next,
         )?;
+        Ok(self.finish_local_array_initializer(name, element_type, length, written, compact))
+    }
+
+    /// Materialize already-parsed values only after the array's bound is
+    /// complete. This is shared by explicit and inferred local array bounds.
+    pub(super) fn finish_local_array_initializer(
+        &self,
+        name: &BindingName,
+        element_type: InterfaceType,
+        length: u32,
+        mut written: Vec<(u32, CExpression)>,
+        compact: bool,
+    ) -> (Option<CZeroFill>, CStatement) {
+        let zero = zero_initializer(element_type);
         for (_, value) in &mut written {
             convert_integer_constant(element_type, value);
         }
@@ -78,10 +91,10 @@ impl Parser {
             .filter(|_| stores_do_not_read_the_object(name, &written_stores))
             {
                 let stores = zero_fill.without_its_own_stores(name, written_stores);
-                return Ok((
+                return (
                     Some(zero_fill),
                     balanced_statement_sequence(stores).unwrap_or(CStatement::Skip),
-                ));
+                );
             }
         }
 
@@ -98,10 +111,10 @@ impl Parser {
                 .unwrap_or_else(|| zero.clone());
             stores.push(store(index, value));
         }
-        Ok((
+        (
             None,
             balanced_statement_sequence(stores).unwrap_or(CStatement::Skip),
-        ))
+        )
     }
 
     /// The stores of an automatic struct array's initializer, zero-filled by
@@ -219,43 +232,66 @@ impl Parser {
         values: &mut Vec<(u32, CExpression)>,
         next: &mut u32,
     ) -> Result<(), CSyntaxError> {
-        let child_width = dimensions[depth + 1..]
-            .iter()
-            .copied()
-            .fold(1u32, |width, dimension| {
-                width
-                    .checked_mul(dimension)
-                    .expect("validated array shape has a representable width")
-            });
-        let child_count = dimensions[depth];
+        self.parse_array_initializer_elements(
+            name,
+            Some(dimensions[depth]),
+            &dimensions[depth + 1..],
+            values,
+            next,
+        )?;
+        Ok(())
+    }
+
+    /// Parse each written expression once. An absent outer bound is inferred
+    /// from the number of children; every trailing dimension remains fixed.
+    /// The work and stored values follow the initializer, not omitted cells.
+    pub(super) fn parse_array_initializer_elements(
+        &mut self,
+        name: &str,
+        child_count: Option<u32>,
+        inner_shape: &[u32],
+        values: &mut Vec<(u32, CExpression)>,
+        next: &mut u32,
+    ) -> Result<u32, CSyntaxError> {
+        let child_width = inner_shape.iter().copied().fold(1u32, |width, dimension| {
+            width
+                .checked_mul(dimension)
+                .expect("validated array shape has a representable width")
+        });
         let start = *next;
         self.expect(Token::LBrace)?;
         let mut children = 0u32;
         if self.peek() != Some(&Token::RBrace) {
             loop {
-                if children == child_count {
-                    return Err(self
-                        .error_here(format!("too many initializers for `{name}[{child_count}]`")));
+                if child_count == Some(children) {
+                    return Err(
+                        self.error_here(format!("too many initializers for `{name}[{children}]`"))
+                    );
                 }
-                if depth + 1 == dimensions.len() {
+                if inner_shape.is_empty() {
                     values.push((*next, self.parse_expression()?));
-                    *next += 1;
+                    *next = next.checked_add(1).ok_or_else(|| {
+                        self.error_here(format!("array dimensions are too large for `{name}`"))
+                    })?;
                 } else {
                     if self.peek() != Some(&Token::LBrace) {
                         return Err(self.error_here(format!(
                             "nested initializer for `{name}` expects `{}` groups",
-                            dimensions.len() - depth - 1
+                            inner_shape.len()
                         )));
                     }
-                    self.parse_sparse_array_initializer_level(
+                    self.parse_array_initializer_elements(
                         name,
-                        dimensions,
-                        depth + 1,
+                        Some(inner_shape[0]),
+                        &inner_shape[1..],
                         values,
                         next,
                     )?;
                 }
-                children += 1;
+                children = children.checked_add(1).ok_or_else(|| {
+                    self.error_here(format!("array dimensions are too large for `{name}`"))
+                })?;
+                crate::instrumentation::record_deterministic_work(1);
                 match self.peek() {
                     Some(Token::Comma) => {
                         self.position += 1;
@@ -281,12 +317,15 @@ impl Parser {
         self.expect(Token::RBrace)?;
 
         let expected = child_count
+            .unwrap_or(children)
             .checked_mul(child_width)
-            .expect("validated array shape has a representable length");
-        *next = start
-            .checked_add(expected)
-            .expect("validated array shape has a representable length");
-        Ok(())
+            .ok_or_else(|| {
+                self.error_here(format!("array dimensions are too large for `{name}`"))
+            })?;
+        *next = start.checked_add(expected).ok_or_else(|| {
+            self.error_here(format!("array dimensions are too large for `{name}`"))
+        })?;
+        Ok(children)
     }
 
     pub(super) fn parse_aggregate_initializer(

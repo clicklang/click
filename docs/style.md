@@ -128,7 +128,7 @@ it is not an execution target. See
 - **Proof state** is the user-facing model of the current goals, facts,
   resources, and execution frontier.
 - A **proof object** is the kernel-owned persistent representation of semantic
-  proof state, open branches, and focus. **Proof provenance** is the separate
+  proof state, open branches, and focus. **Proof lineage** is the separate
   language-layer record of surface-expressible checked operations. Use both
   terms in Internals, not as artifacts that proof authors manipulate.
 - A **certificate** is a surface-expressible explicit proof used as
@@ -141,7 +141,7 @@ it is not an execution target. See
 - A **kernel derivation** is standalone trusted typed evidence produced by a
   kernel rule. A checked proof-object successor can also embody transition
   authority without retaining a separate derivation value. Don't call a
-  certificate, proof provenance, or an evolving proof object a kernel
+  certificate, proof lineage, or an evolving proof object a kernel
   derivation.
 - **Expansion** replaces smart proof source with an extracted explicit proof
   and verifies the complete rewritten source through ordinary verification.

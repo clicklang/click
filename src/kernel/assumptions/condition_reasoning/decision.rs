@@ -312,7 +312,7 @@ impl PureFactContext {
             || self.decide_unrecorded(condition),
         );
         if let Some(value) = result {
-            record_implicit_reasoning_provenance(
+            record_implicit_consulted_premises(
                 self,
                 &Proposition::ConditionIs(condition.clone(), value),
             );
@@ -417,12 +417,12 @@ impl PureFactContext {
             if self.equality_graph.knows_condition(condition, false) {
                 return Some(false);
             }
-            if self.pointer_designations_match(left, right)
+            if self.pointer_provenance_match(left, right)
                 && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
                     left.pointer(),
                     right.pointer(),
                     self,
-                ) || crate::kernel::memory_provenance::pointer_read_has_recorded_value(
+                ) || crate::kernel::memory_history::pointer_read_has_recorded_value(
                     left.pointer(),
                     right.pointer(),
                     self,
@@ -436,7 +436,7 @@ impl PureFactContext {
             ));
             return match address {
                 Some(false) => Some(false),
-                Some(true) if self.pointer_designations_match(left, right) => Some(true),
+                Some(true) if self.pointer_provenance_match(left, right) => Some(true),
                 _ => None,
             };
         }
@@ -682,16 +682,16 @@ impl PureFactContext {
                     left,
                     right,
                 } = condition
-                    && crate::kernel::memory_provenance::wide_loads_have_same_canonical_value(
+                    && crate::kernel::memory_history::wide_loads_have_same_canonical_value(
                         left, right, self,
                     )
                 {
                     return Some(true);
                 }
                 if let ConditionTerm::PointerEqual(left, right) = condition
-                    && (crate::kernel::memory_provenance::pointer_read_has_stored_value(
+                    && (crate::kernel::memory_history::pointer_read_has_stored_value(
                         left, right, self,
-                    ) || crate::kernel::memory_provenance::pointer_read_has_stored_value(
+                    ) || crate::kernel::memory_history::pointer_read_has_stored_value(
                         right, left, self,
                     ))
                 {
@@ -824,7 +824,7 @@ impl PureFactContext {
         }
         let key = Self::separated_pointer_key(left.clone(), right.clone());
         let separation = self.separated_anchor_pointers.get(&key)?.iter().next()?;
-        record_implicit_reasoning_provenance(self, separation);
+        record_implicit_consulted_premises(self, separation);
         Some(false)
     }
 
@@ -838,7 +838,7 @@ impl PureFactContext {
         }
         let key = Self::separated_anchor_key(left.clone(), right.clone());
         let separation = self.separated_anchor_offsets.get(&key)?.iter().next()?;
-        record_implicit_reasoning_provenance(self, separation);
+        record_implicit_consulted_premises(self, separation);
         Some(false)
     }
 
@@ -1120,7 +1120,7 @@ impl PureFactContext {
         let unsigned = u8::try_from(unsigned).ok()?;
         let signed =
             MachineTerm::signed_byte(MachineTerm::constant(u32::from(unsigned))).as_const()? as i32;
-        record_implicit_reasoning_provenance(self, &source);
+        record_implicit_consulted_premises(self, &source);
         Some(i64::from(signed) == target)
     }
 
@@ -1216,7 +1216,7 @@ impl PureFactContext {
             return known == value;
         }
         if self.equality_graph.knows_condition(&condition, value) {
-            record_implicit_reasoning_provenance(self, &Proposition::ConditionIs(condition, value));
+            record_implicit_consulted_premises(self, &Proposition::ConditionIs(condition, value));
             return true;
         }
         // Exact canonical shape, then at most one source per explicitly
@@ -1244,7 +1244,7 @@ impl PureFactContext {
                 })
             });
         if let Some(proposition) = matched {
-            record_implicit_reasoning_provenance(self, &proposition);
+            record_implicit_consulted_premises(self, &proposition);
             true
         } else {
             false
@@ -1261,7 +1261,7 @@ impl PureFactContext {
             let value = [true, false]
                 .into_iter()
                 .find(|value| self.equality_graph.knows_condition(condition, *value))?;
-            record_implicit_reasoning_provenance(
+            record_implicit_consulted_premises(
                 self,
                 &Proposition::ConditionIs(condition.clone(), value),
             );
@@ -1270,7 +1270,7 @@ impl PureFactContext {
     }
 
     /// The exact recorded value of `condition` (or of its mirrored form),
-    /// recording the fact as consumed provenance when a collection is
+    /// recording the fact as a consulted premise when a collection is
     /// active: an exact lookup is a premise like any other.
     pub(in crate::kernel) fn exact_condition_value(
         &self,
@@ -1279,7 +1279,7 @@ impl PureFactContext {
         if self.condition_facts.get(condition).is_none() {
             for truth in [true, false] {
                 if let Some(source) = self.observation_comparisons.source(condition, truth) {
-                    record_implicit_reasoning_provenance(self, source);
+                    record_implicit_consulted_premises(self, source);
                     return Some(truth);
                 }
             }
@@ -1291,13 +1291,13 @@ impl PureFactContext {
             );
             if !bounds.is_empty() {
                 for bound in bounds {
-                    record_implicit_reasoning_provenance(self, &bound);
+                    record_implicit_consulted_premises(self, &bound);
                 }
                 return value;
             }
         }
         if let Some(value) = value {
-            record_implicit_reasoning_provenance(
+            record_implicit_consulted_premises(
                 self,
                 &Proposition::ConditionIs(condition.clone(), value),
             );
@@ -2767,8 +2767,8 @@ mod exact_word_order_tests {
                         truth
                     );
                     let exports = KernelTermExport::machine_export_count();
-                    let (answer, used) = collect_reasoning_provenance(|| {
-                        capture_implicit_reasoning_provenance(|| {
+                    let (answer, used) = collect_consulted_premises(|| {
+                        capture_implicit_consulted_premises(|| {
                             context.decide_exact_word_constant_order(&shared, format)
                         })
                     });

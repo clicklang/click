@@ -406,7 +406,7 @@ impl PureFactContext {
             }
             Proposition::Or(left, right) => {
                 if self.contains_assumed_exact(proposition) {
-                    record_implicit_reasoning_provenance(self, proposition);
+                    record_implicit_consulted_premises(self, proposition);
                     return true;
                 }
                 return self.settles_exactly(left) || self.settles_exactly(right);
@@ -593,7 +593,7 @@ impl PureFactContext {
                     // base's block, not every proposition fact.
                     || self.memory_loadable_candidates_for_base(base).any(|fact| {
                         #[cfg(test)]
-                        crate::kernel::memory_provenance::CARRIED_LOADABLE_VISITS
+                        crate::kernel::memory_history::CARRIED_LOADABLE_VISITS
                             .with(|visits| visits.set(visits.get() + 1));
                         let Proposition::MemoryLoadable {
                             memory: fact_memory,
@@ -3503,7 +3503,7 @@ impl PureFactContext {
                 continue;
             };
             if exact_conclusion {
-                record_implicit_reasoning_provenance(self, source);
+                record_implicit_consulted_premises(self, source);
                 return Some((expected.clone(), truth));
             }
             let Proposition::ForAll {
@@ -3531,7 +3531,7 @@ impl PureFactContext {
             else {
                 unreachable!()
             };
-            record_implicit_reasoning_provenance(self, source);
+            record_implicit_consulted_premises(self, source);
             let value = if *reversed { left } else { right };
             return Some((
                 substitute_bitvector_variable(value, *source_var, &MachineTerm::Variable(var)),
@@ -4128,7 +4128,7 @@ impl PureFactContext {
             }
             // A pointer-value fact carries operand by operand, each pair one
             // value as the state-modulo matchers read it: the same
-            // designation, at a proven-equal address or as one complete read
+            // provenance, at a proven-equal address or as one complete read
             // across the frame (`n->right` before a call, `old(n)->right`
             // after it).
             (
@@ -4139,12 +4139,12 @@ impl PureFactContext {
                             target: &crate::kernel::PointerValue| {
                     fact == target
                         || fact.program_type() == target.program_type()
-                            && self.pointer_designations_match(fact, target)
+                            && self.pointer_provenance_match(fact, target)
                             && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
                                 fact.pointer(),
                                 target.pointer(),
                                 self,
-                            ) || crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+                            ) || crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
                                 fact.pointer(),
                                 target.pointer(),
                                 self,
@@ -4977,7 +4977,7 @@ impl PureFactContext {
     /// This query never initializes the ambient contradiction search index.
     pub(in crate::kernel) fn has_retained_contradiction(&self) -> bool {
         if let Some(source) = self.observation_comparisons.false_source() {
-            record_implicit_reasoning_provenance(self, source);
+            record_implicit_consulted_premises(self, source);
             return true;
         }
 

@@ -303,3 +303,60 @@ mod scaling_tests {
     use super::*;
     include!("../../../scaling_tests/kernel/proof/execution/loop_destinations.rs");
 }
+
+#[test]
+fn test_false_and_written_break_keep_distinct_checked_region_exits() {
+    for (control, expected) in [
+        (
+            ProgramStatement::LoopTest {
+                condition: int32_literal(0),
+                aggregate_steps: Vec::new(),
+            },
+            LoopControlExit::TestFalse,
+        ),
+        (ProgramStatement::Break, LoopControlExit::Break),
+    ] {
+        let state = ExecutionState::new();
+        let outcome = crate::kernel::eval::execute_execution_statement(
+            &state,
+            &control,
+            &PureFactContext::new(),
+        )
+        .expect("the evaluator produces the control outcome");
+        let function = ProgramFunction::new(
+            ProgramType::Void,
+            "control_reason",
+            Vec::new(),
+            control.clone(),
+        );
+        let mut core = ExecutionProofCore::at_entry(
+            state.clone(),
+            ExecutionFrontier {
+                region: ExecutionRegionKind::LoopBody,
+                position: FrontierPosition::StatementEntry {
+                    remaining: Arc::new(control.clone()),
+                },
+                ..ExecutionFrontier::default()
+            },
+        );
+        core.record_statement_transition_native(
+            &function,
+            &[],
+            Theorem::new(Proposition::ProgramStatementVerifies {
+                state: Box::new(state),
+                statement: Box::new(control),
+                outcome,
+            }),
+            PureFactContext::new(),
+            &ExecutionFacts::new(),
+            &[],
+            &crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+        )
+        .expect("the checked boundary retains the explicit exit reason");
+        assert_eq!(core.frontier.loop_control, expected);
+        assert!(matches!(
+            core.frontier.position,
+            FrontierPosition::RegionBoundary
+        ));
+    }
+}

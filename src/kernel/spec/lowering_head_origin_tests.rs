@@ -25,7 +25,7 @@ fn universal(body: SpecProposition) -> SpecProposition {
 
 fn introductions(proposition: &SpecProposition) -> LoweringIntroductions {
     let (_, _, _, introductions) =
-        crate::kernel::program_lower_spec_proposition_at_state_with_provenance(
+        crate::kernel::program_lower_spec_proposition_at_state_with_head_origins(
             &ExecutionState::new(),
             proposition,
             None,
@@ -57,7 +57,7 @@ fn inequality_lowering_records_its_negation() {
             },
         ] {
             let (goal, _, _, recorded) =
-                crate::kernel::program_lower_spec_proposition_at_state_with_provenance(
+                crate::kernel::program_lower_spec_proposition_at_state_with_head_origins(
                     &ExecutionState::new(),
                     &source,
                     None,
@@ -146,7 +146,7 @@ fn a_definedness_guard_under_an_existential_stays_under_its_binder() {
         Box::new(SpecExpression::Value(int32(1))),
     );
     let (goal, facts, obligations, recorded) =
-        crate::kernel::program_lower_spec_proposition_at_state_with_provenance(
+        crate::kernel::program_lower_spec_proposition_at_state_with_head_origins(
             &ExecutionState::new(),
             &existential(positive(incremented)),
             None,
@@ -204,7 +204,7 @@ fn an_integer_existential_does_not_expose_nested_introductions_at_its_head() {
     };
 
     let (_, _, _, recorded) =
-        crate::kernel::program_lower_spec_proposition_at_state_with_provenance(
+        crate::kernel::program_lower_spec_proposition_at_state_with_head_origins(
             &ExecutionState::new(),
             &proposition,
             None,

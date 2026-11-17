@@ -4220,12 +4220,14 @@ applying the local hypothesis checks a strictly smaller argument of the
 measure's type and the theorem's substituted requirements. An `int32` measure
 also requires nonnegativity; a `uint64` measure uses unsigned order over its
 complete native range. For a recursive
-algebraic parameter, `induct` takes an exhaustive constructor-arm block and
-makes the same theorem available at each immediate recursive field:
+algebraic parameter, follow the induction declaration with an exhaustive
+`match` on that parameter. The hypothesis makes the same theorem available
+at each immediate recursive field:
 
 <!-- verified-example: mdtests/algebraic_structural_induction.md -->
 ```click
-induct(xs) as ih {
+let ih = induct(xs);
+match xs {
     TestList::Nil => {
         ... // base case
     }
@@ -4412,7 +4414,7 @@ with `|`, such as `(((word & 7) | address(p)) & 3) == (word & 3)`.
 
 The low-level reads and `byte_offset` are Surface Click escape hatches, not
 Kernel Click syntax. The canonical
-renderer prefers `owner->field` whenever imported layout provenance identifies
+renderer prefers `owner->field` whenever imported layout origin identifies
 the address. Expansion may emit a low-level read only when no source field
 place is available.
 

@@ -54,7 +54,7 @@ impl<L, O, E> ProofState<L, O, E> {
 /// Opaque handle to one immutable checked proof state and the open branch it
 /// addresses.
 ///
-/// Surface-language context and certificate provenance deliberately live
+/// Surface-language context and certificate lineage deliberately live
 /// outside this handle. They may describe or render a checked derivation, but
 /// they are not part of the semantic proof state and cannot change its focus.
 #[derive(Clone)]

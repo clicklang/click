@@ -10388,7 +10388,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // conjunction (commonly after `unfold(predicate)`). Materialize that
         // leaf through an explicit `have`/`known` proof before
         // asking the restricted planner to use it. The returned descendant
-        // therefore owns both the semantic fact and the Surface provenance;
+        // therefore owns both the semantic fact and the Surface evidence;
         // expansion does not need to reconstruct and check a certificate to
         // justify the premise later.
         let mut proof = search_input.clone();
@@ -11113,7 +11113,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         // The planner selects only Surface-expressible explicit operations.
         // Apply those through the same recursive Proof driver used by
-        // authoritative source scripts; the plan is provenance input, not an
+        // authoritative source scripts; the plan is evidence input, not an
         // independently interpreted semantic certificate.
         let checked = search_input.driver().try_generated_linear_script(&tactics);
         if matches!(goal, Proposition::MemoryLoadable { .. })
@@ -11409,7 +11409,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     // `join` publishes the checked proposition into the exact
                     // enclosing frontier.  Reapply the original step value so a
                     // future StepContract follows precisely the same contract
-                    // selection and certificate provenance as the refused step.
+                    // selection and certificate lineage as the refused step.
                     proof = closed.join()?;
                     match proof.driver().apply_step(step.clone()) {
                         Ok(next) => return Ok(next),

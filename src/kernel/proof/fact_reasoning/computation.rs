@@ -694,11 +694,21 @@ pub(super) fn integer_operation_bound_comparison(condition: &ConditionTerm) -> O
 /// `a + a` over `a = b + b` reaches one node along many paths; coefficients
 /// are propagated over the term DAG in topological order, visiting each node
 /// once, rather than walking every path.
+/// One opaque leaf of an affine difference. A range fold is keyed by its
+/// checked alpha identity, so two separately lowered copies of one fold
+/// (each with its own binders) cancel; any other leaf is keyed by its shared
+/// term identity.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum AffineLeaf {
+    Term(u64),
+    Fold(u64),
+}
+
 fn integer_affine_difference(
     left: &SharedIntegerTerm,
     right: &SharedIntegerTerm,
 ) -> (
-    std::collections::BTreeMap<u64, num_bigint::BigInt>,
+    std::collections::BTreeMap<AffineLeaf, num_bigint::BigInt>,
     num_bigint::BigInt,
 ) {
     use num_traits::Zero;
@@ -734,6 +744,7 @@ fn integer_affine_difference(
     *coefficients.entry(left.id()).or_default() += 1;
     *coefficients.entry(right.id()).or_default() -= 1;
     let mut atoms = std::collections::BTreeMap::new();
+    let mut fold_records = Vec::new();
     let mut constant = num_bigint::BigInt::zero();
     for term in order.iter().rev() {
         crate::instrumentation::record_deterministic_work(1);
@@ -760,13 +771,29 @@ fn integer_affine_difference(
                 let value = integer_product_identity(other).unwrap();
                 *coefficients.entry(value.id()).or_default() += coefficient;
             }
+            IntegerTerm::RangeFold { .. } => {
+                // The interner reuses an id only while a record is alive, so
+                // hold each record until the difference is complete.
+                let leaf =
+                    match crate::kernel::proof::integer_affine_atoms::intern_integer_fold_atom(term)
+                    {
+                        Some(record) => {
+                            let leaf = AffineLeaf::Fold(record.id());
+                            fold_records.push(record);
+                            leaf
+                        }
+                        None => AffineLeaf::Term(term.id()),
+                    };
+                *atoms.entry(leaf).or_insert_with(num_bigint::BigInt::zero) += coefficient;
+            }
             _ => {
                 *atoms
-                    .entry(term.id())
+                    .entry(AffineLeaf::Term(term.id()))
                     .or_insert_with(num_bigint::BigInt::zero) += coefficient;
             }
         }
     }
+    drop(fold_records);
     (atoms, constant)
 }
 

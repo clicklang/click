@@ -489,12 +489,22 @@ pub enum Statement {
 }
 
 // Drop-elaborated MIR with validated acyclic regions and natural while loops. Ownership events remain explicit in the
-// artifact and are checked by live-value assertions in direct lowering.
+// artifact; rustc has decided them.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct MirBody {
     pub locals: Vec<Place>,
     pub blocks: Vec<MirBlock>,
+    /// The local MIR returns, `_0`, named `result` as contracts name the
+    /// returned value, unless a source local has that name. A function
+    /// whose return the importer reads directly (`ReturnValue`) has none.
+    #[serde(default = "return_place_name")]
+    pub return_place: String,
+}
+
+/// The name of a function's return place.
+pub fn return_place_name() -> String {
+    "result".into()
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
