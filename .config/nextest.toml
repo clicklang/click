@@ -30,6 +30,12 @@ slow-timeout = { period = "60s", terminate-after = 20 }
 [profile.nightly]
 slow-timeout = { period = "60s", terminate-after = 120 }
 
+# The nightly report (`scripts/nightly-report.py`) reads each test's verdict,
+# time and failure output from this file; `scripts/check.sh` moves it aside
+# after each nightly run.
+[profile.nightly.junit]
+path = "junit.xml"
+
 # Compute audits retain independent cold checks under their existing tool
 # timeout. Avoid running their large body mutations against those same CPUs.
 [test-groups.adler-compute]

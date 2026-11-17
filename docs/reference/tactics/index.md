@@ -1126,7 +1126,6 @@ step is still checked.
 | `if P [ensuring { ... } then] { ... } else { ... }` | control | Core | Split a proof on a chosen proposition. | [Reference](#proposition-branches) |
 | `cases { A => { ... } B => { ... } }` | control | Specialized | Prove a written collection of cases. | [Reference](#explicit-cases) |
 | `open(resource) { ... }` | control | Specialized | Unfold a resource for a nested proof. | [Reference](#scoped-resource-opening) |
-| `open(...) { ... } by { ... }` | control | Expansion output | Supply the proof that restores an opened resource. | [Reference](#scoped-resource-opening-with-restoration) |
 | `witness(value, ...);` | simple | Specialized | Supply values for existential binders. | [Reference](#existential-witnesses) |
 | `let name = obtain(exists (k: Type) { P });` | simple | Specialized | Name witnesses from an available existential fact. | [Reference](#obtaining-witnesses) |
 
@@ -3244,35 +3243,14 @@ an `ensuring` interface can rejoin before the block closes.
 
 Missing ownership, an undecided guard, or failure to restore the body fails. A
 body fact the closing fold leaves open is proved by the implicit closer, which
-expansion prints as `open(...) { ... } by { ... }`. When it leaves several open,
-the implicit closer proves each, and expansion prints them as `have`s at the end
-of the block. Click checks the exact
-resource transition; expansion recurses, and profiling reports descendants.
+expansion writes as `have` steps at the end of the block. To supply a closing
+proof by hand, put the `have` there yourself, after any execution that
+establishes the fact. This also works when the block reaches function exit.
+A trailing `by` after the block is refused.
 
 **Checked examples:** [`resource_population_open.md`](https://github.com/clicklang/click/blob/master/mdtests/resource_population_open.md), [`open_scope_model_match_terminal.md`](https://github.com/clicklang/click/blob/master/mdtests/open_scope_model_match_terminal.md), [`open_scope_model_match_rejoins.md`](https://github.com/clicklang/click/blob/master/mdtests/open_scope_model_match_rejoins.md), [`open_scope_model_match_rejects_bad_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/open_scope_model_match_rejects_bad_arm.md)
 
-### Scoped resource opening with restoration
-
-**Form:** `open(...) { ... } by { ... }`
-
-**Expansion output.** `click expand` writes it; by hand, write it only to give
-the close a different proof than the implicit closer. Closing an `open` scope
-folds its resource again; the body after `by` proves the one body fact that fold
-leaves open, as `fold(...) by { ... }` does, where the block ends, or after
-execution when the block reaches function exit.
-
-A bare `open` proves that fact by the implicit closer, which expansion prints as
-this `by`. The body is one tactic call, such as `solve();`, or a block.
-
-**Failure, checking, and tools:**
-
-Refused when the close leaves no body fact open (superfluous) or more than one;
-prove the others with `have` in the block, the form expansion writes for a bare
-`open` whose close leaves several. Expansion keeps the `by` and
-prints the body's checked steps; a smart tactic written in the `by` expands with its claim
-(`click expand --claim`), not as a site of its own.
-
-**Checked examples:** [`open_by_proves_the_closing_fold_body_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/open_by_proves_the_closing_fold_body_fact.md), [`open_by_is_refused_when_the_close_leaves_nothing_open.md`](https://github.com/clicklang/click/blob/master/mdtests/open_by_is_refused_when_the_close_leaves_nothing_open.md)
+**Checked closing examples:** [`open_closing_fact_inside_block.md`](https://github.com/clicklang/click/blob/master/mdtests/open_closing_fact_inside_block.md), [`open_trailing_by_is_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/open_trailing_by_is_rejected.md)
 
 ### Existential witnesses
 

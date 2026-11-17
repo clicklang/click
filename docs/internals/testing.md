@@ -333,7 +333,9 @@ The budget is kept by what the gate leaves out, not by a faster machine:
 - An example that does is listed in `NIGHTLY` in `tests/examples.rs`, and an
   mdtest fixture that takes half a second or more is listed in `NIGHTLY` in
   `tests/mdtests.rs`. Shared `.click` lemma libraries stay in the gate.
-  `MDTEST_FILTER` runs a nightly fixture by name.
+  `MDTEST_FILTER` runs a nightly fixture by name: a value ending in `.md`
+  selects exactly that file, and any other value every file whose name
+  contains it.
 - `click audit` re-expands and re-verifies every site of a claim, tens of
   seconds where `verify` takes under one. The import tests run it only under
   `CLICK_NIGHTLY`.
@@ -376,6 +378,33 @@ ratchets over the whole corpus. On 2026-10-15 the warm local gate took 11.7
 minutes on four cores, from one example: `examples/rbtree/rbtree-augmented` grew
 from 259 to 5,467 proof lines in a day and verified in 261 seconds of the
 examples harness's 317, so it joined the other rbtree examples in nightly.
+
+### Nightly report
+
+The nightly workflow's `report` job writes a short report of each run to the
+`nightly-reports` branch, which shares no history with `master`, and to the
+run's summary page. Read it with:
+
+```console
+git fetch origin nightly-reports && git show FETCH_HEAD:report.md
+```
+
+`report.md` lists each failing check with the first line of its diagnostic
+and the command that reproduces it locally. Since the previous night's
+report, it marks each failure new or persisting and lists the checks that
+were fixed or did not run. It also groups failures that share a diagnostic
+shape, times each phase, and names the slowest checks. `report.json` holds
+the same data, and the branch history keeps every night's report. To see
+what changed between two nights, diff the branch's commits.
+
+The report is built from records the run leaves when
+`CLICK_NIGHTLY_REPORT_DIR` is set: one JSON line per mdtest fixture, example
+project, and failed `click audit` site (`src/nightly_report.rs`); nextest's
+JUnit results for the nightly profile; and each `check.sh --nightly` phase's
+time and exit status. `scripts/nightly-report.py` renders them, and
+`scripts/test-nightly-report.py` exercises it in the gate. A job that fails
+without recording a failing check, such as a build error or a timeout, is
+reported as that job's failure, with the run log as its reference.
 
 ## Gate timing baselines
 

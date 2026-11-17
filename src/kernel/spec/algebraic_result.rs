@@ -184,16 +184,12 @@ impl AlgebraicFieldResult {
             },
         }
     }
-    pub(super) fn integer(&self) -> Option<IntegerTerm> {
+    pub(super) fn integer(&self) -> Option<IntegerResult> {
         match self {
-            Self::Native(AlgebraicValue::Integer(value)) => Some(value.clone()),
-            Self::Shared(root) if root.ty() == &KernelType::Integer => Some(
-                KernelTermExport::default()
-                    .integer(root)
-                    .expect("Integer binding")
-                    .as_ref()
-                    .clone(),
-            ),
+            Self::Native(AlgebraicValue::Integer(value)) => Some(value.clone().into()),
+            Self::Shared(root) if root.ty() == &KernelType::Integer => {
+                Some(IntegerResult::from_kernel(root.clone()))
+            }
             _ => None,
         }
     }
