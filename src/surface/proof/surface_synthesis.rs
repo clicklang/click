@@ -5267,10 +5267,10 @@ fn synthesize_surface_bitvector(
                 } else {
                     value_type
                 };
-                Some(ContractExpression::ProgramExpression(match value_type {
+                let load = match value_type {
                     Some(value_type) if value_type == ProgramType::UInt8 || typed_word => {
                         ProgramExpression::TypedLoad {
-                            pointer: Box::new(pointer),
+                            pointer: Box::new(pointer.clone()),
                             value_type,
                             volatile: false,
                             pointee_constant: false,
@@ -5278,8 +5278,18 @@ fn synthesize_surface_bitvector(
                             source: Default::default(),
                         }
                     }
-                    _ => ProgramExpression::Load(Box::new(pointer)),
-                }))
+                    _ => ProgramExpression::Load(Box::new(pointer.clone())),
+                };
+                // `synthesize_surface_pointer` names a program parameter or
+                // local, never the contract result, so a pointer named like
+                // a Click value is read through `program::name`.
+                Some(match program_operand(pointer) {
+                    operand @ ContractExpression::ProgramBinding(_) => ContractExpression::CUnary {
+                        operand: Box::new(operand),
+                        lowered: load,
+                    },
+                    _ => ContractExpression::ProgramExpression(load),
+                })
             }
         }
         // A load variable names one cell of one memory version. It denotes
