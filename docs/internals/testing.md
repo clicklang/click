@@ -1530,7 +1530,7 @@ selected-unit verification beside 1, 2, 4, and 8 unrelated earlier functions,
 including reversed declaration order. It uses the original eight-tactic
 reproduction, including the single-earlier-function case.
 Before return, signed-order automation selects indexed bounds before broad
-atomic premise spelling. Existing named rules get first choice over that
+atomic premise raising. Existing named rules get first choice over that
 compact context, followed by the checked ordinary arithmetic proof. Terminal
 outcomes retain their result-aware equality rewrites and source-anchoring
 routes before that arithmetic fallback.

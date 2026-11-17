@@ -5,7 +5,7 @@ without `n == old(n)` in `using`. The transport needs no alias: the fact
 before the call and the target after it both read `n + 8`, as written. Lowering
 once renamed the target's read to the owned footprint's `old(n) + 8`, which only
 the listed alias connected; lowering is fact-stable now
-(`docs/internals/spellability.md`), so the transport holds without it.
+(`docs/internals/raise-lower-principle.md`), so the transport holds without it.
 The bare read equality also exercises whole-pointer observations: unfold the
 field, store through another pointer read, then retain the field across a call.
 

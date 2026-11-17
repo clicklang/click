@@ -49,7 +49,7 @@ impl Proposition {
     /// Whether this is kernel authority rather than a proof-state fact: a
     /// resource composition, or a predicate with no Click spelling. The
     /// kernel holds and checks it like any fact; no surface view presents or
-    /// cites it (`docs/internals/spellability.md`).
+    /// cites it (`docs/internals/raise-lower-principle.md`).
     pub(crate) fn is_kernel_authority(&self) -> bool {
         match self {
             Self::ResourceComposition(_) => true,

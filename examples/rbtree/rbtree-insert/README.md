@@ -28,14 +28,19 @@ root, with `whole.model == plug(c.model, t.model)`. It needs only that the
 plugged tree is parent-consistent, which every exit of the fixup loop
 establishes.
 
-The proof covers `initialize`, the root-blackening and black-parent `break`s,
-the uncle-red `continue` on all four frame combinations, and all 96 rotation
-`break`s: case 3 on the outer frames and case 2 then case 3 on the inner
-ones, split on the uncle, the rotated nodes' children, and the
-great-grandparent's frame. Every `break` states the three whole-tree facts
-about `plug(c.model, t.model)`, so they survive the loop's exit join, and the
-post-loop proof applies `refold_to_root` once and carries those facts to the
-tree at the root.
+`rbtree_insert_rotation.click` verifies contracts for the existing C parent
+accessor, tag setter, and rotation helpers. The accessor retains the returned
+pointer's C object class as well as its tagged-parent relation. The main proof
+keeps unchanged links and tags in resources while rewiring other fields, and
+uses explicit separated read-preservation facts across local assignments.
+
+The proof covers initialization, root blackening, the black-parent exits,
+all four uncle-red continuations, and the straight and double rotations in
+both directions. It splits on the uncle and middle children; the verified
+rotation contracts handle the great-grandparent frame. Every rotation exit
+states the three whole-tree facts about `plug(c.model, t.model)`, so they
+survive the loop's exit join. The post-loop proof applies `refold_to_root`
+once and carries those facts to the tree at the root.
 
 `rb_insert_color`, the exported entry point, is proved too. It calls
 `__rb_insert`, a `static __always_inline` helper, with the no-op

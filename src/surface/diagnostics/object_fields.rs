@@ -263,7 +263,7 @@ pub(super) fn ambient_struct_layout(
     })
 }
 
-pub(super) fn object_field_spelling(
+pub(super) fn object_field_surface(
     block: &PointerBlock,
     offset: u32,
     width: u32,

@@ -6,7 +6,7 @@ budget exhaustion; nothing false is accepted.
 In a proof state holding several hundred recorded facts, a bare `have` whose
 goal follows from one or two facts already in the context exhausts the smart
 budget (2,000,000 units). The same goal closes at once when those facts are
-listed with `solve() using { ... }`. The cost is in `solve` spelling premises
+listed with `solve() using { ... }`. The cost is in `solve` raising premises
 across recorded states, not in the arithmetic.
 
 Invariant: smart search is bounded by the selected goal and the relevant
@@ -14,8 +14,10 @@ state, not by the size of the surrounding context
 (`docs/internals/verification-efficiency.md`); a single prompt miss is
 acceptable, a budget exhaustion on a one-step goal is not.
 
-Related: `bugs/solve-exhausts-its-budget-spelling-premises-of-an-inclusive-range-loop.md`
-reports the same phase on a different shape.
+The earlier inclusive-range case in this phase is now covered by
+`charon_inclusive_range_exhaustion_uses_typed_signed_bounds` in
+`tests/rust_import/inclusive_ranges.rs`. Its unsigned-to-signed range facts
+retain their explicit conversion; this report tracks the larger contexts.
 
 ## Reproduction
 

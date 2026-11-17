@@ -2,6 +2,36 @@ verifying "rb_insert_color.c";
 
 import "../rbtree-model/rbtree_model.click";
 import "../rbtree-model/rbtree_resources.click";
+import "rbtree_insert_rotation.click";
+import click::separation;
+
+// Retain the complete tagged parent relation while other links change.
+resource insert_parent_tag(p: struct rb_node*, up: struct rb_node*) {
+    field color: Color;
+    owns p->__rb_parent_color;
+    fact aligned(up, 8);
+    fact p->__rb_parent_color == address(up) + (p->__rb_parent_color & 1);
+    fact ((p->__rb_parent_color & ~3) as (struct rb_node *)) == up;
+    fact (p->__rb_parent_color & 1) == color_bit(color);
+}
+
+spec enum InsertLink { To(struct rb_node*), }
+
+resource insert_left_link(p: struct rb_node*) {
+    field link: InsertLink;
+    match link { InsertLink::To(child) => {
+            owns p->rb_left;
+            fact p->rb_left == child;
+        }, }
+}
+
+resource insert_right_link(p: struct rb_node*) {
+    field link: InsertLink;
+    match link { InsertLink::To(child) => {
+            owns p->rb_right;
+            fact p->rb_right == child;
+        }, }
+}
 
 theorem ctx_rb_red_focus_not_top(ctx: Context, bh: Nat) {
     requires ctx_rb(ctx, bh, Color::Red) == 1;
@@ -371,7 +401,10 @@ tactic refold_to_root(focus: struct rb_node*, root: struct rb_root*) {
             have whole.model == plug(old(c.model), old(t.model));
         },
         Context::Left(identity, grandparent, color, sibling_model, up_model) => {
-            have rb_parent_consistent(plug(Context::Left(identity, grandparent, color, sibling_model, up_model), t.model), 0) == 1;
+            have rb_parent_consistent(plug(Context::Left(identity, grandparent, color, sibling_model, up_model), t.model), 0) == 1 by {
+                unfold(rb_tree_parent_consistent(plug(Context::Left(identity, grandparent, color, sibling_model, up_model), t.model)));
+                known();
+            }
             apply(plug_parent_consistent_ctx(Context::Left(identity, grandparent, color, sibling_model, up_model), t.model, 0)) using {
                 rb_parent_consistent(plug(Context::Left(identity, grandparent, color, sibling_model, up_model), t.model), 0) == 1;
             };
@@ -396,7 +429,10 @@ tactic refold_to_root(focus: struct rb_node*, root: struct rb_root*) {
             have whole.model == plug(old(c.model), old(t.model));
         },
         Context::Right(identity, grandparent, color, sibling_model, up_model) => {
-            have rb_parent_consistent(plug(Context::Right(identity, grandparent, color, sibling_model, up_model), t.model), 0) == 1;
+            have rb_parent_consistent(plug(Context::Right(identity, grandparent, color, sibling_model, up_model), t.model), 0) == 1 by {
+                unfold(rb_tree_parent_consistent(plug(Context::Right(identity, grandparent, color, sibling_model, up_model), t.model)));
+                known();
+            }
             apply(plug_parent_consistent_ctx(Context::Right(identity, grandparent, color, sibling_model, up_model), t.model, 0)) using {
                 rb_parent_consistent(plug(Context::Right(identity, grandparent, color, sibling_model, up_model), t.model), 0) == 1;
             };
@@ -433,6 +469,13 @@ void dummy_rotate(struct rb_node* old, struct rb_node* new) {
     ensures 1 == 1;
 }
 
+theorem dummy_rotate_is_augment_rotate()
+    executes dummy_rotate(struct rb_node* old, struct rb_node* new) {
+    ensures AugmentRotate(&dummy_rotate) by {
+        step();
+    }
+}
+
 void __rb_insert(struct rb_node* node, struct rb_root* root,
                  void (*augment_rotate)(struct rb_node*, struct rb_node*)) {
     requires AugmentRotate(augment_rotate);
@@ -452,6 +495,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
     match t.model {
         RbTree::Empty => { contradiction(t.model == RbTree::Empty); },
         RbTree::Node(identity, node_parent, color, left_model, right_model) => {
+            have color_bit(color) == 0 by {
+                unfold(rb_color_bit(RbTree::Node(identity, node_parent, color, left_model, right_model)));
+                known();
+            }
             let { left: l, right: r } = unfold(t);
             have (node->__rb_parent_color & 1) == rb_color_bit(old(t.model)) by {
                 rewrite(old(t.model), RbTree::Node(identity, node_parent, color, left_model, right_model));
@@ -459,11 +506,23 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                     RbTree::Node(identity, node_parent, color, left_model, right_model)));
                 known();
             }
-            step();
-            step();
-            step();
-            step();
-            let t = fold(rb_at(node), { model: old(t.model) }, { left: l, right: r });
+            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == node_parent by known();
+            let t = fold(rb_at(node), { model: RbTree::Node(identity, node_parent, color, left_model, right_model) }, { left: l, right: r });
+            step(); // Declare parent.
+            let { left: l, right: r } = unfold(t);
+            have (node->__rb_parent_color & 1) == 0 by {
+                rewrite((node->__rb_parent_color & 1), color_bit(color));
+                rewrite(color_bit(color), 0);
+                normalize();
+            }
+            let load_tag = fold(insert_red_tag(node), { link: InsertParent::To(node_parent) });
+
+            let { after: load_tag } = step(rb_red_parent, { before: load_tag });
+            unfold(load_tag);
+            let t = fold(rb_at(node), { model: RbTree::Node(identity, node_parent, color, left_model, right_model) }, { left: l, right: r });
+            step(); // Initialize parent.
+            step(); // Declare gparent.
+            step(); // Declare tmp.
             have rb_has_parent(t.model, node_parent) == 1 by {
                 rewrite(t.model, RbTree::Node(identity, node_parent, color, left_model, right_model));
                 unfold(rb_has_parent(
@@ -766,7 +825,18 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                 }
                                                 step();
                                                 step();
-                                                step();
+                                                let load_tag = fold(insert_red_tag(parent), { link: InsertParent::To(cgp) });
+                                                let { left: call_left, right: call_right } = unfold(t);
+                                                have separate(load_tag, memory(node->rb_right)) by known();
+                                                have separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_right)) by known();
+                                                have separate(load_tag, memory(node->rb_left)) by known();
+                                                have separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_left)) by known();
+                                                let t = fold(rb_at(node), { model: RbTree::Node(nid, nparent, ncolor, nleft, nright) }, { left: call_left, right: call_right });
+                                                mark before_gparent_call;
+
+                                                let { after: load_tag } = step(rb_red_parent, { before: load_tag });
+                                                unfold(load_tag);
+                                                step(); // Assign the decoded grandparent.
                                                 have cu.model != Context::Top by {
                                                     apply(ctx_rb_red_focus_not_top(cu.model,
                                                         black_height(t.model))) using {
@@ -808,7 +878,30 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have at(before_grandparent_links, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) by { known(); }
                                                     have separate(memory(gparent->__rb_parent_color), memory(gparent->rb_right)) by { known(); }
                                                     have separate(memory(gparent->__rb_parent_color), memory(parent->rb_left)) by { known(); }
-                                                    step();
+                                                        have gparent->rb_left == parent by { rewrite(gparent, uid); rewrite(parent, cid); known(); }
+                                                        let read_focus_link = fold(insert_left_link(gparent), { link: InsertLink::To(parent) });
+                                                        let read_tag = fold(insert_parent_tag(gparent, ugp), { color: ucolor });
+                                                        have gparent->rb_right == uid->rb_right by { rewrite(gparent, uid); normalize(); }
+                                                        have separate(memory(((&tmp) as (uint8 *))[0..8]), memory(gparent->rb_right)) by known();
+                                                        have parent->rb_left == cid->rb_left by { rewrite(parent, cid); normalize(); }
+                                                        have parent->rb_left == node by known();
+                                                        have separate(memory(((&tmp) as (uint8 *))[0..8]), memory(parent->rb_left)) by known();
+                                                        step(); // Load the uncle into tmp.
+                                                        have tmp == at(before_grandparent_links, uid->rb_right) by known();
+                                                        have separate(statement(1).statement(3).footprint, memory(gparent->rb_right)) by {
+                                                            normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(gparent->rb_right)); };
+                                                        }
+                                                        have gparent->rb_right == at(before_grandparent_links, gparent->rb_right) by {
+                                                            preserve(separate(statement(1).statement(3).footprint, memory(gparent->rb_right)));
+                                                        }
+                                                        have separate(statement(1).statement(3).footprint, memory(parent->rb_left)) by {
+                                                            normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(parent->rb_left)); };
+                                                        }
+                                                        have parent->rb_left == at(before_grandparent_links, parent->rb_left) by {
+                                                            preserve(separate(statement(1).statement(3).footprint, memory(parent->rb_left)));
+                                                        }
+                                                        unfold(read_focus_link);
+                                                        unfold(read_tag);
                                                     mark before_uncle_pointer_changes;
                                                     have at(before_uncle_pointer_changes, gparent->rb_right == at(before_uncle_pointer_changes, tmp)) by { known(); }
                                                     have at(before_uncle_pointer_changes, parent->rb_left == node) by { known(); }
@@ -957,27 +1050,39 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         };
                                                         let { left: nl_at, right: nr_at } = unfold(t);
                                                         have (node->__rb_parent_color & 1) == color_bit(Color::Red) by {
-                                                            rewrite(Color::Red, ncolor);
-                                                            known();
+                                                                rewrite(Color::Red, ncolor); known();
                                                         }
+                                                            let t = fold(rb_at(node), { model: RbTree::Node(nid, cid, Color::Red, nleft, nright) }, { left: nl_at, right: nr_at });
+                                                            let held_uncle_link = fold(insert_right_link(gparent), { link: InsertLink::To(at(before_uncle_pointer_changes, tmp)) });
+                                                            let held_focus_link = fold(insert_left_link(parent), { link: InsertLink::To(node) });
+                                                            let rotation_tag = fold(insert_parent_tag(gparent, ugp), { color: ucolor });
                                                         match cs.model ensuring {
                                                             owns sn: rb_at(tmp);
+                                                                owns rotation_tag: insert_parent_tag(gparent, ugp);
+                                                                fact rotation_tag.color == ucolor;
+                                                                fact gparent->rb_left == tmp;
+                                                                fact parent->rb_right == gparent;
                                                             fact sn.model == rb_reparent(csib, gparent);
-                                                            fact ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp;
                                                             fact gparent->rb_right == at(before_uncle_pointer_changes, tmp);
                                                             fact parent->rb_left == node;
                                                         } {
                                                             RbTree::Empty => {
                                                                 unfold(cs);
+                                                                    have parent->rb_right == cid->rb_right by { rewrite(parent, cid); normalize(); }
+                                                                    mark before_sibling_read;
                                                                 step();
                                                                 step();
-                                                                let t = fold(rb_at(node), { model: RbTree::Node(nid, cid, Color::Red, nleft, nright) }, { left: nl_at, right: nr_at });
+                                                                    have tmp == at(before_sibling_read, cid->rb_right) by known();
                                                                 step();
                                                                 step();
                                                                 step();
+                                                                    let written_sibling_link = fold(insert_left_link(gparent), { link: InsertLink::To(tmp) });
+                                                                    step();
+                                                                    let written_grandparent_link = fold(insert_right_link(parent), { link: InsertLink::To(gparent) });
                                                                 step();
                                                                 step();
-                                                                step();
+                                                                    unfold(written_sibling_link);
+                                                                    unfold(written_grandparent_link);
                                                                 have rb_reparent(csib, gparent) == RbTree::Empty by {
                                                                     rewrite(csib, RbTree::Empty);
                                                                     unfold(rb_reparent(RbTree::Empty, gparent)); normalize();
@@ -987,34 +1092,32 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     rewrite(rb_reparent(csib, gparent), RbTree::Empty);
                                                                     solve();
                                                                 }
-                                                                transport(at(before_grandparent_links, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
-                                                                transport(at(before_uncle_pointer_changes, gparent->rb_right == at(before_uncle_pointer_changes, tmp)), gparent->rb_right == at(before_uncle_pointer_changes, tmp)) using {
-                                                                    at(before_uncle_pointer_changes, gparent->rb_right == at(before_uncle_pointer_changes, tmp));
-                                                                    separate(memory(gparent->rb_right), memory(gparent->rb_left));
-                                                                    separate(memory(gparent->rb_right), memory(parent->rb_right));
-                                                                };
-                                                                transport(at(before_uncle_pointer_changes, parent->rb_left == node), parent->rb_left == node) using {
-                                                                    at(before_uncle_pointer_changes, parent->rb_left == node);
-                                                                    separate(memory(parent->rb_left), memory(gparent->rb_left));
-                                                                    separate(memory(parent->rb_left), memory(parent->rb_right));
-                                                                };
+                                                                    unfold(held_uncle_link);
+                                                                    have gparent->rb_right == at(before_uncle_pointer_changes, tmp) by known();
+                                                                    unfold(held_focus_link);
+                                                                    have parent->rb_left == node by known();
+                                                                    have gparent->rb_left == tmp by known();
+                                                                    have parent->rb_right == gparent by known();
                                                             },
                                                             RbTree::Node(sx, sp, scol, sl, sr) => {
                                                                 let { left: sl_at, right: sr_at } = unfold(cs);
+                                                                    have sx == cid->rb_right by known();
+                                                                    have sx->rb_left == cid->rb_right->rb_left by { rewrite(sx, cid->rb_right); normalize(); }
+                                                                    have sx->rb_right == cid->rb_right->rb_right by { rewrite(sx, cid->rb_right); normalize(); }
+                                                                    let saved_child_left = fold(insert_left_link(sx), { link: InsertLink::To(sx->rb_left) });
+                                                                    let saved_child_right = fold(insert_right_link(sx), { link: InsertLink::To(sx->rb_right) });
+                                                                    have parent->rb_right == cid->rb_right by { rewrite(parent, cid); normalize(); }
+                                                                    mark before_sibling_read;
                                                                 step();
                                                                 step();
-                                                                step();
+                                                                    have tmp == at(before_sibling_read, cid->rb_right) by known();
+                                                                    have tmp == sx by known();
+                                                                    let { left: node_l, right: node_r } = unfold(t);
+                                                                    have separate(memory(node->__rb_parent_color), memory(sx->__rb_parent_color)) by known();
+                                                                    step(); // Disjoint owned nodes rule out the triangle branch.
+                                                                    let t = fold(rb_at(node), { model: RbTree::Node(nid, cid, Color::Red, nleft, nright) }, { left: node_l, right: node_r });
                                                                 have gparent == uid by { known(); }
                                                                 have tmp == sx by { known(); }
-                                                                have separate(memory(gparent->rb_right), memory(tmp->__rb_parent_color)) by { known(); }
-                                                                have separate(memory(parent->rb_left), memory(tmp->__rb_parent_color)) by { known(); }
-                                                                have separate(memory(uid->__rb_parent_color), memory(sx->__rb_parent_color)) by { known(); }
-                                                                have separate(memory(gparent->__rb_parent_color), memory(tmp->__rb_parent_color)) by {
-                                                                    rewrite(gparent, uid);
-                                                                    rewrite(tmp, sx);
-                                                                    known();
-                                                                }
-                                                                let t = fold(rb_at(node), { model: RbTree::Node(nid, cid, Color::Red, nleft, nright) }, { left: nl_at, right: nr_at });
                                                                 have rb_root_black(RbTree::Node(sx, sp, scol, sl, sr)) == 1 by {
                                                                     rewrite(RbTree::Node(sx, sp, scol, sl, sr), csib);
                                                                     known();
@@ -1031,193 +1134,84 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 }
                                                                 step();
                                                                 step();
+                                                                    let written_sibling_link = fold(insert_left_link(gparent), { link: InsertLink::To(tmp) });
                                                                 step();
+                                                                    let written_grandparent_link = fold(insert_right_link(parent), { link: InsertLink::To(gparent) });
                                                                 step();
+                                                                    mark before_sibling_recolor;
+                                                                    have separate(memory(sx->rb_left), memory(sx->__rb_parent_color)) by normalize();
+                                                                    have separate(memory(sx->rb_left), memory(tmp->__rb_parent_color)) by { rewrite(tmp, sx); known(); }
+                                                                    have separate(memory(sx->rb_right), memory(sx->__rb_parent_color)) by normalize();
+                                                                    have separate(memory(sx->rb_right), memory(tmp->__rb_parent_color)) by { rewrite(tmp, sx); known(); }
                                                                 step();
+                                                                    have separate(statement(1).statement(4).statement(5).statement(0).footprint, memory(sx->rb_left)) by { normalize() using { separate(memory(sx->rb_left), memory(tmp->__rb_parent_color)); }; }
+                                                                    have sx->rb_left == at(before_sibling_recolor, sx->rb_left) by { preserve(separate(statement(1).statement(4).statement(5).statement(0).footprint, memory(sx->rb_left))); }
+                                                                    have separate(statement(1).statement(4).statement(5).statement(0).footprint, memory(sx->rb_right)) by { normalize() using { separate(memory(sx->rb_right), memory(tmp->__rb_parent_color)); }; }
+                                                                    have sx->rb_right == at(before_sibling_recolor, sx->rb_right) by { preserve(separate(statement(1).statement(4).statement(5).statement(0).footprint, memory(sx->rb_right))); }
+                                                                    unfold(written_sibling_link);
+                                                                    unfold(written_grandparent_link);
+                                                                    unfold(saved_child_left);
+                                                                    unfold(saved_child_right);
+                                                                    have tmp->rb_left == sx->rb_left by { rewrite(tmp, sx); known(); }
+                                                                    have tmp->rb_right == sx->rb_right by { rewrite(tmp, sx); known(); }
+                                                                    have aligned(gparent, 8) by { rewrite(gparent, uid); known(); }
+                                                                    have (address(gparent) | 1) == address(gparent) + 1 by { solve() using { aligned(gparent, 8); }; }
                                                                 let sn = fold(rb_at(tmp), { model: RbTree::Node(sx, gparent, scol, sl, sr) }, { left: sl_at, right: sr_at });
                                                                 have sn.model == rb_reparent(csib, gparent) by {
                                                                     rewrite(rb_reparent(csib, gparent), RbTree::Node(sx, gparent, scol, sl, sr));
                                                                     solve();
                                                                 }
-                                                                transport(at(before_grandparent_links, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
-                                                                transport(at(before_uncle_pointer_changes, gparent->rb_right == at(before_uncle_pointer_changes, tmp)), gparent->rb_right == at(before_uncle_pointer_changes, tmp)) using {
-                                                                    at(before_uncle_pointer_changes, gparent->rb_right == at(before_uncle_pointer_changes, tmp));
-                                                                    separate(memory(gparent->rb_right), memory(gparent->rb_left));
-                                                                    separate(memory(gparent->rb_right), memory(parent->rb_right));
-                                                                    separate(memory(gparent->rb_right), memory(tmp->__rb_parent_color));
-                                                                };
-                                                                transport(at(before_uncle_pointer_changes, parent->rb_left == node), parent->rb_left == node) using {
-                                                                    at(before_uncle_pointer_changes, parent->rb_left == node);
-                                                                    separate(memory(parent->rb_left), memory(gparent->rb_left));
-                                                                    separate(memory(parent->rb_left), memory(parent->rb_right));
-                                                                    separate(memory(parent->rb_left), memory(tmp->__rb_parent_color));
-                                                                };
+                                                                    unfold(held_uncle_link);
+                                                                    have gparent->rb_right == at(before_uncle_pointer_changes, tmp) by known();
+                                                                    unfold(held_focus_link);
+                                                                    have parent->rb_left == node by known();
+                                                                    have gparent->rb_left == tmp by known();
+                                                                    have parent->rb_right == gparent by known();
                                                             },
                                                         }
-                                                        transport(at(before_grandparent_links, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
+                                                            unfold(rotation_tag);
+                                                            have ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp by known();
                                                         have (gparent->__rb_parent_color & 1) == 1 by {
                                                             rewrite((gparent->__rb_parent_color & 1), color_bit(ucolor));
                                                             rewrite(ucolor, Color::Black);
                                                             unfold(color_bit(Color::Black));
                                                             solve();
                                                         }
-                                                        mark before_rotation_parent_changes;
-                                                        have at(before_rotation_parent_changes, gparent->rb_right == at(before_uncle_pointer_changes, tmp)) by { known(); }
-                                                        have at(before_rotation_parent_changes, parent->rb_left == node) by { known(); }
-                                                        match uu.model ensuring {
-                                                            owns uu: ctx_at(parent, root);
-                                                            fact uu.model == uup;
-                                                            fact gparent->rb_right == at(before_uncle_pointer_changes, tmp);
-                                                            fact parent->rb_left == node;
-                                                        } {
-                                                            Context::Top => {
-                                                                have ctx_node_is(Context::Top, ugp) == 1 by {
-                                                                    rewrite(Context::Top, uu.model);
-                                                                    rewrite(uu.model, uup);
-                                                                    known();
-                                                                }
-                                                                have ugp == 0 by {
-                                                                    apply(ctx_node_is_top_null(ugp)) using {
-                                                                        ctx_node_is(Context::Top, ugp) == 1;
-                                                                    };
-                                                                    known();
-                                                                }
-                                                                unfold(uu);
-                                                                have separate(memory(gparent->rb_right), memory(root->rb_node)) by { known(); }
-                                                                have separate(memory(parent->rb_left), memory(root->rb_node)) by { known(); }
-                                                                step();
-                                                                transport(at(before_rotation_parent_changes, gparent->rb_right == at(before_uncle_pointer_changes, tmp)), gparent->rb_right == at(before_uncle_pointer_changes, tmp)) using {
-                                                                    at(before_rotation_parent_changes, gparent->rb_right == at(before_uncle_pointer_changes, tmp));
-                                                                    separate(memory(gparent->rb_right), memory(gparent->__rb_parent_color));
-                                                                    separate(memory(gparent->rb_right), memory(parent->__rb_parent_color));
-                                                                    separate(memory(gparent->rb_right), memory(root->rb_node));
-                                                                };
-                                                                transport(at(before_rotation_parent_changes, parent->rb_left == node), parent->rb_left == node) using {
-                                                                    at(before_rotation_parent_changes, parent->rb_left == node);
-                                                                    separate(memory(parent->rb_left), memory(gparent->__rb_parent_color));
-                                                                    separate(memory(parent->rb_left), memory(parent->__rb_parent_color));
-                                                                    separate(memory(parent->rb_left), memory(root->rb_node));
-                                                                };
-                                                                let uu = fold(ctx_at(parent, root), { model: Context::Top });
-                                                                have uu.model == uup by { rewrite(uup, Context::Top); normalize(); }
-                                                            },
-                                                            Context::Left(xid, xgp, xcol, xsib, xup) => {
-                                                                have ctx_node_is(Context::Left(xid, xgp, xcol, xsib, xup), ugp) == 1 by {
-                                                                    rewrite(Context::Left(xid, xgp, xcol, xsib, xup), uu.model);
-                                                                    rewrite(uu.model, uup);
-                                                                    known();
-                                                                }
-                                                                have ugp == xid by {
-                                                                    apply(ctx_node_is_left_identity(xid, xgp, xcol, xsib, xup, ugp)) using {
-                                                                        ctx_node_is(Context::Left(xid, xgp, xcol, xsib, xup), ugp) == 1;
-                                                                    };
-                                                                    known();
-                                                                }
-                                                                let { sibling: xs, up: xu } = unfold(uu);
-                                                                have separate(memory(gparent->rb_right), memory(xid->rb_left)) by { known(); }
-                                                                have separate(memory(parent->rb_left), memory(xid->rb_left)) by { known(); }
-                                                                have separate(memory(gparent->rb_right), memory(xid->rb_right)) by { known(); }
-                                                                have separate(memory(parent->rb_left), memory(xid->rb_right)) by { known(); }
-                                                                step();
-                                                                transport(at(before_rotation_parent_changes, gparent->rb_right == at(before_uncle_pointer_changes, tmp)), gparent->rb_right == at(before_uncle_pointer_changes, tmp)) using {
-                                                                    at(before_rotation_parent_changes, gparent->rb_right == at(before_uncle_pointer_changes, tmp));
-                                                                    separate(memory(gparent->rb_right), memory(gparent->__rb_parent_color));
-                                                                    separate(memory(gparent->rb_right), memory(parent->__rb_parent_color));
-                                                                    separate(memory(gparent->rb_right), memory(xid->rb_left));
-                                                                    separate(memory(gparent->rb_right), memory(xid->rb_right));
-                                                                };
-                                                                transport(at(before_rotation_parent_changes, parent->rb_left == node), parent->rb_left == node) using {
-                                                                    at(before_rotation_parent_changes, parent->rb_left == node);
-                                                                    separate(memory(parent->rb_left), memory(gparent->__rb_parent_color));
-                                                                    separate(memory(parent->rb_left), memory(parent->__rb_parent_color));
-                                                                    separate(memory(parent->rb_left), memory(xid->rb_left));
-                                                                    separate(memory(parent->rb_left), memory(xid->rb_right));
-                                                                };
-                                                                let uu = fold(ctx_at(parent, root), { model: Context::Left(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
-                                                                have uu.model == uup by { rewrite(uup, Context::Left(xid, xgp, xcol, xsib, xup)); normalize(); }
-                                                            },
-                                                            Context::Right(xid, xgp, xcol, xsib, xup) => {
-                                                                have ctx_node_is(Context::Right(xid, xgp, xcol, xsib, xup), ugp) == 1 by {
-                                                                    rewrite(Context::Right(xid, xgp, xcol, xsib, xup), uu.model);
-                                                                    rewrite(uu.model, uup);
-                                                                    known();
-                                                                }
-                                                                have ugp == xid by {
-                                                                    apply(ctx_node_is_right_identity(xid, xgp, xcol, xsib, xup, ugp)) using {
-                                                                        ctx_node_is(Context::Right(xid, xgp, xcol, xsib, xup), ugp) == 1;
-                                                                    };
-                                                                    known();
-                                                                }
-                                                                let { sibling: xs, up: xu } = unfold(uu);
-                                                                have separate(memory(gparent->rb_right), memory(xid->rb_left)) by { known(); }
-                                                                have separate(memory(parent->rb_left), memory(xid->rb_left)) by { known(); }
-                                                                have separate(memory(gparent->rb_right), memory(xid->rb_right)) by { known(); }
-                                                                have separate(memory(parent->rb_left), memory(xid->rb_right)) by { known(); }
-                                                                mark before_upper_child_change;
-                                                                have at(before_upper_child_change, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp) by { known(); }
-                                                                have separate(memory(xid->__rb_parent_color), memory(gparent->__rb_parent_color)) by { known(); }
-                                                                have separate(memory(xid->__rb_parent_color), memory(parent->__rb_parent_color)) by { known(); }
-                                                                have separate(memory(xid->__rb_parent_color), memory(xid->rb_left)) by { known(); }
-                                                                have separate(memory(xid->__rb_parent_color), memory(xid->rb_right)) by { known(); }
-                                                                match xsib ensuring {
-                                                                    owns xs: rb_at(xid->rb_left);
-                                                                    fact xs.model == xsib;
-                                                                    fact gparent->rb_right == at(before_uncle_pointer_changes, tmp);
-                                                                    fact parent->rb_left == node;
-                                                                    fact ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp;
-                                                                } {
-                                                                    RbTree::Empty => {
-                                                                        unfold(xs);
-                                                                        step();
-                                                                        transport(at(before_rotation_parent_changes, gparent->rb_right == at(before_uncle_pointer_changes, tmp)), gparent->rb_right == at(before_uncle_pointer_changes, tmp)) using {
-                                                                            at(before_rotation_parent_changes, gparent->rb_right == at(before_uncle_pointer_changes, tmp));
-                                                                            separate(memory(gparent->rb_right), memory(gparent->__rb_parent_color));
-                                                                            separate(memory(gparent->rb_right), memory(parent->__rb_parent_color));
-                                                                                    separate(memory(gparent->rb_right), memory(xid->rb_left));
-                                                                            separate(memory(gparent->rb_right), memory(xid->rb_right));
-                                                                        };
-                                                                        transport(at(before_rotation_parent_changes, parent->rb_left == node), parent->rb_left == node) using {
-                                                                            at(before_rotation_parent_changes, parent->rb_left == node);
-                                                                            separate(memory(parent->rb_left), memory(gparent->__rb_parent_color));
-                                                                            separate(memory(parent->rb_left), memory(parent->__rb_parent_color));
-                                                                            separate(memory(parent->rb_left), memory(xid->rb_left));
-                                                                            separate(memory(parent->rb_left), memory(xid->rb_right));
-                                                                        };
-                                                                        let xs = fold(rb_at(0), { model: xsib });
-                                                                        transport(at(before_upper_child_change, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp), ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp);
-                                                                    },
-                                                                    RbTree::Node(yid, yp, ycol, yl, yr) => {
-                                                                        let { left: yl_at, right: yr_at } = unfold(xs);
-                                                                        step();
-                                                                        transport(at(before_rotation_parent_changes, gparent->rb_right == at(before_uncle_pointer_changes, tmp)), gparent->rb_right == at(before_uncle_pointer_changes, tmp)) using {
-                                                                            at(before_rotation_parent_changes, gparent->rb_right == at(before_uncle_pointer_changes, tmp));
-                                                                            separate(memory(gparent->rb_right), memory(gparent->__rb_parent_color));
-                                                                            separate(memory(gparent->rb_right), memory(parent->__rb_parent_color));
-                                                                                    separate(memory(gparent->rb_right), memory(xid->rb_left));
-                                                                            separate(memory(gparent->rb_right), memory(xid->rb_right));
-                                                                        };
-                                                                        transport(at(before_rotation_parent_changes, parent->rb_left == node), parent->rb_left == node) using {
-                                                                            at(before_rotation_parent_changes, parent->rb_left == node);
-                                                                            separate(memory(parent->rb_left), memory(gparent->__rb_parent_color));
-                                                                            separate(memory(parent->rb_left), memory(parent->__rb_parent_color));
-                                                                            separate(memory(parent->rb_left), memory(xid->rb_left));
-                                                                            separate(memory(parent->rb_left), memory(xid->rb_right));
-                                                                        };
-                                                                        let xs = fold(rb_at(yid), { model: xsib }, { left: yl_at, right: yr_at });
-                                                                        transport(at(before_upper_child_change, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp), ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp);
-                                                                    },
-                                                                }
-                                                                let uu = fold(ctx_at(parent, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
-                                                                have uu.model == uup by { rewrite(uup, Context::Right(xid, xgp, xcol, xsib, xup)); normalize(); }
-                                                            },
-                                                        }
+                                                            have ctx_node_is(uu.model, ugp) == 1 by known();
+                                                            have ctx_identity(uu.model) == ugp by { apply(ctx_node_is_identity(uu.model, ugp)) using { ctx_node_is(uu.model, ugp) == 1; }; }
+                                                            have gparent->__rb_parent_color == address(ugp) + 1 by known();
+                                                            apply(insert_black_context_word(uu.model, ugp)) using { ctx_node_is(uu.model, ugp) == 1; };
+                                                            have ctx_parent_word(uu.model, gparent->__rb_parent_color) == 1 by {
+                                                                rewrite(gparent->__rb_parent_color, address(ugp) + 1);
+                                                                known();
+                                                            }
+                                                            let outer_uncle_link = fold(insert_right_link(gparent), { link: InsertLink::To(at(before_uncle_pointer_changes, tmp)) });
+                                                            let outer_focus_link = fold(insert_left_link(parent), { link: InsertLink::To(node) });
+                                                            let moved_sibling_link = fold(insert_left_link(gparent), { link: InsertLink::To(tmp) });
+                                                            let moved_grandparent_link = fold(insert_right_link(parent), { link: InsertLink::To(gparent) });
+                                                            let { after: uu } = step(__rb_rotate_set_parents, { c: uu });
+                                                            unfold(moved_sibling_link);
+                                                            unfold(moved_grandparent_link);
+                                                            unfold(outer_uncle_link);
+                                                            unfold(outer_focus_link);
                                                             have rb_parent_is(rb_reparent(csib, gparent), gparent) == 1 by {
                                                                 apply(rb_reparent_parent_is(csib, gparent));
                                                                 known();
                                                             }
+                                                            have parent == cid by known();
+                                                            have aligned(cid, 8) by known();
+                                                            have gparent->__rb_parent_color == address(cid) by { rewrite(cid, parent); known(); }
+                                                            have (gparent->__rb_parent_color & 1) == 0 by {
+                                                                rewrite(gparent->__rb_parent_color, address(cid));
+                                                                solve() using { aligned(cid, 8); };
+                                                            }
+                                                            have gparent->__rb_parent_color == address(cid) + (gparent->__rb_parent_color & 1) by { rewrite((gparent->__rb_parent_color & 1), 0); known(); }
+                                                            have ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == cid by { rewrite(cid, parent); known(); }
+                                                            unfold(color_bit(Color::Red));
                                                             let gn = fold(rb_at(gparent), { model: RbTree::Node(gparent, cid, Color::Red, rb_reparent(csib, gparent), usib) }, { left: sn, right: un });
                                                             have rb_parent_is(RbTree::Node(gparent, cid, Color::Red, rb_reparent(csib, gparent), usib), cid) == 1 by {
                                                                 unfold(rb_parent_is(RbTree::Node(gparent, cid, Color::Red, rb_reparent(csib, gparent), usib), cid));
+                                                                normalize();
                                                             }
                                                             have (parent->__rb_parent_color & 1) == color_bit(Color::Black) by {
                                                                 unfold(color_bit(Color::Black));
@@ -1335,44 +1329,58 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             unfold(color_bit(Color::Red));
                                                                             normalize();
                                                                         }
-                                                                        mark before_recolor_tags;
-                                                                        have at(before_recolor_tags, gparent->rb_left == parent) by { known(); }
-                                                                        have at(before_recolor_tags, separate(memory(gparent->rb_left), memory(gparent->__rb_parent_color))) by { known(); }
-                                                                        have at(before_recolor_tags, separate(memory(gparent->rb_left), memory(parent->__rb_parent_color))) by { known(); }
-                                                                        have at(before_recolor_tags, separate(memory(gparent->rb_left), memory(tmp->__rb_parent_color))) by { known(); }
-                                                                        have at(before_recolor_tags, gparent->rb_right == tmp) by { known(); }
-                                                                        have at(before_recolor_tags, separate(memory(gparent->rb_right), memory(gparent->__rb_parent_color))) by { known(); }
-                                                                        have at(before_recolor_tags, separate(memory(gparent->rb_right), memory(parent->__rb_parent_color))) by { known(); }
-                                                                        have at(before_recolor_tags, separate(memory(gparent->rb_right), memory(tmp->__rb_parent_color))) by { known(); }
+                                                                            let flip_tmp_rb_left = fold(insert_left_link(tmp), { link: InsertLink::To(tmp->rb_left) });
+                                                                            let flip_tmp_rb_right = fold(insert_right_link(tmp), { link: InsertLink::To(tmp->rb_right) });
+                                                                            let flip_parent_rb_left = fold(insert_left_link(parent), { link: InsertLink::To(parent->rb_left) });
+                                                                            let flip_parent_rb_right = fold(insert_right_link(parent), { link: InsertLink::To(parent->rb_right) });
+                                                                            let flip_gparent_rb_left = fold(insert_left_link(gparent), { link: InsertLink::To(gparent->rb_left) });
+                                                                            let flip_gparent_rb_right = fold(insert_right_link(gparent), { link: InsertLink::To(gparent->rb_right) });
+                                                                            let flip_tag = fold(insert_parent_tag(gparent, ugp), { color: ucolor });
                                                                         step();
                                                                         step();
-                                                                        step();
+                                                                            unfold(flip_tmp_rb_left);
+                                                                            unfold(flip_tmp_rb_right);
+                                                                            have aligned(gparent, 8) by { rewrite(gparent, uid); known(); }
+                                                                            have (address(gparent) | 1) == address(gparent) + 1 by {
+                                                                                solve() using { aligned(gparent, 8); };
+                                                                            }
                                                                         let un = fold(rb_at(tmp), { model: RbTree::Node(unid, gparent, Color::Black, unl, unr) }, { left: ul, right: ur });
+                                                                            step();
+                                                                            unfold(flip_parent_rb_left);
+                                                                            unfold(flip_parent_rb_right);
+                                                                            have parent->__rb_parent_color == (address(gparent) | 1) by known();
+                                                                            have parent->__rb_parent_color == address(gparent) + 1 by known();
+                                                                            have (parent->__rb_parent_color & 1) == 1 by known();
+                                                                            have parent->__rb_parent_color == address(gparent) + (parent->__rb_parent_color & 1) by known();
+                                                                            have ((parent->__rb_parent_color & ~3) as (struct rb_node *)) == gparent by known();
                                                                         let pn = fold(rb_at(parent), { model: RbTree::Node(cid, gparent, Color::Black, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib) }, { left: t, right: cs });
                                                                         step();
+                                                                            unfold(flip_tag);
                                                                         step();
+                                                                            step();
+                                                                            have parent == ugp by known();
                                                                         step();
                                                                         have rb_parent_is(RbTree::Node(cid, gparent, Color::Black, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib), gparent) == 1 by {
                                                                             unfold(rb_parent_is(RbTree::Node(cid, gparent, Color::Black, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib), gparent));
+                                                                            normalize();
                                                                         }
                                                                         have rb_parent_is(RbTree::Node(unid, gparent, Color::Black, unl, unr), gparent) == 1 by {
                                                                             unfold(rb_parent_is(RbTree::Node(unid, gparent, Color::Black, unl, unr), gparent));
+                                                                            normalize();
                                                                         }
                                                                         have rb_parent_is(RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(cid, gparent, Color::Black, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib), RbTree::Node(unid, gparent, Color::Black, unl, unr)), ugp) == 1 by {
                                                                             unfold(rb_parent_is(RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(cid, gparent, Color::Black, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib), RbTree::Node(unid, gparent, Color::Black, unl, unr)), ugp));
+                                                                            normalize();
                                                                         }
-                                                                        transport(at(before_recolor_tags, gparent->rb_left == parent), gparent->rb_left == at(before_recolor_tags, parent)) using {
-                                                                            at(before_recolor_tags, gparent->rb_left == parent);
-                                                                            at(before_recolor_tags, separate(memory(gparent->rb_left), memory(gparent->__rb_parent_color)));
-                                                                            at(before_recolor_tags, separate(memory(gparent->rb_left), memory(parent->__rb_parent_color)));
-                                                                            at(before_recolor_tags, separate(memory(gparent->rb_left), memory(tmp->__rb_parent_color)));
-                                                                        };
-                                                                        transport(at(before_recolor_tags, gparent->rb_right == tmp), gparent->rb_right == at(before_recolor_tags, tmp)) using {
-                                                                            at(before_recolor_tags, gparent->rb_right == tmp);
-                                                                            at(before_recolor_tags, separate(memory(gparent->rb_right), memory(gparent->__rb_parent_color)));
-                                                                            at(before_recolor_tags, separate(memory(gparent->rb_right), memory(parent->__rb_parent_color)));
-                                                                            at(before_recolor_tags, separate(memory(gparent->rb_right), memory(tmp->__rb_parent_color)));
-                                                                        };
+                                                                            unfold(flip_gparent_rb_left);
+                                                                            unfold(flip_gparent_rb_right);
+                                                                            have aligned(ugp, 8) by known();
+                                                                            have gparent->__rb_parent_color == address(ugp) by known();
+                                                                            have (gparent->__rb_parent_color & 1) == 0 by {
+                                                                                rewrite(gparent->__rb_parent_color, address(ugp));
+                                                                                solve() using { aligned(ugp, 8); };
+                                                                            }
+                                                                            have gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1) by known();
                                                                         let gn = fold(rb_at(gparent), { model: RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(cid, gparent, Color::Black, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib), RbTree::Node(unid, gparent, Color::Black, unl, unr)) }, { left: pn, right: un });
                                                                     },
                                                                     Color::Black => {
@@ -1416,17 +1424,39 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         known();
                                                     }
                                                     let { sibling: us, up: uu } = unfold(cu);
+                                                        mark triangle_before_uncle_load;
+                                                        have gparent->rb_left == uid->rb_left by { rewrite(gparent, uid); normalize(); }
+                                                        have gparent->rb_right == parent by { rewrite(gparent, uid); rewrite(parent, cid); known(); }
+                                                        let triangle_uncle_link = fold(insert_left_link(gparent), { link: InsertLink::To(uid->rb_left) });
+                                                        let triangle_parent_link = fold(insert_right_link(gparent), { link: InsertLink::To(parent) });
+                                                        let triangle_focus_link = fold(insert_left_link(parent), { link: InsertLink::To(node) });
+                                                        let triangle_tag = fold(insert_parent_tag(gparent, ugp), { color: ucolor });
                                                     step();
+                                                        unfold(triangle_parent_link);
+                                                        have tmp == parent by known();
                                                     if rb_root_black(usib) == 1 {
                                                         match us.model ensuring {
                                                             owns un: rb_at(tmp);
                                                             fact un.model == usib;
                                                             fact gparent->rb_left == tmp;
+                                                                fact node->rb_right == at(triangle_before_uncle_load, node->rb_right);
+                                                                fact node->rb_left == at(triangle_before_uncle_load, node->rb_left);
                                                         } {
                                                             RbTree::Node(unid, unp, uncolor, unl, unr) => {
                                                                 let { left: ul, right: ur } = unfold(us);
+                                                                    have unid == uid->rb_left by known();
+                                                                    have unid->rb_left == uid->rb_left->rb_left by { rewrite(unid, uid->rb_left); normalize(); }
+                                                                    have separate(memory(((&tmp) as (uint8 *))[0..8]), memory(unid->rb_left)) by known();
+                                                                    let triangle_saved_rb_left = fold(insert_left_link(unid), { link: InsertLink::To(unid->rb_left) });
+                                                                    have unid->rb_right == uid->rb_left->rb_right by { rewrite(unid, uid->rb_left); normalize(); }
+                                                                    have separate(memory(((&tmp) as (uint8 *))[0..8]), memory(unid->rb_right)) by known();
+                                                                    let triangle_saved_rb_right = fold(insert_right_link(unid), { link: InsertLink::To(unid->rb_right) });
+
+                                                                    let triangle_uncle_tag = fold(insert_parent_tag(uid->rb_left, unp), { color: uncolor });
                                                                 step();
+                                                                    mark triangle_before_middle_load;
                                                                 step();
+                                                                    unfold(triangle_uncle_tag);
                                                                 have rb_root_black(RbTree::Node(unid, unp, uncolor, unl, unr)) == 1 by {
                                                                     rewrite(RbTree::Node(unid, unp, uncolor, unl, unr), usib);
                                                                     known();
@@ -1470,8 +1500,25 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     rewrite(Color::Black, uncolor);
                                                                     known();
                                                                 }
+                                                                    unfold(triangle_uncle_link);
                                                                 have gparent->rb_left == tmp by { known(); }
-                                                                let un = fold(rb_at(tmp), { model: RbTree::Node(unid, gparent, Color::Black, unl, unr) }, { left: ul, right: ur });
+                                                                    have separate(statement(1).statement(4).statement(9).footprint, memory(unid->rb_left)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(unid->rb_left)); }; }
+                                                                    have unid->rb_left == at(triangle_before_middle_load, unid->rb_left) by known();
+                                                                    unfold(triangle_saved_rb_left);
+                                                                    have tmp->rb_left == unid->rb_left by { rewrite(tmp, unid); known(); }
+                                                                    have separate(statement(1).statement(4).statement(9).footprint, memory(unid->rb_right)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(unid->rb_right)); }; }
+                                                                    have unid->rb_right == at(triangle_before_middle_load, unid->rb_right) by known();
+                                                                    unfold(triangle_saved_rb_right);
+                                                                    have tmp->rb_right == unid->rb_right by { rewrite(tmp, unid); known(); }
+                                                                    have separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_right)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_right)); }; }
+                                                                    have at(statement(1).statement(4).statement(9).exit, node->rb_right) == at(statement(1).statement(4).statement(9).entry, node->rb_right) by { preserve(separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_right))); }
+                                                                    have at(statement(1).statement(4).statement(9).entry, node->rb_right) == at(triangle_before_uncle_load, node->rb_right) by known();
+                                                                    have node->rb_right == at(triangle_before_uncle_load, node->rb_right) by known();
+                                                                    have separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_left)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_left)); }; }
+                                                                    have at(statement(1).statement(4).statement(9).exit, node->rb_left) == at(statement(1).statement(4).statement(9).entry, node->rb_left) by { preserve(separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_left))); }
+                                                                    have at(statement(1).statement(4).statement(9).entry, node->rb_left) == at(triangle_before_uncle_load, node->rb_left) by known();
+                                                                    have node->rb_left == at(triangle_before_uncle_load, node->rb_left) by known();
+                                                                    let un = fold(rb_at(uid->rb_left), { model: RbTree::Node(unid, gparent, Color::Black, unl, unr) }, { left: ul, right: ur });
                                                                 have un.model == usib by {
                                                                     rewrite(usib, RbTree::Node(unid, gparent, Color::Black, unl, unr));
                                                                     normalize();
@@ -1488,7 +1535,16 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     };
                                                                     known();
                                                                 }
+                                                                    unfold(triangle_uncle_link);
                                                                 have gparent->rb_left == tmp by { known(); }
+                                                                    have separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_right)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_right)); }; }
+                                                                    have at(statement(1).statement(4).statement(9).exit, node->rb_right) == at(statement(1).statement(4).statement(9).entry, node->rb_right) by { preserve(separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_right))); }
+                                                                    have at(statement(1).statement(4).statement(9).entry, node->rb_right) == at(triangle_before_uncle_load, node->rb_right) by known();
+                                                                    have node->rb_right == at(triangle_before_uncle_load, node->rb_right) by known();
+                                                                    have separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_left)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_left)); }; }
+                                                                    have at(statement(1).statement(4).statement(9).exit, node->rb_left) == at(statement(1).statement(4).statement(9).entry, node->rb_left) by { preserve(separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_left))); }
+                                                                    have at(statement(1).statement(4).statement(9).entry, node->rb_left) == at(triangle_before_uncle_load, node->rb_left) by known();
+                                                                    have node->rb_left == at(triangle_before_uncle_load, node->rb_left) by known();
                                                                 let un = fold(rb_at(tmp), { model: RbTree::Empty });
                                                                 have un.model == usib by {
                                                                     rewrite(usib, RbTree::Empty);
@@ -1496,6 +1552,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 }
                                                             },
                                                         }
+                                                            unfold(triangle_focus_link);
+                                                            unfold(triangle_tag);
                                                         mark triangle_uncle_pointer;
                                                         have at(triangle_uncle_pointer, gparent->rb_left == tmp) by { known(); }
                                                         have cup == Context::Right(gparent, ugp, Color::Black, usib, uup) by {
@@ -1564,550 +1622,411 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             rb_parent_consistent(plug(Context::Left(cid, gparent, Color::Red, csib, Context::Right(gparent, ugp, Color::Black, usib, uup)), RbTree::Node(nid, cid, Color::Red, nleft, nright)), 0) == 1;
                                                         };
                                                         let { left: nl_at, right: nr_at } = unfold(t);
-                                                        have (node->__rb_parent_color & 1) == color_bit(Color::Red) by {
-                                                            rewrite(Color::Red, ncolor);
-                                                            known();
-                                                        }
-                                                        step();
-                                                        step();
-                                                        step();
-                                                        have separate(memory(parent->rb_left), memory(node->rb_right)) by { known(); }
-                                                        mark before_inner_parent_right;
-                                                        have at(before_inner_parent_right, parent->rb_right == parent->rb_right) by { normalize(); }
-                                                        have separate(memory(parent->rb_right), memory(parent->rb_left)) by { known(); }
-                                                        have separate(memory(parent->rb_right), memory(node->rb_right)) by { known(); }
-                                                        mark before_inner_node_left;
-                                                        have at(before_inner_node_left, node->rb_left == node->rb_left) by { normalize(); }
-                                                        have separate(memory(node->rb_left), memory(parent->rb_left)) by { known(); }
-                                                        have separate(memory(node->rb_left), memory(node->rb_right)) by { known(); }
-                                                        mark before_triangle_grandparent_tag;
-                                                        have at(before_triangle_grandparent_tag, (gparent->__rb_parent_color & 1) == color_bit(ucolor)) by { known(); }
-                                                        have at(before_triangle_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) by { known(); }
-                                                        have separate(memory(gparent->__rb_parent_color), memory(parent->rb_left)) by { known(); }
-                                                        have separate(memory(gparent->__rb_parent_color), memory(node->rb_right)) by { known(); }
-                                                        have at(before_triangle_grandparent_tag, gparent->rb_left == at(triangle_uncle_pointer, tmp)) by { known(); }
-                                                        have separate(memory(gparent->rb_left), memory(parent->rb_left)) by { known(); }
-                                                        have separate(memory(gparent->rb_left), memory(node->rb_right)) by { known(); }
-                                                        match nr_at.model ensuring {
-                                                            owns bn: rb_at(tmp);
-                                                            fact bn.model == rb_reparent(nright, cid);
-                                                            fact node->rb_right == parent;
-                                                            fact gparent->rb_left == at(triangle_uncle_pointer, tmp);
-                                                            fact (gparent->__rb_parent_color & 1) == color_bit(ucolor);
-                                                            fact ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp;
-                                                            fact parent->rb_left == tmp;
-                                                            fact node->rb_left == at(before_inner_node_left, node->rb_left);
-                                                            fact parent->rb_right == at(before_inner_parent_right, parent->rb_right);
-                                                        } {
-                                                            RbTree::Empty => {
-                                                                unfold(nr_at);
-                                                                step();
-                                                                step();
-                                                                step();
-                                                                step();
-                                                                step();
-                                                                have rb_reparent(nright, cid) == RbTree::Empty by {
-                                                                    rewrite(nright, RbTree::Empty);
-                                                                    unfold(rb_reparent(RbTree::Empty, cid)); normalize();
-                                                                }
-                                                                transport(at(before_inner_parent_right, parent->rb_right == parent->rb_right), parent->rb_right == at(before_inner_parent_right, parent->rb_right)) using {
-                                                                    at(before_inner_parent_right, parent->rb_right == parent->rb_right);
-                                                                    separate(memory(parent->rb_right), memory(parent->rb_left));
-                                                                    separate(memory(parent->rb_right), memory(node->rb_right));
-                                                                };
-                                                                transport(at(before_inner_node_left, node->rb_left == node->rb_left), node->rb_left == at(before_inner_node_left, node->rb_left)) using {
-                                                                    at(before_inner_node_left, node->rb_left == node->rb_left);
-                                                                    separate(memory(node->rb_left), memory(parent->rb_left));
-                                                                    separate(memory(node->rb_left), memory(node->rb_right));
-                                                                };
-                                                                have parent->rb_left == tmp by { known(); }
-                                                                transport(at(before_triangle_grandparent_tag, (gparent->__rb_parent_color & 1) == color_bit(ucolor)), (gparent->__rb_parent_color & 1) == color_bit(ucolor)) using {
-                                                                    at(before_triangle_grandparent_tag, (gparent->__rb_parent_color & 1) == color_bit(ucolor));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(parent->rb_left));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(node->rb_right));
-                                                                };
-                                                                transport(at(before_triangle_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) using {
-                                                                    at(before_triangle_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
-                                                                    separate(memory(gparent->__rb_parent_color), memory(parent->rb_left));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(node->rb_right));
-                                                                };
-                                                                transport(at(before_triangle_grandparent_tag, gparent->rb_left == at(triangle_uncle_pointer, tmp)), gparent->rb_left == at(triangle_uncle_pointer, tmp)) using {
-                                                                    at(before_triangle_grandparent_tag, gparent->rb_left == at(triangle_uncle_pointer, tmp));
-                                                                    separate(memory(gparent->rb_left), memory(parent->rb_left));
-                                                                    separate(memory(gparent->rb_left), memory(node->rb_right));
-                                                                };
-                                                                have node->rb_right == parent by { normalize(); }
-                                                                let bn = fold(rb_at(tmp), { model: RbTree::Empty });
-                                                                have bn.model == rb_reparent(nright, cid) by {
-                                                                    rewrite(rb_reparent(nright, cid), RbTree::Empty);
-                                                                    solve();
-                                                                }
-                                                            },
-                                                            RbTree::Node(bx, bp, bcol, bl, br) => {
-                                                                let { left: bl_at, right: br_at } = unfold(nr_at);
-                                                                step();
-                                                                mark before_inner_child_links;
-                                                                have separate(memory(node->rb_right), memory(tmp->__rb_parent_color)) by { known(); }
-                                                                have separate(memory(gparent->rb_left), memory(tmp->__rb_parent_color)) by { known(); }
-                                                                have separate(memory(gparent->__rb_parent_color), memory(tmp->__rb_parent_color)) by { known(); }
-                                                                have separate(memory(node->rb_left), memory(tmp->__rb_parent_color)) by { known(); }
-                                                                have separate(memory(parent->rb_right), memory(tmp->__rb_parent_color)) by { known(); }
-                                                                have separate(memory(parent->rb_left), memory(tmp->__rb_parent_color)) by { known(); }
-                                                                have at(before_inner_child_links, tmp->rb_left == bx->rb_left) by { known(); }
-                                                                have at(before_inner_child_links, separate(memory(tmp->rb_left), memory(parent->rb_left))) by { known(); }
-                                                                have at(before_inner_child_links, separate(memory(tmp->rb_left), memory(node->rb_right))) by { known(); }
-                                                                have at(before_inner_child_links, separate(memory(tmp->rb_left), memory(tmp->__rb_parent_color))) by { known(); }
-                                                                have at(before_inner_child_links, tmp->rb_right == bx->rb_right) by { known(); }
-                                                                have at(before_inner_child_links, separate(memory(tmp->rb_right), memory(parent->rb_left))) by { known(); }
-                                                                have at(before_inner_child_links, separate(memory(tmp->rb_right), memory(node->rb_right))) by { known(); }
-                                                                have at(before_inner_child_links, separate(memory(tmp->rb_right), memory(tmp->__rb_parent_color))) by { known(); }
-                                                                have rb_root_black(RbTree::Node(bx, bp, bcol, bl, br)) == 1 by {
-                                                                    rewrite(RbTree::Node(bx, bp, bcol, bl, br), nright);
-                                                                    known();
-                                                                }
-                                                                have color_bit(bcol) == 1 by {
-                                                                    apply(rb_root_black_node_color_bit(bx, bp, bcol, bl, br)) using {
-                                                                        rb_root_black(RbTree::Node(bx, bp, bcol, bl, br)) == 1;
+                                                            match InsertParent::To(node->rb_left) {
+                                                                InsertParent::To(original_left) => {
+                                                                    have separate(memory(((&gparent) as (uint8 *))[0..8]), memory(node->rb_right)) by known();
+                                                                    have separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_right)) by known();
+                                                                    have contains(at(before_gparent_call, load_tag), statement(1).statement(2).call(0).footprint) by known();
+                                                                    apply(separation::contains_refl(memory(node->rb_right))) using {};
+                                                                    apply(separation::separate_restrict(at(before_gparent_call, load_tag), memory(node->rb_right), statement(1).statement(2).call(0).footprint, memory(node->rb_right))) using {
+                                                                        at(before_gparent_call, separate(load_tag, memory(node->rb_right)));
+                                                                        contains(at(before_gparent_call, load_tag), statement(1).statement(2).call(0).footprint);
+                                                                        contains(memory(node->rb_right), memory(node->rb_right));
                                                                     };
-                                                                    known();
-                                                                }
-                                                                have rb_reparent(nright, cid) == RbTree::Node(bx, cid, bcol, bl, br) by {
-                                                                    rewrite(nright, RbTree::Node(bx, bp, bcol, bl, br));
-                                                                    unfold(rb_reparent(RbTree::Node(bx, bp, bcol, bl, br), cid)); normalize();
-                                                                }
-                                                                step();
-                                                                step();
-                                                                step();
-                                                                step();
-                                                                transport(at(before_inner_child_links, tmp->rb_left == bx->rb_left), tmp->rb_left == at(before_inner_child_links, bx->rb_left)) using {
-                                                                    at(before_inner_child_links, tmp->rb_left == bx->rb_left);
-                                                                    at(before_inner_child_links, separate(memory(tmp->rb_left), memory(parent->rb_left)));
-                                                                    at(before_inner_child_links, separate(memory(tmp->rb_left), memory(node->rb_right)));
-                                                                    at(before_inner_child_links, separate(memory(tmp->rb_left), memory(tmp->__rb_parent_color)));
-                                                                };
-                                                                transport(at(before_inner_child_links, tmp->rb_right == bx->rb_right), tmp->rb_right == at(before_inner_child_links, bx->rb_right)) using {
-                                                                    at(before_inner_child_links, tmp->rb_right == bx->rb_right);
-                                                                    at(before_inner_child_links, separate(memory(tmp->rb_right), memory(parent->rb_left)));
-                                                                    at(before_inner_child_links, separate(memory(tmp->rb_right), memory(node->rb_right)));
-                                                                    at(before_inner_child_links, separate(memory(tmp->rb_right), memory(tmp->__rb_parent_color)));
-                                                                };
-                                                                transport(at(before_inner_parent_right, parent->rb_right == parent->rb_right), parent->rb_right == at(before_inner_parent_right, parent->rb_right)) using {
-                                                                    at(before_inner_parent_right, parent->rb_right == parent->rb_right);
-                                                                    separate(memory(parent->rb_right), memory(parent->rb_left));
-                                                                    separate(memory(parent->rb_right), memory(node->rb_right));
-                                                                    separate(memory(parent->rb_right), memory(tmp->__rb_parent_color));
-                                                                };
-                                                                transport(at(before_inner_node_left, node->rb_left == node->rb_left), node->rb_left == at(before_inner_node_left, node->rb_left)) using {
-                                                                    at(before_inner_node_left, node->rb_left == node->rb_left);
-                                                                    separate(memory(node->rb_left), memory(parent->rb_left));
-                                                                    separate(memory(node->rb_left), memory(node->rb_right));
-                                                                    separate(memory(node->rb_left), memory(tmp->__rb_parent_color));
-                                                                };
-                                                                have parent->rb_left == tmp by { known(); }
-                                                                transport(at(before_triangle_grandparent_tag, (gparent->__rb_parent_color & 1) == color_bit(ucolor)), (gparent->__rb_parent_color & 1) == color_bit(ucolor)) using {
-                                                                    at(before_triangle_grandparent_tag, (gparent->__rb_parent_color & 1) == color_bit(ucolor));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(parent->rb_left));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(node->rb_right));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(tmp->__rb_parent_color));
-                                                                };
-                                                                transport(at(before_triangle_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) using {
-                                                                    at(before_triangle_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
-                                                                    separate(memory(gparent->__rb_parent_color), memory(parent->rb_left));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(node->rb_right));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(tmp->__rb_parent_color));
-                                                                };
-                                                                transport(at(before_triangle_grandparent_tag, gparent->rb_left == at(triangle_uncle_pointer, tmp)), gparent->rb_left == at(triangle_uncle_pointer, tmp)) using {
-                                                                    at(before_triangle_grandparent_tag, gparent->rb_left == at(triangle_uncle_pointer, tmp));
-                                                                    separate(memory(gparent->rb_left), memory(parent->rb_left));
-                                                                    separate(memory(gparent->rb_left), memory(node->rb_right));
-                                                                    separate(memory(gparent->rb_left), memory(tmp->__rb_parent_color));
-                                                                };
-                                                                have node->rb_right == parent by { normalize(); }
-                                                                let bn = fold(rb_at(tmp), { model: RbTree::Node(bx, cid, bcol, bl, br) }, { left: bl_at, right: br_at });
-                                                                have bn.model == rb_reparent(nright, cid) by {
-                                                                    rewrite(rb_reparent(nright, cid), RbTree::Node(bx, cid, bcol, bl, br));
-                                                                    solve();
-                                                                }
-                                                            },
-                                                        }
-                                                        mark before_inner_parent_color;
-                                                        have at(before_inner_parent_color, node->rb_right == parent) by { known(); }
-                                                        have separate(memory(node->rb_right), memory(parent->__rb_parent_color)) by { known(); }
-                                                        have at(before_inner_parent_color, gparent->rb_left == at(triangle_uncle_pointer, tmp)) by { known(); }
-                                                        have separate(memory(gparent->rb_left), memory(parent->__rb_parent_color)) by { known(); }
-                                                        have at(before_inner_parent_color, (gparent->__rb_parent_color & 1) == color_bit(ucolor)) by { known(); }
-                                                        have at(before_inner_parent_color, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) by { known(); }
-                                                        have separate(memory(gparent->__rb_parent_color), memory(parent->__rb_parent_color)) by { known(); }
-                                                        have at(before_inner_parent_color, parent->rb_left == tmp) by { known(); }
-                                                        have at(before_inner_parent_color, node->rb_left == at(before_inner_node_left, node->rb_left)) by { known(); }
-                                                        have separate(memory(node->rb_left), memory(parent->__rb_parent_color)) by { known(); }
-                                                        have at(before_inner_parent_color, parent->rb_right == at(before_inner_parent_right, parent->rb_right)) by { known(); }
-                                                        have separate(memory(parent->rb_right), memory(parent->__rb_parent_color)) by { known(); }
-                                                        have separate(memory(parent->rb_left), memory(parent->__rb_parent_color)) by { known(); }
-                                                        step();
-                                                        transport(at(before_inner_parent_color, parent->rb_left == tmp), parent->rb_left == tmp) using {
-                                                            at(before_inner_parent_color, parent->rb_left == tmp);
-                                                            separate(memory(parent->rb_left), memory(parent->__rb_parent_color));
-                                                        };
-                                                        transport(at(before_inner_parent_color, parent->rb_right == at(before_inner_parent_right, parent->rb_right)), parent->rb_right == at(before_inner_parent_right, parent->rb_right)) using {
-                                                            at(before_inner_parent_color, parent->rb_right == at(before_inner_parent_right, parent->rb_right));
-                                                            separate(memory(parent->rb_right), memory(parent->__rb_parent_color));
-                                                        };
-                                                        transport(at(before_inner_parent_color, node->rb_left == at(before_inner_node_left, node->rb_left)), node->rb_left == at(before_inner_node_left, node->rb_left)) using {
-                                                            at(before_inner_parent_color, node->rb_left == at(before_inner_node_left, node->rb_left));
-                                                            separate(memory(node->rb_left), memory(parent->__rb_parent_color));
-                                                        };
-                                                        transport(at(before_inner_parent_color, (gparent->__rb_parent_color & 1) == color_bit(ucolor)), (gparent->__rb_parent_color & 1) == color_bit(ucolor)) using {
-                                                            at(before_inner_parent_color, (gparent->__rb_parent_color & 1) == color_bit(ucolor));
-                                                            separate(memory(gparent->__rb_parent_color), memory(parent->__rb_parent_color));
-                                                        };
-                                                        transport(at(before_inner_parent_color, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) using {
-                                                            at(before_inner_parent_color, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
-                                                            separate(memory(gparent->__rb_parent_color), memory(parent->__rb_parent_color));
-                                                        };
-                                                        transport(at(before_inner_parent_color, gparent->rb_left == at(triangle_uncle_pointer, tmp)), gparent->rb_left == at(triangle_uncle_pointer, tmp)) using {
-                                                            at(before_inner_parent_color, gparent->rb_left == at(triangle_uncle_pointer, tmp));
-                                                            separate(memory(gparent->rb_left), memory(parent->__rb_parent_color));
-                                                        };
-                                                        transport(at(before_inner_parent_color, node->rb_right == parent), node->rb_right == parent) using {
-                                                            at(before_inner_parent_color, node->rb_right == parent);
-                                                            separate(memory(node->rb_right), memory(parent->__rb_parent_color));
-                                                        };
-                                                        have rb_parent_is(rb_reparent(nright, cid), cid) == 1 by {
-                                                            apply(rb_reparent_parent_is(nright, cid));
-                                                            known();
-                                                        }
-                                                        let pn = fold(rb_at(parent), { model: RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib) }, { left: bn, right: cs });
-                                                        mark triangle_old_parent;
-                                                        have at(triangle_old_parent, node->rb_right == parent) by { known(); }
-                                                        step();
-                                                        step();
-                                                        mark before_outer_grandparent_tag;
-                                                        have at(before_outer_grandparent_tag, (gparent->__rb_parent_color & 1) == color_bit(ucolor)) by { known(); }
-                                                        have at(before_outer_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) by { known(); }
-                                                        have separate(memory(gparent->__rb_parent_color), memory(gparent->rb_right)) by { known(); }
-                                                        have separate(memory(gparent->__rb_parent_color), memory(parent->rb_left)) by { known(); }
-                                                        have at(before_outer_grandparent_tag, gparent->rb_left == at(triangle_uncle_pointer, tmp)) by { known(); }
-                                                        have separate(memory(gparent->rb_left), memory(gparent->rb_right)) by { known(); }
-                                                        have separate(memory(gparent->rb_left), memory(parent->rb_left)) by { known(); }
-                                                        have at(before_outer_grandparent_tag, node->rb_right == at(triangle_old_parent, parent)) by { known(); }
-                                                        have separate(memory(node->rb_right), memory(gparent->rb_right)) by { known(); }
-                                                        have separate(memory(node->rb_right), memory(parent->rb_left)) by { known(); }
-                                                        match nl_at.model ensuring {
-                                                            owns rn: rb_at(tmp);
-                                                            fact rn.model == rb_reparent(nleft, gparent);
-                                                            fact node->rb_right == at(triangle_old_parent, parent);
-                                                            fact gparent->rb_left == at(triangle_uncle_pointer, tmp);
-                                                            fact (gparent->__rb_parent_color & 1) == color_bit(ucolor);
-                                                            fact ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp;
-                                                        } {
-                                                            RbTree::Empty => {
-                                                                unfold(nl_at);
-                                                                step();
-                                                                step();
-                                                                step();
-                                                                step();
-                                                                step();
-                                                                have rb_reparent(nleft, gparent) == RbTree::Empty by {
-                                                                    rewrite(nleft, RbTree::Empty);
-                                                                    unfold(rb_reparent(RbTree::Empty, gparent)); normalize();
-                                                                }
-                                                                transport(at(before_outer_grandparent_tag, (gparent->__rb_parent_color & 1) == color_bit(ucolor)), (gparent->__rb_parent_color & 1) == color_bit(ucolor)) using {
-                                                                    at(before_outer_grandparent_tag, (gparent->__rb_parent_color & 1) == color_bit(ucolor));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(gparent->rb_right));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(parent->rb_left));
-                                                                };
-                                                                transport(at(before_outer_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) using {
-                                                                    at(before_outer_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
-                                                                    separate(memory(gparent->__rb_parent_color), memory(gparent->rb_right));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(parent->rb_left));
-                                                                };
-                                                                transport(at(before_outer_grandparent_tag, gparent->rb_left == at(triangle_uncle_pointer, tmp)), gparent->rb_left == at(triangle_uncle_pointer, tmp)) using {
-                                                                    at(before_outer_grandparent_tag, gparent->rb_left == at(triangle_uncle_pointer, tmp));
-                                                                    separate(memory(gparent->rb_left), memory(gparent->rb_right));
-                                                                    separate(memory(gparent->rb_left), memory(parent->rb_left));
-                                                                };
-                                                                transport(at(before_outer_grandparent_tag, node->rb_right == at(triangle_old_parent, parent)), node->rb_right == at(triangle_old_parent, parent)) using {
-                                                                    at(before_outer_grandparent_tag, node->rb_right == at(triangle_old_parent, parent));
-                                                                    separate(memory(node->rb_right), memory(gparent->rb_right));
-                                                                    separate(memory(node->rb_right), memory(parent->rb_left));
-                                                                };
-                                                                let rn = fold(rb_at(tmp), { model: RbTree::Empty });
-                                                                have rn.model == rb_reparent(nleft, gparent) by {
-                                                                    rewrite(rb_reparent(nleft, gparent), RbTree::Empty);
-                                                                    solve();
-                                                                }
-                                                            },
-                                                            RbTree::Node(rx, rp, rcol, rl, rr) => {
-                                                                let { left: rl_at, right: rr_at } = unfold(nl_at);
-                                                                step();
-                                                                have separate(memory(node->rb_right), memory(tmp->__rb_parent_color)) by { known(); }
-                                                                have separate(memory(gparent->rb_left), memory(tmp->__rb_parent_color)) by { known(); }
-                                                                have separate(memory(gparent->__rb_parent_color), memory(tmp->__rb_parent_color)) by { known(); }
-                                                                have rb_root_black(RbTree::Node(rx, rp, rcol, rl, rr)) == 1 by {
-                                                                    rewrite(RbTree::Node(rx, rp, rcol, rl, rr), nleft);
-                                                                    known();
-                                                                }
-                                                                have color_bit(rcol) == 1 by {
-                                                                    apply(rb_root_black_node_color_bit(rx, rp, rcol, rl, rr)) using {
-                                                                        rb_root_black(RbTree::Node(rx, rp, rcol, rl, rr)) == 1;
+                                                                    have at(statement(1).statement(2).call(0).exit, node->rb_right) == at(before_gparent_call, node->rb_right) by { preserve(separate(statement(1).statement(2).call(0).footprint, memory(node->rb_right))); }
+                                                                    have separate(statement(1).statement(2).assignment(gparent, 0).footprint, memory(node->rb_right)) by { normalize() using { separate(memory(((&gparent) as (uint8 *))[0..8]), memory(node->rb_right)); }; }
+                                                                    have at(statement(1).statement(2).assignment(gparent, 0).exit, node->rb_right) == at(statement(1).statement(2).assignment(gparent, 0).entry, node->rb_right) by { preserve(separate(statement(1).statement(2).assignment(gparent, 0).footprint, memory(node->rb_right))); }
+                                                                    have at(statement(1).statement(2).assignment(gparent, 0).entry, node->rb_right) == at(statement(1).statement(2).call(0).exit, node->rb_right) by known();
+                                                                    have separate(statement(1).statement(3).footprint, memory(node->rb_right)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_right)); }; }
+                                                                    have at(statement(1).statement(3).exit, node->rb_right) == at(statement(1).statement(3).entry, node->rb_right) by { preserve(separate(statement(1).statement(3).footprint, memory(node->rb_right))); }
+                                                                    have at(statement(1).statement(3).entry, node->rb_right) == at(statement(1).statement(2).assignment(gparent, 0).exit, node->rb_right) by known();
+
+                                                                    have separate(memory(((&gparent) as (uint8 *))[0..8]), memory(node->rb_left)) by known();
+                                                                    have separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_left)) by known();
+                                                                    have contains(at(before_gparent_call, load_tag), statement(1).statement(2).call(0).footprint) by known();
+                                                                    apply(separation::contains_refl(memory(node->rb_left))) using {};
+                                                                    apply(separation::separate_restrict(at(before_gparent_call, load_tag), memory(node->rb_left), statement(1).statement(2).call(0).footprint, memory(node->rb_left))) using {
+                                                                        at(before_gparent_call, separate(load_tag, memory(node->rb_left)));
+                                                                        contains(at(before_gparent_call, load_tag), statement(1).statement(2).call(0).footprint);
+                                                                        contains(memory(node->rb_left), memory(node->rb_left));
                                                                     };
-                                                                    known();
-                                                                }
-                                                                have rb_reparent(nleft, gparent) == RbTree::Node(rx, gparent, rcol, rl, rr) by {
-                                                                    rewrite(nleft, RbTree::Node(rx, rp, rcol, rl, rr));
-                                                                    unfold(rb_reparent(RbTree::Node(rx, rp, rcol, rl, rr), gparent)); normalize();
-                                                                }
-                                                                step();
-                                                                step();
-                                                                step();
-                                                                step();
-                                                                transport(at(before_outer_grandparent_tag, (gparent->__rb_parent_color & 1) == color_bit(ucolor)), (gparent->__rb_parent_color & 1) == color_bit(ucolor)) using {
-                                                                    at(before_outer_grandparent_tag, (gparent->__rb_parent_color & 1) == color_bit(ucolor));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(gparent->rb_right));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(parent->rb_left));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(tmp->__rb_parent_color));
-                                                                };
-                                                                transport(at(before_outer_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) using {
-                                                                    at(before_outer_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
-                                                                    separate(memory(gparent->__rb_parent_color), memory(gparent->rb_right));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(parent->rb_left));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(tmp->__rb_parent_color));
-                                                                };
-                                                                transport(at(before_outer_grandparent_tag, gparent->rb_left == at(triangle_uncle_pointer, tmp)), gparent->rb_left == at(triangle_uncle_pointer, tmp)) using {
-                                                                    at(before_outer_grandparent_tag, gparent->rb_left == at(triangle_uncle_pointer, tmp));
-                                                                    separate(memory(gparent->rb_left), memory(gparent->rb_right));
-                                                                    separate(memory(gparent->rb_left), memory(parent->rb_left));
-                                                                    separate(memory(gparent->rb_left), memory(tmp->__rb_parent_color));
-                                                                };
-                                                                transport(at(before_outer_grandparent_tag, node->rb_right == at(triangle_old_parent, parent)), node->rb_right == at(triangle_old_parent, parent)) using {
-                                                                    at(before_outer_grandparent_tag, node->rb_right == at(triangle_old_parent, parent));
-                                                                    separate(memory(node->rb_right), memory(gparent->rb_right));
-                                                                    separate(memory(node->rb_right), memory(parent->rb_left));
-                                                                    separate(memory(node->rb_right), memory(tmp->__rb_parent_color));
-                                                                };
-                                                                let rn = fold(rb_at(tmp), { model: RbTree::Node(rx, gparent, rcol, rl, rr) }, { left: rl_at, right: rr_at });
-                                                                have rn.model == rb_reparent(nleft, gparent) by {
-                                                                    rewrite(rb_reparent(nleft, gparent), RbTree::Node(rx, gparent, rcol, rl, rr));
-                                                                    solve();
-                                                                }
-                                                            },
-                                                        }
-                                                        have (gparent->__rb_parent_color & 1) == 1 by {
-                                                            rewrite((gparent->__rb_parent_color & 1), color_bit(ucolor));
-                                                            rewrite(ucolor, Color::Black);
-                                                            unfold(color_bit(Color::Black));
-                                                            solve();
-                                                        }
-                                                        mark before_triangle_parent_changes;
-                                                        have at(before_triangle_parent_changes, gparent->rb_left == at(triangle_uncle_pointer, tmp)) by { known(); }
-                                                        have separate(memory(gparent->rb_left), memory(gparent->__rb_parent_color)) by { known(); }
-                                                        have separate(memory(gparent->rb_left), memory(parent->__rb_parent_color)) by { known(); }
-                                                        have at(before_triangle_parent_changes, node->rb_right == at(triangle_old_parent, parent)) by { known(); }
-                                                        have separate(memory(node->rb_right), memory(gparent->__rb_parent_color)) by { known(); }
-                                                        have separate(memory(node->rb_right), memory(parent->__rb_parent_color)) by { known(); }
-                                                        match uu.model ensuring {
-                                                            owns c: ctx_at(node, root);
-                                                            fact c.model == uup;
-                                                            fact node->rb_right == at(triangle_old_parent, parent);
-                                                            fact gparent->rb_left == at(triangle_uncle_pointer, tmp);
-                                                        } {
-                                                            Context::Top => {
-                                                                have ctx_node_is(Context::Top, ugp) == 1 by {
-                                                                    rewrite(Context::Top, uu.model);
-                                                                    rewrite(uu.model, uup);
-                                                                    known();
-                                                                }
-                                                                have ugp == 0 by {
-                                                                    apply(ctx_node_is_top_null(ugp)) using {
-                                                                        ctx_node_is(Context::Top, ugp) == 1;
+                                                                    have at(statement(1).statement(2).call(0).exit, node->rb_left) == at(before_gparent_call, node->rb_left) by { preserve(separate(statement(1).statement(2).call(0).footprint, memory(node->rb_left))); }
+                                                                    have separate(statement(1).statement(2).assignment(gparent, 0).footprint, memory(node->rb_left)) by { normalize() using { separate(memory(((&gparent) as (uint8 *))[0..8]), memory(node->rb_left)); }; }
+                                                                    have at(statement(1).statement(2).assignment(gparent, 0).exit, node->rb_left) == at(statement(1).statement(2).assignment(gparent, 0).entry, node->rb_left) by { preserve(separate(statement(1).statement(2).assignment(gparent, 0).footprint, memory(node->rb_left))); }
+                                                                    have at(statement(1).statement(2).assignment(gparent, 0).entry, node->rb_left) == at(statement(1).statement(2).call(0).exit, node->rb_left) by known();
+                                                                    have separate(statement(1).statement(3).footprint, memory(node->rb_left)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_left)); }; }
+                                                                    have at(statement(1).statement(3).exit, node->rb_left) == at(statement(1).statement(3).entry, node->rb_left) by { preserve(separate(statement(1).statement(3).footprint, memory(node->rb_left))); }
+                                                                    have at(statement(1).statement(3).entry, node->rb_left) == at(statement(1).statement(2).assignment(gparent, 0).exit, node->rb_left) by known();
+
+                                                                    have (node->__rb_parent_color & 1) == color_bit(Color::Red) by {
+                                                                        rewrite(Color::Red, ncolor);
+                                                                        known();
+                                                                    }
+                                                                    have at(triangle_before_uncle_load, node->rb_left) == at(statement(1).statement(3).exit, node->rb_left) by known();
+                                                                    have node->rb_left == at(before_gparent_call, node->rb_left) by known();
+                                                                    let inner_tag = fold(insert_parent_tag(gparent, ugp), { color: ucolor });
+                                                                    let inner_uncle = fold(insert_left_link(gparent), { link: InsertLink::To(at(triangle_uncle_pointer, tmp)) });
+                                                                    step();
+                                                                    step();
+                                                                    step();
+                                                                    have separate(statement(1).statement(4).statement(11).footprint, memory(node->rb_left)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_left)); }; }
+                                                                    have at(statement(1).statement(4).statement(11).exit, node->rb_left) == at(statement(1).statement(4).statement(11).entry, node->rb_left) by { preserve(separate(statement(1).statement(4).statement(11).footprint, memory(node->rb_left))); }
+                                                                    have at(statement(1).statement(4).statement(11).entry, node->rb_left) == at(triangle_uncle_pointer, node->rb_left) by known();
+                                                                    have separate(memory(parent->rb_left), memory(node->rb_right)) by { known(); }
+                                                                    mark before_inner_parent_right;
+                                                                    have at(before_inner_parent_right, parent->rb_right == parent->rb_right) by { normalize(); }
+                                                                    have separate(memory(parent->rb_right), memory(parent->rb_left)) by { known(); }
+                                                                    have separate(memory(parent->rb_right), memory(node->rb_right)) by { known(); }
+                                                                    mark before_inner_node_left;
+                                                                    have at(before_inner_node_left, node->rb_left == node->rb_left) by { normalize(); }
+                                                                    have separate(memory(node->rb_left), memory(parent->rb_left)) by { known(); }
+                                                                    have separate(memory(node->rb_left), memory(node->rb_right)) by { known(); }
+                                                                    let inner_parent_other = fold(insert_right_link(parent), { link: InsertLink::To(parent->rb_right) });
+                                                                    let inner_node_other = fold(insert_left_link(node), { link: InsertLink::To(original_left) });
+                                                                    match nr_at.model ensuring {
+                                                                        owns bn: rb_at(tmp);
+                                                                        owns inner_node_other: insert_left_link(node);
+                                                                        fact inner_node_other.link == InsertLink::To(original_left);
+                                                                        owns inner_tag: insert_parent_tag(gparent, ugp);
+                                                                        fact inner_tag.color == ucolor;
+                                                                        fact bn.model == rb_reparent(nright, cid);
+                                                                        fact node->rb_right == parent;
+                                                                        fact gparent->rb_left == at(triangle_uncle_pointer, tmp);
+
+                                                                        fact parent->rb_left == tmp;
+                                                                        fact parent->rb_right == at(before_inner_parent_right, parent->rb_right);
+                                                                    } {
+                                                                        RbTree::Empty => {
+                                                                            unfold(nr_at);
+                                                                            step();
+                                                                            step();
+                                                                            step();
+                                                                            step();
+                                                                            step();
+                                                                            have rb_reparent(nright, cid) == RbTree::Empty by {
+                                                                                rewrite(nright, RbTree::Empty);
+                                                                                unfold(rb_reparent(RbTree::Empty, cid)); normalize();
+                                                                            }
+                                                                            unfold(inner_parent_other);
+                                                                            have parent->rb_right == at(before_inner_parent_right, parent->rb_right) by known();
+                                                                            have parent->rb_left == tmp by { known(); }
+                                                                            unfold(inner_uncle);
+                                                                            have gparent->rb_left == at(triangle_uncle_pointer, tmp) by known();
+                                                                            have node->rb_right == parent by { normalize(); }
+                                                                            let bn = fold(rb_at(tmp), { model: RbTree::Empty });
+                                                                            have bn.model == rb_reparent(nright, cid) by {
+                                                                                rewrite(rb_reparent(nright, cid), RbTree::Empty);
+                                                                                solve();
+                                                                            }
+                                                                        },
+                                                                        RbTree::Node(bx, bp, bcol, bl, br) => {
+                                                                            let { left: bl_at, right: br_at } = unfold(nr_at);
+                                                                            step();
+                                                                            mark before_inner_child_links;
+                                                                            have separate(memory(node->rb_right), memory(tmp->__rb_parent_color)) by { known(); }
+
+                                                                            have separate(memory(parent->rb_left), memory(tmp->__rb_parent_color)) by { known(); }
+                                                                            have at(before_inner_child_links, tmp->rb_left == bx->rb_left) by { known(); }
+                                                                            have at(before_inner_child_links, separate(memory(tmp->rb_left), memory(parent->rb_left))) by { known(); }
+                                                                            have at(before_inner_child_links, separate(memory(tmp->rb_left), memory(node->rb_right))) by { known(); }
+                                                                            have at(before_inner_child_links, separate(memory(tmp->rb_left), memory(tmp->__rb_parent_color))) by { known(); }
+                                                                            have at(before_inner_child_links, tmp->rb_right == bx->rb_right) by { known(); }
+                                                                            have at(before_inner_child_links, separate(memory(tmp->rb_right), memory(parent->rb_left))) by { known(); }
+                                                                            have at(before_inner_child_links, separate(memory(tmp->rb_right), memory(node->rb_right))) by { known(); }
+                                                                            have at(before_inner_child_links, separate(memory(tmp->rb_right), memory(tmp->__rb_parent_color))) by { known(); }
+                                                                            have rb_root_black(RbTree::Node(bx, bp, bcol, bl, br)) == 1 by {
+                                                                                rewrite(RbTree::Node(bx, bp, bcol, bl, br), nright);
+                                                                                known();
+                                                                            }
+                                                                            have color_bit(bcol) == 1 by {
+                                                                                apply(rb_root_black_node_color_bit(bx, bp, bcol, bl, br)) using {
+                                                                                    rb_root_black(RbTree::Node(bx, bp, bcol, bl, br)) == 1;
+                                                                                };
+                                                                                known();
+                                                                            }
+                                                                            have rb_reparent(nright, cid) == RbTree::Node(bx, cid, bcol, bl, br) by {
+                                                                                rewrite(nright, RbTree::Node(bx, bp, bcol, bl, br));
+                                                                                unfold(rb_reparent(RbTree::Node(bx, bp, bcol, bl, br), cid)); normalize();
+                                                                            }
+                                                                            step();
+                                                                            let inner_new_parent_focus = fold(insert_left_link(parent), { link: InsertLink::To(tmp) });
+                                                                            step();
+                                                                            let inner_new_node_focus = fold(insert_right_link(node), { link: InsertLink::To(parent) });
+                                                                            step();
+                                                                            step();
+                                                                            transport(at(before_inner_child_links, tmp->rb_left == bx->rb_left), tmp->rb_left == at(before_inner_child_links, bx->rb_left)) using {
+                                                                                at(before_inner_child_links, tmp->rb_left == bx->rb_left);
+                                                                                at(before_inner_child_links, separate(memory(tmp->rb_left), memory(parent->rb_left)));
+                                                                                at(before_inner_child_links, separate(memory(tmp->rb_left), memory(node->rb_right)));
+                                                                                at(before_inner_child_links, separate(memory(tmp->rb_left), memory(tmp->__rb_parent_color)));
+                                                                            };
+                                                                            transport(at(before_inner_child_links, tmp->rb_right == bx->rb_right), tmp->rb_right == at(before_inner_child_links, bx->rb_right)) using {
+                                                                                at(before_inner_child_links, tmp->rb_right == bx->rb_right);
+                                                                                at(before_inner_child_links, separate(memory(tmp->rb_right), memory(parent->rb_left)));
+                                                                                at(before_inner_child_links, separate(memory(tmp->rb_right), memory(node->rb_right)));
+                                                                                at(before_inner_child_links, separate(memory(tmp->rb_right), memory(tmp->__rb_parent_color)));
+                                                                            };
+                                                                            unfold(inner_parent_other);
+                                                                            have parent->rb_right == at(before_inner_parent_right, parent->rb_right) by known();
+                                                                            unfold(inner_new_parent_focus);
+                                                                            have parent->rb_left == tmp by { known(); }
+                                                                            unfold(inner_uncle);
+                                                                            have gparent->rb_left == at(triangle_uncle_pointer, tmp) by known();
+                                                                            unfold(inner_new_node_focus);
+                                                                            have node->rb_right == parent by { known(); }
+                                                                            have aligned(parent, 8) by { rewrite(parent, cid); known(); }
+                                                                            have tmp->__rb_parent_color == (address(parent) | 1) by known();
+                                                                            have (address(parent) | 1) == address(parent) + 1 by { normalize() using { aligned(parent, 8); }; }
+                                                                            have tmp->__rb_parent_color == address(parent) + 1 by known();
+                                                                            have (tmp->__rb_parent_color & 1) == color_bit(bcol) by { rewrite(color_bit(bcol), 1); known(); }
+                                                                            have tmp->__rb_parent_color == address(cid) + (tmp->__rb_parent_color & 1) by { rewrite(cid, parent); known(); }
+                                                                            have ((tmp->__rb_parent_color & ~3) as (struct rb_node *)) == cid by { rewrite(cid, parent); known(); }
+                                                                            let bn = fold(rb_at(tmp), { model: RbTree::Node(bx, cid, bcol, bl, br) }, { left: bl_at, right: br_at });
+                                                                            have bn.model == rb_reparent(nright, cid) by {
+                                                                                rewrite(rb_reparent(nright, cid), RbTree::Node(bx, cid, bcol, bl, br));
+                                                                                solve();
+                                                                            }
+                                                                        },
+                                                                    }
+                                                                    mark before_inner_parent_color;
+                                                                    have at(before_inner_parent_color, node->rb_right == parent) by { known(); }
+                                                                    have separate(memory(node->rb_right), memory(parent->__rb_parent_color)) by { known(); }
+                                                                    have at(before_inner_parent_color, gparent->rb_left == at(triangle_uncle_pointer, tmp)) by { known(); }
+                                                                    have separate(memory(gparent->rb_left), memory(parent->__rb_parent_color)) by { known(); }
+
+                                                                    have at(before_inner_parent_color, parent->rb_left == tmp) by { known(); }
+
+                                                                    have at(before_inner_parent_color, parent->rb_right == at(before_inner_parent_right, parent->rb_right)) by { known(); }
+                                                                    have separate(memory(parent->rb_right), memory(parent->__rb_parent_color)) by { known(); }
+                                                                    have separate(memory(parent->rb_left), memory(parent->__rb_parent_color)) by { known(); }
+                                                                    step();
+
+                                                                    transport(at(before_inner_parent_color, parent->rb_left == tmp), parent->rb_left == tmp) using {
+                                                                        at(before_inner_parent_color, parent->rb_left == tmp);
+                                                                        separate(memory(parent->rb_left), memory(parent->__rb_parent_color));
                                                                     };
-                                                                    known();
-                                                                }
-                                                                unfold(uu);
-                                                                have separate(memory(gparent->rb_left), memory(root->rb_node)) by { known(); }
-                                                                have separate(memory(node->rb_right), memory(root->rb_node)) by { known(); }
-                                                                step();
-                                                                transport(at(before_triangle_parent_changes, gparent->rb_left == at(triangle_uncle_pointer, tmp)), gparent->rb_left == at(triangle_uncle_pointer, tmp)) using {
-                                                                    at(before_triangle_parent_changes, gparent->rb_left == at(triangle_uncle_pointer, tmp));
-                                                                    separate(memory(gparent->rb_left), memory(gparent->__rb_parent_color));
-                                                                    separate(memory(gparent->rb_left), memory(parent->__rb_parent_color));
-                                                                    separate(memory(gparent->rb_left), memory(root->rb_node));
-                                                                };
-                                                                transport(at(before_triangle_parent_changes, node->rb_right == at(triangle_old_parent, parent)), node->rb_right == at(triangle_old_parent, parent)) using {
-                                                                    at(before_triangle_parent_changes, node->rb_right == at(triangle_old_parent, parent));
-                                                                    separate(memory(node->rb_right), memory(gparent->__rb_parent_color));
-                                                                    separate(memory(node->rb_right), memory(parent->__rb_parent_color));
-                                                                    separate(memory(node->rb_right), memory(root->rb_node));
-                                                                };
-                                                                let c = fold(ctx_at(node, root), { model: Context::Top });
-                                                                have c.model == uup by { rewrite(uup, Context::Top); normalize(); }
-                                                            },
-                                                            Context::Left(xid, xgp, xcol, xsib, xup) => {
-                                                                have ctx_node_is(Context::Left(xid, xgp, xcol, xsib, xup), ugp) == 1 by {
-                                                                    rewrite(Context::Left(xid, xgp, xcol, xsib, xup), uu.model);
-                                                                    rewrite(uu.model, uup);
-                                                                    known();
-                                                                }
-                                                                have ugp == xid by {
-                                                                    apply(ctx_node_is_left_identity(xid, xgp, xcol, xsib, xup, ugp)) using {
-                                                                        ctx_node_is(Context::Left(xid, xgp, xcol, xsib, xup), ugp) == 1;
+                                                                    transport(at(before_inner_parent_color, parent->rb_right == at(before_inner_parent_right, parent->rb_right)), parent->rb_right == at(before_inner_parent_right, parent->rb_right)) using {
+                                                                        at(before_inner_parent_color, parent->rb_right == at(before_inner_parent_right, parent->rb_right));
+                                                                        separate(memory(parent->rb_right), memory(parent->__rb_parent_color));
                                                                     };
-                                                                    known();
-                                                                }
-                                                                let { sibling: xs, up: xu } = unfold(uu);
-                                                                have separate(memory(gparent->rb_left), memory(xid->rb_left)) by { known(); }
-                                                                have separate(memory(node->rb_right), memory(xid->rb_left)) by { known(); }
-                                                                have separate(memory(gparent->rb_left), memory(xid->rb_right)) by { known(); }
-                                                                have separate(memory(node->rb_right), memory(xid->rb_right)) by { known(); }
-                                                                step();
-                                                                transport(at(before_triangle_parent_changes, gparent->rb_left == at(triangle_uncle_pointer, tmp)), gparent->rb_left == at(triangle_uncle_pointer, tmp)) using {
-                                                                    at(before_triangle_parent_changes, gparent->rb_left == at(triangle_uncle_pointer, tmp));
-                                                                    separate(memory(gparent->rb_left), memory(gparent->__rb_parent_color));
-                                                                    separate(memory(gparent->rb_left), memory(parent->__rb_parent_color));
-                                                                    separate(memory(gparent->rb_left), memory(xid->rb_left));
-                                                                    separate(memory(gparent->rb_left), memory(xid->rb_right));
-                                                                };
-                                                                transport(at(before_triangle_parent_changes, node->rb_right == at(triangle_old_parent, parent)), node->rb_right == at(triangle_old_parent, parent)) using {
-                                                                    at(before_triangle_parent_changes, node->rb_right == at(triangle_old_parent, parent));
-                                                                    separate(memory(node->rb_right), memory(gparent->__rb_parent_color));
-                                                                    separate(memory(node->rb_right), memory(parent->__rb_parent_color));
-                                                                    separate(memory(node->rb_right), memory(xid->rb_left));
-                                                                    separate(memory(node->rb_right), memory(xid->rb_right));
-                                                                };
-                                                                let c = fold(ctx_at(node, root), { model: Context::Left(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
-                                                                have c.model == uup by { rewrite(uup, Context::Left(xid, xgp, xcol, xsib, xup)); normalize(); }
-                                                            },
-                                                            Context::Right(xid, xgp, xcol, xsib, xup) => {
-                                                                have ctx_node_is(Context::Right(xid, xgp, xcol, xsib, xup), ugp) == 1 by {
-                                                                    rewrite(Context::Right(xid, xgp, xcol, xsib, xup), uu.model);
-                                                                    rewrite(uu.model, uup);
-                                                                    known();
-                                                                }
-                                                                have ugp == xid by {
-                                                                    apply(ctx_node_is_right_identity(xid, xgp, xcol, xsib, xup, ugp)) using {
-                                                                        ctx_node_is(Context::Right(xid, xgp, xcol, xsib, xup), ugp) == 1;
+                                                                    transport(at(before_inner_parent_color, gparent->rb_left == at(triangle_uncle_pointer, tmp)), gparent->rb_left == at(triangle_uncle_pointer, tmp)) using {
+                                                                        at(before_inner_parent_color, gparent->rb_left == at(triangle_uncle_pointer, tmp));
+                                                                        separate(memory(gparent->rb_left), memory(parent->__rb_parent_color));
                                                                     };
-                                                                    known();
-                                                                }
-                                                                let { sibling: xs, up: xu } = unfold(uu);
-                                                                have separate(memory(gparent->rb_left), memory(xid->rb_left)) by { known(); }
-                                                                have separate(memory(node->rb_right), memory(xid->rb_left)) by { known(); }
-                                                                have separate(memory(gparent->rb_left), memory(xid->rb_right)) by { known(); }
-                                                                have separate(memory(node->rb_right), memory(xid->rb_right)) by { known(); }
-                                                                mark before_triangle_upper_link;
-                                                                have at(before_triangle_upper_link, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp) by { known(); }
-                                                                have separate(memory(xid->__rb_parent_color), memory(gparent->__rb_parent_color)) by { known(); }
-                                                                have separate(memory(xid->__rb_parent_color), memory(parent->__rb_parent_color)) by { known(); }
-                                                                have separate(memory(xid->__rb_parent_color), memory(xid->rb_left)) by { known(); }
-                                                                have separate(memory(xid->__rb_parent_color), memory(xid->rb_right)) by { known(); }
-                                                                match xsib ensuring {
-                                                                    owns xs: rb_at(xid->rb_left);
-                                                                    fact xs.model == xsib;
-                                                                    fact node->rb_right == at(triangle_old_parent, parent);
-                                                                    fact gparent->rb_left == at(triangle_uncle_pointer, tmp);
-                                                                    fact ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp;
-                                                                } {
-                                                                    RbTree::Empty => {
-                                                                        unfold(xs);
-                                                                        step();
-                                                                        transport(at(before_triangle_upper_link, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp), ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp) using {
-                                                                            at(before_triangle_upper_link, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp);
-                                                                            separate(memory(xid->__rb_parent_color), memory(gparent->__rb_parent_color));
-                                                                            separate(memory(xid->__rb_parent_color), memory(parent->__rb_parent_color));
-                                                                            separate(memory(xid->__rb_parent_color), memory(xid->rb_left));
-                                                                            separate(memory(xid->__rb_parent_color), memory(xid->rb_right));
-                                                                        };
-                                                                        transport(at(before_triangle_parent_changes, gparent->rb_left == at(triangle_uncle_pointer, tmp)), gparent->rb_left == at(triangle_uncle_pointer, tmp)) using {
-                                                                            at(before_triangle_parent_changes, gparent->rb_left == at(triangle_uncle_pointer, tmp));
-                                                                            separate(memory(gparent->rb_left), memory(gparent->__rb_parent_color));
-                                                                            separate(memory(gparent->rb_left), memory(parent->__rb_parent_color));
-                                                                            separate(memory(gparent->rb_left), memory(xid->rb_left));
-                                                                            separate(memory(gparent->rb_left), memory(xid->rb_right));
-                                                                        };
-                                                                        transport(at(before_triangle_parent_changes, node->rb_right == at(triangle_old_parent, parent)), node->rb_right == at(triangle_old_parent, parent)) using {
-                                                                            at(before_triangle_parent_changes, node->rb_right == at(triangle_old_parent, parent));
-                                                                            separate(memory(node->rb_right), memory(gparent->__rb_parent_color));
-                                                                            separate(memory(node->rb_right), memory(parent->__rb_parent_color));
-                                                                            separate(memory(node->rb_right), memory(xid->rb_left));
-                                                                            separate(memory(node->rb_right), memory(xid->rb_right));
-                                                                        };
-                                                                        let xs = fold(rb_at(0), { model: xsib });
-                                                                    },
-                                                                    RbTree::Node(yid, yp, ycol, yl, yr) => {
-                                                                        let { left: yl_at, right: yr_at } = unfold(xs);
-                                                                        step();
-                                                                        transport(at(before_triangle_upper_link, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp), ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp) using {
-                                                                            at(before_triangle_upper_link, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp);
-                                                                            separate(memory(xid->__rb_parent_color), memory(gparent->__rb_parent_color));
-                                                                            separate(memory(xid->__rb_parent_color), memory(parent->__rb_parent_color));
-                                                                            separate(memory(xid->__rb_parent_color), memory(xid->rb_left));
-                                                                            separate(memory(xid->__rb_parent_color), memory(xid->rb_right));
-                                                                        };
-                                                                        transport(at(before_triangle_parent_changes, gparent->rb_left == at(triangle_uncle_pointer, tmp)), gparent->rb_left == at(triangle_uncle_pointer, tmp)) using {
-                                                                            at(before_triangle_parent_changes, gparent->rb_left == at(triangle_uncle_pointer, tmp));
-                                                                            separate(memory(gparent->rb_left), memory(gparent->__rb_parent_color));
-                                                                            separate(memory(gparent->rb_left), memory(parent->__rb_parent_color));
-                                                                            separate(memory(gparent->rb_left), memory(xid->rb_left));
-                                                                            separate(memory(gparent->rb_left), memory(xid->rb_right));
-                                                                        };
-                                                                        transport(at(before_triangle_parent_changes, node->rb_right == at(triangle_old_parent, parent)), node->rb_right == at(triangle_old_parent, parent)) using {
-                                                                            at(before_triangle_parent_changes, node->rb_right == at(triangle_old_parent, parent));
-                                                                            separate(memory(node->rb_right), memory(gparent->__rb_parent_color));
-                                                                            separate(memory(node->rb_right), memory(parent->__rb_parent_color));
-                                                                            separate(memory(node->rb_right), memory(xid->rb_left));
-                                                                            separate(memory(node->rb_right), memory(xid->rb_right));
-                                                                        };
-                                                                        let xs = fold(rb_at(yid), { model: xsib }, { left: yl_at, right: yr_at });
-                                                                    },
-                                                                }
-                                                                let c = fold(ctx_at(node, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
-                                                                have c.model == uup by { rewrite(uup, Context::Right(xid, xgp, xcol, xsib, xup)); normalize(); }
-                                                            },
-                                                        }
-                                                            have rb_parent_is(rb_reparent(nleft, gparent), gparent) == 1 by {
-                                                                apply(rb_reparent_parent_is(nleft, gparent));
-                                                                known();
+                                                                    transport(at(before_inner_parent_color, node->rb_right == parent), node->rb_right == parent) using {
+                                                                        at(before_inner_parent_color, node->rb_right == parent);
+                                                                        separate(memory(node->rb_right), memory(parent->__rb_parent_color));
+                                                                    };
+                                                                    have rb_parent_is(rb_reparent(nright, cid), cid) == 1 by {
+                                                                        apply(rb_reparent_parent_is(nright, cid));
+                                                                        known();
+                                                                    }
+                                                                    have node == nid by known();
+                                                                    have aligned(node, 8) by known();
+                                                                    have parent->__rb_parent_color == address(node) by known();
+                                                                    have (parent->__rb_parent_color & 1) == 0 by known();
+                                                                    have parent->__rb_parent_color == address(nid) + (parent->__rb_parent_color & 1) by { rewrite(nid, node); known(); }
+                                                                    have ((parent->__rb_parent_color & ~3) as (struct rb_node *)) == nid by { rewrite(nid, node); known(); }
+                                                                    unfold(color_bit(Color::Red));
+                                                                    let pn = fold(rb_at(parent), { model: RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib) }, { left: bn, right: cs });
+                                                                    mark triangle_old_parent;
+                                                                    have at(triangle_old_parent, node->rb_right == parent) by { known(); }
+                                                                    step();
+                                                                    mark before_triangle_parent_assignment;
+
+                                                                    step();
+
+                                                                    unfold(inner_node_other);
+                                                                    have node->rb_left == original_left by known();
+                                                                    mark before_outer_grandparent_tag;
+
+                                                                    have at(before_outer_grandparent_tag, gparent->rb_left == at(triangle_uncle_pointer, tmp)) by { known(); }
+                                                                    have separate(memory(gparent->rb_left), memory(gparent->rb_right)) by { known(); }
+                                                                    have separate(memory(gparent->rb_left), memory(parent->rb_left)) by { known(); }
+                                                                    have at(before_outer_grandparent_tag, node->rb_right == at(triangle_old_parent, parent)) by { known(); }
+                                                                    have separate(memory(node->rb_right), memory(gparent->rb_right)) by { known(); }
+                                                                    have separate(memory(node->rb_right), memory(parent->rb_left)) by { known(); }
+                                                                    let triangle_outer_uncle = fold(insert_left_link(gparent), { link: InsertLink::To(at(triangle_uncle_pointer, tmp)) });
+                                                                    let triangle_outer_other = fold(insert_right_link(node), { link: InsertLink::To(at(triangle_old_parent, parent)) });
+                                                                    match nl_at.model ensuring {
+                                                                        owns rn: rb_at(tmp);
+                                                                        owns inner_tag: insert_parent_tag(gparent, ugp);
+                                                                        fact inner_tag.color == ucolor;
+                                                                        fact rn.model == rb_reparent(nleft, gparent);
+                                                                        fact gparent->rb_right == tmp;
+                                                                        fact parent->rb_left == gparent;
+                                                                        fact node->rb_right == at(triangle_old_parent, parent);
+                                                                        fact gparent->rb_left == at(triangle_uncle_pointer, tmp);
+
+                                                                    } {
+                                                                        RbTree::Empty => {
+                                                                            unfold(nl_at);
+                                                                            step();
+                                                                            step();
+                                                                            let triangle_new_gparent = fold(insert_right_link(gparent), { link: InsertLink::To(tmp) });
+                                                                            step();
+                                                                            let triangle_new_parent = fold(insert_left_link(parent), { link: InsertLink::To(gparent) });
+                                                                            step();
+                                                                            step();
+                                                                            have rb_reparent(nleft, gparent) == RbTree::Empty by {
+                                                                                rewrite(nleft, RbTree::Empty);
+                                                                                unfold(rb_reparent(RbTree::Empty, gparent)); normalize();
+                                                                            }
+                                                                            unfold(triangle_outer_uncle);
+                                                                            have gparent->rb_left == at(triangle_uncle_pointer, tmp) by known();
+                                                                            unfold(triangle_outer_other);
+                                                                            have node->rb_right == at(triangle_old_parent, parent) by known();
+                                                                            unfold(triangle_new_gparent);
+                                                                            have gparent->rb_right == tmp by known();
+                                                                            unfold(triangle_new_parent);
+                                                                            have parent->rb_left == gparent by known();
+                                                                            let rn = fold(rb_at(tmp), { model: RbTree::Empty });
+                                                                            have rn.model == rb_reparent(nleft, gparent) by {
+                                                                                rewrite(rb_reparent(nleft, gparent), RbTree::Empty);
+                                                                                solve();
+                                                                            }
+                                                                        },
+                                                                        RbTree::Node(rx, rp, rcol, rl, rr) => {
+                                                                            let { left: rl_at, right: rr_at } = unfold(nl_at);
+                                                                            have separate(memory(((&parent) as (uint8 *))[0..8]), memory(original_left->rb_left)) by known();
+                                                                            have separate(statement(1).statement(4).statement(12).statement(6).footprint, memory(original_left->rb_left)) by { normalize() using { separate(memory(((&parent) as (uint8 *))[0..8]), memory(original_left->rb_left)); }; }
+                                                                            have at(statement(1).statement(4).statement(12).statement(6).exit, original_left->rb_left) == at(statement(1).statement(4).statement(12).statement(6).entry, original_left->rb_left) by { preserve(separate(statement(1).statement(4).statement(12).statement(6).footprint, memory(original_left->rb_left))); }
+                                                                            have separate(memory(((&parent) as (uint8 *))[0..8]), memory(original_left->rb_right)) by known();
+                                                                            have separate(statement(1).statement(4).statement(12).statement(6).footprint, memory(original_left->rb_right)) by { normalize() using { separate(memory(((&parent) as (uint8 *))[0..8]), memory(original_left->rb_right)); }; }
+                                                                            have at(statement(1).statement(4).statement(12).statement(6).exit, original_left->rb_right) == at(statement(1).statement(4).statement(12).statement(6).entry, original_left->rb_right) by { preserve(separate(statement(1).statement(4).statement(12).statement(6).footprint, memory(original_left->rb_right))); }
+                                                                            have rx == original_left by known();
+
+                                                                            let outer_child_left = fold(insert_left_link(original_left), { link: InsertLink::To(original_left->rb_left) });
+                                                                            let outer_child_right = fold(insert_right_link(original_left), { link: InsertLink::To(original_left->rb_right) });
+                                                                            step();
+
+                                                                            have rb_root_black(RbTree::Node(rx, rp, rcol, rl, rr)) == 1 by {
+                                                                                rewrite(RbTree::Node(rx, rp, rcol, rl, rr), nleft);
+                                                                                known();
+                                                                            }
+                                                                            have color_bit(rcol) == 1 by {
+                                                                                apply(rb_root_black_node_color_bit(rx, rp, rcol, rl, rr)) using {
+                                                                                    rb_root_black(RbTree::Node(rx, rp, rcol, rl, rr)) == 1;
+                                                                                };
+                                                                                known();
+                                                                            }
+                                                                            have rb_reparent(nleft, gparent) == RbTree::Node(rx, gparent, rcol, rl, rr) by {
+                                                                                rewrite(nleft, RbTree::Node(rx, rp, rcol, rl, rr));
+                                                                                unfold(rb_reparent(RbTree::Node(rx, rp, rcol, rl, rr), gparent)); normalize();
+                                                                            }
+                                                                            step();
+                                                                            let triangle_new_gparent = fold(insert_right_link(gparent), { link: InsertLink::To(tmp) });
+                                                                            step();
+                                                                            let triangle_new_parent = fold(insert_left_link(parent), { link: InsertLink::To(gparent) });
+                                                                            step();
+                                                                            mark before_outer_child_color;
+                                                                            have separate(memory(original_left->rb_left), memory(tmp->__rb_parent_color)) by { rewrite(tmp, original_left); normalize(); }
+                                                                            have separate(memory(original_left->rb_right), memory(tmp->__rb_parent_color)) by { rewrite(tmp, original_left); normalize(); }
+                                                                            step();
+                                                                            have separate(statement(1).statement(4).statement(15).statement(0).footprint, memory(original_left->rb_left)) by { normalize() using { separate(memory(original_left->rb_left), memory(tmp->__rb_parent_color)); }; }
+                                                                            have original_left->rb_left == at(before_outer_child_color, original_left->rb_left) by { preserve(separate(statement(1).statement(4).statement(15).statement(0).footprint, memory(original_left->rb_left))); }
+                                                                            have separate(statement(1).statement(4).statement(15).statement(0).footprint, memory(original_left->rb_right)) by { normalize() using { separate(memory(original_left->rb_right), memory(tmp->__rb_parent_color)); }; }
+                                                                            have original_left->rb_right == at(before_outer_child_color, original_left->rb_right) by { preserve(separate(statement(1).statement(4).statement(15).statement(0).footprint, memory(original_left->rb_right))); }
+                                                                            unfold(outer_child_left);
+                                                                            unfold(outer_child_right);
+                                                                            have tmp->rb_left == original_left->rb_left by { rewrite(tmp, original_left); known(); }
+                                                                            have tmp->rb_right == original_left->rb_right by { rewrite(tmp, original_left); known(); }
+                                                                            unfold(triangle_outer_uncle);
+                                                                            have gparent->rb_left == at(triangle_uncle_pointer, tmp) by known();
+                                                                            unfold(triangle_outer_other);
+                                                                            have node->rb_right == at(triangle_old_parent, parent) by known();
+                                                                            unfold(triangle_new_gparent);
+                                                                            have gparent->rb_right == tmp by known();
+                                                                            unfold(triangle_new_parent);
+                                                                            have parent->rb_left == gparent by known();
+                                                                            let rn = fold(rb_at(original_left), { model: RbTree::Node(rx, gparent, rcol, rl, rr) }, { left: rl_at, right: rr_at });
+                                                                            have rn.model == rb_reparent(nleft, gparent) by {
+                                                                                rewrite(rb_reparent(nleft, gparent), RbTree::Node(rx, gparent, rcol, rl, rr));
+                                                                                solve();
+                                                                            }
+                                                                        },
+                                                                    }
+                                                                    unfold(inner_tag);
+                                                                    have (gparent->__rb_parent_color & 1) == 1 by {
+                                                                        rewrite((gparent->__rb_parent_color & 1), color_bit(ucolor));
+                                                                        rewrite(ucolor, Color::Black);
+                                                                        unfold(color_bit(Color::Black));
+                                                                        solve();
+                                                                    }
+                                                                    have ctx_node_is(uu.model, ugp) == 1 by known();
+                                                                    have ctx_identity(uu.model) == ugp by { apply(ctx_node_is_identity(uu.model, ugp)) using { ctx_node_is(uu.model, ugp) == 1; }; }
+                                                                    have gparent->__rb_parent_color == address(ugp) + 1 by known();
+                                                                    apply(insert_black_context_word(uu.model, ugp)) using { ctx_node_is(uu.model, ugp) == 1; };
+                                                                    have ctx_parent_word(uu.model, gparent->__rb_parent_color) == 1 by { rewrite(gparent->__rb_parent_color, address(ugp) + 1); known(); }
+                                                                    let final_uncle = fold(insert_left_link(gparent), { link: InsertLink::To(at(triangle_uncle_pointer, tmp)) });
+                                                                    let final_other = fold(insert_right_link(node), { link: InsertLink::To(at(triangle_old_parent, parent)) });
+                                                                    let final_child = fold(insert_right_link(gparent), { link: InsertLink::To(tmp) });
+                                                                    let final_parent = fold(insert_left_link(parent), { link: InsertLink::To(gparent) });
+                                                                    let { after: c } = step(__rb_rotate_set_parents, { c: uu });
+                                                                    unfold(final_uncle);
+                                                                    unfold(final_other);
+                                                                    unfold(final_child);
+                                                                    unfold(final_parent);
+                                                                    have c.model == uup by known();
+                                                                    have rb_parent_is(rb_reparent(nleft, gparent), gparent) == 1 by {
+                                                                        apply(rb_reparent_parent_is(nleft, gparent));
+                                                                        known();
+                                                                    }
+                                                                    have parent == nid by known();
+                                                                    have aligned(nid, 8) by known();
+                                                                    have gparent->__rb_parent_color == address(nid) by { rewrite(nid, parent); known(); }
+                                                                    have (gparent->__rb_parent_color & 1) == 0 by {
+                                                                        rewrite(gparent->__rb_parent_color, address(nid));
+                                                                        solve() using { aligned(nid, 8); };
+                                                                    }
+                                                                    have gparent->__rb_parent_color == address(nid) + (gparent->__rb_parent_color & 1) by { rewrite((gparent->__rb_parent_color & 1), 0); known(); }
+                                                                    have ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == nid by { rewrite(nid, parent); known(); }
+                                                                    let gn = fold(rb_at(gparent), { model: RbTree::Node(gparent, nid, Color::Red, usib, rb_reparent(nleft, gparent)) }, { left: un, right: rn });
+                                                                    have rb_parent_is(RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib), nid) == 1 by {
+                                                                        unfold(rb_parent_is(RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib), nid));
+                                                                        normalize();
+                                                                    }
+                                                                    have rb_parent_is(RbTree::Node(gparent, nid, Color::Red, usib, rb_reparent(nleft, gparent)), nid) == 1 by {
+                                                                        unfold(rb_parent_is(RbTree::Node(gparent, nid, Color::Red, usib, rb_reparent(nleft, gparent)), nid));
+                                                                        normalize();
+                                                                    }
+                                                                    have (node->__rb_parent_color & 1) == color_bit(Color::Black) by {
+                                                                        unfold(color_bit(Color::Black));
+                                                                        solve();
+                                                                    }
+                                                                    let t = fold(rb_at(node), { model: RbTree::Node(nid, ugp, Color::Black, RbTree::Node(gparent, nid, Color::Red, usib, rb_reparent(nleft, gparent)), RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib)) }, { left: gn, right: pn });
+                                                                    have rb_inorder(plug(c.model, t.model)) == rb_inorder(plug(old(c.model), RbTree::Node(identity, node_parent, color, left_model, right_model))) by {
+                                                                        rewrite(c.model, uup);
+                                                                        rewrite(t.model, RbTree::Node(nid, ugp, Color::Black, RbTree::Node(gparent, nid, Color::Red, usib, rb_reparent(nleft, gparent)), RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib)));
+                                                                        rewrite(rb_inorder(plug(uup, RbTree::Node(nid, ugp, Color::Black, RbTree::Node(gparent, nid, Color::Red, usib, rb_reparent(nleft, gparent)), RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib)))), rb_inorder(plug(Context::Left(cid, gparent, Color::Red, csib, Context::Right(gparent, ugp, Color::Black, usib, uup)), RbTree::Node(nid, cid, Color::Red, nleft, nright))));
+                                                                        known();
+                                                                    }
+                                                                    have is_rb_root(plug(c.model, t.model)) == 1 by {
+                                                                        rewrite(c.model, uup);
+                                                                        rewrite(t.model, RbTree::Node(nid, ugp, Color::Black, RbTree::Node(gparent, nid, Color::Red, usib, rb_reparent(nleft, gparent)), RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib)));
+                                                                        known();
+                                                                    }
+                                                                    have rb_parent_consistent(plug(c.model, t.model), 0) == 1 by {
+                                                                        rewrite(c.model, uup);
+                                                                        rewrite(t.model, RbTree::Node(nid, ugp, Color::Black, RbTree::Node(gparent, nid, Color::Red, usib, rb_reparent(nleft, gparent)), RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib)));
+                                                                        known();
+                                                                    }
+                                                                    have rb_tree_parent_consistent(plug(c.model, t.model)) == 1 by {
+                                                                        unfold(rb_tree_parent_consistent(plug(c.model, t.model)));
+                                                                    }
+                                                                    step();
+                                                                    step();
+                                                                },
                                                             }
-                                                            let gn = fold(rb_at(gparent), { model: RbTree::Node(gparent, nid, Color::Red, usib, rb_reparent(nleft, gparent)) }, { left: un, right: rn });
-                                                            have rb_parent_is(RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib), nid) == 1 by {
-                                                                unfold(rb_parent_is(RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib), nid));
-                                                            }
-                                                            have rb_parent_is(RbTree::Node(gparent, nid, Color::Red, usib, rb_reparent(nleft, gparent)), nid) == 1 by {
-                                                                unfold(rb_parent_is(RbTree::Node(gparent, nid, Color::Red, usib, rb_reparent(nleft, gparent)), nid));
-                                                            }
-                                                            have (node->__rb_parent_color & 1) == color_bit(Color::Black) by {
-                                                                unfold(color_bit(Color::Black));
-                                                                solve();
-                                                            }
-                                                            let t = fold(rb_at(node), { model: RbTree::Node(nid, ugp, Color::Black, RbTree::Node(gparent, nid, Color::Red, usib, rb_reparent(nleft, gparent)), RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib)) }, { left: gn, right: pn });
-                                                            have rb_inorder(plug(c.model, t.model)) == rb_inorder(plug(old(c.model), RbTree::Node(identity, node_parent, color, left_model, right_model))) by {
-                                                                rewrite(c.model, uup);
-                                                                rewrite(t.model, RbTree::Node(nid, ugp, Color::Black, RbTree::Node(gparent, nid, Color::Red, usib, rb_reparent(nleft, gparent)), RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib)));
-                                                                rewrite(rb_inorder(plug(uup, RbTree::Node(nid, ugp, Color::Black, RbTree::Node(gparent, nid, Color::Red, usib, rb_reparent(nleft, gparent)), RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib)))), rb_inorder(plug(Context::Left(cid, gparent, Color::Red, csib, Context::Right(gparent, ugp, Color::Black, usib, uup)), RbTree::Node(nid, cid, Color::Red, nleft, nright))));
-                                                                known();
-                                                            }
-                                                            have is_rb_root(plug(c.model, t.model)) == 1 by {
-                                                                rewrite(c.model, uup);
-                                                                rewrite(t.model, RbTree::Node(nid, ugp, Color::Black, RbTree::Node(gparent, nid, Color::Red, usib, rb_reparent(nleft, gparent)), RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib)));
-                                                                known();
-                                                            }
-                                                            have rb_parent_consistent(plug(c.model, t.model), 0) == 1 by {
-                                                                rewrite(c.model, uup);
-                                                                rewrite(t.model, RbTree::Node(nid, ugp, Color::Black, RbTree::Node(gparent, nid, Color::Red, usib, rb_reparent(nleft, gparent)), RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib)));
-                                                                known();
-                                                            }
-                                                        have rb_tree_parent_consistent(plug(c.model, t.model)) == 1 by {
-                                                            unfold(rb_tree_parent_consistent(plug(c.model, t.model)));
-                                                        }
-                                                        step();
-                                                        step();
                                                     } else {
                                                         match us.model {
                                                             RbTree::Node(unid, unp, uncolor, unl, unr) => {
                                                                 let { left: ul, right: ur } = unfold(us);
                                                                 step();
                                                                 step();
+                                                                    unfold(triangle_uncle_link);
+                                                                    unfold(triangle_tag);
+                                                                    unfold(triangle_focus_link);
                                                                 match uncolor {
                                                                     Color::Red => {
                                                                         have (tmp->__rb_parent_color & 1) == 0 by {
@@ -2203,44 +2122,58 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             unfold(color_bit(Color::Red));
                                                                             normalize();
                                                                         }
-                                                                        mark before_recolor_tags_2;
-                                                                        have at(before_recolor_tags_2, gparent->rb_left == tmp) by { known(); }
-                                                                        have at(before_recolor_tags_2, separate(memory(gparent->rb_left), memory(gparent->__rb_parent_color))) by { known(); }
-                                                                        have at(before_recolor_tags_2, separate(memory(gparent->rb_left), memory(parent->__rb_parent_color))) by { known(); }
-                                                                        have at(before_recolor_tags_2, separate(memory(gparent->rb_left), memory(tmp->__rb_parent_color))) by { known(); }
-                                                                        have at(before_recolor_tags_2, gparent->rb_right == parent) by { known(); }
-                                                                        have at(before_recolor_tags_2, separate(memory(gparent->rb_right), memory(gparent->__rb_parent_color))) by { known(); }
-                                                                        have at(before_recolor_tags_2, separate(memory(gparent->rb_right), memory(parent->__rb_parent_color))) by { known(); }
-                                                                        have at(before_recolor_tags_2, separate(memory(gparent->rb_right), memory(tmp->__rb_parent_color))) by { known(); }
+                                                                            let flip_tmp_rb_left = fold(insert_left_link(tmp), { link: InsertLink::To(tmp->rb_left) });
+                                                                            let flip_tmp_rb_right = fold(insert_right_link(tmp), { link: InsertLink::To(tmp->rb_right) });
+                                                                            let flip_parent_rb_left = fold(insert_left_link(parent), { link: InsertLink::To(parent->rb_left) });
+                                                                            let flip_parent_rb_right = fold(insert_right_link(parent), { link: InsertLink::To(parent->rb_right) });
+                                                                            let flip_gparent_rb_left = fold(insert_left_link(gparent), { link: InsertLink::To(gparent->rb_left) });
+                                                                            let flip_gparent_rb_right = fold(insert_right_link(gparent), { link: InsertLink::To(gparent->rb_right) });
+                                                                            let flip_tag = fold(insert_parent_tag(gparent, ugp), { color: ucolor });
                                                                         step();
                                                                         step();
-                                                                        step();
+                                                                            unfold(flip_tmp_rb_left);
+                                                                            unfold(flip_tmp_rb_right);
+                                                                            have aligned(gparent, 8) by { rewrite(gparent, uid); known(); }
+                                                                            have (address(gparent) | 1) == address(gparent) + 1 by {
+                                                                                solve() using { aligned(gparent, 8); };
+                                                                            }
                                                                         let un = fold(rb_at(tmp), { model: RbTree::Node(unid, gparent, Color::Black, unl, unr) }, { left: ul, right: ur });
+                                                                            step();
+                                                                            unfold(flip_parent_rb_left);
+                                                                            unfold(flip_parent_rb_right);
+                                                                            have parent->__rb_parent_color == (address(gparent) | 1) by known();
+                                                                            have parent->__rb_parent_color == address(gparent) + 1 by known();
+                                                                            have (parent->__rb_parent_color & 1) == 1 by known();
+                                                                            have parent->__rb_parent_color == address(gparent) + (parent->__rb_parent_color & 1) by known();
+                                                                            have ((parent->__rb_parent_color & ~3) as (struct rb_node *)) == gparent by known();
                                                                         let pn = fold(rb_at(parent), { model: RbTree::Node(cid, gparent, Color::Black, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib) }, { left: t, right: cs });
                                                                         step();
+                                                                            unfold(flip_tag);
                                                                         step();
+                                                                            step();
+                                                                            have parent == ugp by known();
                                                                         step();
                                                                         have rb_parent_is(RbTree::Node(cid, gparent, Color::Black, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib), gparent) == 1 by {
                                                                             unfold(rb_parent_is(RbTree::Node(cid, gparent, Color::Black, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib), gparent));
+                                                                            normalize();
                                                                         }
                                                                         have rb_parent_is(RbTree::Node(unid, gparent, Color::Black, unl, unr), gparent) == 1 by {
                                                                             unfold(rb_parent_is(RbTree::Node(unid, gparent, Color::Black, unl, unr), gparent));
+                                                                            normalize();
                                                                         }
                                                                         have rb_parent_is(RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), RbTree::Node(cid, gparent, Color::Black, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib)), ugp) == 1 by {
                                                                             unfold(rb_parent_is(RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), RbTree::Node(cid, gparent, Color::Black, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib)), ugp));
+                                                                            normalize();
                                                                         }
-                                                                        transport(at(before_recolor_tags_2, gparent->rb_left == tmp), gparent->rb_left == at(before_recolor_tags_2, tmp)) using {
-                                                                            at(before_recolor_tags_2, gparent->rb_left == tmp);
-                                                                            at(before_recolor_tags_2, separate(memory(gparent->rb_left), memory(gparent->__rb_parent_color)));
-                                                                            at(before_recolor_tags_2, separate(memory(gparent->rb_left), memory(parent->__rb_parent_color)));
-                                                                            at(before_recolor_tags_2, separate(memory(gparent->rb_left), memory(tmp->__rb_parent_color)));
-                                                                        };
-                                                                        transport(at(before_recolor_tags_2, gparent->rb_right == parent), gparent->rb_right == at(before_recolor_tags_2, parent)) using {
-                                                                            at(before_recolor_tags_2, gparent->rb_right == parent);
-                                                                            at(before_recolor_tags_2, separate(memory(gparent->rb_right), memory(gparent->__rb_parent_color)));
-                                                                            at(before_recolor_tags_2, separate(memory(gparent->rb_right), memory(parent->__rb_parent_color)));
-                                                                            at(before_recolor_tags_2, separate(memory(gparent->rb_right), memory(tmp->__rb_parent_color)));
-                                                                        };
+                                                                            unfold(flip_gparent_rb_left);
+                                                                            unfold(flip_gparent_rb_right);
+                                                                            have aligned(ugp, 8) by known();
+                                                                            have gparent->__rb_parent_color == address(ugp) by known();
+                                                                            have (gparent->__rb_parent_color & 1) == 0 by {
+                                                                                rewrite(gparent->__rb_parent_color, address(ugp));
+                                                                                solve() using { aligned(ugp, 8); };
+                                                                            }
+                                                                            have gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1) by known();
                                                                         let gn = fold(rb_at(gparent), { model: RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), RbTree::Node(cid, gparent, Color::Black, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib)) }, { left: un, right: pn });
                                                                     },
                                                                     Color::Black => {
@@ -2381,7 +2314,18 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                 }
                                                 step();
                                                 step();
-                                                step();
+                                                let load_tag = fold(insert_red_tag(parent), { link: InsertParent::To(cgp) });
+                                                let { left: call_left, right: call_right } = unfold(t);
+                                                have separate(load_tag, memory(node->rb_right)) by known();
+                                                have separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_right)) by known();
+                                                have separate(load_tag, memory(node->rb_left)) by known();
+                                                have separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_left)) by known();
+                                                let t = fold(rb_at(node), { model: RbTree::Node(nid, nparent, ncolor, nleft, nright) }, { left: call_left, right: call_right });
+                                                mark before_gparent_call;
+
+                                                let { after: load_tag } = step(rb_red_parent, { before: load_tag });
+                                                unfold(load_tag);
+                                                step(); // Assign the decoded grandparent.
                                                 have cu.model != Context::Top by {
                                                     apply(ctx_rb_red_focus_not_top(cu.model,
                                                         black_height(t.model))) using {
@@ -2415,10 +2359,50 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         known();
                                                     }
                                                     let { sibling: us, up: uu } = unfold(cu);
-                                                    step();
+                                                        mark before_grandparent_links;
+                                                        mark triangle_before_uncle_load;
+                                                        have separate(memory(gparent->rb_right), memory(gparent->rb_left)) by { known(); }
+                                                        have separate(memory(gparent->rb_right), memory(parent->rb_left)) by { known(); }
+                                                        have separate(memory(gparent->rb_right), memory(gparent->__rb_parent_color)) by { known(); }
+                                                        have separate(memory(gparent->rb_right), memory(parent->__rb_parent_color)) by { known(); }
+                                                        have at(before_grandparent_links, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) by { known(); }
+                                                        have separate(memory(gparent->__rb_parent_color), memory(gparent->rb_right)) by { known(); }
+                                                        have separate(memory(gparent->__rb_parent_color), memory(parent->rb_right)) by { known(); }
+                                                        have gparent->rb_left == parent by { rewrite(gparent, uid); rewrite(parent, cid); known(); }
+                                                        let read_focus_link = fold(insert_left_link(gparent), { link: InsertLink::To(parent) });
+                                                        let read_tag = fold(insert_parent_tag(gparent, ugp), { color: ucolor });
+                                                        have gparent->rb_right == uid->rb_right by { rewrite(gparent, uid); normalize(); }
+                                                        have separate(memory(((&tmp) as (uint8 *))[0..8]), memory(gparent->rb_right)) by known();
+                                                        have parent->rb_right == cid->rb_right by { rewrite(parent, cid); normalize(); }
+                                                        have parent->rb_right == node by known();
+                                                        have separate(memory(((&tmp) as (uint8 *))[0..8]), memory(parent->rb_right)) by known();
+                                                        step(); // Load the uncle into tmp.
+                                                        have tmp == at(before_grandparent_links, uid->rb_right) by known();
+                                                        have separate(statement(1).statement(3).footprint, memory(gparent->rb_right)) by {
+                                                            normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(gparent->rb_right)); };
+                                                        }
+                                                        have gparent->rb_right == at(before_grandparent_links, gparent->rb_right) by {
+                                                            preserve(separate(statement(1).statement(3).footprint, memory(gparent->rb_right)));
+                                                        }
+                                                        have separate(statement(1).statement(3).footprint, memory(parent->rb_right)) by {
+                                                            normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(parent->rb_right)); };
+                                                        }
+                                                        have parent->rb_right == at(before_grandparent_links, parent->rb_right) by {
+                                                            preserve(separate(statement(1).statement(3).footprint, memory(parent->rb_right)));
+                                                        }
+                                                        unfold(read_focus_link);
+                                                        mark before_uncle_pointer_changes;
+                                                        have at(before_uncle_pointer_changes, gparent->rb_right == at(before_uncle_pointer_changes, tmp)) by { known(); }
+                                                        have at(before_uncle_pointer_changes, parent->rb_right == node) by { known(); }
+                                                        have separate(memory(parent->rb_right), memory(gparent->rb_left)) by { known(); }
+                                                        have separate(memory(parent->rb_right), memory(parent->rb_left)) by { known(); }
+                                                        have separate(memory(parent->rb_right), memory(gparent->__rb_parent_color)) by { known(); }
+                                                        have separate(memory(parent->rb_right), memory(parent->__rb_parent_color)) by { known(); }
                                                     if rb_root_black(usib) == 1 {
                                                         match us.model ensuring {
                                                             owns un: rb_at(tmp);
+                                                                owns read_tag: insert_parent_tag(gparent, ugp);
+                                                                fact read_tag.color == ucolor;
                                                             fact un.model == usib;
                                                             fact gparent->rb_right == tmp;
                                                         } {
@@ -2493,6 +2477,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 }
                                                             },
                                                         }
+                                                            unfold(read_tag);
                                                         mark triangle_uncle_pointer;
                                                         have at(triangle_uncle_pointer, gparent->rb_right == tmp) by { known(); }
                                                         have cup == Context::Left(gparent, ugp, Color::Black, usib, uup) by {
@@ -2560,545 +2545,415 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             ctx_rb(Context::Right(cid, gparent, Color::Red, csib, Context::Left(gparent, ugp, Color::Black, usib, uup)), black_height(RbTree::Node(nid, cid, Color::Red, nleft, nright)), Color::Black) == 1;
                                                             rb_parent_consistent(plug(Context::Right(cid, gparent, Color::Red, csib, Context::Left(gparent, ugp, Color::Black, usib, uup)), RbTree::Node(nid, cid, Color::Red, nleft, nright)), 0) == 1;
                                                         };
-                                                        let { left: nl_at, right: nr_at } = unfold(t);
-                                                        have (node->__rb_parent_color & 1) == color_bit(Color::Red) by {
-                                                            rewrite(Color::Red, ncolor);
-                                                            known();
-                                                        }
-                                                        step();
-                                                        step();
-                                                        step();
-                                                        have separate(memory(parent->rb_right), memory(node->rb_left)) by { known(); }
-                                                        mark before_inner_parent_right;
-                                                        have at(before_inner_parent_right, parent->rb_left == parent->rb_left) by { normalize(); }
-                                                        have separate(memory(parent->rb_left), memory(parent->rb_right)) by { known(); }
-                                                        have separate(memory(parent->rb_left), memory(node->rb_left)) by { known(); }
-                                                        mark before_inner_node_left;
-                                                        have at(before_inner_node_left, node->rb_right == node->rb_right) by { normalize(); }
-                                                        have separate(memory(node->rb_right), memory(parent->rb_right)) by { known(); }
-                                                        have separate(memory(node->rb_right), memory(node->rb_left)) by { known(); }
-                                                        mark before_triangle_grandparent_tag;
-                                                        have at(before_triangle_grandparent_tag, (gparent->__rb_parent_color & 1) == color_bit(ucolor)) by { known(); }
-                                                        have at(before_triangle_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) by { known(); }
-                                                        have separate(memory(gparent->__rb_parent_color), memory(parent->rb_right)) by { known(); }
-                                                        have separate(memory(gparent->__rb_parent_color), memory(node->rb_left)) by { known(); }
-                                                        have at(before_triangle_grandparent_tag, gparent->rb_right == at(triangle_uncle_pointer, tmp)) by { known(); }
-                                                        have separate(memory(gparent->rb_right), memory(parent->rb_right)) by { known(); }
-                                                        have separate(memory(gparent->rb_right), memory(node->rb_left)) by { known(); }
-                                                        match nl_at.model ensuring {
-                                                            owns bn: rb_at(tmp);
-                                                            fact bn.model == rb_reparent(nleft, cid);
-                                                            fact node->rb_left == parent;
-                                                            fact gparent->rb_right == at(triangle_uncle_pointer, tmp);
-                                                            fact (gparent->__rb_parent_color & 1) == color_bit(ucolor);
-                                                            fact ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp;
-                                                            fact parent->rb_right == tmp;
-                                                            fact node->rb_right == at(before_inner_node_left, node->rb_right);
-                                                            fact parent->rb_left == at(before_inner_parent_right, parent->rb_left);
-                                                        } {
-                                                            RbTree::Empty => {
-                                                                unfold(nl_at);
-                                                                step();
-                                                                step();
-                                                                step();
-                                                                step();
-                                                                step();
-                                                                have rb_reparent(nleft, cid) == RbTree::Empty by {
-                                                                    rewrite(nleft, RbTree::Empty);
-                                                                    unfold(rb_reparent(RbTree::Empty, cid)); normalize();
-                                                                }
-                                                                transport(at(before_inner_parent_right, parent->rb_left == parent->rb_left), parent->rb_left == at(before_inner_parent_right, parent->rb_left)) using {
-                                                                    at(before_inner_parent_right, parent->rb_left == parent->rb_left);
-                                                                    separate(memory(parent->rb_left), memory(parent->rb_right));
-                                                                    separate(memory(parent->rb_left), memory(node->rb_left));
-                                                                };
-                                                                transport(at(before_inner_node_left, node->rb_right == node->rb_right), node->rb_right == at(before_inner_node_left, node->rb_right)) using {
-                                                                    at(before_inner_node_left, node->rb_right == node->rb_right);
-                                                                    separate(memory(node->rb_right), memory(parent->rb_right));
-                                                                    separate(memory(node->rb_right), memory(node->rb_left));
-                                                                };
-                                                                have parent->rb_right == tmp by { known(); }
-                                                                transport(at(before_triangle_grandparent_tag, (gparent->__rb_parent_color & 1) == color_bit(ucolor)), (gparent->__rb_parent_color & 1) == color_bit(ucolor)) using {
-                                                                    at(before_triangle_grandparent_tag, (gparent->__rb_parent_color & 1) == color_bit(ucolor));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(parent->rb_right));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(node->rb_left));
-                                                                };
-                                                                transport(at(before_triangle_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) using {
-                                                                    at(before_triangle_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
-                                                                    separate(memory(gparent->__rb_parent_color), memory(parent->rb_right));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(node->rb_left));
-                                                                };
-                                                                transport(at(before_triangle_grandparent_tag, gparent->rb_right == at(triangle_uncle_pointer, tmp)), gparent->rb_right == at(triangle_uncle_pointer, tmp)) using {
-                                                                    at(before_triangle_grandparent_tag, gparent->rb_right == at(triangle_uncle_pointer, tmp));
-                                                                    separate(memory(gparent->rb_right), memory(parent->rb_right));
-                                                                    separate(memory(gparent->rb_right), memory(node->rb_left));
-                                                                };
-                                                                have node->rb_left == parent by { normalize(); }
-                                                                let bn = fold(rb_at(tmp), { model: RbTree::Empty });
-                                                                have bn.model == rb_reparent(nleft, cid) by {
-                                                                    rewrite(rb_reparent(nleft, cid), RbTree::Empty);
-                                                                    solve();
-                                                                }
-                                                            },
-                                                            RbTree::Node(bx, bp, bcol, bl, br) => {
-                                                                let { left: bl_at, right: br_at } = unfold(nl_at);
-                                                                step();
-                                                                mark before_inner_child_links;
-                                                                have separate(memory(node->rb_left), memory(tmp->__rb_parent_color)) by { known(); }
-                                                                have separate(memory(gparent->rb_right), memory(tmp->__rb_parent_color)) by { known(); }
-                                                                have separate(memory(gparent->__rb_parent_color), memory(tmp->__rb_parent_color)) by { known(); }
-                                                                have separate(memory(node->rb_right), memory(tmp->__rb_parent_color)) by { known(); }
-                                                                have separate(memory(parent->rb_left), memory(tmp->__rb_parent_color)) by { known(); }
-                                                                have separate(memory(parent->rb_right), memory(tmp->__rb_parent_color)) by { known(); }
-                                                                have at(before_inner_child_links, tmp->rb_right == bx->rb_right) by { known(); }
-                                                                have at(before_inner_child_links, separate(memory(tmp->rb_right), memory(parent->rb_right))) by { known(); }
-                                                                have at(before_inner_child_links, separate(memory(tmp->rb_right), memory(node->rb_left))) by { known(); }
-                                                                have at(before_inner_child_links, separate(memory(tmp->rb_right), memory(tmp->__rb_parent_color))) by { known(); }
-                                                                have at(before_inner_child_links, tmp->rb_left == bx->rb_left) by { known(); }
-                                                                have at(before_inner_child_links, separate(memory(tmp->rb_left), memory(parent->rb_right))) by { known(); }
-                                                                have at(before_inner_child_links, separate(memory(tmp->rb_left), memory(node->rb_left))) by { known(); }
-                                                                have at(before_inner_child_links, separate(memory(tmp->rb_left), memory(tmp->__rb_parent_color))) by { known(); }
-                                                                have rb_root_black(RbTree::Node(bx, bp, bcol, bl, br)) == 1 by {
-                                                                    rewrite(RbTree::Node(bx, bp, bcol, bl, br), nleft);
-                                                                    known();
-                                                                }
-                                                                have color_bit(bcol) == 1 by {
-                                                                    apply(rb_root_black_node_color_bit(bx, bp, bcol, bl, br)) using {
-                                                                        rb_root_black(RbTree::Node(bx, bp, bcol, bl, br)) == 1;
+                                                            let { right: nr_at, left: nl_at } = unfold(t);
+                                                            match InsertParent::To(node->rb_right) {
+                                                                InsertParent::To(original_outer_child) => {
+                                                                    have separate(memory(((&gparent) as (uint8 *))[0..8]), memory(node->rb_left)) by known();
+                                                                    have separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_left)) by known();
+                                                                    have contains(at(before_gparent_call, load_tag), statement(1).statement(2).call(0).footprint) by known();
+                                                                    apply(separation::contains_refl(memory(node->rb_left))) using {};
+                                                                    apply(separation::separate_restrict(at(before_gparent_call, load_tag), memory(node->rb_left), statement(1).statement(2).call(0).footprint, memory(node->rb_left))) using {
+                                                                        at(before_gparent_call, separate(load_tag, memory(node->rb_left)));
+                                                                        contains(at(before_gparent_call, load_tag), statement(1).statement(2).call(0).footprint);
+                                                                        contains(memory(node->rb_left), memory(node->rb_left));
                                                                     };
-                                                                    known();
-                                                                }
-                                                                have rb_reparent(nleft, cid) == RbTree::Node(bx, cid, bcol, bl, br) by {
-                                                                    rewrite(nleft, RbTree::Node(bx, bp, bcol, bl, br));
-                                                                    unfold(rb_reparent(RbTree::Node(bx, bp, bcol, bl, br), cid)); normalize();
-                                                                }
-                                                                step();
-                                                                step();
-                                                                step();
-                                                                step();
-                                                                transport(at(before_inner_child_links, tmp->rb_right == bx->rb_right), tmp->rb_right == at(before_inner_child_links, bx->rb_right)) using {
-                                                                    at(before_inner_child_links, tmp->rb_right == bx->rb_right);
-                                                                    at(before_inner_child_links, separate(memory(tmp->rb_right), memory(parent->rb_right)));
-                                                                    at(before_inner_child_links, separate(memory(tmp->rb_right), memory(node->rb_left)));
-                                                                    at(before_inner_child_links, separate(memory(tmp->rb_right), memory(tmp->__rb_parent_color)));
-                                                                };
-                                                                transport(at(before_inner_child_links, tmp->rb_left == bx->rb_left), tmp->rb_left == at(before_inner_child_links, bx->rb_left)) using {
-                                                                    at(before_inner_child_links, tmp->rb_left == bx->rb_left);
-                                                                    at(before_inner_child_links, separate(memory(tmp->rb_left), memory(parent->rb_right)));
-                                                                    at(before_inner_child_links, separate(memory(tmp->rb_left), memory(node->rb_left)));
-                                                                    at(before_inner_child_links, separate(memory(tmp->rb_left), memory(tmp->__rb_parent_color)));
-                                                                };
-                                                                transport(at(before_inner_parent_right, parent->rb_left == parent->rb_left), parent->rb_left == at(before_inner_parent_right, parent->rb_left)) using {
-                                                                    at(before_inner_parent_right, parent->rb_left == parent->rb_left);
-                                                                    separate(memory(parent->rb_left), memory(parent->rb_right));
-                                                                    separate(memory(parent->rb_left), memory(node->rb_left));
-                                                                    separate(memory(parent->rb_left), memory(tmp->__rb_parent_color));
-                                                                };
-                                                                transport(at(before_inner_node_left, node->rb_right == node->rb_right), node->rb_right == at(before_inner_node_left, node->rb_right)) using {
-                                                                    at(before_inner_node_left, node->rb_right == node->rb_right);
-                                                                    separate(memory(node->rb_right), memory(parent->rb_right));
-                                                                    separate(memory(node->rb_right), memory(node->rb_left));
-                                                                    separate(memory(node->rb_right), memory(tmp->__rb_parent_color));
-                                                                };
-                                                                have parent->rb_right == tmp by { known(); }
-                                                                transport(at(before_triangle_grandparent_tag, (gparent->__rb_parent_color & 1) == color_bit(ucolor)), (gparent->__rb_parent_color & 1) == color_bit(ucolor)) using {
-                                                                    at(before_triangle_grandparent_tag, (gparent->__rb_parent_color & 1) == color_bit(ucolor));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(parent->rb_right));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(node->rb_left));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(tmp->__rb_parent_color));
-                                                                };
-                                                                transport(at(before_triangle_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) using {
-                                                                    at(before_triangle_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
-                                                                    separate(memory(gparent->__rb_parent_color), memory(parent->rb_right));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(node->rb_left));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(tmp->__rb_parent_color));
-                                                                };
-                                                                transport(at(before_triangle_grandparent_tag, gparent->rb_right == at(triangle_uncle_pointer, tmp)), gparent->rb_right == at(triangle_uncle_pointer, tmp)) using {
-                                                                    at(before_triangle_grandparent_tag, gparent->rb_right == at(triangle_uncle_pointer, tmp));
-                                                                    separate(memory(gparent->rb_right), memory(parent->rb_right));
-                                                                    separate(memory(gparent->rb_right), memory(node->rb_left));
-                                                                    separate(memory(gparent->rb_right), memory(tmp->__rb_parent_color));
-                                                                };
-                                                                have node->rb_left == parent by { normalize(); }
-                                                                let bn = fold(rb_at(tmp), { model: RbTree::Node(bx, cid, bcol, bl, br) }, { left: bl_at, right: br_at });
-                                                                have bn.model == rb_reparent(nleft, cid) by {
-                                                                    rewrite(rb_reparent(nleft, cid), RbTree::Node(bx, cid, bcol, bl, br));
-                                                                    solve();
-                                                                }
-                                                            },
-                                                        }
-                                                        mark before_inner_parent_color;
-                                                        have at(before_inner_parent_color, node->rb_left == parent) by { known(); }
-                                                        have separate(memory(node->rb_left), memory(parent->__rb_parent_color)) by { known(); }
-                                                        have at(before_inner_parent_color, gparent->rb_right == at(triangle_uncle_pointer, tmp)) by { known(); }
-                                                        have separate(memory(gparent->rb_right), memory(parent->__rb_parent_color)) by { known(); }
-                                                        have at(before_inner_parent_color, (gparent->__rb_parent_color & 1) == color_bit(ucolor)) by { known(); }
-                                                        have at(before_inner_parent_color, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) by { known(); }
-                                                        have separate(memory(gparent->__rb_parent_color), memory(parent->__rb_parent_color)) by { known(); }
-                                                        have at(before_inner_parent_color, parent->rb_right == tmp) by { known(); }
-                                                        have at(before_inner_parent_color, node->rb_right == at(before_inner_node_left, node->rb_right)) by { known(); }
-                                                        have separate(memory(node->rb_right), memory(parent->__rb_parent_color)) by { known(); }
-                                                        have at(before_inner_parent_color, parent->rb_left == at(before_inner_parent_right, parent->rb_left)) by { known(); }
-                                                        have separate(memory(parent->rb_left), memory(parent->__rb_parent_color)) by { known(); }
-                                                        have separate(memory(parent->rb_right), memory(parent->__rb_parent_color)) by { known(); }
-                                                        step();
-                                                        transport(at(before_inner_parent_color, parent->rb_right == tmp), parent->rb_right == tmp) using {
-                                                            at(before_inner_parent_color, parent->rb_right == tmp);
-                                                            separate(memory(parent->rb_right), memory(parent->__rb_parent_color));
-                                                        };
-                                                        transport(at(before_inner_parent_color, parent->rb_left == at(before_inner_parent_right, parent->rb_left)), parent->rb_left == at(before_inner_parent_right, parent->rb_left)) using {
-                                                            at(before_inner_parent_color, parent->rb_left == at(before_inner_parent_right, parent->rb_left));
-                                                            separate(memory(parent->rb_left), memory(parent->__rb_parent_color));
-                                                        };
-                                                        transport(at(before_inner_parent_color, node->rb_right == at(before_inner_node_left, node->rb_right)), node->rb_right == at(before_inner_node_left, node->rb_right)) using {
-                                                            at(before_inner_parent_color, node->rb_right == at(before_inner_node_left, node->rb_right));
-                                                            separate(memory(node->rb_right), memory(parent->__rb_parent_color));
-                                                        };
-                                                        transport(at(before_inner_parent_color, (gparent->__rb_parent_color & 1) == color_bit(ucolor)), (gparent->__rb_parent_color & 1) == color_bit(ucolor)) using {
-                                                            at(before_inner_parent_color, (gparent->__rb_parent_color & 1) == color_bit(ucolor));
-                                                            separate(memory(gparent->__rb_parent_color), memory(parent->__rb_parent_color));
-                                                        };
-                                                        transport(at(before_inner_parent_color, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) using {
-                                                            at(before_inner_parent_color, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
-                                                            separate(memory(gparent->__rb_parent_color), memory(parent->__rb_parent_color));
-                                                        };
-                                                        transport(at(before_inner_parent_color, gparent->rb_right == at(triangle_uncle_pointer, tmp)), gparent->rb_right == at(triangle_uncle_pointer, tmp)) using {
-                                                            at(before_inner_parent_color, gparent->rb_right == at(triangle_uncle_pointer, tmp));
-                                                            separate(memory(gparent->rb_right), memory(parent->__rb_parent_color));
-                                                        };
-                                                        transport(at(before_inner_parent_color, node->rb_left == parent), node->rb_left == parent) using {
-                                                            at(before_inner_parent_color, node->rb_left == parent);
-                                                            separate(memory(node->rb_left), memory(parent->__rb_parent_color));
-                                                        };
-                                                        have rb_parent_is(rb_reparent(nleft, cid), cid) == 1 by {
-                                                            apply(rb_reparent_parent_is(nleft, cid));
-                                                            known();
-                                                        }
-                                                        let pn = fold(rb_at(parent), { model: RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)) }, { left: cs, right: bn });
-                                                        mark triangle_old_parent;
-                                                        have at(triangle_old_parent, node->rb_left == parent) by { known(); }
-                                                        step();
-                                                        step();
-                                                        mark before_outer_grandparent_tag;
-                                                        have at(before_outer_grandparent_tag, (gparent->__rb_parent_color & 1) == color_bit(ucolor)) by { known(); }
-                                                        have at(before_outer_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) by { known(); }
-                                                        have separate(memory(gparent->__rb_parent_color), memory(gparent->rb_left)) by { known(); }
-                                                        have separate(memory(gparent->__rb_parent_color), memory(parent->rb_right)) by { known(); }
-                                                        have at(before_outer_grandparent_tag, gparent->rb_right == at(triangle_uncle_pointer, tmp)) by { known(); }
-                                                        have separate(memory(gparent->rb_right), memory(gparent->rb_left)) by { known(); }
-                                                        have separate(memory(gparent->rb_right), memory(parent->rb_right)) by { known(); }
-                                                        have at(before_outer_grandparent_tag, node->rb_left == at(triangle_old_parent, parent)) by { known(); }
-                                                        have separate(memory(node->rb_left), memory(gparent->rb_left)) by { known(); }
-                                                        have separate(memory(node->rb_left), memory(parent->rb_right)) by { known(); }
-                                                        match nr_at.model ensuring {
-                                                            owns rn: rb_at(tmp);
-                                                            fact rn.model == rb_reparent(nright, gparent);
-                                                            fact node->rb_left == at(triangle_old_parent, parent);
-                                                            fact gparent->rb_right == at(triangle_uncle_pointer, tmp);
-                                                            fact (gparent->__rb_parent_color & 1) == color_bit(ucolor);
-                                                            fact ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp;
-                                                        } {
-                                                            RbTree::Empty => {
-                                                                unfold(nr_at);
-                                                                step();
-                                                                step();
-                                                                step();
-                                                                step();
-                                                                step();
-                                                                have rb_reparent(nright, gparent) == RbTree::Empty by {
-                                                                    rewrite(nright, RbTree::Empty);
-                                                                    unfold(rb_reparent(RbTree::Empty, gparent)); normalize();
-                                                                }
-                                                                transport(at(before_outer_grandparent_tag, (gparent->__rb_parent_color & 1) == color_bit(ucolor)), (gparent->__rb_parent_color & 1) == color_bit(ucolor)) using {
-                                                                    at(before_outer_grandparent_tag, (gparent->__rb_parent_color & 1) == color_bit(ucolor));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(gparent->rb_left));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(parent->rb_right));
-                                                                };
-                                                                transport(at(before_outer_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) using {
-                                                                    at(before_outer_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
-                                                                    separate(memory(gparent->__rb_parent_color), memory(gparent->rb_left));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(parent->rb_right));
-                                                                };
-                                                                transport(at(before_outer_grandparent_tag, gparent->rb_right == at(triangle_uncle_pointer, tmp)), gparent->rb_right == at(triangle_uncle_pointer, tmp)) using {
-                                                                    at(before_outer_grandparent_tag, gparent->rb_right == at(triangle_uncle_pointer, tmp));
-                                                                    separate(memory(gparent->rb_right), memory(gparent->rb_left));
-                                                                    separate(memory(gparent->rb_right), memory(parent->rb_right));
-                                                                };
-                                                                transport(at(before_outer_grandparent_tag, node->rb_left == at(triangle_old_parent, parent)), node->rb_left == at(triangle_old_parent, parent)) using {
-                                                                    at(before_outer_grandparent_tag, node->rb_left == at(triangle_old_parent, parent));
-                                                                    separate(memory(node->rb_left), memory(gparent->rb_left));
-                                                                    separate(memory(node->rb_left), memory(parent->rb_right));
-                                                                };
-                                                                let rn = fold(rb_at(tmp), { model: RbTree::Empty });
-                                                                have rn.model == rb_reparent(nright, gparent) by {
-                                                                    rewrite(rb_reparent(nright, gparent), RbTree::Empty);
-                                                                    solve();
-                                                                }
-                                                            },
-                                                            RbTree::Node(rx, rp, rcol, rl, rr) => {
-                                                                let { left: rl_at, right: rr_at } = unfold(nr_at);
-                                                                step();
-                                                                have separate(memory(node->rb_left), memory(tmp->__rb_parent_color)) by { known(); }
-                                                                have separate(memory(gparent->rb_right), memory(tmp->__rb_parent_color)) by { known(); }
-                                                                have separate(memory(gparent->__rb_parent_color), memory(tmp->__rb_parent_color)) by { known(); }
-                                                                have rb_root_black(RbTree::Node(rx, rp, rcol, rl, rr)) == 1 by {
-                                                                    rewrite(RbTree::Node(rx, rp, rcol, rl, rr), nright);
-                                                                    known();
-                                                                }
-                                                                have color_bit(rcol) == 1 by {
-                                                                    apply(rb_root_black_node_color_bit(rx, rp, rcol, rl, rr)) using {
-                                                                        rb_root_black(RbTree::Node(rx, rp, rcol, rl, rr)) == 1;
+                                                                    have at(statement(1).statement(2).call(0).exit, node->rb_left) == at(before_gparent_call, node->rb_left) by { preserve(separate(statement(1).statement(2).call(0).footprint, memory(node->rb_left))); }
+                                                                    have separate(statement(1).statement(2).assignment(gparent, 0).footprint, memory(node->rb_left)) by { normalize() using { separate(memory(((&gparent) as (uint8 *))[0..8]), memory(node->rb_left)); }; }
+                                                                    have at(statement(1).statement(2).assignment(gparent, 0).exit, node->rb_left) == at(statement(1).statement(2).assignment(gparent, 0).entry, node->rb_left) by { preserve(separate(statement(1).statement(2).assignment(gparent, 0).footprint, memory(node->rb_left))); }
+                                                                    have at(statement(1).statement(2).assignment(gparent, 0).entry, node->rb_left) == at(statement(1).statement(2).call(0).exit, node->rb_left) by known();
+                                                                    have separate(statement(1).statement(3).footprint, memory(node->rb_left)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_left)); }; }
+                                                                    have at(statement(1).statement(3).exit, node->rb_left) == at(statement(1).statement(3).entry, node->rb_left) by { preserve(separate(statement(1).statement(3).footprint, memory(node->rb_left))); }
+                                                                    have at(statement(1).statement(3).entry, node->rb_left) == at(statement(1).statement(2).assignment(gparent, 0).exit, node->rb_left) by known();
+
+                                                                    have separate(memory(((&gparent) as (uint8 *))[0..8]), memory(node->rb_right)) by known();
+                                                                    have separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_right)) by known();
+                                                                    have contains(at(before_gparent_call, load_tag), statement(1).statement(2).call(0).footprint) by known();
+                                                                    apply(separation::contains_refl(memory(node->rb_right))) using {};
+                                                                    apply(separation::separate_restrict(at(before_gparent_call, load_tag), memory(node->rb_right), statement(1).statement(2).call(0).footprint, memory(node->rb_right))) using {
+                                                                        at(before_gparent_call, separate(load_tag, memory(node->rb_right)));
+                                                                        contains(at(before_gparent_call, load_tag), statement(1).statement(2).call(0).footprint);
+                                                                        contains(memory(node->rb_right), memory(node->rb_right));
                                                                     };
-                                                                    known();
-                                                                }
-                                                                have rb_reparent(nright, gparent) == RbTree::Node(rx, gparent, rcol, rl, rr) by {
-                                                                    rewrite(nright, RbTree::Node(rx, rp, rcol, rl, rr));
-                                                                    unfold(rb_reparent(RbTree::Node(rx, rp, rcol, rl, rr), gparent)); normalize();
-                                                                }
-                                                                step();
-                                                                step();
-                                                                step();
-                                                                step();
-                                                                transport(at(before_outer_grandparent_tag, (gparent->__rb_parent_color & 1) == color_bit(ucolor)), (gparent->__rb_parent_color & 1) == color_bit(ucolor)) using {
-                                                                    at(before_outer_grandparent_tag, (gparent->__rb_parent_color & 1) == color_bit(ucolor));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(gparent->rb_left));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(parent->rb_right));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(tmp->__rb_parent_color));
-                                                                };
-                                                                transport(at(before_outer_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) using {
-                                                                    at(before_outer_grandparent_tag, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
-                                                                    separate(memory(gparent->__rb_parent_color), memory(gparent->rb_left));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(parent->rb_right));
-                                                                    separate(memory(gparent->__rb_parent_color), memory(tmp->__rb_parent_color));
-                                                                };
-                                                                transport(at(before_outer_grandparent_tag, gparent->rb_right == at(triangle_uncle_pointer, tmp)), gparent->rb_right == at(triangle_uncle_pointer, tmp)) using {
-                                                                    at(before_outer_grandparent_tag, gparent->rb_right == at(triangle_uncle_pointer, tmp));
-                                                                    separate(memory(gparent->rb_right), memory(gparent->rb_left));
-                                                                    separate(memory(gparent->rb_right), memory(parent->rb_right));
-                                                                    separate(memory(gparent->rb_right), memory(tmp->__rb_parent_color));
-                                                                };
-                                                                transport(at(before_outer_grandparent_tag, node->rb_left == at(triangle_old_parent, parent)), node->rb_left == at(triangle_old_parent, parent)) using {
-                                                                    at(before_outer_grandparent_tag, node->rb_left == at(triangle_old_parent, parent));
-                                                                    separate(memory(node->rb_left), memory(gparent->rb_left));
-                                                                    separate(memory(node->rb_left), memory(parent->rb_right));
-                                                                    separate(memory(node->rb_left), memory(tmp->__rb_parent_color));
-                                                                };
-                                                                let rn = fold(rb_at(tmp), { model: RbTree::Node(rx, gparent, rcol, rl, rr) }, { left: rl_at, right: rr_at });
-                                                                have rn.model == rb_reparent(nright, gparent) by {
-                                                                    rewrite(rb_reparent(nright, gparent), RbTree::Node(rx, gparent, rcol, rl, rr));
-                                                                    solve();
-                                                                }
-                                                            },
-                                                        }
-                                                        have (gparent->__rb_parent_color & 1) == 1 by {
-                                                            rewrite((gparent->__rb_parent_color & 1), color_bit(ucolor));
-                                                            rewrite(ucolor, Color::Black);
-                                                            unfold(color_bit(Color::Black));
-                                                            solve();
-                                                        }
-                                                        mark before_triangle_parent_changes;
-                                                        have at(before_triangle_parent_changes, gparent->rb_right == at(triangle_uncle_pointer, tmp)) by { known(); }
-                                                        have separate(memory(gparent->rb_right), memory(gparent->__rb_parent_color)) by { known(); }
-                                                        have separate(memory(gparent->rb_right), memory(parent->__rb_parent_color)) by { known(); }
-                                                        have at(before_triangle_parent_changes, node->rb_left == at(triangle_old_parent, parent)) by { known(); }
-                                                        have separate(memory(node->rb_left), memory(gparent->__rb_parent_color)) by { known(); }
-                                                        have separate(memory(node->rb_left), memory(parent->__rb_parent_color)) by { known(); }
-                                                        match uu.model ensuring {
-                                                            owns c: ctx_at(node, root);
-                                                            fact c.model == uup;
-                                                            fact node->rb_left == at(triangle_old_parent, parent);
-                                                            fact gparent->rb_right == at(triangle_uncle_pointer, tmp);
-                                                        } {
-                                                            Context::Top => {
-                                                                have ctx_node_is(Context::Top, ugp) == 1 by {
-                                                                    rewrite(Context::Top, uu.model);
-                                                                    rewrite(uu.model, uup);
-                                                                    known();
-                                                                }
-                                                                have ugp == 0 by {
-                                                                    apply(ctx_node_is_top_null(ugp)) using {
-                                                                        ctx_node_is(Context::Top, ugp) == 1;
+                                                                    have at(statement(1).statement(2).call(0).exit, node->rb_right) == at(before_gparent_call, node->rb_right) by { preserve(separate(statement(1).statement(2).call(0).footprint, memory(node->rb_right))); }
+                                                                    have separate(statement(1).statement(2).assignment(gparent, 0).footprint, memory(node->rb_right)) by { normalize() using { separate(memory(((&gparent) as (uint8 *))[0..8]), memory(node->rb_right)); }; }
+                                                                    have at(statement(1).statement(2).assignment(gparent, 0).exit, node->rb_right) == at(statement(1).statement(2).assignment(gparent, 0).entry, node->rb_right) by { preserve(separate(statement(1).statement(2).assignment(gparent, 0).footprint, memory(node->rb_right))); }
+                                                                    have at(statement(1).statement(2).assignment(gparent, 0).entry, node->rb_right) == at(statement(1).statement(2).call(0).exit, node->rb_right) by known();
+                                                                    have separate(statement(1).statement(3).footprint, memory(node->rb_right)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_right)); }; }
+                                                                    have at(statement(1).statement(3).exit, node->rb_right) == at(statement(1).statement(3).entry, node->rb_right) by { preserve(separate(statement(1).statement(3).footprint, memory(node->rb_right))); }
+                                                                    have at(statement(1).statement(3).entry, node->rb_right) == at(statement(1).statement(2).assignment(gparent, 0).exit, node->rb_right) by known();
+
+                                                                    have (node->__rb_parent_color & 1) == color_bit(Color::Red) by {
+                                                                        rewrite(Color::Red, ncolor);
+                                                                        known();
+                                                                    }
+                                                                    have at(triangle_before_uncle_load, node->rb_right) == at(statement(1).statement(3).exit, node->rb_right) by known();
+                                                                    have node->rb_right == at(before_gparent_call, node->rb_right) by known();
+                                                                    let inner_uncle = fold(insert_right_link(gparent), { link: InsertLink::To(at(triangle_uncle_pointer, tmp)) });
+                                                                    let inner_tag = fold(insert_parent_tag(gparent, ugp), { color: ucolor });
+                                                                    step();
+                                                                    step();
+                                                                    step();
+                                                                    have separate(statement(1).statement(4).statement(1).footprint, memory(node->rb_right)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_right)); }; }
+                                                                    have at(statement(1).statement(4).statement(1).exit, node->rb_right) == at(statement(1).statement(4).statement(1).entry, node->rb_right) by { preserve(separate(statement(1).statement(4).statement(1).footprint, memory(node->rb_right))); }
+                                                                    have at(statement(1).statement(4).statement(1).entry, node->rb_right) == at(triangle_uncle_pointer, node->rb_right) by known();
+                                                                    have separate(statement(1).statement(4).statement(1).footprint, memory(node->rb_left)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_left)); }; }
+                                                                    have at(statement(1).statement(4).statement(1).exit, node->rb_left) == at(statement(1).statement(4).statement(1).entry, node->rb_left) by { preserve(separate(statement(1).statement(4).statement(1).footprint, memory(node->rb_left))); }
+                                                                    have separate(memory(parent->rb_right), memory(node->rb_left)) by { known(); }
+                                                                    mark before_inner_parent_right;
+                                                                    have at(before_inner_parent_right, parent->rb_left == parent->rb_left) by { normalize(); }
+                                                                    have separate(memory(parent->rb_left), memory(parent->rb_right)) by { known(); }
+                                                                    have separate(memory(parent->rb_left), memory(node->rb_left)) by { known(); }
+                                                                    mark before_inner_node_left;
+                                                                    have at(before_inner_node_left, node->rb_right == node->rb_right) by { normalize(); }
+                                                                    have separate(memory(node->rb_right), memory(parent->rb_right)) by { known(); }
+                                                                    have separate(memory(node->rb_right), memory(node->rb_left)) by { known(); }
+                                                                    let inner_parent_other = fold(insert_left_link(parent), { link: InsertLink::To(parent->rb_left) });
+                                                                    let inner_node_other = fold(insert_right_link(node), { link: InsertLink::To(original_outer_child) });
+                                                                    match nl_at.model ensuring {
+                                                                        owns bn: rb_at(tmp);
+                                                                        owns inner_node_other: insert_right_link(node);
+                                                                        fact inner_node_other.link == InsertLink::To(original_outer_child);
+                                                                        owns inner_tag: insert_parent_tag(gparent, ugp);
+                                                                        fact inner_tag.color == ucolor;
+                                                                        fact bn.model == rb_reparent(nleft, cid);
+                                                                        fact node->rb_left == parent;
+                                                                        fact gparent->rb_right == at(triangle_uncle_pointer, tmp);
+
+                                                                        fact parent->rb_right == tmp;
+                                                                        fact parent->rb_left == at(before_inner_parent_right, parent->rb_left);
+                                                                    } {
+                                                                        RbTree::Empty => {
+                                                                            unfold(nl_at);
+                                                                            step();
+                                                                            step();
+                                                                            let empty_parent_focus = fold(insert_right_link(parent), { link: InsertLink::To(tmp) });
+                                                                            step();
+                                                                            let empty_node_focus = fold(insert_left_link(node), { link: InsertLink::To(parent) });
+                                                                            step();
+                                                                            step();
+                                                                            have rb_reparent(nleft, cid) == RbTree::Empty by {
+                                                                                rewrite(nleft, RbTree::Empty);
+                                                                                unfold(rb_reparent(RbTree::Empty, cid)); normalize();
+                                                                            }
+                                                                            unfold(inner_parent_other);
+                                                                            have parent->rb_left == at(before_inner_parent_right, parent->rb_left) by known();
+                                                                            unfold(empty_parent_focus);
+                                                                            have parent->rb_right == tmp by { known(); }
+                                                                            unfold(inner_uncle);
+                                                                            have gparent->rb_right == at(triangle_uncle_pointer, tmp) by known();
+                                                                            unfold(empty_node_focus);
+                                                                            have node->rb_left == parent by { known(); }
+                                                                            let bn = fold(rb_at(tmp), { model: RbTree::Empty });
+                                                                            have bn.model == rb_reparent(nleft, cid) by {
+                                                                                rewrite(rb_reparent(nleft, cid), RbTree::Empty);
+                                                                                solve();
+                                                                            }
+                                                                        },
+                                                                        RbTree::Node(bx, bp, bcol, br, bl) => {
+                                                                            let { right: bl_at, left: br_at } = unfold(nl_at);
+                                                                            have separate(memory(((&tmp) as (uint8 *))[0..8]), memory(bx->rb_left)) by known();
+                                                                            have separate(statement(1).statement(4).statement(1).footprint, memory(bx->rb_left)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(bx->rb_left)); }; }
+                                                                            have at(statement(1).statement(4).statement(1).exit, bx->rb_left) == at(statement(1).statement(4).statement(1).entry, bx->rb_left) by { preserve(separate(statement(1).statement(4).statement(1).footprint, memory(bx->rb_left))); }
+                                                                            have separate(memory(((&tmp) as (uint8 *))[0..8]), memory(bx->rb_right)) by known();
+                                                                            have separate(statement(1).statement(4).statement(1).footprint, memory(bx->rb_right)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(bx->rb_right)); }; }
+                                                                            have at(statement(1).statement(4).statement(1).exit, bx->rb_right) == at(statement(1).statement(4).statement(1).entry, bx->rb_right) by { preserve(separate(statement(1).statement(4).statement(1).footprint, memory(bx->rb_right))); }
+                                                                            step();
+                                                                            have separate(statement(1).statement(4).statement(2).statement(0).footprint, memory(bx->rb_left)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(bx->rb_left)); }; }
+                                                                            have at(statement(1).statement(4).statement(2).statement(0).exit, bx->rb_left) == at(statement(1).statement(4).statement(2).statement(0).entry, bx->rb_left) by { preserve(separate(statement(1).statement(4).statement(2).statement(0).footprint, memory(bx->rb_left))); }
+                                                                            have separate(statement(1).statement(4).statement(2).statement(0).footprint, memory(bx->rb_right)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(bx->rb_right)); }; }
+                                                                            have at(statement(1).statement(4).statement(2).statement(0).exit, bx->rb_right) == at(statement(1).statement(4).statement(2).statement(0).entry, bx->rb_right) by { preserve(separate(statement(1).statement(4).statement(2).statement(0).footprint, memory(bx->rb_right))); }
+                                                                            mark before_inner_child_links;
+                                                                            have separate(memory(node->rb_left), memory(tmp->__rb_parent_color)) by { known(); }
+
+                                                                            have separate(memory(parent->rb_right), memory(tmp->__rb_parent_color)) by { known(); }
+                                                                            have at(before_inner_child_links, tmp->rb_right == bx->rb_right) by { known(); }
+                                                                            have at(before_inner_child_links, separate(memory(tmp->rb_right), memory(parent->rb_right))) by { known(); }
+                                                                            have at(before_inner_child_links, separate(memory(tmp->rb_right), memory(node->rb_left))) by { known(); }
+                                                                            have at(before_inner_child_links, separate(memory(tmp->rb_right), memory(tmp->__rb_parent_color))) by { known(); }
+                                                                            have at(before_inner_child_links, tmp->rb_left == bx->rb_left) by { known(); }
+                                                                            have at(before_inner_child_links, separate(memory(tmp->rb_left), memory(parent->rb_right))) by { known(); }
+                                                                            have at(before_inner_child_links, separate(memory(tmp->rb_left), memory(node->rb_left))) by { known(); }
+                                                                            have at(before_inner_child_links, separate(memory(tmp->rb_left), memory(tmp->__rb_parent_color))) by { known(); }
+                                                                            have rb_root_black(RbTree::Node(bx, bp, bcol, br, bl)) == 1 by {
+                                                                                rewrite(RbTree::Node(bx, bp, bcol, br, bl), nleft);
+                                                                                known();
+                                                                            }
+                                                                            have color_bit(bcol) == 1 by {
+                                                                                apply(rb_root_black_node_color_bit(bx, bp, bcol, br, bl)) using {
+                                                                                    rb_root_black(RbTree::Node(bx, bp, bcol, br, bl)) == 1;
+                                                                                };
+                                                                                known();
+                                                                            }
+                                                                            have rb_reparent(nleft, cid) == RbTree::Node(bx, cid, bcol, br, bl) by {
+                                                                                rewrite(nleft, RbTree::Node(bx, bp, bcol, br, bl));
+                                                                                unfold(rb_reparent(RbTree::Node(bx, bp, bcol, br, bl), cid)); normalize();
+                                                                            }
+                                                                            let middle_left = fold(insert_left_link(tmp), { link: InsertLink::To(bx->rb_left) });
+                                                                            let middle_right = fold(insert_right_link(tmp), { link: InsertLink::To(bx->rb_right) });
+                                                                            step();
+                                                                            let inner_new_parent_focus = fold(insert_right_link(parent), { link: InsertLink::To(tmp) });
+                                                                            step();
+                                                                            let inner_new_node_focus = fold(insert_left_link(node), { link: InsertLink::To(parent) });
+                                                                            step();
+                                                                            step();
+                                                                            unfold(middle_right);
+                                                                            have tmp->rb_right == at(before_inner_child_links, bx->rb_right) by known();
+                                                                            unfold(middle_left);
+                                                                            have tmp->rb_left == at(before_inner_child_links, bx->rb_left) by known();
+                                                                            unfold(inner_parent_other);
+                                                                            have parent->rb_left == at(before_inner_parent_right, parent->rb_left) by known();
+                                                                            unfold(inner_new_parent_focus);
+                                                                            have parent->rb_right == tmp by { known(); }
+                                                                            unfold(inner_uncle);
+                                                                            have gparent->rb_right == at(triangle_uncle_pointer, tmp) by known();
+                                                                            unfold(inner_new_node_focus);
+                                                                            have node->rb_left == parent by { known(); }
+                                                                            have aligned(parent, 8) by { rewrite(parent, cid); known(); }
+                                                                            have tmp->__rb_parent_color == (address(parent) | 1) by known();
+                                                                            have (address(parent) | 1) == address(parent) + 1 by { normalize() using { aligned(parent, 8); }; }
+                                                                            have tmp->__rb_parent_color == address(parent) + 1 by known();
+                                                                            have (tmp->__rb_parent_color & 1) == color_bit(bcol) by { rewrite(color_bit(bcol), 1); known(); }
+                                                                            have tmp->__rb_parent_color == address(cid) + (tmp->__rb_parent_color & 1) by { rewrite(cid, parent); known(); }
+                                                                            have ((tmp->__rb_parent_color & ~3) as (struct rb_node *)) == cid by { rewrite(cid, parent); known(); }
+                                                                            have rb_parent_is(br, tmp) == 1 by known();
+                                                                            have rb_parent_is(bl, tmp) == 1 by known();
+                                                                            let bn = fold(rb_at(tmp), { model: RbTree::Node(bx, cid, bcol, br, bl) }, { right: bl_at, left: br_at });
+                                                                            have bn.model == rb_reparent(nleft, cid) by {
+                                                                                rewrite(rb_reparent(nleft, cid), RbTree::Node(bx, cid, bcol, br, bl));
+                                                                                solve();
+                                                                            }
+                                                                        },
+                                                                    }
+                                                                    mark before_inner_parent_color;
+                                                                    have at(before_inner_parent_color, node->rb_left == parent) by { known(); }
+                                                                    have separate(memory(node->rb_left), memory(parent->__rb_parent_color)) by { known(); }
+                                                                    have at(before_inner_parent_color, gparent->rb_right == at(triangle_uncle_pointer, tmp)) by { known(); }
+                                                                    have separate(memory(gparent->rb_right), memory(parent->__rb_parent_color)) by { known(); }
+
+                                                                    have at(before_inner_parent_color, parent->rb_right == tmp) by { known(); }
+
+                                                                    have at(before_inner_parent_color, parent->rb_left == at(before_inner_parent_right, parent->rb_left)) by { known(); }
+                                                                    have separate(memory(parent->rb_left), memory(parent->__rb_parent_color)) by { known(); }
+                                                                    have separate(memory(parent->rb_right), memory(parent->__rb_parent_color)) by { known(); }
+                                                                    step();
+
+                                                                    transport(at(before_inner_parent_color, parent->rb_right == tmp), parent->rb_right == tmp) using {
+                                                                        at(before_inner_parent_color, parent->rb_right == tmp);
+                                                                        separate(memory(parent->rb_right), memory(parent->__rb_parent_color));
                                                                     };
-                                                                    known();
-                                                                }
-                                                                unfold(uu);
-                                                                have separate(memory(gparent->rb_right), memory(root->rb_node)) by { known(); }
-                                                                have separate(memory(node->rb_left), memory(root->rb_node)) by { known(); }
-                                                                step();
-                                                                transport(at(before_triangle_parent_changes, gparent->rb_right == at(triangle_uncle_pointer, tmp)), gparent->rb_right == at(triangle_uncle_pointer, tmp)) using {
-                                                                    at(before_triangle_parent_changes, gparent->rb_right == at(triangle_uncle_pointer, tmp));
-                                                                    separate(memory(gparent->rb_right), memory(gparent->__rb_parent_color));
-                                                                    separate(memory(gparent->rb_right), memory(parent->__rb_parent_color));
-                                                                    separate(memory(gparent->rb_right), memory(root->rb_node));
-                                                                };
-                                                                transport(at(before_triangle_parent_changes, node->rb_left == at(triangle_old_parent, parent)), node->rb_left == at(triangle_old_parent, parent)) using {
-                                                                    at(before_triangle_parent_changes, node->rb_left == at(triangle_old_parent, parent));
-                                                                    separate(memory(node->rb_left), memory(gparent->__rb_parent_color));
-                                                                    separate(memory(node->rb_left), memory(parent->__rb_parent_color));
-                                                                    separate(memory(node->rb_left), memory(root->rb_node));
-                                                                };
-                                                                let c = fold(ctx_at(node, root), { model: Context::Top });
-                                                                have c.model == uup by { rewrite(uup, Context::Top); normalize(); }
-                                                            },
-                                                            Context::Left(xid, xgp, xcol, xsib, xup) => {
-                                                                have ctx_node_is(Context::Left(xid, xgp, xcol, xsib, xup), ugp) == 1 by {
-                                                                    rewrite(Context::Left(xid, xgp, xcol, xsib, xup), uu.model);
-                                                                    rewrite(uu.model, uup);
-                                                                    known();
-                                                                }
-                                                                have ugp == xid by {
-                                                                    apply(ctx_node_is_left_identity(xid, xgp, xcol, xsib, xup, ugp)) using {
-                                                                        ctx_node_is(Context::Left(xid, xgp, xcol, xsib, xup), ugp) == 1;
+                                                                    transport(at(before_inner_parent_color, parent->rb_left == at(before_inner_parent_right, parent->rb_left)), parent->rb_left == at(before_inner_parent_right, parent->rb_left)) using {
+                                                                        at(before_inner_parent_color, parent->rb_left == at(before_inner_parent_right, parent->rb_left));
+                                                                        separate(memory(parent->rb_left), memory(parent->__rb_parent_color));
                                                                     };
-                                                                    known();
-                                                                }
-                                                                let { sibling: xs, up: xu } = unfold(uu);
-                                                                have separate(memory(gparent->rb_right), memory(xid->rb_right)) by { known(); }
-                                                                have separate(memory(node->rb_left), memory(xid->rb_right)) by { known(); }
-                                                                have separate(memory(gparent->rb_right), memory(xid->rb_left)) by { known(); }
-                                                                have separate(memory(node->rb_left), memory(xid->rb_left)) by { known(); }
-                                                                step();
-                                                                transport(at(before_triangle_parent_changes, gparent->rb_right == at(triangle_uncle_pointer, tmp)), gparent->rb_right == at(triangle_uncle_pointer, tmp)) using {
-                                                                    at(before_triangle_parent_changes, gparent->rb_right == at(triangle_uncle_pointer, tmp));
-                                                                    separate(memory(gparent->rb_right), memory(gparent->__rb_parent_color));
-                                                                    separate(memory(gparent->rb_right), memory(parent->__rb_parent_color));
-                                                                    separate(memory(gparent->rb_right), memory(xid->rb_right));
-                                                                    separate(memory(gparent->rb_right), memory(xid->rb_left));
-                                                                };
-                                                                transport(at(before_triangle_parent_changes, node->rb_left == at(triangle_old_parent, parent)), node->rb_left == at(triangle_old_parent, parent)) using {
-                                                                    at(before_triangle_parent_changes, node->rb_left == at(triangle_old_parent, parent));
-                                                                    separate(memory(node->rb_left), memory(gparent->__rb_parent_color));
-                                                                    separate(memory(node->rb_left), memory(parent->__rb_parent_color));
-                                                                    separate(memory(node->rb_left), memory(xid->rb_right));
-                                                                    separate(memory(node->rb_left), memory(xid->rb_left));
-                                                                };
-                                                                let c = fold(ctx_at(node, root), { model: Context::Left(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
-                                                                have c.model == uup by { rewrite(uup, Context::Left(xid, xgp, xcol, xsib, xup)); normalize(); }
-                                                            },
-                                                            Context::Right(xid, xgp, xcol, xsib, xup) => {
-                                                                have ctx_node_is(Context::Right(xid, xgp, xcol, xsib, xup), ugp) == 1 by {
-                                                                    rewrite(Context::Right(xid, xgp, xcol, xsib, xup), uu.model);
-                                                                    rewrite(uu.model, uup);
-                                                                    known();
-                                                                }
-                                                                have ugp == xid by {
-                                                                    apply(ctx_node_is_right_identity(xid, xgp, xcol, xsib, xup, ugp)) using {
-                                                                        ctx_node_is(Context::Right(xid, xgp, xcol, xsib, xup), ugp) == 1;
+                                                                    transport(at(before_inner_parent_color, gparent->rb_right == at(triangle_uncle_pointer, tmp)), gparent->rb_right == at(triangle_uncle_pointer, tmp)) using {
+                                                                        at(before_inner_parent_color, gparent->rb_right == at(triangle_uncle_pointer, tmp));
+                                                                        separate(memory(gparent->rb_right), memory(parent->__rb_parent_color));
                                                                     };
-                                                                    known();
-                                                                }
-                                                                let { sibling: xs, up: xu } = unfold(uu);
-                                                                have separate(memory(gparent->rb_right), memory(xid->rb_right)) by { known(); }
-                                                                have separate(memory(node->rb_left), memory(xid->rb_right)) by { known(); }
-                                                                have separate(memory(gparent->rb_right), memory(xid->rb_left)) by { known(); }
-                                                                have separate(memory(node->rb_left), memory(xid->rb_left)) by { known(); }
-                                                                mark before_triangle_upper_link;
-                                                                have at(before_triangle_upper_link, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp) by { known(); }
-                                                                have separate(memory(xid->__rb_parent_color), memory(gparent->__rb_parent_color)) by { known(); }
-                                                                have separate(memory(xid->__rb_parent_color), memory(parent->__rb_parent_color)) by { known(); }
-                                                                have separate(memory(xid->__rb_parent_color), memory(xid->rb_right)) by { known(); }
-                                                                have separate(memory(xid->__rb_parent_color), memory(xid->rb_left)) by { known(); }
-                                                                match xsib ensuring {
-                                                                    owns xs: rb_at(xid->rb_left);
-                                                                    fact xs.model == xsib;
-                                                                    fact node->rb_left == at(triangle_old_parent, parent);
-                                                                    fact gparent->rb_right == at(triangle_uncle_pointer, tmp);
-                                                                    fact ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp;
-                                                                } {
-                                                                    RbTree::Empty => {
-                                                                        unfold(xs);
-                                                                        step();
-                                                                        transport(at(before_triangle_upper_link, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp), ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp) using {
-                                                                            at(before_triangle_upper_link, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp);
-                                                                            separate(memory(xid->__rb_parent_color), memory(gparent->__rb_parent_color));
-                                                                            separate(memory(xid->__rb_parent_color), memory(parent->__rb_parent_color));
-                                                                            separate(memory(xid->__rb_parent_color), memory(xid->rb_right));
-                                                                            separate(memory(xid->__rb_parent_color), memory(xid->rb_left));
-                                                                        };
-                                                                        transport(at(before_triangle_parent_changes, gparent->rb_right == at(triangle_uncle_pointer, tmp)), gparent->rb_right == at(triangle_uncle_pointer, tmp)) using {
-                                                                            at(before_triangle_parent_changes, gparent->rb_right == at(triangle_uncle_pointer, tmp));
-                                                                            separate(memory(gparent->rb_right), memory(gparent->__rb_parent_color));
-                                                                            separate(memory(gparent->rb_right), memory(parent->__rb_parent_color));
-                                                                            separate(memory(gparent->rb_right), memory(xid->rb_right));
-                                                                            separate(memory(gparent->rb_right), memory(xid->rb_left));
-                                                                        };
-                                                                        transport(at(before_triangle_parent_changes, node->rb_left == at(triangle_old_parent, parent)), node->rb_left == at(triangle_old_parent, parent)) using {
-                                                                            at(before_triangle_parent_changes, node->rb_left == at(triangle_old_parent, parent));
-                                                                            separate(memory(node->rb_left), memory(gparent->__rb_parent_color));
-                                                                            separate(memory(node->rb_left), memory(parent->__rb_parent_color));
-                                                                            separate(memory(node->rb_left), memory(xid->rb_right));
-                                                                            separate(memory(node->rb_left), memory(xid->rb_left));
-                                                                        };
-                                                                        let xs = fold(rb_at(0), { model: xsib });
-                                                                    },
-                                                                    RbTree::Node(yid, yp, ycol, yl, yr) => {
-                                                                        let { left: yl_at, right: yr_at } = unfold(xs);
-                                                                        step();
-                                                                        transport(at(before_triangle_upper_link, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp), ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp) using {
-                                                                            at(before_triangle_upper_link, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp);
-                                                                            separate(memory(xid->__rb_parent_color), memory(gparent->__rb_parent_color));
-                                                                            separate(memory(xid->__rb_parent_color), memory(parent->__rb_parent_color));
-                                                                            separate(memory(xid->__rb_parent_color), memory(xid->rb_right));
-                                                                            separate(memory(xid->__rb_parent_color), memory(xid->rb_left));
-                                                                        };
-                                                                        transport(at(before_triangle_parent_changes, gparent->rb_right == at(triangle_uncle_pointer, tmp)), gparent->rb_right == at(triangle_uncle_pointer, tmp)) using {
-                                                                            at(before_triangle_parent_changes, gparent->rb_right == at(triangle_uncle_pointer, tmp));
-                                                                            separate(memory(gparent->rb_right), memory(gparent->__rb_parent_color));
-                                                                            separate(memory(gparent->rb_right), memory(parent->__rb_parent_color));
-                                                                            separate(memory(gparent->rb_right), memory(xid->rb_right));
-                                                                            separate(memory(gparent->rb_right), memory(xid->rb_left));
-                                                                        };
-                                                                        transport(at(before_triangle_parent_changes, node->rb_left == at(triangle_old_parent, parent)), node->rb_left == at(triangle_old_parent, parent)) using {
-                                                                            at(before_triangle_parent_changes, node->rb_left == at(triangle_old_parent, parent));
-                                                                            separate(memory(node->rb_left), memory(gparent->__rb_parent_color));
-                                                                            separate(memory(node->rb_left), memory(parent->__rb_parent_color));
-                                                                            separate(memory(node->rb_left), memory(xid->rb_right));
-                                                                            separate(memory(node->rb_left), memory(xid->rb_left));
-                                                                        };
-                                                                        let xs = fold(rb_at(yid), { model: xsib }, { left: yl_at, right: yr_at });
-                                                                    },
-                                                                }
-                                                                let c = fold(ctx_at(node, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
-                                                                have c.model == uup by { rewrite(uup, Context::Right(xid, xgp, xcol, xsib, xup)); normalize(); }
-                                                            },
-                                                        }
-                                                            have rb_parent_is(rb_reparent(nright, gparent), gparent) == 1 by {
-                                                                apply(rb_reparent_parent_is(nright, gparent));
-                                                                known();
+                                                                    transport(at(before_inner_parent_color, node->rb_left == parent), node->rb_left == parent) using {
+                                                                        at(before_inner_parent_color, node->rb_left == parent);
+                                                                        separate(memory(node->rb_left), memory(parent->__rb_parent_color));
+                                                                    };
+                                                                    have rb_parent_is(rb_reparent(nleft, cid), cid) == 1 by {
+                                                                        apply(rb_reparent_parent_is(nleft, cid));
+                                                                        known();
+                                                                    }
+                                                                    have node == nid by known();
+                                                                    have aligned(node, 8) by known();
+                                                                    have parent->__rb_parent_color == address(node) by known();
+                                                                    have (parent->__rb_parent_color & 1) == 0 by known();
+                                                                    have parent->__rb_parent_color == address(nid) + (parent->__rb_parent_color & 1) by { rewrite(nid, node); known(); }
+                                                                    have ((parent->__rb_parent_color & ~3) as (struct rb_node *)) == nid by { rewrite(nid, node); known(); }
+                                                                    unfold(color_bit(Color::Red));
+                                                                    let pn = fold(rb_at(parent), { model: RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)) }, { right: bn, left: cs });
+                                                                    mark triangle_old_parent;
+                                                                    have at(triangle_old_parent, node->rb_left == parent) by { known(); }
+                                                                    step();
+                                                                    mark before_triangle_parent_assignment;
+
+                                                                    step();
+
+                                                                    unfold(inner_node_other);
+                                                                    have node->rb_right == original_outer_child by known();
+                                                                    mark before_outer_grandparent_tag;
+
+                                                                    have at(before_outer_grandparent_tag, gparent->rb_right == at(triangle_uncle_pointer, tmp)) by { known(); }
+                                                                    have separate(memory(gparent->rb_right), memory(gparent->rb_left)) by { known(); }
+                                                                    have separate(memory(gparent->rb_right), memory(parent->rb_right)) by { known(); }
+                                                                    have at(before_outer_grandparent_tag, node->rb_left == at(triangle_old_parent, parent)) by { known(); }
+                                                                    have separate(memory(node->rb_left), memory(gparent->rb_left)) by { known(); }
+                                                                    have separate(memory(node->rb_left), memory(parent->rb_right)) by { known(); }
+                                                                    let triangle_outer_uncle = fold(insert_right_link(gparent), { link: InsertLink::To(at(triangle_uncle_pointer, tmp)) });
+                                                                    let triangle_outer_other = fold(insert_left_link(node), { link: InsertLink::To(at(triangle_old_parent, parent)) });
+                                                                    match nr_at.model ensuring {
+                                                                        owns rn: rb_at(tmp);
+                                                                        owns inner_tag: insert_parent_tag(gparent, ugp);
+                                                                        fact inner_tag.color == ucolor;
+                                                                        fact rn.model == rb_reparent(nright, gparent);
+                                                                        fact gparent->rb_left == tmp;
+                                                                        fact parent->rb_right == gparent;
+                                                                        fact node->rb_left == at(triangle_old_parent, parent);
+                                                                        fact gparent->rb_right == at(triangle_uncle_pointer, tmp);
+
+                                                                    } {
+                                                                        RbTree::Empty => {
+                                                                            unfold(nr_at);
+                                                                            step();
+                                                                            step();
+                                                                            let triangle_new_gparent = fold(insert_left_link(gparent), { link: InsertLink::To(tmp) });
+                                                                            step();
+                                                                            let triangle_new_parent = fold(insert_right_link(parent), { link: InsertLink::To(gparent) });
+                                                                            step();
+                                                                            step();
+                                                                            have rb_reparent(nright, gparent) == RbTree::Empty by {
+                                                                                rewrite(nright, RbTree::Empty);
+                                                                                unfold(rb_reparent(RbTree::Empty, gparent)); normalize();
+                                                                            }
+                                                                            unfold(triangle_outer_uncle);
+                                                                            have gparent->rb_right == at(triangle_uncle_pointer, tmp) by known();
+                                                                            unfold(triangle_outer_other);
+                                                                            have node->rb_left == at(triangle_old_parent, parent) by known();
+                                                                            unfold(triangle_new_gparent);
+                                                                            have gparent->rb_left == tmp by known();
+                                                                            unfold(triangle_new_parent);
+                                                                            have parent->rb_right == gparent by known();
+                                                                            let rn = fold(rb_at(tmp), { model: RbTree::Empty });
+                                                                            have rn.model == rb_reparent(nright, gparent) by {
+                                                                                rewrite(rb_reparent(nright, gparent), RbTree::Empty);
+                                                                                solve();
+                                                                            }
+                                                                        },
+                                                                        RbTree::Node(rx, rp, rcol, rr, rl) => {
+                                                                            let { right: rl_at, left: rr_at } = unfold(nr_at);
+                                                                            have separate(memory(((&parent) as (uint8 *))[0..8]), memory(original_outer_child->rb_right)) by known();
+                                                                            have separate(statement(1).statement(4).statement(2).statement(6).footprint, memory(original_outer_child->rb_right)) by { normalize() using { separate(memory(((&parent) as (uint8 *))[0..8]), memory(original_outer_child->rb_right)); }; }
+                                                                            have at(statement(1).statement(4).statement(2).statement(6).exit, original_outer_child->rb_right) == at(statement(1).statement(4).statement(2).statement(6).entry, original_outer_child->rb_right) by { preserve(separate(statement(1).statement(4).statement(2).statement(6).footprint, memory(original_outer_child->rb_right))); }
+                                                                            have separate(memory(((&parent) as (uint8 *))[0..8]), memory(original_outer_child->rb_left)) by known();
+                                                                            have separate(statement(1).statement(4).statement(2).statement(6).footprint, memory(original_outer_child->rb_left)) by { normalize() using { separate(memory(((&parent) as (uint8 *))[0..8]), memory(original_outer_child->rb_left)); }; }
+                                                                            have at(statement(1).statement(4).statement(2).statement(6).exit, original_outer_child->rb_left) == at(statement(1).statement(4).statement(2).statement(6).entry, original_outer_child->rb_left) by { preserve(separate(statement(1).statement(4).statement(2).statement(6).footprint, memory(original_outer_child->rb_left))); }
+                                                                            have rx == original_outer_child by known();
+
+                                                                            let outer_child_left = fold(insert_right_link(original_outer_child), { link: InsertLink::To(original_outer_child->rb_right) });
+                                                                            let outer_child_right = fold(insert_left_link(original_outer_child), { link: InsertLink::To(original_outer_child->rb_left) });
+                                                                            step();
+
+                                                                            have rb_root_black(RbTree::Node(rx, rp, rcol, rr, rl)) == 1 by {
+                                                                                rewrite(RbTree::Node(rx, rp, rcol, rr, rl), nright);
+                                                                                known();
+                                                                            }
+                                                                            have color_bit(rcol) == 1 by {
+                                                                                apply(rb_root_black_node_color_bit(rx, rp, rcol, rr, rl)) using {
+                                                                                    rb_root_black(RbTree::Node(rx, rp, rcol, rr, rl)) == 1;
+                                                                                };
+                                                                                known();
+                                                                            }
+                                                                            have rb_reparent(nright, gparent) == RbTree::Node(rx, gparent, rcol, rr, rl) by {
+                                                                                rewrite(nright, RbTree::Node(rx, rp, rcol, rr, rl));
+                                                                                unfold(rb_reparent(RbTree::Node(rx, rp, rcol, rr, rl), gparent)); normalize();
+                                                                            }
+                                                                            step();
+                                                                            let triangle_new_gparent = fold(insert_left_link(gparent), { link: InsertLink::To(tmp) });
+                                                                            step();
+                                                                            let triangle_new_parent = fold(insert_right_link(parent), { link: InsertLink::To(gparent) });
+                                                                            step();
+                                                                            mark before_outer_child_color;
+                                                                            have separate(memory(original_outer_child->rb_right), memory(tmp->__rb_parent_color)) by { rewrite(tmp, original_outer_child); normalize(); }
+                                                                            have separate(memory(original_outer_child->rb_left), memory(tmp->__rb_parent_color)) by { rewrite(tmp, original_outer_child); normalize(); }
+                                                                            step();
+                                                                            have separate(statement(1).statement(4).statement(5).statement(0).footprint, memory(original_outer_child->rb_right)) by { normalize() using { separate(memory(original_outer_child->rb_right), memory(tmp->__rb_parent_color)); }; }
+                                                                            have original_outer_child->rb_right == at(before_outer_child_color, original_outer_child->rb_right) by { preserve(separate(statement(1).statement(4).statement(5).statement(0).footprint, memory(original_outer_child->rb_right))); }
+                                                                            have separate(statement(1).statement(4).statement(5).statement(0).footprint, memory(original_outer_child->rb_left)) by { normalize() using { separate(memory(original_outer_child->rb_left), memory(tmp->__rb_parent_color)); }; }
+                                                                            have original_outer_child->rb_left == at(before_outer_child_color, original_outer_child->rb_left) by { preserve(separate(statement(1).statement(4).statement(5).statement(0).footprint, memory(original_outer_child->rb_left))); }
+                                                                            unfold(outer_child_left);
+                                                                            unfold(outer_child_right);
+                                                                            have tmp->rb_right == original_outer_child->rb_right by { rewrite(tmp, original_outer_child); known(); }
+                                                                            have tmp->rb_left == original_outer_child->rb_left by { rewrite(tmp, original_outer_child); known(); }
+                                                                            unfold(triangle_outer_uncle);
+                                                                            have gparent->rb_right == at(triangle_uncle_pointer, tmp) by known();
+                                                                            unfold(triangle_outer_other);
+                                                                            have node->rb_left == at(triangle_old_parent, parent) by known();
+                                                                            unfold(triangle_new_gparent);
+                                                                            have gparent->rb_left == tmp by known();
+                                                                            unfold(triangle_new_parent);
+                                                                            have parent->rb_right == gparent by known();
+                                                                            let rn = fold(rb_at(original_outer_child), { model: RbTree::Node(rx, gparent, rcol, rr, rl) }, { right: rl_at, left: rr_at });
+                                                                            have rn.model == rb_reparent(nright, gparent) by {
+                                                                                rewrite(rb_reparent(nright, gparent), RbTree::Node(rx, gparent, rcol, rr, rl));
+                                                                                solve();
+                                                                            }
+                                                                        },
+                                                                    }
+                                                                    unfold(inner_tag);
+                                                                    have (gparent->__rb_parent_color & 1) == 1 by {
+                                                                        rewrite((gparent->__rb_parent_color & 1), color_bit(ucolor));
+                                                                        rewrite(ucolor, Color::Black);
+                                                                        unfold(color_bit(Color::Black));
+                                                                        solve();
+                                                                    }
+                                                                    have ctx_node_is(uu.model, ugp) == 1 by known();
+                                                                    have ctx_identity(uu.model) == ugp by { apply(ctx_node_is_identity(uu.model, ugp)) using { ctx_node_is(uu.model, ugp) == 1; }; }
+                                                                    have gparent->__rb_parent_color == address(ugp) + 1 by known();
+                                                                    apply(insert_black_context_word(uu.model, ugp)) using { ctx_node_is(uu.model, ugp) == 1; };
+                                                                    have ctx_parent_word(uu.model, gparent->__rb_parent_color) == 1 by { rewrite(gparent->__rb_parent_color, address(ugp) + 1); known(); }
+                                                                    let final_uncle = fold(insert_right_link(gparent), { link: InsertLink::To(at(triangle_uncle_pointer, tmp)) });
+                                                                    let final_other = fold(insert_left_link(node), { link: InsertLink::To(at(triangle_old_parent, parent)) });
+                                                                    let final_child = fold(insert_left_link(gparent), { link: InsertLink::To(tmp) });
+                                                                    let final_parent = fold(insert_right_link(parent), { link: InsertLink::To(gparent) });
+                                                                    let { after: c } = step(__rb_rotate_set_parents, { c: uu });
+                                                                    unfold(final_uncle);
+                                                                    unfold(final_other);
+                                                                    unfold(final_child);
+                                                                    unfold(final_parent);
+                                                                    have c.model == uup by known();
+                                                                    have rb_parent_is(rb_reparent(nright, gparent), gparent) == 1 by {
+                                                                        apply(rb_reparent_parent_is(nright, gparent));
+                                                                        known();
+                                                                    }
+                                                                    have parent == nid by known();
+                                                                    have aligned(nid, 8) by known();
+                                                                    have gparent->__rb_parent_color == address(nid) by { rewrite(nid, parent); known(); }
+                                                                    have (gparent->__rb_parent_color & 1) == 0 by {
+                                                                        rewrite(gparent->__rb_parent_color, address(nid));
+                                                                        solve() using { aligned(nid, 8); };
+                                                                    }
+                                                                    have gparent->__rb_parent_color == address(nid) + (gparent->__rb_parent_color & 1) by { rewrite((gparent->__rb_parent_color & 1), 0); known(); }
+                                                                    have ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == nid by { rewrite(nid, parent); known(); }
+                                                                    let gn = fold(rb_at(gparent), { model: RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), usib) }, { right: un, left: rn });
+                                                                    have rb_parent_is(RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), nid) == 1 by {
+                                                                        unfold(rb_parent_is(RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), nid));
+                                                                        normalize();
+                                                                    }
+                                                                    have rb_parent_is(RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), usib), nid) == 1 by {
+                                                                        unfold(rb_parent_is(RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), usib), nid));
+                                                                        normalize();
+                                                                    }
+                                                                    have (node->__rb_parent_color & 1) == color_bit(Color::Black) by {
+                                                                        unfold(color_bit(Color::Black));
+                                                                        solve();
+                                                                    }
+                                                                    let t = fold(rb_at(node), { model: RbTree::Node(nid, ugp, Color::Black, RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), usib)) }, { right: gn, left: pn });
+                                                                    have rb_inorder(plug(c.model, t.model)) == rb_inorder(plug(old(c.model), RbTree::Node(identity, node_parent, color, left_model, right_model))) by {
+                                                                        rewrite(c.model, uup);
+                                                                        rewrite(t.model, RbTree::Node(nid, ugp, Color::Black, RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), usib)));
+                                                                        rewrite(rb_inorder(plug(uup, RbTree::Node(nid, ugp, Color::Black, RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), usib)))), rb_inorder(plug(Context::Right(cid, gparent, Color::Red, csib, Context::Left(gparent, ugp, Color::Black, usib, uup)), RbTree::Node(nid, cid, Color::Red, nleft, nright))));
+                                                                        known();
+                                                                    }
+                                                                    have is_rb_root(plug(c.model, t.model)) == 1 by {
+                                                                        rewrite(c.model, uup);
+                                                                        rewrite(t.model, RbTree::Node(nid, ugp, Color::Black, RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), usib)));
+                                                                        known();
+                                                                    }
+                                                                    have rb_parent_consistent(plug(c.model, t.model), 0) == 1 by {
+                                                                        rewrite(c.model, uup);
+                                                                        rewrite(t.model, RbTree::Node(nid, ugp, Color::Black, RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), usib)));
+                                                                        known();
+                                                                    }
+                                                                    have rb_tree_parent_consistent(plug(c.model, t.model)) == 1 by {
+                                                                        unfold(rb_tree_parent_consistent(plug(c.model, t.model)));
+                                                                    }
+                                                                    step();
+                                                                    step();
+                                                                },
                                                             }
-                                                            let gn = fold(rb_at(gparent), { model: RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), usib) }, { left: rn, right: un });
-                                                            have rb_parent_is(RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), nid) == 1 by {
-                                                                unfold(rb_parent_is(RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), nid));
-                                                            }
-                                                            have rb_parent_is(RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), usib), nid) == 1 by {
-                                                                unfold(rb_parent_is(RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), usib), nid));
-                                                            }
-                                                            have (node->__rb_parent_color & 1) == color_bit(Color::Black) by {
-                                                                unfold(color_bit(Color::Black));
-                                                                solve();
-                                                            }
-                                                            let t = fold(rb_at(node), { model: RbTree::Node(nid, ugp, Color::Black, RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), usib)) }, { left: pn, right: gn });
-                                                            have rb_inorder(plug(c.model, t.model)) == rb_inorder(plug(old(c.model), RbTree::Node(identity, node_parent, color, left_model, right_model))) by {
-                                                                rewrite(c.model, uup);
-                                                                rewrite(t.model, RbTree::Node(nid, ugp, Color::Black, RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), usib)));
-                                                                rewrite(rb_inorder(plug(uup, RbTree::Node(nid, ugp, Color::Black, RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), usib)))), rb_inorder(plug(Context::Right(cid, gparent, Color::Red, csib, Context::Left(gparent, ugp, Color::Black, usib, uup)), RbTree::Node(nid, cid, Color::Red, nleft, nright))));
-                                                                known();
-                                                            }
-                                                            have is_rb_root(plug(c.model, t.model)) == 1 by {
-                                                                rewrite(c.model, uup);
-                                                                rewrite(t.model, RbTree::Node(nid, ugp, Color::Black, RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), usib)));
-                                                                known();
-                                                            }
-                                                            have rb_parent_consistent(plug(c.model, t.model), 0) == 1 by {
-                                                                rewrite(c.model, uup);
-                                                                rewrite(t.model, RbTree::Node(nid, ugp, Color::Black, RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), usib)));
-                                                                known();
-                                                            }
-                                                        have rb_tree_parent_consistent(plug(c.model, t.model)) == 1 by {
-                                                            unfold(rb_tree_parent_consistent(plug(c.model, t.model)));
-                                                        }
-                                                        step();
-                                                        step();
                                                     } else {
                                                         match us.model {
                                                             RbTree::Node(unid, unp, uncolor, unl, unr) => {
@@ -3206,44 +3061,59 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             unfold(color_bit(Color::Red));
                                                                             normalize();
                                                                         }
-                                                                        mark before_recolor_tags_3;
-                                                                        have at(before_recolor_tags_3, gparent->rb_left == parent) by { known(); }
-                                                                        have at(before_recolor_tags_3, separate(memory(gparent->rb_left), memory(gparent->__rb_parent_color))) by { known(); }
-                                                                        have at(before_recolor_tags_3, separate(memory(gparent->rb_left), memory(parent->__rb_parent_color))) by { known(); }
-                                                                        have at(before_recolor_tags_3, separate(memory(gparent->rb_left), memory(tmp->__rb_parent_color))) by { known(); }
-                                                                        have at(before_recolor_tags_3, gparent->rb_right == tmp) by { known(); }
-                                                                        have at(before_recolor_tags_3, separate(memory(gparent->rb_right), memory(gparent->__rb_parent_color))) by { known(); }
-                                                                        have at(before_recolor_tags_3, separate(memory(gparent->rb_right), memory(parent->__rb_parent_color))) by { known(); }
-                                                                        have at(before_recolor_tags_3, separate(memory(gparent->rb_right), memory(tmp->__rb_parent_color))) by { known(); }
+                                                                            unfold(read_tag);
+                                                                            let flip_tmp_rb_left = fold(insert_left_link(tmp), { link: InsertLink::To(tmp->rb_left) });
+                                                                            let flip_tmp_rb_right = fold(insert_right_link(tmp), { link: InsertLink::To(tmp->rb_right) });
+                                                                            let flip_parent_rb_left = fold(insert_left_link(parent), { link: InsertLink::To(parent->rb_left) });
+                                                                            let flip_parent_rb_right = fold(insert_right_link(parent), { link: InsertLink::To(parent->rb_right) });
+                                                                            let flip_gparent_rb_left = fold(insert_left_link(gparent), { link: InsertLink::To(gparent->rb_left) });
+                                                                            let flip_gparent_rb_right = fold(insert_right_link(gparent), { link: InsertLink::To(gparent->rb_right) });
+                                                                            let flip_tag = fold(insert_parent_tag(gparent, ugp), { color: ucolor });
                                                                         step();
                                                                         step();
-                                                                        step();
+                                                                            unfold(flip_tmp_rb_left);
+                                                                            unfold(flip_tmp_rb_right);
+                                                                            have aligned(gparent, 8) by { rewrite(gparent, uid); known(); }
+                                                                            have (address(gparent) | 1) == address(gparent) + 1 by {
+                                                                                solve() using { aligned(gparent, 8); };
+                                                                            }
                                                                         let un = fold(rb_at(tmp), { model: RbTree::Node(unid, gparent, Color::Black, unl, unr) }, { left: ul, right: ur });
+                                                                            step();
+                                                                            unfold(flip_parent_rb_left);
+                                                                            unfold(flip_parent_rb_right);
+                                                                            have parent->__rb_parent_color == (address(gparent) | 1) by known();
+                                                                            have parent->__rb_parent_color == address(gparent) + 1 by known();
+                                                                            have (parent->__rb_parent_color & 1) == 1 by known();
+                                                                            have parent->__rb_parent_color == address(gparent) + (parent->__rb_parent_color & 1) by known();
+                                                                            have ((parent->__rb_parent_color & ~3) as (struct rb_node *)) == gparent by known();
                                                                         let pn = fold(rb_at(parent), { model: RbTree::Node(cid, gparent, Color::Black, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright)) }, { left: cs, right: t });
                                                                         step();
+                                                                            unfold(flip_tag);
                                                                         step();
+                                                                            step();
+                                                                            have parent == ugp by known();
                                                                         step();
                                                                         have rb_parent_is(RbTree::Node(cid, gparent, Color::Black, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright)), gparent) == 1 by {
                                                                             unfold(rb_parent_is(RbTree::Node(cid, gparent, Color::Black, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright)), gparent));
+                                                                            normalize();
                                                                         }
                                                                         have rb_parent_is(RbTree::Node(unid, gparent, Color::Black, unl, unr), gparent) == 1 by {
                                                                             unfold(rb_parent_is(RbTree::Node(unid, gparent, Color::Black, unl, unr), gparent));
+                                                                            normalize();
                                                                         }
                                                                         have rb_parent_is(RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(cid, gparent, Color::Black, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright)), RbTree::Node(unid, gparent, Color::Black, unl, unr)), ugp) == 1 by {
                                                                             unfold(rb_parent_is(RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(cid, gparent, Color::Black, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright)), RbTree::Node(unid, gparent, Color::Black, unl, unr)), ugp));
+                                                                            normalize();
                                                                         }
-                                                                        transport(at(before_recolor_tags_3, gparent->rb_left == parent), gparent->rb_left == at(before_recolor_tags_3, parent)) using {
-                                                                            at(before_recolor_tags_3, gparent->rb_left == parent);
-                                                                            at(before_recolor_tags_3, separate(memory(gparent->rb_left), memory(gparent->__rb_parent_color)));
-                                                                            at(before_recolor_tags_3, separate(memory(gparent->rb_left), memory(parent->__rb_parent_color)));
-                                                                            at(before_recolor_tags_3, separate(memory(gparent->rb_left), memory(tmp->__rb_parent_color)));
-                                                                        };
-                                                                        transport(at(before_recolor_tags_3, gparent->rb_right == tmp), gparent->rb_right == at(before_recolor_tags_3, tmp)) using {
-                                                                            at(before_recolor_tags_3, gparent->rb_right == tmp);
-                                                                            at(before_recolor_tags_3, separate(memory(gparent->rb_right), memory(gparent->__rb_parent_color)));
-                                                                            at(before_recolor_tags_3, separate(memory(gparent->rb_right), memory(parent->__rb_parent_color)));
-                                                                            at(before_recolor_tags_3, separate(memory(gparent->rb_right), memory(tmp->__rb_parent_color)));
-                                                                        };
+                                                                            unfold(flip_gparent_rb_left);
+                                                                            unfold(flip_gparent_rb_right);
+                                                                            have aligned(ugp, 8) by known();
+                                                                            have gparent->__rb_parent_color == address(ugp) by known();
+                                                                            have (gparent->__rb_parent_color & 1) == 0 by {
+                                                                                rewrite(gparent->__rb_parent_color, address(ugp));
+                                                                                solve() using { aligned(ugp, 8); };
+                                                                            }
+                                                                            have gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1) by known();
                                                                         let gn = fold(rb_at(gparent), { model: RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(cid, gparent, Color::Black, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright)), RbTree::Node(unid, gparent, Color::Black, unl, unr)) }, { left: pn, right: un });
                                                                     },
                                                                     Color::Black => {
@@ -3287,31 +3157,39 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         known();
                                                     }
                                                     let { sibling: us, up: uu } = unfold(cu);
-                                                    mark before_grandparent_links;
-                                                    have separate(memory(gparent->rb_left), memory(gparent->rb_right)) by { known(); }
-                                                    have separate(memory(gparent->rb_left), memory(parent->rb_left)) by { known(); }
-                                                    have separate(memory(gparent->rb_left), memory(gparent->__rb_parent_color)) by { known(); }
-                                                    have separate(memory(gparent->rb_left), memory(parent->__rb_parent_color)) by { known(); }
-                                                    have at(before_grandparent_links, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp) by { known(); }
-                                                    have separate(memory(gparent->__rb_parent_color), memory(gparent->rb_left)) by { known(); }
-                                                    have separate(memory(gparent->__rb_parent_color), memory(parent->rb_right)) by { known(); }
+                                                        mark triangle_before_uncle_load;
+                                                        have gparent->rb_left == uid->rb_left by { rewrite(gparent, uid); normalize(); }
+                                                        have gparent->rb_right == parent by { rewrite(gparent, uid); rewrite(parent, cid); known(); }
+                                                        let triangle_uncle_link = fold(insert_left_link(gparent), { link: InsertLink::To(uid->rb_left) });
+                                                        let triangle_parent_link = fold(insert_right_link(gparent), { link: InsertLink::To(parent) });
+                                                        let triangle_focus_link = fold(insert_right_link(parent), { link: InsertLink::To(node) });
+                                                        let triangle_tag = fold(insert_parent_tag(gparent, ugp), { color: ucolor });
                                                     step();
-                                                    step();
-                                                    step();
-                                                    mark before_uncle_pointer_changes;
-                                                    have at(before_uncle_pointer_changes, gparent->rb_left == at(before_uncle_pointer_changes, tmp)) by { known(); }
-                                                    have at(before_uncle_pointer_changes, parent->rb_right == node) by { known(); }
-                                                    have separate(memory(parent->rb_right), memory(gparent->rb_right)) by { known(); }
-                                                    have separate(memory(parent->rb_right), memory(parent->rb_left)) by { known(); }
-                                                    have separate(memory(parent->rb_right), memory(gparent->__rb_parent_color)) by { known(); }
-                                                    have separate(memory(parent->rb_right), memory(parent->__rb_parent_color)) by { known(); }
+                                                        unfold(triangle_parent_link);
+                                                        have tmp == parent by known();
                                                     if rb_root_black(usib) == 1 {
                                                         match us.model ensuring {
                                                             owns un: rb_at(tmp);
                                                             fact un.model == usib;
+                                                                fact gparent->rb_left == tmp;
+                                                                fact node->rb_right == at(triangle_before_uncle_load, node->rb_right);
+                                                                fact node->rb_left == at(triangle_before_uncle_load, node->rb_left);
                                                         } {
                                                             RbTree::Node(unid, unp, uncolor, unl, unr) => {
                                                                 let { left: ul, right: ur } = unfold(us);
+                                                                    have unid == uid->rb_left by known();
+                                                                    have unid->rb_left == uid->rb_left->rb_left by { rewrite(unid, uid->rb_left); normalize(); }
+                                                                    have separate(memory(((&tmp) as (uint8 *))[0..8]), memory(unid->rb_left)) by known();
+                                                                    let triangle_saved_rb_left = fold(insert_left_link(unid), { link: InsertLink::To(unid->rb_left) });
+                                                                    have unid->rb_right == uid->rb_left->rb_right by { rewrite(unid, uid->rb_left); normalize(); }
+                                                                    have separate(memory(((&tmp) as (uint8 *))[0..8]), memory(unid->rb_right)) by known();
+                                                                    let triangle_saved_rb_right = fold(insert_right_link(unid), { link: InsertLink::To(unid->rb_right) });
+
+                                                                    let triangle_uncle_tag = fold(insert_parent_tag(uid->rb_left, unp), { color: uncolor });
+                                                                    step();
+                                                                    mark triangle_before_middle_load;
+                                                                    step();
+                                                                    unfold(triangle_uncle_tag);
                                                                 have rb_root_black(RbTree::Node(unid, unp, uncolor, unl, unr)) == 1 by {
                                                                     rewrite(RbTree::Node(unid, unp, uncolor, unl, unr), usib);
                                                                     known();
@@ -3355,7 +3233,25 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     rewrite(Color::Black, uncolor);
                                                                     known();
                                                                 }
-                                                                let un = fold(rb_at(tmp), { model: RbTree::Node(unid, gparent, Color::Black, unl, unr) }, { left: ul, right: ur });
+                                                                    unfold(triangle_uncle_link);
+                                                                    have gparent->rb_left == tmp by { known(); }
+                                                                    have separate(statement(1).statement(4).statement(9).footprint, memory(unid->rb_left)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(unid->rb_left)); }; }
+                                                                    have unid->rb_left == at(triangle_before_middle_load, unid->rb_left) by known();
+                                                                    unfold(triangle_saved_rb_left);
+                                                                    have tmp->rb_left == unid->rb_left by { rewrite(tmp, unid); known(); }
+                                                                    have separate(statement(1).statement(4).statement(9).footprint, memory(unid->rb_right)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(unid->rb_right)); }; }
+                                                                    have unid->rb_right == at(triangle_before_middle_load, unid->rb_right) by known();
+                                                                    unfold(triangle_saved_rb_right);
+                                                                    have tmp->rb_right == unid->rb_right by { rewrite(tmp, unid); known(); }
+                                                                    have separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_right)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_right)); }; }
+                                                                    have at(statement(1).statement(4).statement(9).exit, node->rb_right) == at(statement(1).statement(4).statement(9).entry, node->rb_right) by { preserve(separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_right))); }
+                                                                    have at(statement(1).statement(4).statement(9).entry, node->rb_right) == at(triangle_before_uncle_load, node->rb_right) by known();
+                                                                    have node->rb_right == at(triangle_before_uncle_load, node->rb_right) by known();
+                                                                    have separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_left)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_left)); }; }
+                                                                    have at(statement(1).statement(4).statement(9).exit, node->rb_left) == at(statement(1).statement(4).statement(9).entry, node->rb_left) by { preserve(separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_left))); }
+                                                                    have at(statement(1).statement(4).statement(9).entry, node->rb_left) == at(triangle_before_uncle_load, node->rb_left) by known();
+                                                                    have node->rb_left == at(triangle_before_uncle_load, node->rb_left) by known();
+                                                                    let un = fold(rb_at(uid->rb_left), { model: RbTree::Node(unid, gparent, Color::Black, unl, unr) }, { left: ul, right: ur });
                                                                 have un.model == usib by {
                                                                     rewrite(usib, RbTree::Node(unid, gparent, Color::Black, unl, unr));
                                                                     normalize();
@@ -3364,12 +3260,24 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             RbTree::Empty => {
                                                                 unfold(us);
                                                                 step();
+                                                                    step();
+                                                                    step();
                                                                 have ucolor == Color::Black by {
                                                                     apply(ctx_rb_right_red_focus_black(uid, ugp, ucolor, usib, uup, black_height(t.model))) using {
                                                                         ctx_rb(Context::Right(uid, ugp, ucolor, usib, uup), black_height(t.model), Color::Red) == 1;
                                                                     };
                                                                     known();
                                                                 }
+                                                                    unfold(triangle_uncle_link);
+                                                                    have gparent->rb_left == tmp by { known(); }
+                                                                    have separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_right)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_right)); }; }
+                                                                    have at(statement(1).statement(4).statement(9).exit, node->rb_right) == at(statement(1).statement(4).statement(9).entry, node->rb_right) by { preserve(separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_right))); }
+                                                                    have at(statement(1).statement(4).statement(9).entry, node->rb_right) == at(triangle_before_uncle_load, node->rb_right) by known();
+                                                                    have node->rb_right == at(triangle_before_uncle_load, node->rb_right) by known();
+                                                                    have separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_left)) by { normalize() using { separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_left)); }; }
+                                                                    have at(statement(1).statement(4).statement(9).exit, node->rb_left) == at(statement(1).statement(4).statement(9).entry, node->rb_left) by { preserve(separate(statement(1).statement(4).statement(9).footprint, memory(node->rb_left))); }
+                                                                    have at(statement(1).statement(4).statement(9).entry, node->rb_left) == at(triangle_before_uncle_load, node->rb_left) by known();
+                                                                    have node->rb_left == at(triangle_before_uncle_load, node->rb_left) by known();
                                                                 let un = fold(rb_at(tmp), { model: RbTree::Empty });
                                                                 have un.model == usib by {
                                                                     rewrite(usib, RbTree::Empty);
@@ -3377,6 +3285,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 }
                                                             },
                                                         }
+                                                            unfold(triangle_focus_link);
+                                                            unfold(triangle_tag);
+                                                            mark before_uncle_pointer_changes;
+                                                            have at(before_uncle_pointer_changes, gparent->rb_left == tmp) by { known(); }
                                                         have cup == Context::Right(gparent, ugp, Color::Black, usib, uup) by {
                                                             rewrite(cup, Context::Right(uid, ugp, ucolor, usib, uup));
                                                             rewrite(ucolor, Color::Black);
@@ -3444,27 +3356,39 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         };
                                                         let { left: nl_at, right: nr_at } = unfold(t);
                                                         have (node->__rb_parent_color & 1) == color_bit(Color::Red) by {
-                                                            rewrite(Color::Red, ncolor);
-                                                            known();
+                                                                rewrite(Color::Red, ncolor); known();
                                                         }
+                                                            let t = fold(rb_at(node), { model: RbTree::Node(nid, cid, Color::Red, nleft, nright) }, { left: nl_at, right: nr_at });
+                                                            let held_uncle_link = fold(insert_left_link(gparent), { link: InsertLink::To(at(before_uncle_pointer_changes, tmp)) });
+                                                            let held_focus_link = fold(insert_right_link(parent), { link: InsertLink::To(node) });
+                                                            let rotation_tag = fold(insert_parent_tag(gparent, ugp), { color: ucolor });
                                                         match cs.model ensuring {
                                                             owns sn: rb_at(tmp);
+                                                                owns rotation_tag: insert_parent_tag(gparent, ugp);
+                                                                fact rotation_tag.color == ucolor;
+                                                                fact gparent->rb_right == tmp;
+                                                                fact parent->rb_left == gparent;
                                                             fact sn.model == rb_reparent(csib, gparent);
-                                                            fact ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp;
                                                             fact gparent->rb_left == at(before_uncle_pointer_changes, tmp);
                                                             fact parent->rb_right == node;
                                                         } {
                                                             RbTree::Empty => {
                                                                 unfold(cs);
+                                                                    have parent->rb_left == cid->rb_left by { rewrite(parent, cid); normalize(); }
+                                                                    mark before_sibling_read;
                                                                 step();
                                                                 step();
-                                                                let t = fold(rb_at(node), { model: RbTree::Node(nid, cid, Color::Red, nleft, nright) }, { left: nl_at, right: nr_at });
+                                                                    have tmp == at(before_sibling_read, cid->rb_left) by known();
                                                                 step();
                                                                 step();
                                                                 step();
+                                                                    let written_sibling_link = fold(insert_right_link(gparent), { link: InsertLink::To(tmp) });
+                                                                    step();
+                                                                    let written_grandparent_link = fold(insert_left_link(parent), { link: InsertLink::To(gparent) });
                                                                 step();
                                                                 step();
-                                                                step();
+                                                                    unfold(written_sibling_link);
+                                                                    unfold(written_grandparent_link);
                                                                 have rb_reparent(csib, gparent) == RbTree::Empty by {
                                                                     rewrite(csib, RbTree::Empty);
                                                                     unfold(rb_reparent(RbTree::Empty, gparent)); normalize();
@@ -3474,34 +3398,32 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     rewrite(rb_reparent(csib, gparent), RbTree::Empty);
                                                                     solve();
                                                                 }
-                                                                transport(at(before_grandparent_links, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
-                                                                transport(at(before_uncle_pointer_changes, gparent->rb_left == at(before_uncle_pointer_changes, tmp)), gparent->rb_left == at(before_uncle_pointer_changes, tmp)) using {
-                                                                    at(before_uncle_pointer_changes, gparent->rb_left == at(before_uncle_pointer_changes, tmp));
-                                                                    separate(memory(gparent->rb_left), memory(gparent->rb_right));
-                                                                    separate(memory(gparent->rb_left), memory(parent->rb_left));
-                                                                };
-                                                                transport(at(before_uncle_pointer_changes, parent->rb_right == node), parent->rb_right == node) using {
-                                                                    at(before_uncle_pointer_changes, parent->rb_right == node);
-                                                                    separate(memory(parent->rb_right), memory(gparent->rb_right));
-                                                                    separate(memory(parent->rb_right), memory(parent->rb_left));
-                                                                };
+                                                                    unfold(held_uncle_link);
+                                                                    have gparent->rb_left == at(before_uncle_pointer_changes, tmp) by known();
+                                                                    unfold(held_focus_link);
+                                                                    have parent->rb_right == node by known();
+                                                                    have gparent->rb_right == tmp by known();
+                                                                    have parent->rb_left == gparent by known();
                                                             },
                                                             RbTree::Node(sx, sp, scol, sl, sr) => {
                                                                 let { left: sl_at, right: sr_at } = unfold(cs);
+                                                                    have sx == cid->rb_left by known();
+                                                                    have sx->rb_left == cid->rb_left->rb_left by { rewrite(sx, cid->rb_left); normalize(); }
+                                                                    have sx->rb_right == cid->rb_left->rb_right by { rewrite(sx, cid->rb_left); normalize(); }
+                                                                    let saved_child_left = fold(insert_left_link(sx), { link: InsertLink::To(sx->rb_left) });
+                                                                    let saved_child_right = fold(insert_right_link(sx), { link: InsertLink::To(sx->rb_right) });
+                                                                    have parent->rb_left == cid->rb_left by { rewrite(parent, cid); normalize(); }
+                                                                    mark before_sibling_read;
                                                                 step();
                                                                 step();
-                                                                step();
+                                                                    have tmp == at(before_sibling_read, cid->rb_left) by known();
+                                                                    have tmp == sx by known();
+                                                                    let { left: node_l, right: node_r } = unfold(t);
+                                                                    have separate(memory(node->__rb_parent_color), memory(sx->__rb_parent_color)) by known();
+                                                                    step(); // Disjoint owned nodes rule out the triangle branch.
+                                                                    let t = fold(rb_at(node), { model: RbTree::Node(nid, cid, Color::Red, nleft, nright) }, { left: node_l, right: node_r });
                                                                 have gparent == uid by { known(); }
                                                                 have tmp == sx by { known(); }
-                                                                have separate(memory(gparent->rb_left), memory(tmp->__rb_parent_color)) by { known(); }
-                                                                have separate(memory(parent->rb_right), memory(tmp->__rb_parent_color)) by { known(); }
-                                                                have separate(memory(uid->__rb_parent_color), memory(sx->__rb_parent_color)) by { known(); }
-                                                                have separate(memory(gparent->__rb_parent_color), memory(tmp->__rb_parent_color)) by {
-                                                                    rewrite(gparent, uid);
-                                                                    rewrite(tmp, sx);
-                                                                    known();
-                                                                }
-                                                                let t = fold(rb_at(node), { model: RbTree::Node(nid, cid, Color::Red, nleft, nright) }, { left: nl_at, right: nr_at });
                                                                 have rb_root_black(RbTree::Node(sx, sp, scol, sl, sr)) == 1 by {
                                                                     rewrite(RbTree::Node(sx, sp, scol, sl, sr), csib);
                                                                     known();
@@ -3518,193 +3440,84 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 }
                                                                 step();
                                                                 step();
+                                                                    let written_sibling_link = fold(insert_right_link(gparent), { link: InsertLink::To(tmp) });
                                                                 step();
+                                                                    let written_grandparent_link = fold(insert_left_link(parent), { link: InsertLink::To(gparent) });
                                                                 step();
+                                                                    mark before_sibling_recolor;
+                                                                    have separate(memory(sx->rb_left), memory(sx->__rb_parent_color)) by normalize();
+                                                                    have separate(memory(sx->rb_left), memory(tmp->__rb_parent_color)) by { rewrite(tmp, sx); known(); }
+                                                                    have separate(memory(sx->rb_right), memory(sx->__rb_parent_color)) by normalize();
+                                                                    have separate(memory(sx->rb_right), memory(tmp->__rb_parent_color)) by { rewrite(tmp, sx); known(); }
                                                                 step();
+                                                                    have separate(statement(1).statement(4).statement(15).statement(0).footprint, memory(sx->rb_left)) by { normalize() using { separate(memory(sx->rb_left), memory(tmp->__rb_parent_color)); }; }
+                                                                    have sx->rb_left == at(before_sibling_recolor, sx->rb_left) by { preserve(separate(statement(1).statement(4).statement(15).statement(0).footprint, memory(sx->rb_left))); }
+                                                                    have separate(statement(1).statement(4).statement(15).statement(0).footprint, memory(sx->rb_right)) by { normalize() using { separate(memory(sx->rb_right), memory(tmp->__rb_parent_color)); }; }
+                                                                    have sx->rb_right == at(before_sibling_recolor, sx->rb_right) by { preserve(separate(statement(1).statement(4).statement(15).statement(0).footprint, memory(sx->rb_right))); }
+                                                                    unfold(written_sibling_link);
+                                                                    unfold(written_grandparent_link);
+                                                                    unfold(saved_child_left);
+                                                                    unfold(saved_child_right);
+                                                                    have tmp->rb_left == sx->rb_left by { rewrite(tmp, sx); known(); }
+                                                                    have tmp->rb_right == sx->rb_right by { rewrite(tmp, sx); known(); }
+                                                                    have aligned(gparent, 8) by { rewrite(gparent, uid); known(); }
+                                                                    have (address(gparent) | 1) == address(gparent) + 1 by { solve() using { aligned(gparent, 8); }; }
                                                                 let sn = fold(rb_at(tmp), { model: RbTree::Node(sx, gparent, scol, sl, sr) }, { left: sl_at, right: sr_at });
                                                                 have sn.model == rb_reparent(csib, gparent) by {
                                                                     rewrite(rb_reparent(csib, gparent), RbTree::Node(sx, gparent, scol, sl, sr));
                                                                     solve();
                                                                 }
-                                                                transport(at(before_grandparent_links, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
-                                                                transport(at(before_uncle_pointer_changes, gparent->rb_left == at(before_uncle_pointer_changes, tmp)), gparent->rb_left == at(before_uncle_pointer_changes, tmp)) using {
-                                                                    at(before_uncle_pointer_changes, gparent->rb_left == at(before_uncle_pointer_changes, tmp));
-                                                                    separate(memory(gparent->rb_left), memory(gparent->rb_right));
-                                                                    separate(memory(gparent->rb_left), memory(parent->rb_left));
-                                                                    separate(memory(gparent->rb_left), memory(tmp->__rb_parent_color));
-                                                                };
-                                                                transport(at(before_uncle_pointer_changes, parent->rb_right == node), parent->rb_right == node) using {
-                                                                    at(before_uncle_pointer_changes, parent->rb_right == node);
-                                                                    separate(memory(parent->rb_right), memory(gparent->rb_right));
-                                                                    separate(memory(parent->rb_right), memory(parent->rb_left));
-                                                                    separate(memory(parent->rb_right), memory(tmp->__rb_parent_color));
-                                                                };
+                                                                    unfold(held_uncle_link);
+                                                                    have gparent->rb_left == at(before_uncle_pointer_changes, tmp) by known();
+                                                                    unfold(held_focus_link);
+                                                                    have parent->rb_right == node by known();
+                                                                    have gparent->rb_right == tmp by known();
+                                                                    have parent->rb_left == gparent by known();
                                                             },
                                                         }
-                                                        transport(at(before_grandparent_links, ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp), ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp);
+                                                            unfold(rotation_tag);
+                                                            have ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp by known();
                                                         have (gparent->__rb_parent_color & 1) == 1 by {
                                                             rewrite((gparent->__rb_parent_color & 1), color_bit(ucolor));
                                                             rewrite(ucolor, Color::Black);
                                                             unfold(color_bit(Color::Black));
                                                             solve();
                                                         }
-                                                        mark before_rotation_parent_changes;
-                                                        have at(before_rotation_parent_changes, gparent->rb_left == at(before_uncle_pointer_changes, tmp)) by { known(); }
-                                                        have at(before_rotation_parent_changes, parent->rb_right == node) by { known(); }
-                                                        match uu.model ensuring {
-                                                            owns uu: ctx_at(parent, root);
-                                                            fact uu.model == uup;
-                                                            fact gparent->rb_left == at(before_uncle_pointer_changes, tmp);
-                                                            fact parent->rb_right == node;
-                                                        } {
-                                                            Context::Top => {
-                                                                have ctx_node_is(Context::Top, ugp) == 1 by {
-                                                                    rewrite(Context::Top, uu.model);
-                                                                    rewrite(uu.model, uup);
-                                                                    known();
-                                                                }
-                                                                have ugp == 0 by {
-                                                                    apply(ctx_node_is_top_null(ugp)) using {
-                                                                        ctx_node_is(Context::Top, ugp) == 1;
-                                                                    };
-                                                                    known();
-                                                                }
-                                                                unfold(uu);
-                                                                have separate(memory(gparent->rb_left), memory(root->rb_node)) by { known(); }
-                                                                have separate(memory(parent->rb_right), memory(root->rb_node)) by { known(); }
-                                                                step();
-                                                                transport(at(before_rotation_parent_changes, gparent->rb_left == at(before_uncle_pointer_changes, tmp)), gparent->rb_left == at(before_uncle_pointer_changes, tmp)) using {
-                                                                    at(before_rotation_parent_changes, gparent->rb_left == at(before_uncle_pointer_changes, tmp));
-                                                                    separate(memory(gparent->rb_left), memory(gparent->__rb_parent_color));
-                                                                    separate(memory(gparent->rb_left), memory(parent->__rb_parent_color));
-                                                                    separate(memory(gparent->rb_left), memory(root->rb_node));
-                                                                };
-                                                                transport(at(before_rotation_parent_changes, parent->rb_right == node), parent->rb_right == node) using {
-                                                                    at(before_rotation_parent_changes, parent->rb_right == node);
-                                                                    separate(memory(parent->rb_right), memory(gparent->__rb_parent_color));
-                                                                    separate(memory(parent->rb_right), memory(parent->__rb_parent_color));
-                                                                    separate(memory(parent->rb_right), memory(root->rb_node));
-                                                                };
-                                                                let uu = fold(ctx_at(parent, root), { model: Context::Top });
-                                                                have uu.model == uup by { rewrite(uup, Context::Top); normalize(); }
-                                                            },
-                                                            Context::Left(xid, xgp, xcol, xsib, xup) => {
-                                                                have ctx_node_is(Context::Left(xid, xgp, xcol, xsib, xup), ugp) == 1 by {
-                                                                    rewrite(Context::Left(xid, xgp, xcol, xsib, xup), uu.model);
-                                                                    rewrite(uu.model, uup);
-                                                                    known();
-                                                                }
-                                                                have ugp == xid by {
-                                                                    apply(ctx_node_is_left_identity(xid, xgp, xcol, xsib, xup, ugp)) using {
-                                                                        ctx_node_is(Context::Left(xid, xgp, xcol, xsib, xup), ugp) == 1;
-                                                                    };
-                                                                    known();
-                                                                }
-                                                                let { sibling: xs, up: xu } = unfold(uu);
-                                                                have separate(memory(gparent->rb_left), memory(xid->rb_right)) by { known(); }
-                                                                have separate(memory(parent->rb_right), memory(xid->rb_right)) by { known(); }
-                                                                have separate(memory(gparent->rb_left), memory(xid->rb_left)) by { known(); }
-                                                                have separate(memory(parent->rb_right), memory(xid->rb_left)) by { known(); }
-                                                                step();
-                                                                transport(at(before_rotation_parent_changes, gparent->rb_left == at(before_uncle_pointer_changes, tmp)), gparent->rb_left == at(before_uncle_pointer_changes, tmp)) using {
-                                                                    at(before_rotation_parent_changes, gparent->rb_left == at(before_uncle_pointer_changes, tmp));
-                                                                    separate(memory(gparent->rb_left), memory(gparent->__rb_parent_color));
-                                                                    separate(memory(gparent->rb_left), memory(parent->__rb_parent_color));
-                                                                    separate(memory(gparent->rb_left), memory(xid->rb_right));
-                                                                    separate(memory(gparent->rb_left), memory(xid->rb_left));
-                                                                };
-                                                                transport(at(before_rotation_parent_changes, parent->rb_right == node), parent->rb_right == node) using {
-                                                                    at(before_rotation_parent_changes, parent->rb_right == node);
-                                                                    separate(memory(parent->rb_right), memory(gparent->__rb_parent_color));
-                                                                    separate(memory(parent->rb_right), memory(parent->__rb_parent_color));
-                                                                    separate(memory(parent->rb_right), memory(xid->rb_right));
-                                                                    separate(memory(parent->rb_right), memory(xid->rb_left));
-                                                                };
-                                                                let uu = fold(ctx_at(parent, root), { model: Context::Left(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
-                                                                have uu.model == uup by { rewrite(uup, Context::Left(xid, xgp, xcol, xsib, xup)); normalize(); }
-                                                            },
-                                                            Context::Right(xid, xgp, xcol, xsib, xup) => {
-                                                                have ctx_node_is(Context::Right(xid, xgp, xcol, xsib, xup), ugp) == 1 by {
-                                                                    rewrite(Context::Right(xid, xgp, xcol, xsib, xup), uu.model);
-                                                                    rewrite(uu.model, uup);
-                                                                    known();
-                                                                }
-                                                                have ugp == xid by {
-                                                                    apply(ctx_node_is_right_identity(xid, xgp, xcol, xsib, xup, ugp)) using {
-                                                                        ctx_node_is(Context::Right(xid, xgp, xcol, xsib, xup), ugp) == 1;
-                                                                    };
-                                                                    known();
-                                                                }
-                                                                let { sibling: xs, up: xu } = unfold(uu);
-                                                                have separate(memory(gparent->rb_left), memory(xid->rb_right)) by { known(); }
-                                                                have separate(memory(parent->rb_right), memory(xid->rb_right)) by { known(); }
-                                                                have separate(memory(gparent->rb_left), memory(xid->rb_left)) by { known(); }
-                                                                have separate(memory(parent->rb_right), memory(xid->rb_left)) by { known(); }
-                                                                mark before_upper_child_change;
-                                                                have at(before_upper_child_change, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp) by { known(); }
-                                                                have separate(memory(xid->__rb_parent_color), memory(gparent->__rb_parent_color)) by { known(); }
-                                                                have separate(memory(xid->__rb_parent_color), memory(parent->__rb_parent_color)) by { known(); }
-                                                                have separate(memory(xid->__rb_parent_color), memory(xid->rb_right)) by { known(); }
-                                                                have separate(memory(xid->__rb_parent_color), memory(xid->rb_left)) by { known(); }
-                                                                match xsib ensuring {
-                                                                    owns xs: rb_at(xid->rb_left);
-                                                                    fact xs.model == xsib;
-                                                                    fact gparent->rb_left == at(before_uncle_pointer_changes, tmp);
-                                                                    fact parent->rb_right == node;
-                                                                    fact ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp;
-                                                                } {
-                                                                    RbTree::Empty => {
-                                                                        unfold(xs);
-                                                                        step();
-                                                                        transport(at(before_rotation_parent_changes, gparent->rb_left == at(before_uncle_pointer_changes, tmp)), gparent->rb_left == at(before_uncle_pointer_changes, tmp)) using {
-                                                                            at(before_rotation_parent_changes, gparent->rb_left == at(before_uncle_pointer_changes, tmp));
-                                                                            separate(memory(gparent->rb_left), memory(gparent->__rb_parent_color));
-                                                                            separate(memory(gparent->rb_left), memory(parent->__rb_parent_color));
-                                                                                    separate(memory(gparent->rb_left), memory(xid->rb_right));
-                                                                            separate(memory(gparent->rb_left), memory(xid->rb_left));
-                                                                        };
-                                                                        transport(at(before_rotation_parent_changes, parent->rb_right == node), parent->rb_right == node) using {
-                                                                            at(before_rotation_parent_changes, parent->rb_right == node);
-                                                                            separate(memory(parent->rb_right), memory(gparent->__rb_parent_color));
-                                                                            separate(memory(parent->rb_right), memory(parent->__rb_parent_color));
-                                                                            separate(memory(parent->rb_right), memory(xid->rb_right));
-                                                                            separate(memory(parent->rb_right), memory(xid->rb_left));
-                                                                        };
-                                                                        let xs = fold(rb_at(0), { model: xsib });
-                                                                        transport(at(before_upper_child_change, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp), ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp);
-                                                                    },
-                                                                    RbTree::Node(yid, yp, ycol, yl, yr) => {
-                                                                        let { left: yl_at, right: yr_at } = unfold(xs);
-                                                                        step();
-                                                                        transport(at(before_rotation_parent_changes, gparent->rb_left == at(before_uncle_pointer_changes, tmp)), gparent->rb_left == at(before_uncle_pointer_changes, tmp)) using {
-                                                                            at(before_rotation_parent_changes, gparent->rb_left == at(before_uncle_pointer_changes, tmp));
-                                                                            separate(memory(gparent->rb_left), memory(gparent->__rb_parent_color));
-                                                                            separate(memory(gparent->rb_left), memory(parent->__rb_parent_color));
-                                                                                    separate(memory(gparent->rb_left), memory(xid->rb_right));
-                                                                            separate(memory(gparent->rb_left), memory(xid->rb_left));
-                                                                        };
-                                                                        transport(at(before_rotation_parent_changes, parent->rb_right == node), parent->rb_right == node) using {
-                                                                            at(before_rotation_parent_changes, parent->rb_right == node);
-                                                                            separate(memory(parent->rb_right), memory(gparent->__rb_parent_color));
-                                                                            separate(memory(parent->rb_right), memory(parent->__rb_parent_color));
-                                                                            separate(memory(parent->rb_right), memory(xid->rb_right));
-                                                                            separate(memory(parent->rb_right), memory(xid->rb_left));
-                                                                        };
-                                                                        let xs = fold(rb_at(yid), { model: xsib }, { left: yl_at, right: yr_at });
-                                                                        transport(at(before_upper_child_change, ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp), ((xid->__rb_parent_color & ~3) as (struct rb_node *)) == xgp);
-                                                                    },
-                                                                }
-                                                                let uu = fold(ctx_at(parent, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
-                                                                have uu.model == uup by { rewrite(uup, Context::Right(xid, xgp, xcol, xsib, xup)); normalize(); }
-                                                            },
-                                                        }
+                                                            have ctx_node_is(uu.model, ugp) == 1 by known();
+                                                            have ctx_identity(uu.model) == ugp by { apply(ctx_node_is_identity(uu.model, ugp)) using { ctx_node_is(uu.model, ugp) == 1; }; }
+                                                            have gparent->__rb_parent_color == address(ugp) + 1 by known();
+                                                            apply(insert_black_context_word(uu.model, ugp)) using { ctx_node_is(uu.model, ugp) == 1; };
+                                                            have ctx_parent_word(uu.model, gparent->__rb_parent_color) == 1 by {
+                                                                rewrite(gparent->__rb_parent_color, address(ugp) + 1);
+                                                                known();
+                                                            }
+                                                            let outer_uncle_link = fold(insert_left_link(gparent), { link: InsertLink::To(at(before_uncle_pointer_changes, tmp)) });
+                                                            let outer_focus_link = fold(insert_right_link(parent), { link: InsertLink::To(node) });
+                                                            let moved_sibling_link = fold(insert_right_link(gparent), { link: InsertLink::To(tmp) });
+                                                            let moved_grandparent_link = fold(insert_left_link(parent), { link: InsertLink::To(gparent) });
+                                                            let { after: uu } = step(__rb_rotate_set_parents, { c: uu });
+                                                            unfold(moved_sibling_link);
+                                                            unfold(moved_grandparent_link);
+                                                            unfold(outer_uncle_link);
+                                                            unfold(outer_focus_link);
                                                             have rb_parent_is(rb_reparent(csib, gparent), gparent) == 1 by {
                                                                 apply(rb_reparent_parent_is(csib, gparent));
                                                                 known();
                                                             }
+                                                            have parent == cid by known();
+                                                            have aligned(cid, 8) by known();
+                                                            have gparent->__rb_parent_color == address(cid) by { rewrite(cid, parent); known(); }
+                                                            have (gparent->__rb_parent_color & 1) == 0 by {
+                                                                rewrite(gparent->__rb_parent_color, address(cid));
+                                                                solve() using { aligned(cid, 8); };
+                                                            }
+                                                            have gparent->__rb_parent_color == address(cid) + (gparent->__rb_parent_color & 1) by { rewrite((gparent->__rb_parent_color & 1), 0); known(); }
+                                                            have ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == cid by { rewrite(cid, parent); known(); }
+                                                            unfold(color_bit(Color::Red));
                                                             let gn = fold(rb_at(gparent), { model: RbTree::Node(gparent, cid, Color::Red, usib, rb_reparent(csib, gparent)) }, { left: un, right: sn });
                                                             have rb_parent_is(RbTree::Node(gparent, cid, Color::Red, usib, rb_reparent(csib, gparent)), cid) == 1 by {
                                                                 unfold(rb_parent_is(RbTree::Node(gparent, cid, Color::Red, usib, rb_reparent(csib, gparent)), cid));
+                                                                normalize();
                                                             }
                                                             have (parent->__rb_parent_color & 1) == color_bit(Color::Black) by {
                                                                 unfold(color_bit(Color::Black));
@@ -3726,6 +3539,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         match us.model {
                                                             RbTree::Node(unid, unp, uncolor, unl, unr) => {
                                                                 let { left: ul, right: ur } = unfold(us);
+                                                                    step();
+                                                                    step();
+                                                                    unfold(triangle_uncle_link);
+                                                                    unfold(triangle_tag);
+                                                                    unfold(triangle_focus_link);
                                                                 match uncolor {
                                                                     Color::Red => {
                                                                         have (tmp->__rb_parent_color & 1) == 0 by {
@@ -3828,44 +3646,58 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             unfold(color_bit(Color::Red));
                                                                             normalize();
                                                                         }
-                                                                        mark before_recolor_tags_4;
-                                                                        have at(before_recolor_tags_4, gparent->rb_left == tmp) by { known(); }
-                                                                        have at(before_recolor_tags_4, separate(memory(gparent->rb_left), memory(gparent->__rb_parent_color))) by { known(); }
-                                                                        have at(before_recolor_tags_4, separate(memory(gparent->rb_left), memory(parent->__rb_parent_color))) by { known(); }
-                                                                        have at(before_recolor_tags_4, separate(memory(gparent->rb_left), memory(tmp->__rb_parent_color))) by { known(); }
-                                                                        have at(before_recolor_tags_4, gparent->rb_right == parent) by { known(); }
-                                                                        have at(before_recolor_tags_4, separate(memory(gparent->rb_right), memory(gparent->__rb_parent_color))) by { known(); }
-                                                                        have at(before_recolor_tags_4, separate(memory(gparent->rb_right), memory(parent->__rb_parent_color))) by { known(); }
-                                                                        have at(before_recolor_tags_4, separate(memory(gparent->rb_right), memory(tmp->__rb_parent_color))) by { known(); }
+                                                                            let flip_tmp_rb_left = fold(insert_left_link(tmp), { link: InsertLink::To(tmp->rb_left) });
+                                                                            let flip_tmp_rb_right = fold(insert_right_link(tmp), { link: InsertLink::To(tmp->rb_right) });
+                                                                            let flip_parent_rb_left = fold(insert_left_link(parent), { link: InsertLink::To(parent->rb_left) });
+                                                                            let flip_parent_rb_right = fold(insert_right_link(parent), { link: InsertLink::To(parent->rb_right) });
+                                                                            let flip_gparent_rb_left = fold(insert_left_link(gparent), { link: InsertLink::To(gparent->rb_left) });
+                                                                            let flip_gparent_rb_right = fold(insert_right_link(gparent), { link: InsertLink::To(gparent->rb_right) });
+                                                                            let flip_tag = fold(insert_parent_tag(gparent, ugp), { color: ucolor });
                                                                         step();
                                                                         step();
-                                                                        step();
+                                                                            unfold(flip_tmp_rb_left);
+                                                                            unfold(flip_tmp_rb_right);
+                                                                            have aligned(gparent, 8) by { rewrite(gparent, uid); known(); }
+                                                                            have (address(gparent) | 1) == address(gparent) + 1 by {
+                                                                                solve() using { aligned(gparent, 8); };
+                                                                            }
                                                                         let un = fold(rb_at(tmp), { model: RbTree::Node(unid, gparent, Color::Black, unl, unr) }, { left: ul, right: ur });
+                                                                            step();
+                                                                            unfold(flip_parent_rb_left);
+                                                                            unfold(flip_parent_rb_right);
+                                                                            have parent->__rb_parent_color == (address(gparent) | 1) by known();
+                                                                            have parent->__rb_parent_color == address(gparent) + 1 by known();
+                                                                            have (parent->__rb_parent_color & 1) == 1 by known();
+                                                                            have parent->__rb_parent_color == address(gparent) + (parent->__rb_parent_color & 1) by known();
+                                                                            have ((parent->__rb_parent_color & ~3) as (struct rb_node *)) == gparent by known();
                                                                         let pn = fold(rb_at(parent), { model: RbTree::Node(cid, gparent, Color::Black, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright)) }, { left: cs, right: t });
                                                                         step();
+                                                                            unfold(flip_tag);
                                                                         step();
+                                                                            step();
+                                                                            have parent == ugp by known();
                                                                         step();
                                                                         have rb_parent_is(RbTree::Node(cid, gparent, Color::Black, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright)), gparent) == 1 by {
                                                                             unfold(rb_parent_is(RbTree::Node(cid, gparent, Color::Black, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright)), gparent));
+                                                                            normalize();
                                                                         }
                                                                         have rb_parent_is(RbTree::Node(unid, gparent, Color::Black, unl, unr), gparent) == 1 by {
                                                                             unfold(rb_parent_is(RbTree::Node(unid, gparent, Color::Black, unl, unr), gparent));
+                                                                            normalize();
                                                                         }
                                                                         have rb_parent_is(RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), RbTree::Node(cid, gparent, Color::Black, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright))), ugp) == 1 by {
                                                                             unfold(rb_parent_is(RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), RbTree::Node(cid, gparent, Color::Black, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright))), ugp));
+                                                                            normalize();
                                                                         }
-                                                                        transport(at(before_recolor_tags_4, gparent->rb_left == tmp), gparent->rb_left == at(before_recolor_tags_4, tmp)) using {
-                                                                            at(before_recolor_tags_4, gparent->rb_left == tmp);
-                                                                            at(before_recolor_tags_4, separate(memory(gparent->rb_left), memory(gparent->__rb_parent_color)));
-                                                                            at(before_recolor_tags_4, separate(memory(gparent->rb_left), memory(parent->__rb_parent_color)));
-                                                                            at(before_recolor_tags_4, separate(memory(gparent->rb_left), memory(tmp->__rb_parent_color)));
-                                                                        };
-                                                                        transport(at(before_recolor_tags_4, gparent->rb_right == parent), gparent->rb_right == at(before_recolor_tags_4, parent)) using {
-                                                                            at(before_recolor_tags_4, gparent->rb_right == parent);
-                                                                            at(before_recolor_tags_4, separate(memory(gparent->rb_right), memory(gparent->__rb_parent_color)));
-                                                                            at(before_recolor_tags_4, separate(memory(gparent->rb_right), memory(parent->__rb_parent_color)));
-                                                                            at(before_recolor_tags_4, separate(memory(gparent->rb_right), memory(tmp->__rb_parent_color)));
-                                                                        };
+                                                                            unfold(flip_gparent_rb_left);
+                                                                            unfold(flip_gparent_rb_right);
+                                                                            have aligned(ugp, 8) by known();
+                                                                            have gparent->__rb_parent_color == address(ugp) by known();
+                                                                            have (gparent->__rb_parent_color & 1) == 0 by {
+                                                                                rewrite(gparent->__rb_parent_color, address(ugp));
+                                                                                solve() using { aligned(ugp, 8); };
+                                                                            }
+                                                                            have gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1) by known();
                                                                         let gn = fold(rb_at(gparent), { model: RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), RbTree::Node(cid, gparent, Color::Black, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright))) }, { left: un, right: pn });
                                                                     },
                                                                     Color::Black => {
@@ -3937,6 +3769,7 @@ void rb_insert_color(struct rb_node* node, struct rb_root* root) {
     ensures is_rb_root(tree.model) == 1;
     ensures rb_tree_parent_consistent(tree.model) == 1;
 } by {
+    apply(dummy_rotate_is_augment_rotate());
     let { tree: tree } = step(__rb_insert, { c: c, t: t });
     step();
     solve();

@@ -1477,7 +1477,7 @@ impl DiagnosticNaming {
 }
 
 /// The C values the proof's own binders name: `let`, `choose`, `obtain`
-/// and `unfold` bindings. Diagnostics and premise spelling both name values
+/// and `unfold` bindings. Diagnostics and premise raising both name values
 /// through these, so a report and a citation agree.
 fn proof_local_program_values(
     proof: &KernelProofHandle,
@@ -3091,7 +3091,7 @@ impl<'a> Proof<'a> {
     }
 
     /// The spelling of a refined goal no written template carries over to:
-    /// the premise speller's, which lowers back to exactly `goal`. A goal is
+    /// the premise raiser's, which lowers back to exactly `goal`. A goal is
     /// stated at the current state, so it is spelled with no premise anchor
     /// and never searches recorded states. Smart refinements reconstruct
     /// their structural goal from indexed source names, without premise search.
@@ -3162,7 +3162,7 @@ impl<'a> Proof<'a> {
         let candidate = self.structural_proposition_candidate(goal)?;
         // This compares presentation, not proof authority: rewriting already
         // produced the successor. A spelling must retain its exact term.
-        self.lower_surface_proposition_direct(&candidate, "structural goal spelling")
+        self.lower_surface_proposition_direct(&candidate, "structural goal raising")
             .ok()
             .filter(|lowered| lowered == goal)
             .map(|_| candidate)

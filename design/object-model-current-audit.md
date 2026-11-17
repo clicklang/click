@@ -161,7 +161,7 @@ other ten selected fixtures passed. The full C, resources and proof remain in
 The baseline failure was at `rb_set_root.contract` tactic 4 (`fold`):
 
 ```text
-a generated prerequisite has no Surface spelling; this is a spellability defect
+a generated prerequisite has no Surface spelling; this is a raise-lower principle defect
 goal: at(<state A>, root->rb_node) == <pointer A>
 ```
 
