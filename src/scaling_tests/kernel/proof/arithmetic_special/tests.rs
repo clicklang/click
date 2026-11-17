@@ -173,18 +173,18 @@ fn intrinsic_alignment_known_work_ignores_other_blocks_and_related_facts() {
     let mut samples = Vec::new();
     for size in [8, 32, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let block: PointerBlock = "intrinsic-alignment-target".into();
+        let block: AddressBase = "intrinsic-alignment-target".into();
         crate::kernel::primitives::register_block_alignment(&block, 8);
         let mut context = crate::kernel::PureFactContext::new();
         for i in 0..size {
-            let other: PointerBlock = format!("intrinsic-alignment-other-{i}").as_str().into();
+            let other: AddressBase = format!("intrinsic-alignment-other-{i}").as_str().into();
             crate::kernel::primitives::register_block_alignment(&other, 16);
             for related in [block.clone(), other] {
                 context = context.assume_proposition(Proposition::ConditionIs(
                     ConditionTerm::pointer_aligned(
-                        Pointer {
-                            block: related,
-                            offset: PointerOffsetTerm::Constant(i * 8),
+                        Address {
+                            base: related,
+                            offset: AddressOffset::Constant(i * 8),
                         },
                         8,
                     ),
@@ -196,9 +196,9 @@ fn intrinsic_alignment_known_work_ignores_other_blocks_and_related_facts() {
             [(0, 8, true), (4, 8, false), (0, 16, true)].map(|(offset, alignment, truth)| {
                 Proposition::ConditionIs(
                     ConditionTerm::pointer_aligned(
-                        Pointer {
-                            block: block.clone(),
-                            offset: PointerOffsetTerm::Constant(offset),
+                        Address {
+                            base: block.clone(),
+                            offset: AddressOffset::Constant(offset),
                         },
                         alignment,
                     ),

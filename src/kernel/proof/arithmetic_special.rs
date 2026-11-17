@@ -1449,10 +1449,10 @@ pub(crate) fn unsigned_word_constant_for_discovery(
 
 /// A bounded discovery hint over two explicit pointers, with no fact context.
 /// The caller still constructs its ordinary address identity and offset law.
-pub(crate) fn constant_pointer_byte_difference(left: &Pointer, right: &Pointer) -> Option<i128> {
+pub(crate) fn constant_pointer_byte_difference(left: &Address, right: &Address) -> Option<i128> {
     if !charge_pointer(left)
         || !charge_pointer(right)
-        || !pointer_block_equal(&left.block, &right.block)
+        || !address_base_equal(&left.base, &right.base)
     {
         return None;
     }
