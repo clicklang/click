@@ -2630,7 +2630,7 @@ thread_local! {
 pub(crate) fn comparison_form(proposition: &Proposition) -> Option<Proposition> {
     if let Proposition::ConditionIs(condition, value) = proposition
         && let Some(decided) =
-            crate::kernel::machine_integer::comparison::fact_free_condition_value(condition)
+            crate::kernel::machine_integer::comparison::closed_condition_value(condition)
     {
         return Some(Proposition::ConditionIs(
             ConditionTerm::Constant(decided),
@@ -2684,7 +2684,7 @@ fn decide_closed_conditions(proposition: &Proposition) -> Option<Proposition> {
         Proposition::ConditionIs(condition, value)
             if !matches!(condition, ConditionTerm::Constant(_)) =>
         {
-            crate::kernel::machine_integer::comparison::fact_free_condition_value(condition)
+            crate::kernel::machine_integer::comparison::closed_condition_value(condition)
                 .map(|decided| Proposition::ConditionIs(ConditionTerm::Constant(decided), *value))
         }
         Proposition::And(left, right) => pair(left, right).map(|(l, r)| Proposition::And(l, r)),

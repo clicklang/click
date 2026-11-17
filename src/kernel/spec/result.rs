@@ -246,7 +246,7 @@ impl SpecValue {
             && !a.is_null()
         {
             return Ok(Some(Proposition::ConditionIs(
-                ConditionTerm::reflexive_pointer_value_equal(a),
+                ConditionTerm::logical_pointer_value_equal(a.clone(), b.clone()),
                 op == ComparisonOperator::Equal,
             )));
         }

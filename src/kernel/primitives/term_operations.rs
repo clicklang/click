@@ -3874,6 +3874,19 @@ impl ConditionTerm {
         )
     }
 
+    /// Pointer value equality as logical lowering builds it: a value
+    /// compared with itself is retained
+    /// ([`Self::reflexive_pointer_value_equal`]), any other pair is
+    /// [`Self::pointer_value_equal`]. A producer whose result must match a
+    /// lowered goal, such as `preserve`, builds it the same way.
+    pub(crate) fn logical_pointer_value_equal(left: PointerValue, right: PointerValue) -> Self {
+        if left == right && !left.is_null() {
+            Self::reflexive_pointer_value_equal(&left)
+        } else {
+            Self::pointer_value_equal(left, right)
+        }
+    }
+
     pub fn pointer_equal(left: Address, right: Address) -> Self {
         if left.blocks_proven_distinct(&right) {
             Self::Constant(false)

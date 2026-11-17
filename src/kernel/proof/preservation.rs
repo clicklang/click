@@ -206,7 +206,7 @@ fn preserve_field(
             AlgebraicValue::Program(ProgramValue::Pointer(a)),
             AlgebraicValue::Program(ProgramValue::Pointer(b)),
         ) if a.program_type() == b.program_type() => {
-            ConditionTerm::pointer_value_equal(a.clone(), b.clone())
+            ConditionTerm::logical_pointer_value_equal(a.clone(), b.clone())
         }
         (
             AlgebraicValue::Program(ProgramValue::Int32(a)),
@@ -273,7 +273,7 @@ fn observation_equality(
     }
     let condition = match (kind, after, before) {
         (ReadType::Pointer(_), ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
-            ConditionTerm::pointer_value_equal(a, b)
+            ConditionTerm::logical_pointer_value_equal(a, b)
         }
         (ReadType::PointerAddress, ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
             ConditionTerm::pointer_equal(a.pointer().clone(), b.pointer().clone())

@@ -3430,9 +3430,13 @@ fn allocation_result_names_survive_reassignment_and_follow_state_scope() {
     let lowered =
         relower_written_proposition_with_states(&surface, &current, &current, &retained_states)
             .unwrap();
+    // The allocation compared with itself keeps its comparison.
     assert_eq!(
         lowered,
-        Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+        Proposition::ConditionIs(
+            ConditionTerm::PointerEqual(Box::new(first.clone()), Box::new(first.clone())),
+            true
+        )
     );
     retained_states.insert(point.clone(), state(&second));
     assert!(retained_states.allocation_result(&first).is_none());
@@ -4141,7 +4145,7 @@ fn volatile_read_event_results_raise_and_lower_exactly() {
                 true,
             ),
             ProgramValue::Pointer(pointer) => Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(pointer.pointer().clone(), pointer.pointer().clone()),
+                ConditionTerm::reflexive_pointer_value_equal(pointer),
                 true,
             ),
             _ => unreachable!(),
