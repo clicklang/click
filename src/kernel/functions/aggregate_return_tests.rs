@@ -1267,8 +1267,7 @@ fn value_only_constructor_preserves_descriptor_across_result_copy_chains() {
                 outcome: StatementOutcome::Normal(state),
                 ..
             } => state,
-            Proposition::ProgramStatementExecutes { outcome, .. }
-            | Proposition::ProgramStatementVerifies { outcome, .. } => {
+            Proposition::ProgramStatementVerifies { outcome, .. } => {
                 panic!("descriptor construction and copies must complete: {outcome:?}")
             }
             _ => panic!("descriptor construction and copies must produce a statement outcome"),

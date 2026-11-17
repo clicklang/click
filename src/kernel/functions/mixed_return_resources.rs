@@ -897,6 +897,19 @@ impl ConstructedReturnBody {
             .filter(|piece| piece.memory_own_range().is_some())
     }
 
+    pub(super) fn escrow_boundary(&self) -> Vec<ResourceFact> {
+        self.boundary
+            .iter()
+            .cloned()
+            .chain(
+                self.folded
+                    .iter()
+                    .filter(|(fact, _)| fact.is_own())
+                    .map(|(fact, _)| fact.clone()),
+            )
+            .collect()
+    }
+
     pub(in crate::kernel) fn boundary(&self) -> &[ResourceFact] {
         &self.boundary
     }
@@ -1474,11 +1487,28 @@ impl EscrowRecoveryBoundary {
         opaque: bool,
         live: &ResourceContext,
         assumptions: &PureFactContext,
-    ) -> Result<(), ResourceContextValidityError> {
+    ) -> Result<(), RuntimeError> {
         for (occurrence, frontier) in &self.entries {
             // Protocol reconciliation can remove an emitted authority.
-            if live.owned_fact_for_occurrence(*occurrence).is_none() {
+            let Some(support) = live.owned_fact_for_occurrence(*occurrence) else {
                 continue;
+            };
+            let opaque_output = frontier.iter().any(|fact| {
+                fact.is_own()
+                    && matches!(
+                        fact.resource(),
+                        Resource::Composite { .. }
+                            | Resource::Instance(_)
+                            | Resource::Footprint(_)
+                            | Resource::Parameter(_)
+                            | Resource::Star(_)
+                            | Resource::Iterated(_)
+                    )
+            });
+            if opaque_output && !protected.facts().is_empty() {
+                return Err(resource_context_runtime_error(
+                    ResourceContextValidityError::UnsupportedOwnershipBoundary,
+                ));
             }
             if opaque
                 && frontier.iter().any(|fact| {
@@ -1486,23 +1516,39 @@ impl EscrowRecoveryBoundary {
                         && !matches!(fact.resource(), Resource::Token { .. } | Resource::Emp)
                 })
             {
-                return Err(ResourceContextValidityError::UnsupportedOwnershipBoundary);
+                return Err(resource_context_runtime_error(
+                    ResourceContextValidityError::UnsupportedOwnershipBoundary,
+                ));
             }
             match protected.admit_returned_frontier(frontier, assumptions) {
                 FlatBodyAdmission::Admitted => {}
                 FlatBodyAdmission::Unsupported => {
-                    return Err(ResourceContextValidityError::UnsupportedOwnershipBoundary);
+                    return Err(resource_context_runtime_error(
+                        ResourceContextValidityError::UnsupportedOwnershipBoundary,
+                    ));
                 }
                 FlatBodyAdmission::Conflict { piece, held } => {
-                    return Err(match (held.memory_own_range(), piece.memory_own_range()) {
-                        (Some(left), Some(right)) => {
-                            ResourceContextValidityError::OverlappingOwnedMemoryResources {
-                                left: left.clone(),
-                                right: right.clone(),
+                    if matches!(
+                        support.resource(),
+                        Resource::Composite { .. } | Resource::Instance(_)
+                    ) {
+                        return Err(RuntimeError::ProducedCompositeOverlapsHeldResource {
+                            produced: Box::new(support.clone()),
+                            piece,
+                            held,
+                        });
+                    }
+                    return Err(resource_context_runtime_error(
+                        match (held.memory_own_range(), piece.memory_own_range()) {
+                            (Some(left), Some(right)) => {
+                                ResourceContextValidityError::OverlappingOwnedMemoryResources {
+                                    left: left.clone(),
+                                    right: right.clone(),
+                                }
                             }
-                        }
-                        _ => ResourceContextValidityError::DuplicateOwnedResourceFact(*piece),
-                    });
+                            _ => ResourceContextValidityError::DuplicateOwnedResourceFact(*piece),
+                        },
+                    ));
                 }
             }
         }

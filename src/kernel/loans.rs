@@ -1912,6 +1912,8 @@ pub(crate) struct StableViewTransferPlan {
 pub(crate) struct RecoveredEscrow {
     fact: ResourceFact,
     occurrence: ResourceOccurrenceId,
+    // Retained adapter ancestry, not a premise for recovery to rediscover.
+    #[allow(dead_code)]
     source: ResourceOccurrenceId,
     binding: Option<LoanViewBinding>,
     frontier: Arc<Vec<ResourceFact>>,
@@ -2012,9 +2014,6 @@ pub(crate) struct StableViewRecovery {
     /// Exact hold transitions after the terminal recovery path is selected.
     pub(crate) hold_transitions: Vec<CheckedLoanTransition>,
     pub(crate) resources: ResourceContext,
-    /// The escrowed owners recovery handed back, in recovery order, each
-    /// with the hold binding its occurrence carried before the call.
-    pub(crate) recovered_escrows: Vec<(ResourceFact, Option<LoanViewBinding>)>,
     restorations: Vec<RecoveredEscrow>,
     protected_escrows: BTreeMap<ResourceOccurrenceId, RecoveredEscrow>,
     pub(crate) mutex_authority_updates: Vec<mutex_calls::MutexAuthorityUpdate>,
@@ -2038,7 +2037,7 @@ impl StableViewRecovery {
             ResourceContext,
             Vec<(ResourceOccurrenceId, LoanViewBinding)>,
         ),
-        crate::kernel::primitives::ResourceContextValidityError,
+        super::RuntimeError,
     > {
         #[cfg(test)]
         let _fast = crate::kernel::search::FastOperationScope::enter("escrow return restoration");
@@ -2067,7 +2066,9 @@ impl StableViewRecovery {
         boundary.admit(&protected, opaque, &resources, assumptions)?;
         let mut bindings = Vec::new();
         for member in &self.restorations {
-            resources = resources.restore_checked_escrow(member, assumptions)?;
+            resources = resources
+                .restore_checked_escrow(member, assumptions)
+                .map_err(super::functions::resource_context_runtime_error)?;
             if let Some(binding) = member.binding() {
                 bindings.push((member.occurrence(), binding.clone()));
             }
@@ -4240,7 +4241,6 @@ impl StableViewTransferPlan {
         let mut view_bindings = self.parent_view_bindings.clone();
         let mut local_view_updates = BTreeMap::new();
         let mut transitions = Vec::new();
-        let mut recovered_escrows = Vec::new();
         let mut restorations = Vec::new();
         let mut mutex_authority_updates = Vec::new();
         let mut pending_holds: Vec<(Vec<EscapingComposite>, LoanViewBinding)> = Vec::new();
@@ -4355,7 +4355,6 @@ impl StableViewTransferPlan {
                     );
                     resources = restore_resource(resources, &member)?;
                     restorations.push(member);
-                    recovered_escrows.push((escrow, None));
                 } else if ledger
                     .validate_view_binding(binding.clone(), self.caller)
                     .is_err()
@@ -4383,7 +4382,7 @@ impl StableViewTransferPlan {
                 if let Some(restored) = self.adapter_restorations.get(&loan) {
                     for member in restored {
                         resources = restore_resource(resources, member)?;
-                        recovered_escrows.push((member.fact().clone(), None));
+
                         restorations.push(member.clone());
                     }
                     continue;
@@ -4398,7 +4397,6 @@ impl StableViewTransferPlan {
                 );
                 resources = restore_resource(resources, &member)?;
                 restorations.push(member);
-                recovered_escrows.push((escrow, hold_binding));
             }
         }
         // A composite the callee consumed took its borrow with it: release
@@ -4432,7 +4430,6 @@ impl StableViewTransferPlan {
                 );
                 resources = restore_resource(resources, &member)?;
                 restorations.push(member);
-                recovered_escrows.push((escrow, None));
             }
         }
         for use_plan in self.mutex_uses.iter().rev() {
@@ -4470,7 +4467,6 @@ impl StableViewTransferPlan {
                 let member = RecoveredEscrow::emitted(source.clone());
                 resources = restore_resource(resources, &member)?;
                 restorations.push(member);
-                recovered_escrows.push((source, None));
             }
         }
         // Every scope in loan_roots that this plan ended has just passed End
@@ -4514,7 +4510,6 @@ impl StableViewTransferPlan {
             hold_base_ledger,
             hold_transitions,
             resources,
-            recovered_escrows,
             restorations,
             protected_escrows: self.protected_escrows,
             mutex_authority_updates,

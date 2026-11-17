@@ -3377,10 +3377,7 @@ fn escaping_borrow_keeps_the_loan_open_until_the_composite_is_consumed() {
             .recheck(&ledger, Some(caller), &planned_ledger, Some(callee))
             .is_ok()
     );
-    assert!(
-        recovery.recovered_escrows.is_empty(),
-        "the owner stays escrowed"
-    );
+    assert!(recovery.restorations.is_empty(), "the owner stays escrowed");
     assert!(!recovery.resources.satisfies_fact(&owner_fact, &assumptions));
     assert_eq!(recovery.escaped_holds.len(), 1);
     let escaped = &recovery.escaped_holds[0];
@@ -3469,9 +3466,12 @@ fn escaping_borrow_keeps_the_loan_open_until_the_composite_is_consumed() {
         (Some(caller), Some(recovered_ledger.clone())),
         "pristine-root summaries follow the same recovery chain"
     );
+    assert_eq!(recovered.restorations.len(), 1);
+    assert_eq!(recovered.restorations[0].fact(), &owner_fact);
+    assert!(recovered.restorations[0].binding().is_none());
     assert_eq!(
-        recovered.recovered_escrows,
-        vec![(owner_fact.clone(), None)]
+        caller_resources.owned_fact_for_occurrence(recovered.restorations[0].occurrence()),
+        Some(&owner_fact)
     );
     assert!(
         recovered

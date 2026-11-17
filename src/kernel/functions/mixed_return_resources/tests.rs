@@ -2291,3 +2291,30 @@ fn escrow_recovery_uses_the_lend_time_frontier_of_a_folded_owner() {
         }
     }
 }
+
+#[test]
+fn an_opaque_return_frontier_cannot_hide_new_ownership_from_escrow() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let facts = PureFactContext::new();
+    let protected = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(owner(
+        Pointer::symbolic(Variable(8_919_999)),
+        0,
+        1,
+    ));
+    let head = ResourceFact::own_composite("opaque-return".into(), vec![]);
+    let (live, emitted) = ResourceContext::new_with_equalities(&facts)
+        .unchecked_with_facts_and_occurrences([head.clone()]);
+    let mut boundary = EscrowRecoveryBoundary::default();
+    boundary.record(emitted[0].1, vec![], vec![head]);
+    assert!(boundary.admit(&protected, false, &live, &facts).is_err());
+    assert!(
+        boundary
+            .admit(
+                &ResourceContext::new_with_equalities(&facts),
+                false,
+                &live,
+                &facts
+            )
+            .is_ok()
+    );
+}

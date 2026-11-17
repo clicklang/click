@@ -1863,18 +1863,18 @@ replacement from its description. Adapter materialization allocates its restored
 child occurrences once and carries them with their parent source. Hold bindings
 are keyed by the backing occurrence. Both recovery stages consume those receipts;
 neither rechecks separation among the old frame members. The return producer
-records a boundary delta by actual output occurrence. Newly described owners and constructed body frontiers are checked once against
+records a boundary delta by actual output occurrence. Newly described owners and
+constructed body frontiers are checked once against
 the finite frontiers retained by the loan producer, including older roots released
 when consumed holds close. Opaque frontier members cause a bounded refusal when
 new ownership could intersect them. Removed protocol outputs do not participate.
 The body's joint-custody proof certifies its internal output partition; recovery
-still checks its boundary with withheld escrow. Duplicate
-live restoration occurrences refuse rather than silently deduplicating equal
+still checks its boundary with withheld escrow. Duplicate live restoration occurrences refuse rather than silently deduplicating equal
 resource descriptions. Ledger liveness and transition checks remain separate.
 
-Function-body returns stage descriptions privately, then establish their output
-partition with the existing joint-custody proof against the actual live body.
-That proof runs before construction and projection; it is not repeated afterward.
+Executed-body return construction consumes each selected output from one persistent
+live-body remainder, establishing the output partition directly. Installation and
+recovery do not repeat that custody consumption.
 The caller boundary still checks new ownership against its retained frame.
 Entry-state borrowed clauses carry the checked input occurrence even when their
 surface address is a field expression or their endpoints are symbolic.
@@ -1883,7 +1883,9 @@ surface address is a field expression or their endpoints are symbolic.
 not established overlap. No incomplete successor is published. The supported
 fragment includes maintained constant intervals, direct symbolic bounds that
 establish a separating envelope, and singleton exact-base/width intervals
-whose signed endpoints have direct separation evidence. It does not enumerate
+whose signed endpoints have direct separation evidence. A singleton can also use
+its two explicit ranges' canonical byte coordinates, without preparing the ambient
+frame. It does not enumerate
 alias spellings, symbolic owners, or order chains to recover a miss.
 
 Regressions in
@@ -1895,9 +1897,7 @@ forbid restoring legacy ownership admission at the migrated operations. Existing
 and added deterministic growth tests cover related/unrelated owners, aliases,
 endpoint facts, output size, and unsupported boundaries.
 
-The wider perimeter remains separate. `ExecutionState::local_scalar_access_resources`
-and `ReservedLocalScalarOwner::restore_into` still admit withheld owners through
-the legacy wrapper. The generic incremental facade serves exchange restoration,
+The wider perimeter remains separate. The generic incremental facade serves exchange restoration,
 certified groups, function resource context evaluation,
 instance rewriting, contract refinement, iterated steps, loop guards,
 proof-interface joins and thread joins. The manifest names each caller and

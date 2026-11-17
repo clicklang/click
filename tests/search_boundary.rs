@@ -1646,9 +1646,12 @@ fn ownership_fallback_inventory_rejects_new_routes_and_hidden_references() {
 
 #[test]
 fn ownership_fallback_inventory_pins_callers_and_reference_counts() {
-    let path = "src/kernel/loans/local_references/memory.rs";
-    let target = "try_compose_with_legacy_discovery_and_occurrences";
-    for (owner, name) in [("ExecutionState", "local_scalar_access_resources")] {
+    let path = "src/kernel/loans.rs";
+    let target = "try_compose_with_fact_with_occurrence";
+    for (owner, name) in [(
+        "StableViewTransferPlan",
+        "lend_local_views_with_worker_shares",
+    )] {
         let source = format!("impl {owner} {{ fn {name}(c: C) {{ c.{target}(); }} }}");
         let file = syn::parse_file(&source).unwrap();
         let key = format!("{path}\tlegacy-caller\t{owner}::{name}\t{target}");

@@ -840,6 +840,8 @@ fn fixed_range_transfer_work_ignores_length_aliases_and_retained_owners() {
                 .unchecked_with_facts_and_occurrences([output.clone()]);
             let mut evaluated = EvaluatedReturnResources {
                 body: None,
+                unclassified: resources.clone(),
+                selected_inputs: BTreeSet::new(),
                 resources,
                 occurrences: vec![EvaluatedReturnOccurrence {
                     clause: None,
@@ -1539,7 +1541,7 @@ fn rebound_hold_creation_scales_with_the_returned_occurrences() {
 }
 
 #[test]
-fn unsupported_body_boundary_does_not_revalidate_the_retained_frame() {
+fn bounded_body_boundary_does_not_revalidate_the_retained_frame() {
     for axis in ["cold unrelated", "cold related", "general unrelated"] {
         for overlap in [false, true] {
             let mut samples = Vec::new();
@@ -1602,7 +1604,11 @@ fn unsupported_body_boundary_does_not_revalidate_the_retained_frame() {
                         &Memory::new(),
                         &facts,
                     );
-                    if overlap {
+                    if axis != "cold related" {
+                        assert!(
+                            matches!(error, Some(RuntimeError::FunctionContract(ref message)) if message.contains("indexed checking fragment"))
+                        );
+                    } else if overlap {
                         let Some(RuntimeError::ProducedCompositeOverlapsHeldResource {
                             piece,
                             held: selected,

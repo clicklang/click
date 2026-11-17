@@ -1092,9 +1092,8 @@ fn recover_candidate_stable_view_resources(
     // owner later drops it. Compose the recovered escrows into that residual
     // rather than rebuilding the residual fact by fact, which would keep the
     // facts and lose what supports them.
-    let (mut recovered_resources, restored_bindings) = recovery
-        .restore_returned_escrows(residual, &escrow_boundary, output_assumptions)
-        .map_err(resource_context_runtime_error)?;
+    let (mut recovered_resources, restored_bindings) =
+        recovery.restore_returned_escrows(residual, &escrow_boundary, output_assumptions)?;
     let recovered_ledger = recovery.ledger;
     let mut recovered_bindings = recovery.view_bindings;
     for (occurrence, binding) in restored_bindings {
@@ -13500,7 +13499,7 @@ fn evaluate_contract_return_resources(
                 Vec::new()
             };
             let body = if let Some(body) = return_bodies.for_return(source, &support) {
-                body.boundary().to_vec()
+                body.escrow_boundary()
             } else if matches!(
                 support.resource(),
                 Resource::Composite { .. } | Resource::Instance(_)
@@ -18798,7 +18797,9 @@ fn resource_clause_cycle_runtime_error(
     annotate_resource_clause_error(error, resource_clause_stall_note(index, other))
 }
 
-fn resource_context_runtime_error(error: ResourceContextValidityError) -> RuntimeError {
+pub(in crate::kernel) fn resource_context_runtime_error(
+    error: ResourceContextValidityError,
+) -> RuntimeError {
     match error {
         ResourceContextValidityError::UnsupportedOwnershipBoundary => RuntimeError::FunctionContract(error.to_string()),
         ResourceContextValidityError::DuplicateOwnedResourceFact(resource) => {

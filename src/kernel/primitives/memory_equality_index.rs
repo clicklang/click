@@ -1454,7 +1454,7 @@ impl ResourceContext {
     fn structural_owned_overlap(
         &self,
         fact: &ResourceFact,
-        assumptions: &PureFactContext,
+        _assumptions: &PureFactContext,
     ) -> ConstantOwnedOverlap {
         use ConstantOwnedOverlap::*;
         let Some(range) = fact.memory_own_range() else {
@@ -1484,9 +1484,7 @@ impl ResourceContext {
             && self.storage.index.owned_automatic_memory_by_block.len() == blocks.len()
             && !blocks.contains_key(&PointerBlock::ContractResult)
             && !blocks.contains_key(&PointerBlock::ContractException);
-        if (assumptions.has_pointer_block_aliases() && !automatic_partition)
-            || matches!(range.base().block, PointerBlock::StringLiteral { .. })
-        {
+        if matches!(range.base().block, PointerBlock::StringLiteral { .. }) {
             return Unsupported;
         }
         let Some((origin, start, end)) =
@@ -1668,8 +1666,42 @@ impl ResourceContext {
             }
             // Register only the two explicit ranges, never the ambient frame.
             let graph = &assumptions.equality_graph;
-            graph.footprint_class(held);
-            graph.footprint_class(range);
+            let held_class = graph.footprint_class(held);
+            let query_class = graph.footprint_class(range);
+            let nonempty = |range: &MemoryRange| {
+                if read_extent(&ResourceFact::own_memory(range.clone()))
+                    .is_some_and(|bytes| bytes > 0)
+                {
+                    return true;
+                }
+                let Some((start, end)) = range.int32_bounds() else {
+                    return false;
+                };
+                if assumptions.exact_condition_value(&ConditionTerm::signed_less_than(
+                    start.clone(),
+                    end.clone(),
+                )) == Some(true)
+                {
+                    return true;
+                }
+                let interval = |term: &MachineTerm| {
+                    term.as_const()
+                        .map(|value| {
+                            let value = i64::from(value as i32);
+                            (value, value)
+                        })
+                        .or_else(|| assumptions.indexed_constant_interval(term))
+                };
+                matches!((interval(start), interval(end)), (Some((_, upper)), Some((lower, _))) if upper < lower)
+            };
+            if held_class.is_some()
+                && held_class == query_class
+                && nonempty(held)
+                && nonempty(range)
+                && let Some(entry) = selected_entry()
+            {
+                return Overlap(entry);
+            }
             if let (Some(ls), Some(le), Some(rs), Some(re)) = (
                 graph.canonical_pointer(&held.start_pointer()),
                 graph.canonical_pointer(&held.end_pointer()),

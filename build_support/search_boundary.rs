@@ -85,6 +85,10 @@ impl Boundary<'_> {
                 name,
                 "try_compose_into_valid_context_delaying_normalization"
                     | "try_compose_with_legacy_discovery_and_occurrences"
+                    | "returned_boundary_conflict_with_legacy_discovery"
+                    | "resume_legacy_discovery"
+                    | "legacy_memory_boundary_conflict"
+                    | "validity_error"
                     | "owned_occurrences_for_fact"
                     | "permitted_descriptions"
             )

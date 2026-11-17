@@ -168,7 +168,7 @@ fn returned_boundary_names_exclusive_conflicts_without_installing_children() {
 }
 
 #[test]
-fn cold_boundary_refuses_and_prepared_aliases_keep_the_selected_held_fact() {
+fn cold_singleton_and_prepared_aliases_keep_the_selected_held_fact() {
     let facts =
         PureFactContext::new().assume_condition(ConditionTerm::pointer_equal(at(0), at(1)), true);
     let piece = owner(at(0), 0, 4);
@@ -176,7 +176,7 @@ fn cold_boundary_refuses_and_prepared_aliases_keep_the_selected_held_fact() {
     let _fast = crate::kernel::search::FastOperationScope::enter("bounded aliased return boundary");
     assert!(matches!(
         parent.admit_returned_frontier(std::slice::from_ref(&piece), &facts),
-        FlatBodyAdmission::Unsupported
+        FlatBodyAdmission::Admitted
     ));
     parent.synchronize_memory_equalities(&facts);
     assert!(matches!(
