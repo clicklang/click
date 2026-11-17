@@ -344,9 +344,17 @@ pub(crate) fn resources_directly_match(
         (Resource::Memory(left), Resource::Memory(right)) => {
             left == right
                 || (((!left.typed_carrier
-                    || assumptions.access_provenance_match(left.access_provenance(), right))
+                    || assumptions.access_provenance_matches_range(
+                        left.access_provenance(),
+                        left,
+                        right,
+                    ))
                     && (!right.typed_carrier
-                        || assumptions.access_provenance_match(right.access_provenance(), left)))
+                        || assumptions.access_provenance_matches_range(
+                            right.access_provenance(),
+                            right,
+                            left,
+                        )))
                     && left.int32_bounds().is_some()
                     && right.int32_bounds().is_some()
                     && crate::instrumentation::measure_operation(

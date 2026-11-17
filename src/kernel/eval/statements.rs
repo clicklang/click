@@ -577,6 +577,12 @@ fn write_program_lvalue_paths_for_initialization(
         )
     });
     let lvalue_bounds = lvalue.bounds.clone();
+    let lvalue_bounds_owner = lvalue.bounds_owner.clone();
+    let lvalue_domain_source = crate::kernel::assumptions::PointerDomainSource::Retained {
+        bounds: lvalue_bounds.as_deref(),
+        known: lvalue.bounds_known,
+        opaque: lvalue_bounds_owner.as_deref(),
+    };
     let lvalue_value_type = lvalue.value_type;
     let lvalue_classes = (lvalue.access_class(), lvalue.object_class());
     match lvalue.storage {
@@ -597,11 +603,11 @@ fn write_program_lvalue_paths_for_initialization(
             if let Some(pointer) = state.locals.slot(&name)
                 && let Some(refusal) = subobject_access_refusal(
                     pointer,
-                    lvalue_bounds.as_deref(),
+                    lvalue_domain_source,
                     lvalue_value_type.byte_width(),
                     &facts,
                     &obligations,
-                    assumptions,
+                    &effective_assumptions,
                 )
             {
                 return Ok(vec![StatementExecutionPath::new(
@@ -712,11 +718,11 @@ fn write_program_lvalue_paths_for_initialization(
             let source_pointer = pointer.clone();
             if let Some(refusal) = subobject_access_refusal(
                 &pointer,
-                lvalue_bounds.as_deref(),
+                lvalue_domain_source,
                 lvalue_value_type.byte_width(),
                 &facts,
                 &obligations,
-                assumptions,
+                &effective_assumptions,
             )
             .or_else(|| {
                 effective_type_refusal_of(
@@ -1241,22 +1247,23 @@ fn execute_program_aggregate_copy_paths(
             if source_pointer.is_null() {
                 continue;
             }
+            let copy_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
             if let Some(refusal) = subobject_access_refusal(
                 source_pointer.pointer(),
-                source_pointer.bounds(),
+                &source_pointer,
                 layout.size_bytes(),
                 &facts,
                 &obligations,
-                assumptions,
+                &copy_assumptions,
             )
             .or_else(|| {
                 subobject_access_refusal(
                     target_pointer.pointer(),
-                    target_pointer.bounds(),
+                    &target_pointer,
                     layout.size_bytes(),
                     &facts,
                     &obligations,
-                    assumptions,
+                    &copy_assumptions,
                 )
             }) {
                 paths.push(StatementExecutionPath::new(
@@ -1270,7 +1277,7 @@ fn execute_program_aggregate_copy_paths(
                 state,
                 &source_pointer,
                 layout,
-                &assumptions_with_path_context(assumptions, &facts, &obligations),
+                &copy_assumptions,
             ) {
                 paths.push(StatementExecutionPath::new(
                     StatementOutcome::RuntimeError(RuntimeError::MissingResource {
@@ -1281,21 +1288,19 @@ fn execute_program_aggregate_copy_paths(
                 ));
                 continue;
             }
-            let write_assumptions =
-                assumptions_with_path_context(assumptions, &facts, &obligations);
             let write_refusal = match destination {
                 AggregateCopyDestination::Assignment => aggregate_assignment_write_outcome(
                     state,
                     &target_pointer,
                     layout.size_bytes(),
-                    &write_assumptions,
+                    &copy_assumptions,
                     &mut obligations,
                 ),
                 AggregateCopyDestination::ResultTemporary => memory_write_permission_outcome(
                     state,
                     target_pointer.pointer(),
                     layout.size_bytes(),
-                    &write_assumptions,
+                    &copy_assumptions,
                 ),
             };
             if let Some(outcome) = write_refusal {
@@ -1306,7 +1311,7 @@ fn execute_program_aggregate_copy_paths(
                 state,
                 &target_pointer,
                 layout,
-                &write_assumptions,
+                &copy_assumptions,
             ) {
                 paths.push(StatementExecutionPath::new(
                     StatementOutcome::RuntimeError(RuntimeError::MissingResource {
