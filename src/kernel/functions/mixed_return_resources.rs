@@ -54,6 +54,15 @@ impl ConsumedCellReturns {
                 used.insert(input);
             }
         }
+        for (path, input) in &interface.resource_transfer_rule.inputs_by_child {
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some((_, source)) = selected.get(input) {
+                outputs
+                    .children
+                    .insert(path.clone(), ConsumedCellReturn { input: *source });
+                used.insert(*input);
+            }
+        }
         let parameters = interface
             .parameters()
             .iter()
@@ -144,6 +153,9 @@ impl ConsumedCellReturns {
         inputs: &mut BTreeMap<FixedMemoryKey, VecDeque<ConsumedCellReturn>>,
         active: &mut BTreeSet<String>,
     ) {
+        if self.children.contains_key(path) {
+            return;
+        }
         if spec.quantity() != &ResourceQuantity::One || spec.guard().is_some() {
             return;
         }
@@ -1083,8 +1095,11 @@ impl ConstructedReturnBodies {
             if fact.is_view() {
                 viewed_children.push((fact.clone(), child_source));
             }
-            let fixed_borrow =
-                fact.is_own() && borrowed && fixed_memory_shape(spec, &parameters).is_some();
+            let fixed_borrow = fact.is_own()
+                && borrowed
+                && (fixed_memory_shape(spec, &parameters).is_some()
+                    || definition.condition.is_none()
+                        && summary_transfer::invariant_memory_shape(spec, &parameters));
             // A view remains a view even when its definition contains owns.
             // Neither its declaration nor a fresh backing block grants custody.
             let origin = if fact.is_view() {
@@ -1333,6 +1348,8 @@ pub(super) fn project_return_resource_cores(
         .collect()
 }
 
+#[cfg(test)]
+mod composite_transfer_tests;
 #[cfg(test)]
 mod existential_return_tests;
 #[cfg(test)]

@@ -450,9 +450,6 @@ fn walk_program_function<S: VariableSubstitution + ?Sized>(
         .iter()
         .map(|resource| walk_resource_spec(resource, s))
         .collect();
-    interface.resource_transfer_rule = std::sync::Arc::new(
-        crate::kernel::functions::SummaryResourceTransferRule::compile(&interface),
-    );
     interface.resource_constructors = function
         .resource_constructors()
         .iter()
@@ -587,6 +584,9 @@ fn walk_program_function<S: VariableSubstitution + ?Sized>(
             body: s.spec_proposition(&unfolding.body),
         })
         .collect();
+    interface.resource_transfer_rule = std::sync::Arc::new(
+        crate::kernel::functions::SummaryResourceTransferRule::compile(&interface),
+    );
     ProgramFunction {
         program_entry: function.program_entry,
         name: function.name.clone(),

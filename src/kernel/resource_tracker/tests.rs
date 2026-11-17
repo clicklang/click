@@ -1122,7 +1122,7 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
     let source = Proposition::ConditionIs(ConditionTerm::equal(old, three.clone()), true);
     assert!(crate::kernel::eval::holds_by_read_over_write(&source));
     let premises = [source, equality];
-    let facts = crate::kernel::proof::ProofFacts::from_ordered(&premises);
+    let facts = crate::kernel::proof::PureFactStore::from_ordered(&premises);
     let condition = ConditionTerm::equal(new, three);
     assert!(
         crate::kernel::proof::fact_reasoning::normalize_using_conditions(

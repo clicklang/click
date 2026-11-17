@@ -2,7 +2,7 @@ use super::*;
 use crate::kernel::ExecutionFactSource;
 
 pub(in crate::surface::proof) struct CheckedFixedStateTheoremApplication {
-    pub(in crate::surface::proof) facts: ProofFacts,
+    pub(in crate::surface::proof) facts: PureFactStore,
     pub(in crate::surface::proof) added_facts: Vec<Proposition>,
     /// All conclusions this application checked, including already-stated ones.
     pub(in crate::surface::proof) checked_facts: Vec<Proposition>,
@@ -19,7 +19,7 @@ pub(in crate::surface::proof) fn check_fixed_state_theorem_application_using_fac
     surface_premises: &[ClickProposition],
     claim_label: &str,
     tactic_index: usize,
-    available: &ProofFacts,
+    available: &PureFactStore,
     parameter_binding: ParameterBinding<'_>,
     fixed_state: FixedStateFrame<'_>,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,

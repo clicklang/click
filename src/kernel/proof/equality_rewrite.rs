@@ -31,7 +31,7 @@ pub(in crate::kernel) use shared::normalize_node as rebuild_normalized_machine_n
 pub(in crate::kernel) use shared::transport_node as rebuild_transported_machine_node;
 
 use super::fact_reasoning::exactly_available_fact;
-use super::{ProofFacts, PropositionObligation};
+use super::{PropositionObligation, PureFactStore};
 use crate::kernel::CompareRelation;
 use crate::kernel::MachineTerm;
 use crate::kernel::binary_node;
@@ -45,7 +45,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 /// Only this module can construct or change its semantic result.
 pub(crate) struct CheckedEqualityRewrite {
     proposition: Proposition,
-    facts: ProofFacts,
+    facts: PureFactStore,
 }
 
 impl CheckedEqualityRewrite {
@@ -87,7 +87,7 @@ impl CheckedEqualityRewrite {
         self,
         presentation: P,
         outcome: Option<O>,
-    ) -> (PropositionObligation<P, O>, ProofFacts) {
+    ) -> (PropositionObligation<P, O>, PureFactStore) {
         let obligation = match outcome {
             Some(outcome) => {
                 PropositionObligation::at_outcome(self.proposition, presentation, outcome)
@@ -98,7 +98,7 @@ impl CheckedEqualityRewrite {
     }
 }
 
-impl ProofFacts {
+impl PureFactStore {
     /// Check one explicitly cited equality against the persistent premise
     /// index, then compute the exact substitution. This path never scans or
     /// rebuilds the ambient premise context. Goal lowering/unfolding precedes
@@ -293,7 +293,7 @@ fn rewrite_equality_variables(equality: &Proposition) -> Result<BTreeSet<Variabl
 
 /// Candidate construction for smart planning over an explicit premise slice.
 /// The result has no proof authority; certificate checking uses the indexed
-/// `ProofFacts::check_equality_rewrite` rule instead.
+/// `PureFactStore::check_equality_rewrite` rule instead.
 pub(crate) fn rewrite_proposition_by_exact_equality(
     goal: &Proposition,
     equality: &Proposition,
@@ -2644,12 +2644,12 @@ mod tests {
                 ConditionTerm::machine_compare(ty, CompareRelation::Equal, x.clone(), y.clone()),
                 true,
             );
-            let facts = ProofFacts::default().with_fact(equality.clone());
+            let facts = PureFactStore::default().with_fact(equality.clone());
             let exports = KernelTermExport::machine_export_count();
             let checked = facts.check_equality_rewrite(&goal, &equality).unwrap();
             assert_ne!(checked.proposition(), &goal);
             assert!(
-                ProofFacts::default()
+                PureFactStore::default()
                     .check_equality_rewrite(&goal, &equality)
                     .is_err()
             );
@@ -2705,7 +2705,7 @@ mod tests {
         let rewritten_other = to.clone();
         let cited =
             Proposition::ConditionIs(ConditionTerm::pointer_equal(from.clone(), to.clone()), true);
-        let facts = ProofFacts::default().with_fact(cited.clone());
+        let facts = PureFactStore::default().with_fact(cited.clone());
         let read = |address: &Pointer| {
             Pointer::symbolic(crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,
@@ -2742,7 +2742,7 @@ mod tests {
         let memory = crate::kernel::intern_memory(memory);
         let cited =
             Proposition::ConditionIs(ConditionTerm::pointer_equal(from.clone(), to.clone()), true);
-        let facts = ProofFacts::default().with_fact(cited.clone());
+        let facts = PureFactStore::default().with_fact(cited.clone());
         let mut input = from.clone();
         let mut expected = to.clone();
         for depth in 1..=32 {
@@ -2810,7 +2810,7 @@ mod tests {
         let expected = read(&to);
         let cited =
             Proposition::ConditionIs(ConditionTerm::pointer_equal(from.clone(), to.clone()), true);
-        let facts = ProofFacts::default().with_fact(cited.clone());
+        let facts = PureFactStore::default().with_fact(cited.clone());
         let goal = Proposition::ConditionIs(ConditionTerm::pointer_equal(input, from), true);
         let wanted = Proposition::ConditionIs(ConditionTerm::pointer_equal(expected, to), true);
         assert_eq!(
@@ -3210,7 +3210,7 @@ mod tests {
             true,
         );
         let cited = equality(index, MachineTerm::constant(16));
-        let facts = ProofFacts::default().with_fact(cited.clone());
+        let facts = PureFactStore::default().with_fact(cited.clone());
         let mut rewrite = facts.check_equality_rewrite(&goal, &cited).unwrap();
         let raw = rewrite.proposition().clone();
         let folded = Proposition::ConditionIs(
@@ -3253,7 +3253,7 @@ mod tests {
         let replacement = MachineTerm::Variable(Variable(193_024));
         let value = MachineTerm::Variable(Variable(193_025));
         let cited = equality(source.clone(), replacement.clone());
-        let facts = ProofFacts::default().with_fact(cited.clone());
+        let facts = PureFactStore::default().with_fact(cited.clone());
         for (folded, lifted) in [
             (
                 MachineTerm::int64_constant(-1),
@@ -3318,7 +3318,7 @@ mod tests {
         for source in [65521, 0x8000_0001, u32::MAX] {
             let source = MachineTerm::constant(source);
             let cited = equality(source.clone(), divisor.clone());
-            let facts = ProofFacts::default().with_fact(cited.clone());
+            let facts = PureFactStore::default().with_fact(cited.clone());
             for make in [
                 ConditionTerm::unsigned_less_than as fn(MachineTerm, MachineTerm) -> ConditionTerm,
                 ConditionTerm::unsigned_less_equal,
@@ -3339,7 +3339,7 @@ mod tests {
                         &expected
                     );
                     assert!(
-                        ProofFacts::default()
+                        PureFactStore::default()
                             .check_equality_rewrite(&goal, &cited)
                             .is_err()
                     );
@@ -3363,7 +3363,7 @@ mod tests {
             MachineTerm::constant(1),
         );
         let cited = equality(read.clone(), replacement.clone());
-        let facts = ProofFacts::default().with_fact(cited.clone());
+        let facts = PureFactStore::default().with_fact(cited.clone());
         for truth in [false, true] {
             let goal = |value| {
                 Proposition::Implies(
@@ -3432,7 +3432,7 @@ mod tests {
                     ),
                     truth,
                 );
-                let facts = ProofFacts::default().with_fact(cited.clone());
+                let facts = PureFactStore::default().with_fact(cited.clone());
                 assert_eq!(
                     facts
                         .check_equality_rewrite(&goal, &cited)
@@ -3441,7 +3441,7 @@ mod tests {
                     &expected
                 );
                 assert!(
-                    ProofFacts::default()
+                    PureFactStore::default()
                         .check_equality_rewrite(&goal, &cited)
                         .is_err()
                 );
@@ -3459,7 +3459,7 @@ mod tests {
         let compound = |a| IntegerTerm::add(IntegerTerm::multiply(a, z.clone()), x.clone());
         let goal = integer_equality(compound(source.clone()), z.clone());
         let expected = integer_equality(compound(y.clone()), z.clone());
-        let empty = ProofFacts::default();
+        let empty = PureFactStore::default();
         assert!(empty.check_equality_rewrite(&goal, &cited).is_err());
         for evidence in [cited.clone(), integer_equality(y.clone(), source.clone())] {
             let facts = empty.with_fact(evidence);
@@ -3522,7 +3522,7 @@ mod tests {
         let x = IntegerTerm::var(Variable(193_011));
         let y = IntegerTerm::var(Variable(193_012));
         let cited = integer_equality(x.clone(), y.clone());
-        let facts = ProofFacts::default().with_fact(cited.clone());
+        let facts = PureFactStore::default().with_fact(cited.clone());
         let goal = integer_equality(IntegerTerm::multiply(x.clone(), x.clone()), y.clone());
         for variable in [Variable(193_011), Variable(193_012)] {
             let quantified = Proposition::ForAll {
@@ -3675,7 +3675,7 @@ mod tests {
         let changed = observe(after);
         let y = IntegerTerm::var(Variable(193_031));
         let cited = integer_equality(x.clone(), y.clone());
-        let facts = ProofFacts::default().with_fact(cited.clone());
+        let facts = PureFactStore::default().with_fact(cited.clone());
         let compound = |a| integer_equality(IntegerTerm::multiply(a, y.clone()), y.clone());
         assert!(
             facts
@@ -3724,7 +3724,7 @@ mod tests {
         let x = IntegerTerm::var(Variable(193_041));
         let y = IntegerTerm::var(Variable(193_042));
         let cited = integer_equality(x.clone(), y.clone());
-        let facts = ProofFacts::default().with_fact(cited.clone());
+        let facts = PureFactStore::default().with_fact(cited.clone());
         // These raw native forms are valid opaque observation identities.
         // Congruence must not fold them while rewriting an unrelated Integer.
         let terms = [
@@ -3805,7 +3805,7 @@ mod tests {
         let one = MachineTerm::constant(1);
         let cited = equality(x.clone(), y.clone());
         let goal = equality(x.clone(), one.clone());
-        let empty = ProofFacts::default();
+        let empty = PureFactStore::default();
         let established = empty.with_fact(cited.clone());
         let sibling = empty.with_fact(equality(y.clone(), one.clone()));
         assert!(empty.check_equality_rewrite(&goal, &cited).is_err());
@@ -3814,7 +3814,7 @@ mod tests {
         let (obligation, facts) = result.into_obligation((), None::<()>);
         assert_eq!(obligation.proposition(), &equality(y.clone(), one.clone()));
         assert!(facts.materialization_available(&cited));
-        let reversed = ProofFacts::from_ordered(&[equality(y.clone(), x)]);
+        let reversed = PureFactStore::from_ordered(&[equality(y.clone(), x)]);
         let (obligation, _) = reversed
             .check_equality_rewrite(&goal, &cited)
             .unwrap()
@@ -3827,7 +3827,7 @@ mod tests {
         let x = MachineTerm::Variable(Variable(911));
         let y = MachineTerm::Variable(Variable(912));
         let cited = equality(x.clone(), y.clone());
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&cited));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&cited));
         let goal = equality(x, MachineTerm::constant(3));
         let expected = equality(y, MachineTerm::constant(3));
         let mut result = facts.check_equality_rewrite(&goal, &cited).unwrap();
@@ -3905,7 +3905,7 @@ mod tests {
                 )
             };
             let cited = eq(mask(load(&before, pointer.clone(), kind)), one.clone());
-            let facts = ProofFacts::from_ordered(std::slice::from_ref(&cited));
+            let facts = PureFactStore::from_ordered(std::slice::from_ref(&cited));
             let goal = eq(mask(load(&after, pointer.clone(), kind)), one.clone());
             let checked = facts
                 .check_equality_rewrite(&goal, &cited)
@@ -3927,7 +3927,7 @@ mod tests {
                 )
             );
             assert!(
-                ProofFacts::default()
+                PureFactStore::default()
                     .check_equality_rewrite(&goal, &cited)
                     .is_err()
             );
@@ -4018,7 +4018,7 @@ mod tests {
             let goal = eq(expression(&after, size), MachineTerm::uint64_constant(1));
             let mut context_costs = Vec::new();
             for ambient in [0, 32, 128] {
-                let mut facts = ProofFacts::from_ordered(std::slice::from_ref(&cited));
+                let mut facts = PureFactStore::from_ordered(std::slice::from_ref(&cited));
                 for i in 0..ambient {
                     facts = facts.with_fact(equality(
                         MachineTerm::Variable(Variable(930_000 + i)),
@@ -4072,7 +4072,7 @@ mod tests {
         let x = MachineTerm::Variable(Variable(931));
         let y = MachineTerm::Variable(Variable(932));
         let cited = equality(x.clone(), y.clone());
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&cited));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&cited));
         let mut result = facts
             .check_equality_rewrite(&equality(x, load(memory)), &cited)
             .unwrap();
@@ -4092,7 +4092,7 @@ mod tests {
             equality: &Proposition,
             available: &[Proposition],
         ) -> Result<Proposition, String> {
-            ProofFacts::from_ordered(available)
+            PureFactStore::from_ordered(available)
                 .check_equality_rewrite(goal, equality)
                 .map(|checked| checked.proposition)
         }
@@ -4296,7 +4296,7 @@ mod numeric_address_annotation_tests {
         };
         let goal = mask(&p);
         let expected = mask(&q);
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&equality));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&equality));
         let checked = facts.check_equality_rewrite(&goal, &equality).unwrap();
         assert_eq!(checked.proposition(), &expected);
         assert_eq!(
@@ -4319,7 +4319,7 @@ mod numeric_address_annotation_tests {
             true,
         );
         let masked = mask(&p);
-        let mask_facts = ProofFacts::from_ordered(std::slice::from_ref(&masked));
+        let mask_facts = PureFactStore::from_ordered(std::slice::from_ref(&masked));
         assert_eq!(
             mask_facts
                 .check_equality_rewrite(&nested, &masked)

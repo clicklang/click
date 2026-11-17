@@ -548,7 +548,7 @@ fn full_pointer_queries_refresh_late_address_aliases() {
     };
     for indices in [[0, 1, 2, 3, 4], [2, 1, 4, 0, 3], [4, 3, 2, 1, 0]] {
         let ambient = indices.map(|index| premises[index].clone());
-        let facts = crate::kernel::proof::ProofFacts::from_ordered(&ambient);
+        let facts = crate::kernel::proof::PureFactStore::from_ordered(&ambient);
         assert!(
             facts
                 .assumptions()
@@ -562,7 +562,7 @@ fn full_pointer_queries_refresh_late_address_aliases() {
 
 #[test]
 fn selected_cursor_chain_needs_its_support_and_displacement() {
-    use crate::kernel::proof::{ProofFacts, fact_reasoning::normalize_using_conditions};
+    use crate::kernel::proof::{PureFactStore, fact_reasoning::normalize_using_conditions};
     let (goal, premises) = selected_cursor_chain();
     for missing in 0..premises.len() {
         let selected: Vec<_> = premises
@@ -571,7 +571,7 @@ fn selected_cursor_chain_needs_its_support_and_displacement() {
             .filter(|(index, _)| *index != missing)
             .map(|(_, p)| p.clone())
             .collect();
-        let facts = ProofFacts::from_ordered(&selected);
+        let facts = PureFactStore::from_ordered(&selected);
         assert!(
             normalize_using_conditions(&goal, &selected, &facts).is_err(),
             "missing premise {missing}"
@@ -592,13 +592,13 @@ fn selected_cursor_chain_needs_its_support_and_displacement() {
         ),
         true,
     );
-    let facts = ProofFacts::from_ordered(&premises);
+    let facts = PureFactStore::from_ordered(&premises);
     assert!(normalize_using_conditions(&wrong, &premises, &facts).is_err());
 }
 
 #[test]
 fn refreshed_address_aliases_do_not_establish_pointer_identity() {
-    use crate::kernel::proof::{ProofFacts, fact_reasoning::normalize_using_conditions};
+    use crate::kernel::proof::{PureFactStore, fact_reasoning::normalize_using_conditions};
     let (goal, mut premises) = selected_cursor_chain();
     let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) =
         &premises[0]
@@ -618,7 +618,7 @@ fn refreshed_address_aliases_do_not_establish_pointer_identity() {
         ConditionTerm::pointer_equal(left.pointer().clone(), right.pointer().clone()),
         true,
     ));
-    let facts = ProofFacts::from_ordered(&premises);
+    let facts = PureFactStore::from_ordered(&premises);
     assert!(
         facts
             .assumptions()
@@ -630,7 +630,7 @@ fn refreshed_address_aliases_do_not_establish_pointer_identity() {
 
 #[test]
 fn selected_native_cursor_normalization_is_stable_across_context_orders() {
-    use crate::kernel::proof::{ProofFacts, fact_reasoning::normalize_using_conditions};
+    use crate::kernel::proof::{PureFactStore, fact_reasoning::normalize_using_conditions};
     let original = PointerValue::new(
         Pointer {
             block: PointerBlock::ExternalArgument,
@@ -702,7 +702,7 @@ fn selected_native_cursor_normalization_is_stable_across_context_orders() {
     let goal = full(cursor, target);
     for order in [[2, 0, 1], [0, 1, 2], [1, 2, 0]] {
         let ambient = order.map(|index| premises[index].clone());
-        let facts = ProofFacts::from_ordered(&ambient);
+        let facts = PureFactStore::from_ordered(&ambient);
         for attempt in 0..32 {
             normalize_using_conditions(&goal, &premises, &facts).unwrap_or_else(|error| {
                 panic!("ambient order {order:?}, attempt {attempt}: {error:?}")
@@ -716,7 +716,7 @@ fn selected_native_cursor_normalization_is_stable_across_context_orders() {
             .filter(|(index, _)| *index != missing)
             .map(|(_, premise)| premise.clone())
             .collect();
-        let facts = ProofFacts::from_ordered(&selected);
+        let facts = PureFactStore::from_ordered(&selected);
         assert!(
             normalize_using_conditions(&goal, &selected, &facts).is_err(),
             "missing premise {missing}"

@@ -574,7 +574,7 @@ Exact premise lists, signed arithmetic claims, and fold alpha keys use this
 same form; they do not add tactic-specific fact searches.
 
 - The fact stores file each fact under its comparison form too
-  (`ProofFacts::with_fact`, `PureFactContext::assume_condition_once`), and an
+  (`PureFactStore::with_fact`, `PureFactContext::assume_condition_once`), and an
   exact lookup also looks up the comparison form of what it looks up.
 - A kernel rule that compares a stated term with one it derives compares
   their comparison forms (identity, cast identity, affine conclusions).

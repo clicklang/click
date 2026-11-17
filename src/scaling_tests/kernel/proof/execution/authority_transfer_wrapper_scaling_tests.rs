@@ -43,7 +43,7 @@ fn ordinary_authority_wrapper_checks_only_its_delta() {
     let child = ResourceFact::own_composite("member".into(), vec![]);
     let samples = [4usize, 16, 64, 256].map(|size| {
         let mut before = ExecutionState::new().with_population_creation_tracking();
-        let mut facts = ProofFacts::default();
+        let mut facts = PureFactStore::default();
         let mut memory = Memory::new();
         let mut resources = ResourceContext::new().unchecked_with_fact(child.clone());
         for index in 0..size {

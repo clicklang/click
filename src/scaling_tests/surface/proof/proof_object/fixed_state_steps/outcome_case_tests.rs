@@ -52,7 +52,7 @@ fn nested_case_partition_reuses_decisions_without_relowering_or_forking() {
             case_obligations: PersistentMap::default(),
             checked_haves: PersistentMap::default(),
         };
-        let root = ProofFacts::default();
+        let root = PureFactStore::default();
         let mut leaves = 0;
         let (fork, work) = crate::instrumentation::measure_deterministic_work(|| {
             partition_outcome_cases(
@@ -163,7 +163,7 @@ fn flat_haves_before_a_case_use_linear_work_and_constant_traversal_stack() {
             recorded_states: RecordedStates::default(),
             generated_load_bindings: PersistentMap::default(),
         };
-        let root = ProofFacts::default();
+        let root = PureFactStore::default();
         let calls = std::cell::Cell::new(0);
         let mut leaves = 0;
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {

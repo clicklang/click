@@ -2240,7 +2240,7 @@ pub(crate) fn contract_path_context_entries() -> usize {
 
 /// Counts, in test builds, the entries a fact context built from a list
 /// assumes (`assumptions_with_path_context`, `assumptions_with_propositions`,
-/// `PropositionSource::pure_context`, `ProofFacts::from_ordered`, and the
+/// `PropositionSource::pure_context`, `PureFactStore::from_ordered`, and the
 /// contexts a `PureFactList` extends). The work itself is charged where
 /// every context is built, one unit per fact
 /// (`PureFactContext::assume_proposition`), so a caller that rebuilds a

@@ -136,7 +136,7 @@ fn exact_signed_mirror_normalization_ignores_unrelated_facts() {
                 true,
             ));
         }
-        let facts = crate::kernel::proof::ProofFacts::from_ordered(&premises);
+        let facts = crate::kernel::proof::PureFactStore::from_ordered(&premises);
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::proof::fact_reasoning::normalize_using_conditions(
                 &goal,
