@@ -5338,9 +5338,10 @@ mod ranking_member_tests {
     fn current_load(cell: &Address) -> SpecExpression {
         SpecExpression::MemoryLoad {
             point: SpecPoint::Current,
-            pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-                PointerValue::new(cell.clone(), ProgramType::Int32Pointer),
-            ))),
+            pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(Pointer::new(
+                cell.clone(),
+                ProgramType::Int32Pointer,
+            )))),
             value_type: ProgramType::Int32,
         }
     }

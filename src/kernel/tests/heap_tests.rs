@@ -1512,7 +1512,7 @@ fn realloc_failure_preserves_a_loan_and_success_requires_call_entry_separation()
     let Some(ProgramValue::Pointer(pointer)) = local.as_deref() else {
         panic!("allocation should assign a pointer");
     };
-    let base = pointer.pointer().clone();
+    let base = pointer.address().clone();
     // This field is in the part that the successful shrink would cut off.
     let interior = MemoryRange::new(base.offset_by_bytes(12), 0.into(), 1.into());
     let ledger = active_heap_memory_loan(interior.clone());
@@ -1565,7 +1565,7 @@ fn realloc_failure_preserves_a_loan_and_success_requires_call_entry_separation()
         panic!("pending realloc must name its result");
     };
     let success_assumptions = PureFactContext::new()
-        .assume_condition(pointer_is_null_condition(result.pointer().clone()), false);
+        .assume_condition(pointer_is_null_condition(result.address().clone()), false);
     let checked = crate::kernel::resolve_pending_heap_allocations_with(
         &pending,
         &success_assumptions,

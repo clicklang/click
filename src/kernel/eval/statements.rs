@@ -2357,7 +2357,7 @@ fn execute_program_realloc_result_paths(
         let old_argument = match old_value {
             ProgramValue::Pointer(pointer) => pointer,
             ProgramValue::Int32(bits) if bits.as_const() == Some(0) => {
-                PointerValue::new(Address::null(), target_type)
+                Pointer::new(Address::null(), target_type)
             }
             _ => {
                 paths.push(StatementExecutionPath::new(
@@ -2369,7 +2369,7 @@ fn execute_program_realloc_result_paths(
             }
         };
 
-        let old_pointer = old_argument.pointer().clone();
+        let old_pointer = old_argument.address().clone();
         // C specifies realloc(NULL, size) as an allocation. Reuse the
         // existing pending-allocation machinery so a later null check can
         // resolve this branch just like malloc/calloc.
@@ -3347,7 +3347,7 @@ fn execute_program_return_expression_paths(
             {
                 let pointer = value.pointer().expect("pending pointer result").clone();
                 for mut truthiness_path in pending_allocation_outcome_paths(
-                    pointer.pointer().clone(),
+                    pointer.address().clone(),
                     facts,
                     obligations,
                     assumptions,

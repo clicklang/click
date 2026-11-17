@@ -2803,8 +2803,8 @@ fn representation_copy_arguments(
         return None;
     };
     Some((
-        destination.pointer(),
-        source.pointer(),
+        destination.address(),
+        source.address(),
         values.get(effect.bytes_argument)?,
     ))
 }

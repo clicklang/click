@@ -909,7 +909,7 @@ fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
     let load = SpecExpression::MemoryLoad {
         point: SpecPoint::Current,
         pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-            PointerValue::new(alias.clone(), ProgramType::UInt64Pointer),
+            Pointer::new(alias.clone(), ProgramType::UInt64Pointer),
         ))),
         value_type: ProgramType::UInt64,
     };
