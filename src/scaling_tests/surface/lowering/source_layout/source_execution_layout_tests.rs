@@ -114,3 +114,61 @@ fn construction_return_parameter_cleanup_scales_with_selected_parameters() {
         "{costs:?}"
     );
 }
+
+#[test]
+fn typed_conditional_value_layout_preserves_join_identity_and_scales() {
+    use crate::kernel::{
+        ProgramStatement, ProgramType, program_expression as e, program_function, program_if,
+        program_return, program_seq,
+    };
+    let value = |step| ProgramStatement::StepValue {
+        aggregate_layout: None,
+        steps: vec![step],
+        expression: e::int32_literal(1),
+        value_type: Some(ProgramType::Int32),
+        pointee_constant: false,
+    };
+    let mut samples = Vec::new();
+    for count in [8, 32, 128, 512] {
+        let mut body = program_if(e::int32_literal(1), value(0), value(0));
+        for step in 1..=count {
+            body = program_seq(body, value(step));
+        }
+        body = program_seq(body, program_return(e::int32_literal(0)));
+        let function = syntax::parse_function("int32 f() { return 0; }")
+            .unwrap()
+            .with_prelowered_kernel_function(program_function(
+                ProgramType::Int32,
+                "f",
+                vec![],
+                body,
+            ));
+        let (layout, work) = crate::instrumentation::measure_deterministic_work(|| {
+            SourceExecutionLayout::for_function(&function).unwrap()
+        });
+        assert!(work > 0);
+        assert_eq!(
+            layout.step_region(0),
+            Some(0),
+            "the join owns both arms' result"
+        );
+        assert_eq!(layout.call_number(0), Some(0));
+        assert_eq!(
+            layout.result_code_region(0),
+            Some(crate::surface::CodeRegionRef::Region(0))
+        );
+        for step in 1..=count {
+            let region = layout.step_region(step).unwrap();
+            assert_eq!(layout.call_number(region), Some(step));
+            assert_eq!(
+                layout.result_code_region(region),
+                Some(crate::surface::CodeRegionRef::Region(region))
+            );
+        }
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|w| w[1] <= w[0] * 5 + 64),
+        "{samples:?}"
+    );
+}

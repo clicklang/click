@@ -2,6 +2,8 @@ use super::schema::{Expression as E, Function, Record, RustExport, Statement as 
 #[cfg(test)]
 mod array_reference_tests;
 mod arrays;
+#[cfg(test)]
+mod checked_value_tests;
 mod chunks;
 mod enumerate;
 #[cfg(test)]
@@ -193,6 +195,36 @@ fn nested_enum_field_type(
         return Ok(None);
     };
     Ok(Some(InterfaceType::Parameter(EnumTypes::get(field)?)))
+}
+
+/// A guard or earlier use observes a captured value without ending its lifetime.
+fn keep_operand(value: &ProgramExpression) -> ProgramExpression {
+    match value {
+        ProgramExpression::StepResult { step, origin, .. } => ProgramExpression::StepResult {
+            step: *step,
+            origin: origin.clone(),
+            ends: false,
+        },
+        ProgramExpression::Cast { .. } => {
+            let mut kept = value.clone();
+            if let ProgramExpression::Cast { expression, .. } = &mut kept {
+                **expression = keep_operand(expression);
+            }
+            kept
+        }
+        _ => value.clone(),
+    }
+}
+
+/// Evaluate a retained operand for its final use, without publishing a result.
+fn discard_operand(expression: ProgramExpression) -> ProgramStatement {
+    ProgramStatement::StepValue {
+        aggregate_layout: None,
+        steps: vec![],
+        expression,
+        value_type: None,
+        pointee_constant: false,
+    }
 }
 
 /// Whether `value` is a local or a literal, possibly converted: a read with
@@ -724,9 +756,9 @@ fn lower_function(
         });
     }
     // Reserve the compiler's explicit call-result identities once for this
-    // function. Generated call/assignment pairs must not reuse a later MIR
-    // call's identity, even when the generated call comes first.
-    let next_call_result = f
+    // function. Generated calls and operand captures must not reuse a later
+    // MIR call's identity, even when they execute before that call.
+    let next_step = f
         .mir
         .iter()
         .flat_map(|mir| &mir.blocks)
@@ -760,8 +792,7 @@ fn lower_function(
         import_identity: identity.map(std::sync::Arc::from),
         mir_point: None,
         mir_nodes: BTreeMap::new(),
-        next_temporary: 0,
-        next_call_result: std::cell::Cell::new(next_call_result),
+        next_step: std::cell::Cell::new(next_step),
         loop_iterators: Vec::new(),
         locals,
         return_type,
@@ -848,8 +879,7 @@ struct Context<'a> {
     import_identity: Option<std::sync::Arc<str>>,
     mir_point: Option<super::borrow_frontiers::MirPoint>,
     mir_nodes: BTreeMap<usize, usize>,
-    next_temporary: u32,
-    next_call_result: std::cell::Cell<u32>,
+    next_step: std::cell::Cell<u32>,
     /// The iterator each loop advances, by loop index in preorder.
     loop_iterators: Vec<Option<crate::languages::interface::RustLoopIterator>>,
     locals: BTreeSet<String>,
@@ -864,10 +894,7 @@ impl Context<'_> {
         function: impl Into<String>,
         arguments: Vec<ProgramExpression>,
     ) -> (ProgramStatement, ProgramExpression) {
-        let id = self.next_call_result.get();
-        self.next_call_result
-            .set(id.checked_add(1).expect("too many calls in one function"));
-        crate::kernel::program_call_value(id, function, arguments)
+        crate::kernel::program_call_value(self.fresh_step(), function, arguments)
     }
 
     fn call_then_assign(
@@ -1053,9 +1080,9 @@ impl Context<'_> {
                     // which may call a function that changes the RHS storage.
                     let value_type = indexed_element_type(self.place_type(target)?)
                         .ok_or("unsupported Rust indexed assignment type")?;
-                    let (capture, name) = self.capture_operand(value, &value_type)?;
+                    let (capture, captured) = self.capture_operand(value, &value_type)?;
                     checks = program_seq(checks, capture);
-                    value = crate::kernel::program_expression::variable(name);
+                    value = captured;
                 }
                 let (target_checks, address) = self.prepared_address(target)?;
                 Ok(program_seq(
@@ -1175,16 +1202,16 @@ impl Context<'_> {
         let (pointer, length) = self.slice_parts(slice)?;
         // Evaluate the receiver before the argument and capture both metadata
         // components. The midpoint may call code; it is evaluated only once.
-        let (pointer_capture, pointer_name) = self.capture_operand(
+        let (pointer_capture, captured_pointer) = self.capture_operand(
             pointer,
             &Type::Reference {
                 mutable: false,
                 pointee: Box::new(Type::U8),
             },
         )?;
-        let (length_capture, length_name) = self.capture_operand(length, &Type::Usize)?;
+        let (length_capture, captured_length) = self.capture_operand(length, &Type::Usize)?;
         let (midpoint_prefix, midpoint_value) = self.prepared_expr(midpoint)?;
-        let (midpoint_capture, midpoint_name) =
+        let (midpoint_capture, captured_midpoint) =
             self.capture_operand(midpoint_value, &Type::Usize)?;
         let mut result = program_seq(
             pointer_capture,
@@ -1197,8 +1224,8 @@ impl Context<'_> {
             result,
             program_labeled_assert(
                 crate::kernel::program_expression::less_equal(
-                    crate::kernel::program_expression::variable(&midpoint_name),
-                    crate::kernel::program_expression::variable(&length_name),
+                    keep_operand(&captured_midpoint),
+                    keep_operand(&captured_length),
                 ),
                 "Rust split_at panic check",
             ),
@@ -1206,21 +1233,18 @@ impl Context<'_> {
         for (place, pointer, length) in [
             (
                 left,
-                crate::kernel::program_expression::variable(&pointer_name),
-                crate::kernel::program_expression::variable(&midpoint_name),
+                keep_operand(&captured_pointer),
+                keep_operand(&captured_midpoint),
             ),
             (
                 right,
                 // The right half starts at the midpoint in its own type, as
                 // the contract's `bytes[mid]` does.
                 crate::kernel::program_expression::add(
-                    crate::kernel::program_expression::variable(&pointer_name),
-                    crate::kernel::program_expression::variable(&midpoint_name),
+                    captured_pointer,
+                    keep_operand(&captured_midpoint),
                 ),
-                crate::kernel::program_expression::subtract(
-                    crate::kernel::program_expression::variable(&length_name),
-                    crate::kernel::program_expression::variable(&midpoint_name),
-                ),
+                crate::kernel::program_expression::subtract(captured_length, captured_midpoint),
             ),
         ] {
             if place.value_type != (Type::ByteSlice { mutable: false }) {
@@ -1400,19 +1424,13 @@ impl Context<'_> {
         if !self.locals.contains(name) {
             return Err(format!("unknown Rust local `{name}`"));
         }
-        // A memory-backed local's value is computed into a temporary and
-        // stored to its object.
+        // Prepare the value before storing into the memory-backed local.
         if let Some(&value_type) = self.memory_values.get(name) {
-            let temporary = self.fresh_temporary()?;
-            let assign = self.assign(&temporary, e)?;
+            let (checks, value) = self.prepared_expr(e)?;
             let address = self.address(&E::Local { name: name.into() })?;
             return Ok(program_seq(
-                program_seq(program_declare(&temporary, value_type), assign),
-                program_typed_store(
-                    address,
-                    crate::kernel::program_expression::variable(&temporary),
-                    value_type,
-                ),
+                checks,
+                program_typed_store(address, value, value_type),
             ));
         }
         if let Some((length, expected)) = self.shared_scalar_slices.get(name).cloned() {
@@ -1556,19 +1574,17 @@ impl Context<'_> {
             }
             if let Type::ByteSlice { mutable } = value_type {
                 let (pointer, length) = self.slice_parts(argument)?;
-                let (capture_pointer, pointer_name) = self.capture_operand(
+                let (capture_pointer, captured_pointer) = self.capture_operand(
                     pointer,
                     &Type::Reference {
                         mutable,
                         pointee: Box::new(Type::U8),
                     },
                 )?;
-                let (capture_length, length_name) = self.capture_operand(length, &Type::Usize)?;
+                let (capture_length, captured_length) =
+                    self.capture_operand(length, &Type::Usize)?;
                 checks = program_seq(checks, program_seq(capture_pointer, capture_length));
-                values.extend([
-                    crate::kernel::program_expression::variable(pointer_name),
-                    crate::kernel::program_expression::variable(length_name),
-                ]);
+                values.extend([captured_pointer, captured_length]);
                 pieces.push((checks, values, None));
                 continue;
             }
@@ -1577,19 +1593,17 @@ impl Context<'_> {
                 if actual != scalar_type(element)?.to_kernel_type() {
                     return Err("Rust scalar slice call element mismatch".into());
                 }
-                let (capture_pointer, pointer_name) = self.capture_operand(
+                let (capture_pointer, captured_pointer) = self.capture_operand(
                     pointer,
                     &Type::Reference {
                         mutable: *mutable,
                         pointee: element.clone(),
                     },
                 )?;
-                let (capture_length, length_name) = self.capture_operand(length, &Type::Usize)?;
+                let (capture_length, captured_length) =
+                    self.capture_operand(length, &Type::Usize)?;
                 checks = program_seq(checks, program_seq(capture_pointer, capture_length));
-                values.extend([
-                    crate::kernel::program_expression::variable(pointer_name),
-                    crate::kernel::program_expression::variable(length_name),
-                ]);
+                values.extend([captured_pointer, captured_length]);
                 pieces.push((checks, values, None));
                 continue;
             }
@@ -1627,8 +1641,7 @@ impl Context<'_> {
                         reference_view(value, interface_type, false, constant),
                     )
                 } else {
-                    let (capture, name) = self.capture_operand(value, &value_type)?;
-                    (capture, crate::kernel::program_expression::variable(name))
+                    self.capture_operand(value, &value_type)?
                 };
                 checks = program_seq(checks, capture);
                 values.push(value);
@@ -1637,55 +1650,59 @@ impl Context<'_> {
         Ok((checks, values))
     }
 
-    /// A fresh local name for a value the lowering introduces.
-    fn fresh_temporary(&mut self) -> Result<String, String> {
-        loop {
-            let name = format!("__rust_checked_{}", self.next_temporary);
-            self.next_temporary = self
-                .next_temporary
-                .checked_add(1)
-                .ok_or("Rust temporary identity exhausted")?;
-            if self.locals.insert(name.clone()) {
-                return Ok(name);
-            }
+    /// Calls and operand values share one identity space, reserved past MIR's calls.
+    fn fresh_step(&self) -> u32 {
+        let step = self.next_step.get();
+        self.next_step.set(
+            step.checked_add(1)
+                .expect("too many expression steps in one function"),
+        );
+        step
+    }
+
+    fn value_step(
+        step: u32,
+        value: ProgramExpression,
+        value_type: ProgramType,
+        constant: bool,
+    ) -> ProgramStatement {
+        ProgramStatement::StepValue {
+            aggregate_layout: None,
+            steps: vec![step],
+            expression: value,
+            value_type: Some(value_type),
+            pointee_constant: constant,
         }
     }
-    /// The operand `source`, prepared as `value` at `value_type`, read once:
+
+    /// The operand prepared as `value` at `value_type`, read once:
     /// the statement that captures it, the value its guards read, and the
     /// operand its operator reads. A local or a literal is its own short
     /// name, so where nothing between its read and its use can change it
     /// (`stable`) it is used where it is read. Any other value is captured
-    /// in a fresh local first, so its guards and its use name it rather than
+    /// in a value step first, so its guards and its use name it rather than
     /// repeat it.
     fn read_operand(
         &mut self,
-        source: &E,
         value: ProgramExpression,
         value_type: &Type,
         stable: bool,
-    ) -> Result<(ProgramStatement, ProgramExpression, E), String> {
+    ) -> Result<(ProgramStatement, ProgramExpression, ProgramExpression), String> {
         if stable && !matches!(value_type, Type::Reference { .. }) && direct_operand(&value) {
             let interface_type = scalar_type(value_type)?.to_kernel_type();
-            return Ok((
-                program_skip(),
-                crate::kernel::program_expression::cast(value, interface_type),
-                source.clone(),
-            ));
+            let value = crate::kernel::program_expression::cast(value, interface_type);
+            return Ok((program_skip(), value.clone(), value));
         }
-        let (capture, name) = self.capture_operand(value, value_type)?;
-        Ok((
-            capture,
-            crate::kernel::program_expression::variable(&name),
-            E::Local { name },
-        ))
+        let (capture, value) = self.capture_operand(value, value_type)?;
+        Ok((capture, keep_operand(&value), value))
     }
 
     fn capture_operand(
         &mut self,
         value: ProgramExpression,
         value_type: &Type,
-    ) -> Result<(ProgramStatement, String), String> {
-        let name = self.fresh_temporary()?;
+    ) -> Result<(ProgramStatement, ProgramExpression), String> {
+        let retained = matches!(value, ProgramExpression::StepResult { .. });
         let interface_type = scalar_type(value_type)?.to_kernel_type();
         let constant = matches!(value_type, Type::Reference { mutable: false, .. });
         let value = if matches!(value_type, Type::Reference { .. }) {
@@ -1693,24 +1710,22 @@ impl Context<'_> {
         } else {
             crate::kernel::program_expression::cast(value, interface_type)
         };
+        if retained {
+            return Ok((program_skip(), value));
+        }
+        let step = self.fresh_step();
         Ok((
-            program_seq(
-                program_declare_with_all_qualifiers(
-                    &name,
-                    interface_type,
-                    false,
-                    false,
-                    false,
-                    constant,
-                ),
-                program_assign(&name, value),
-            ),
-            name,
+            Self::value_step(step, value, interface_type, constant),
+            ProgramExpression::StepResult {
+                step,
+                origin: StepOrigin::Value("operand"),
+                ends: true,
+            },
         ))
     }
 
     // Read each operand once, in source order. A local or a literal is read
-    // where it is used; any other operand is captured in a local first, so
+    // where it is used; any other operand is captured in a value step first, so
     // guards name it rather than duplicate an arbitrarily large expression
     // tree. The generated asserts are checked execution obligations, not
     // assumptions.
@@ -1740,17 +1755,18 @@ impl Context<'_> {
                     .return_type
                     .clone();
                 let (prefix, arguments) = self.prepared_arguments(function, arguments)?;
-                let (declare, name) = self.capture_operand(
-                    crate::kernel::program_expression::int32_literal(0),
-                    &return_type,
-                )?;
-                Ok((
-                    program_seq(
-                        prefix,
-                        program_seq(declare, self.call_then_assign(&name, function, arguments)),
-                    ),
-                    crate::kernel::program_expression::variable(name),
-                ))
+                let (mut call, value) = self.call_value(function, arguments);
+                if let ProgramStatement::CallResult {
+                    result_type,
+                    result_pointee_constant,
+                    ..
+                } = &mut call
+                {
+                    *result_type = Some(scalar_type(&return_type)?.to_kernel_type());
+                    *result_pointee_constant =
+                        matches!(return_type, Type::Reference { mutable: false, .. });
+                }
+                Ok((program_seq(prefix, call), value))
             }
             E::Index { .. } => {
                 let (checks, pointer) = self.prepared_address(e)?;
@@ -1796,29 +1812,38 @@ impl Context<'_> {
             } => {
                 let (left_prefix, left_value) = self.prepared_expr(left)?;
                 if operator == "and" || operator == "or" {
-                    let (left_capture, left_name) = self.capture_operand(left_value, left_type)?;
-                    let prefix = program_seq(left_prefix, left_capture);
                     if *left_type != Type::Bool || *right_type != Type::Bool {
                         return Err("Rust logical operators require bool operands".into());
                     }
                     let (right_prefix, right_value) = self.prepared_expr(right)?;
-                    let condition = if operator == "and" {
-                        crate::kernel::program_expression::variable(&left_name)
-                    } else {
-                        crate::kernel::program_expression::not(
-                            crate::kernel::program_expression::variable(&left_name),
-                        )
-                    };
-                    let update = program_seq(
+                    let step = self.fresh_step();
+                    let right = program_seq(
                         right_prefix,
-                        program_assign(
-                            &left_name,
-                            crate::kernel::program_expression::cast(right_value, ProgramType::Bool),
-                        ),
+                        Self::value_step(step, right_value, ProgramType::Bool, false),
                     );
+                    let short = Self::value_step(
+                        step,
+                        crate::kernel::program_expression::int32_literal(u32::from(
+                            operator == "or",
+                        )),
+                        ProgramType::Bool,
+                        false,
+                    );
+                    let (yes, no) = if operator == "and" {
+                        (right, short)
+                    } else {
+                        (short, right)
+                    };
                     return Ok((
-                        program_seq(prefix, program_if(condition, update, program_skip())),
-                        crate::kernel::program_expression::variable(left_name),
+                        program_seq(
+                            left_prefix,
+                            program_if(branch_condition(left_value), yes, no),
+                        ),
+                        ProgramExpression::StepResult {
+                            step,
+                            origin: StepOrigin::Value("short-circuit expression"),
+                            ends: true,
+                        },
                     ));
                 }
                 let (right_prefix, right_value) = self.prepared_expr(right)?;
@@ -1826,13 +1851,12 @@ impl Context<'_> {
                 // so it is used where it is read only when that work has no
                 // effect that could change it.
                 let (left_capture, left_operand, left_read) = self.read_operand(
-                    left,
                     left_value,
                     left_type,
                     no_effect(&left_prefix) && no_effect(&right_prefix),
                 )?;
                 let (right_capture, right_operand, right_read) =
-                    self.read_operand(right, right_value, right_type, no_effect(&right_prefix))?;
+                    self.read_operand(right_value, right_type, no_effect(&right_prefix))?;
                 let mut prefix = program_seq(
                     program_seq(left_prefix, left_capture),
                     program_seq(right_prefix, right_capture),
@@ -2046,15 +2070,12 @@ impl Context<'_> {
                         );
                     }
                 }
-                let expression = E::Binary {
-                    operator: operator.clone(),
-                    left_type: left_type.clone(),
-                    right_type: right_type.clone(),
-                    left: Box::new(left_read),
-                    right: Box::new(right_read),
-                };
-                Ok((prefix, self.expr(&expression)?))
+                Ok((
+                    prefix,
+                    binary_value(operator, left_type, right_type, left_read, right_read)?,
+                ))
             }
+
             E::Not { value }
             | E::BitwiseNot { value, .. }
             | E::Cast { value, .. }
@@ -2246,8 +2267,7 @@ impl Context<'_> {
         if let E::Index { slice, index } = e {
             let (pointer, length, _) = self.indexed_parts(slice)?;
             let (checks, value) = self.prepared_expr(index)?;
-            let (capture, name) = self.capture_operand(value, &Type::Usize)?;
-            let index = crate::kernel::program_expression::variable(name);
+            let (capture, index) = self.capture_operand(value, &Type::Usize)?;
             // The index keeps its own type, as the contract's place does.
             let offset = index.clone();
             return Ok((
@@ -2256,7 +2276,10 @@ impl Context<'_> {
                     program_seq(
                         capture,
                         program_labeled_assert(
-                            crate::kernel::program_expression::less_than(index.clone(), length),
+                            crate::kernel::program_expression::less_than(
+                                keep_operand(&index),
+                                length,
+                            ),
                             if matches!(slice.as_ref(), E::Local { name }
                                 if self.slices.contains_key(name)
                                     || self.shared_scalar_slices.contains_key(name))
@@ -2567,122 +2590,9 @@ impl Context<'_> {
                 left,
                 right,
             } => {
-                let mut l = self.expr(left)?;
+                let l = self.expr(left)?;
                 let r = self.expr(right)?;
-                // A Rust comparison of two 8- or 16-bit values is native
-                // at their type (`design/machine-integers.md`, Decisions
-                // 2026-11-01): its operands keep their width, and the `bool`
-                // value below reads the comparison at it.
-                let narrow = matches!(left_type, Type::U8 | Type::U16 | Type::I8 | Type::I16);
-                let narrow_comparison =
-                    narrow && matches!(operator.as_str(), "eq" | "ne" | "lt" | "le" | "gt" | "ge");
-                // Rust `+ - * & | ^ <<` on 8- or 16-bit values are the
-                // operators of that type (decision G4): native nodes over the
-                // operands as written. A checked operator's overflow panic is
-                // its own assertion (`prepared_expr`). A native shift's count
-                // is a 32-bit word; a count of another width keeps the
-                // promoted shift.
-                let narrow_native = narrow
-                    && (matches!(
-                        operator.as_str(),
-                        "add" | "sub" | "mul" | "bit_and" | "bit_or" | "bit_xor"
-                    ) || (operator == "shl" && right_type.integer_bits() == Some(32)));
-                // Keep the RHS at its source width. The shared shift evaluator
-                // checks signed/nonnegative and full-width upper bounds before
-                // forming its word-sized shift term. Narrowing here would lose
-                // the exact relation to Rust's already checked count.
-                if narrow && !narrow_comparison && !narrow_native {
-                    // Rust narrow `/ % >>` are still a 32-bit operation and
-                    // a cast back (decision G4).
-                    crate::kernel::machine_integer::format_audit::record(
-                        crate::kernel::machine_integer::format_audit::WordIdentity::PromotedNarrowArithmetic,
-                        std::panic::Location::caller(),
-                    );
-                }
-                if narrow_comparison || narrow_native {
-                } else if matches!(left_type, Type::U8 | Type::U16) {
-                    // Narrow unsigned remainder fits in signed int, matching
-                    // the promotion used by its contract expression. Other
-                    // operations keep unsigned words (notably u16 multiply).
-                    l = crate::kernel::program_expression::cast(
-                        l,
-                        if operator == "rem" {
-                            ProgramType::Int32
-                        } else {
-                            ProgramType::UInt32
-                        },
-                    );
-                } else if left_type.is_signed_integer() && operator == "shl" {
-                    // A signed left shift wraps in Rust and may be undefined
-                    // in C: shift the bits as an unsigned word of at least
-                    // the operand's width, then reinterpret them at the
-                    // operand's width below.
-                    l = crate::kernel::program_expression::cast(
-                        l,
-                        if left_type.integer_bits() == Some(64) {
-                            ProgramType::UInt64
-                        } else {
-                            ProgramType::UInt32
-                        },
-                    );
-                } else if matches!(left_type, Type::I8 | Type::I16) {
-                    l = crate::kernel::program_expression::cast(l, ProgramType::Int32);
-                }
-                let result = match operator.as_str() {
-                    "add" => crate::kernel::program_expression::add(l, r),
-                    "sub" => crate::kernel::program_expression::subtract(l, r),
-                    "mul" => crate::kernel::program_expression::multiply(l, r),
-                    "div" => crate::kernel::program_expression::divide(l, r),
-                    "rem" => crate::kernel::program_expression::remainder(l, r),
-                    "shl" => crate::kernel::program_expression::shift_left(l, r),
-                    "shr" => crate::kernel::program_expression::shift_right(l, r),
-                    "bit_and" => crate::kernel::program_expression::bitwise_and(l, r),
-                    "bit_or" => crate::kernel::program_expression::bitwise_or(l, r),
-                    "bit_xor" => crate::kernel::program_expression::bitwise_xor(l, r),
-                    "eq" => crate::kernel::program_expression::equal(l, r),
-                    "ne" => crate::kernel::program_expression::not_equal(l, r),
-                    "lt" => crate::kernel::program_expression::less_than(l, r),
-                    "le" => crate::kernel::program_expression::less_equal(l, r),
-                    "gt" => crate::kernel::program_expression::greater_than(l, r),
-                    "ge" => crate::kernel::program_expression::greater_equal(l, r),
-                    "and" => crate::kernel::program_expression::and(l, r),
-                    "or" => crate::kernel::program_expression::or(l, r),
-                    _ => return Err("unsupported Rust operator in artifact".into()),
-                };
-                if matches!(
-                    operator.as_str(),
-                    "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "and" | "or"
-                ) {
-                    // A Rust comparison or connective is a `bool` value: the
-                    // condition itself, with no path split (Stage 5, D5).
-                    Ok(crate::kernel::program_expression::bool_value(result))
-                } else if narrow_native {
-                    Ok(crate::kernel::program_expression::narrow_arithmetic(
-                        result,
-                        scalar_type(left_type)?.to_kernel_type(),
-                    ))
-                } else if narrow && matches!(operator.as_str(), "div" | "rem") {
-                    // Checked narrow arithmetic cannot discard bits. Its range
-                    // obligation permits an exact coercion; only casts,
-                    // bitwise results and shifts need explicit truncation.
-                    // Convert from the operation's promoted type: `int32` for
-                    // signed arithmetic and narrow unsigned remainder,
-                    // `uint32` for the other unsigned operations.
-                    let computed = if matches!(left_type, Type::U8 | Type::U16) {
-                        result
-                    } else {
-                        crate::kernel::program_expression::cast(result, ProgramType::Int32)
-                    };
-                    Ok(crate::kernel::program_expression::cast(
-                        computed,
-                        scalar_type(left_type)?.to_kernel_type(),
-                    ))
-                } else {
-                    Ok(rust_scalar_cast(
-                        result,
-                        scalar_type(left_type)?.to_kernel_type(),
-                    ))
-                }
+                binary_value(operator, left_type, right_type, l, r)
             }
             E::Call { .. } => Err("nested Rust calls outside statement lowering".into()),
             E::ClosureInstance { .. } => {
@@ -2722,4 +2632,127 @@ impl Context<'_> {
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/languages/rust/lowering/tests.rs");
+}
+
+/// Build an operator directly from its prepared, typed operands.
+fn binary_value(
+    operator: &str,
+    left_type: &Type,
+    right_type: &Type,
+    mut l: ProgramExpression,
+    r: ProgramExpression,
+) -> Result<ProgramExpression, String> {
+    // A Rust comparison of two 8- or 16-bit values is native
+    // at their type (`design/machine-integers.md`, Decisions
+    // 2026-11-01): its operands keep their width, and the `bool`
+    // value below reads the comparison at it.
+    let narrow = matches!(left_type, Type::U8 | Type::U16 | Type::I8 | Type::I16);
+    let narrow_comparison = narrow && matches!(operator, "eq" | "ne" | "lt" | "le" | "gt" | "ge");
+    // Rust `+ - * & | ^ <<` on 8- or 16-bit values are the
+    // operators of that type (decision G4): native nodes over the
+    // operands as written. A checked operator's overflow panic is
+    // its own assertion (`prepared_expr`). A native shift's count
+    // is a 32-bit word; a count of another width keeps the
+    // promoted shift.
+    let narrow_native = narrow
+        && (matches!(
+            operator,
+            "add" | "sub" | "mul" | "bit_and" | "bit_or" | "bit_xor"
+        ) || (operator == "shl" && right_type.integer_bits() == Some(32)));
+    // Keep the RHS at its source width. The shared shift evaluator
+    // checks signed/nonnegative and full-width upper bounds before
+    // forming its word-sized shift term. Narrowing here would lose
+    // the exact relation to Rust's already checked count.
+    if narrow && !narrow_comparison && !narrow_native {
+        // Rust narrow `/ % >>` are still a 32-bit operation and
+        // a cast back (decision G4).
+        crate::kernel::machine_integer::format_audit::record(
+            crate::kernel::machine_integer::format_audit::WordIdentity::PromotedNarrowArithmetic,
+            std::panic::Location::caller(),
+        );
+    }
+    if narrow_comparison || narrow_native {
+    } else if matches!(left_type, Type::U8 | Type::U16) {
+        // Narrow unsigned remainder fits in signed int, matching
+        // the promotion used by its contract expression. Other
+        // operations keep unsigned words (notably u16 multiply).
+        l = crate::kernel::program_expression::cast(
+            l,
+            if operator == "rem" {
+                ProgramType::Int32
+            } else {
+                ProgramType::UInt32
+            },
+        );
+    } else if left_type.is_signed_integer() && operator == "shl" {
+        // A signed left shift wraps in Rust and may be undefined
+        // in C: shift the bits as an unsigned word of at least
+        // the operand's width, then reinterpret them at the
+        // operand's width below.
+        l = crate::kernel::program_expression::cast(
+            l,
+            if left_type.integer_bits() == Some(64) {
+                ProgramType::UInt64
+            } else {
+                ProgramType::UInt32
+            },
+        );
+    } else if matches!(left_type, Type::I8 | Type::I16) {
+        l = crate::kernel::program_expression::cast(l, ProgramType::Int32);
+    }
+    let result = match operator {
+        "add" => crate::kernel::program_expression::add(l, r),
+        "sub" => crate::kernel::program_expression::subtract(l, r),
+        "mul" => crate::kernel::program_expression::multiply(l, r),
+        "div" => crate::kernel::program_expression::divide(l, r),
+        "rem" => crate::kernel::program_expression::remainder(l, r),
+        "shl" => crate::kernel::program_expression::shift_left(l, r),
+        "shr" => crate::kernel::program_expression::shift_right(l, r),
+        "bit_and" => crate::kernel::program_expression::bitwise_and(l, r),
+        "bit_or" => crate::kernel::program_expression::bitwise_or(l, r),
+        "bit_xor" => crate::kernel::program_expression::bitwise_xor(l, r),
+        "eq" => crate::kernel::program_expression::equal(l, r),
+        "ne" => crate::kernel::program_expression::not_equal(l, r),
+        "lt" => crate::kernel::program_expression::less_than(l, r),
+        "le" => crate::kernel::program_expression::less_equal(l, r),
+        "gt" => crate::kernel::program_expression::greater_than(l, r),
+        "ge" => crate::kernel::program_expression::greater_equal(l, r),
+        "and" => crate::kernel::program_expression::and(l, r),
+        "or" => crate::kernel::program_expression::or(l, r),
+        _ => return Err("unsupported Rust operator in artifact".into()),
+    };
+    if matches!(
+        operator,
+        "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "and" | "or"
+    ) {
+        // A Rust comparison or connective is a `bool` value: the
+        // condition itself, with no path split (Stage 5, D5).
+        Ok(crate::kernel::program_expression::bool_value(result))
+    } else if narrow_native {
+        Ok(crate::kernel::program_expression::narrow_arithmetic(
+            result,
+            scalar_type(left_type)?.to_kernel_type(),
+        ))
+    } else if narrow && matches!(operator, "div" | "rem") {
+        // Checked narrow arithmetic cannot discard bits. Its range
+        // obligation permits an exact coercion; only casts,
+        // bitwise results and shifts need explicit truncation.
+        // Convert from the operation's promoted type: `int32` for
+        // signed arithmetic and narrow unsigned remainder,
+        // `uint32` for the other unsigned operations.
+        let computed = if matches!(left_type, Type::U8 | Type::U16) {
+            result
+        } else {
+            crate::kernel::program_expression::cast(result, ProgramType::Int32)
+        };
+        Ok(crate::kernel::program_expression::cast(
+            computed,
+            scalar_type(left_type)?.to_kernel_type(),
+        ))
+    } else {
+        Ok(rust_scalar_cast(
+            result,
+            scalar_type(left_type)?.to_kernel_type(),
+        ))
+    }
 }

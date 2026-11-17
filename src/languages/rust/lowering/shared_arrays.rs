@@ -97,14 +97,8 @@ impl Context<'_> {
         Ok(program_seq(
             program_seq(p_capture, l_capture),
             program_seq(
-                program_assign(
-                    format!("{target}_ptr"),
-                    crate::kernel::program_expression::variable(&p),
-                ),
-                program_assign(
-                    format!("{target}_len"),
-                    crate::kernel::program_expression::variable(&l),
-                ),
+                program_assign(format!("{target}_ptr"), p),
+                program_assign(format!("{target}_len"), l),
             ),
         ))
     }

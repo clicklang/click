@@ -575,7 +575,12 @@ pub(super) fn execute_branch_step_from_frontier_position(
     // successor per variant, as an undecided C condition has two. Each is
     // its own proof arm: a proof `match` on the value names the fields its
     // arm learns, which a proof `if` on the test could not.
-    if let Some(split) = enum_switch_proof_match(&statement, &current_state, context) {
+    if let Some(split) = enum_switch_proof_match(
+        &statement,
+        &current_state,
+        context,
+        &proof_context.constants.source_layout,
+    )? {
         return Err(ClickError::new(format!(
             "`{claim_label}` tactic {tactic_index}: `{tactic_name}` reached a Rust `match` of `{}`, whose variant is not known here; each variant is its own proof arm. Write `{}` here, or end the script here and let its implicit tail split it",
             split.describe_scrutinee(),
@@ -4018,31 +4023,57 @@ pub(super) fn condition_path_case_split_condition(
     path_case_split_condition(&cases, available, state, proof_context)
 }
 
-/// The proof `match` that separates a Rust `match` of an enum local: one arm
-/// per variant, each field bound as `<local>_<variant>_<index>` with the
-/// variant in snake case, made fresh against the function's locals. Every
-/// arm's binders differ, so all stay bound after the implicit tail finishes.
+/// The proof `match` that separates a Rust enum match, including a retained
+/// discriminant value. The produced proof names that value by its own region.
 fn enum_switch_proof_match(
     statement: &ProgramStatement,
     state: &ExecutionState,
     facts: Option<&PureFactContext>,
-) -> Option<ProofMatch> {
+    layout: &crate::surface::lowering::SourceExecutionLayout,
+) -> Result<Option<ProofMatch>, ClickError> {
     let ProgramStatement::If { condition, .. } = statement else {
-        return None;
+        return Ok(None);
     };
     let mut test = condition;
     while let ProgramExpression::Or(left, _) = test {
         test = left;
     }
     let ProgramExpression::EnumIs { value, .. } = test else {
-        return None;
+        return Ok(None);
     };
-    let ProgramExpression::Variable(name) = value.as_ref() else {
-        return None;
+    let (native, scrutinee, name) = match value.as_ref() {
+        ProgramExpression::Variable(name) => {
+            let Some(native) = state.locals().get_native(name) else {
+                return Ok(None);
+            };
+            (
+                native,
+                ContractExpression::ProgramExpression(ProgramExpression::Variable(name.clone())),
+                name.to_string(),
+            )
+        }
+        ProgramExpression::StepResult { step, .. } => {
+            let native = state
+                .step_result(*step)
+                .ok_or_else(|| ClickError::new("the enum discriminant has no retained value"))?
+                .clone()
+                .into_native();
+            let region = layout
+                .step_region(*step)
+                .and_then(|region| layout.result_code_region(region))
+                .ok_or_else(|| {
+                    ClickError::new("the retained enum discriminant has no source region")
+                })?;
+            (
+                std::borrow::Cow::Owned(native),
+                ContractExpression::RegionResult(region),
+                "value".into(),
+            )
+        }
+        _ => return Ok(None),
     };
-    let native = state.locals().get_native(name)?;
     let ProgramValue::Parameter(term) = native.as_ref() else {
-        return None;
+        return Ok(None);
     };
     if term.algebraic_type.rigid
         || matches!(
@@ -4051,7 +4082,7 @@ fn enum_switch_proof_match(
         )
         || facts.is_some_and(|facts| facts.knows_algebraic_constructor(term))
     {
-        return None;
+        return Ok(None);
     }
     let arms = term
         .algebraic_type
@@ -4077,11 +4108,11 @@ fn enum_switch_proof_match(
             }
         })
         .collect();
-    Some(ProofMatch {
-        scrutinee: ContractExpression::ProgramExpression(ProgramExpression::Variable(name.clone())),
+    Ok(Some(ProofMatch {
+        scrutinee,
         ensuring: None,
         arms,
-    })
+    }))
 }
 
 /// `IsEmpty` as `is_empty`.

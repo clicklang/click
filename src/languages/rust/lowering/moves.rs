@@ -577,24 +577,12 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                 } else if callee.return_type == Type::Unit {
                     program_call(function, arguments_values)
                 } else if let Some(&value_type) = cx.memory_values.get(destination.as_str()) {
-                    // A memory-backed local, a borrowed enum or `Vec`,
-                    // receives the result through a temporary stored to its
-                    // object.
-                    let temporary = cx.fresh_temporary()?;
+                    // The memory-backed local receives the call's typed value directly.
+                    let (call, value) = cx.call_value(function, arguments_values);
                     let address = cx.address(&E::Local {
                         name: destination.clone(),
                     })?;
-                    program_seq(
-                        program_seq(
-                            program_declare(&temporary, value_type),
-                            cx.call_then_assign(&temporary, function, arguments_values),
-                        ),
-                        program_typed_store(
-                            address,
-                            crate::kernel::program_expression::variable(&temporary),
-                            value_type,
-                        ),
-                    )
+                    program_seq(call, program_typed_store(address, value, value_type))
                 } else {
                     cx.call_then_assign(destination, function, arguments_values)
                 };
@@ -797,7 +785,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                                 .ok_or("unsupported Rust indexed assignment type")?;
                             let (capture, name) = cx.capture_operand(value, &value_type)?;
                             checks = program_seq(checks, capture);
-                            value = crate::kernel::program_expression::variable(name);
+                            value = name;
                         }
                         let (target_checks, address) = cx.prepared_address(target)?;
                         let value_type = cx.place_type(target)?;
@@ -1414,37 +1402,40 @@ fn switch(
     for (target, _) in &groups {
         bodies.push(region(cx, mir, nodes, flow, emitted, *target..join, exits)?);
     }
-    // A match on an enum field of an enum, `Err(ParseError::Empty)`, tests a
-    // local bound to that field, so the test splits as one on any enum local.
-    let mut bound_field = None;
-    let bound_local;
-    let scrutinee = if let E::EnumField {
+    // Read a nested enum field once. Every arm consumes the retained
+    // discriminant on entry, after the conditions that inspect it.
+    let field_enum = if let E::EnumField {
         name,
         variant,
         index,
         ..
     } = scrutinee
-        && let Some(field_enum) = super::nested_enum_field_type(name, variant, *index)?
     {
-        let local = cx.fresh_temporary()?;
-        bound_field = Some(Sited::at(
-            site,
-            program_seq(
-                program_declare_with_all_qualifiers(
-                    &local,
-                    field_enum.to_kernel_type(),
-                    false,
-                    false,
-                    false,
-                    false,
-                ),
-                program_assign(&local, cx.expr(scrutinee)?),
-            ),
-        ));
-        bound_local = E::Local { name: local };
-        &bound_local
+        super::nested_enum_field_type(name, variant, *index)?
     } else {
-        scrutinee
+        None
+    };
+    let value = cx.expr(scrutinee)?;
+    let (bound_field, scrutinee) = if let Some(field_enum) = field_enum {
+        let step = cx.fresh_step();
+        let retained = ProgramExpression::StepResult {
+            step,
+            origin: StepOrigin::Value("match discriminant"),
+            ends: true,
+        };
+        bodies = bodies
+            .into_iter()
+            .map(|body| Sited::unsited(discard_operand(retained.clone())).then(body))
+            .collect();
+        (
+            Some(Sited::at(
+                site,
+                Context::value_step(step, value, field_enum.to_kernel_type(), false),
+            )),
+            keep_operand(&retained),
+        )
+    } else {
+        (None, value)
     };
     let mut chain = None;
     for ((target, labels), body) in groups.iter().zip(bodies).rev() {
@@ -1461,10 +1452,10 @@ fn switch(
             // splits as any other.
             let test = match label {
                 SwitchLabel::Value { value } => {
-                    crate::kernel::program_expression::equal(cx.expr(scrutinee)?, cx.expr(value)?)
+                    crate::kernel::program_expression::equal(scrutinee.clone(), cx.expr(value)?)
                 }
                 SwitchLabel::Variant { name } => ProgramExpression::EnumIs {
-                    value: Box::new(cx.expr(scrutinee)?),
+                    value: Box::new(scrutinee.clone()),
                     variant: name.clone(),
                 },
             };
@@ -1671,8 +1662,7 @@ mod tests {
                 import_identity: None,
                 mir_point: None,
                 mir_nodes: BTreeMap::new(),
-                next_temporary: 0,
-                next_call_result: std::cell::Cell::new(0),
+                next_step: std::cell::Cell::new(0),
                 loop_iterators: Vec::new(),
                 locals: BTreeSet::new(),
                 return_type: InterfaceType::Void,

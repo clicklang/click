@@ -79,9 +79,9 @@ impl Context<'_> {
                 }
                 for e in elements {
                     let (prefix, value) = self.prepared_expr(e)?;
-                    let (capture, name) = self.capture_operand(value, &source_type)?;
+                    let (capture, captured) = self.capture_operand(value, &source_type)?;
                     captures = program_seq(captures, program_seq(prefix, capture));
-                    values.push(crate::kernel::program_expression::variable(name));
+                    values.push(captured);
                 }
             }
             E::Repeat {
@@ -93,12 +93,14 @@ impl Context<'_> {
                 }
                 // Rust evaluates the operand once, even for a zero count.
                 let (prefix, value) = self.prepared_expr(value)?;
-                let (capture, name) = self.capture_operand(value, &source_type)?;
+                let (capture, captured) = self.capture_operand(value, &source_type)?;
                 captures = program_seq(prefix, capture);
-                values.resize(
-                    length as usize,
-                    crate::kernel::program_expression::variable(name),
-                );
+                values.resize(length as usize, keep_operand(&captured));
+                if let Some(last) = values.last_mut() {
+                    *last = captured;
+                } else {
+                    captures = program_seq(captures, discard_operand(captured));
+                }
             }
             _ => {
                 let (source, source_length, source_element) = self.indexed_parts(value)?;
@@ -160,16 +162,10 @@ impl Context<'_> {
                     _ => unreachable!(),
                 };
                 let (prefix, value) = self.prepared_expr(value)?;
-                let (capture, name) = self.capture_operand(value, &value_type)?;
+                let (capture, captured) = self.capture_operand(value, &value_type)?;
                 Ok(program_seq(
                     program_seq(prefix, capture),
-                    program_write_scalar_array_region(
-                        target,
-                        crate::kernel::program_expression::variable(name),
-                        element,
-                        count,
-                        false,
-                    ),
+                    program_write_scalar_array_region(target, captured, element, count, false),
                 ))
             }
             _ => {

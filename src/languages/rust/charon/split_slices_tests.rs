@@ -40,9 +40,21 @@ fn charon_split_at_preserves_both_shared_slices_and_original_proofs() {
     }
     let prepared = super::super::import::prepared_for_test(export).unwrap();
     ProgramVerificationSession::new_program_prepared(CLAIM, &prepared).unwrap();
+    // An omitted clause derives the shared reference's view; an explicit
+    // empty range below withholds the access needed by the indexed reads.
+    let implicit_views = CLAIM.replace("views bytes[0..bytes.len()];", "");
+    ProgramVerificationSession::new_program_prepared(&implicit_views, &prepared).unwrap();
+    let expanded = crate::surface::expand_program_prepared_claim_source_by_label(
+        CLAIM,
+        &prepared,
+        "right_first.ensures_0",
+    )
+    .unwrap();
+    assert!(!expanded.contains("__rust_checked_"), "{expanded}");
+    ProgramVerificationSession::new_program_prepared(&expanded, &prepared).unwrap();
     for bad in [
         CLAIM.replace("requires mid <= bytes.len();", ""),
-        CLAIM.replace("views bytes[0..bytes.len()];", ""),
+        CLAIM.replace("views bytes[0..bytes.len()];", "views bytes[0..0];"),
         CLAIM.replace("ensures result == mid;", "ensures result != mid;"),
         CLAIM.replace(
             "ensures result == bytes[mid];",

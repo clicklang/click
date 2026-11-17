@@ -3326,6 +3326,24 @@ const RESULT_ERROR_SIDECAR: &str =
 // equates two constructors: a clash refutes its antecedent, one variant
 // equates the fields.
 #[test]
+#[ignore = "nightly: retained Rust enum match expansion"]
+fn charon_nested_enum_discriminants_expand_as_retained_results() {
+    let p = Project::from_fixture("design/charon-trial/result-errors");
+    fs::write(p.root.join("borrow.click"), RESULT_ERROR_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    let expanded = click::surface::expand_program_prepared_claim_source_by_label(
+        RESULT_ERROR_SIDECAR,
+        &prepared,
+        "describe.ensures_0",
+    )
+    .unwrap();
+    assert!(expanded.contains("match "), "{expanded}");
+    assert!(expanded.contains(".result"), "{expanded}");
+    assert!(!expanded.contains("__rust_checked_"), "{expanded}");
+    ProgramVerificationSession::new_program_prepared(&expanded, &prepared).unwrap();
+}
+
+#[test]
 fn charon_result_errors_carry_a_crate_enum() {
     let p = Project::from_fixture("design/charon-trial/result-errors");
     fs::write(p.root.join("borrow.click"), RESULT_ERROR_SIDECAR).unwrap();

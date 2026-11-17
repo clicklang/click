@@ -260,6 +260,7 @@ fn expression_reads(expression: &ProgramExpression) -> bool {
 fn kernel_statement_reads(statement: &ProgramStatement) -> bool {
     match statement {
         ProgramStatement::Assign { expression, .. }
+        | ProgramStatement::StepValue { expression, .. }
         | ProgramStatement::Return(expression)
         | ProgramStatement::Throw(expression)
         | ProgramStatement::Assert {
@@ -463,6 +464,19 @@ impl SourceExecutionLayout {
             }
         }
 
+        // A frontend can lower a conditional value to two arms that publish
+        // the same result. That result belongs to the join, not either arm.
+        fn terminal_value_steps(statement: &ProgramStatement) -> Option<&[u32]> {
+            let tail = match statement {
+                ProgramStatement::Seq(statements) => statements.get(statements.len() - 1)?.as_ref(),
+                statement => statement,
+            };
+            match tail {
+                ProgramStatement::StepValue { steps, .. } => Some(steps),
+                _ => None,
+            }
+        }
+
         fn visit(
             statement: &ProgramStatement,
             next_statement_index: &mut usize,
@@ -492,6 +506,16 @@ impl SourceExecutionLayout {
                 } => {
                     let statement_index = *next_statement_index;
                     *next_statement_index += 1;
+                    if let (Some(yes), Some(no)) = (
+                        terminal_value_steps(then_branch),
+                        terminal_value_steps(else_branch),
+                    ) && yes == no
+                    {
+                        for step in yes {
+                            layout.step_regions.insert(*step, statement_index);
+                            layout.call_numbers.entry(statement_index).or_insert(*step);
+                        }
+                    }
                     let then_statement_index = *next_statement_index;
                     let then_last =
                         visit(then_branch, next_statement_index, layout, aggregate_objects)?;
@@ -664,6 +688,16 @@ impl SourceExecutionLayout {
                     if let ProgramStatement::CallResult { call, .. } = statement {
                         layout.call_numbers.insert(statement_index, *call);
                         layout.step_regions.insert(*call, statement_index);
+                    }
+                    if let ProgramStatement::StepValue { steps, .. } = statement {
+                        for step in steps {
+                            if let std::collections::btree_map::Entry::Vacant(entry) =
+                                layout.step_regions.entry(*step)
+                            {
+                                entry.insert(statement_index);
+                                layout.call_numbers.entry(statement_index).or_insert(*step);
+                            }
+                        }
                     }
                     if let ProgramStatement::Call { .. }
                     | ProgramStatement::CallResult { .. }
@@ -1436,6 +1470,24 @@ impl SourceExecutionLayout {
     /// The region of the step numbered `step`.
     pub(in crate::surface) fn step_region(&self, step: u32) -> Option<usize> {
         self.data.step_regions.get(&step).copied()
+    }
+
+    /// A retained result's source region. Compiler bodies without statement
+    /// provenance already expose their numbered regions as `region(N)`.
+    /// Choose by retained provenance, rather than trying alternate spellings.
+    pub(in crate::surface) fn result_code_region(
+        &self,
+        region: usize,
+    ) -> Option<crate::surface::CodeRegionRef> {
+        if self.data.region_paths.contains_key(&region) || self.data.calls.contains(&region) {
+            self.source_path_spelling(region, crate::surface::ProgramPointKind::Exit)
+                .map(crate::surface::CodeRegionRef::Path)
+        } else {
+            self.data
+                .statements
+                .contains_key(&region)
+                .then_some(crate::surface::CodeRegionRef::Region(region))
+        }
     }
 
     /// The local whose prior value step `step` keeps, when it is an
@@ -2750,6 +2802,40 @@ mod source_execution_layout_tests {
         syntax::parse_function("void* source() { return 0; }")
             .unwrap()
             .with_prelowered_kernel_function(function)
+    }
+
+    #[test]
+    fn retained_value_loads_are_read_frontiers() {
+        use crate::kernel::{
+            ProgramType, program_expression as e, program_function, program_parameter,
+            program_return, program_seq,
+        };
+        let body = program_seq(
+            ProgramStatement::StepValue {
+                aggregate_layout: None,
+                steps: vec![0],
+                expression: e::typed_load(e::variable("p"), ProgramType::Int32),
+                value_type: Some(ProgramType::Int32),
+                pointee_constant: false,
+            },
+            program_return(ProgramExpression::StepResult {
+                step: 0,
+                origin: crate::kernel::StepOrigin::Value("operand"),
+                ends: true,
+            }),
+        );
+        let function = syntax::parse_function("int32 f(const int32* p) { return *p; }")
+            .unwrap()
+            .with_prelowered_kernel_function(program_function(
+                ProgramType::Int32,
+                "f",
+                vec![program_parameter("p", ProgramType::Int32Pointer).with_pointee_constant(true)],
+                body,
+            ));
+        let layout = SourceExecutionLayout::for_function(&function).unwrap();
+        assert_eq!(layout.read_entry(0), Ok(0));
+        assert!(layout.read_entry(1).is_err());
+        assert_eq!(layout.step_region(0), Some(0));
     }
 
     #[test]

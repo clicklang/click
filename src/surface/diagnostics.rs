@@ -1461,10 +1461,9 @@ pub(in crate::surface) fn step_result_expression(step: u32) -> Option<ContractEx
                 )),
             })
         }
-        None => {
-            let steps = layout.source_path_spelling(region, ProgramPointKind::Exit)?;
-            Some(ContractExpression::RegionResult(CodeRegionRef::Path(steps)))
-        }
+        None => Some(ContractExpression::RegionResult(
+            layout.result_code_region(region)?,
+        )),
     }
 }
 
