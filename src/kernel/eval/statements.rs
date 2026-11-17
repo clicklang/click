@@ -1178,16 +1178,16 @@ enum AggregateCopyDestination {
     ResultTemporary,
 }
 
-fn aggregate_assignment_write_outcome(
+fn memory_region_write_obligation_outcome(
     state: &ExecutionState,
-    target: &PointerValue,
+    pointer: &Address,
     bytes: u32,
+    destination: &MemoryRange,
     assumptions: &PureFactContext,
     obligations: &mut Vec<ProofObligation>,
 ) -> Option<StatementOutcome> {
     #[cfg(test)]
-    let _fast = crate::kernel::search::FastOperationScope::enter("aggregate copy loan check");
-    let pointer = target.pointer();
+    let _fast = crate::kernel::search::FastOperationScope::enter("memory region write loan check");
     let storage =
         MemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), 1u32.into(), bytes);
     if let Some(error) = super::super::mutexes::storage_write_refusal(state, &storage, assumptions)
@@ -1197,12 +1197,7 @@ fn aggregate_assignment_write_outcome(
     if let Some(outcome) = memory_write_ownership_outcome(state, storage, assumptions) {
         return Some(outcome);
     }
-    // Express the full destination, including padding, as a byte slice that
-    // the proof can name at the assignment's entry point.
-    let byte_pointer =
-        super::expression::cast_pointer_value(target.clone(), ProgramType::UInt8Pointer);
-    let destination = MemoryRange::from_pointer_value(&byte_pointer, 0u32.into(), bytes.into(), 1);
-    require_write_loan_separation(state, &destination, obligations);
+    require_write_loan_separation(state, destination, obligations);
     None
 }
 
@@ -1297,13 +1292,28 @@ fn execute_program_aggregate_copy_paths(
             let write_assumptions =
                 assumptions_with_path_context(assumptions, &facts, &obligations);
             let write_refusal = match destination {
-                AggregateCopyDestination::Assignment => aggregate_assignment_write_outcome(
-                    state,
-                    &target_pointer,
-                    layout.size_bytes(),
-                    &write_assumptions,
-                    &mut obligations,
-                ),
+                AggregateCopyDestination::Assignment => {
+                    // The byte slice covers the entire layout, including padding.
+                    let bytes = layout.size_bytes();
+                    let byte_pointer = super::expression::cast_pointer_value(
+                        target_pointer.clone(),
+                        ProgramType::UInt8Pointer,
+                    );
+                    let range = MemoryRange::from_pointer_value(
+                        &byte_pointer,
+                        0u32.into(),
+                        bytes.into(),
+                        1,
+                    );
+                    memory_region_write_obligation_outcome(
+                        state,
+                        target_pointer.pointer(),
+                        bytes,
+                        &range,
+                        &write_assumptions,
+                        &mut obligations,
+                    )
+                }
                 AggregateCopyDestination::ResultTemporary => memory_write_permission_outcome(
                     state,
                     target_pointer.pointer(),

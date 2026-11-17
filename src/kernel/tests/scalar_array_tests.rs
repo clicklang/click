@@ -361,6 +361,98 @@ fn compact_scalar_array_initialization_cannot_bypass_an_active_view_loan() {
     }
 }
 
+fn scalar_array_copy_state() -> ExecutionState {
+    ExecutionState::new()
+        .with_memory(seeded(4))
+        .with_resource_context(ResourceContext::new().unchecked_with_facts([
+            own_memory_fact(pointer("local:array-source", 0), 0, 4),
+            own_memory_fact(pointer("local:array-target", 0), 0, 4),
+        ]))
+}
+
+fn execute_test_scalar_array_copy(
+    state: &ExecutionState,
+    count: u32,
+    assumptions: &PureFactContext,
+) -> StatementExecutionPath {
+    let [path]: [StatementExecutionPath; 1] = execute_execution_statement_paths(
+        state,
+        &program_write_scalar_array_region(
+            ProgramExpression::Value(ProgramValue::typed_pointer(
+                pointer("local:array-target", 0),
+                ProgramType::UInt32Pointer,
+            )),
+            crate::kernel::program_expression::pointer_value(pointer("local:array-source", 0)),
+            ProgramType::UInt32,
+            count,
+            true,
+        ),
+        assumptions,
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
+        &mut ExecutionBudget::default(),
+    )
+    .unwrap()
+    .try_into()
+    .expect("one compact copy path");
+    path
+}
+
+#[test]
+fn scalar_array_region_copy_requires_separation_for_its_entire_destination() {
+    use crate::kernel::loans::LoanLedger;
+
+    let state = scalar_array_copy_state();
+    let assumptions = PureFactContext::new();
+    for (block, separate) in [("local:array-target", false), ("local:array-source", true)] {
+        // The loan covers only the last element of the block.
+        let range = MemoryRange::new(pointer(block, 12), 0u32.into(), 1u32.into());
+        let backing = ResourceFact::own_memory(range.clone());
+        let occurrence = ResourceContext::new()
+            .unchecked_with_fact(backing.clone())
+            .unique_owned_occurrence_for_fact(&backing)
+            .unwrap()
+            .0;
+        let ledger = LoanLedger::new();
+        let lender = ledger.fresh_participant().unwrap();
+        let reader = ledger.fresh_participant().unwrap();
+        let opening = ledger.lend(lender, reader, occurrence, backing).unwrap();
+        let state = state
+            .clone()
+            .with_loan_ledger(Some(ledger.apply(&opening.transition).unwrap()));
+
+        let copy = execute_test_scalar_array_copy(&state, 4, &assumptions);
+        let [obligation] = copy.obligations.as_slice() else {
+            panic!("expected one separation obligation for the entire copy");
+        };
+        let Proposition::ResourceSeparate { left, right } = obligation.proposition() else {
+            panic!("expected a loan separation obligation");
+        };
+        let expected = MemoryRange::from_pointer_value(
+            &PointerValue::new(pointer("local:array-target", 0), ProgramType::UInt32Pointer),
+            0u32.into(),
+            4u32.into(),
+            4,
+        );
+        assert_eq!(left.as_ref(), &Resource::Memory(expected));
+        assert_eq!(right.as_ref(), &Resource::Memory(range));
+        assert_eq!(assumptions.proves_resource_separate(left, right), separate);
+        let StatementOutcome::Normal(after) = copy.outcome else {
+            panic!("expected a copy path conditional on separation");
+        };
+        assert_eq!(
+            after.memory().load(&pointer("local:array-target", 12)),
+            state.memory().load(&pointer("local:array-source", 12)),
+        );
+
+        let empty = execute_test_scalar_array_copy(&state, 0, &assumptions);
+        assert!(empty.obligations.is_empty());
+        let StatementOutcome::Normal(after_empty) = empty.outcome else {
+            panic!("an empty copy has no destination write");
+        };
+        assert_eq!(after_empty.memory(), state.memory());
+    }
+}
+
 #[test]
 fn compact_array_regions_check_source_type_size_alignment_and_initialization() {
     let context = PureFactContext::new();

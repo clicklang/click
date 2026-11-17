@@ -138,10 +138,27 @@ pub(super) fn execute(
                 ));
                 continue;
             }
-            if bytes != 0
-                && let Some(outcome) =
-                    memory_write_permission_outcome(state, target, bytes, &selected)
-            {
+            let write_refusal = if bytes == 0 {
+                None
+            } else if copy && !fresh {
+                let destination = MemoryRange::from_pointer_value(
+                    &target_pointer,
+                    0u32.into(),
+                    count.into(),
+                    element_type.byte_width(),
+                );
+                memory_region_write_obligation_outcome(
+                    state,
+                    target,
+                    bytes,
+                    &destination,
+                    &selected,
+                    &mut obligations,
+                )
+            } else {
+                memory_write_permission_outcome(state, target, bytes, &selected)
+            };
+            if let Some(outcome) = write_refusal {
                 paths.push(path(outcome, facts, obligations));
                 continue;
             }

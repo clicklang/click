@@ -308,3 +308,63 @@ fn scalar_array_state_region_does_not_scan_unrelated_sibling_cells() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn scalar_array_copy_loan_requirement_ignores_alias_and_loan_counts() {
+    use crate::kernel::loans::LoanLedger;
+
+    let _session = crate::kernel::VerificationSession::enter();
+    let state = scalar_array_copy_state();
+    let source = pointer("local:array-source", 0);
+    for grow_aliases in [true, false] {
+        let mut samples = Vec::new();
+        for count in [4, 16, 64] {
+            let mut assumptions = PureFactContext::new();
+            if grow_aliases {
+                for i in 0..count {
+                    assumptions = assumptions.assume_condition(
+                        ConditionTerm::pointer_equal(
+                            source.clone(),
+                            Address::symbolic(Variable(913_000 + i)),
+                        ),
+                        true,
+                    );
+                }
+            }
+            let mut ledger = LoanLedger::new();
+            let lender = ledger.fresh_participant().unwrap();
+            let reader = ledger.fresh_participant().unwrap();
+            for i in 0..if grow_aliases { 1 } else { count } {
+                let backing = ResourceFact::own_memory(MemoryRange::new(
+                    Address::symbolic(Variable(914_000 + i)),
+                    0u32.into(),
+                    1u32.into(),
+                ));
+                let occurrence = ResourceContext::new()
+                    .unchecked_with_fact(backing.clone())
+                    .unique_owned_occurrence_for_fact(&backing)
+                    .unwrap()
+                    .0;
+                let opening = ledger.lend(lender, reader, occurrence, backing).unwrap();
+                ledger = ledger.apply(&opening.transition).unwrap();
+            }
+            let state = state.clone().with_loan_ledger(Some(ledger));
+            let (copy, work) = crate::instrumentation::measure_deterministic_work(|| {
+                execute_test_scalar_array_copy(&state, 4, &assumptions)
+            });
+            assert!(matches!(copy.outcome, StatementOutcome::Normal(_)));
+            let [obligation] = copy.obligations.as_slice() else {
+                panic!("expected one loan separation obligation");
+            };
+            assert!(matches!(
+                obligation.proposition(),
+                Proposition::ResourceSeparate { .. }
+            ));
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 32),
+            "{grow_aliases}: {samples:?}"
+        );
+    }
+}
