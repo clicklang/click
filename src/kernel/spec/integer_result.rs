@@ -16,6 +16,9 @@ impl From<SharedIntegerTerm> for IntegerResult {
     }
 }
 impl IntegerResult {
+    pub(super) fn from_kernel(root: KernelTerm) -> Self {
+        Self(root)
+    }
     pub(super) fn operation(operator: KernelIntegerOperator, arguments: Vec<Self>) -> Self {
         Self(
             KernelTerm::integer_operation(
@@ -104,20 +107,25 @@ impl IntegerResult {
     }
 
     pub(super) fn range_fold(
-        index: IntegerRangeFoldIndex,
+        index: IntegerFoldIndexResult,
         initial: Self,
         accumulator: Variable,
         item: Variable,
         body: Self,
     ) -> Self {
         Self(
-            KernelFold::integer_with_children(
-                &index,
+            KernelFold::new(
+                index.kind,
                 accumulator,
                 item,
-                initial.into_kernel(),
-                body.into_kernel(),
+                [
+                    index.bounds[0].clone(),
+                    index.bounds[1].clone(),
+                    initial.into_kernel(),
+                    body.into_kernel(),
+                ],
             )
+            .expect("Integer fold result types")
             .into_term(),
         )
     }

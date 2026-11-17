@@ -59,6 +59,8 @@ impl<T> LoweredTermPath<T> {
 pub(super) type SpecExpressionPath = LoweredTermPath<SpecValue>;
 mod integer_result;
 use integer_result::IntegerResult;
+mod integer_fold_index;
+use integer_fold_index::IntegerFoldIndexResult;
 pub(super) type SpecIntegerPath = LoweredTermPath<IntegerResult>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -164,7 +166,7 @@ struct SpecEvaluation<'a> {
     pointer_cast_operand: bool,
     machine_preparation_disabled: bool,
     machine_result_production_disabled: bool,
-    integer_bindings: BTreeMap<Variable, IntegerTerm>,
+    integer_bindings: BTreeMap<Variable, IntegerResult>,
 }
 
 /// The identity a loop invariant's `iterations` lowers to: the number of
@@ -180,17 +182,17 @@ struct SpecEvaluation<'a> {
 pub(crate) const LOOP_ITERATIONS_VARIABLE: Variable = Variable(1 << 44);
 
 std::thread_local! {
-    static LOOP_ITERATIONS: std::cell::RefCell<Option<IntegerTerm>> =
+    static LOOP_ITERATIONS: std::cell::RefCell<Option<IntegerResult>> =
         const { std::cell::RefCell::new(None) };
 }
 
 /// Binds a loop invariant's `iterations` for the lowerings made while it
 /// lives: the pass count of the loop phase lowering the invariant.
-pub(in crate::kernel) struct LoopIterationsScope(Option<IntegerTerm>);
+pub(in crate::kernel) struct LoopIterationsScope(Option<IntegerResult>);
 
 impl LoopIterationsScope {
     pub(in crate::kernel) fn enter(iterations: IntegerTerm) -> Self {
-        Self(LOOP_ITERATIONS.with(|slot| slot.replace(Some(iterations))))
+        Self(LOOP_ITERATIONS.with(|slot| slot.replace(Some(iterations.into()))))
     }
 }
 
@@ -204,7 +206,7 @@ impl Drop for LoopIterationsScope {
 
 /// The integer bindings an evaluation starts with: a loop phase's pass
 /// count, when one is in scope.
-fn initial_integer_bindings() -> BTreeMap<Variable, IntegerTerm> {
+fn initial_integer_bindings() -> BTreeMap<Variable, IntegerResult> {
     LOOP_ITERATIONS.with(|slot| {
         slot.borrow()
             .clone()
@@ -260,7 +262,8 @@ impl<'a> SpecEvaluation<'a> {
                 crate::instrumentation::record_deterministic_work(1);
                 saved.push((
                     *variable,
-                    self.integer_bindings.insert(*variable, field.clone()),
+                    self.integer_bindings
+                        .insert(*variable, field.clone().into()),
                 ));
             }
         }
@@ -315,7 +318,7 @@ impl<'a> SpecEvaluation<'a> {
         result
     }
 
-    fn bound_integer_term(&self, term: &IntegerTerm) -> ExecutionResult<IntegerTerm> {
+    fn bound_integer_term(&self, term: &IntegerTerm) -> ExecutionResult<IntegerResult> {
         if *term == IntegerTerm::Variable(LOOP_ITERATIONS_VARIABLE)
             && !self
                 .integer_bindings
@@ -324,7 +327,7 @@ impl<'a> SpecEvaluation<'a> {
             return Err(ExecutionLimit::LoopIterationsUnbound);
         }
         if self.integer_bindings.is_empty() {
-            return Ok(term.clone());
+            return Ok(term.clone().into());
         }
         match term {
             IntegerTerm::Variable(variable) => {
@@ -333,9 +336,9 @@ impl<'a> SpecEvaluation<'a> {
                     .integer_bindings
                     .get(variable)
                     .cloned()
-                    .unwrap_or_else(|| term.clone()));
+                    .unwrap_or_else(|| term.clone().into()));
             }
-            IntegerTerm::Constant(_) => return Ok(term.clone()),
+            IntegerTerm::Constant(_) => return Ok(term.clone().into()),
             _ => {}
         }
         // Select replacements from this payload only. Never scan the ambient
@@ -351,18 +354,22 @@ impl<'a> SpecEvaluation<'a> {
                 self.integer_bindings
                     .get(&variable)
                     .cloned()
-                    .map(|value| (variable, value))
+                    .map(|value| (variable, value.into_native_compat()))
             })
             .collect::<BTreeMap<_, _>>();
         if replacements.is_empty() {
-            return Ok(term.clone());
+            return Ok(term.clone().into());
         }
+        // Compound native specification inputs still cross the existing typed
+        // checking boundary. Only selected replacements are exported; the
+        // evaluator bindings and returned result retain common roots.
         rewrite_integer_match_typed_body(
             term.clone(),
             &BTreeMap::new(),
             &replacements,
             &BTreeMap::new(),
         )
+        .map(IntegerResult::from)
         .ok_or(ExecutionLimit::Paths)
     }
 }
@@ -2198,11 +2205,11 @@ fn evaluate_spec_integer_expression_paths_in(
         }
         SpecIntegerExpression::Term(term) => {
             let term = budget.bound_integer_term(term)?;
-            if crate::instrumentation::numeric_operation_work_exceeded(integer_term_bits(&term)) {
+            if crate::instrumentation::numeric_operation_work_exceeded(term.bits()) {
                 return Err(ExecutionLimit::Deadline);
             }
             Ok(vec![SpecIntegerPath {
-                value: term.into(),
+                value: term,
                 facts: Vec::new().into(),
                 obligations: Vec::new(),
             }])
@@ -2399,8 +2406,7 @@ fn evaluate_spec_integer_expression_paths_in(
                         let body_paths = budget.with_integer_bindings(
                             &[
                                 Some(*accumulator),
-                                matches!(index, IntegerRangeFoldIndex::Integer { .. })
-                                    .then_some(*item),
+                                (index.kind == KernelFoldIndex::Integer).then_some(*item),
                             ],
                             &[
                                 AlgebraicValue::Integer(IntegerTerm::var(*accumulator)),
@@ -2447,7 +2453,7 @@ fn evaluate_spec_integer_expression_paths_in(
                     let body_paths = budget.with_integer_bindings(
                         &[
                             Some(*accumulator),
-                            matches!(index, IntegerRangeFoldIndex::Integer { .. }).then_some(*item),
+                            (index.kind == KernelFoldIndex::Integer).then_some(*item),
                         ],
                         &[
                             AlgebraicValue::Integer(IntegerTerm::var(*accumulator)),
@@ -2617,7 +2623,7 @@ pub(super) fn existential_body_branch(path: &SpecPropositionPath) -> Proposition
 /// range makes the body requirement vacuous.
 fn integer_range_fold_body_obligation(
     proposition: Proposition,
-    index: &IntegerRangeFoldIndex,
+    index: &IntegerFoldIndexResult,
     accumulator: Variable,
     item: Variable,
 ) -> Proposition {
@@ -2642,116 +2648,14 @@ fn integer_range_fold_body_obligation(
 }
 
 fn integer_range_fold_item_domain(
-    index: &IntegerRangeFoldIndex,
+    index: &IntegerFoldIndexResult,
     item: Variable,
 ) -> (Sort, Proposition) {
-    use crate::kernel::machine_integer::comparison::condition_for_operand_views;
-    use crate::kernel::{CompareRelation as R, MachineOperandView as V};
-    let (item_sort, guard) = match index {
-        IntegerRangeFoldIndex::Int32 { start, end } => {
-            let item_term = MachineTerm::Variable(item);
-            let guard = Proposition::And(
-                Box::new(Proposition::ConditionIs(
-                    condition_for_operand_views(
-                        MachineIntegerType::Int32,
-                        R::GreaterEqual,
-                        [
-                            V::Legacy(&item_term),
-                            start.machine_operand().operand_view(),
-                        ],
-                    ),
-                    true,
-                )),
-                Box::new(Proposition::ConditionIs(
-                    condition_for_operand_views(
-                        MachineIntegerType::Int32,
-                        R::LessThan,
-                        [V::Legacy(&item_term), end.machine_operand().operand_view()],
-                    ),
-                    true,
-                )),
-            );
-            (Sort::ProgramInt32, guard)
-        }
-        IntegerRangeFoldIndex::UInt64 { start, end } => {
-            let item_term = MachineTerm::Variable(item);
-            let guard = Proposition::And(
-                Box::new(Proposition::ConditionIs(
-                    condition_for_operand_views(
-                        MachineIntegerType::UInt64,
-                        R::LessEqual,
-                        [
-                            start.machine_operand().operand_view(),
-                            V::Legacy(&item_term),
-                        ],
-                    ),
-                    true,
-                )),
-                Box::new(Proposition::ConditionIs(
-                    condition_for_operand_views(
-                        MachineIntegerType::UInt64,
-                        R::LessThan,
-                        [V::Legacy(&item_term), end.machine_operand().operand_view()],
-                    ),
-                    true,
-                )),
-            );
-            (Sort::ProgramInteger(MachineIntegerType::UInt64), guard)
-        }
-        IntegerRangeFoldIndex::Integer { start, end } => {
-            let item_term = IntegerTerm::Variable(item);
-            let guard = Proposition::And(
-                Box::new(Proposition::ConditionIs(
-                    ConditionTerm::integer_greater_equal(item_term.clone(), start.as_ref().clone()),
-                    true,
-                )),
-                Box::new(Proposition::ConditionIs(
-                    ConditionTerm::integer_less_than(item_term, end.as_ref().clone()),
-                    true,
-                )),
-            );
-            (Sort::Integer, guard)
-        }
-    };
-
-    (item_sort, guard)
+    index.item_domain(item)
 }
 
-fn integer_range_fold_index_is_empty(index: &IntegerRangeFoldIndex) -> bool {
-    match index {
-        IntegerRangeFoldIndex::Int32 { start, end } => {
-            let Some(start) = start
-                .machine_operand()
-                .operand_view()
-                .word32_constant()
-                .map(|value| value as i32)
-            else {
-                return false;
-            };
-            let Some(end) = end
-                .machine_operand()
-                .operand_view()
-                .word32_constant()
-                .map(|value| value as i32)
-            else {
-                return false;
-            };
-            start >= end
-        }
-        IntegerRangeFoldIndex::UInt64 { start, end } => {
-            match (
-                start.machine_operand().operand_view().uint64_constant(),
-                end.machine_operand().operand_view().uint64_constant(),
-            ) {
-                (Some(start), Some(end)) => start >= end,
-                _ => false,
-            }
-        }
-        IntegerRangeFoldIndex::Integer { start, end } => match (start.as_const(), end.as_const()) {
-            (Some(start), Some(end)) => start >= end,
-            _ => false,
-        },
-    }
+fn integer_range_fold_index_is_empty(index: &IntegerFoldIndexResult) -> bool {
+    index.is_empty()
 }
 
 fn integer_carrier_in_pointer(pointer: &Address, variable: Variable) -> bool {
@@ -3078,7 +2982,7 @@ fn evaluate_spec_integer_range_fold_indices_in(
     index: &SpecIntegerRangeFoldIndex,
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
-) -> ExecutionResult<Vec<(IntegerRangeFoldIndex, ExecutionFacts, Vec<ProofObligation>)>> {
+) -> ExecutionResult<Vec<(IntegerFoldIndexResult, ExecutionFacts, Vec<ProofObligation>)>> {
     match index {
         SpecIntegerRangeFoldIndex::Int32 { start, end }
         | SpecIntegerRangeFoldIndex::UInt64 { start, end } => {
@@ -3113,25 +3017,28 @@ fn evaluate_spec_integer_range_fold_indices_in(
                     else {
                         continue;
                     };
-                    // Each kind takes endpoints of its own type only.
-                    let index = match (
-                        start_path.value.clone().into_native(),
-                        end_path.value.into_native(),
-                        unsigned64,
-                    ) {
-                        (ProgramValue::Int32(start), ProgramValue::Int32(end), false) => {
-                            IntegerRangeFoldIndex::Int32 {
-                                start: SharedIntegerRangeEndpoint::intern(start),
-                                end: SharedIntegerRangeEndpoint::intern(end),
-                            }
-                        }
-                        (ProgramValue::UInt64(start), ProgramValue::UInt64(end), true) => {
-                            IntegerRangeFoldIndex::UInt64 {
-                                start: SharedIntegerRangeEndpoint::intern(start),
-                                end: SharedIntegerRangeEndpoint::intern(end),
-                            }
-                        }
-                        _ => continue,
+                    // Keep the selected typed roots, including their producer payloads.
+                    let kind = if unsigned64 {
+                        KernelFoldIndex::UInt64
+                    } else {
+                        KernelFoldIndex::Int32
+                    };
+                    let expected = if unsigned64 {
+                        ProgramType::UInt64
+                    } else {
+                        ProgramType::Int32
+                    };
+                    if start_path.value.program_type() != expected
+                        || end_path.value.program_type() != expected
+                    {
+                        continue;
+                    }
+                    let index = IntegerFoldIndexResult {
+                        kind,
+                        bounds: [
+                            start_path.value.common_operand(),
+                            end_path.value.common_operand(),
+                        ],
                     };
                     result.push((index, facts, obligations));
                 }
@@ -3167,9 +3074,12 @@ fn evaluate_spec_integer_range_fold_indices_in(
                         continue;
                     };
                     result.push((
-                        IntegerRangeFoldIndex::Integer {
-                            start: start_path.value.native_compat(),
-                            end: end_path.value.native_compat(),
+                        IntegerFoldIndexResult {
+                            kind: KernelFoldIndex::Integer,
+                            bounds: [
+                                start_path.value.clone().into_kernel(),
+                                end_path.value.into_kernel(),
+                            ],
                         },
                         facts,
                         obligations,
@@ -3578,13 +3488,6 @@ enum IntegerBinaryOperation {
     Multiply,
     TruncatingQuotient,
     TruncatingRemainder,
-}
-
-fn integer_term_bits(term: &IntegerTerm) -> usize {
-    term.as_const()
-        .and_then(|value| usize::try_from(value.bits()).ok())
-        .unwrap_or(1)
-        .saturating_add(1)
 }
 
 fn lower_spec_algebraic_comparison_at_state_in(
@@ -10546,7 +10449,7 @@ mod shared_fold_operand_tests {
                 IntegerRangeFoldIndex::Int32 { start, end }
             };
             let exports = KernelTermExport::machine_export_count();
-            assert_eq!(integer_range_fold_index_is_empty(&index), empty);
+            assert_eq!(integer_range_fold_index_is_empty(&index.into()), empty);
             assert_eq!(KernelTermExport::machine_export_count(), exports);
         }
     }
