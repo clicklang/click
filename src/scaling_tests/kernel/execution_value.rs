@@ -441,7 +441,7 @@ fn boolean_storage_keys_keep_growing_connectives_shared() {
 }
 #[test]
 fn boolean_storage_key_work_is_independent_of_prior_verifications() {
-    use std::hash::{Hash, Hasher};
+    use std::hash::Hash;
     for size in [16, 64, 256] {
         let atom = KernelTerm::variable(KernelType::Bool, Variable(998710));
         let other = KernelTerm::variable(KernelType::Bool, Variable(998711));
