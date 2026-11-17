@@ -1,12 +1,11 @@
-# A symbolic array load remains on the loop store's history
+# A symbolic loop read survives a disjoint store
 
 The loop reads a symbolic `next[cur]` after writing the disjoint `visited`
-array. One quantified transport carries every guarded `next[k]` value from
-the iteration-entry state through the store, inside a `have` in `preserve`.
-The guard supplies the read index bounds, and the `using` list supplies the
-write index bounds and separation. An unrelated existential fact keeps the
-proof on the explicit transport path. A second transport carries the bounded-value
-invariant itself to the post-store state, so loop closure can reuse it directly.
+array. For each guarded index, explicit containment restricts the array
+separation to the read cell and the written cell. A `preserve` step carries
+that read across the store's footprint. Instantiating the saved bounded-value
+invariant and rewriting with the preserved equality restores the invariant
+before the next iteration. An unrelated existential fact remains in scope.
 
 ```c filename=loop_symbolic_disjoint_array_store_frame.c
 void traverse(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
@@ -50,11 +49,6 @@ void traverse(int32 *next, int32 *visited, int32 n, int32 from, int32 to) diverg
         initialize by { solve(); }
         preserve by {
             mark iter;
-            have forall (k: int32) {
-                0 <= k and k < n implies at(iter, next[k]) == at(iter, next[k])
-            } by {
-                intro(); intro(); normalize();
-            }
             have 0 <= next[cur] and next[cur] < n by {
                 instantiate(forall (k: int32) {
                     0 <= k and k < n implies 0 <= next[k] and next[k] < n
@@ -73,44 +67,54 @@ void traverse(int32 *next, int32 *visited, int32 n, int32 from, int32 to) diverg
             have forall (k: int32) {
                 0 <= k and k < n implies at(iter, next[k]) == next[k]
             } by {
-                transport(
-                    forall (k: int32) {
-                        0 <= k and k < n implies at(iter, next[k]) == at(iter, next[k])
-                    },
-                    forall (k: int32) {
-                        0 <= k and k < n implies at(iter, next[k]) == next[k]
-                    }
-                ) using {
-                    forall (k: int32) {
-                        0 <= k and k < n implies at(iter, next[k]) == at(iter, next[k])
+                intro(); intro();
+                have contains(memory(visited[0..n]), memory(visited[cur])) by {
+                    apply(click::separation::contains_element(visited, 0, n, cur)) using {
+                        0 <= cur; cur < n;
                     };
-                    0 <= cur;
-                    cur < n;
-                    separate(memory(next[0..n]), memory(visited[0..n]));
-                };
+                }
+                have contains(memory(next[0..n]), memory(next[k])) by {
+                    apply(click::separation::contains_element(next, 0, n, k)) using {
+                        0 <= k; k < n;
+                    };
+                }
+                have separate(memory(visited[cur]), memory(next[k])) by {
+                    apply(click::separation::separate_restrict(memory(visited[0..n]), memory(next[0..n]), memory(visited[cur]), memory(next[k]))) using {
+                        separate(memory(visited[0..n]), memory(next[0..n]));
+                        contains(memory(visited[0..n]), memory(visited[cur]));
+                        contains(memory(next[0..n]), memory(next[k]));
+                    };
+                }
+                have separate(loop(0).statement(1).footprint, memory(next[k])) by {
+                    normalize() using { separate(memory(visited[cur]), memory(next[k])); };
+                }
+                have next[k] == at(iter, next[k]) by {
+                    preserve(memory(next[k]), loop(0).statement(1));
+                }
                 known();
             }
             have forall (k: int32) {
                 0 <= k and k < n implies 0 <= next[k] and next[k] < n
             } by {
-                transport(
-                    at(iter, forall (k: int32) {
-                        0 <= k and k < n implies 0 <= next[k] and next[k] < n
-                    }),
-                    forall (k: int32) {
-                        0 <= k and k < n implies 0 <= next[k] and next[k] < n
-                    }
-                ) using {
-                    at(iter, forall (k: int32) {
-                        0 <= k and k < n implies 0 <= next[k] and next[k] < n
-                    });
-                    0 <= cur;
-                    cur < n;
-                    separate(memory(next[0..n]), memory(visited[0..n]));
-                };
+                intro(); intro();
+                instantiate(at(iter, forall (j: int32) {
+                    0 <= j and j < n implies 0 <= next[j] and next[j] < n
+                }), k);
+                instantiate(forall (j: int32) {
+                    0 <= j and j < n implies at(iter, next[j]) == next[j]
+                }, k);
+                rewrite(next[k], at(iter, next[k]));
+                known();
+            }
+            have 0 <= next[cur] and next[cur] < n by {
+                instantiate(forall (k: int32) {
+                    0 <= k and k < n implies 0 <= next[k] and next[k] < n
+                }, cur);
                 known();
             }
             step();
+            have 0 <= cur by { known(); }
+            have cur < n by { known(); }
         }
     }
 }
