@@ -7138,6 +7138,17 @@ fn check_conditional_round_trip_using_equality(
     reverse: bool,
     equality: &str,
 ) {
+    check_conditional_round_trip_with_arm(format, spelling, guard, reverse, equality, "x");
+}
+
+fn check_conditional_round_trip_with_arm(
+    format: crate::kernel::MachineIntegerType,
+    spelling: &str,
+    guard: &str,
+    reverse: bool,
+    equality: &str,
+    then_value: &str,
+) {
     use crate::kernel::proof::PureFactStore;
     let _session = crate::kernel::VerificationSession::enter();
     let state = ExecutionState::new()
@@ -7168,7 +7179,7 @@ fn check_conditional_round_trip_using_equality(
         p.clone()
     };
     let equality = relower_written_proposition(&parse(equality), &state).unwrap();
-    let value = format!("to_integer(if {guard} {{ x }} else {{ 3 as {spelling} }})");
+    let value = format!("to_integer(if {guard} {{ {then_value} }} else {{ 3 as {spelling} }})");
     let goal = if reverse {
         format!("100 <= {value}")
     } else {
@@ -7521,6 +7532,181 @@ fn bitwise_arm_conditionals_round_trip_after_rewrite() {
                 for reverse in [false, true] {
                     check_conditional_round_trip_using_equality(
                         format, spelling, guard, reverse, &equality,
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn bitwise_guard_conditionals_round_trip_after_rewrite() {
+    use crate::kernel::MachineIntegerType as T;
+    for (format, spelling) in [
+        (T::Int32, "int32"),
+        (T::UInt32, "uint32"),
+        (T::Int64, "int64"),
+        (T::UInt64, "uint64"),
+    ] {
+        for op in ["&", "|", "^"] {
+            let equality = format!("x == (z {op} (7 as {spelling}))");
+            for guard in [
+                "x < y", "x <= y", "x > y", "x >= y", "x == y", "x != y", "y < x", "y <= x",
+                "y > x", "y >= x", "y == x", "y != x",
+            ] {
+                for reverse in [false, true] {
+                    check_conditional_round_trip_with_arm(
+                        format, spelling, guard, reverse, &equality, "z",
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn intrinsically_decided_bitwise_guards_retain_their_conditionals() {
+    use crate::kernel::MachineIntegerType as T;
+    for (format, spelling) in [
+        (T::Int32, "int32"),
+        (T::UInt32, "uint32"),
+        (T::Int64, "int64"),
+        (T::UInt64, "uint64"),
+    ] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let state = ExecutionState::new()
+            .with_local(
+                "z",
+                format.value_from_term(MachineTerm::Variable(Variable(999710))),
+            )
+            .with_local(
+                "y",
+                format.value_from_term(MachineTerm::Variable(Variable(999709))),
+            );
+        for guard in [
+            format!("(z & (7 as {spelling})) < (100 as {spelling})"),
+            format!("(z ^ (7 as {spelling})) == (z ^ (7 as {spelling}))"),
+            format!("(z | (7 as {spelling})) < (z | (7 as {spelling}))"),
+        ] {
+            let text = format!("to_integer(if {guard} {{ y }} else {{ 3 as {spelling} }}) <= 100");
+            let file = parser::parse(&format!(
+                "theorem probe() {{ requires {text}; ensures true; }}"
+            ))
+            .unwrap();
+            let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0]
+            else {
+                panic!()
+            };
+            let original = relower_written_proposition(written, &state).unwrap();
+            assert!(
+                matches!(&original, Proposition::ConditionIs(ConditionTerm::Compare { left, .. }, true)
+                if matches!(left.as_ref(), MachineTerm::If { .. })),
+                "{text}: {original:?}"
+            );
+            let raised =
+                synthesize_surface_proposition(&original, ParameterBinding::default(), &state)
+                    .unwrap();
+            assert_eq!(
+                relower_written_proposition(&raised, &state).unwrap(),
+                original,
+                "{text}"
+            );
+            let printed = crate::surface::printing::source_click_proposition(&raised);
+            let file = parser::parse(&format!(
+                "theorem probe() {{ requires {printed}; ensures true; }}"
+            ))
+            .unwrap();
+            let Requirement::Proposition(parsed) = &file.theorem_definitions()[0].requires()[0]
+            else {
+                panic!()
+            };
+            assert_eq!(
+                relower_written_proposition(parsed, &state).unwrap(),
+                original,
+                "{printed}"
+            );
+        }
+    }
+}
+
+#[test]
+fn mixed_format_integer_comparisons_of_bitwise_values_round_trip() {
+    use crate::kernel::MachineIntegerType as T;
+    for (format, spelling) in [
+        (T::Int32, "int32"),
+        (T::UInt32, "uint32"),
+        (T::Int64, "int64"),
+        (T::UInt64, "uint64"),
+    ] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let state = ExecutionState::new()
+            .with_local(
+                "z",
+                format.value_from_term(MachineTerm::Variable(Variable(999710))),
+            )
+            .with_local(
+                "y",
+                format.value_from_term(MachineTerm::Variable(Variable(999709))),
+            );
+        for op in ["&", "|", "^"] {
+            let text = format!("(z {op} (7 as {spelling})) < y");
+            let file = parser::parse(&format!(
+                "theorem probe() {{ requires {text}; ensures true; }}"
+            ))
+            .unwrap();
+            let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0]
+            else {
+                panic!()
+            };
+            let native = relower_written_proposition(written, &state).unwrap();
+            let Proposition::ConditionIs(ConditionTerm::Compare { left, right, .. }, true) = native
+            else {
+                panic!("native bitwise comparison");
+            };
+            let left = crate::kernel::IntegerTerm::from_machine(format, *left).unwrap();
+            // Same-format observations canonically use a native comparison.
+            // A mixed-format observation pair must retain its Integer form.
+            let other_format = if format.format().bits() == 32 {
+                T::Int64
+            } else {
+                T::Int32
+            };
+            let right = crate::kernel::IntegerTerm::from_machine(other_format, *right).unwrap();
+            let state = state.clone().with_local(
+                "y",
+                other_format.value_from_term(MachineTerm::Variable(Variable(999709))),
+            );
+            for condition in [
+                ConditionTerm::integer_less_than(left.clone(), right.clone()),
+                ConditionTerm::integer_equal(left, right),
+            ] {
+                for truth in [true, false] {
+                    let original = Proposition::ConditionIs(condition.clone(), truth);
+                    let raised = synthesize_surface_proposition(
+                        &original,
+                        ParameterBinding::default(),
+                        &state,
+                    )
+                    .unwrap();
+                    assert_eq!(
+                        relower_written_proposition(&raised, &state).unwrap(),
+                        original,
+                        "{text}: {raised:?}"
+                    );
+                    let printed = crate::surface::printing::source_click_proposition(&raised);
+                    let file = parser::parse(&format!(
+                        "theorem probe() {{ requires {printed}; ensures true; }}"
+                    ))
+                    .unwrap();
+                    let Requirement::Proposition(parsed) =
+                        &file.theorem_definitions()[0].requires()[0]
+                    else {
+                        panic!()
+                    };
+                    assert_eq!(
+                        relower_written_proposition(parsed, &state).unwrap(),
+                        original,
+                        "{printed}"
                     );
                 }
             }
