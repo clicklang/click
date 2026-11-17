@@ -60,7 +60,7 @@ impl OriginChecks<Address, MachineTerm> for PureFactContext {
         a == b
     }
     fn opaque_is_root(&self, a: &Address) -> bool {
-        self.equality_graph.bounds_owner_is_root(a)
+        self.pointer_domain(PointerDomainSource::BoundsOwner(a)) == PointerDomain::Root
     }
 }
 pub(super) fn origins_match<A, W>(
@@ -278,8 +278,8 @@ mod tests {
         }
         fn opaque_is_root(&self, a: &SharedAddress) -> bool {
             self.facts
-                .equality_graph
-                .bounds_owner_is_root(&self.addresses[a])
+                .pointer_domain(PointerDomainSource::BoundsOwner(&self.addresses[a]))
+                == PointerDomain::Root
         }
     }
 
