@@ -43,7 +43,6 @@ const QUARANTINED: &[(&str, &str)] = &[];
 /// libraries stay in the gate so it checks both sides of their imports. Run
 /// one with `MDTEST_FILTER=<name>`.
 const NIGHTLY: &[&str] = &[
-    "a_summarized_pure_loop_does_not_record_its_test_state.md", // 0.84s focused; fast layout coverage checks the test selector
     "a_returned_member_domain_supports_a_logical_read.md", // 2.3s: member-result resource fold and logical read
     "scalar_induction_after_helper_facts.md", // 0.78s in the parallel induction fixture selection
     "witness_mixed_type_values.md", // 1.36s focused: pointer, Integer, and machine binders
@@ -51,6 +50,7 @@ const NIGHTLY: &[&str] = &[
     "modeled_pthread_copied_handle_join_twice.md", // forwarded handle must consume one right
     "shared_loop_test_and_update.md", // 1.2s focused: ranked pre/post-test call proofs
     "shared_loop_post_test_ends_body_scope.md", // 0.8s focused: post-test after an expired body array
+    "a_summarized_pure_loop_does_not_record_its_test_state.md", // 0.84s focused; fast layout coverage checks the test selector
     "a_fixed_range_transfer_preserves_the_retained_tail.md", // 0.55s focused: typed byte-range call and return
     "consumed_scalar_transfer_mixes_with_a_borrowed_return.md", // 0.67s focused: two-parameter call and caller return
     "aliased_packaged_views_keep_their_selected_whole_loan.md", // 0.71s focused: selected whole-loan recovery
