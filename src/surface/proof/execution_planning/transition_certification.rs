@@ -216,7 +216,7 @@ fn proof_condition_runtime_error(
 #[derive(Clone)]
 pub(in crate::surface::proof) struct CertifiedProofConditionTransition {
     pub(in crate::surface::proof) is_true: bool,
-    pub(in crate::surface::proof) pure_facts: ProofFacts,
+    pub(in crate::surface::proof) pure_facts: PureFactStore,
     pub(in crate::surface::proof) path_facts: Vec<Proposition>,
     pub(in crate::surface::proof) theorem: Theorem,
 }
@@ -230,7 +230,7 @@ pub(in crate::surface::proof) struct CertifiedProofConditionTransition {
 #[cfg(test)]
 pub(in crate::surface::proof) fn certified_proof_condition_transitions(
     state: &ExecutionState,
-    pure_facts: &ProofFacts,
+    pure_facts: &PureFactStore,
     condition: &ProgramExpression,
     context_label: &str,
 ) -> Result<Vec<CertifiedProofConditionTransition>, ClickError> {
@@ -245,7 +245,7 @@ pub(in crate::surface::proof) fn certified_proof_condition_transitions(
 
 pub(in crate::surface::proof) fn certified_proof_condition_split(
     state: &ExecutionState,
-    pure_facts: &ProofFacts,
+    pure_facts: &PureFactStore,
     branch_statement: &ProgramStatement,
     continuation: Option<&ProgramStatement>,
     context_label: &str,

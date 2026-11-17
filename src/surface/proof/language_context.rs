@@ -54,6 +54,12 @@ impl FixedStateFacts<'_> {
     }
 }
 impl PropositionSource for FixedStateFacts<'_> {
+    fn fact_store(&self) -> PureFactStore {
+        match self {
+            Self::Slice(facts) => facts.fact_store(),
+            Self::List(facts) => facts.store().clone(),
+        }
+    }
     fn exact_available(&self, required: &Proposition) -> bool {
         match self {
             Self::Slice(facts) => facts.exact_available(required),
@@ -72,16 +78,10 @@ impl PropositionSource for FixedStateFacts<'_> {
             Self::List(facts) => facts.context(),
         }
     }
-    fn indexed_proof_facts(&self) -> ProofFacts {
+    fn ordered_fact_store(&self) -> PureFactStore {
         match self {
-            Self::Slice(facts) => facts.indexed_proof_facts(),
-            Self::List(facts) => facts.proof_facts(),
-        }
-    }
-    fn ordered_proof_facts(&self) -> ProofFacts {
-        match self {
-            Self::Slice(facts) => facts.ordered_proof_facts(),
-            Self::List(facts) => facts.ordered_proof_facts(),
+            Self::Slice(facts) => facts.ordered_fact_store(),
+            Self::List(facts) => facts.ordered_fact_store(),
         }
     }
 }
@@ -100,7 +100,7 @@ pub(in crate::surface::proof) struct FixedStateProofContext<'a> {
     pub(in crate::surface::proof) effect_facts: ExecutionFacts,
     /// The facts a recorded surface lowering must name to be reused here:
     /// the phase's facts with its state's observable resource facts.
-    pub(in crate::surface::proof) lowering_context: ProofFacts,
+    pub(in crate::surface::proof) lowering_context: PureFactStore,
     pub(in crate::surface::proof) original_requirements: &'a [Requirement],
     pub(in crate::surface::proof) requirement_facts: FixedStateFacts<'a>,
     /// The recorder for a selected expansion target written inside a `have`

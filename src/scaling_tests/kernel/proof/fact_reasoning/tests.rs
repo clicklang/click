@@ -27,7 +27,7 @@ fn quantified_single_match_does_not_check_the_whole_alpha_bucket() {
     let goal = quantified("goal".into());
     let mut curve = Vec::new();
     for size in [8, 16, 32, 64] {
-        let facts = ProofFacts::from_ordered(
+        let facts = PureFactStore::from_ordered(
             &(0..size)
                 .map(|i| quantified(format!("witness{i}")))
                 .collect::<Vec<_>>(),
@@ -81,7 +81,7 @@ fn quantified_nested_matching_work_is_linear_and_context_indexed() {
         });
         assert!(matches);
         depths.push(work);
-        let mut facts = ProofFacts::from_ordered(&[nested(2, 100)]);
+        let mut facts = PureFactStore::from_ordered(&[nested(2, 100)]);
         for index in 0..size {
             facts = facts.with_fact(Proposition::ForAll {
                 name: Default::default(),
@@ -280,7 +280,7 @@ fn check_footprint_normalization_scaling(sizes: [u64; 4]) {
     let costs = sizes.map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let (goal, separation, alias) = footprint_alias_fixture();
-        let mut facts = ProofFacts::from_ordered(&[separation.clone(), alias]);
+        let mut facts = PureFactStore::from_ordered(&[separation.clone(), alias]);
         let pointer = |id| Pointer::symbolic(Variable(id));
         for i in 0..size {
             // Grow the selected address class and a related separation bucket.

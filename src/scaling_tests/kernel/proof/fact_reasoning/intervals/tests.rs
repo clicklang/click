@@ -12,7 +12,7 @@ fn one_operation_interval_check_ignores_ambient_related_and_unrelated_facts() {
                 })));
                 ambient.push(le(literal(-1000 - index as i64), subject));
             }
-            let facts = ProofFacts::from_ordered(&ambient);
+            let facts = PureFactStore::from_ordered(&ambient);
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                 normalize_using_conditions(&goal, &bounds, &facts)
             });
@@ -38,7 +38,7 @@ fn one_operation_interval_work_tracks_only_explicit_premises() {
                 observe(MachineTerm::Variable(Variable(988_000 + index))),
             ));
         }
-        let facts = ProofFacts::from_ordered(&selected);
+        let facts = PureFactStore::from_ordered(&selected);
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             normalize_using_conditions(&goal, &selected, &facts)
         });

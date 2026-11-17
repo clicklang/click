@@ -7,11 +7,11 @@ use crate::kernel::proof::{
     BranchId, CheckedBranchSplit, CheckedCallOutcomeSplit, ClaimGoalError, ClaimGoalEvidence,
     ExecutionUpdateError, FrontierObligation, FrontierSplitError, FunctionOutcomeObligation,
     OutcomeClaimGoals, OutcomeProofCore, OutcomeProofState as KernelOutcomeProofState, ProofBranch,
-    ProofBranchState, ProofExecutionState as KernelProofExecutionState, ProofFacts,
-    ProofFocusError, ProofJoinError, ProofObject as KernelProofObject,
-    ProofObligation as KernelBranchObligation, ProofState as KernelProofState,
-    PropositionCloseError, PropositionIntroduction, PropositionKnownContext,
-    PropositionObligation as KernelPropositionObligation, PropositionSplitError, SplitId,
+    ProofBranchState, ProofExecutionState as KernelProofExecutionState, ProofFocusError,
+    ProofJoinError, ProofObject as KernelProofObject, ProofObligation as KernelBranchObligation,
+    ProofState as KernelProofState, PropositionCloseError, PropositionIntroduction,
+    PropositionKnownContext, PropositionObligation as KernelPropositionObligation,
+    PropositionSplitError, PureFactStore, SplitId,
 };
 use crate::persistent::PersistentMap;
 
@@ -111,10 +111,10 @@ pub(super) struct ExecutionSplitData<'a> {
     arm_branches: [Option<BranchId>; 2],
     condition_theorems: [Option<Theorem>; 2],
     checked_split: CheckedExecutionSplit,
-    base_facts: [Option<ProofFacts>; 2],
+    base_facts: [Option<PureFactStore>; 2],
     base_executions: [Option<Arc<ExecutionProofState>>; 2],
     path_facts: [Option<Vec<Proposition>>; 2],
-    parent_facts: ProofFacts,
+    parent_facts: PureFactStore,
     parent_unfolds: PersistentOrderedSet<String>,
     parent_execution: Arc<ExecutionProofState>,
     statement_index: usize,
@@ -213,10 +213,10 @@ pub(super) struct ExecutionProofCaseSplitData<'a> {
     split: SplitId,
     arm_branches: [BranchId; 2],
     case_condition: ProofCaseCondition,
-    base_facts: [ProofFacts; 2],
+    base_facts: [PureFactStore; 2],
     base_executions: [Arc<ExecutionProofState>; 2],
     path_facts: [Vec<Proposition>; 2],
-    common_facts: ProofFacts,
+    common_facts: PureFactStore,
     parent_unfolds: PersistentOrderedSet<String>,
     parent_execution: Arc<ExecutionProofState>,
     execution_start_state: ExecutionState,
@@ -242,7 +242,7 @@ impl ExecutionProofCaseSplitData<'_> {
 struct CheckedExecutionJoinArm<'v> {
     branch_id: BranchId,
     certificate: ProofCertificate,
-    facts: &'v ProofFacts,
+    facts: &'v PureFactStore,
     execution: &'v ExecutionProofState,
     condition_theorem: Option<&'v Theorem>,
     introduced_facts: Vec<Proposition>,
@@ -297,7 +297,7 @@ impl CheckedExecutionJoinArm<'_> {
 /// `Branch` step. Callers assemble the successor proof around it.
 struct CheckedExecutionJoinParts {
     execution: ExecutionProofState,
-    facts: ProofFacts,
+    facts: PureFactStore,
     common_added_facts: Vec<Proposition>,
     unfolded_predicates: PersistentOrderedSet<String>,
     step: ProofStep,
@@ -362,7 +362,7 @@ struct PreparedExecutionBranch {
 }
 
 struct PreparedExecutionArm {
-    facts: ProofFacts,
+    facts: PureFactStore,
     execution: ExecutionProofState,
     path_facts: Vec<Proposition>,
     condition_theorem: Theorem,
@@ -620,7 +620,7 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     /// than an invariant across parallel vectors. The record is output-sized
     /// Proof provenance; its persistent roots do not copy semantic state.
     outcome_provenance: crate::kernel::proof::PersistentVector<OutcomeProvenance>,
-    outcome_fact_root: Option<Arc<ProofFacts>>,
+    outcome_fact_root: Option<Arc<PureFactStore>>,
     pub(in crate::surface::proof) checked_leaf_facts: Option<Arc<CheckedLeafFacts>>,
     /// The facts of the last checked statement with every effect the path
     /// has retained, extended step by step ([`EffectLeaf`]).
@@ -1150,7 +1150,7 @@ impl ExecutionBranchDecisions {
 /// checks its typed outcome goals.
 pub(super) struct ProofExecutionView<'p> {
     pub(super) state: &'p ExecutionState,
-    pub(super) facts: &'p ProofFacts,
+    pub(super) facts: &'p PureFactStore,
     pub(super) frontier: &'p ExecutionFrontier,
     pub(super) execution: &'p ExecutionProofState,
     pub(super) context: &'p ExecutionProofContext<'p>,
@@ -1327,7 +1327,7 @@ impl ProofExecutionView<'_> {
 /// under, and whether those facts already hold every effect its path
 /// retained, so an outcome goal need not import them again.
 pub(in crate::surface::proof) type CheckedLeafFacts =
-    (FunctionExecutionCandidate, ProofFacts, bool);
+    (FunctionExecutionCandidate, PureFactStore, bool);
 
 /// The facts a path's last checked statement held, with every effect the
 /// path has retained. Each statement extends it by the facts it introduced
@@ -1335,8 +1335,8 @@ pub(in crate::surface::proof) type CheckedLeafFacts =
 /// instead of importing the path's whole effect history.
 pub(in crate::surface::proof) struct EffectLeaf {
     /// The statement's own facts, the lineage the next statement extends.
-    base: ProofFacts,
-    pub(in crate::surface::proof) facts: ProofFacts,
+    base: PureFactStore,
+    pub(in crate::surface::proof) facts: PureFactStore,
     /// How many of the path's effects `facts` holds.
     effects: usize,
 }
@@ -1348,7 +1348,7 @@ impl EffectLeaf {
     /// the effects a rebuild refolds; any other starts over.
     pub(in crate::surface::proof) fn after_statement(
         previous: Option<&Self>,
-        facts: &ProofFacts,
+        facts: &PureFactStore,
         effects: &crate::kernel::ExecutionFacts,
     ) -> Self {
         let extended = previous.and_then(|previous| {
@@ -2918,7 +2918,7 @@ impl<'a> Proof<'a> {
     fn checked_fact_transition(
         &self,
         locals: ProofLocals,
-        facts: ProofFacts,
+        facts: PureFactStore,
         complete: bool,
         added_facts: Vec<Proposition>,
         checked_facts: Vec<Proposition>,
@@ -2957,7 +2957,7 @@ impl<'a> Proof<'a> {
 
     fn checked_execution_transition(
         &self,
-        facts: ProofFacts,
+        facts: PureFactStore,
         complete: bool,
         execution: ExecutionProofState,
         added_facts: Vec<Proposition>,
@@ -3051,7 +3051,7 @@ impl<'a> Proof<'a> {
     /// The focused branch goal's path-local fact context. Every caller is a
     /// checked operation or search query on an open goal: `apply_step` and
     /// the structural operations reject discharged proofs first.
-    pub(in crate::surface::proof) fn facts(&self) -> &ProofFacts {
+    pub(in crate::surface::proof) fn facts(&self) -> &PureFactStore {
         match self.focused_branch() {
             Some(branch) => &branch.state.facts,
             None => unreachable!("fact queries require an open goal"),
@@ -3060,7 +3060,7 @@ impl<'a> Proof<'a> {
 
     /// The focused branch goal's context with updated facts, for refinement rules
     /// that change goal content and facts together.
-    fn refined_branch_state(&self, facts: ProofFacts) -> BranchState {
+    fn refined_branch_state(&self, facts: PureFactStore) -> BranchState {
         BranchState {
             facts,
             unfolded_predicates: self.focused_branch_unfolds().clone(),

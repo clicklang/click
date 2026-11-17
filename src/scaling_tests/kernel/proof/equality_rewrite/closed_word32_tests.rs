@@ -39,7 +39,7 @@ fn newly_closed_word32_rewrite_visits_each_shared_node_once() {
                 ),
                 true,
             );
-            let facts = ProofFacts::from_ordered(std::slice::from_ref(&equality));
+            let facts = PureFactStore::from_ordered(std::slice::from_ref(&equality));
             let exports = KernelTermExport::machine_export_count();
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                 facts.check_equality_rewrite(&goal, &equality).unwrap()
@@ -66,7 +66,7 @@ fn newly_closed_word32_rewrite_visits_each_shared_node_once() {
 
 #[test]
 fn newly_closed_word32_rewrite_ignores_unrelated_facts() {
-    use crate::kernel::proof::ProofFacts;
+    use crate::kernel::proof::PureFactStore;
     for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
         let mut baseline = None;
         for unrelated in [0usize, 16, 64, 256] {
@@ -89,7 +89,7 @@ fn newly_closed_word32_rewrite_ignores_unrelated_facts() {
                 name: format!("unused_{i}"),
                 arguments: vec![],
             }));
-            let facts = ProofFacts::from_ordered(&premises);
+            let facts = PureFactStore::from_ordered(&premises);
             let root = KernelTerm::machine_binary_shared(
                 format,
                 MachineBinaryOp::Divide,

@@ -50,7 +50,7 @@ fn intrinsic_integer_normalization_reads_only_selected_bounds() {
                     };
                     facts.push(le(literal(-1000 - i as i64), subject));
                 }
-                let facts = ProofFacts::from_ordered(&facts);
+                let facts = PureFactStore::from_ordered(&facts);
                 let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                     normalize_using_conditions(&goal, &bounds, &facts)
                 });

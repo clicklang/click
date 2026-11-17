@@ -337,7 +337,7 @@ impl<'a> Proof<'a> {
         &self,
         source: &ProofMatch,
         state: &ExecutionState,
-        query: &ProofFacts,
+        query: &PureFactStore,
         retained_states: &RecordedStates,
     ) -> Result<crate::kernel::AlgebraicTerm, ClickError> {
         let execution = self
@@ -390,7 +390,7 @@ impl<'a> Proof<'a> {
         &self,
         source: &ProofMatch,
         value: &crate::kernel::AlgebraicTerm,
-        authority: &ProofFacts,
+        authority: &PureFactStore,
         next_variable: u64,
     ) -> Result<OutcomeMatchCases, ClickError> {
         let execution = self

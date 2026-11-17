@@ -314,7 +314,8 @@ impl<'a> Proof<'a> {
                 );
             }
         }
-        let facts = ProofFacts::from_ordered(requires).with_reserved_variables(ambient_variables);
+        let facts =
+            PureFactStore::from_ordered(requires).with_reserved_variables(ambient_variables);
         let mut proof = Self {
             site: ProofStepSite::default(),
             context: Arc::new(ProofContext::Pure(PureProofContext {
@@ -559,7 +560,7 @@ impl<'a> Proof<'a> {
             unfolded_predicates,
             effect_facts,
             &[],
-            Some(available.proof_facts()),
+            Some(available.fact_store()),
         )
     }
 
@@ -577,9 +578,9 @@ impl<'a> Proof<'a> {
         unfolded_predicates: &'a [String],
         effect_facts: &(impl ExecutionFactSource + ?Sized),
         original_requirements: &'a [Requirement],
-        indexed: Option<ProofFacts>,
+        indexed: Option<PureFactStore>,
     ) -> Self {
-        let facts = indexed.unwrap_or_else(|| available.indexed_proof_facts());
+        let facts = indexed.unwrap_or_else(|| available.fact_store());
         let lowering_context = resource_context_observable_facts_for_proof(
             fixed_state.state.resources(),
             facts.clone(),

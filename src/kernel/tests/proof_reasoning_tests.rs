@@ -231,7 +231,7 @@ fn algebraic_equality_lookup_for_constructor_disequality_is_goal_local() {
             .expect("a known constructor proves disequality from every other constructor");
     assert!(derivation.has_typed_atomic_evidence());
     assert!(derivation.check(&assumptions));
-    let facts = crate::kernel::proof::ProofFacts::from_ordered(&[source.clone(), unrelated]);
+    let facts = crate::kernel::proof::PureFactStore::from_ordered(&[source.clone(), unrelated]);
     assert_eq!(facts.algebraic_equalities_mentioning(&goal), vec![source]);
     let unmatched = Proposition::Not(Box::new(Proposition::Equal(
         Term::Algebraic(AlgebraicTerm {
@@ -312,7 +312,7 @@ fn algebraic_equality_lookup_descends_constructor_fields() {
             node: AlgebraicTermNode::Variable(Variable(89_033)),
         }),
     );
-    let facts = crate::kernel::proof::ProofFacts::from_ordered(&[source.clone(), unrelated]);
+    let facts = crate::kernel::proof::PureFactStore::from_ordered(&[source.clone(), unrelated]);
     assert_eq!(facts.algebraic_equalities_mentioning(&goal), vec![source]);
 }
 
@@ -824,13 +824,15 @@ fn contradicts_recognizes_a_comparison_and_its_arithmetic_negation() {
         true,
     );
 
-    let opposite = crate::kernel::proof::ProofFacts::from_ordered(&[negative.clone(), nonnegative]);
+    let opposite =
+        crate::kernel::proof::PureFactStore::from_ordered(&[negative.clone(), nonnegative]);
     assert!(
         opposite.contradicts(&negative),
         "`x < 0` held beside `x >= 0` contradicts"
     );
 
-    let tighter = crate::kernel::proof::ProofFacts::from_ordered(&[negative.clone(), at_least_one]);
+    let tighter =
+        crate::kernel::proof::PureFactStore::from_ordered(&[negative.clone(), at_least_one]);
     assert!(
         !tighter.contradicts(&negative),
         "`x >= 1` is not the arithmetic negation of `x < 0`"
@@ -971,14 +973,14 @@ fn checked_pure_completion(
     conclusion: &Proposition,
 ) -> crate::kernel::proof::CheckedProposition {
     use crate::kernel::proof::{
-        OutcomeProofState, PersistentOrderedSet, ProofBranch, ProofBranchState, ProofFacts,
-        ProofObject, ProofObligation, PropositionKnownContext, PropositionObligation,
+        OutcomeProofState, PersistentOrderedSet, ProofBranch, ProofBranchState, ProofObject,
+        ProofObligation, PropositionKnownContext, PropositionObligation, PureFactStore,
     };
 
     let branch = ProofBranch::new(
         ProofObligation::Proposition(PropositionObligation::new(conclusion.clone(), ())),
         ProofBranchState {
-            facts: ProofFacts::from_ordered(requirements),
+            facts: PureFactStore::from_ordered(requirements),
             unfolded_predicates: PersistentOrderedSet::default(),
             execution: None,
         },
@@ -4120,7 +4122,7 @@ fn a_binder_name_never_distinguishes_two_universals() {
     assert_eq!(written.cmp(&other), std::cmp::Ordering::Equal);
     assert_eq!(hash(&written), hash(&other));
     assert_eq!(hash(&written), hash(&unnamed));
-    let facts = crate::kernel::proof::ProofFacts::from_ordered(&[written]);
+    let facts = crate::kernel::proof::PureFactStore::from_ordered(&[written]);
     assert!(facts.contains(&other));
 }
 
@@ -7232,7 +7234,7 @@ fn bounded_byte_pointer_association_uses_checked_signed_addition() {
         crate::kernel::proof::fact_reasoning::normalize_using_conditions(
             &goal,
             std::slice::from_ref(&defined),
-            &crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&defined)),
+            &crate::kernel::proof::PureFactStore::from_ordered(std::slice::from_ref(&defined)),
         )
         .is_ok()
     );

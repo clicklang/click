@@ -114,7 +114,7 @@ fn outcome_goal_selection_ignores_closed_claims_and_unrelated_proof_facts() {
         goal.claims = Some(claims);
         for fact_count in [0, 64, 1024] {
             let facts = (0..fact_count).fold(
-                crate::kernel::proof::ProofFacts::from_ordered(&[]),
+                crate::kernel::proof::PureFactStore::from_ordered(&[]),
                 |facts, index| {
                     facts.with_fact(crate::kernel::Proposition::ConditionIs(
                         crate::kernel::ConditionTerm::equal(
@@ -167,7 +167,7 @@ fn ordinary_closing_steps_ignore_unrelated_facts_and_closed_source_claims() {
         (
             fact_count,
             (0..fact_count).fold(
-                crate::kernel::proof::ProofFacts::from_ordered(&[]),
+                crate::kernel::proof::PureFactStore::from_ordered(&[]),
                 |facts, index| {
                     facts.with_fact(crate::kernel::Proposition::ConditionIs(
                         crate::kernel::ConditionTerm::equal(
@@ -243,12 +243,14 @@ fn ordinary_closing_steps_ignore_unrelated_facts_and_closed_source_claims() {
 
 #[test]
 fn owned_outcome_completion_is_indexed_and_does_not_copy_sibling_facts() {
-    use crate::kernel::proof::{PersistentOrderedSet, ProofBranch, ProofBranchState, ProofFacts};
+    use crate::kernel::proof::{
+        PersistentOrderedSet, ProofBranch, ProofBranchState, PureFactStore,
+    };
     let execution = closing_execution();
     let context = crate::kernel::ContractClosingContext::new(&execution);
     for count in [16_usize, 64, 256] {
         for fact_count in [0, 1024] {
-            let facts = ProofFacts::from_ordered(
+            let facts = PureFactStore::from_ordered(
                 &(0..fact_count)
                     .map(|index| crate::kernel::Proposition::Predicate {
                         name: format!("unrelated_{index}"),

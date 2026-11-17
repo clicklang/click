@@ -271,7 +271,7 @@ pub(super) fn state_indexed_selectors<'a>(
 pub(super) fn checked_surface_comparison_fact_in_state_with_indexed_facts(
     view: ExecutionView<'_>,
     kernel: &Proposition,
-    available: &ProofFacts,
+    available: &PureFactStore,
     assumptions: &PureFactContext,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
@@ -296,7 +296,7 @@ fn checked_surface_comparison_fact_in_state_with_availability(
     kernel: &Proposition,
     available: &[Proposition],
     assumptions: &PureFactContext,
-    indexed_available: Option<&ProofFacts>,
+    indexed_available: Option<&PureFactStore>,
     allow_memory_erased_candidates: bool,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,

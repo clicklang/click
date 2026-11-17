@@ -2,13 +2,13 @@ use super::*;
 use crate::surface::proof::proof_object::ExecutionProofState;
 
 pub(in crate::surface::proof) struct CheckedPredicateUnfold {
-    pub(in crate::surface::proof) facts: ProofFacts,
+    pub(in crate::surface::proof) facts: PureFactStore,
     pub(in crate::surface::proof) added_facts: Vec<Proposition>,
     pub(in crate::surface::proof) added_unfolded_predicates: Vec<String>,
 }
 
 pub(in crate::surface::proof) struct CheckedPredicateFactUnfold {
-    pub(in crate::surface::proof) facts: ProofFacts,
+    pub(in crate::surface::proof) facts: PureFactStore,
     pub(in crate::surface::proof) added_facts: Vec<Proposition>,
 }
 
@@ -16,7 +16,7 @@ pub(in crate::surface::proof) struct CheckedPredicateFactUnfold {
 /// mention it. This is the proposition-level semantic core shared by pure,
 /// fixed-state, and execution-frontier proof objects.
 pub(in crate::surface::proof) fn check_unfold_predicate_in_facts(
-    available: &ProofFacts,
+    available: &PureFactStore,
     name: &String,
     spec_definitions: SpecDefinitions<'_>,
     claim_label: &str,
@@ -56,7 +56,7 @@ pub(in crate::surface::proof) fn check_unfold_predicate_in_facts(
 pub(in crate::surface::proof) fn check_unfold_predicate_facts(
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
-    available_pure_facts: &ProofFacts,
+    available_pure_facts: &PureFactStore,
     name: &String,
 ) -> Result<CheckedPredicateUnfold, ClickError> {
     let predicate_environment = proof_context.spec_definitions.predicates;

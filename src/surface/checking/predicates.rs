@@ -22,7 +22,7 @@ pub(in crate::surface) fn unfold_available_predicate_fact_delta(
     if unfolded_predicates.is_empty() {
         return Ok(Vec::new());
     }
-    let facts = available.ordered_proof_facts();
+    let facts = available.fact_store();
     let mut delta = Vec::new();
     for proposition in facts.propositions().filter(|proposition| {
         proposition_contains_named_predicate(proposition, unfolded_predicates)

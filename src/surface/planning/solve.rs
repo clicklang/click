@@ -248,7 +248,7 @@ pub(in crate::surface) fn plan_solve_certificate(
 pub(in crate::surface) fn plan_termination(
     scope: &crate::kernel::OrdinaryTerminationScope,
     goal: &Proposition,
-    facts: &crate::kernel::proof::ProofFacts,
+    facts: &crate::kernel::proof::PureFactStore,
 ) -> Result<Vec<crate::kernel::TerminationCheck>, ClickError> {
     check_verification_deadline()?;
     let plan = scope.plan(goal, facts);

@@ -24,7 +24,7 @@ pub(crate) fn disjunction_candidates(
 
 /// Enumerate universal premises only while planning an expandable proof.
 pub(crate) fn universal_candidates(
-    facts: &crate::kernel::proof::ProofFacts,
+    facts: &crate::kernel::proof::PureFactStore,
 ) -> impl Iterator<Item = &crate::kernel::Proposition> {
     facts.universal_facts_for_search(SearchPermission::new())
 }

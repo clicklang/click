@@ -2451,7 +2451,7 @@ pub(crate) fn apply_verified_tactic_rule(
     state: &ExecutionState,
     name: &str,
     arguments: &[ProgramValue],
-    facts: &crate::kernel::proof::ProofFacts,
+    facts: &crate::kernel::proof::PureFactStore,
     environment: &ExecutionEnvironment,
     next_kernel_variable: u64,
 ) -> Result<TacticRuleTransition, TacticApplicationRefusal> {

@@ -58,7 +58,7 @@ fn contract_closing_input(
     execution: &CheckedFunctionExecution,
     path_index: usize,
     has_return_resource_rewrite: bool,
-    post_return_facts: &[(usize, ProofFacts)],
+    post_return_facts: &[(usize, PureFactStore)],
 ) -> Result<ContractClosingInput, ClickError> {
     let returned = if has_return_resource_rewrite {
         let root =
@@ -112,7 +112,7 @@ fn prove_next_contract_closing_goal<'a>(
     execution: &CheckedFunctionExecution,
     path_index: usize,
     has_return_resource_rewrite: bool,
-    post_return_facts: &[(usize, ProofFacts)],
+    post_return_facts: &[(usize, PureFactStore)],
     mode: ClosingProofMode,
 ) -> Result<bool, ClickError> {
     let Some(root) = outcome_proof.as_ref() else {
@@ -631,7 +631,7 @@ fn prove_claims_by_checked_tactics(
             })
         })
         .collect::<Vec<_>>();
-    let pure_facts = PureFactList::from_proof_facts(opened_entry.facts());
+    let pure_facts = PureFactList::from_store(opened_entry.facts());
     let completion = opened_entry.contract_root().cloned();
     let root_attempt = completion.as_ref().map(|root| root.begin_attempt());
     let strategy_root = root_attempt.as_ref().map(|attempt| attempt.root().clone());
@@ -2209,7 +2209,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
     completed_execution: &'e CheckedFunctionExecution,
     entry_pure_facts: &PureFactList,
     path_capture: Option<&DeferredTacticCapture>,
-    path_requirements: &ProofFacts,
+    path_requirements: &PureFactStore,
     rewrite_claim_equalities: &[Vec<ClickProposition>],
     rewritten_claim_proofs: &[Option<(Proof<'a>, ProofCheckpoint<'a>)>],
     unfolded_predicates: &SharedVec<String>,
@@ -6146,7 +6146,7 @@ mod evidence_tests {
             panic!("checked function path")
         };
         let key = FunctionContractClaimKey::Ensure(*index);
-        let facts = ProofFacts::from_ordered(&path.assumptions().pure_facts());
+        let facts = PureFactStore::from_ordered(&path.assumptions().pure_facts());
         let checked = prove_ensure_resource(
             execution,
             key.clone(),
@@ -6223,7 +6223,7 @@ mod evidence_tests {
 /// path already held when execution returned keeps the final tactic's site.
 fn unjustified_return_fact_error(
     proof: &Proof<'_>,
-    facts_before_tactic: &[(usize, ProofFacts)],
+    facts_before_tactic: &[(usize, PureFactStore)],
     fact: &Proposition,
     message: &str,
     path_index: usize,

@@ -13,7 +13,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
     written_assertions: &[ProofAssertion],
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
-    available_pure_facts: &mut ProofFacts,
+    available_pure_facts: &mut PureFactStore,
     sibling_join_states: Option<&[&ExecutionState]>,
     // `join_next_kernel_variable` is the counter every sibling arm abstracts
     // from: the highest of the arms' own. The arms' abstractions are compared
@@ -160,7 +160,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
     // Extend one indexed context as the interface publishes each fact.
     // Rebuilding the growing prefix for every assertion is quadratic even
     // though the interface itself is explicit output.
-    let mut exported_pure_facts = ProofFacts::default();
+    let mut exported_pure_facts = PureFactStore::default();
     for assertion in assertions {
         if let ProofAssertion::Resource(resource) = assertion {
             // A named instance may carry a different model in each arm. The
@@ -3246,7 +3246,7 @@ fn execute_step_from_frontier_position_selecting_path(
             let mut returned_facts = loop_index
                 .and_then(|index| execution.presentation.loop_return_proofs.get(&index))
                 .map(|planned| planned.entry_facts.clone())
-                .unwrap_or_else(|| available_pure_facts.proof_facts());
+                .unwrap_or_else(|| available_pure_facts.fact_store());
             for fact in returned.pure_facts.iter() {
                 if !returned_facts.contains(fact) {
                     returned_facts = returned_facts.with_kernel_checked_fact(fact.clone());

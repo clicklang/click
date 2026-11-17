@@ -148,7 +148,7 @@ Current instances of the rule:
   (`constructing_an_instance_fold_pays_for_its_body_once`).
 - A logical case partition retains each arm's indexed context with its exact
   premise delta, and entering an arm shares it.
-- Branch-interface publication extends one `ProofFacts` context as it
+- Branch-interface publication extends one `PureFactStore` context as it
   exports facts; each assertion lowers against the accumulated context.
 - An interface join combines the effects each arm's checked walk retained and
   does not reconstruct store or call-havoc results
@@ -338,7 +338,7 @@ charged to visible semantic output rather than hidden ambient state:
   and effects a restart would fold restarts it, and the restart defers that
   fold until as many transitions have recorded since or the path completes.
   The surface `EffectLeaf` holds each statement's facts with the path's
-  effects, extended through `ProofFacts::introduced_since_within` up to the
+  effects, extended through `PureFactStore::introduced_since_within` up to the
   effects a rebuild refolds. Retained-trace walks visit each shared node once;
   surface path synthesis advances cursors instead of renumbering choices.
   Each path theorem still lists its own `k` premises, which is its output,

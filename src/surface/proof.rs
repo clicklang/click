@@ -68,7 +68,7 @@ use crate::kernel::fresh_int32_variable_for_propositions;
 use crate::kernel::proof::{
     ExceptionalContinuation, ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind,
     FrontierPosition, LoopControlExit, PersistentOrderedSet, PersistentSequence,
-    ProofExecutionContinuation, ProofFacts, SharedVec, old_reference_state,
+    ProofExecutionContinuation, PureFactStore, SharedVec, old_reference_state,
 };
 
 pub(in crate::surface) use crate::kernel::proof::{
@@ -371,7 +371,7 @@ mod certificate_tests {
         );
         let state = ExecutionState::new().with_memory(Memory::new().with_block("current", 4));
 
-        let facts = ProofFacts::from_ordered(&[]);
+        let facts = PureFactStore::from_ordered(&[]);
         let error = checked_surface_comparison_fact_in_state_with_indexed_facts(
             ExecutionView::new(
                 &ExecutionFrontier::default(),
@@ -2403,7 +2403,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         spec_definitions,
         state,
         &arguments,
-        &entry_pure_facts,
+        entry_pure_facts.store(),
         include_owned_composite_cores,
         claim_label,
         &entry_authority_state.resources().clone(),
@@ -2437,7 +2437,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
             resource,
             parameter_binding,
             &state,
-            &requirement_pure_facts,
+            requirement_pure_facts.store(),
             &mut surface_propositions,
             spec_definitions,
             &mut BTreeSet::new(),
@@ -2721,7 +2721,7 @@ fn evaluate_entry_resource_context(
     spec_definitions: SpecDefinitions<'_>,
     state: ExecutionState,
     arguments: &[ProgramExpression],
-    pure_facts: &PureFactList,
+    pure_facts: &PureFactStore,
     include_owned_composite_cores: Option<resources::OwnedCores>,
     claim_label: &str,
     entry_resources: &ResourceContext,
@@ -2769,7 +2769,7 @@ fn evaluate_entry_resource_context(
     // authority.  Keep a read view for each concrete loadability atom,
     // matching the projection used by certification.
     let precondition_read_facts = pure_facts
-        .iter()
+        .occurrences()
         .filter_map(|fact| {
             let Proposition::MemoryLoadable { base, bytes, .. } = fact else {
                 return None;
@@ -2814,7 +2814,7 @@ fn evaluate_entry_resource_context(
             Some(ResourceFact::view_memory(range))
         })
         .collect::<Vec<_>>();
-    let assumptions = pure_facts.context();
+    let assumptions = pure_facts.assumptions().clone();
     let mut evaluation_state = state.clone().with_resource_context(
         ResourceContext::new_with_equalities(&assumptions)
             .unchecked_with_facts(explicit_entry_facts)

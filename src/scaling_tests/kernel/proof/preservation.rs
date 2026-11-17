@@ -371,7 +371,7 @@ fn definedness_preservation_ignores_history_and_ambient_facts() {
         let _session = crate::kernel::VerificationSession::enter();
         let (preservation, separation, old, goal) =
             tests::definedness_fixture(size, ProgramType::UInt8);
-        let mut facts = crate::kernel::proof::ProofFacts::from_ordered(&[]);
+        let mut facts = crate::kernel::proof::PureFactStore::from_ordered(&[]);
         facts = facts.with_fact(separation);
         facts = facts.with_fact(old.clone());
         for i in 0..size {

@@ -779,7 +779,7 @@ impl<'a> Proof<'a> {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn merge_interface_execution_join(
         &self,
-        parent_facts: &ProofFacts,
+        parent_facts: &PureFactStore,
         parent_unfolds: &PersistentOrderedSet<String>,
         parent_execution: &ExecutionProofState,
         statement_index: usize,
@@ -950,7 +950,7 @@ impl<'a> Proof<'a> {
             .max(arms[1].execution.core.kernel_variable_mark());
 
         let abstract_arm = |arm: &CheckedExecutionJoinArm<'_>| -> Result<
-            (ExecutionProofState, ProofFacts),
+            (ExecutionProofState, PureFactStore),
             ClickError,
         > {
             let mut execution = arm.execution.clone();
@@ -1469,7 +1469,7 @@ impl<'a> Proof<'a> {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn merge_terminal_execution_join(
         &self,
-        parent_facts: &ProofFacts,
+        parent_facts: &PureFactStore,
         parent_unfolds: &PersistentOrderedSet<String>,
         parent_execution: &ExecutionProofState,
         statement_index: usize,
@@ -2135,7 +2135,7 @@ impl<'a> Proof<'a> {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn merge_checked_execution_join(
         &self,
-        parent_facts: &ProofFacts,
+        parent_facts: &PureFactStore,
         parent_unfolds: &PersistentOrderedSet<String>,
         parent_execution: &ExecutionProofState,
         statement_index: usize,
@@ -2553,7 +2553,7 @@ impl<'a> Proof<'a> {
     /// state, and the effect facts are either arm's.
     fn merge_case_execution_join(
         &self,
-        parent_facts: &ProofFacts,
+        parent_facts: &PureFactStore,
         parent_unfolds: &PersistentOrderedSet<String>,
         parent_execution: &ExecutionProofState,
         case_condition: ProofCaseCondition,
@@ -2819,8 +2819,8 @@ impl<'a> Proof<'a> {
         split: SplitId,
         id: BranchId,
         steps: Vec<ProofStep>,
-        ancestry_facts: &'v ProofFacts,
-        delta_facts: &'v ProofFacts,
+        ancestry_facts: &'v PureFactStore,
+        delta_facts: &'v PureFactStore,
         delta_execution: &'v ExecutionProofState,
         condition_theorem: Option<&'v Theorem>,
     ) -> Result<CheckedExecutionJoinArm<'v>, ClickError> {
@@ -3699,7 +3699,7 @@ impl<'a> Proof<'a> {
             .clone()
             .expect("the preparation requires an execution frontier");
         let mut condition_theorems: [Option<Theorem>; 2] = [None, None];
-        let mut base_facts: [Option<ProofFacts>; 2] = [None, None];
+        let mut base_facts: [Option<PureFactStore>; 2] = [None, None];
         let mut base_executions: [Option<Arc<ExecutionProofState>>; 2] = [None, None];
         let mut path_facts: [Option<Vec<Proposition>>; 2] = [None, None];
         let mut arms = [None, None];

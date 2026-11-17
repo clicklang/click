@@ -332,7 +332,7 @@ mod cached_read_completion_tests {
                         )),
                     )),
                     ProofBranchState {
-                        facts: ProofFacts::from_ordered(&[proposition]),
+                        facts: PureFactStore::from_ordered(&[proposition]),
                         unfolded_predicates: PersistentOrderedSet::default(),
                         execution: None,
                     },
@@ -4197,12 +4197,12 @@ mod claim_requirement_tests {
 
     use crate::kernel::proof::{
         FunctionOutcomeObligation, OutcomeIdentity, OutcomeProofCore, OutcomeProofState,
-        PersistentOrderedSet, ProofBranch, ProofBranchState, ProofFacts, ProofObject,
-        ProofObligation as BranchObligation, PropositionKnownContext,
+        PersistentOrderedSet, ProofBranch, ProofBranchState, ProofObject,
+        ProofObligation as BranchObligation, PropositionKnownContext, PureFactStore,
     };
 
     type ClaimProof = ProofObject<(), BranchObligation<(), Arc<OutcomeProofState<()>>>, ()>;
-    fn root(facts: ProofFacts, outcome: &Arc<OutcomeProofState<()>>) -> ClaimProof {
+    fn root(facts: PureFactStore, outcome: &Arc<OutcomeProofState<()>>) -> ClaimProof {
         ClaimProof::root(
             (),
             ProofBranch::new(
@@ -4229,7 +4229,7 @@ mod claim_requirement_tests {
             true,
         );
         let truth = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
-        let empty = ProofFacts::from_ordered(std::slice::from_ref(&truth));
+        let empty = PureFactStore::from_ordered(std::slice::from_ref(&truth));
         let established = empty.with_kernel_checked_fact(domain.clone());
         for (target, is_exceptional) in [
             (FunctionContractClaimTarget::EnsureProposition(0), false),
@@ -4298,7 +4298,7 @@ mod claim_requirement_tests {
 #[cfg(test)]
 mod claim_requirement_scaling_tests {
     use super::*;
-    use crate::kernel::proof::ProofFacts;
+    use crate::kernel::proof::PureFactStore;
     include!(
         "../../../scaling_tests/kernel/api/contract_certification/contract_claims/requirements_tests.rs"
     );

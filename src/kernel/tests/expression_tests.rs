@@ -4127,7 +4127,7 @@ fn exact_signed_mirror_normalization_checks_state_address_and_selected_premise()
         ConditionTerm::signed_greater_than(load, MachineTerm::constant(1)),
         true,
     );
-    let facts = crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&premise));
+    let facts = crate::kernel::proof::PureFactStore::from_ordered(std::slice::from_ref(&premise));
     assert!(
         crate::kernel::proof::fact_reasoning::normalize_using_conditions(
             &goal,
@@ -4172,7 +4172,7 @@ fn exact_signed_mirror_normalization_checks_state_address_and_selected_premise()
         crate::kernel::proof::fact_reasoning::normalize_using_conditions(
             &goal,
             &[premise],
-            &crate::kernel::proof::ProofFacts::from_ordered(&[])
+            &crate::kernel::proof::PureFactStore::from_ordered(&[])
         )
         .is_err()
     );

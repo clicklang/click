@@ -2444,7 +2444,7 @@ fn persistent_fact_lookup_scales_logarithmically() {
 fn introduced_since_recovers_only_the_appended_delta() {
     for size in [16_u32, 64, 256, 1024, 4096] {
         let ancestor_facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
-        let ancestor = ProofFacts::from_ordered(&ancestor_facts);
+        let ancestor = PureFactStore::from_ordered(&ancestor_facts);
 
         // A fork that adds two ordinary facts reports exactly those, in
         // insertion order, regardless of the shared ancestor's size.
@@ -2473,7 +2473,7 @@ fn introduced_since_recovers_only_the_appended_delta() {
         // structure — proves the shared history: an equal-content
         // context built independently is not an ancestor.
         assert_eq!(ancestor.introduced_since(&ancestor), Some(Vec::new()));
-        let rebuilt = ProofFacts::from_ordered(&ancestor_facts);
+        let rebuilt = PureFactStore::from_ordered(&ancestor_facts);
         assert_eq!(fork.introduced_since(&rebuilt), None);
 
         // Divergent forks are not each other's ancestors.
@@ -2488,7 +2488,7 @@ fn proof_fact_forks_share_context_and_local_insertions_are_logarithmic() {
     let mut allocation_samples = Vec::new();
     for size in LOCAL_PROOF_FACT_SIZES {
         let initial = (0..size).map(indexed_fact).collect::<Vec<_>>();
-        let facts = ProofFacts::from_ordered(&initial);
+        let facts = PureFactStore::from_ordered(&initial);
         let fork = facts.clone();
         assert!(facts.shares_exact_index_with(&fork));
         assert!(facts.shares_assumptions_with(&fork));
@@ -2524,7 +2524,7 @@ fn statement_fact_prefix_preserves_successor_order_without_copying_ambient_histo
     let first = indexed_fact(1);
     let promoted = indexed_fact(2);
     let added = indexed_fact(3);
-    let facts = ProofFacts::from_ordered(&[first.clone(), promoted.clone()]);
+    let facts = PureFactStore::from_ordered(&[first.clone(), promoted.clone()]);
     let successor = facts.with_statement_facts(vec![promoted.clone(), added.clone()]);
 
     assert!(successor.shares_ordered_tail_with(&facts));
@@ -2544,7 +2544,7 @@ fn check_availability_probes_equivalent_condition_polarities_by_exact_index() {
         },
         true,
     );
-    let facts = ProofFacts::from_ordered(&[available]);
+    let facts = PureFactStore::from_ordered(&[available]);
     for required in [
         Proposition::ConditionIs(
             ConditionTerm::Compare {
@@ -2589,7 +2589,7 @@ fn proof_fact_predicate_index_ignores_unrelated_context() {
     for size in [16_u32, 64, 256, 1024, 4096] {
         let mut initial = (0..size).map(indexed_fact).collect::<Vec<_>>();
         initial.push(predicate.clone());
-        let facts = ProofFacts::from_ordered(&initial);
+        let facts = PureFactStore::from_ordered(&initial);
         let fork = facts.clone();
 
         assert!(facts.shares_ordered_tail_with(&fork));
@@ -2625,7 +2625,7 @@ fn outcome_fact_deltas_share_ambient_universal_facts() {
             .collect::<Vec<_>>();
         let unfolded = universal(9_000_000);
         let original =
-            ProofFacts::from_ordered(&ambient).with_kernel_checked_fact(unfolded.clone());
+            PureFactStore::from_ordered(&ambient).with_kernel_checked_fact(unfolded.clone());
         for operations in [1_u64, 4, 16] {
             crate::kernel::proof::take_fact_entry_counts();
             let mut successor = original.clone();
@@ -11098,7 +11098,7 @@ fn proof_condition_split_filters_conflicts_without_rebuilding_facts() {
         Box::new(ProgramExpression::Variable(("x".to_string()).into())),
         Box::new(ProgramExpression::Value(int32(0))),
     );
-    let empty = ProofFacts::default();
+    let empty = PureFactStore::default();
     let branch = ProgramStatement::If {
         condition: condition.clone(),
         then_branch: Box::new(ProgramStatement::Skip),
@@ -11166,7 +11166,7 @@ fn proof_condition_split_filters_conflicts_without_rebuilding_facts() {
     for size in [16_u32, 64, 256, 1024, 4096] {
         let mut available = (0..size).map(indexed_fact).collect::<Vec<_>>();
         available.push(selecting_fact.clone());
-        let facts = ProofFacts::from_ordered(&available);
+        let facts = PureFactStore::from_ordered(&available);
         assert!(facts.directly_conflicts_with(&rejected_path_fact));
         let before = fact_node_allocations();
         let transitions = certified_proof_condition_transitions(
@@ -14313,7 +14313,7 @@ fn execution_entry_retains_prepared_symbolic_write_selection() {
         .expect("the written ownership clause remains live")
         .clone();
     let assumptions = facts.context();
-    let root_facts = ProofFacts::from_source(&facts);
+    let root_facts = PureFactStore::from_source(&facts);
     assert!(
         state
             .resources()
@@ -15056,7 +15056,7 @@ fn partition_known_uses_the_fixed_state_not_its_entry_partition() {
             .state
             .replace_focused_obligation_and_facts(
                 focused.focused_obligation().unwrap().clone(),
-                ProofFacts::default(),
+                PureFactStore::default(),
             )
             .unwrap_or_else(|_| panic!("the selected goal must stay open"));
         let focused = focused.with_kernel_state(state);
