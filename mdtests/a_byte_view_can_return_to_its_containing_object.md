@@ -1,4 +1,4 @@
-# An explicit byte view retains the complete object's extent
+# An explicit byte view retains the complete object's bounds
 
 ```c filename=probe.c
 struct Pair { int32 first; int32 second; };

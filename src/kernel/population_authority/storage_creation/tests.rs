@@ -76,7 +76,7 @@ fn only_successful_real_malloc_records_creation() {
         .with_population_creation_tracking()
         .with_memory(
             Memory::new()
-                .with_heap_allocation_claim(created.pointer().clone(), HeapExtent::int32(16))
+                .with_heap_allocation_claim(created.pointer().clone(), AllocationSize::int32(16))
                 .expect("assumed allocation claim"),
         );
     assert!(!imported.population_storage_created_here(created));
@@ -1258,7 +1258,7 @@ fn two_authority_control_import_checks_each_custody_and_scope() {
     )
     .unwrap();
     let cell = SpecExpression::MemoryLoad {
-        memory: SpecMemory::Current,
+        memory: SpecPoint::Current,
         pointer: Box::new(SpecExpression::PointerOffset {
             pointer: Box::new(SpecExpression::ProgramExpression(
                 crate::kernel::program_expression::variable("p"),
@@ -1487,7 +1487,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     )
     .unwrap();
     let cell = SpecExpression::MemoryLoad {
-        memory: SpecMemory::Current,
+        memory: SpecPoint::Current,
         pointer: Box::new(SpecExpression::PointerOffset {
             pointer: Box::new(SpecExpression::ProgramExpression(
                 crate::kernel::program_expression::variable("p"),

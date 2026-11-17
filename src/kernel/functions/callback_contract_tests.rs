@@ -1163,79 +1163,6 @@ fn resource_derived_frame_rejects_mixed_explicit_effect_metadata() {
 }
 
 #[test]
-fn resource_derived_loop_frame_rejects_wrapper_range_disagreement() {
-    let pointer = Pointer {
-        block: PointerBlock::Concrete("local:loop-wrapper:data".to_string()),
-        offset: PointerOffsetTerm::Constant(0),
-    };
-    let definition = CompositeResourceDefinition::new(
-        "LoopWrapper",
-        vec![program_parameter("data", ProgramType::Int32Pointer)],
-        None,
-        false,
-        vec![ResourceSpec::owned_memory(MemorySegment::new(
-            ProgramExpression::Variable("data".into()),
-            ProgramExpression::Value(int32(0)),
-            ProgramExpression::Value(int32(1)),
-        ))],
-        vec![],
-    );
-    let requirement = ResourceSpec::composite(
-        ResourceAccessMode::Own,
-        "LoopWrapper".into(),
-        vec![ProgramExpression::Variable("p".into())],
-        vec![ProgramType::Int32Pointer],
-    );
-    let wrong_loop_frame = LoopEffectCheck::new_with_origin(
-        LoopEffect::Mutable(vec![MemorySegment::new(
-            ProgramExpression::Variable("p".into()),
-            ProgramExpression::Value(int32(1)),
-            ProgramExpression::Value(int32(2)),
-        )]),
-        LoopEffectSpan::Whole,
-        LoopEffectOrigin::InheritedResourceDerived,
-        Some("loop 0 inherited owned resource frame".into()),
-    );
-    let body = ProgramStatement::Loop {
-        test: crate::kernel::LoopTestRegion::expression(
-            crate::kernel::program_expression::int32_literal(0),
-            crate::kernel::LoopTestPosition::BeforeBody,
-        ),
-        update: None,
-        invariant: vec![],
-        invariant_checks: vec![],
-        effect_checks: vec![wrong_loop_frame],
-        resource_specs: vec![],
-        ranking_measures: vec![],
-        structural_measure: None,
-        backedge_target: None,
-        natural_exit_target: None,
-        body: Box::new(ProgramStatement::Skip),
-    };
-    let function = program_function(
-        ProgramType::Void,
-        "wrong_loop_wrapper_frame",
-        vec![program_parameter("p", ProgramType::Int32Pointer)],
-        body,
-    )
-    .with_contract(vec![], vec![], vec![], vec![], true)
-    .with_resource_summary(vec![requirement], vec![])
-    .with_composite_resource_definitions(vec![definition])
-    .with_resource_derived_mutable_frame();
-    let state = ExecutionState::new()
-        .with_local("p", ProgramValue::pointer(pointer.clone()))
-        .with_memory(Memory::new().with_block(pointer.block, 4));
-    let result = validate_resource_derived_loop_frames(
-        &function,
-        &state,
-        &PureFactContext::new(),
-        &mut ExecutionBudget::default(),
-    )
-    .unwrap();
-    assert!(result.is_err());
-}
-
-#[test]
 fn declared_loop_frame_is_installed_from_the_loop_specs_not_from_segments() {
     let pointer = Pointer {
         block: PointerBlock::Concrete("local:loop-declared:data".to_string()),
@@ -1572,7 +1499,7 @@ fn requirement_capability_describes_the_complete_source_tree() {
         name: "len".to_string().into(),
         variable: Variable(900),
         body: Box::new(SpecProposition::MemoryLoadable {
-            memory: SpecMemory::Current,
+            memory: SpecPoint::Current,
             base: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
                 "p",
             )),

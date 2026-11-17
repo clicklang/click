@@ -1591,7 +1591,7 @@ impl PureFactStore {
             MachineTerm::Variable(fresh),
         );
         let renamed =
-            restore_range_extent_spelling(body, renamed, binder, &MachineTerm::Variable(fresh));
+            restore_range_span_spelling(body, renamed, binder, &MachineTerm::Variable(fresh));
         Some((fresh, renamed))
     }
 
@@ -1723,7 +1723,7 @@ impl PureFactStore {
             Pointer::symbolic(fresh)
         };
         // A pointer binder never occurs in a range's element endpoints, which
-        // are `int32` terms, so the extent has nothing to put back here.
+        // are `int32` terms, so the span has nothing to put back here.
         let body =
             crate::kernel::substitute_pointer_variable_in_proposition(body, binder, &pointer);
         Some((fresh, body))
@@ -2833,37 +2833,37 @@ impl PureFactStore {
     }
 }
 
-/// Puts back the extent spelling a range carried before its binder was
+/// Puts back the span spelling a range carried before its binder was
 /// renamed.
 ///
 /// Renaming a bound variable is supposed to change what a proposition's binder
 /// is called and nothing else. Substitution rebuilds every term it walks with
 /// the kernel's folding constructors, though, and those fold strictly more
-/// than the one `memory_range_byte_count` builds a range's extent with: the
-/// extent of `a[k..k + 1]` is written `((k + 1) - k) * w` and comes back from
-/// a substitution as the constant `w`. Both spell the same extent, and a
+/// than the one `memory_range_byte_count` builds a range's span with: the
+/// span of `a[k..k + 1]` is written `((k + 1) - k) * w` and comes back from
+/// a substitution as the constant `w`. Both spell the same span, and a
 /// proof state matches a goal against a fact syntactically, so the rename
 /// moved the goal out of the form every re-lowering of the written range
 /// produces and the narrowing that had just worked stopped matching.
 ///
-/// The two forms cannot simply be merged. The extent is also where surface
+/// The two forms cannot simply be merged. The span is also where surface
 /// synthesis recovers a range's written ends from — folding `(k + 1) - k` to a
 /// constant loses them, and `loadable(p[k..k + 1])` then spells back as a
 /// zero-based range over a displaced base. So the rename keeps the spelling
-/// instead: where the original carried a range extent, the renamed
-/// proposition gets that extent's endpoints substituted and reassembled in the
+/// instead: where the original carried a range span, the renamed
+/// proposition gets that span's endpoints substituted and reassembled in the
 /// written shape rather than the folded one.
 ///
 /// This walks only the logical structure the two propositions share, and only
 /// as far as the range leaves; it changes no other term and decides nothing.
-fn restore_range_extent_spelling(
+fn restore_range_span_spelling(
     original: &Proposition,
     renamed: Proposition,
     from: Variable,
     to: &MachineTerm,
 ) -> Proposition {
     let recurse = |original: &Proposition, renamed: Proposition| {
-        Box::new(restore_range_extent_spelling(original, renamed, from, to))
+        Box::new(restore_range_span_spelling(original, renamed, from, to))
     };
     match (original, renamed) {
         (
@@ -2877,7 +2877,7 @@ fn restore_range_extent_spelling(
         ) => Proposition::MemoryLoadable {
             memory,
             base,
-            bytes: substituted_range_extent(bytes, from, to).unwrap_or(folded),
+            bytes: substituted_range_span(bytes, from, to).unwrap_or(folded),
             wide: false,
         },
         (Proposition::And(left, right), Proposition::And(renamed_left, renamed_right)) => {
@@ -2914,11 +2914,11 @@ fn restore_range_extent_spelling(
     }
 }
 
-/// A written range extent with its endpoints substituted, reassembled in the
+/// A written range span with its endpoints substituted, reassembled in the
 /// shape [`crate::kernel::memory_range_byte_count`] builds rather than the
 /// shape the folding constructors would collapse it to. `None` when the term
-/// is not a written range extent, which is every other byte count.
-fn substituted_range_extent(
+/// is not a written range span, which is every other byte count.
+fn substituted_range_span(
     bytes: &MachineTerm,
     from: Variable,
     to: &MachineTerm,
@@ -5023,7 +5023,7 @@ mod held_separation_tests {
         Resource::Memory(
             range
                 .with_provenance(Arc::new(origin.base().clone()))
-                .with_opaque_extent(Some(Arc::new(origin.base().clone())), false)
+                .with_bounds_owner(Some(Arc::new(origin.base().clone())), false)
                 .with_typed_carrier(),
         )
     }

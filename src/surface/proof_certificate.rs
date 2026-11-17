@@ -195,7 +195,6 @@ pub enum CertificatePathSegment {
     RightCase,
     LoopInitialize,
     LoopPreserve,
-    LoopItem(usize),
     StepBody,
     StepRequirement(usize),
 }
@@ -1034,7 +1033,6 @@ impl CertificateError {
                 CertificatePathSegment::RightCase => "right case".to_string(),
                 CertificatePathSegment::LoopInitialize => "loop `initialize`".to_string(),
                 CertificatePathSegment::LoopPreserve => "loop `preserve`".to_string(),
-                CertificatePathSegment::LoopItem(index) => format!("loop item {index}"),
                 CertificatePathSegment::StepBody => "step `by` body".to_string(),
                 CertificatePathSegment::StepRequirement(index) => {
                     format!("step `requires` entry {index}")

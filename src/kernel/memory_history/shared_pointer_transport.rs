@@ -317,7 +317,7 @@ mod tests {
         }
     }
     #[test]
-    fn complete_transport_retains_metadata_and_original_extent_width() {
+    fn complete_transport_retains_metadata_and_original_bounds_width() {
         let _session = crate::kernel::VerificationSession::enter();
         let (before, field, other) = fixture();
         let after = before
@@ -328,7 +328,7 @@ mod tests {
             Pointer::symbolic(Variable(1007010)),
             ProgramType::VoidPointer,
         )
-        .with_extent(Some(SubobjectExtent {
+        .with_bounds(Some(SubobjectBounds {
             start: field.clone(),
             width: MachineTerm::MemoryLoad(
                 ProgramPoint::at(&before),
@@ -377,7 +377,7 @@ mod tests {
                 ProgramType::VoidPointer,
             )
             .with_provenance(loaded.clone())
-            .with_opaque_extent(Some(loaded.clone()));
+            .with_bounds_owner(Some(loaded.clone()));
             assert!(source.pointer().integer_address_bits().is_none());
             let shared = SharedPointerValue::import(&source);
             let expected = transport_framed_atomic_pointer_value(&source, &after, None)
@@ -385,7 +385,7 @@ mod tests {
             let output = transport_pointer(&shared, &after, None).unwrap();
             assert_eq!(output.export().unwrap(), expected);
             assert_eq!(output.node().provenance, shared.node().provenance);
-            assert_eq!(output.node().opaque_extent, shared.node().opaque_extent);
+            assert_eq!(output.node().bounds_owner, shared.node().bounds_owner);
         }
     }
     #[test]
@@ -406,7 +406,7 @@ mod tests {
             ProgramType::VoidPointer,
         )
         .with_provenance(loaded.clone())
-        .with_opaque_extent(Some(loaded));
+        .with_bounds_owner(Some(loaded));
         let shared = SharedPointerValue::import(&source);
         let context = PureFactContext::new();
         let expected =

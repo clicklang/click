@@ -32,7 +32,7 @@ fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
     let forged = fact(
         pointer(&after)
             .with_provenance(origin.clone())
-            .with_opaque_extent(Some(origin)),
+            .with_bounds_owner(Some(origin)),
     );
     let overwritten = intern_memory(after.memory().clone().store(
         cell.clone().offset_by_bytes(4),
@@ -52,7 +52,7 @@ fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
             ));
         }
         for index in 0..size {
-            let selected = pointer(&before).with_extent(Some(SubobjectExtent {
+            let selected = pointer(&before).with_bounds(Some(SubobjectBounds {
                 start: cell.clone(),
                 width: MachineTerm::constant(u32::try_from(index + 1).unwrap()),
             }));

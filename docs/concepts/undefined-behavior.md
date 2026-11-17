@@ -41,7 +41,7 @@ Click currently models obligations for cases such as:
 - invalid signed left shifts,
 - out-of-bounds memory access,
 - pointer arithmetic that leaves the pointed-to object, or an object whose
-  extent is known only through the ranges the state holds,
+  size is known only through the ranges the state holds,
 - reads of uninitialized automatic storage,
 - loads, stores, and pointer operations through a freed allocation.
 
@@ -55,7 +55,7 @@ array object `p` points into or one past its end. For a local array or a heap
 allocation Click checks the displacement against the object's size. A pointer
 parameter, or any symbolic or loaded pointer, has no recorded size; the
 `owns`, `views`, and `viewable` ranges the function holds for it are the only
-extent Click knows, so the result must lie in one of them, its one-past end
+bounds Click knows, so the result must lie in one of them, its one-past end
 included:
 
 <!-- verified-example: mdtests/pointer_arithmetic_past_a_viewed_range_is_refused.md -->

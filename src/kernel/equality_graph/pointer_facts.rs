@@ -113,8 +113,8 @@ impl EqualityGraph {
                         None
                     }
                 })?;
-        // Every coverage fact of one opaque extent shares a bucket, whatever
-        // its element width, so a lookup by extent finds them all.
+        // Every coverage fact of one opaque bounds owner shares a bucket, whatever
+        // its element width, so a lookup by bounds finds them all.
         if name.starts_with(crate::kernel::SUBOBJECT_COVERS_PREDICATE_PREFIX) {
             return Some((
                 pointer.pointer().clone(),
@@ -278,8 +278,8 @@ impl EqualityGraph {
             })
     }
 
-    /// The coverage facts of the opaque extent whose start is `start`, and of
-    /// every extent a pointer equality has identified with it.
+    /// The coverage facts of the opaque bounds whose start is `start`, and of
+    /// every bounds owner a pointer equality has identified with it.
     pub(in crate::kernel) fn subobject_coverage_facts(
         &self,
         start: &Pointer,

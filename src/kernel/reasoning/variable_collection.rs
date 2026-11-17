@@ -747,15 +747,6 @@ pub(in crate::kernel) fn collect_term_bitvector_variables(
         Term::ProgramValue(value) => collect_program_value_bitvector_variables(value, variables),
         Term::Sequence(sequence) => collect_sequence_bitvector_variables(sequence, variables),
         Term::Algebraic(term) => collect_algebraic_term_bitvector_variables(term, variables),
-        Term::ExpressionOutcome(outcome) => {
-            collect_program_expression_outcome_bitvector_variables(outcome, variables);
-        }
-        Term::StatementOutcome(outcome) => {
-            collect_execution_statement_outcome_bitvector_variables(outcome, variables);
-        }
-        Term::FunctionOutcome(outcome) => {
-            collect_program_function_outcome_bitvector_variables(outcome, variables);
-        }
         Term::Memory(memory) => collect_memory_bitvector_variables(memory, variables),
         Term::ExecutionState(state) => {
             collect_execution_state_bitvector_variables(state, variables)
@@ -1045,8 +1036,11 @@ pub(in crate::kernel) fn collect_execution_statement_bitvector_variables(
             body,
             ..
         } => {
-            let (condition, _, test) = loop_test.execution_parts();
-            collect_program_expression_bitvector_variables(condition, variables);
+            let condition = loop_test.source_condition();
+            let test = loop_test.source_region();
+            if let Some(condition) = condition {
+                collect_program_expression_bitvector_variables(condition, variables);
+            }
             for proposition in invariant {
                 collect_proposition_bitvector_variables(proposition, variables);
             }
@@ -1530,7 +1524,6 @@ pub(in crate::kernel) fn collect_loop_effect_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match effect {
-        LoopEffect::Immutable => {}
         LoopEffect::Mutable(segments) => {
             for segment in segments {
                 collect_program_expression_bitvector_variables(&segment.base, variables);
@@ -1875,6 +1868,7 @@ pub(in crate::kernel) fn collect_assumption_variables(
     }
 }
 
+#[cfg(test)]
 pub(in crate::kernel) fn collect_execution_environment_variables(
     environment: &ExecutionEnvironment,
     variables: &mut BTreeSet<Variable>,

@@ -143,7 +143,7 @@ pub(crate) enum BindingCarrier {
 pub(crate) enum TypedProgramValueReplacement {
     Bitvector(MachineTerm),
     /// The whole value: a use of the bound variable's address adopts its
-    /// subobject extent.
+    /// subobject bounds.
     Pointer(PointerValue),
 }
 
@@ -530,7 +530,7 @@ fn replace_binding_variable(
                 ) =>
             {
                 // Rename the binder's block wherever the value names it: in
-                // its address and in its extent's start.
+                // its address and in its bounds' start.
                 let old = pointer.block.clone();
                 let new = match old {
                     PointerBlock::FunctionSymbolic(_) => PointerBlock::FunctionSymbolic(variable),
@@ -2522,7 +2522,7 @@ impl<'a> TermRewrite<'a> {
         rewrite
     }
 
-    /// Numeric address equality cannot substitute an allocation or extent identity.
+    /// Numeric address equality cannot substitute an allocation or bounds identity.
     pub(crate) fn for_pointer_address_variable(from: Variable, to: &'a Pointer) -> Self {
         let mut rewrite = Self::for_pointer_variable(from, to);
         rewrite.pointer_addresses_only = true;
@@ -3177,11 +3177,7 @@ impl<'a> TermRewrite<'a> {
                 Term::Algebraic(value) => {
                     collect_algebraic_carriers_seen(value, &mut variables, &mut seen)
                 }
-                Term::ExpressionOutcome(_)
-                | Term::StatementOutcome(_)
-                | Term::FunctionOutcome(_)
-                | Term::Memory(_)
-                | Term::ExecutionState(_) => {}
+                Term::Memory(_) | Term::ExecutionState(_) => {}
             }
             if variables.exhausted() {
                 break;
@@ -3269,12 +3265,12 @@ impl<'a> TermRewrite<'a> {
                 if let Some((from, to)) = self.pointer_value_exact
                     && !self.source_disabled
                     && range.provenance.as_ref() == from.provenance()
-                    && range.opaque_extent.as_deref() == from.opaque_extent()
-                    && range.carrier_extent_known == from.extent_is_known()
+                    && range.bounds_owner.as_deref() == from.bounds_owner()
+                    && range.carrier_bounds_known == from.bounds_are_known()
                 {
                     // The footprint already fixed its admitted byte bounds.
                     // A complete equality transports its retained carrier,
-                    // including transitions between known and opaque extents.
+                    // including transitions between known and opaque bounds.
                     mapped = to.clone().with_address(mapped.pointer().clone());
                 }
                 let mut result = range
@@ -3420,16 +3416,12 @@ impl<'a> TermRewrite<'a> {
             Sort::Integer => Some(BindingCarrier::Integer),
             Sort::Algebraic(_) => Some(BindingCarrier::Algebraic),
             Sort::Bitvector32
-            | Sort::Bitvector64
             | Sort::ProgramInt32
             | Sort::ProgramInt64
             | Sort::ProgramInteger(_)
             | Sort::ProgramPointer(_)
             | Sort::ProgramObjectPointer(_, _)
-            | Sort::ProgramValue
-            | Sort::PointerOffset
             | Sort::Condition => Some(BindingCarrier::Program),
-            _ => None,
         };
         let Some(carrier) = carrier else {
             return (variable, self.scoped_proposition(body));
@@ -4004,9 +3996,9 @@ impl<'a> TermRewrite<'a> {
                 });
                 let shifted_replacement = shifted_source.and_then(|(from, to)| {
                     (v.provenance() == from.provenance()
-                        && v.extent() == from.extent()
-                        && v.extent_is_known() == from.extent_is_known()
-                        && v.opaque_extent() == from.opaque_extent())
+                        && v.bounds() == from.bounds()
+                        && v.bounds_are_known() == from.bounds_are_known()
+                        && v.bounds_owner() == from.bounds_owner())
                     .then(|| to.clone())
                 });
                 let retain_view = shifted_source.is_some() && shifted_replacement.is_none();
@@ -4034,8 +4026,8 @@ impl<'a> TermRewrite<'a> {
                     // Address-equality rewrites use a separate constructor.
                     Some(PointerValue::new(to.clone(), v.program_type()))
                 }));
-                let adopted = if !v.extent_is_known() {
-                    replacement.as_ref().and_then(|p| p.extent().cloned())
+                let adopted = if !v.bounds_are_known() {
+                    replacement.as_ref().and_then(|p| p.bounds().cloned())
                 } else {
                     None
                 };
@@ -4060,7 +4052,7 @@ impl<'a> TermRewrite<'a> {
                 } else {
                     self.pointer(v.provenance())
                 };
-                let opaque_extent = match v.opaque_extent() {
+                let bounds_owner = match v.bounds_owner() {
                     None => None,
                     Some(origin) => {
                         if addresses_only {
@@ -4069,7 +4061,7 @@ impl<'a> TermRewrite<'a> {
                         {
                             replacement
                                 .as_ref()
-                                .and_then(|p| p.opaque_extent().cloned())
+                                .and_then(|p| p.bounds_owner().cloned())
                                 .map(std::sync::Arc::new)
                         } else if let Some((from, to)) = self.pointer_variable
                             && !self.scope.program_values.contains_key(&from)
@@ -4078,10 +4070,10 @@ impl<'a> TermRewrite<'a> {
                             Some(std::sync::Arc::new(to.object_identity()))
                         } else if let Some((from, to)) = self.pointer_value_exact
                             && !self.source_disabled
-                            && !from.extent_is_known()
-                            && from.opaque_extent() == Some(origin)
+                            && !from.bounds_are_known()
+                            && from.bounds_owner() == Some(origin)
                         {
-                            to.opaque_extent().cloned().map(std::sync::Arc::new)
+                            to.bounds_owner().cloned().map(std::sync::Arc::new)
                         } else if self.pointer_exact.is_some() && self.pointer_value_exact.is_none()
                         {
                             Some(std::sync::Arc::new(origin.clone()))
@@ -4097,7 +4089,7 @@ impl<'a> TermRewrite<'a> {
                 let mut mapped = v
                     .map_pointers(|address| self.pointer(address))
                     .with_provenance(std::sync::Arc::new(provenance))
-                    .with_opaque_extent(opaque_extent);
+                    .with_bounds_owner(bounds_owner);
                 if retain_view && let Some((from, _)) = shifted_source {
                     // The numeric consequence cannot identify the base's own
                     // domain with a different view's domain. Nested reads still
@@ -4108,22 +4100,21 @@ impl<'a> TermRewrite<'a> {
                         mapped =
                             mapped.with_provenance(std::sync::Arc::new(v.provenance().clone()));
                     }
-                    if (from.extent_is_known() || v.opaque_extent() != from.opaque_extent())
-                        && v.opaque_extent()
+                    if (from.bounds_are_known() || v.bounds_owner() != from.bounds_owner())
+                        && v.bounds_owner()
                             .is_some_and(|origin| origin.block == from.pointer().block)
                     {
-                        mapped = mapped.with_opaque_extent(
-                            v.opaque_extent().cloned().map(std::sync::Arc::new),
-                        );
+                        mapped = mapped
+                            .with_bounds_owner(v.bounds_owner().cloned().map(std::sync::Arc::new));
                     }
                 }
                 self.resolve_registered_loads = previous_load_resolution;
                 ProgramValue::Pointer(match adopted {
-                    Some(extent) => mapped.with_extent(Some(extent)),
-                    None if !v.extent_is_known()
-                        && replacement.as_ref().is_some_and(|p| p.extent_is_known()) =>
+                    Some(bounds) => mapped.with_bounds(Some(bounds)),
+                    None if !v.bounds_are_known()
+                        && replacement.as_ref().is_some_and(|p| p.bounds_are_known()) =>
                     {
-                        mapped.with_root_extent()
+                        mapped.with_root_bounds()
                     }
                     None => mapped,
                 })
@@ -5182,7 +5173,7 @@ impl<'a> TermRewrite<'a> {
             self.pointer_origin_cache.insert(key, block.clone());
             return Pointer { block, offset };
         }
-        // Opaque object and extent identities participate in lexical
+        // Opaque object and bounds identities participate in lexical
         // binding, never in numeric pointer rewrites.
         if let PointerBlock::ExternalObject(variable) = &p.block {
             if let Some(mapped) = self.scope.program_values.get(variable) {
@@ -5751,7 +5742,11 @@ impl<'a> TermRewrite<'a> {
                 let (op, left, right) = v
                     .as_bitvector_comparison()
                     .expect("every other condition has its own arm");
-                op.build_raw(self.bits(left), self.bits(right))
+                super::equality_rewrite::rebuild_machine_comparison(
+                    op,
+                    self.bits(left),
+                    self.bits(right),
+                )
             }
         };
         // Comparison forms are lookup aids, not stored syntax. Replacing a
@@ -5942,8 +5937,8 @@ impl<'a> TermRewrite<'a> {
                 let matches = self.pointer_context.map_or_else(
                     || {
                         left.provenance() == right.provenance()
-                            && left.extent() == right.extent()
-                            && left.extent_is_known() == right.extent_is_known()
+                            && left.bounds() == right.bounds()
+                            && left.bounds_are_known() == right.bounds_are_known()
                     },
                     |context| context.pointer_provenance_match(left, right),
                 );

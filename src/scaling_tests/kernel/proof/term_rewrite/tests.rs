@@ -91,7 +91,7 @@ fn full_pointer_alias_keeps_typed_constructor_fields_in_linear_work() {
         panic!("pointer expected")
     };
     assert_eq!(actual.provenance(), typed.provenance());
-    assert_eq!(actual.opaque_extent(), typed.opaque_extent());
+    assert_eq!(actual.bounds_owner(), typed.bounds_owner());
 }
 
 #[test]

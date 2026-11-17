@@ -31,5 +31,5 @@ The empty/endpoint configs share the original split extraction; refresh their
 lock identities together when refreshing that artifact. Ordinary tests check
 frozen source/proof parity, boundaries, forged declarations/projections,
 missing authority, false claims, tool agreement, expansion, and deterministic
-work at extents 8/128/1024. The live gate re-extracts both sources and checks
+work at lengths 8/128/1024. The live gate re-extracts both sources and checks
 transactional rejection of mutable/non-byte/tuple-return shapes.

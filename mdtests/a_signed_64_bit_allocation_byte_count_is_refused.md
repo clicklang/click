@@ -1,6 +1,6 @@
 # A signed 64-bit `allocation` byte count is refused
 
-An `allocation` byte count is a 32-bit `int32` extent or a 64-bit `uint64`
+An `allocation` byte count is a 32-bit `int32` size or a 64-bit `uint64`
 (`size_t`) one. A `long` count is neither; it is stated through its
 `size_t` conversion.
 

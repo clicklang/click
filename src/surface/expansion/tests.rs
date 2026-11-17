@@ -3100,17 +3100,14 @@ theorem ordinary(x: int32) {
     ensures x == x by { solve(); }
 }
 "#;
-    verify_click_theorems_with_program_sources(source, &[]).unwrap();
+    verify_click_theorems(source).unwrap();
     let sites = c_smart_tactic_source_sites(source, &[]).unwrap();
     assert_eq!(sites.len(), 1);
     assert_eq!(sites[0].claim_label, "ordinary.ensures_0");
     assert_eq!(sites[0].tactic_name, "solve");
     assert!(
-        verify_click_theorems_with_program_sources(
-            &source.replace("ensures left == right", "ensures left != right"),
-            &[]
-        )
-        .is_err(),
+        verify_click_theorems(&source.replace("ensures left == right", "ensures left != right"))
+            .is_err(),
         "kernel axiom declarations must still be checked"
     );
 }

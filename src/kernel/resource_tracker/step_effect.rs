@@ -96,18 +96,18 @@ pub(in crate::kernel) enum BlockSeparation {
     /// both outside this block.
     StoreInDistinctBlock,
     /// The object that entered the memory model is proven distinct from this
-    /// one, so it has its own `blocks` key and this block's extent entry is
+    /// one, so it has its own `blocks` key and this block's size entry is
     /// untouched.
     DeclarationOfDistinctBlock,
     /// The object that became live is proven distinct from this one, so its
-    /// extent and its fresh-allocation status are its own.
+    /// size and its fresh-allocation status are its own.
     AllocationOfDistinctBlock,
     /// A pending allocation request was registered or failed. Neither step
     /// changes existing storage; successful allocation is judged separately.
     PendingAllocationMetadata,
     /// The automatic-storage object retired, or the heap allocation released,
     /// is proven distinct from this one, so this block keeps its contents,
-    /// extent, liveness and heap status.
+    /// size, liveness and heap status.
     ReleaseOfDistinctBlock,
     /// Initialization status was extended only in a different object.
     InitializationOfDistinctBlock,
@@ -227,7 +227,7 @@ pub(in crate::kernel) fn separation_check(
             | MemoryDerivation::LocalLifetimeEnded { .. } => SeparationCheck::PointerDistinctness,
         },
         // A block's footprint is everything the object contains, so one check
-        // covers its extent, liveness and heap status as well as its cells;
+        // covers its size, liveness and heap status as well as its cells;
         // only a store has a single address to be distinct from.
         TrackedResource::Block(_) => match step {
             MemoryDerivation::Store { .. } | MemoryDerivation::CellsSeeded { .. } => {
@@ -375,11 +375,11 @@ fn cell_effect(
         }
         MemoryDerivation::LocalLifetimeEnded { block, .. } => {
             // Cleanup can name a private object while the surviving result
-            // uses a symbolic block. Frame the full retired extent, not just
+            // uses a symbolic block. Frame the full retired size, not just
             // its base address, using retained range membership evidence: a
             // cell distinct from the object's first byte may still be one of
             // its others, as for `HeapFreed` below. Only distinct *blocks*
-            // decide without the extent.
+            // decide without the size.
             if extended_dag_bridging_active()
                 && pointer.blocks_proven_distinct(&Pointer {
                     block: block.clone(),
@@ -391,7 +391,7 @@ fn cell_effect(
                 StepEffect::Affected
             } else if extended_dag_bridging_active()
                 && block.is_local_block()
-                && let Some(extent) = step
+                && let Some(size) = step
                     .base()
                     .block_size(block)
                     .and_then(|size| size.as_const())
@@ -407,7 +407,7 @@ fn cell_effect(
                         block: block.clone(),
                         offset: PointerOffsetTerm::Constant(0),
                     },
-                    extent,
+                    size,
                     pointer,
                     bytes,
                     assumptions,
@@ -418,7 +418,7 @@ fn cell_effect(
                             block: block.clone(),
                             offset: PointerOffsetTerm::Constant(0),
                         },
-                        extent,
+                        size,
                         pointer,
                         bytes,
                         assumptions,
@@ -460,12 +460,12 @@ fn cell_effect(
                 };
             }
             // A free ends the whole allocation, so what has to miss this
-            // cell is the allocation's *extent*, not its base address. The
+            // cell is the allocation's *size*, not its base address. The
             // rung that asked `pointers_proven_distinct_for_memory_resolution`
             // about `allocation_base` asked whether the cell is the first
             // element, and answered "this free did not touch it" for
             // `p[3]` — every cell of the block but one. Distinct *blocks*
-            // still decide above, and the extent question is the rung below,
+            // still decide above, and the size question is the rung below,
             // which is the same predicate the state routes spend
             // (`heap_allocation_proven_separate_from_pointer`).
             if allocation_base.blocks_proven_distinct(pointer) {
@@ -480,8 +480,8 @@ fn cell_effect(
                 allocation_base,
                 // A derivation's byte term carries no format; read as 32-bit,
                 // a 64-bit block's term spells no element count, and the
-                // separation is not proved (`design/heap-extents.md`).
-                &HeapExtent::int32(bytes.clone()),
+                // separation is not proved (`design/heap-allocation-sizes.md`).
+                &AllocationSize::int32(bytes.clone()),
                 pointer,
                 assumptions,
             ) {
@@ -933,7 +933,7 @@ fn seeded_cell_effect_store_by_store(
 /// argument it was built with. Two program points may therefore share one
 /// argument only when they agree on everything such a body can observe
 /// through the pointer: the contents of every cell of the block, the union
-/// overlays in it, its own entry in `blocks` (the extent a read is checked
+/// overlays in it, its own entry in `blocks` (the size a read is checked
 /// against), its liveness (the ended-local set and the heap's live, freed and
 /// pending status for it), and the zeroed status that decides what an
 /// unwritten byte reads as.
@@ -953,19 +953,19 @@ fn seeded_cell_effect_store_by_store(
 /// * `BlockDeclared` inserts one entry in `blocks` under the declared block's
 ///   own key and changes nothing else — no cell, no overlay, no ended-local
 ///   entry, no heap status. An object proven distinct from this one therefore
-///   has a different key, so this block's own extent entry is the same entry it
+///   has a different key, so this block's own size entry is the same entry it
 ///   was, and everything a body reads through the pointer is untouched. This is
 ///   why `int32 t;` now carries a fact about `a` as a whole, as it has always
 ///   carried `a[0] == 5`.
-/// * `HeapAllocated` inserts the fresh object's extent under its own key and
+/// * `HeapAllocated` inserts the fresh object's size under its own key and
 ///   marks that one base live and uninitialized-or-zeroed. An object proven
-///   distinct from this block therefore leaves this block's extent, contents,
+///   distinct from this block therefore leaves this block's size, contents,
 ///   liveness and zeroed status alone. A `Heap` block is a fresh object, which
 ///   is the `proven_distinct` arm this rides.
 /// * `HeapAllocationPending` records a requested allocation that has no
 ///   address yet: `pending_allocations`, and `zeroed_pending_allocations` for a
 ///   `calloc`. Nothing that decides what a read of a block sees consults
-///   either map — not its extent, not its cells, not its liveness, not its
+///   either map — not its size, not its cells, not its liveness, not its
 ///   zeroed status — so this step is separate from every block, with no
 ///   distinctness claim needed. That is also why the cell arm crosses it. The
 ///   moment the request resolves is a `HeapAllocated` edge, judged on its own,
@@ -976,10 +976,10 @@ fn seeded_cell_effect_store_by_store(
 ///   footprint is judged with the same separation bounds as `HeapFreed`;
 ///   unlike a definite free, it creates no deallocation tombstone.
 /// * `HeapFreed` moves one allocation from live to deallocated, drops its
-///   uninitialized and zeroed status, removes its extent, and drops the cells
+///   uninitialized and zeroed status, removes its size, and drops the cells
 ///   that allocation may contain — which `heap_allocation_may_contain_pointer`
 ///   confines to that allocation's own block. `LocalLifetimeEnded` removes the
-///   retired block's extent, its cells and its overlays, and adds it to the
+///   retired block's size, its cells and its overlays, and adds it to the
 ///   ended-local set, all under that block's key. An object proven distinct
 ///   from this block keeps everything this block contains. Neither is a
 ///   spelling test: a contract-imported allocation can be a subrange of
@@ -992,7 +992,7 @@ fn seeded_cell_effect_store_by_store(
 ///   the declared ranges, drops the zeroed reading of every allocation those
 ///   ranges may reach, and inserts its two marker blocks. A loop havoc forgets
 ///   every cell outside the preserved scalar-local blocks and the
-///   loan-protected ones, and inserts its marker block; it changes no extent,
+///   loan-protected ones, and inserts its marker block; it changes no size,
 ///   no ended-local entry and no heap status at all. When every declared range
 ///   lies in an object proven distinct from this block:
 ///     * its cells keep their values across a call havoc, because block
@@ -1001,7 +1001,7 @@ fn seeded_cell_effect_store_by_store(
 ///     * its zeroed status survives, because
 ///       `heap_allocation_may_contain_pointer` needs equal blocks before it
 ///       will call an allocation written;
-///     * the marker blocks are fresh keys, so this block's extent entry is
+///     * the marker blocks are fresh keys, so this block's size entry is
 ///       untouched;
 ///     * and a loop havoc does drop this block's cached values, which is a
 ///       change of *form* only. The argument names the older state, and its
@@ -1157,7 +1157,7 @@ fn block_effect(step: &MemoryDerivation, block: &PointerBlock) -> StepEffect {
 ///   nothing.
 /// * `LocalLifetimeEnded` is separate when the retired object is proven
 ///   distinct from the object every range is in. It drops that block's cells
-///   and extent and nothing else.
+///   and size and nothing else.
 /// * `BlockDeclared`, `HeapAllocated`, `HeapAllocationPending`,
 ///   `ContractAllocationClaimsChanged` and `CellsForgotten` write no byte of
 ///   any pre-existing object, so no stated footprint can be stale because of

@@ -4,7 +4,7 @@ A pure theorem has no resource context: nothing is lent to it, nothing is
 consumed, and applying it separates nothing. Readability is the one thing a
 range still means without an owner, so `views v[lo..hi];` in a theorem is a
 hypothesis — reads of that range are defined — and nothing more. It lowers to
-the proposition `viewable(v[lo..hi])` states, and carries the same valid-extent
+the proposition `viewable(v[lo..hi])` states, and carries the same valid-span
 guards, which the proof below assumes and any application owes.
 
 The first theorem reads `v[k]` in its own statement. `to_integer(v[k])` denotes
@@ -20,7 +20,7 @@ works.
 
 The third applies the first. A `using` list holds propositions, so the `views`
 premise is named there by its fact form, `viewable(v[0..hi])`, and the two
-valid-extent facts the range carries are named beside it — this theorem's own
+valid-span facts the range carries are named beside it — this theorem's own
 `views` clause is where they come from.
 
 ```click

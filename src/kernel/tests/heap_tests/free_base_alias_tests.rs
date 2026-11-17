@@ -42,7 +42,7 @@ fn free_uses_the_owned_base_and_retires_every_proven_alias() {
         let mut memory = Memory::new().store(alias.clone(), int32(7));
         if registered {
             memory = memory
-                .with_heap_allocation_claim(base.clone(), HeapExtent::int32(4))
+                .with_heap_allocation_claim(base.clone(), AllocationSize::int32(4))
                 .unwrap();
         }
         let state = ExecutionState::new()
@@ -54,7 +54,7 @@ fn free_uses_the_owned_base_and_retires_every_proven_alias() {
             panic!("a proven base alias must free (registered={registered})");
         };
         assert!(after.resources().facts().is_empty());
-        assert!(after.memory().live_heap_block_extent(&base).is_none());
+        assert!(after.memory().live_heap_block_size(&base).is_none());
         assert!(after.memory().is_deallocated_heap_address(&base, &facts));
         assert!(after.memory().is_deallocated_heap_address(&alias, &facts));
         assert_eq!(
@@ -120,12 +120,12 @@ fn free_alias_cannot_bypass_an_unresolved_reallocation() {
         true,
     ));
     let memory = Memory::new()
-        .with_heap_allocation_claim(base.clone(), HeapExtent::int32(4))
+        .with_heap_allocation_claim(base.clone(), AllocationSize::int32(4))
         .unwrap()
         .with_pending_heap_reallocation(
             pending,
             base.clone(),
-            HeapExtent::int32(4),
+            AllocationSize::int32(4),
             None,
             vec![],
             vec![],

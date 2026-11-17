@@ -367,8 +367,13 @@ mod tests {
                 diverging_contracts: &BTreeSet::new(),
                 has_unselected_functions: false,
             })
-            .and_then(|proof| proof.prove_implicitly())
-            .map(|proof| proof.complete().into_termination_rules())
+            .map(|proof| {
+                proof
+                    .prove_through_native_root()
+                    .unwrap_or_else(|error| panic!("{error}"))
+                    .complete()
+                    .into_termination_rules()
+            })
     }
 
     #[test]

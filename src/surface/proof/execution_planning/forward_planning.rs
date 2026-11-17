@@ -111,7 +111,8 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
             body,
             ..
         } => {
-            let (condition, direct_post_test, test) = loop_test.execution_parts();
+            let condition = loop_test.entry_condition();
+            let test = Some(loop_test);
             let statement_index = *next_statement_index;
             let _site_scope = crate::surface::diagnostics::StatementSiteScope::enter(
                 environment.source_layout,
@@ -207,31 +208,17 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                 // change, from this execution's counter rather than from the
                 // base of the identity range.
                 let pass_body = crate::kernel::program_loop_pass(body, update.as_deref(), test);
-                let preservation_contexts = if direct_post_test {
-                    program_do_while_preservation_contexts(
-                        &context.state,
-                        condition,
-                        invariant_checks,
-                        effect_checks,
-                        resource_specs,
-                        environment.function.composite_resource_definitions(),
-                        &pass_body,
-                        &assumptions,
-                        context.next_kernel_variable,
-                    )
-                } else {
-                    loop_preservation_contexts(
-                        &context.state,
-                        condition,
-                        invariant_checks,
-                        effect_checks,
-                        resource_specs,
-                        environment.function.composite_resource_definitions(),
-                        &pass_body,
-                        &assumptions,
-                        context.next_kernel_variable,
-                    )
-                }
+                let preservation_contexts = crate::kernel::loop_phase_preservation_contexts(
+                    &context.state,
+                    condition,
+                    invariant_checks,
+                    effect_checks,
+                    resource_specs,
+                    environment.function.composite_resource_definitions(),
+                    &pass_body,
+                    &assumptions,
+                    context.next_kernel_variable,
+                )
                 .map_err(|refusal| {
                     ClickError::new(format!(
                         "`{}`: {}{}",
@@ -317,7 +304,6 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                             body,
                             update.as_ref(),
                             test,
-                            direct_post_test,
                             environment,
                         )
                         .map_err(|error| {
@@ -824,7 +810,9 @@ fn advance_execution_proof_statement(
                         test: loop_test, ..
                     } = statement
                     {
-                        let (condition, _, _) = loop_test.execution_parts();
+                        let Some(condition) = loop_test.entry_condition() else {
+                            continue;
+                        };
                         let exit_condition = ClickProposition::Not(Box::new(
                             surface_program_condition(condition, exit_state)?,
                         ));

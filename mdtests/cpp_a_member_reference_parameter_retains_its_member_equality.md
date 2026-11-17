@@ -1,6 +1,6 @@
 # A member reference retains the bounds of its field
 
-Binding `r` to `pair.first` carries the selected member extent into the call,
+Binding `r` to `pair.first` carries the selected member bounds into the call,
 so its address equals the contract's spelling of that same member.
 
 ```cpp filename=refp.cpp function=caller profile=normal_only

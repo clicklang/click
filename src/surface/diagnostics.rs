@@ -2835,7 +2835,7 @@ pub(super) fn describe_parameter_relative_range(
         && low.checked_add(1) == Some(high)
     {
         // A whole element behind a reference parameter is its referent.
-        // An explicit byte slice keeps its exact extent and cast spelling.
+        // An explicit byte slice keeps its exact span and cast spelling.
         if low == 0
             && name
                 == crate::surface::surface_parameter_binding(parameter.binding_name()).to_string()
@@ -7000,14 +7000,13 @@ pub(super) fn describe_execution_statement_head(statement: &ProgramStatement) ->
         }
         ProgramStatement::Loop {
             test: loop_test, ..
-        } => {
-            let (condition, direct_post_test, _) = loop_test.execution_parts();
-            if direct_post_test {
+        } => match loop_test.source_condition() {
+            Some(condition) if loop_test.position == crate::kernel::LoopTestPosition::AfterBody => {
                 format!("do ... while ({})", describe_c_guard(condition))
-            } else {
-                format!("while ({})", describe_c_guard(condition))
             }
-        }
+            Some(condition) => format!("while ({})", describe_c_guard(condition)),
+            None => "loop with test preparation".to_owned(),
+        },
         ProgramStatement::Switch { expression, .. } => {
             format!("switch ({})", describe_c_guard(expression))
         }

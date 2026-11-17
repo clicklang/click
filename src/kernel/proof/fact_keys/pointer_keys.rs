@@ -327,23 +327,23 @@ pub(super) fn alpha_address<const ALLOW_LOADS: bool>(
 pub(super) fn recorded_value(pointer: &SharedPointerValue) -> MemoryErasedPointerValueKey {
     let p = pointer.node();
     let q = p.qualifiers.as_ref();
-    let known = q.is_some_and(|q| q.extent_known);
+    let known = q.is_some_and(|q| q.bounds_known);
     MemoryErasedPointerValueKey {
         program_type: p.program_type,
         address: state_address(&p.address),
         provenance: state_address(&p.provenance),
-        opaque_extent: if known {
+        bounds_owner: if known {
             None
         } else {
-            p.opaque_extent.as_ref().map(state_address)
+            p.bounds_owner.as_ref().map(state_address)
         },
-        extent: q.and_then(|q| q.extent.as_ref()).map(|e| {
+        bounds: q.and_then(|q| q.bounds.as_ref()).map(|e| {
             (
                 state_address(&e.start),
                 memory_operands::operand(V::Shared(&e.width)),
             )
         }),
-        extent_known: known,
+        bounds_known: known,
     }
 }
 
@@ -356,23 +356,23 @@ pub(super) fn alpha_value<const ALLOW_LOADS: bool>(
     alpha_work_checkpoint(bindings, 1)?;
     let p = pointer.node();
     let q = p.qualifiers.as_ref();
-    let known = q.is_some_and(|q| q.extent_known);
+    let known = q.is_some_and(|q| q.bounds_known);
     Some(AlphaProgramValueKey::Pointer {
         program_type: p.program_type,
         pointee_volatile: q.is_some_and(|q| q.volatile),
         pointee_constant: q.is_some_and(|q| q.constant),
         pointer: alpha_address::<ALLOW_LOADS>(&p.address, bindings, next)?,
         provenance: alpha_address::<ALLOW_LOADS>(&p.provenance, bindings, next)?,
-        extent_known: known,
-        opaque_extent: if known {
+        bounds_known: known,
+        bounds_owner: if known {
             None
         } else {
-            match &p.opaque_extent {
+            match &p.bounds_owner {
                 Some(p) => Some(alpha_address::<ALLOW_LOADS>(p, bindings, next)?),
                 None => None,
             }
         },
-        extent: match q.and_then(|q| q.extent.as_ref()) {
+        bounds: match q.and_then(|q| q.bounds.as_ref()) {
             Some(e) => Some((
                 alpha_address::<ALLOW_LOADS>(&e.start, bindings, next)?,
                 alpha_machine_key::<ALLOW_LOADS>(V::Shared(&e.width), bindings, next)?,
@@ -386,7 +386,7 @@ pub(super) fn alpha_value<const ALLOW_LOADS: bool>(
 mod tests {
     use super::*;
     use crate::kernel::{
-        KernelTermExport, MachineBinaryOp, SharedMachineIntegerTerm, SubobjectExtent,
+        KernelTermExport, MachineBinaryOp, SharedMachineIntegerTerm, SubobjectBounds,
         VerificationSession,
     };
     fn pointer(offset: PointerOffsetTerm) -> PointerValue {
@@ -398,7 +398,7 @@ mod tests {
             .with_provenance(Arc::new(address.clone()))
             .with_pointee_volatile(true)
             .with_pointee_constant(true)
-            .with_extent(Some(SubobjectExtent {
+            .with_bounds(Some(SubobjectBounds {
                 start: address,
                 width: MachineTerm::Binary {
                     format: MachineIntegerType::Int32,
@@ -407,7 +407,7 @@ mod tests {
                     right: MachineTerm::constant(4).into(),
                 },
             }))
-            .with_opaque_extent(Some(Arc::new(Pointer::symbolic(Variable(1010001)))))
+            .with_bounds_owner(Some(Arc::new(Pointer::symbolic(Variable(1010001)))))
     }
 
     #[test]

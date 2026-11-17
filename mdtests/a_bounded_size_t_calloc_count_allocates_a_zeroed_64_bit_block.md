@@ -1,7 +1,7 @@
 # A bounded `size_t` `calloc` count allocates a zeroed 64-bit block
 
 `calloc(n, sizeof(uint32_t))` with a `size_t` count `n` makes a heap block
-with a 64-bit extent (`design/heap-extents.md`, stage 4). `calloc` returns
+with a 64-bit size (`design/heap-allocation-sizes.md`, stage 4). `calloc` returns
 null when `n * w` is not representable, so the product is never evaluated as
 C's wrapping `size_t` product: the facts must prove
 `1 <= n <= PTRDIFF_MAX / w`, here that limit itself, and then the block is the

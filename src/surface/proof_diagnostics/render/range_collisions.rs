@@ -98,15 +98,15 @@ impl MemoryStateLabels {
             let (provenance, opaque, known) = range.diagnostic_pointer_metadata();
             let provenance = self.range_object_identity(provenance);
             let bounds = match (known, opaque) {
-                (true, None) => "known object extent".to_owned(),
+                (true, None) => "known object bounds".to_owned(),
                 (true, Some(origin)) => format!(
-                    "known extent; retained extent identity = {}",
+                    "known bounds; retained bounds identity = {}",
                     self.range_object_identity(origin)
                 ),
                 (false, Some(origin)) => {
-                    format!("opaque extent from {}", self.range_object_identity(origin))
+                    format!("opaque bounds from {}", self.range_object_identity(origin))
                 }
-                (false, None) => "unknown extent".to_owned(),
+                (false, None) => "unknown bounds".to_owned(),
             };
             // Keep the legend bounded even for large symbolic pointer terms.
             let bounded = |text: String| {

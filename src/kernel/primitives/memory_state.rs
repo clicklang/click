@@ -1046,7 +1046,7 @@ mod forget_cached_values_tests {
         let mut memory = Memory::new().with_block(base.block.clone(), 8);
         let heap = std::sync::Arc::make_mut(&mut memory.heap);
         heap.live_allocations
-            .insert(base.clone(), HeapExtent::int32(8));
+            .insert(base.clone(), AllocationSize::int32(8));
         heap.zeroed_allocations.insert(base.clone());
         let memory = memory.store(base.clone(), int32(9));
         (memory, base)
@@ -1122,7 +1122,7 @@ mod forget_cached_values_tests {
         let mut memory = Memory::new().with_block(base.block.clone(), 16);
         let heap = std::sync::Arc::make_mut(&mut memory.heap);
         heap.live_allocations
-            .insert(base.clone(), HeapExtent::int32(16));
+            .insert(base.clone(), AllocationSize::int32(16));
         heap.zeroed_allocations.insert(base.clone());
         let facts = PureFactContext::new();
         // A byte at offset 5 lies inside the four bytes at 4 and the eight
@@ -1160,7 +1160,7 @@ mod forget_cached_values_tests {
         let mut untouched = Memory::new().with_block(base.block.clone(), 8);
         let heap = std::sync::Arc::make_mut(&mut untouched.heap);
         heap.live_allocations
-            .insert(base.clone(), HeapExtent::int32(8));
+            .insert(base.clone(), AllocationSize::int32(8));
         heap.zeroed_allocations.insert(base.clone());
         let arms = [&wrote, &untouched];
         let from_wrote = wrote
@@ -1303,7 +1303,7 @@ fn memory_havoc_write_set_fingerprint(mutable_ranges: &[MemoryRange]) -> u32 {
     (hasher.finish() as u32) | 1
 }
 
-/// Whether a held resource grants read authority over a symbolic byte extent
+/// Whether a held resource grants read authority over a symbolic byte span
 /// at `base`.
 ///
 /// The trusted graph/index selects a sole footprint or start supplier. The
@@ -1405,12 +1405,6 @@ impl LocalEnvironment {
 
     pub fn new() -> Self {
         Self::default()
-    }
-
-    pub fn with(mut self, name: impl Into<BindingName>, value: ProgramValue) -> Self {
-        let name = self.resolve_binding(&name.into());
-        self.set(name, value);
-        self
     }
 
     pub fn set(&mut self, name: impl Into<BindingName>, value: ProgramValue) {
@@ -2665,7 +2659,7 @@ impl LocalEnvironment {
 impl MemoryBlock {
     pub fn new(size: u32) -> Self {
         Self {
-            size: HeapExtent::int32(size),
+            size: AllocationSize::int32(size),
             read_only: false,
             declared_scalar_type: None,
             declared_class: None,
@@ -2674,14 +2668,14 @@ impl MemoryBlock {
 
     pub fn read_only(size: u32) -> Self {
         Self {
-            size: HeapExtent::int32(size),
+            size: AllocationSize::int32(size),
             read_only: true,
             declared_scalar_type: None,
             declared_class: None,
         }
     }
 
-    pub(in crate::kernel) fn with_symbolic_size(size: HeapExtent) -> Self {
+    pub(in crate::kernel) fn with_symbolic_size(size: AllocationSize) -> Self {
         Self {
             size,
             read_only: false,
@@ -2691,12 +2685,12 @@ impl MemoryBlock {
     }
 
     /// The block's byte count. A comparison whose width matters reads it
-    /// through [`Self::extent`].
+    /// through [`Self::allocation_size`].
     pub fn size(&self) -> &MachineTerm {
         self.size.bytes()
     }
 
-    pub fn extent(&self) -> &HeapExtent {
+    pub fn allocation_size(&self) -> &AllocationSize {
         &self.size
     }
 
@@ -3749,7 +3743,7 @@ impl Memory {
         self
     }
 
-    /// Complete scalar construction without changing its extent, type, cells,
+    /// Complete scalar construction without changing its size, type, cells,
     /// ownership, or allocation generation. Checked declaration execution is
     /// the only caller; later alias writes see the block's read-only status.
     pub(in crate::kernel) fn freeze_declared_scalar(self, block: &PointerBlock) -> Self {
@@ -3824,12 +3818,12 @@ impl Memory {
         )
     }
 
-    /// The extent of an unwritten footprint whose length is not a constant,
+    /// The span of an unwritten footprint whose length is not a constant,
     /// such as `owns uninitialized(p[0..n])`: every byte from its start to the
     /// end of the block is treated as possibly unwritten. That is
     /// conservative for other memory of the same block, which then needs
     /// write or `defined` evidence too.
-    pub(crate) const UNBOUNDED_UNWRITTEN_EXTENT: u32 = u32::MAX;
+    pub(crate) const UNBOUNDED_UNWRITTEN_SPAN: u32 = u32::MAX;
 
     /// Record an unwritten object footprint without declaring or resizing its
     /// containing allocation. Proof-entry ownership supplies its storage
@@ -4094,7 +4088,7 @@ impl Memory {
         // checked the surviving frame. Its remaining owners are separate
         // from those consumed bytes by construction. Select the owner of
         // this complete cell through the access index; do not rediscover the
-        // freed extent's ownership (which may have symbolic size).
+        // freed block's ownership (which may have symbolic size).
         let mut pointer_frames = Vec::new();
         self.forget_cached_values(
             ForgetScope::candidates(&candidates),
@@ -4138,10 +4132,10 @@ impl Memory {
         Ok((self, pointer_frames))
     }
 
-    pub(in crate::kernel) fn live_heap_block_extent(
+    pub(in crate::kernel) fn live_heap_block_size(
         &self,
         pointer: &Pointer,
-    ) -> Option<&HeapExtent> {
+    ) -> Option<&AllocationSize> {
         self.heap.live_allocations.get(pointer)
     }
 
@@ -4385,7 +4379,7 @@ impl Memory {
     pub(in crate::kernel) fn with_heap_allocation_claim(
         mut self,
         base: Pointer,
-        bytes: HeapExtent,
+        bytes: AllocationSize,
     ) -> Option<Self> {
         if bytes.bytes().as_const() == Some(0)
             || self.heap.deallocated_allocations.contains_key(&base)
@@ -4497,7 +4491,7 @@ impl Memory {
     pub(in crate::kernel) fn with_pending_heap_allocation(
         self,
         base: Pointer,
-        bytes: HeapExtent,
+        bytes: AllocationSize,
         zeroed: bool,
     ) -> Self {
         self.with_pending_typed_heap_allocation(base, bytes, zeroed, None)
@@ -4506,7 +4500,7 @@ impl Memory {
     pub(in crate::kernel) fn with_pending_typed_heap_allocation(
         mut self,
         base: Pointer,
-        bytes: HeapExtent,
+        bytes: AllocationSize,
         zeroed: bool,
         object_class: Option<crate::kernel::effective_type::CAccessClass>,
     ) -> Self {
@@ -4541,7 +4535,7 @@ impl Memory {
         mut self,
         base: Pointer,
         old_pointer: Pointer,
-        old_bytes: HeapExtent,
+        old_bytes: AllocationSize,
         zeroed_prefix: Option<MachineTerm>,
         copied_cells: Vec<(PointerOffsetTerm, ProgramValue)>,
         initialized_prefix: Vec<(i64, u32)>,
@@ -4686,7 +4680,7 @@ impl Memory {
         mut self,
         base: &Pointer,
         succeeds: bool,
-    ) -> Option<(Self, HeapExtent, Pointer)> {
+    ) -> Option<(Self, AllocationSize, Pointer)> {
         let prior = Some(intern_derivation_base(&mut self));
         let bytes = std::sync::Arc::make_mut(&mut self.heap)
             .pending_allocations
@@ -4748,7 +4742,7 @@ impl Memory {
         base: &Pointer,
         succeeds: bool,
         assumptions: &PureFactContext,
-    ) -> Option<(Self, HeapExtent, Pointer, PendingReallocation)> {
+    ) -> Option<(Self, AllocationSize, Pointer, PendingReallocation)> {
         let diagnostic_base = self.clone();
         let pending = std::sync::Arc::make_mut(&mut self.heap)
             .pending_reallocations
@@ -5088,9 +5082,7 @@ impl Memory {
                 .iter()
                 .map(|memory| &memory.heap.uninitialized_objects),
         )
-        .map_err(|base| {
-            format!("interface arms disagree on unwritten object extent at {base:?}")
-        })?;
+        .map_err(|base| format!("interface arms disagree on unwritten object size at {base:?}"))?;
 
         let uninitialized_allocations = union_of_arm_sets(
             &first.heap.uninitialized_allocations,
@@ -5161,7 +5153,7 @@ impl Memory {
                             .heap
                             .live_allocations
                             .get(base)
-                            .map(HeapExtent::bytes)
+                            .map(AllocationSize::bytes)
                     } else {
                         memory.heap.zeroed_prefix_allocations.get(base)
                     }
@@ -5883,7 +5875,7 @@ impl Memory {
                 let run_end = i64::from(run.count())
                     .checked_mul(i64::from(run.element_width()))
                     .and_then(|bytes| run_start.checked_add(bytes))
-                    .ok_or_else(|| invalid("run byte extent overflow"))?;
+                    .ok_or_else(|| invalid("run byte span overflow"))?;
                 if run_end <= start || end <= run_start {
                     continue;
                 }
@@ -7818,13 +7810,13 @@ impl Memory {
 
     /// A sufficient, search-free condition for transporting loadability of
     /// an exact range. Unlike value equality, this ignores writes, but never
-    /// ignores changed block extents or allocation retirement metadata.
+    /// ignores changed block sizes or allocation retirement metadata.
     pub(in crate::kernel) fn read_region_identity(&self, base: &Pointer) -> ReadRegionIdentity {
         crate::instrumentation::record_deterministic_work(1);
         let stored = crate::kernel::eval::pointer_read_over_immediate_store(base);
         let base = stored.as_ref().unwrap_or(base);
         ReadRegionIdentity {
-            block_size: self.block_extent(&base.block).cloned(),
+            block_size: self.block_allocation_size(&base.block).cloned(),
             local_lifetime_ended: self.forgotten.ended_local_blocks.contains(&base.block),
             heap: self.heap.clone(),
         }
@@ -7849,9 +7841,12 @@ impl Memory {
         self.blocks.get(block).map(MemoryBlock::size)
     }
 
-    /// The block's byte count with its format; see [`MemoryBlock::extent`].
-    pub(in crate::kernel) fn block_extent(&self, block: &PointerBlock) -> Option<&HeapExtent> {
-        self.blocks.get(block).map(MemoryBlock::extent)
+    /// The block's byte count with its format; see [`MemoryBlock::allocation_size`].
+    pub(in crate::kernel) fn block_allocation_size(
+        &self,
+        block: &PointerBlock,
+    ) -> Option<&AllocationSize> {
+        self.blocks.get(block).map(MemoryBlock::allocation_size)
     }
 
     /// Whether some allocation this state has already freed may contain
@@ -9020,7 +9015,7 @@ impl ExecutionState {
             let is_parameter = |expression: &SpecExpression| matches!(expression, SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) if name.is_named(parameter));
             let is_counter_load = |expression: &SpecExpression| {
                 let SpecExpression::MemoryLoad {
-                    memory: SpecMemory::Current,
+                    memory: SpecPoint::Current,
                     pointer,
                     value_type: ProgramType::Int32,
                 } = expression
@@ -9148,11 +9143,11 @@ impl ExecutionState {
                 }
                 super::super::ResourceTerm::Memory(_) => {
                     // The held control's body, as its fold established it
-                    // (`assume_entry_clause_extents`).
+                    // (`assume_entry_clause_spans`).
                     super::super::functions::evaluate_function_resource_spec(
                         &evaluation,
                         spec,
-                        &assumptions.clone().assume_entry_clause_extents(),
+                        &assumptions.clone().assume_entry_clause_spans(),
                         &mut budget,
                     )
                     .map_err(|error| format!("control memory evaluation failed: {error}"))?
@@ -9162,11 +9157,11 @@ impl ExecutionState {
                     if name == ResourceFact::ALLOCATION_RESOURCE_NAME =>
                 {
                     // The held control's body, as its fold established it
-                    // (`assume_entry_clause_extents`).
+                    // (`assume_entry_clause_spans`).
                     super::super::functions::evaluate_function_resource_spec(
                         &evaluation,
                         spec,
-                        &assumptions.clone().assume_entry_clause_extents(),
+                        &assumptions.clone().assume_entry_clause_spans(),
                         &mut budget,
                     )
                     .map_err(|error| format!("control allocation evaluation failed: {error}"))?
@@ -9229,7 +9224,7 @@ impl ExecutionState {
     pub(in crate::kernel) fn population_storage_created_here(&self, pointer: &Pointer) -> bool {
         pointer.offset == PointerOffsetTerm::Constant(0)
             && (matches!(&pointer.block, PointerBlock::Heap(_))
-                && self.memory.live_heap_block_extent(pointer).is_some()
+                && self.memory.live_heap_block_size(pointer).is_some()
                 || pointer.block.is_local_block() && self.memory.has_block(&pointer.block))
             && self
                 .population_effects
@@ -9287,7 +9282,7 @@ impl ExecutionState {
         if !imported_retirement
             && (anchor.offset != PointerOffsetTerm::Constant(0)
                 || !(matches!(&anchor.block, PointerBlock::Heap(_))
-                    && self.memory.live_heap_block_extent(anchor).is_some()
+                    && self.memory.live_heap_block_size(anchor).is_some()
                     || anchor.block.is_local_block() && self.memory.has_block(&anchor.block)))
         {
             return Err("Requires live base storage for authority(R(p))".into());
@@ -9419,7 +9414,7 @@ impl ExecutionState {
         if !imported_member_exchange
             && (anchor.offset != PointerOffsetTerm::Constant(0)
                 || !(matches!(&anchor.block, PointerBlock::Heap(_))
-                    && self.memory.live_heap_block_extent(anchor).is_some()
+                    && self.memory.live_heap_block_size(anchor).is_some()
                     || anchor.block.is_local_block() && self.memory.has_block(&anchor.block)))
         {
             return Err("Requires live base storage for R(p)".into());
@@ -10586,7 +10581,7 @@ mod contract_retirement_tests {
             ))
         });
         let mut memory = Memory::new()
-            .with_heap_allocation_claim(base.clone(), HeapExtent::int32(4))
+            .with_heap_allocation_claim(base.clone(), AllocationSize::int32(4))
             .expect("fresh input allocation");
         let heap = std::sync::Arc::make_mut(&mut memory.heap);
         heap.zeroed_allocations.extend(aliases.iter().cloned());
@@ -10659,7 +10654,7 @@ mod interface_join_tombstone_tests {
         // Arm B kept it live.
         let alive = Memory::new()
             .with_block(base.block.clone(), 8)
-            .with_heap_allocation_claim(base.clone(), HeapExtent::int32(8))
+            .with_heap_allocation_claim(base.clone(), AllocationSize::int32(8))
             .expect("fresh allocation on arm B");
         // Arm A freed it.
         let freed = alive
@@ -10707,11 +10702,11 @@ mod join_allocation_spelling_tests {
     fn joined(p: &Pointer, q: &Pointer) -> Memory {
         let arm_a = Memory::new()
             .with_block(p.block.clone(), 8)
-            .with_heap_allocation_claim(p.clone(), HeapExtent::int32(8))
+            .with_heap_allocation_claim(p.clone(), AllocationSize::int32(8))
             .expect("arm A claim");
         let arm_b = Memory::new()
             .with_block(q.block.clone(), 8)
-            .with_heap_allocation_claim(q.clone(), HeapExtent::int32(8))
+            .with_heap_allocation_claim(q.clone(), AllocationSize::int32(8))
             .expect("arm B claim");
         let arms = [&arm_a, &arm_b];
         let joined = arm_a

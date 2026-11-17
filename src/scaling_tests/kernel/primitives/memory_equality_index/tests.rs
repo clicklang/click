@@ -415,7 +415,7 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
             &facts,
             (
                 &Pointer::symbolic(Variable(988_406)),
-                cursor_value.opaque_extent()
+                cursor_value.bounds_owner()
             )
         ));
         assert!(!permits(
@@ -578,7 +578,7 @@ fn modeled_pointer_alias_field_lookup_scales_with_selected_addresses() {
 
 #[test]
 #[ignore = "nightly: 0.6s in the parallel gate"]
-fn mixed_extent_read_hits_and_misses_do_not_scan_unrelated_ranges() {
+fn mixed_span_read_hits_and_misses_do_not_scan_unrelated_ranges() {
     let mut samples = Vec::new();
     for size in [16_u32, 64, 256, 1024] {
         let base = Pointer::symbolic(Variable(851_030));

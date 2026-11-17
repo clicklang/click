@@ -205,6 +205,7 @@ fn float_to_integer_conversion_value(
     })
 }
 
+#[cfg(test)]
 pub(in crate::kernel) fn evaluate_program_expression(
     state: &ExecutionState,
     expression: &ProgramExpression,
@@ -1049,7 +1050,7 @@ fn cast_program_value_to_type_with_integer_origin(
                                 | ProgramType::Int8Pointer
                         )
                     {
-                        pointer.with_root_extent()
+                        pointer.with_root_bounds()
                     } else {
                         pointer
                     },
@@ -2163,7 +2164,7 @@ fn evaluate_program_cast_paths(
                     {
                         return Ok(ProgramValue::typed_pointer(Pointer::null(), target_type));
                     }
-                    // Only full-value premises supply the selected extent.
+                    // Only full-value premises supply the selected bounds.
                     // Numeric tag equations may then choose address coordinates.
                     let pointer = effective_assumptions.pointer_value_at_entry(pointer);
                     let address = super::pointer_tags::cast_tagged_address_to_pointer(
@@ -2922,7 +2923,7 @@ pub(in crate::kernel) fn evaluate_program_lvalue_paths(
                                 pointer.pointee_volatile(),
                             )
                             .with_constant(pointer.pointee_constant())
-                            .with_extent_of(&pointer)
+                            .with_bounds_of(&pointer)
                             .with_access_class(CAccessClass::of_kernel_type(value_type)),
                         ),
                         facts: pointer_path.facts,
@@ -2972,7 +2973,7 @@ pub(in crate::kernel) fn evaluate_program_lvalue_paths(
                             )
                             .with_constant(pointer.pointee_constant())
                             .with_pointee_constant(*pointee_constant)
-                            .with_extent_of(&pointer)
+                            .with_bounds_of(&pointer)
                             .with_access_class(access_class.clone()),
                         ),
                         facts: pointer_path.facts,
@@ -3017,7 +3018,7 @@ pub(in crate::kernel) fn evaluate_program_lvalue_paths(
                                 pointer.pointee_volatile(),
                             )
                             .with_constant(pointer.pointee_constant())
-                            .with_extent_of(&pointer)
+                            .with_bounds_of(&pointer)
                             .with_access_class(CAccessClass::of_kernel_type(value_type)),
                         ),
                         facts: pointer_path.facts,
@@ -3240,7 +3241,7 @@ fn read_retained_lvalue_paths_without_ranges(
                 if let Some(pointer) = state.locals.slot(name)
                     && let Some(refusal) = subobject_access_refusal(
                         pointer,
-                        lvalue.extent(),
+                        lvalue.bounds(),
                         lvalue.value_type.byte_width(),
                         &facts,
                         &obligations,
@@ -3258,7 +3259,7 @@ fn read_retained_lvalue_paths_without_ranges(
                 if let Some(pointer) = state.locals.slot(name)
                     && lvalue.provenance.as_deref().is_some_and(|origin| {
                         !local_assumptions.provenance_equal(origin, &pointer.object_identity())
-                            || !lvalue.extent_known && lvalue.opaque_extent.is_some()
+                            || !lvalue.bounds_known && lvalue.bounds_owner.is_some()
                     })
                     && !state.resources().permits_designated_memory_read(
                         pointer,
@@ -3414,7 +3415,7 @@ fn read_retained_lvalue_paths_without_ranges(
                 }
                 if let Some(refusal) = subobject_access_refusal(
                     pointer,
-                    lvalue.extent(),
+                    lvalue.bounds(),
                     lvalue.value_type.byte_width(),
                     &facts,
                     &obligations,
@@ -3437,7 +3438,7 @@ fn read_retained_lvalue_paths_without_ranges(
                     || state.memory.requires_explicit_scalar_ownership(pointer)
                     || lvalue.provenance.as_deref().is_some_and(|origin| {
                         !effective_assumptions.provenance_equal(origin, &pointer.object_identity())
-                            || !lvalue.extent_known && lvalue.opaque_extent.is_some()
+                            || !lvalue.bounds_known && lvalue.bounds_owner.is_some()
                     });
                 let require_owned = assumptions.should_require_owned_expression_loads();
                 // An aggregate a call returns by value is a fresh object the
@@ -3628,14 +3629,14 @@ pub(in crate::kernel) fn address_of_lvalue_paths(
                             let mut address = PointerValue::new(pointer, pointer_type)
                                 .with_pointee_volatile(lvalue.is_volatile())
                                 .with_pointee_constant(lvalue.is_constant())
-                                .with_extent(lvalue.extent().cloned());
-                            if lvalue.extent_known && lvalue.extent().is_none() {
-                                address = address.with_root_extent();
+                                .with_bounds(lvalue.bounds().cloned());
+                            if lvalue.bounds_known && lvalue.bounds().is_none() {
+                                address = address.with_root_bounds();
                             }
                             if let Some(provenance) = &lvalue.provenance {
                                 address = address
                                     .with_provenance(provenance.clone())
-                                    .with_opaque_extent(lvalue.opaque_extent.clone());
+                                    .with_bounds_owner(lvalue.bounds_owner.clone());
                             }
                             let value = ProgramValue::Pointer(address);
                             ExpressionPath {
@@ -4246,7 +4247,7 @@ mod pointer_integer_tests {
         let root = Pointer::symbolic(Variable(991_085));
         let source = PointerValue::new(root.clone(), ProgramType::Int32Pointer)
             .with_object_class(Some(class.clone()))
-            .with_extent(Some(SubobjectExtent {
+            .with_bounds(Some(SubobjectBounds {
                 start: root,
                 width: 4u32.into(),
             }));
@@ -4267,7 +4268,7 @@ mod pointer_integer_tests {
         };
         assert_eq!(decoded.pointer(), source.pointer());
         assert_eq!(decoded.object_class(), Some(class));
-        assert!(!decoded.extent_is_known());
+        assert!(!decoded.bounds_are_known());
         assert_ne!(decoded.provenance(), source.provenance());
     }
 
@@ -4277,7 +4278,7 @@ mod pointer_integer_tests {
             Pointer::symbolic(Variable(991_001)),
             ProgramType::Int32Pointer,
         );
-        let member = root.clone().with_extent(Some(SubobjectExtent {
+        let member = root.clone().with_bounds(Some(SubobjectBounds {
             start: root.pointer().clone(),
             width: 4u32.into(),
         }));
@@ -4302,19 +4303,19 @@ mod pointer_integer_tests {
                 .unwrap() else {
                     panic!("pointer")
                 };
-                assert!(!opaque.extent_is_known());
+                assert!(!opaque.bounds_are_known());
                 assert_ne!(opaque.provenance(), member.provenance());
             }
         }
     }
 
     #[test]
-    fn equal_integer_bits_do_not_exchange_pointer_extents() {
+    fn equal_integer_bits_do_not_exchange_pointer_bounds() {
         let root = PointerValue::new(
             Pointer::symbolic(Variable(991_002)),
             ProgramType::Int32Pointer,
         );
-        let member = root.clone().with_extent(Some(SubobjectExtent {
+        let member = root.clone().with_bounds(Some(SubobjectBounds {
             start: root.pointer().clone(),
             width: 4u32.into(),
         }));
@@ -4357,7 +4358,7 @@ mod pointer_integer_tests {
         .unwrap() else {
             panic!("pointer")
         };
-        assert!(!opaque.extent_is_known());
+        assert!(!opaque.bounds_are_known());
         assert!(!context.pointer_provenance_match(&opaque, &root));
     }
 }
@@ -4516,7 +4517,7 @@ mod packed_word_contract_tests {
             Pointer::symbolic(Variable(997_004)),
             ProgramType::Int32Pointer,
         )
-        .with_extent(Some(SubobjectExtent {
+        .with_bounds(Some(SubobjectBounds {
             start: Pointer::symbolic(Variable(997_004)),
             width: 4u32.into(),
         }));
@@ -4581,6 +4582,6 @@ mod packed_word_contract_tests {
         ));
         let restored = cast(cleared, &context);
         assert!(context.pointer_provenance_match(&restored, &original));
-        assert!(!restored.extent_is_known());
+        assert!(!restored.bounds_are_known());
     }
 }

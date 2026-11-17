@@ -83,12 +83,12 @@ impl Gen {
         }
     }
 
-    fn memory(&mut self) -> SpecMemory {
+    fn memory(&mut self) -> SpecPoint {
         match self.pick(4) {
-            0 => SpecMemory::Current,
-            1 => SpecMemory::FunctionEntry,
-            2 => SpecMemory::LoopEntry,
-            _ => SpecMemory::Fixed(Memory::new()),
+            0 => SpecPoint::Current,
+            1 => SpecPoint::FunctionEntry,
+            2 => SpecPoint::LoopEntry,
+            _ => SpecPoint::At(ProgramPoint::of_memory(&Memory::new())),
         }
     }
 

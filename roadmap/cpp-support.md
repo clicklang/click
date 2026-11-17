@@ -77,7 +77,7 @@ The `SpanPopBack` contract, for descriptor pointer `p` and length `N`, from
 ```text
 requires:
   authority to update the span descriptor
-  1 <= N <= 1073741823                        // accepted single-range byte-extent limit
+  1 <= N <= 1073741823                        // accepted single-range byte-span limit
   p[0..N] is live, initialized and readable
   descriptor storage is separate from that backing range
 
@@ -90,9 +90,9 @@ ensures:
   no backing storage is allocated, freed, or transferred
 ```
 
-The bound is the 32-bit byte extent of shared segment resources
+The bound is the 32-bit byte span of shared segment resources
 (`UINT32_MAX / 4` four-byte elements). The user accepted it for the first
-proof; wider shared byte extents are deferred. The native `size_t` storage
+proof; wider shared byte spans are deferred. The native `size_t` storage
 and arithmetic are preserved, not retagged.
 
 ### Sequencing

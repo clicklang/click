@@ -13036,8 +13036,7 @@ fn nested_end_of_arm_interface_derives_its_enclosing_continuation() {
 fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
     use crate::kernel::{
         bool_value, program_call, program_parameter, program_return, program_skip,
-        program_try_catch_int32, prove_checked_program_function_execution_with_environment,
-        prove_program_function_contract_execution_paths_with_checked_artifacts,
+        program_try_catch_int32,
     };
 
     let click_file = crate::surface::parse(
@@ -13073,30 +13072,7 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
         vec![FunctionContractClaim::body_safety()],
         true,
     );
-    let helper_arguments = vec![ProgramExpression::Value(bool_value(MachineTerm::Variable(
-        Variable(80_010),
-    )))];
-    let artifacts = prove_checked_program_function_execution_with_environment(
-        ExecutionState::new().with_population_creation_tracking(),
-        helper.clone(),
-        helper_arguments.clone(),
-        PureFactContext::new(),
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-    );
-    let certified = prove_program_function_contract_execution_paths_with_checked_artifacts(
-        ExecutionState::new().with_population_creation_tracking(),
-        helper.clone(),
-        helper_arguments,
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-        &[artifacts],
-    );
-    let claims = crate::kernel::program_verified_function_contract_claims(&helper, &certified)
-        .expect("helper body safety should certify");
-    let helper_rule = program_verified_function_rule(helper.clone(), &claims)
+    let helper_rule = crate::kernel::program_recursive_function_contract_hypothesis(helper.clone())
         .expect("the checked helper should have a modular rule");
     let function_environment = ExecutionEnvironment::new()
         .with_function(helper)
@@ -15172,5 +15148,88 @@ fn known_have_step(proposition: ClickProposition) -> ProofStep {
     ProofStep::Have {
         proposition,
         proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Known]).unwrap()),
+    }
+}
+
+#[test]
+#[ignore = "nightly: 0.77s in the parallel scaling selection; guard classification has fast scaling coverage"]
+fn loop_exit_eligibility_comes_from_the_guard_not_an_ownership_failure() {
+    let file = crate::surface::parse("void boundary() { ensures true; }").unwrap();
+    let parsed = syntax::parse_function("void boundary() {}").unwrap();
+    let function = parsed.to_kernel_function();
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let resources = ResourceEnvironment::new(&[]);
+    let environment = ExecutionEnvironment::new();
+    let state = ExecutionState::new().with_local(
+        "gate",
+        ProgramValue::Int32(MachineTerm::Variable(Variable(9_771_000))),
+    );
+    let root = Proof::for_execution_frontier(
+        "loop edge",
+        0,
+        ExecutionProofState::at_entry(
+            state.clone(),
+            ExecutionFrontier {
+                region: ExecutionRegionKind::LoopBody,
+                position: FrontierPosition::RegionBoundary,
+                ..ExecutionFrontier::default()
+            },
+            RecordedStates::new(),
+            SurfacePropositionMap::default(),
+            PersistentSequence::default(),
+        ),
+        vec![],
+        ExecutionProofConstants::default(),
+        &file.function_blocks()[0],
+        &function,
+        &parsed,
+        &[],
+        &environment,
+        &resources,
+        SpecDefinitions::new(&predicates, &functions),
+        &theorems,
+    );
+    let true_guard = ProgramExpression::Value(crate::kernel::int32(1));
+    let false_guard = ProgramExpression::Value(crate::kernel::int32(0));
+    let unknown_guard = ProgramExpression::Variable("gate".into());
+    let owned = state.clone().with_resource_context(
+        crate::kernel::ResourceContext::new().unchecked_with_fact(
+            crate::kernel::ResourceFact::own_token("keep".into(), Vec::new()),
+        ),
+    );
+    for (guard, consumed, may_continue, may_exit) in [
+        (&false_guard, false, false, true),
+        (&false_guard, true, false, true),
+        (&true_guard, true, true, false),
+        (&unknown_guard, true, true, true),
+    ] {
+        let head = if consumed { &owned } else { &state };
+        let result = root.check_loop_boundary(
+            head,
+            head,
+            &crate::kernel::IntegerTerm::constant_i64(0),
+            Some(guard),
+            &[],
+            &[],
+            None,
+            &[],
+        );
+        if consumed && may_continue {
+            assert!(
+                result
+                    .err()
+                    .unwrap()
+                    .message()
+                    .contains("resource ownership"),
+                "a continuing edge cannot become an exit when ownership is missing"
+            );
+        } else {
+            let edge = result.unwrap();
+            assert_eq!(edge.may_exit(), may_exit);
+            assert_eq!(edge.state(), &state);
+            assert_eq!(edge.explicit_exit_state().is_some(), consumed && may_exit);
+        }
     }
 }

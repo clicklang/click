@@ -2816,7 +2816,7 @@ fn memory_states_match_for_resolution(
     // Slots of a run at a constant gap from the load that clears its bytes
     // are other addresses by arithmetic, as for
     // `memories_match_for_pointer_load_under_assumptions`; spelling each of
-    // them out would cost the run's whole extent.
+    // them out would cost the run's whole length.
     let load_bytes = crate::kernel::load_access_width_at_address_or_widest(pointer);
     let differing = crate::instrumentation::measure_operation(
         "kernel",
@@ -2946,14 +2946,14 @@ fn cell_is_observable_by_load(cell_pointer: &Pointer, load: &Pointer) -> bool {
 
 /// Whether the three assumption-carrying comparisons agree about the
 /// *objects* the two states hold, as against the values in their cells:
-/// each block's extent, and which automatic blocks have had their lifetimes
+/// each block's size, and which automatic blocks have had their lifetimes
 /// ended.
 ///
 /// The cell filter beside this one was corrected to
 /// [`cell_is_observable_by_load`]; this one was left as the same block-name
 /// shortcut, `!block.is_local_block()`, and it makes the same claim about
-/// a different map. A block's extent is what says the object is there and how
-/// big it is, so two states that disagree about a local's extent or
+/// a different map. A block's size is what says the object is there and how
+/// big it is, so two states that disagree about a local's size or
 /// liveness disagree about the object a load through a pointer that may
 /// designate it reads — and `&a` may be handed to a callee and come back as
 /// its result, so "the load's pointer is not spelled `local:`" does not mean
@@ -3608,14 +3608,14 @@ fn unrelated_states_do_not_erase_object_or_heap_state_visible_to_the_load() {
     let mut uninitialized = heap_shell.clone();
     std::sync::Arc::make_mut(&mut uninitialized.heap)
         .live_allocations
-        .insert(heap_pointer.clone(), HeapExtent::int32(4));
+        .insert(heap_pointer.clone(), AllocationSize::int32(4));
     std::sync::Arc::make_mut(&mut uninitialized.heap)
         .uninitialized_allocations
         .insert(heap_pointer.clone());
     let mut zeroed = heap_shell;
     std::sync::Arc::make_mut(&mut zeroed.heap)
         .live_allocations
-        .insert(heap_pointer.clone(), HeapExtent::int32(4));
+        .insert(heap_pointer.clone(), AllocationSize::int32(4));
     std::sync::Arc::make_mut(&mut zeroed.heap)
         .zeroed_allocations
         .insert(heap_pointer.clone());
@@ -3643,7 +3643,7 @@ fn unrelated_states_do_not_erase_object_or_heap_state_visible_to_the_load() {
                 block: PointerBlock::Heap(7_620_003),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            HeapExtent::int32(4),
+            AllocationSize::int32(4),
         );
     assert!(
         memories_match_for_pointer_load(&concrete_memory, &with_unrelated_heap, &concrete),
@@ -3674,7 +3674,7 @@ fn unrelated_states_do_not_erase_object_or_heap_state_visible_to_the_load() {
     };
     let with_pending = concrete_memory.clone().with_pending_heap_allocation(
         pending_base,
-        HeapExtent::int32(4),
+        AllocationSize::int32(4),
         false,
     );
     assert!(
@@ -4465,7 +4465,7 @@ fn run_has_direct_store_separation(
 /// slot they meet is dropped, and forgotten unless the store covers all of
 /// it, and every other slot keeps its value, being a different address whose
 /// bytes the gap clears. A store the facts place outside the run's whole
-/// extent leaves every slot. A bounded symbolic store forgets its possible
+/// span leaves every slot. A bounded symbolic store forgets its possible
 /// window at once; an unplaced store forgets the whole run, regardless of its
 /// value mode. One stated separation at the exact anchors may keep the whole
 /// run. No range-fact search or per-slot query participates. Explicit
@@ -4516,7 +4516,7 @@ pub(in crate::kernel) fn run_slots_kept_by_store(
                 shift,
             } = run_access(run, pointer)
                 && let Some((low, high)) = assumptions.signed_interval_view(index.operand_view())
-                && let (Some(first), Some(extent)) = (
+                && let (Some(first), Some(span_bytes)) = (
                     low.checked_mul(scale)
                         .and_then(|bytes| bytes.checked_add(shift)),
                     high.checked_sub(low)
@@ -4524,7 +4524,7 @@ pub(in crate::kernel) fn run_slots_kept_by_store(
                         .and_then(|span| span.checked_add(i64::from(bytes))),
                 )
             {
-                let (low, high) = run_elements_meeting(run, first, extent);
+                let (low, high) = run_elements_meeting(run, first, span_bytes);
                 if low >= high {
                     return (SlotSet::All, false);
                 }
@@ -5051,7 +5051,7 @@ fn constant_byte_shift_between(pointer: &Pointer, base: &Pointer) -> Option<i64>
 
 /// The bytes a store covers, as non-constant offset atoms plus a constant
 /// byte interval, for the cells of the same block to be compared against.
-/// `None` where the write has no constant extent to compare.
+/// `None` where the write has no constant span to compare.
 pub(in crate::kernel) struct StoreByteInterval {
     atoms: Vec<PointerOffsetTerm>,
     shift: i64,

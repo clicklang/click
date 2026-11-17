@@ -2024,12 +2024,12 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
         }
         SpecProposition::ResourceViewable { memory, resource } => {
             let memory = match memory {
-                SpecMemory::Current => scope.state.memory(),
-                SpecMemory::FunctionEntry | SpecMemory::LoopEntry => match scope.loop_entry_state {
+                SpecPoint::Current => scope.state.memory(),
+                SpecPoint::FunctionEntry | SpecPoint::LoopEntry => match scope.loop_entry_state {
                     Some(entry) => entry.memory(),
                     None => return Ok(Vec::new()),
                 },
-                SpecMemory::Fixed(memory) => memory,
+                SpecPoint::At(point) => point.memory(),
             };
             let mut paths = Vec::new();
             for (resource, facts, obligations) in
@@ -2079,9 +2079,9 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             checked.program_definedness = true;
             // Definedness is decided from no facts, except that a contract
             // entry's own requirement keeps assuming what its caller checked
-            // about opaque pointer extents.
-            let context = if assumptions.should_assume_entry_clause_extents() {
-                PureFactContext::new().assume_entry_clause_extents()
+            // about opaque pointer bounds.
+            let context = if assumptions.should_assume_entry_clause_spans() {
+                PureFactContext::new().assume_entry_clause_spans()
             } else {
                 PureFactContext::new()
             };
@@ -2955,15 +2955,12 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
             Term::Sequence(sequence) => sequence_contains_integer_variable(sequence, variable),
             Term::PointerOffset(offset) => integer_carrier_in_pointer_offset(offset, variable),
             Term::Algebraic(value) => integer_carrier_in_algebraic(value, variable),
-            Term::ExpressionOutcome(ExpressionOutcome::Value(value)) => {
-                integer_carrier_in_program_value(value, variable)
-            }
-            // A state or an execution outcome may carry a mathematical
-            // machine conversion in a nested local.  Keep this conservative
+            // A state may carry a mathematical machine conversion in a
+            // nested local.  Keep this conservative
             // rather than silently dropping the accumulator scope; memory
             // states themselves remain opaque below.
-            Term::StatementOutcome(_) | Term::FunctionOutcome(_) | Term::ExecutionState(_) => true,
-            Term::ExpressionOutcome(_) | Term::Memory(_) => false,
+            Term::ExecutionState(_) => true,
+            Term::Memory(_) => false,
         }
     }
 
@@ -5177,7 +5174,7 @@ fn evaluate_spec_resource_at_state_in(
 }
 
 /// Lower a resource relation structurally. Naming a descriptor does not
-/// establish a physical byte extent, access permission, or ownership.
+/// establish a physical byte span, access permission, or ownership.
 fn lower_spec_resource_relation_at_state_in(
     scope: SpecScope<'_>,
     left: &SpecResource,
@@ -5220,7 +5217,7 @@ fn lower_spec_resource_relation_at_state_in(
 #[allow(clippy::too_many_arguments)]
 fn lower_spec_memory_loadable_at_state_in(
     scope: SpecScope<'_>,
-    memory: &SpecMemory,
+    memory: &SpecPoint,
     base: &SpecExpression,
     start: &SpecExpression,
     end: &SpecExpression,
@@ -5232,12 +5229,12 @@ fn lower_spec_memory_loadable_at_state_in(
     let state = scope.state;
     let loop_entry_state = scope.loop_entry_state;
     let memory = match memory {
-        SpecMemory::Current => state.memory(),
-        SpecMemory::FunctionEntry | SpecMemory::LoopEntry => match loop_entry_state {
+        SpecPoint::Current => state.memory(),
+        SpecPoint::FunctionEntry | SpecPoint::LoopEntry => match loop_entry_state {
             Some(entry) => entry.memory(),
             None => return Ok(Vec::new()),
         },
-        SpecMemory::Fixed(memory) => memory,
+        SpecPoint::At(point) => point.memory(),
     };
     Ok(evaluate_spec_values_at_state_in(
         scope,
@@ -5248,7 +5245,7 @@ fn lower_spec_memory_loadable_at_state_in(
     .into_iter()
     .filter_map(|path| match path.values.as_slice() {
         // The proposition describes the same native range as a resource
-        // clause, including its extent guards, and states the wide liveness
+        // clause, including its span guards, and states the wide liveness
         // fact a contract holding it is given. Neither endpoint is a signed
         // observation of the source count.
         [ProgramValue::Pointer(base), start, end]
@@ -5266,7 +5263,7 @@ fn lower_spec_memory_loadable_at_state_in(
             );
             let mut obligations = path.obligations;
             if enforce_range_guards {
-                for guard in crate::kernel::memory_range_extent_guards(&range) {
+                for guard in crate::kernel::memory_range_span_guards(&range) {
                     add_proof_obligation(&mut obligations, assumptions, guard)?;
                 }
             }
@@ -5296,7 +5293,7 @@ fn lower_spec_memory_loadable_at_state_in(
             );
             let mut obligations = path.obligations;
             if enforce_range_guards {
-                for guard in crate::kernel::memory_range_extent_guards(&range) {
+                for guard in crate::kernel::memory_range_span_guards(&range) {
                     add_proof_obligation(&mut obligations, assumptions, guard)?;
                 }
             }
@@ -5328,36 +5325,32 @@ fn lower_spec_memory_loadable_at_state_in(
             };
             let mut obligations = path.obligations;
             if enforce_range_guards {
-                match crate::kernel::memory_range_byte_count_extent(
+                match crate::kernel::memory_range_byte_count_span(
                     range_start.clone(),
                     range_end.clone(),
                     element_width,
                 ) {
-                    crate::kernel::MemoryRangeExtent::ConstantValid => {}
+                    crate::kernel::MemoryRangeSpan::ConstantValid => {}
                     // A constant range that is reversed or wider than a `u32`
-                    // byte extent prunes this path. Record why: the surviving
+                    // byte span prunes this path. Record why: the surviving
                     // path count alone said only "no path".
-                    crate::kernel::MemoryRangeExtent::ConstantInvalid {
+                    crate::kernel::MemoryRangeSpan::ConstantInvalid {
                         element_count,
                         byte_limit,
                     } => {
-                        budget.record_dropped_range_extent(
-                            element_count,
-                            element_width,
-                            byte_limit,
-                        );
+                        budget.record_dropped_range_span(element_count, element_width, byte_limit);
                         return None;
                     }
-                    // The extent half of the stated range. It is owed here
+                    // The span half of the stated range. It is owed here
                     // like any other side condition of the lowering, and a
                     // site assuming the lowered proposition as a hypothesis
                     // proved elsewhere assumes it with the rest.
-                    crate::kernel::MemoryRangeExtent::Guards(guards) => {
+                    crate::kernel::MemoryRangeSpan::Guards(guards) => {
                         // Past one-byte elements the unsigned `fits` half is
                         // the signed count bound, which is the spelling a
                         // proof can write and a refusal can print.
                         let guards = if element_width > 1 {
-                            crate::kernel::memory_range_extent_guards(
+                            crate::kernel::memory_range_span_guards(
                                 &MemoryRange::new_with_element_width(
                                     base.clone(),
                                     range_start.clone(),
@@ -5381,7 +5374,7 @@ fn lower_spec_memory_loadable_at_state_in(
                             let reversed = guard == ordered;
                             if add_proof_obligation(&mut obligations, assumptions, guard).is_none()
                             {
-                                budget.record_dropped_refuted_range_extent(reversed);
+                                budget.record_dropped_refuted_range_span(reversed);
                                 return None;
                             }
                         }
@@ -5851,14 +5844,14 @@ fn lower_spec_predicate_proposition_at_state_in(
                 };
                 if let Some(memory) = memory {
                     let memory = match memory {
-                        SpecMemory::Current => state.memory(),
-                        SpecMemory::FunctionEntry | SpecMemory::LoopEntry => {
+                        SpecPoint::Current => state.memory(),
+                        SpecPoint::FunctionEntry | SpecPoint::LoopEntry => {
                             let Some(entry_state) = loop_entry_state else {
                                 continue;
                             };
                             entry_state.memory()
                         }
-                        SpecMemory::Fixed(memory) => memory,
+                        SpecPoint::At(point) => point.memory(),
                     };
                     arguments.push(Term::Memory(memory.clone()));
                 }
@@ -6650,7 +6643,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 return evaluate_spec_expression_paths_with_algebraic_bindings_in(
                     SpecScope { state, ..scope },
                     &SpecExpression::MemoryLoad {
-                        memory: SpecMemory::Current,
+                        memory: SpecPoint::Current,
                         pointer: pointer.clone(),
                         value_type: *value_type,
                     },
@@ -6673,7 +6666,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             evaluate_spec_expression_paths_with_algebraic_bindings_in(
                 SpecScope { state, ..scope },
                 &SpecExpression::MemoryLoad {
-                    memory: SpecMemory::Fixed(memory.clone()),
+                    memory: SpecPoint::At(ProgramPoint::of_memory(memory)),
                     pointer: Box::new(pointer),
                     value_type: *value_type,
                 },
@@ -7056,7 +7049,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             evaluate_spec_expression_paths_with_algebraic_bindings_in(
                 SpecScope { state, ..scope },
                 &SpecExpression::MemoryLoad {
-                    memory: SpecMemory::Current,
+                    memory: SpecPoint::Current,
                     pointer: Box::new(SpecExpression::Value(ProgramValue::typed_pointer(
                         slot.clone(),
                         ProgramType::ParameterPointer(parameter),
@@ -7666,7 +7659,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     return None;
                 };
                 path.value =
-                    ProgramValue::Pointer(value.clone().with_extent(Some(SubobjectExtent {
+                    ProgramValue::Pointer(value.clone().with_bounds(Some(SubobjectBounds {
                         start: value.pointer().clone(),
                         width: (*width).into(),
                     })))
@@ -7694,7 +7687,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
         } => {
             let mut paths = Vec::new();
             let entry_projection =
-                if matches!(memory, SpecMemory::FunctionEntry | SpecMemory::LoopEntry) {
+                if matches!(memory, SpecPoint::FunctionEntry | SpecPoint::LoopEntry) {
                     fn root(expression: &SpecExpression) -> Option<&BindingName> {
                         match expression {
                             SpecExpression::ProgramExpression(ProgramExpression::Variable(
@@ -7727,16 +7720,16 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 };
                 let pointer = pointer.into_pointer();
                 let memory = match memory {
-                    SpecMemory::Current => state.memory(),
-                    SpecMemory::FunctionEntry => match loop_entry_state {
+                    SpecPoint::Current => state.memory(),
+                    SpecPoint::FunctionEntry => match loop_entry_state {
                         Some(entry_state) => entry_state.memory(),
                         None => continue,
                     },
-                    SpecMemory::LoopEntry => match loop_entry_state {
+                    SpecPoint::LoopEntry => match loop_entry_state {
                         Some(loop_entry_state) => loop_entry_state.memory(),
                         None => continue,
                     },
-                    SpecMemory::Fixed(memory) => memory,
+                    SpecPoint::At(point) => point.memory(),
                 };
                 let mut obligations = pointer_path.obligations;
                 // A written definedness claim must retain the typed premise,
@@ -8277,14 +8270,14 @@ fn evaluate_spec_pure_function_argument_paths_in(
             element_type,
         } => {
             let memory = match memory {
-                SpecMemory::Current => state.memory(),
-                SpecMemory::FunctionEntry | SpecMemory::LoopEntry => {
+                SpecPoint::Current => state.memory(),
+                SpecPoint::FunctionEntry | SpecPoint::LoopEntry => {
                     let Some(entry) = loop_entry_state else {
                         return Ok(Vec::new());
                     };
                     entry.memory()
                 }
-                SpecMemory::Fixed(memory) => memory,
+                SpecPoint::At(point) => point.memory(),
             };
             Ok(evaluate_spec_expression_paths_with_algebraic_bindings_in(
                 scope,
@@ -8870,7 +8863,7 @@ fn evaluate_spec_scalar_unary_paths_retaining_type_in(
             paths.push(path);
             continue;
         }
-        // An explicit pointer cast can change extent metadata even when its
+        // An explicit pointer cast can change bounds metadata even when its
         // type is unchanged. Let the existing cast producer select that payload,
         // then retain its producer and unchanged address children.
         let retained_pointer = (!budget.machine_result_production_disabled
@@ -8972,6 +8965,14 @@ fn evaluate_spec_if_paths_in(
         // select an arm; logical lowering retains both guarded values.
         let retained_comparison = !budget.machine_result_production_disabled
             && match &condition_path.proposition {
+                Proposition::ConditionIs(condition, _)
+                    if crate::kernel::machine_integer::comparison::is_simple_bitwise_comparison(
+                        condition,
+                    ) =>
+                {
+                    true
+                }
+
                 Proposition::ConditionIs(
                     ConditionTerm::Compare {
                         format,
@@ -10498,7 +10499,7 @@ mod assumed_arithmetic_domain_tests {
         };
         let checked = evaluate(&PureFactContext::new());
         let assumed = evaluate(&PureFactContext::new().assume_held_resource_domains());
-        let entry = evaluate(&PureFactContext::new().assume_entry_clause_extents());
+        let entry = evaluate(&PureFactContext::new().assume_entry_clause_spans());
         assert!(entry.obligations.iter().all(|debt| !debt.is_assumable()));
         assert_eq!(checked.outcome, assumed.outcome);
         assert_eq!(checked.obligations.len(), 2);

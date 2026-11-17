@@ -131,7 +131,7 @@ fn complete_read_domains_use_numeric_storage_classes_without_scanning_other_clas
         let right = Pointer::loaded_value(&memory, &b);
         let (holds, work) = crate::instrumentation::measure_deterministic_work(|| {
             pointer_read_provenance_equal(&left, &right, &facts)
-                && pointer_read_extents_equal(&left, &right, &facts)
+                && pointer_read_bounds_equal(&left, &right, &facts)
         });
         assert!(holds);
         work
@@ -171,8 +171,8 @@ fn copied_pointer_frames_ignore_unrelated_separations() {
         let field = header.clone().offset_by_bytes(8);
         let buffer = Pointer::symbolic(Variable(9_909_001));
         let target = Pointer::symbolic(Variable(9_909_002));
-        let stored = PointerValue::new(target.clone(), ProgramType::Int32Pointer).with_extent(
-            Some(SubobjectExtent {
+        let stored = PointerValue::new(target.clone(), ProgramType::Int32Pointer).with_bounds(
+            Some(SubobjectBounds {
                 start: target,
                 width: 4u32.into(),
             }),
@@ -256,7 +256,7 @@ fn sibling_pointer_reads_stop_before_unrelated_shared_history() {
                     &Pointer::loaded_value(&right, &field),
                     &context,
                 )
-                && pointer_read_extents_equal(
+                && pointer_read_bounds_equal(
                     &Pointer::loaded_value(&left, &field),
                     &Pointer::loaded_value(&right, &field),
                     &context,

@@ -56,7 +56,6 @@ fn balanced_unit_sum_domain_requires_all_three_original_domains() {
 }
 
 use super::*;
-use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 // These operation tests also exercise kernel proposition search explicitly.
 use crate::kernel::{
@@ -1327,7 +1326,7 @@ fn return_resource_observations_construct_successors_and_reject_other_paths() {
 #[test]
 fn return_exchange_keeps_the_published_body_state() {
     use crate::kernel::{
-        PointerValue, ResourceFieldSchema, ResourceFieldType, ResourceInstance, SpecMemory,
+        PointerValue, ResourceFieldSchema, ResourceFieldType, ResourceInstance, SpecPoint,
     };
     let pointer = Pointer::symbolic(Variable(810_000));
     let schema = ResourceFieldSchema::new(vec![(
@@ -1351,7 +1350,7 @@ fn return_exchange_keeps_the_published_body_state() {
         vec![],
         vec![SpecProposition::Comparison {
             left: SpecExpression::MemoryLoad {
-                memory: SpecMemory::Current,
+                memory: SpecPoint::Current,
                 pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
                     PointerValue::new(pointer.clone(), ProgramType::Int32Pointer),
                 ))),
@@ -2283,7 +2282,7 @@ fn conditional_heap_free_is_checked_as_a_guarded_lifetime_join() {
         Memory::new()
             .with_heap_allocation_claim(
                 allocation_base.clone(),
-                crate::kernel::HeapExtent::int32(16),
+                crate::kernel::AllocationSize::int32(16),
             )
             .expect("the allocation claim should be fresh"),
     );
@@ -2300,7 +2299,7 @@ fn conditional_heap_free_is_checked_as_a_guarded_lifetime_join() {
         before: before.memory().clone(),
         after: freed.memory().clone(),
         allocation_base: allocation_base.clone(),
-        bytes: crate::kernel::HeapExtent::int32(MachineTerm::constant(16)),
+        bytes: crate::kernel::AllocationSize::int32(MachineTerm::constant(16)),
     });
     let mut freed_core = parent.clone();
     freed_core.state = freed.clone().into();
@@ -2347,162 +2346,6 @@ fn conditional_heap_free_is_checked_as_a_guarded_lifetime_join() {
         [&facts, &facts],
         &conditional_heap_frees([std::slice::from_ref(&free_effect), &[],]),
     ));
-}
-
-#[test]
-fn ground_comparison_premises_check_signed_literals_and_both_polarities() {
-    use crate::kernel::ConditionTerm;
-    for left in [i32::MIN, -1, 0, 1, i32::MAX] {
-        for right in [i32::MIN, -1, 0, 1, i32::MAX] {
-            let l = Box::new(MachineTerm::constant(left as u32));
-            let r = Box::new(MachineTerm::constant(right as u32));
-            for (condition, actual) in [
-                (
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
-                        relation: CompareRelation::LessThan,
-                        left: l.clone(),
-                        right: r.clone(),
-                    },
-                    left < right,
-                ),
-                (
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
-                        relation: CompareRelation::LessEqual,
-                        left: l.clone(),
-                        right: r.clone(),
-                    },
-                    left <= right,
-                ),
-                (
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
-                        relation: CompareRelation::GreaterThan,
-                        left: l.clone(),
-                        right: r.clone(),
-                    },
-                    left > right,
-                ),
-                (
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
-                        relation: CompareRelation::GreaterEqual,
-                        left: l.clone(),
-                        right: r.clone(),
-                    },
-                    left >= right,
-                ),
-                (
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
-                        relation: CompareRelation::Equal,
-                        left: l.clone(),
-                        right: r.clone(),
-                    },
-                    left == right,
-                ),
-            ] {
-                assert!(ground_comparison_premise_holds(&Proposition::ConditionIs(
-                    condition.clone(),
-                    actual
-                )));
-                assert!(!ground_comparison_premise_holds(&Proposition::ConditionIs(
-                    condition, !actual
-                )));
-            }
-        }
-    }
-    // Literal sums canonicalize when constructed; a symbolic operand
-    // keeps this an actual compound term at the checking boundary.
-    let symbolic_expression = Proposition::ConditionIs(
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::Equal,
-            left: Box::new(binary_node!(
-                Int32,
-                Add,
-                Box::new(MachineTerm::Variable(crate::kernel::Variable(990))),
-                Box::new(MachineTerm::constant(1)),
-            )),
-            right: Box::new(MachineTerm::constant(1)),
-        },
-        true,
-    );
-    assert!(!ground_comparison_premise_holds(&symbolic_expression));
-}
-
-#[test]
-fn checked_event_premises_require_exact_facts_or_ground_comparisons() {
-    use crate::kernel::{ConditionTerm, Variable};
-    let theorem = |premise| {
-        Theorem::new(Proposition::Implies(
-            Box::new(premise),
-            Box::new(Proposition::ConditionIs(
-                ConditionTerm::Constant(true),
-                true,
-            )),
-        ))
-    };
-    let required = Proposition::ConditionIs(
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterEqual,
-            left: Box::new(MachineTerm::Variable(Variable(991))),
-            right: Box::new(MachineTerm::constant(0)),
-        },
-        true,
-    );
-    let stronger = Proposition::ConditionIs(
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterThan,
-            left: Box::new(MachineTerm::Variable(Variable(991))),
-            right: Box::new(MachineTerm::constant(0)),
-        },
-        true,
-    );
-    let empty = PureFactStore::default();
-    assert!(!checked_evidence_premises_hold(
-        &theorem(required.clone()),
-        &empty
-    ));
-    assert!(checked_evidence_premises_hold(
-        &theorem(required.clone()),
-        &empty.with_fact(required.clone())
-    ));
-    let derived = empty.with_fact(stronger);
-    assert!(
-        crate::kernel::search::ProofSearch::proves(derived.assumptions(), &required),
-        "the retired fallback would find this proof"
-    );
-    assert!(!checked_evidence_premises_hold(
-        &theorem(required.clone()),
-        &derived
-    ));
-    let unrelated = empty.with_fact(Proposition::ConditionIs(
-        ConditionTerm::Variable(Variable(992)),
-        true,
-    ));
-    assert!(!checked_evidence_premises_hold(
-        &theorem(required),
-        &unrelated
-    ));
-    for (left, right, accepted) in [(1, 1, true), (0, 1, false)] {
-        let premise = Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterEqual,
-                left: Box::new(MachineTerm::constant(left)),
-                right: Box::new(MachineTerm::constant(right)),
-            },
-            true,
-        );
-        assert_eq!(
-            checked_evidence_premises_hold(&theorem(premise), &empty),
-            accepted
-        );
-    }
 }
 
 #[test]
@@ -2820,14 +2663,14 @@ fn branch_split_obligations_require_evidence_on_each_named_arm() {
 
 #[test]
 fn interface_logical_read_does_not_establish_validity() {
-    use crate::kernel::{PointerValue, SpecMemory};
+    use crate::kernel::{PointerValue, SpecPoint};
     let state = ExecutionState::new();
     let pointer = crate::kernel::Pointer {
         block: "interface_cell".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
     let load = SpecExpression::MemoryLoad {
-        memory: SpecMemory::Current,
+        memory: SpecPoint::Current,
         pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
             PointerValue::new(pointer, ProgramType::Int32Pointer),
         ))),

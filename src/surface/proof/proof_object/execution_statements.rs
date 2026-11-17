@@ -1543,17 +1543,17 @@ impl<'a> Proof<'a> {
     /// Checks the heap, resource, and counted-population components at this
     /// loop-state join using the Proof-owned state and facts.
     #[allow(clippy::too_many_arguments)]
-    pub(in crate::surface::proof) fn check_loop_state_join(
+    pub(in crate::surface::proof) fn check_loop_boundary(
         &self,
         loop_entry_state: &ExecutionState,
         loop_head_state: &ExecutionState,
         head_iterations: &crate::kernel::IntegerTerm,
-        condition: &ProgramExpression,
+        condition: Option<&ProgramExpression>,
         invariant_checks: &[LoopInvariantCheck],
         binders: &[crate::kernel::LoopBinder],
         structural_measure: Option<&str>,
         composite_resource_definitions: &[CompositeResourceDefinition],
-    ) -> Result<(), ClickError> {
+    ) -> Result<LoopBoundary, ClickError> {
         if !matches!(self.context.as_ref(), ProofContext::Execution(_)) {
             return Err(self.step_error("loop state join requires an execution proof"));
         }
@@ -1569,7 +1569,7 @@ impl<'a> Proof<'a> {
         // them: whatever the body called the instance it ends holding, the
         // binder names it, and a body that ends with no instance at those
         // arguments fails here by name.
-        let back_edge_state = crate::kernel::loop_state_with_loop_binders_rebound(
+        let boundary_state = crate::kernel::loop_state_with_loop_binders_rebound(
             loop_head_state,
             &execution.core.state,
             binders,
@@ -1582,7 +1582,7 @@ impl<'a> Proof<'a> {
         if let Some(measure) = structural_measure
             && let Some(failure) = crate::kernel::loop_structural_descent_failure(
                 loop_head_state,
-                &back_edge_state,
+                &boundary_state,
                 binders,
                 measure,
                 composite_resource_definitions,
@@ -1592,7 +1592,7 @@ impl<'a> Proof<'a> {
             return Err(self.step_error(format!("loop state join: {failure}")));
         }
         let invariant_obligations = crate::kernel::loop_invariant_obligations_at_back_edge(
-            &back_edge_state,
+            &boundary_state,
             loop_entry_state,
             invariant_checks,
             head_iterations,
@@ -1603,27 +1603,42 @@ impl<'a> Proof<'a> {
             .into_iter()
             .map(|obligation| obligation.proposition().clone())
             .fold(assumptions, PureFactContext::assume_proposition);
-        if !crate::kernel::loop_condition_may_continue(&back_edge_state, condition, &assumptions)
-            .map_err(|message| {
-                self.step_error(format!("loop condition classification: {message}"))
-            })?
-        {
-            return Ok(());
-        }
+        let guard = match condition {
+            Some(condition) => {
+                crate::kernel::classify_loop_condition(&boundary_state, condition, &assumptions)
+                    .map_err(|message| {
+                        self.step_error(format!("loop condition classification: {message}"))
+                    })?
+            }
+            None => crate::kernel::LoopConditionFeasibility::TrueOnly,
+        };
         // Heap lifetime and resource ownership are compared against the head
         // the body actually started from. That is the loop entry context for
         // an ordinary loop, and the loop's own narrower resource context when
         // the loop declares `owns` or `views` clauses of its own. A binder's
         // model is what its invariants constrain, so the ownership comparison
         // sets it aside; the invariant obligations above checked it.
-        crate::kernel::loop_binder_state_components_match_at_back_edge(
+        let head_join = crate::kernel::loop_binder_state_components_match_at_back_edge(
             loop_head_state,
-            &back_edge_state,
+            &boundary_state,
             binders,
             &assumptions,
             composite_resource_definitions,
-        )
-        .map_err(|message| self.step_error(format!("loop state join: {message}")))
+        );
+        let head_compatible = match head_join {
+            Ok(()) => true,
+            Err(message) if guard.may_continue() => {
+                return Err(self.step_error(format!("loop state join: {message}")));
+            }
+            // The guard already establishes an exit. This comparison only
+            // selects its representation; it does not classify control flow.
+            Err(_) => false,
+        };
+        Ok(LoopBoundary {
+            state: boundary_state,
+            guard,
+            head_compatible,
+        })
     }
 
     /// Consume the complete prepared bundle without lowering or proof search.
@@ -1999,12 +2014,14 @@ fn retained_have_body(certificate: &ProofCertificate) -> Result<ProofCertificate
         .ok_or_else(|| ClickError::new("a step obligation proof retained no `have`"))
 }
 
-/// Requirements up to alpha-equivalence, in the order first met.
+/// Requirements up to the comparison used by written obligation proofs, in
+/// the order first met. In particular, different closed true comparisons
+/// must not produce entries that replay matches to the same obligation.
 fn distinct_requirements(recorded: Vec<UnresolvedRequirement>) -> Vec<UnresolvedRequirement> {
     let mut distinct: Vec<UnresolvedRequirement> = Vec::new();
     for requirement in recorded {
         if !distinct.iter().any(|seen| {
-            crate::kernel::proof::propositions_are_alpha_equal(
+            super::super::smart_closures::propositions_match_after_canonical_loads(
                 &seen.proposition,
                 &requirement.proposition,
             )
@@ -2013,6 +2030,31 @@ fn distinct_requirements(recorded: Vec<UnresolvedRequirement>) -> Vec<Unresolved
         }
     }
     distinct
+}
+
+#[test]
+fn requirement_deduplication_uses_replay_truth_and_polarity() {
+    let requirement = |left: u32, right: u32| UnresolvedRequirement {
+        proposition: Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: Box::new(left.into()),
+                right: Box::new(right.into()),
+            },
+            true,
+        ),
+        context: None,
+        introductions: Default::default(),
+        call_site: None,
+        assertion_condition: None,
+        surface: None,
+    };
+    let first = requirement(0, 0);
+    let false_bound = requirement(2, 1);
+    let distinct =
+        distinct_requirements(vec![first.clone(), requirement(0, 1), false_bound.clone()]);
+    assert_eq!(distinct, vec![first, false_bound]);
 }
 
 thread_local! {

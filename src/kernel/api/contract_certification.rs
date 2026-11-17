@@ -5,7 +5,6 @@ use crate::kernel::{
     MachineOperandView as Operand, MachineUnaryOp, SharedMachineIntegerTerm,
 };
 use crate::kernel::{MachineCastSpelling, cast_term};
-use crate::kernel::{bits32_constant, constant_u32};
 
 mod contract_claims;
 mod input_initialization;
@@ -19,11 +18,7 @@ pub use contract_claims::*;
 pub(crate) struct PreparedContractEntryCases {
     identity: Arc<()>,
     pub(super) guard_cases: Vec<Vec<Proposition>>,
-    pub(super) state: ExecutionState,
     pub(super) function: ProgramFunction,
-    pub(super) arguments: Vec<ProgramExpression>,
-    pub(super) byte_order: Proposition,
-    pub(super) raw_entry_state: ExecutionState,
     pub(super) closing_entry: Arc<RetainedClosingEntry>,
     closing_footprint: std::sync::OnceLock<RetainedClosingFootprint>,
     pub(super) cases: Vec<PreparedContractEntryCase>,
@@ -31,7 +26,9 @@ pub(crate) struct PreparedContractEntryCases {
 
 #[derive(Clone, Debug)]
 pub(super) struct PreparedContractEntryCase {
+    #[cfg(test)]
     pub(super) assumptions: PureFactContext,
+    #[cfg(test)]
     pub(super) entry_state: ExecutionState,
     pub(super) closing_entry: Arc<RetainedClosingEntry>,
 }
@@ -113,7 +110,7 @@ pub(crate) fn prepare_function_contract_entry_cases(
         state,
         function,
         arguments,
-        &base_assumptions.clone().assume_entry_clause_extents(),
+        &base_assumptions.clone().assume_entry_clause_spans(),
     )
     .ok_or("could not enumerate the undecided resource guards of the contract entry")?;
     let raw_entry_state = program_function_entry_state(state, function, arguments)
@@ -142,7 +139,9 @@ pub(crate) fn prepare_function_contract_entry_cases(
         let closing_case =
             Arc::new(closing_entry.for_case(function, entry_state.clone(), assumptions.clone()));
         cases.push(PreparedContractEntryCase {
+            #[cfg(test)]
             assumptions,
+            #[cfg(test)]
             entry_state,
             closing_entry: closing_case,
         });
@@ -150,25 +149,11 @@ pub(crate) fn prepare_function_contract_entry_cases(
     Ok(PreparedContractEntryCases {
         identity: Arc::new(()),
         guard_cases: resource_condition_cases,
-        state: state.clone(),
         function: function.clone(),
-        arguments: arguments.to_vec(),
-        byte_order,
-        raw_entry_state,
         closing_entry,
         closing_footprint: std::sync::OnceLock::new(),
         cases,
     })
-}
-
-#[cfg(test)]
-thread_local! {
-    static GUARD_CASE_BUILDS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
-#[cfg(test)]
-fn guard_case_builds() -> usize {
-    GUARD_CASE_BUILDS.with(std::cell::Cell::get)
 }
 
 /// Returns an exhaustive set of proof-only cases for undecided guards on
@@ -185,15 +170,13 @@ pub(crate) fn contract_resource_condition_cases(
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
 ) -> Option<Vec<Vec<Proposition>>> {
-    #[cfg(test)]
-    GUARD_CASE_BUILDS.with(|count| count.set(count.get() + 1));
     let entry_state = program_function_entry_state(caller_state, function, arguments)?;
     let mut budget = ExecutionBudget::beside_live_state();
     let required_resources = evaluate_function_resource_context(
         &entry_state,
         function.resource_requires(),
         function.composite_resource_definitions(),
-        &assumptions.clone().assume_entry_clause_extents(),
+        &assumptions.clone().assume_entry_clause_spans(),
         &mut budget,
     )
     .ok()?
@@ -1257,8 +1240,10 @@ pub enum ContractEntryFactOrigin {
     ResourceQuantity,
     /// Disjointness of the transferred and the borrowed entry clauses.
     Partition,
-    /// A guard that a stated memory range's extent is well formed.
-    Extent,
+    /// A guard that a stated memory range's byte span is well formed.
+    Span,
+    /// A fact that a pointer's opaque bounds cover a stated range.
+    Bounds,
     /// Loadability of a stated clause range at the entry memory.
     ClauseLoadable,
     /// Initialized typed reads promised by an admitted input clause.
@@ -1547,7 +1532,7 @@ fn program_function_contract_entry_facts(
         function.contract_interface().value_parameters(),
     ] {
         for (index, parameter) in parameters.iter().enumerate() {
-            if let Some(bytes) = parameter.fixed_reference_extent {
+            if let Some(bytes) = parameter.fixed_reference_bounds {
                 let pointer_value = entry_state
                     .locals
                     .get_native(parameter.binding_name().clone());
@@ -1561,7 +1546,7 @@ fn program_function_contract_entry_facts(
                     1,
                 )) {
                     assumptions =
-                        entry_facts.assume(assumptions, ContractEntryFactOrigin::Extent, coverage);
+                        entry_facts.assume(assumptions, ContractEntryFactOrigin::Bounds, coverage);
                 }
             }
             let Some(length_index) = parameter.slice_length_parameter else {
@@ -1587,7 +1572,7 @@ fn program_function_contract_entry_facts(
                 .byte_width();
             assumptions = entry_facts.assume(
                 assumptions,
-                ContractEntryFactOrigin::Extent,
+                ContractEntryFactOrigin::Span,
                 Proposition::ConditionIs(
                     ConditionTerm::uint64_less_equal(
                         length.clone(),
@@ -1603,7 +1588,7 @@ fn program_function_contract_entry_facts(
                 width,
             )) {
                 assumptions =
-                    entry_facts.assume(assumptions, ContractEntryFactOrigin::Extent, coverage);
+                    entry_facts.assume(assumptions, ContractEntryFactOrigin::Bounds, coverage);
             }
         }
     }
@@ -1625,7 +1610,7 @@ fn program_function_contract_entry_facts(
             .clone()
             .allow_symbolic_contract_loads()
             .prefer_symbolic_external_loads()
-            .assume_entry_clause_extents();
+            .assume_entry_clause_spans();
         let paths = match lower_spec_proposition_at_state_with_loop_entry(
             &entry_state,
             requirement,
@@ -1761,7 +1746,7 @@ fn program_function_contract_entry_facts(
             &entry_state,
             function.resource_requires(),
             function.composite_resource_definitions(),
-            &assumptions.clone().assume_entry_clause_extents(),
+            &assumptions.clone().assume_entry_clause_spans(),
             &mut budget,
         ) {
             Ok(Ok(evaluated)) => evaluated,
@@ -1805,7 +1790,7 @@ fn program_function_contract_entry_facts(
             continue;
         };
         let mut well_formed = true;
-        for guard in crate::kernel::admitted_memory_range_extent_facts(range) {
+        for guard in crate::kernel::admitted_memory_range_span_facts(range) {
             let guard_is_false = match &guard {
                 Proposition::ConditionIs(condition, true) => {
                     assumptions.decide(condition) == Some(false)
@@ -1815,8 +1800,7 @@ fn program_function_contract_entry_facts(
             if guard_is_false {
                 well_formed = false;
             } else {
-                assumptions =
-                    entry_facts.assume(assumptions, ContractEntryFactOrigin::Extent, guard);
+                assumptions = entry_facts.assume(assumptions, ContractEntryFactOrigin::Span, guard);
             }
         }
         // A range its own guards refute states no memory to read.
@@ -1872,7 +1856,7 @@ fn program_function_contract_entry_facts(
     for fact in required_resources.facts() {
         if let Some(coverage) = fact.allocation_bounds_fact(&assumptions) {
             assumptions =
-                entry_facts.assume(assumptions, ContractEntryFactOrigin::Extent, coverage);
+                entry_facts.assume(assumptions, ContractEntryFactOrigin::Bounds, coverage);
         }
         // Owned ranges carry their byte-count guards exactly as viewed ranges
         // do: the clause states the same range, and the loadability rules read
@@ -1880,7 +1864,7 @@ fn program_function_contract_entry_facts(
         let Some(range) = fact.memory_view_range().or_else(|| fact.memory_own_range()) else {
             continue;
         };
-        for guard in crate::kernel::admitted_memory_range_extent_facts(range) {
+        for guard in crate::kernel::admitted_memory_range_span_facts(range) {
             let guard_is_false = match &guard {
                 Proposition::ConditionIs(condition, true) => {
                     assumptions.decide(condition) == Some(false)
@@ -1888,8 +1872,7 @@ fn program_function_contract_entry_facts(
                 _ => false,
             };
             if !guard_is_false {
-                assumptions =
-                    entry_facts.assume(assumptions, ContractEntryFactOrigin::Extent, guard);
+                assumptions = entry_facts.assume(assumptions, ContractEntryFactOrigin::Span, guard);
             }
         }
     }
@@ -1912,12 +1895,12 @@ fn program_function_contract_entry_facts(
     for fact in expanded_resources.facts() {
         if let Some(coverage) = fact.allocation_bounds_fact(&assumptions) {
             assumptions =
-                entry_facts.assume(assumptions, ContractEntryFactOrigin::Extent, coverage);
+                entry_facts.assume(assumptions, ContractEntryFactOrigin::Bounds, coverage);
         }
         let Some(range) = fact.memory_view_range().or_else(|| fact.memory_own_range()) else {
             continue;
         };
-        for guard in crate::kernel::admitted_memory_range_extent_facts(range) {
+        for guard in crate::kernel::admitted_memory_range_span_facts(range) {
             let guard_is_false = match &guard {
                 Proposition::ConditionIs(condition, true) => {
                     assumptions.decide(condition) == Some(false)
@@ -1925,8 +1908,7 @@ fn program_function_contract_entry_facts(
                 _ => false,
             };
             if !guard_is_false {
-                assumptions =
-                    entry_facts.assume(assumptions, ContractEntryFactOrigin::Extent, guard);
+                assumptions = entry_facts.assume(assumptions, ContractEntryFactOrigin::Span, guard);
             }
         }
     }
@@ -2329,6 +2311,7 @@ pub(super) fn instantiate_contract_predicate_unfolding_with_obligations(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 pub(super) fn prove_symbolic_program_function_verification_paths(
     state: ExecutionState,
     function: ProgramFunction,
@@ -2426,6 +2409,7 @@ pub(super) fn prove_symbolic_program_function_verification_paths(
     SymbolicExecution { paths, limit: None }
 }
 
+#[cfg(test)]
 pub fn program_function_execution_candidates_from_outcomes(
     state: ExecutionState,
     function: ProgramFunction,
@@ -2454,6 +2438,7 @@ pub fn program_function_execution_candidates_from_outcomes(
     )
 }
 
+#[cfg(test)]
 pub(crate) fn program_function_execution_candidates_from_outcomes_with_loan_evidence(
     state: ExecutionState,
     function: ProgramFunction,
@@ -2614,6 +2599,7 @@ pub(crate) fn program_function_execution_candidate_with_additional_facts(
     }
 }
 
+#[cfg(test)]
 pub fn prove_program_function_satisfies_specification_from_symbolic_path(
     function: ProgramFunction,
     specification: FunctionSpecification,
@@ -3372,128 +3358,6 @@ fn names_of_one_cell_framed(
         })
 }
 
-fn match_quantified_int32_term(
-    pattern: &MachineTerm,
-    target: &MachineTerm,
-    binders: &BTreeSet<Variable>,
-    substitutions: &mut BTreeMap<Variable, MachineTerm>,
-) -> bool {
-    if let MachineTerm::Variable(variable) = pattern
-        && binders.contains(variable)
-    {
-        return match substitutions.get(variable) {
-            Some(existing) => existing == target,
-            None => {
-                substitutions.insert(*variable, target.clone());
-                true
-            }
-        };
-    }
-    if let (Some((operator, pattern_left, pattern_right)), Some((other, target_left, target_right))) =
-        (pattern.as_binary(), target.as_binary())
-        && operator == other
-        && operator.is_bitvector32()
-    {
-        return match_quantified_int32_term(pattern_left, target_left, binders, substitutions)
-            && match_quantified_int32_term(pattern_right, target_right, binders, substitutions);
-    }
-    match (pattern, target) {
-        (bits32_constant!(left), bits32_constant!(right)) => {
-            constant_u32(*left) == constant_u32(*right)
-        }
-        (MachineTerm::Variable(left), MachineTerm::Variable(right)) => left == right,
-        (
-            unary_term!(Bits32 @ pattern_format, BitwiseNot, pattern),
-            unary_term!(Bits32 @ target_format, BitwiseNot, target),
-        ) if pattern_format == target_format => {
-            match_quantified_int32_term(pattern, target, binders, substitutions)
-        }
-        _ => pattern == target,
-    }
-}
-
-/// Instantiates every binder in one closed theorem from its condition
-/// conclusion. Matching is a single structural pass; premises are then
-/// certified normally under the resulting exact substitution.
-pub(super) fn certification_proves_condition_from_verified_pure_implication(
-    assumptions: &PureFactContext,
-    fact: &Proposition,
-    target: &ConditionTerm,
-    target_value: bool,
-) -> bool {
-    let mut binder_order = Vec::new();
-    let mut body = fact;
-    while let Proposition::ForAll {
-        var, body: inner, ..
-    } = body
-    {
-        binder_order.push(*var);
-        body = inner;
-    }
-    if binder_order.is_empty() {
-        return false;
-    }
-    let mut premises = Vec::new();
-    while let Proposition::Implies(premise, rest) = body {
-        premises.push(premise.as_ref().clone());
-        body = rest;
-    }
-    let Proposition::ConditionIs(pattern, pattern_value) = body else {
-        return false;
-    };
-    if *pattern_value != target_value {
-        return false;
-    }
-    let binders = binder_order.iter().copied().collect::<BTreeSet<_>>();
-    let mut substitutions = BTreeMap::new();
-    let matched = match (pattern, target) {
-        (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                left: pattern_left,
-                right: pattern_right,
-            },
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                left: target_left,
-                right: target_right,
-            },
-        )
-        | (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterEqual,
-                left: pattern_left,
-                right: pattern_right,
-            },
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterEqual,
-                left: target_left,
-                right: target_right,
-            },
-        ) => {
-            match_quantified_int32_term(pattern_left, target_left, &binders, &mut substitutions)
-                && match_quantified_int32_term(
-                    pattern_right,
-                    target_right,
-                    &binders,
-                    &mut substitutions,
-                )
-        }
-        _ => false,
-    };
-    if !matched || substitutions.len() != binders.len() {
-        return false;
-    }
-    premises.into_iter().all(|premise| {
-        let premise = substitute_bitvector_variables_in_proposition(&premise, &substitutions);
-        PureFactContext::settles_exactly(assumptions, &premise)
-    })
-}
-
 pub(super) fn resources_certify_loadability(
     state: &ExecutionState,
     resources: &ResourceContext,
@@ -3801,57 +3665,6 @@ mod prepared_entry_cases_tests {
             .map(|case| case.entry_state.resources().facts().len())
             .collect::<Vec<_>>();
         assert_eq!(token_counts, vec![2, 1, 1, 0]);
-        let core = opened.into_execution_core();
-        // Registration can inspect missing coverage, but must not invent new cases.
-        let before = guard_case_builds();
-        for _ in 0..2 {
-            let execution = prove_prepared_function_contract_execution_paths(
-                &prepared,
-                function.clone(),
-                ExecutionEnvironment::new(),
-                ExecutionSemantics::APPLY_VERIFIED_RULES,
-                FunctionContractExecutionMode::VerifyLoops,
-                &[],
-                &[],
-            );
-            assert_eq!(execution.cases.len(), 4);
-            assert!(
-                !execution.is_complete(),
-                "unproved cases do not become completed coverage"
-            );
-        }
-        assert_eq!(
-            guard_case_builds(),
-            before,
-            "registration consumes the retained alternatives"
-        );
-        let _ = core;
-        let foreign = program_function(
-            ProgramType::Int32,
-            "other",
-            vec![],
-            program_return(crate::kernel::program_expression::int32_literal(0)),
-        );
-        let refused = prove_prepared_function_contract_execution_paths(
-            &prepared,
-            foreign,
-            ExecutionEnvironment::new(),
-            ExecutionSemantics::APPLY_VERIFIED_RULES,
-            FunctionContractExecutionMode::VerifyLoops,
-            &[],
-            &[],
-        );
-        assert!(!refused.is_complete());
-        assert!(
-            refused
-                .reuse_diagnostic()
-                .unwrap()
-                .contains("another function or target")
-        );
-    }
-
-    mod scaling_tests {
-        include!("../../scaling_tests/kernel/api/contract_certification/prepared_entry_cases.rs");
     }
 }
 

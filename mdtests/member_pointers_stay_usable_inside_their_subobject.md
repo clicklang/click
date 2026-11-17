@@ -1,7 +1,7 @@
 # Member pointers stay usable inside their subobject
 
 A member's address designates the member: arithmetic and access inside it
-are unaffected by its narrower extent. `+ 0` reads the member itself, the
+are unaffected by its narrower bounds. `+ 0` reads the member itself, the
 one-past pointer may be formed and returned (it shares only its address with
 `second`), a member array is traversed
 through its decayed pointer, a nested member is read through its own

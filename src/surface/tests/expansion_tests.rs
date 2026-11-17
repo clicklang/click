@@ -38,7 +38,7 @@ fn consumed_field_refusal_keeps_an_ordinary_preservation_repair() {
 
 #[test]
 #[ignore = "nightly: repeated entry guard provenance"]
-fn entry_requirement_provenance_survives_repeated_extent_guards() {
+fn entry_requirement_provenance_survives_repeated_span_guards() {
     let sources = [("entry.c", "int32 entry(int32 a[], int32 n) { return 0; }")];
     let source = r#"
         verifying "entry.c";
@@ -918,7 +918,7 @@ fn check_member_pointer_address_expansion(fixture: &str, function: &str) {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_05")]
-fn member_pointer_addresses_retain_subobject_extents_through_expansion() {
+fn member_pointer_addresses_retain_subobject_bounds_through_expansion() {
     check_member_pointer_address_expansion("egraph_resource_pointer_load_alias", "check");
 }
 
@@ -930,7 +930,7 @@ fn member_pointer_addresses_with_equal_numeric_addresses_expand() {
 
 #[test]
 #[ignore = "nightly: 0.63s after reducing duplicate verification"]
-fn nonzero_member_pointer_addresses_retain_subobject_extents_through_expansion() {
+fn nonzero_member_pointer_addresses_retain_subobject_bounds_through_expansion() {
     check_member_pointer_address_expansion("model_pointer_alias_nonzero_field_load", "probe");
 }
 
@@ -2536,7 +2536,7 @@ fn shared_initialize_closer_expansion_replaces_the_script_before_it() {
 }
 
 /// An invariant owes its side conditions as entry goals of their own beside
-/// its body: a quantified `viewable` invariant owes the extent bound too.
+/// its body: a quantified `viewable` invariant owes the span bound too.
 /// The closer's expansion states one `have` per owed goal, so that
 /// invariant is named twice. The script layout used to accept only one
 /// `have` per invariant, fell back to running the whole script against
@@ -13832,7 +13832,7 @@ const RESOURCE_EXAMPLE_PIPELINE_CASES: &[(&str, &str, &str, &str)] = &[
 // Compare both surrounding byte ranges so scoped checking cannot silently
 // omit a rewrite to a helper, contract, import, or another declaration.
 pub(super) fn only_function_proof_changed(before: &str, after: &str, function: &str) -> bool {
-    let extent = |text: &str| {
+    let text_span = |text: &str| {
         let signature = format!(" {function}(");
         assert_eq!(
             text.matches(&signature).count(),
@@ -13848,10 +13848,10 @@ pub(super) fn only_function_proof_changed(before: &str, after: &str, function: &
         let end = body + text[body..].find("\n}")? + "\n}".len();
         Some((body, end))
     };
-    let Some((before_start, before_end)) = extent(before) else {
+    let Some((before_start, before_end)) = text_span(before) else {
         return false;
     };
-    let Some((after_start, after_end)) = extent(after) else {
+    let Some((after_start, after_end)) = text_span(after) else {
         return false;
     };
     before[..before_start] == after[..after_start] && before[before_end..] == after[after_end..]
@@ -17080,6 +17080,42 @@ fn local_job_views_expand_and_reverify_without_ownership_annotations() {
 }
 
 #[test]
+#[ignore = "nightly: two-hop loop frame verification, expansion and cold replay"]
+fn two_hop_loop_frame_expands_and_cold_replays() {
+    let (source, sources) =
+        mdtest_sources("mdtests/loop_frame_keeps_a_two_hop_map_beside_a_written_array.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    with_proof_trace("clear_data", || {
+        verify_c_sources(&source, &sources).unwrap_or_else(|error| {
+            panic!(
+                "{}\n{}",
+                error.report(),
+                error.trace_context_report().unwrap_or_default()
+            )
+        });
+    });
+    assert!(!source.contains("transport("), "{source}");
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "clear_data.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("preserve("), "{expanded}");
+    without_implicit_solve_for_claim("clear_data.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+
+    // Writing the framed map instead of the owned data array must be refused.
+    let bad_c = sources[0]
+        .1
+        .replace("arena->data[i] = 0;", "arena->occupied[i] = 0;");
+    assert_ne!(bad_c, sources[0].1);
+    assert!(verify_c_sources(&source, &[(sources[0].0, bad_c.as_str())]).is_err());
+}
+
+#[test]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn an_unfold_bound_scalar_field_expands_and_reverifies() {
     // `let { prefix: p } = unfold(before)` names the folded field value that
@@ -19308,6 +19344,41 @@ fn unfolding_proof_bound_integer_arguments_expands_and_rechecks() {
     }
 }
 
+/// Distinct literal bounds can match the same closed obligation during
+/// replay. Expansion must emit a proof that replays without a duplicate
+/// `requires` entry, while a false bound must still be refused.
+#[test]
+#[ignore = "nightly: literal call expansion and cold replay"]
+fn literal_call_bounds_expand_without_duplicate_obligation_entries() {
+    let source = r#"
+verifying "bounds.c";
+void bounded(int32 color) {
+    requires 0 <= color;
+    requires color <= 1;
+    ensures 1 == 1;
+}
+void caller() { ensures 1 == 1; }
+"#;
+    for value in [0, 1] {
+        let program =
+            format!("void bounded(int color) {{}} void caller(void) {{ bounded({value}); }}");
+        let sources = [("bounds.c", program.as_str())];
+        verify_c_sources(source, &sources).expect("both bounds hold");
+        let expanded =
+            expand_c_claim_source(source, &sources, "caller", ContractProofClaim::Ensure(0))
+                .expect("literal bounds must expand without duplicate obligation entries");
+        without_implicit_solve_for_claim("caller.ensures_0", || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+    let sources = [(
+        "bounds.c",
+        "void bounded(int color) {} void caller(void) { bounded(2); }",
+    )];
+    verify_c_sources(source, &sources).expect_err("a false upper bound must be refused");
+}
+
 /// A step's written obligation proofs expand in place: each `requires` entry
 /// keeps its proposition and prints its body's checked steps, the expansion
 /// reverifies, and deleting an entry leaves its obligation unproved.
@@ -19524,7 +19595,7 @@ fn without_first_step_obligation_proofs(expanded: &str) -> String {
 
 #[test]
 #[ignore = "nightly: checks whole global object ownership through expansion and retained verification"]
-fn whole_global_objects_keep_their_extent_and_field_types() {
+fn whole_global_objects_keep_their_size_and_field_types() {
     let (source, sources) =
         mdtest_sources("mdtests/whole_global_struct_covers_addressed_object.md");
     let sources = sources
@@ -21754,7 +21825,7 @@ test_batches! {
     ],
     expansion_batch_05: [
         integer_equality_does_not_identify_signed_and_unsigned_observations,
-        member_pointer_addresses_retain_subobject_extents_through_expansion,
+        member_pointer_addresses_retain_subobject_bounds_through_expansion,
         member_pointer_addresses_with_equal_numeric_addresses_expand,
     ],
     expansion_batch_06: [

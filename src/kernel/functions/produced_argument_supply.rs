@@ -34,10 +34,10 @@ pub(super) fn prepare_produced_argument_supply(
     // only clauses whose missing cells have become available, so reversed
     // pointer chains do not require rounds over every pending clause.
     // These are the certified callee's own output clauses. Its checked body
-    // established their subobject extents, just as an opened resource body's
-    // clauses carry the extents its fold established. Reads still need the
+    // established their subobject bounds, just as an opened resource body's
+    // clauses carry the bounds its fold established. Reads still need the
     // section's actual cell authority; this does not relax call requirements.
-    let output_assumptions = assumptions.clone().assume_entry_clause_extents();
+    let output_assumptions = assumptions.clone().assume_entry_clause_spans();
     let checked = evaluate_resource_clauses_in_section(
         entry,
         evaluation,

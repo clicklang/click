@@ -176,7 +176,7 @@ fn wide_storage_refuses_wrong_load_kind_and_typed_reinterpretation() {
 }
 
 #[test]
-fn wide_storage_symbolic_load_requires_full_extent_and_local_initialization() {
+fn wide_storage_symbolic_load_requires_full_span_and_local_initialization() {
     for (size, offset) in [(15, 0), (16, 1), (32, 17)] {
         let state =
             ExecutionState::new().with_memory(Memory::new().with_block("local:wide-storage", size));

@@ -672,25 +672,21 @@ impl Drop for SynthesisRecordedPointsScope {
     }
 }
 
-/// A recorded state whose structural read selection reproduces this read.
-/// Prefer the point recording its memory, then indexed nearby points.
+/// The recorded state whose structural read selection reproduces this read:
+/// the point recording its memory, or the projection's source memory.
 fn recorded_point_of_load(
     read: &MachineTerm,
 ) -> Option<(ProgramPointSelector, ExecutionState, MachineTerm)> {
-    let MachineTerm::MemoryLoad(memory, _, _) = read else {
+    let MachineTerm::MemoryLoad(memory, pointer, _) = read else {
         return None;
     };
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let slot = slot.borrow();
-        let points = slot.as_ref()?;
-        points
-            .point_reading_memory(memory.shared_memory())
-            .into_iter()
-            .chain(points.points_near_memory(memory.shared_memory()))
-            .find_map(|(selector, state)| {
-                let load = scalar_read_in_state(read, state)?;
-                Some((selector.clone(), state.clone(), load))
-            })
+        let (selector, state) = slot
+            .as_ref()?
+            .point_reading_load(memory.shared_memory(), pointer)?;
+        let load = scalar_read_in_state(read, state)?;
+        Some((selector.clone(), state.clone(), load))
     })
 }
 
@@ -717,22 +713,20 @@ fn synthesize_recorded_held_value_local(
     term: &crate::kernel::AlgebraicTerm,
     pointer: &Pointer,
 ) -> Option<ContractExpression> {
-    let crate::kernel::AlgebraicTermNode::MemoryLoad { memory, .. } = &term.node else {
+    let crate::kernel::AlgebraicTermNode::MemoryLoad {
+        memory,
+        pointer: address,
+    } = &term.node
+    else {
         return None;
     };
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let slot = slot.borrow();
-        let points = slot.as_ref()?;
-        points
-            .point_reading_memory(memory)
-            .into_iter()
-            .chain(points.points_near_memory(memory))
-            .find_map(|(selector, recorded)| {
-                Some(ContractExpression::At {
-                    selector: selector.clone(),
-                    expression: Box::new(synthesize_held_value_local(term, pointer, recorded)?),
-                })
-            })
+        let (selector, recorded) = slot.as_ref()?.point_reading_load(memory, address)?;
+        Some(ContractExpression::At {
+            selector: selector.clone(),
+            expression: Box::new(synthesize_held_value_local(term, pointer, recorded)?),
+        })
     })
 }
 
@@ -1731,7 +1725,7 @@ fn synthesize_zero_based_loadable_segment(
             ProgramType::Int32Pointer,
         )
     } else if !matches!(bytes, binary_term!(Int32, Subtract, _, _)) {
-        // A byte extent remains unscaled over an explicit byte pointer.
+        // A byte span remains unscaled over an explicit byte pointer.
         (
             contract_expression_to_program_expression(&synthesize_surface_bitvector(
                 bytes,
@@ -3396,7 +3390,7 @@ pub(super) fn raise_kernel_term(
 }
 
 // A comparison's presentation reads addresses and declared pointer types.
-// Keep producer qualifiers/evidence/extents on the root; do not export those
+// Keep producer qualifiers/evidence/bounds on the root; do not export those
 // unrelated payloads merely to pass through a native condition constructor.
 fn raise_pointer_comparison(
     term: &crate::kernel::KernelTerm,
@@ -3553,16 +3547,13 @@ fn raise_algebraic_read(
         SYNTHESIS_RECORDED_POINTS.with(|slot| {
             let slot = slot.borrow();
             let points = slot.as_ref()?;
-            points
+            let (selector, recorded) = points
                 .point_reading_memory(memory)
-                .into_iter()
-                .chain(points.points_near_memory(memory))
-                .find_map(|(selector, recorded)| {
-                    Some(SurfaceTerm::At {
-                        selector: selector.clone(),
-                        expression: Box::new(held_at(recorded)?),
-                    })
-                })
+                .or_else(|| points.point_reading_load(memory, &address.export().ok()?))?;
+            Some(SurfaceTerm::At {
+                selector: selector.clone(),
+                expression: Box::new(held_at(recorded)?),
+            })
         })
     })
 }
@@ -3643,8 +3634,8 @@ fn raise_constructor_pointer(
             // is needed only for a checked root view; adding
             // it to a saved narrow view would change the value.
             if pointer.program_type() == ProgramType::VoidPointer
-                && pointer.extent_is_known()
-                && pointer.extent().is_none()
+                && pointer.bounds_are_known()
+                && pointer.bounds().is_none()
             {
                 ContractExpression::CUnary {
                     lowered: ProgramExpression::Cast {
@@ -4344,102 +4335,6 @@ pub(super) fn synthesize_surface_resource_subject(
             end: surface_end,
         },
     }))
-}
-
-/// Spells one certified equality whose operands were read from different
-/// states, such as a callee postcondition relating a cell after
-/// the call to its value before it. Each operand is anchored at the first
-/// listed point where it denotes a source expression; the caller lists the
-/// recorded statement entries nearest first and must re-lower the result to
-/// confirm it denotes exactly this kernel fact.
-pub(in crate::surface) fn synthesize_surface_equality_across_points(
-    proposition: &Proposition,
-    parameter_binding: ParameterBinding<'_>,
-    points: &[(ProgramPointRef, &ExecutionState)],
-) -> Option<ClickProposition> {
-    let _scope = SurfaceSynthesisScope::enter();
-    let Proposition::ConditionIs(condition, true) = proposition else {
-        return None;
-    };
-    let bound_variables = BTreeMap::new();
-    let anchored = |synthesize: &dyn Fn(&ExecutionState) -> Option<ContractExpression>| {
-        points
-            .iter()
-            .take_while(|_| !crate::instrumentation::deadline_exceeded())
-            .find_map(|(point, state)| {
-                let expression = synthesize(state)?;
-                Some(ContractExpression::At {
-                    selector: ProgramPointSelector::ProgramPoint(point.clone()),
-                    expression: Box::new(expression),
-                })
-            })
-    };
-    let (left, right) = match condition {
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-            relation: CompareRelation::Equal,
-            left,
-            right,
-        }
-        | ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::Equal,
-            left,
-            right,
-        } => (
-            anchored(&|state| {
-                synthesize_surface_bitvector(left, parameter_binding, state, &bound_variables)
-            })?,
-            anchored(&|state| {
-                synthesize_surface_bitvector(right, parameter_binding, state, &bound_variables)
-            })?,
-        ),
-        ConditionTerm::PointerOffsetEqual(left, right) => (
-            anchored(&|state| {
-                synthesize_surface_pointer_offset(left, parameter_binding, state, &bound_variables)
-            })?,
-            anchored(&|state| {
-                synthesize_surface_pointer_offset(right, parameter_binding, state, &bound_variables)
-            })?,
-        ),
-        ConditionTerm::PointerValueEqual(left, right) => (
-            anchored(&|state| {
-                synthesize_pointer_equality_operand(
-                    left,
-                    parameter_binding,
-                    state,
-                    &bound_variables,
-                )
-            })?,
-            anchored(&|state| {
-                synthesize_pointer_equality_operand(
-                    right,
-                    parameter_binding,
-                    state,
-                    &bound_variables,
-                )
-            })?,
-        ),
-        ConditionTerm::PointerEqual(left, right) => (
-            anchored(&|state| {
-                synthesize_surface_pointer_address(left, parameter_binding, state, &bound_variables)
-            })?,
-            anchored(&|state| {
-                synthesize_surface_pointer_address(
-                    right,
-                    parameter_binding,
-                    state,
-                    &bound_variables,
-                )
-            })?,
-        ),
-        _ => return None,
-    };
-    Some(ClickProposition::Comparison {
-        left,
-        operator: ComparisonOperator::Equal,
-        right,
-    })
 }
 
 /// Whether a parameter's bare name still means the value it was passed: false
@@ -7023,19 +6918,12 @@ fn recorded_point_of_pointer_read(
     if pointer_read_address_in_state(pointer, state).is_some() {
         return None;
     }
-    // Read where the memory is recorded or, for a memory no point records,
-    // at a recorded memory near it that reads the same, as a load is.
+    // Read where the memory is recorded.
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let slot = slot.borrow();
-        let points = slot.as_ref()?;
-        points
-            .point_reading_memory(&memory)
-            .into_iter()
-            .chain(points.points_near_memory(&memory))
-            .find_map(|(selector, recorded)| {
-                pointer_read_address_in_state(pointer, recorded)?;
-                Some((selector.clone(), recorded.clone()))
-            })
+        let (selector, recorded) = slot.as_ref()?.point_reading_memory(&memory)?;
+        pointer_read_address_in_state(pointer, recorded)?;
+        Some((selector.clone(), recorded.clone()))
     })
 }
 

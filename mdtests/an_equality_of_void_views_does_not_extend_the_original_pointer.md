@@ -2,8 +2,8 @@
 
 The void casts explicitly select the enclosing allocation. Equating those
 views can establish allocation origin, but says nothing about the original
-`q`'s selected extent. Its own scalar permission and the sibling permission
-must not merge into a longer permission carrying q's opaque extent.
+`q`'s selected bounds. Its own scalar permission and the sibling permission
+must not merge into a longer permission carrying q's opaque bounds.
 
 ```c filename=probe.c
 struct Pair { int32 first; int32 second; };

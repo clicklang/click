@@ -5,7 +5,7 @@ The implementation uses a hidden record for unchanged complete C integers. On 20
 for full packed-pointer relationships, using existing syntax such as
 `requires ((word & ~1) as (struct node *)) == p;`. Their implementation and checked tagged-word transport are in
 [PR #1245](https://github.com/clicklang/click/pull/1245). No new `represents` predicate is approved.
-This extends [pointer subobject extents](pointer-subobject-extents.md)
+This extends [pointer subobject bounds](pointer-subobject-bounds.md)
 whose staged repairs have closed the original scalar-subobject bug. The
 integer-representation work is a separate transport boundary, not evidence
 that every larger rbtree sidecar is green.
@@ -13,7 +13,7 @@ that every larger rbtree sidecar is green.
 ## Accepted policy
 
 A lossless pointer-to-integer-to-pointer round trip preserves the original
-pointer's allocation origin and selected extent. Equality of integer addresses
+pointer's allocation origin and selected bounds. Equality of integer addresses
 alone never supplies either. Keep ordinary integer equality numeric. Keep the
 separately approved character/void cast behavior; integer casts do not acquire
 that widening rule.
@@ -26,7 +26,7 @@ one universal provenance model.
 
 `CValue::PointerInteger` separates an ordinary signed or unsigned LP64 numeric
 value from its original complete pointer. Direct casts back recover that
-pointer and its selected extent. Assignment, complete stores/reloads and
+pointer and its selected bounds. Assignment, complete stores/reloads and
 whole-value copies retain the record. Changes of integer format and ordinary arithmetic discard it. Checked low-bit
 tag operations retain the source pointer; the tag must be cleared before the
 value is used as a pointer. Bounded variable tags work in either OR operand
@@ -100,7 +100,7 @@ performance change has a deterministic scaling regression.
 
 The C implementation and verification limits are preserved. The remaining
 unseen-pointer formation checks are described in
-[Phase C](pointer-subobject-extents.md#phase-c-pointers-of-unseen-formation).
+[Phase C](pointer-subobject-bounds.md#phase-c-pointers-of-unseen-formation).
 
 ## Reproduced escape
 
@@ -113,7 +113,7 @@ field permissions in the regression.
 The existing `PointerAddress(Box<Pointer>)` records only a physical address.
 `cast_tagged_address_to_pointer` can also recover that address from a numeric
 word equality. Reconstructing `CPointerValue::new` then loses the selected
-extent. Merely putting the full pointer in that term is insufficient: numeric
+bounds. Merely putting the full pointer in that term is insufficient: numeric
 rewrites, pure-function congruence and resource argument matching could copy
 its bounds to another equal integer.
 
@@ -178,13 +178,13 @@ The carrier is a complete source pointer or an opaque incoming/loaded word
 identity. It is not an address-indexed registry, and numeric classes never
 choose a carrier. Copying, binding and complete stores/loads transport it.
 Partial writes invalidate it; supported complete representation copies retain
-it. New allocation producers establish their own known allocation extent.
+it. New allocation producers establish their own known allocation bounds.
 
 Arithmetic changes the numeric component. Preserve a pointer carrier only
 through the checked lossless tag operations; a zero-tag cast back returns the
 same pointer provenance. If an operation loses the carrier, an address may
 still be recoverable for comparisons, but dereference requires an explicit
-representation relation. Do not reconstruct a known allocation extent merely
+representation relation. Do not reconstruct known allocation bounds merely
 because the recovered physical block happens to be concrete.
 
 Numeric equality rewrites change numeric components and leave existing
@@ -211,7 +211,7 @@ a producer's output in the same session.
 | One-past member pointer round trip without dereference | Accept |
 | Whole word local copy, store/reload, aggregate copy | Retain provenance |
 | Tag then clear supported low bits | Retain provenance |
-| Equal numeric addresses with different selected extents | No bounds transfer |
+| Equal numeric addresses with different selected bounds | No bounds transfer |
 | Numeric equality rewrite, pure function or integer model argument | No bounds transfer |
 | Entry word constrained only by its numeric address | No dereference authority |
 | Entry word constrained by full cast equality | Adopt the stated provenance |
