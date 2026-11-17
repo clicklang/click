@@ -81,7 +81,7 @@ fn pointer_domain_queries_read_cached_classes_without_alias_discovery() {
                 ExpressionOutcome::Value(ProgramValue::Pointer(
                     first
                         .clone()
-                        .with_address(first.pointer().offset_by_bytes(4))
+                        .with_address(first.address().offset_by_bytes(4))
                 ))
             );
             assert!(

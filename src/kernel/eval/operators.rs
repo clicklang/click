@@ -5934,7 +5934,7 @@ fn subobject_formation_guards(
         {
             return Ok(Vec::new());
         }
-        if context.pointers_known_equal(result, value.pointer())
+        if context.pointers_known_equal(result, value.address())
             || context.opaque_pointer_covers(value, result, 0)
         {
             return Ok(Vec::new());
@@ -5992,7 +5992,7 @@ pub(in crate::kernel) fn subobject_paths(
                 facts.push(ExecutionPureFact::new(coverage));
             }
         } else {
-            if !context.opaque_pointer_covers(&pointer, pointer.pointer(), width)
+            if !context.opaque_pointer_covers(&pointer, pointer.address(), width)
                 && !resources.permits_designated_storage_read(
                     pointer.address(),
                     Some(pointer.access_provenance()),
@@ -6022,7 +6022,7 @@ pub(in crate::kernel) fn subobject_paths(
         }
     }
     if let Some(refusal) = subobject_access_refusal(
-        pointer.pointer(),
+        pointer.address(),
         &pointer,
         width,
         &facts,
@@ -6252,12 +6252,12 @@ mod pointer_domain_tests {
     #[test]
     fn arithmetic_and_access_check_admitted_bounds_without_adopting_them() {
         let _session = crate::kernel::VerificationSession::enter();
-        let value = PointerValue::new(
+        let value = Pointer::new(
             Address::symbolic(Variable(1013100)),
             ProgramType::Int32Pointer,
         );
         let selected = value.clone().with_bounds(Some(SubobjectBounds {
-            start: value.pointer().clone(),
+            start: value.address().clone(),
             width: 4u32.into(),
         }));
         let facts = PureFactContext::new().assume_condition(
@@ -6279,7 +6279,7 @@ mod pointer_domain_tests {
             ExpressionOutcome::Value(ProgramValue::Pointer(
                 value
                     .clone()
-                    .with_address(value.pointer().offset_by_bytes(4))
+                    .with_address(value.address().offset_by_bytes(4))
             ))
         );
         let beyond = pointer_offset_by_bytes_paths(
@@ -6302,7 +6302,7 @@ mod pointer_domain_tests {
         for (offset, bytes, refused) in [(0, 4, false), (4, 0, false), (4, 4, true), (0, 8, true)] {
             assert_eq!(
                 subobject_access_refusal(
-                    &value.pointer().offset_by_bytes(offset),
+                    &value.address().offset_by_bytes(offset),
                     &value,
                     bytes,
                     &ExecutionFacts::new(),

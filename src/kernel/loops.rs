@@ -9625,12 +9625,12 @@ mod pointer_domain_clause_tests {
     #[test]
     fn clause_ranges_check_admitted_member_bounds_without_rewriting_the_base() {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = PointerValue::new(
+        let base = Pointer::new(
             Address::symbolic(Variable(1013200)),
             ProgramType::Int32Pointer,
         );
         let selected = base.clone().with_bounds(Some(SubobjectBounds {
-            start: base.pointer().clone(),
+            start: base.address().clone(),
             width: 4u32.into(),
         }));
         let context = PureFactContext::new().assume_condition(

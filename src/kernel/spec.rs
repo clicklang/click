@@ -8022,8 +8022,8 @@ fn refine_object_pointer_argument_with_null(
     {
         return true;
     }
-    let names_declared_object = |value: &PointerValue| {
-        [value.pointer(), value.provenance()]
+    let names_declared_object = |value: &Pointer| {
+        [value.address(), value.provenance()]
             .into_iter()
             .any(|object| {
                 object.offset == AddressOffset::Constant(0)
@@ -8033,7 +8033,7 @@ fn refine_object_pointer_argument_with_null(
     if pointer.object_type_evidence().is_none()
         && (assumptions
             .equality_graph
-            .has_object_type(pointer.pointer(), object_class)
+            .has_object_type(pointer.address(), object_class)
             || names_declared_object(pointer)
             || {
                 // Complete-value equality can identify the declared object

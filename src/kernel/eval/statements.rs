@@ -1249,7 +1249,7 @@ fn execute_program_aggregate_copy_paths(
             }
             let copy_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
             if let Some(refusal) = subobject_access_refusal(
-                source_pointer.pointer(),
+                source_pointer.address(),
                 &source_pointer,
                 layout.size_bytes(),
                 &facts,
@@ -1258,7 +1258,7 @@ fn execute_program_aggregate_copy_paths(
             )
             .or_else(|| {
                 subobject_access_refusal(
-                    target_pointer.pointer(),
+                    target_pointer.address(),
                     &target_pointer,
                     layout.size_bytes(),
                     &facts,

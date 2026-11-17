@@ -31,8 +31,8 @@ pub(in crate::kernel) enum PointerDomainSource<'a> {
     BoundsOwner(&'a Address),
 }
 
-impl<'a> From<&'a PointerValue> for PointerDomainSource<'a> {
-    fn from(value: &'a PointerValue) -> Self {
+impl<'a> From<&'a Pointer> for PointerDomainSource<'a> {
+    fn from(value: &'a Pointer) -> Self {
         Self::Retained {
             bounds: value.bounds(),
             known: value.bounds_are_known(),
@@ -349,13 +349,13 @@ mod tests {
             .unchecked_with_fact(ResourceFact::own_memory(parent_range.clone()));
         let required = returned.access_provenance();
         assert!(resources.permits_designated_memory_read(
-            returned.pointer(),
+            returned.address(),
             Some(required),
             4,
             &facts
         ));
         assert!(!resources.permits_designated_memory_read(
-            parent.pointer(),
+            parent.address(),
             Some(required),
             4,
             &facts,

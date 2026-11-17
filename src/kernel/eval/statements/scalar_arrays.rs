@@ -155,7 +155,7 @@ pub(super) fn execute(
                     continue;
                 };
                 if let Some(refusal) = subobject_access_refusal(
-                    source.pointer(),
+                    source.address(),
                     source,
                     bytes,
                     &facts,

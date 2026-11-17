@@ -812,7 +812,7 @@ pub(super) fn aggregate_argument_read_refusal(
             continue;
         };
         if let Some(refusal) = crate::kernel::eval::subobject_access_refusal(
-            source.pointer(),
+            source.address(),
             source,
             layout.size_bytes(),
             &ExecutionFacts::new(),
