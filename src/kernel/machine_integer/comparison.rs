@@ -188,25 +188,23 @@ pub(crate) fn literal_native_comparison_value(condition: &ConditionTerm) -> Opti
     }
 }
 
-/// Preserve a closed native order comparison during logical lowering. Inspect
-/// only the two literal roots; deciding their truth belongs to checking.
+/// Preserve a closed native comparison during logical lowering. Inspect only
+/// the two literal roots; deciding their truth belongs to checking
+/// ([`literal_native_comparison_value`]).
 pub(crate) fn logical_condition_for_operand_views(
     format: MachineIntegerType,
     relation: crate::kernel::CompareRelation,
     operands: [crate::kernel::MachineOperandView<'_>; 2],
 ) -> ConditionTerm {
-    closed_order_for_operand_views(format, relation, operands)
+    closed_comparison_for_operand_views(format, relation, operands)
         .unwrap_or_else(|| condition_for_operand_views(format, relation, operands))
 }
 
-fn closed_order_for_operand_views(
+fn closed_comparison_for_operand_views(
     format: MachineIntegerType,
     relation: crate::kernel::CompareRelation,
     operands: [crate::kernel::MachineOperandView<'_>; 2],
 ) -> Option<ConditionTerm> {
-    if relation == crate::kernel::CompareRelation::Equal {
-        return None;
-    }
     let [Some(left), Some(right)] = operands.map(|operand| operand.literal()) else {
         return None;
     };
@@ -216,6 +214,14 @@ fn closed_order_for_operand_views(
         [left.into_word32(), right.into_word32()]
     } else {
         [left, right]
+    };
+    // Wide equality reads no sign: like `ConditionTerm::int64_equal`, it is
+    // filed at the signed format.
+    let format = match (format, relation) {
+        (MachineIntegerType::UInt64, crate::kernel::CompareRelation::Equal) => {
+            MachineIntegerType::Int64
+        }
+        _ => format,
     };
     Some(ConditionTerm::Compare {
         format,

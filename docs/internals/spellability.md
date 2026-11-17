@@ -374,11 +374,17 @@ the one the text names.
   choosing a term by known provenance. Equalities stay in the equality graph
   and the comparison form, which every check consults.
 
-Closed native order comparisons at 8, 16, 32, and 64 bits retain their comparison
-node, format, and literal operands during logical lowering. Their truth is
-established by checking, including when exact rewriting removed the last
-variable before the comparison was printed. This does not change literal
-arithmetic evaluation or the existing equality normal forms.
+Closed native comparisons at 8, 16, 32, and 64 bits, order and equality
+alike, retain their comparison node, format, and literal operands during
+logical lowering: `1u64 == 0u64` lowers to that comparison, not to `false`.
+Their truth is established by checking
+(`machine_integer::comparison::literal_native_comparison_value`), including
+when exact rewriting removed the last variable before the comparison was
+printed (`mdtests/closed_machine_order_comparisons.md`,
+`mdtests/closed_machine_equality_comparisons.md`). A retained 64-bit
+equality is filed at `int64`, as the folding constructor files a symbolic
+one. This does not change literal arithmetic evaluation, and the shared
+comparison constructors used by checking still fold.
 
 Machine conditionals with closed 32/64-bit order guards retain their `if` node
 and guard during logical lowering. Their arm domains remain guarded, including
