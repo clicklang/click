@@ -2434,7 +2434,11 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
                 step();
                 step();
                 outcomes {
-                    returned => { step(); step(); }
+                    returned => {
+                        step(); // helper
+                        step(); // destructor
+                        step(); // retire the guard's automatic storage
+                    }
                     threw => { step(); step_until(function.exit); solve(); }
                 }
             } else { }
@@ -20897,4 +20901,261 @@ fn check_noexcept_cleanup(profile: &str, declaration: &str, thrown: &str) {
             );
         }
     }
+}
+
+#[test]
+#[ignore = "nightly: record reference local field spelling and complete replay"]
+fn cpp_record_reference_locals_name_fields_and_addresses() {
+    let project = Project::with_fixture(
+        "reference.cpp",
+        "probe",
+        r#"
+struct Widget { int padding; int value; int get() const noexcept { return value; } };
+int probe(const Widget& widget) noexcept { const auto& ref = widget; return ref.get(); }
+"#,
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "reference.cpp";
+int32 Widget::get() const { views this->value; ensures result == this->value; }
+int32 probe(const Widget& widget) { views widget.value; ensures result == widget.value; } by {
+    step(); step();
+    have &ref == &widget;
+    have ref.value == widget.value;
+}
+"#;
+    click::surface::with_proof_trace("probe", || {
+        check_noexcept_replay_all(&project, &import, source)
+    });
+    for bad in [
+        source.replace("views widget.value;", ""),
+        source.replace(
+            "ensures result == widget.value;",
+            "ensures result == widget.value + 1;",
+        ),
+    ] {
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &bad).unwrap();
+        let parsed = read_click_project(&path, &bad).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+}
+
+#[test]
+#[ignore = "nightly: mutable record reference aliases and const observations"]
+fn cpp_record_reference_locals_keep_aliases_and_mutation_authority() {
+    let project = Project::with_fixture(
+        "reference.cpp",
+        "probe",
+        r#"
+struct Widget { int padding; int value; };
+int probe(Widget& widget, int value) noexcept {
+    auto& ref = widget;
+    auto& other = ref;
+    const Widget& observed = other;
+    other.value = value;
+    return observed.value;
+}
+"#,
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "reference.cpp";
+int32 probe(Widget& widget, int32 value) {
+    owns widget.value;
+    views widget.padding;
+    ensures result == value;
+    ensures widget.value == value;
+    ensures widget.padding == old(widget.padding);
+} by {
+    step(); step(); step(); step(); step(); step();
+    have &ref == &widget;
+    have &other == &widget;
+    have &observed == &widget;
+}
+"#;
+    click::surface::with_proof_trace("probe", || {
+        check_noexcept_replay_all(&project, &import, source)
+    });
+    for bad in [
+        source.replace("owns widget.value;", "views widget.value;"),
+        source.replace("owns widget.value;", ""),
+        source.replace("ensures result == value;", "ensures result == 0;"),
+    ] {
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &bad).unwrap();
+        let parsed = read_click_project(&path, &bad).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+}
+
+#[test]
+#[ignore = "nightly: references to local record storage and nested record subobjects"]
+fn cpp_record_reference_locals_bind_objects_and_nested_members() {
+    for (cpp, source) in [
+        (
+            r#"struct Widget { int padding; int value; };
+int probe() noexcept { Widget widget{3, 7}; auto& ref = widget; ref.value = 9; return widget.value; }
+"#,
+            r#"verifying "reference.cpp";
+int32 probe() { ensures result == 9; }
+"#,
+        ),
+        (
+            r#"struct Widget { int padding; int value; }; struct Outer { int first; Widget child; };
+int probe(Outer& outer, int value) noexcept { auto& ref = outer.child; ref.value = value; return outer.child.value; }
+"#,
+            r#"verifying "reference.cpp";
+int32 probe(Outer& outer, int32 value) { owns outer.child.value; ensures outer.child.value == value; ensures result == value; }
+"#,
+        ),
+    ] {
+        let project = Project::with_fixture("reference.cpp", "probe", cpp);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        click::surface::with_proof_trace("probe", || {
+            check_noexcept_replay_all(&project, &import, source)
+        });
+    }
+}
+
+#[test]
+#[ignore = "nightly: record pointer reference binding and invalid-storage rejection"]
+fn cpp_record_reference_locals_check_pointer_backing() {
+    let project = Project::with_fixture(
+        "reference.cpp",
+        "probe",
+        r#"
+struct Widget { int padding; int value; };
+int probe(Widget* pointer) noexcept { auto& ref = *pointer; return ref.value; }
+"#,
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "reference.cpp";
+int32 probe(Widget* pointer) { views pointer->padding; views pointer->value; ensures result == pointer->value; }
+"#;
+    click::surface::with_proof_trace("probe", || {
+        check_noexcept_replay_all(&project, &import, source)
+    });
+    let bad = Project::with_fixture(
+        "null.cpp",
+        "probe",
+        "struct Widget { int value; }; int probe() noexcept { Widget* pointer = nullptr; auto& ref = *pointer; return 0; }",
+    );
+    refresh_import(&bad.config()).unwrap();
+    let import = load_import(&bad.config()).unwrap();
+    let source = "verifying \"null.cpp\"; int32 probe() { ensures result == 0; }";
+    fs::write(bad.directory.join("bad.click"), source).unwrap();
+    let parsed = read_click_project(&bad.directory.join("bad.click"), source).unwrap();
+    assert!(
+        verify_program_prepared_project(&parsed, &import).is_err(),
+        "binding a null record reference must fail without any field read"
+    );
+}
+
+#[test]
+fn cpp_record_reference_locals_refuse_forged_nominal_types_and_const() {
+    use sha2::{Digest, Sha256};
+    let project = Project::with_fixture(
+        "reference.cpp",
+        "probe",
+        r#"
+struct Widget { int value; }; struct Other { int value; };
+int probe(const Widget& widget, const Other& other) noexcept { const Widget& ref = widget; return 0; }
+"#,
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let original_artifact = fs::read(project.artifact()).unwrap();
+    let original_lock = fs::read(project.lock()).unwrap();
+    for mutation in 0..3 {
+        let mut artifact: serde_json::Value = serde_json::from_slice(&original_artifact).unwrap();
+        let other = artifact["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|record| record["name"] == "Other")
+            .unwrap()
+            .clone();
+        let declaration = &mut artifact["functions"][0]["body"][0];
+        if mutation == 2 {
+            declaration["initializer"] = serde_json::json!({"kind":"uninitialized"});
+        } else {
+            for target in ["local", "initializer"] {
+                let ty = if target == "local" {
+                    &mut declaration["local"]["value_type"]["pointee"]
+                } else {
+                    &mut declaration["initializer"]["value"]["value_type"]["pointee"]
+                };
+                if mutation == 0 {
+                    ty["is_const"] = false.into();
+                } else {
+                    ty["declaration_id"] = other["declaration_id"].clone();
+                    ty["name"] = other["name"].clone();
+                }
+            }
+        }
+        let bytes = serde_json::to_vec_pretty(&artifact).unwrap();
+        let mut lock: serde_json::Value = serde_json::from_slice(&original_lock).unwrap();
+        lock_source_mut(&mut lock)["artifact"]["sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_source_mut(&mut lock)["artifact"]["bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(project.lock(), serde_json::to_vec_pretty(&lock).unwrap()).unwrap();
+        let error = load_import(&project.config()).unwrap_err();
+        assert!(
+            error.contains("reference binding") || error.contains("local initializer"),
+            "{error}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "nightly: aliases grant no memory authority and never resurrect retired record storage"]
+fn cpp_record_reference_locals_keep_storage_lifetimes_separate() {
+    let alias = Project::with_fixture(
+        "alias.cpp",
+        "probe",
+        "struct Widget { int value; }; int probe(Widget& widget) noexcept { Widget& ref = widget; return 0; }",
+    );
+    refresh_import(&alias.config()).unwrap();
+    let import = load_import(&alias.config()).unwrap();
+    check_noexcept_replay_all(
+        &alias,
+        &import,
+        "verifying \"alias.cpp\"; int32 probe(Widget& widget) { ensures result == 0; }",
+    );
+    let project = Project::with_fixture(
+        "lifetime.cpp",
+        "probe",
+        r#"
+struct Widget {
+    int value;
+    explicit Widget(int v) noexcept : value(v) {}
+    ~Widget() noexcept { value = 0; }
+};
+int probe() noexcept {
+    Widget* pointer = nullptr;
+    { Widget widget(7); pointer = &widget; }
+    auto& ref = *pointer;
+    return 0;
+}
+"#,
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "lifetime.cpp";
+Widget::Widget(int32 v) { owns this->value; ensures this->value == v; }
+Widget::~Widget() { owns this->value; ensures this->value == 0; }
+int32 probe() { ensures result == 0; }
+"#;
+    let path = project.directory.join("lifetime.click");
+    fs::write(&path, source).unwrap();
+    let parsed = read_click_project(&path, source).unwrap();
+    assert!(
+        verify_program_prepared_project(&parsed, &import).is_err(),
+        "an unused reference must still reject retired record storage"
+    );
 }

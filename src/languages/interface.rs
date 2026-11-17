@@ -829,6 +829,14 @@ impl ImportedFunction {
         &self.local_struct_pointers
     }
 
+    pub(crate) fn with_local_struct_pointers(
+        mut self,
+        pointers: BTreeMap<crate::kernel::BindingName, String>,
+    ) -> Self {
+        self.local_struct_pointers = pointers;
+        self
+    }
+
     pub(crate) fn with_local_struct_values(
         mut self,
         values: BTreeMap<crate::kernel::BindingName, String>,
