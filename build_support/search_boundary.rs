@@ -64,15 +64,6 @@ impl Boundary<'_> {
     }
     fn ident(&mut self, name: &str) {
         let name = name.strip_prefix("r#").unwrap_or(name);
-        if (self.path.starts_with("src/surface")
-            || self.path == "src/kernel/termination/completion.rs")
-            && matches!(
-                name,
-                "program_verified_function_termination_rules" | "generate_independent"
-            )
-        {
-            self.errors.push(format!("{}: {}: ordinary contract orchestration must consume program-owned completed bodies, not the independent termination API ({name})", self.path, self.function));
-        }
         if name == "prepare_independent_loop_exits"
             && self.path != "src/kernel/termination/inputs.rs"
             && self.path != "src/kernel/termination.rs"

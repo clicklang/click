@@ -208,15 +208,7 @@ fn record_resource_clause_attempt() {
 /// outputs still pass through description admission.
 #[derive(Clone, Copy)]
 enum ReturnResourceComposition<'a> {
-    #[cfg(test)]
-    RestoreEntryBorrows,
     ApplyTransfers(&'a ConsumedCellReturns),
-    #[cfg_attr(not(test), allow(dead_code))]
-    BodyAllocations {
-        creator: &'a CreationEvents,
-        events: &'a CreationEvents,
-        consumed: Option<&'a ConsumedCellReturns>,
-    },
     BodyReturn {
         state: &'a ExecutionState,
         frame: &'a ResourceContext,
@@ -230,7 +222,6 @@ impl<'a> ReturnResourceComposition<'a> {
     fn consumed_children(self) -> Option<&'a ConsumedCellReturns> {
         match self {
             Self::ApplyTransfers(plan) => Some(plan),
-            Self::BodyAllocations { consumed, .. } => consumed,
             Self::BodyReturn {
                 consumed,
                 allocations: Some(_),
@@ -249,9 +240,6 @@ impl<'a> ReturnResourceComposition<'a> {
 
     fn allocation_events(self) -> Option<(&'a CreationEvents, &'a CreationEvents)> {
         match self {
-            Self::BodyAllocations {
-                creator, events, ..
-            } => Some((creator, events)),
             Self::BodyReturn { allocations, .. } => allocations,
             _ => None,
         }
@@ -260,8 +248,6 @@ impl<'a> ReturnResourceComposition<'a> {
     fn restores_entry_borrows(self) -> bool {
         match self {
             Self::ApplyTransfers(_) => true,
-            #[cfg(test)]
-            Self::RestoreEntryBorrows => true,
             _ => false,
         }
     }

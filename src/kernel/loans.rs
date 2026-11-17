@@ -1597,12 +1597,6 @@ enum LoanTransitionEvidence {
         loan: LoanId,
         holder: LoanParticipantId,
     },
-    #[cfg_attr(not(test), allow(dead_code))]
-    RegisterDependency {
-        parent: LoanScopeId,
-        child: LoanScopeId,
-        holder: LoanParticipantId,
-    },
 }
 
 /// Kernel-issued evidence for one exact ledger transition.
@@ -1986,8 +1980,7 @@ impl StableViewRecovery {
                 LoanTransitionEvidence::Recover { loan, .. } => {
                     LoanRefusalSubject::with_loan_id(*loan)
                 }
-                LoanTransitionEvidence::End { scope, .. }
-                | LoanTransitionEvidence::RegisterDependency { parent: scope, .. } => {
+                LoanTransitionEvidence::End { scope, .. } => {
                     LoanRefusalSubject::with_scope_id(*scope)
                 }
                 LoanTransitionEvidence::Split { share, .. }
@@ -5728,23 +5721,6 @@ impl LoanLedger {
         self.issue(LoanTransitionEvidence::End { scope, holder })
     }
 
-    #[cfg(test)]
-    pub(crate) fn register_dependency(
-        &self,
-        parent: LoanScopeId,
-        child: LoanScopeId,
-        holder: LoanParticipantId,
-    ) -> Result<CheckedLoanTransition, LoanRefusal> {
-        self.require_arena(parent.arena)?;
-        self.require_arena(child.arena)?;
-        self.require_participant(holder)?;
-        self.issue(LoanTransitionEvidence::RegisterDependency {
-            parent,
-            child,
-            holder,
-        })
-    }
-
     pub(crate) fn recover(
         &self,
         loan: LoanId,
@@ -7108,52 +7084,6 @@ impl LoanLedger {
                     LoanRecord {
                         recovered: true,
                         ..record
-                    },
-                );
-            }
-            LoanTransitionEvidence::RegisterDependency {
-                parent,
-                child,
-                holder,
-            } => {
-                if parent == child {
-                    return Err(LoanRefusal::InvalidEvidence);
-                }
-                let parent_record = data
-                    .scopes
-                    .get(parent)
-                    .cloned()
-                    .ok_or(LoanRefusal::MissingScope)?;
-                let child_record = data
-                    .scopes
-                    .get(child)
-                    .cloned()
-                    .ok_or(LoanRefusal::MissingScope)?;
-                if !parent_record.active || !child_record.active {
-                    return Err(LoanRefusal::ScopeEnded);
-                }
-                if parent_record.close_right != Some(*holder) || child_record.parent.is_some() {
-                    return Err(LoanRefusal::WrongHolder);
-                }
-                let parent_share = data
-                    .shares
-                    .get(&parent_record.root)
-                    .ok_or(LoanRefusal::MissingShare)?;
-                if parent_share.holder != Some(*holder) {
-                    return Err(LoanRefusal::WrongHolder);
-                }
-                data.scopes = data.scopes.with_inserted(
-                    *parent,
-                    LoanScopeRecord {
-                        dependencies: parent_record.dependencies.with_value(*child),
-                        ..parent_record
-                    },
-                );
-                data.scopes = data.scopes.with_inserted(
-                    *child,
-                    LoanScopeRecord {
-                        parent: Some(*parent),
-                        ..child_record
                     },
                 );
             }

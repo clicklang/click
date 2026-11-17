@@ -3578,8 +3578,8 @@ pub fn program_external_function_rule(function: ProgramFunction) -> Option<Exter
 }
 
 /// Builds an untrusted ranking plan. Supplying a plan is not evidence; the
-/// kernel validates it together with the exact verified C functions in
-/// [`crate::kernel::program_verified_function_termination_rules`].
+/// kernel validates it together with the exact verified C functions when it
+/// checks the program's termination obligations.
 pub fn program_function_termination_plan(
     function_name: impl Into<String>,
     recursive_measure: Option<FunctionTerminationMeasure>,
