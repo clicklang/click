@@ -1445,7 +1445,11 @@ from nowhere else, as C's `return value` does:
 `_0` is then not a local. It stays one when it is written on several paths
 that join before the return, when cleanup such as a drop runs between the
 write and the return, or when it holds a struct, a generic value or a heap
-value.
+value. A kept `_0` is named `result`, the name contracts give the returned
+value, or the next free spelling (`result_`) when a source local has that name;
+`MirBody::return_place` records the name for the lowering. The C++ importer
+names its capture of a return value that destructors follow the same way,
+with a numeric suffix on a collision.
 
 These still stay a temporary:
 
