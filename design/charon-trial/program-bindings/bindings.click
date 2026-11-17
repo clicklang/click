@@ -6,9 +6,9 @@ fn program_bindings::count(n: u32) -> u32 {
 } by {
     step_until(loop(0));
     loop {
-        decreases n - rust(iterations);
-        invariant rust(iterations) <= n;
-        invariant rust(iterations) == iterations;
+        decreases n - program::iterations;
+        invariant program::iterations <= n;
+        invariant program::iterations == iterations;
     }
     have loop(0).iterations == n by { solve(); }
 }

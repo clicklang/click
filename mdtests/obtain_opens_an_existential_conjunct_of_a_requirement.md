@@ -14,7 +14,7 @@ verifying "obtain_opens_an_existential_conjunct_of_a_requirement.c";
 theorem below(n: int32) {
     requires n > 0 and exists (k: int32) { k < n };
     ensures exists (m: int32) { m < n } by {
-        obtain (k: int32) { k < n };
+        let k = obtain(exists (k: int32) { k < n });
         witness(k);
         known();
     }

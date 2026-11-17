@@ -2760,6 +2760,7 @@ fn separately_declared_member_bundle(declarations: usize) -> (String, String) {
 /// each time, and 28 declarations of a real proof exhausted the smart budget
 /// with every member already an available fact.
 #[test]
+#[ignore = "nightly: 22s focused, separately declared invariant scaling audit"]
 fn back_edge_closure_over_separately_declared_invariants_is_bounded_by_the_bundle() {
     let closer = [8, 16, 32]
         .into_iter()
@@ -7816,7 +7817,7 @@ fn long_proof_else_spines_parse_on_a_small_stack_and_restore_block_bindings() {
         .spawn(|| {
             let mut body = "normalize();".to_string();
             for index in 0..64 {
-                body = format!("if 0 == 0 {{ normalize(); }} else {{ obtain (v{index}: Integer) {{ v{index} == v{index} }} {body} }} obtain (v{index}: int32) {{ v{index} == v{index} }}");
+                body = format!("if 0 == 0 {{ normalize(); }} else {{ let v{index} = obtain(exists (k: Integer) {{ k == k }}); {body} }} let v{index} = obtain(exists (k: int32) {{ k == k }});");
             }
             parser::parse_file_items(&format!("theorem spine() {{ ensures 0 == 0 by {{ {body} }} }}"))
                 .expect("else scopes restore their existential bindings before later tactics");
@@ -10332,11 +10333,13 @@ fn conjunction_transport_replay_scales_with_explicit_links() {
 }
 
 #[test]
+#[ignore = "nightly: full skewed conjunction expansion and cold replay scaling audit"]
 fn nested_conjunction_transport_scales_with_written_leaves() {
     nested_conjunction_transport_scaling(false);
 }
 
 #[test]
+#[ignore = "nightly: 13s focused, balanced conjunction expansion and cold replay scaling audit"]
 fn balanced_nested_conjunction_transport_scales_with_written_leaves() {
     nested_conjunction_transport_scaling(true);
 }
@@ -10419,6 +10422,7 @@ fn nested_conjunction_transport_scaling(balanced: bool) {
 }
 
 #[test]
+#[ignore = "nightly: full conjunction projection expansion and cold replay scaling audit"]
 fn conjunction_projection_transport_scales_with_written_source() {
     fn balanced(leaves: &[String]) -> String {
         if leaves.len() == 1 {

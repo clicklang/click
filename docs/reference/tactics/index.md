@@ -803,9 +803,8 @@ loop, `iterations` is that loop's own count, and the enclosing proof reads it
 as `loop(i).iterations` once the inner loop exits. `iterations` outside a loop,
 and `loop(i).iterations` on a path that has not left loop `i`, are refused. In a
 loop's clauses and phases bare `iterations` is always the pass count; a
-program variable of that name is [`c(iterations)`](../language/index.md#explicit-c-binding-references),
-or `rust(iterations)` in a Rust sidecar
-([`a_c_local_named_iterations_is_written_c_iterations.md`](https://github.com/clicklang/click/blob/master/mdtests/a_c_local_named_iterations_is_written_c_iterations.md)).
+program variable of that name is [`program::iterations`](../language/index.md#program-binding-references)
+([`a_c_local_named_iterations_is_written_program_iterations.md`](https://github.com/clicklang/click/blob/master/mdtests/a_c_local_named_iterations_is_written_program_iterations.md)).
 Like any proof `Integer`, it compares with a C value directly, `i == iterations`
 ([`a_loop_states_a_running_total_over_its_pass_count.md`](https://github.com/clicklang/click/blob/master/mdtests/a_loop_states_a_running_total_over_its_pass_count.md),
 [`a_loop_pass_count_names_the_passes_after_the_loop.md`](https://github.com/clicklang/click/blob/master/mdtests/a_loop_pass_count_names_the_passes_after_the_loop.md),
@@ -1127,7 +1126,7 @@ step is still checked.
 | `open(resource) { ... }` | control | Specialized | Unfold a resource for a nested proof. | [Reference](#scoped-resource-opening) |
 | `open(...) { ... } by { ... }` | control | Expansion output | Supply the proof that restores an opened resource. | [Reference](#scoped-resource-opening-with-restoration) |
 | `witness(value, ...);` | simple | Specialized | Supply values for existential binders. | [Reference](#existential-witnesses) |
-| `obtain (name: Type, ...) { P }` | simple | Specialized | Name witnesses from an available existential fact. | [Reference](#obtaining-witnesses) |
+| `let name = obtain(exists (k: Type) { P });` | simple | Specialized | Name witnesses from an available existential fact. | [Reference](#obtaining-witnesses) |
 
 `sorry()` is a dev-only proof hole, not a tactic for committed proofs: it
 parses only under `click verify --allow-sorry` and closes its goal without
@@ -3256,46 +3255,32 @@ and profiling charges one instantiation per value.
 
 ### Obtaining witnesses
 
-**Form:** `obtain (name: Type, ...) { P }`
+**Forms:** `let name = obtain(exists (k: Type) { P });` and
+`let (a, b) = obtain(exists (x: T, y: U) { P });`.
 
-**Specialized.** Write it to use an existential fact by naming its witness. Open
-an already established `exists (name: Type, ...) { P }`, introducing the bound
-values and instantiated body into the proof context. Each name is in scope for
-every later tactic of the same proof block, whatever its type: a `have` goal, an
-`instantiate` argument or `using` premise, a `contradiction` fact, a theorem
-argument, or a `witness`.
+**Specialized.** Open an established existential and name its witnesses.
+The right side states the exact available proposition, up to its bound names.
+The left side names the outputs in quantifier order. Their types come from
+the existential. Each output and the instantiated body are available in
+subsequent tactics in the same proof block.
 
-**Accepts** an `obtain` whose written `exists (name: Type, ...) { P }` is an
-available fact up to the binders' names, held alone or as a leaf conjunct of a
-fact (`requires n > 0 and exists (k: int32) { k < n };`), when:
-
-- The fact is a requirement, a `have` conclusion, or another opened body, and
-  `P` is written as the fact states it, with each binder type the same.
-- Binder types are C integers, pointers, `Integer`, or algebraic types.
-- Fewer names than the fact's binders open the outer ones, when `P` is written
-  as the remaining existential: `obtain (a: int32) { exists (y: int32) { a < y } }`
-  opens `exists (x: int32, y: int32) { x < y }` one binder at a time.
-- A `(0..n).any(|k| { B })` fact opens with its bounds written in the body:
-  `obtain (m: int32) { 0 <= m and m < n and B' }`, `B'` being `B` at `m`.
-- No name is a parameter, `result`, a local, or an earlier `obtain` name.
-
-Each name is bound to a fresh value, and the body at those values becomes a
-fact.
-
-**Outside it**, with what to write instead:
-
-- An existential held only under a disjunction or implication: `cases` or
-  `have` it first.
-- A body spelled differently from the fact (`n > m` for `m < n`), or a
-  different binder type: write it as the fact states it.
-- More names than the fact's binders: name only those it has.
+- The existential may be a requirement, a `have` conclusion, or a leaf
+  conjunct of an available fact. It must be available before the tactic runs.
+- One output opens the outermost binder. For example,
+  `let a = obtain(exists (x: int32, y: int32) { x < y });` leaves
+  `exists (y: int32) { a < y }` available.
+- For `(0..n).any(|k| { B })`, give the explicit existential, including the
+  range bounds, as the argument.
+- To open a historical existential, write
+  `let a = obtain(at(point, exists (x: int32) { P }));`.
+- Output names must be distinct and fresh in the proof block. The quantifier
+  binds its own variables independently of the output names.
 
 **Failure, checking, and tools:**
 
-An unavailable existential, wrong binder type, or name already in scope fails;
-the first two print the written existential as an unsatisfied requirement.
-Prove the existential with `have` first if needed. Expansion retains this exact
-step.
+An unavailable existential, too many outputs, or an output name already in
+scope fails. State an existential with `have` first if it needs a proof.
+Expansion retains the `let` and its source proposition.
 
 **Checked examples:** [`integer_exists_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_exists_choose.md), [`witness_and_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/witness_and_choose.md), [`obtain_requires_the_written_existential_body.md`](https://github.com/clicklang/click/blob/master/mdtests/obtain_requires_the_written_existential_body.md)
 

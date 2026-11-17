@@ -100,7 +100,7 @@ fn memory_erased_surface_selection_scales_by_index_height() {
             spellings.record_lowering(&surface, &recorded).unwrap();
             for index in 0..size {
                 let unrelated_surface = ClickProposition::Comparison {
-                    left: ContractExpression::CBinding(format!("unrelated_{index}")),
+                    left: ContractExpression::ProgramBinding(format!("unrelated_{index}")),
                     operator: ComparisonOperator::Equal,
                     right: current_int(index),
                 };

@@ -1,6 +1,6 @@
 # An `obtain`ed int32 witness is in scope for every later tactic
 
-`obtain (k: int32) { k > x }` names the witness of an established existential
+`let k = obtain(exists (k: int32) { k > x });` names the witness of an established existential
 for the rest of the proof block. A later `have` goal, `instantiate` argument
 and `using` premise, and `contradiction` fact all read `k`, exactly as a later
 `witness` or theorem argument does, and as an obtained algebraic binder
@@ -12,7 +12,7 @@ theorem instantiate_at_the_witness(x: int32) {
     requires exists (k: int32) { k > x };
     requires forall (j: int32) { j > x implies x < 1000 };
     ensures x < 1000 by {
-        obtain (k: int32) { k > x }
+        let k = obtain(exists (k: int32) { k > x });
         instantiate(forall (j: int32) { j > x implies x < 1000 }, k);
         known();
     }
@@ -22,7 +22,7 @@ theorem quantifier_binder_shadows_the_witness(x: int32) {
     requires exists (k: int32) { k > x };
     requires forall (k: int32) { k > x implies x < 1000 };
     ensures x < 1000 by {
-        obtain (k: int32) { k > x }
+        let k = obtain(exists (k: int32) { k > x });
         instantiate(forall (k: int32) { k > x implies x < 1000 }, k);
         known();
     }
@@ -33,8 +33,8 @@ theorem two_witnesses_reach_a_contradiction(x: int32) {
     requires exists (m: int32) { m < x };
     requires forall (j: int32) { j > x implies j <= x };
     ensures 0 == 1 by {
-        obtain (k: int32) { k > x }
-        obtain (m: int32) { m < x }
+        let k = obtain(exists (k: int32) { k > x });
+        let m = obtain(exists (m: int32) { m < x });
         have k > x by known();
         have m < x by known();
         instantiate(forall (j: int32) { j > x implies j <= x }, k);

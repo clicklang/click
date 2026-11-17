@@ -1768,17 +1768,17 @@ int32 caller() {
     ensures result == 0;
 } by {
     step_until(function.exit);
-    have at(statement(2).entry, c(result)) == 0 by {
+    have at(statement(2).entry, program::result) == 0 by {
         known();
     }
-    have result == at(statement(2).entry, c(result)) by {
+    have result == at(statement(2).entry, program::result) by {
         normalize();
     }
     known();
 }
 "#;
     verify_c_sources(explicit_source, &sources)
-        .expect("`c(result)` should denote the C local rather than contract result");
+        .expect("`program::result` should denote the C local rather than contract result");
 }
 
 #[test]
@@ -2071,9 +2071,9 @@ int32 contains(uint8 p[], int32 n) {
     ensures bytes::contains(p, 0, n as uint64, 'x') by {
         step_until(function.exit);
         unfold(bytes::contains(p, 0, n as uint64, 'x'));
-        obtain (found: uint64) {
+        let found = obtain(exists (found: uint64) {
             0u64 <= found and found < n as uint64 and p[found] == 'x'
-        };
+        });
         witness(found);
         solve();
     }

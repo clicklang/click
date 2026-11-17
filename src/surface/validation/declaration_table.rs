@@ -147,6 +147,15 @@ fn refuse_reserved_name(kind: DeclarationKind, name: &str) -> Result<(), ClickEr
         }
     }
     if matches!(kind, DeclarationKind::Predicate | DeclarationKind::Function)
+        && matches!(name, "c" | "rust")
+    {
+        return Err(ClickError::new(format!(
+            "`{name}(...)` was the program-binding form, now `program::name`, and is refused \
+             with that replacement, so a {} named `{name}` could never be called; rename it",
+            kind.noun()
+        )));
+    }
+    if matches!(kind, DeclarationKind::Predicate | DeclarationKind::Function)
         && BUILTIN_CALL_FORMS.contains(&name)
     {
         return Err(ClickError::new(format!(
@@ -165,13 +174,11 @@ const BUILTIN_CALL_FORMS: &[&str] = &[
     "aligned",
     "at",
     "byte_offset",
-    "c",
     "contains",
     "defined",
     "memory",
     "object",
     "old",
-    "rust",
     "separate",
     "float32_from_bits",
     "float64_from_bits",

@@ -4,7 +4,7 @@
 theorem bound_names(x: int32) {
     requires exists (k: int32) { k == x };
     ensures forall (k: int32) { k == x } by {
-        obtain (k: int32) { k == x }
+        let k = obtain(exists (k: int32) { k == x });
         intro();
         known();
     }

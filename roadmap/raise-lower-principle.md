@@ -593,8 +593,8 @@ sequence below. These rows record planned scope, not completed implementation.
 
 | Slice | Scope | Acceptance / dependency | Status |
 | --- | --- | --- | --- |
-| 10j | Remove redundant native payloads from stored execution and memory values. | Audit actual wrapper-owned and reachable duplicate payloads first; remove demonstrated redundancy while preserving producer, storage and exact-refresh contracts. Account for live compatibility readers. | Next; audit first. |
-| 10k | Migrate native Integer result storage. | Integer results retain shared roots through result handoffs; exact native output is an explicit boundary. | Planned. |
+| 10j | Remove redundant native payloads from stored execution and memory values. | Audit actual wrapper-owned and reachable duplicate payloads first; remove demonstrated redundancy while preserving producer, storage and exact-refresh contracts. Account for live compatibility readers. | Audit complete; wrapper field duplication already absent; live dependencies below remain. |
+| 10k | Migrate native Integer result storage. | Integer results retain shared roots through result handoffs; exact native output is an explicit boundary. | Implementation and local validation complete; [PR #3151](https://github.com/clicklang/click/pull/3151) has auto-merge requested. Integration pending; evidence below. |
 | 10l | Migrate deferred Integer bindings and fold endpoints. | Deferred bindings and endpoints retain shared operands through substitution and evaluation with unchanged fold behavior. | Planned. |
 | 10m | Migrate algebraic field and match-result storage. | Fields and match results retain shared values with existing constructor/arm identity and producer metadata. | Planned. |
 | 10n | Migrate theorem argument and recorded-state value storage. | Stored arguments and recorded values retain shared operands with unchanged substitution and state selection. | Planned. |
@@ -793,6 +793,91 @@ All 8,508 nonignored library checks passed, including all 1,855 scaling checks.
 The full regular mdtest corpus and examples passed unchanged. Corpus-wide
 fact-stability auditing recorded zero changed terms, zero fact-selected paths
 and 371 refusals without facts. Quality checks passed; Nightly was not run.
+
+### 10j Audit: stored execution and memory payloads
+
+Audited source baseline: `95696b5cf` (the restored plan on `959ad5f90`).
+This is a source/ownership audit, not a runtime allocation measurement or a
+claim that the full storage migration is complete. No implementation changes
+were made for this audit.
+
+**Finding:** there is no independent enclosing native-value field to delete
+from either stored wrapper. `ExecutionValue` is an enum selecting
+`Native(ProgramValue)` or `Shared(KernelTerm)`; `StoredValueData` and
+`StoredMemoryData` each own one such value and a `OnceLock<StoredKey>`.
+Their immutable clones share the enclosing `Arc`; `into_value` unwraps that
+allocation or clones its selected value. Persistent cell maps/indexes can hold
+several handles to the same wrapper without copying an enclosing native tree.
+The field-deletion part of 10j is already satisfied by the current layout.
+
+That does not make all reachable native payloads redundant or removable:
+
+| Remaining storage / reader | Source evidence and reason | Disposition |
+| --- | --- | --- |
+| Native numeric memory carrier | `execution_value.rs`: `From<ExecutionValue> for StoredMemoryValue` converts shared machine roots back to native values. Numeric identity/hash remains native structural syntax. `memory_numeric_keys_keep_native_syntax_instead_of_local_observations` proves that native versus shared call-argument carriers can be distinct memory keys while equal local keys. | Real unresolved storage boundary. Inventory its exact structural key and native readers before any producer switch; do not substitute local observation identity. This is not covered merely by migrating mathematical Integer result storage in 10k. |
+| Native local inputs and their machine observation keys | `StoredKey::for_value` passes a native word clone to `SharedMachineIntegerTerm::intern`. `integer.rs` may retain that written input in `boxed` or `ExactLegacy` alongside a shared observation. It preserves producer input independently of normalized local equality. | Reachable compatibility duplication remains; coordinate reader migration with 10r, rather than removing the stored producer or treating its observation key as exact producer syntax. |
+| Root-owned native compatibility caches | `kernel_term.rs::TermData` owns `argument_leaf`, `machine_leaf` and the weak Integer reverse bridge. `boolean/storage.rs`, `float.rs`, `algebraic.rs` and `pointers.rs` build their native readings through these caches. `ExecutionValue::native`, `native_payload`, `pointer`, `into_native` and `StoredMemoryValue::native` reach them. | Not wrapper-owned duplicate fields. Cache removal remains 10r–10s after the listed readers migrate. Pointer descriptor compatibility also needs explicit accounting in the final audit. |
+| Exact outcome refresh | `StoredExecutionValue::same_native_value` falls back to native comparisons when exact roots differ; `surface/proof/proof_object/outcomes_and_focus.rs::refresh_outcome_from` uses it to prevent changing a checked result. | A live exact comparison consumer, distinct from local observation equality. Preserve its contract when eliminating its compatibility read. |
+| Native cell/local APIs and rewriting | `cell_store.rs`: `native_cell`/`NativeCellIter`, `explicitly_stored_value`, `get`, `remove`, `map_cells_preserving_runs`; `memory_state.rs`: `Locals::get_native`, `scalar_local_value`, `local_cell_values`, union-view and cache readers. Retained counterparts exist for some but not all reads. | Migrate consumers before removing the borrowed/owned native output routes. `CellStore`'s compressed `RunValueMode::Constant(ProgramValue)` is additional native storage outside the two wrappers. |
+| Store admission and heap effective-type records | `memory_state.rs::store_with_effective_type` supplies `value.native()` as the eagerly evaluated debug subject to `debug_assert_widths`; the native borrow is requested even when the callee skips its debug-only body. The heap effective-type path also passes a native value to `HeapEffectiveTypes::record`. `heap_effective_types.rs::HeapEffectiveType` retains `value: ProgramValue`, clones it on record and compares it with the current cell in `class_at`. | A stored shared root can still populate its compatibility cache outside key operations. The effective-type value is live validity evidence, not dead data: migrate its value carrier and confirmation/substitution consumers together. This schema needs explicit closure accounting; it is not removed by 10i. |
+| Selected native fragments inside structural keys | `storage_keys.rs` retains raw Boolean words; `storage_keys/float.rs` retains opaque atoms/nonfloat arguments; `storage_keys/algebraic.rs` retains selected scalar arguments and read addresses; `storage_keys/pointer.rs` exports subobject widths and retains existing offset-index handles. | Keys are derived identity projections, not interchangeable producer values. These selected fragments remain native boundaries even though supported family keys no longer export their enclosing value. |
+
+In particular, the 10i scaling regressions establish the shared **key** route,
+not a claim that every actual memory store avoids native materialization.
+Existing tests also cover immutable carrier retention, exact-refresh versus
+local equality, mixed-carrier order/hash classes, signed-zero/NaN distinctions
+and forced outer hash collisions. This audit inspected those contracts; it did
+not rerun the implementation/scaling suites or weaken any of them.
+
+Recommended disposition: do not schedule a speculative wrapper-field deletion
+PR. The remaining work is consumer migration, with the numeric memory carrier,
+native store/admission readers and effective-type value record called out
+explicitly before deleting compatibility storage. Keep 10j's overall cleanup
+status qualified until those dependencies are assigned and resolved; do not
+silently declare them covered by 10k or by the later cache-removal titles.
+10k–10q remain the saved consumer sequence, and 10r–10s remain dependent cache
+cleanup. Splitting or reassigning the newly explicit memory dependencies is a
+plan decision to discuss, not an implementation change made by this audit.
+
+### 10k Integer result storage
+
+`SpecIntegerPath` now retains `IntegerResult`, which owns only a `KernelTerm`.
+Arithmetic, conditionals and fold initial/body handoffs retain common children.
+Conditional construction preserves native literal-guard and equal-arm behavior,
+including the original left producer when common roots distinguish metadata
+that native equality ignores. No proof rules, search indexes or budgets change.
+
+Growing conditional production exposed a prefix-export regression: work at
+8/32/128 levels was 238/1,702/19,077 with the first storage-only prototype;
+common construction reduces it to 144/552/2,184. Fold body production likewise
+fell from 111/819/9,411 to 20/68/260. Tests cover native-source release,
+constant-cost root handoffs, shared DAGs and native equality classes.
+
+Native comparison, capture, ranking, match rewriting and pure-call descriptors
+remain explicit compatibility outputs. Deferred Integer bindings and fold
+endpoints belong to 10l; algebraic matches/fields to 10m; theorem arguments to
+10n; proposition output schemas to 10q. Native machine memory carriers found
+by 10j are not mathematical Integer result storage and remain unresolved.
+
+The changed-endpoint negative fold fixture previously asserted failure for a
+true zero-count equality: storing one adds zero to that count. An accepted
+trace unfolds the calls, splits off that zero contribution, and transports
+only the unchanged prefix. Preserve that source as a positive fixture with
+expansion/replay coverage; the negative now counts ones, making its unchanged
+endpoint claim false (already for index zero in a one-element range). The C
+program and tactic steps are unchanged. No proof weakening was needed.
+
+Validation: 30 focused Integer checks; 2,294 Spec/API/termination/documentation
+and scaling checks (including all 1,881 scaling cases). One narrow-cast case
+hit its unchanged 30-second limit in the first concurrent run; all four sizes
+passed in isolation, and the remaining selection passed with two workers.
+The workspace reconnect lost that latter runner handle; its completed log
+reports all 2,288 selected cases passing. The regular mdtest corpus, fact
+stability (zero changed terms/paths), regular examples and quality checks
+passed before the final direct-fold producer adjustment; after integrating upstream `2ba6b3961`, all 509 Spec/API/termination checks,
+the fold-read fixture selection, named expansion/replay with implicit solving
+disabled, and quality checks passed (combined script exit zero). Full nightly was not
+run.
 
 ## Chunk 3: machine-valued pure-function results
 

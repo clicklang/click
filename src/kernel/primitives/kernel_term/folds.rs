@@ -130,21 +130,11 @@ impl KernelFold {
         }
     }
 
-    pub(crate) fn import_integer(
+    fn integer_index(
         import: &mut KernelTermImport,
-        source: &IntegerTerm,
-    ) -> Option<Self> {
-        let IntegerTerm::RangeFold {
-            index,
-            initial,
-            accumulator,
-            item,
-            body,
-        } = source
-        else {
-            return None;
-        };
-        let (index, start, end) = match index {
+        index: &IntegerRangeFoldIndex,
+    ) -> (KernelFoldIndex, KernelTerm, KernelTerm) {
+        match index {
             IntegerRangeFoldIndex::Int32 { start, end } => (
                 KernelFoldIndex::Int32,
                 Self::import_endpoint(import, MachineIntegerType::Int32, start),
@@ -160,7 +150,38 @@ impl KernelFold {
                 import.integer(start),
                 import.integer(end),
             ),
+        }
+    }
+
+    /// Common result production imports only the selected endpoints. Initial
+    /// value and body are already retained roots, not native compatibility reads.
+    pub(crate) fn integer_with_children(
+        index: &IntegerRangeFoldIndex,
+        accumulator: Variable,
+        item: Variable,
+        initial: KernelTerm,
+        body: KernelTerm,
+    ) -> Self {
+        let (index, start, end) = Self::integer_index(&mut KernelTermImport::default(), index);
+        Self::new(index, accumulator, item, [start, end, initial, body])
+            .expect("Integer fold result types")
+    }
+
+    pub(crate) fn import_integer(
+        import: &mut KernelTermImport,
+        source: &IntegerTerm,
+    ) -> Option<Self> {
+        let IntegerTerm::RangeFold {
+            index,
+            initial,
+            accumulator,
+            item,
+            body,
+        } = source
+        else {
+            return None;
         };
+        let (index, start, end) = Self::integer_index(import, index);
         Some(
             Self::new(
                 index,

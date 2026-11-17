@@ -67,6 +67,10 @@ Kernel files:
 - `reasoning.rs`: deterministic proof helpers, finite forall/range reasoning,
   substitutions, execution-derived pure facts, and obligation plumbing.
 - `spec.rs`: `SpecExpression`/`SpecProposition` lowering and evaluation.
+  `spec/integer_result.rs` retains one common Integer root through evaluator
+  paths, arithmetic, conditionals and fold initial/body production. Native
+  comparison, capture and ranking outputs use explicit compatibility reads;
+  deferred bindings and fold endpoints remain separate storage boundaries.
 - `eval.rs`: program expression/statement evaluation and memory operations.
 - `loops.rs`: loop verification, loop effects, loop havoc, and invariant
   helpers.
@@ -1748,7 +1752,7 @@ raises to `exception.storage()` and grants no storage or ownership. Neither `exc
 name `__click_exception` is decoded into a kernel identity, so a source
 variable of either name cannot replace the payload or alias its slot.
 
-Bare `result` lowers to that typed binding, while `c(result)` resolves the
+Bare `result` lowers to that typed binding, while `program::result` resolves the
 source C binding, including inside casts, field projections, and array indices.
 Kernel post-state reconstruction and fixed-state proof lowering preserve a
 same-named parameter's value.

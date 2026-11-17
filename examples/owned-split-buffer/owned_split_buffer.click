@@ -300,8 +300,8 @@ int32 owned_split_buffer_pipeline(
         preserve(memory(data[1]), statement(6).assignment(result, 0));
     }
     have data[1] == right_value by { known(); }
-    apply(int32_equality_transitive(c(result), data[1], right_value)) using {
-        c(result) == data[1];
+    apply(int32_equality_transitive(program::result, data[1], right_value)) using {
+        program::result == data[1];
         data[1] == right_value;
     };
     step();

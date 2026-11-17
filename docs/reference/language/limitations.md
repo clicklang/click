@@ -294,8 +294,8 @@ lowering concept for parameters written as `int32 p[]`, `int32* p`,
 `exists (x: int32, y: int32) { ... }` are supported. Symbolic
 `(lo..hi).any(...)` lowers to a bounded existential. Proof scripts prove an
 existential goal with `witness(expression);`. To open an already established
-existential fact, write `obtain (k: int32) { ... };`; the same form accepts
-multiple typed bindings. A predicate requirement can be unfolded first.
+existential fact, write `let k = obtain(exists (x: int32) { ... });`. Use a tuple of output
+names for multiple witnesses. A predicate requirement can be unfolded first.
 
 `solve` and the implicit closer do not synthesize witnesses. `obtain` requires the exact
 existential to be available; use `have` to establish it if necessary. Concrete

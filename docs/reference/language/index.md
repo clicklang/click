@@ -1763,7 +1763,7 @@ proposition, and an unmet one is reported by its text. An `ensures` label
 names its postcondition claim. A loop `invariant` may be labeled the same
 way, and the label names it where a failure reports it: "loop 0 invariant
 `bounded` entry" for `invariant bounded: i <= n;`. To open an available existential precondition, write its
-proposition with `obtain (...) { ... };`.
+proposition with `let k = obtain(exists (x: Type) { ... });`.
 
 `viewable(base[start..end])` and `memory(base[start..end])` use half-open
 integer element ranges. The byte count is derived from the base pointer's
@@ -3783,7 +3783,7 @@ predicate, it becomes an entry-state Click array ref. For example,
 `permutation::permutation(p, old(p), 0, 2)` compares post-state `p` to entry-state `p`.
 See [Surface Click and Kernel Click](../../concepts/surface-and-kernel.md).
 
-## `c(...)`
+## `program::` and qualified names
 
 ### File-qualified C objects
 
@@ -3862,15 +3862,18 @@ qualify functions as values or arrays of structs.
 Aliases must be unique and cannot share a name with a specification datatype.
 Existing unqualified references and `verifying "file.c";` remain unchanged.
 
-### Explicit C binding references
+### Program binding references
 
-`c(name)` explicitly refers to the binding named `name` in the verified C
-program. It is distinct from Click built-ins and contract bindings with the
-same name. In particular, bare `result` is the function's contract result,
-while `c(result)` is a C parameter or local named `result`. The contract return
+`program::name` explicitly refers to the binding named `name` in the verified
+program, resolved as the program itself resolves it at that point: its
+parameters and locals, then file statics and globals. The form is the same in
+every source language. It is distinct from Click built-ins and contract
+bindings with the same name. In particular, bare `result` is the function's
+contract result, while `program::result` is a parameter or local named
+`result`. The contract return
 value has a separate internal binding, so a postcondition can use both names.
 After function exit, a parameter reference denotes its logical input value.
-Use `old(c(result))` or `at(function.entry, c(result))` to refer explicitly to
+Use `old(program::result)` or `at(function.entry, program::result)` to refer explicitly to
 the parameter's entry value.
 
 C locals exist only while they are in scope. After function exit, refer to a
@@ -3878,21 +3881,21 @@ local through a recorded point:
 
 <!-- verified-example: mdtests/c_local_named_result_state.md -->
 ```click
-result == at(region(2).entry, c(result))
+result == at(region(2).entry, program::result)
 ```
 
-The AST retains this distinction; `c(result)` is not converted to an ordinary
+The AST retains this distinction; `program::result` is not converted to an ordinary
 string variable and cannot be reinterpreted as contract `result`. Expansion
 uses this form when an explicit proof must name an overlapping C
 binding.
 
 The same holds for every Click value name: in a loop's clauses and phases bare
-`iterations` is the loop's pass count, and `c(iterations)` a program variable
-named `iterations`; diagnostics print that variable as `c(iterations)`
-([`a_c_local_named_iterations_is_written_c_iterations.md`](https://github.com/clicklang/click/blob/master/mdtests/a_c_local_named_iterations_is_written_c_iterations.md)).
-A Rust sidecar writes the form in its own language, `rust(name)`, and refuses
-`c(name)`; a C or C++ sidecar refuses `rust(name)`
-([`a_c_sidecar_names_a_program_binding_c_not_rust.md`](https://github.com/clicklang/click/blob/master/mdtests/a_c_sidecar_names_a_program_binding_c_not_rust.md),
+`iterations` is the loop's pass count, and `program::iterations` a program variable
+named `iterations`; diagnostics print that variable as `program::iterations`
+([`a_c_local_named_iterations_is_written_program_iterations.md`](https://github.com/clicklang/click/blob/master/mdtests/a_c_local_named_iterations_is_written_program_iterations.md)).
+The earlier language-named forms `c(name)` and `rust(name)` are refused with
+the replacement, and a source alias cannot be named `program`
+([`a_language_named_program_binding_is_refused.md`](https://github.com/clicklang/click/blob/master/mdtests/a_language_named_program_binding_is_refused.md),
 [`design/charon-trial/program-bindings`](https://github.com/clicklang/click/blob/master/design/charon-trial/program-bindings/bindings.click)).
 
 Returning a pointer does not extend an automatic object's lifetime. A returned
@@ -4101,7 +4104,7 @@ The contract `result` exists only once the function returns, so `old(...)` and
 refused where they are written (`mdtests/old_of_result_is_refused.md`,
 `mdtests/an_entry_point_cannot_name_result.md`). A proof mark can name it,
 since a proof may place the mark after the return. A C binding named `result`
-is still written `c(result)` inside `at(...)` or `old(...)`.
+is still written `program::result` inside `at(...)` or `old(...)`.
 
 `at(function.exit, ...)` reads the state the function returns in. It is
 available where `result` is: in a postcondition and in a proof step after
