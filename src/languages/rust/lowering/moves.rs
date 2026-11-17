@@ -379,6 +379,15 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     program_return(crate::kernel::program_expression::variable("__rust_mir_0"))
                 }
             }
+            // The value MIR wrote to its return place, returned as written.
+            T::ReturnValue { value } => {
+                let (checks, value) = cx.prepared_expr(value)?;
+                let return_type = scalar_type(&f.return_type)?.to_kernel_type();
+                program_seq(
+                    checks,
+                    program_return(crate::kernel::program_expression::cast(value, return_type)),
+                )
+            }
             T::Unreachable => program_assert(crate::kernel::program_expression::int32_literal(0)),
             T::Panic { message } => program_labeled_assert(
                 crate::kernel::program_expression::int32_literal(0),

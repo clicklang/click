@@ -3756,6 +3756,7 @@ pub(super) fn decode_crate(
         temporaries::call_steps(&mut locals, &mut blocks, &temporaries);
         temporaries::collapse_iterator_moves(&mut locals, &mut blocks, &temporaries);
         temporaries::bind_range_payloads(&mut locals, &mut blocks, &temporaries);
+        temporaries::return_values(&mut locals, &mut blocks);
         functions.push(out::Function {
             sites: source_statements
                 .iter()

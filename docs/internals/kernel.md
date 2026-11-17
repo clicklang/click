@@ -1432,6 +1432,21 @@ then makes the test read the result without ending it,
 the `Some` arm's payload read ends it. The loop's header holds the call, so
 it lowers as `while (1) { next; if (!is_some) break; body }`.
 
+MIR writes a function's return value to its return place `_0` and then
+returns `_0`. `temporaries::return_values` returns the written value itself
+when `_0` holds a scalar or an enum, is written once, and that write reaches
+`Return` past only source sites and storage markers, through blocks entered
+from nowhere else, as C's `return value` does:
+
+- `_0 = value` ends its block in `MirTerminator::ReturnValue { value }`;
+- a tail call writing `_0` becomes a call step, and its successor ends in
+  `ReturnValue` of `CallResult` for that step.
+
+`_0` is then not a local. It stays one when it is written on several paths
+that join before the return, when cleanup such as a drop runs between the
+write and the return, or when it holds a struct, a generic value or a heap
+value.
+
 These still stay a temporary:
 
 - a call's result read more than once, so a slice, chunk or `enumerate`

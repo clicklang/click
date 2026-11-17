@@ -198,6 +198,10 @@ mod tests {
             .unwrap();
         for block in &mut initializer.mir.as_mut().unwrap().blocks {
             block.statements.clear();
+            // The initializer returns its value as written.
+            if let out::MirTerminator::ReturnValue { value } = &mut block.terminator {
+                *value = out::Expression::UsizeInteger { value: 0 };
+            }
         }
         let prepared = super::super::super::import::prepared_for_test(changed).unwrap();
         assert!(
