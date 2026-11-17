@@ -6901,3 +6901,111 @@ fn negative_int64_comparisons_round_trip_under_point_selectors() {
         );
     }
 }
+
+fn check_order_guard_conditional_round_trips(
+    format: crate::kernel::MachineIntegerType,
+    spelling: &str,
+    guards: &[(&str, i32)],
+) {
+    use crate::kernel::proof::ProofFacts;
+    for operator in ["<", "<=", ">", ">="] {
+        for &(guard, bound) in guards {
+            for reverse in [false, true] {
+                let _session = crate::kernel::VerificationSession::enter();
+                let state = ExecutionState::new()
+                    .with_local(
+                        "x",
+                        format.value_from_term(MachineTerm::Variable(Variable(999708))),
+                    )
+                    .with_local(
+                        "y",
+                        format.value_from_term(MachineTerm::Variable(Variable(999709))),
+                    );
+                let parse = |text: &str| {
+                    let file = parser::parse(&format!(
+                        "theorem probe() {{ requires {text}; ensures true; }}"
+                    ))
+                    .unwrap();
+                    let Requirement::Proposition(p) = &file.theorem_definitions()[0].requires()[0]
+                    else {
+                        panic!("expected a proposition")
+                    };
+                    p.clone()
+                };
+                let equality =
+                    relower_written_proposition(&parse(&format!("x == (9 as {spelling})")), &state)
+                        .unwrap();
+                let value = format!(
+                    "to_integer(if {guard} {operator} ({bound} as {spelling}) {{ x }} else {{ 3 as {spelling} }})"
+                );
+                let goal = if reverse {
+                    format!("100 <= {value}")
+                } else {
+                    format!("{value} <= 100")
+                };
+                let original = relower_written_proposition(&parse(&goal), &state).unwrap();
+                let rewritten = ProofFacts::from_ordered(std::slice::from_ref(&equality))
+                    .check_equality_rewrite(&original, &equality)
+                    .unwrap()
+                    .proposition()
+                    .clone();
+                let Proposition::ConditionIs(condition, true) = rewritten else {
+                    panic!("expected a comparison")
+                };
+                for truth in [true, false] {
+                    let produced = Proposition::ConditionIs(condition.clone(), truth);
+                    let raised = synthesize_surface_proposition(
+                        &produced,
+                        ParameterBinding::default(),
+                        &state,
+                    )
+                    .unwrap();
+                    let text = crate::surface::printing::source_click_proposition(&raised);
+                    let restored = relower_written_proposition(&parse(&text), &state).unwrap();
+                    assert_eq!(
+                        restored, produced,
+                        "{spelling}, {operator}, bound={bound}, reverse={reverse}, truth={truth}: {text}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn closed_uint32_order_guard_conditionals_round_trip_after_rewrite() {
+    check_order_guard_conditional_round_trips(
+        crate::kernel::MachineIntegerType::UInt32,
+        "uint32",
+        &[("x", 8), ("x", 10)],
+    );
+}
+#[test]
+fn closed_int64_order_guard_conditionals_round_trip_after_rewrite() {
+    check_order_guard_conditional_round_trips(
+        crate::kernel::MachineIntegerType::Int64,
+        "int64",
+        &[("x", 8), ("x", 10)],
+    );
+}
+#[test]
+fn closed_uint64_order_guard_conditionals_round_trip_after_rewrite() {
+    check_order_guard_conditional_round_trips(
+        crate::kernel::MachineIntegerType::UInt64,
+        "uint64",
+        &[("x", 8), ("x", 10)],
+    );
+}
+
+#[test]
+fn symbolic_order_guard_conditionals_round_trip_after_rewrite() {
+    use crate::kernel::MachineIntegerType as T;
+    for (format, spelling) in [
+        (T::Int32, "int32"),
+        (T::UInt32, "uint32"),
+        (T::Int64, "int64"),
+        (T::UInt64, "uint64"),
+    ] {
+        check_order_guard_conditional_round_trips(format, spelling, &[("y", 8)]);
+    }
+}

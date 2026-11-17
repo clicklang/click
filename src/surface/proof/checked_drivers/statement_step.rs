@@ -29,7 +29,7 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
         .core
         .checked_step_case_context(execution.presentation.case_assumptions.len());
     let state: &mut ExecutionState = &mut execution.core.state;
-    let assumptions = requirement_pure_facts.assumptions();
+    let assumptions = requirement_pure_facts.store().assumptions();
     // A bare `step()` executes in the whole proof context: prerequisites
     // are proved from it, and nothing is transported per step because the
     // kernel keeps cell names it can prove unwritten from that context.
@@ -113,10 +113,8 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
             step_facts.push(resource_fact);
         }
     }
-    let step_facts = match local_context {
-        Some(context) => PureFactList::with_checked_context(step_facts, context),
-        None => PureFactList::from(step_facts),
-    };
+    let step_facts =
+        PureFactList::for_statement(step_facts, local_context, requirement_pure_facts.store());
     let apply = |policy, selected_context| {
         execute_step_successor_from_frontier_position(
             execution,

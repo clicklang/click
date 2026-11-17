@@ -1171,7 +1171,7 @@ fn charon_adler2_empty_compute_tools_recheck_original_contract() {
 #[ignore = "nightly: 5s in the parallel gate"]
 fn charon_adler2_single_byte_compute_rejects_missing_length_and_view() {
     reject_single_byte_compute("requires bytes.len() == 1u64;", "");
-    reject_single_byte_compute("views bytes[0..1];", "");
+    reject_single_byte_compute("views bytes[0..1];", "views bytes[0..0];");
 }
 
 #[test]
@@ -1523,7 +1523,7 @@ fn charon_adler2_four_byte_compute_tools_recheck_original_contract() {
 #[test]
 #[ignore = "nightly: checksum contract mutation checks"]
 fn charon_adler2_small_batch_compute_rejects_missing_view_and_full_outer_batch() {
-    reject_compute(SMALL_BATCH_COMPUTE, " views *bytes;", "");
+    reject_compute(SMALL_BATCH_COMPUTE, " views *bytes;", " views bytes[0..0];");
     reject_compute(
         SMALL_BATCH_COMPUTE,
         " requires bytes.len() <= 22207u64;\n     requires bytes.len() < 22208u64;",
@@ -2787,7 +2787,7 @@ fn charon_adler2_resumed_client_matches_concatenated_input_and_rejects_false_cla
             "ensures to_integer(result) == old(adler_spec_checksum_u64(bytes, bytes.len(), 1, 0)) + 1;",
         ),
         ("requires split <= bytes.len();", ""),
-        ("views *bytes;", ""),
+        ("views *bytes;", "views bytes[0..0];"),
         (
             "implies bytes[k] == old(bytes[k])",
             "implies bytes[k] == old(bytes[k]) + 1",

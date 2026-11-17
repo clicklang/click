@@ -101,6 +101,8 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
             Ok(joined)
         }
         ProgramStatement::Loop {
+            test,
+            update,
             condition,
             invariant_checks,
             effect_checks,
@@ -205,6 +207,8 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                 // The loop head invents identities for everything the body can
                 // change, from this execution's counter rather than from the
                 // base of the identity range.
+                let pass_body =
+                    crate::kernel::program_loop_pass(body, update.as_deref(), test.as_ref());
                 let preservation_contexts = if *do_while {
                     program_do_while_preservation_contexts(
                         &context.state,
@@ -213,7 +217,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                         effect_checks,
                         resource_specs,
                         environment.function.composite_resource_definitions(),
-                        body,
+                        &pass_body,
                         &assumptions,
                         context.next_kernel_variable,
                     )
@@ -225,7 +229,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                         effect_checks,
                         resource_specs,
                         environment.function.composite_resource_definitions(),
-                        body,
+                        &pass_body,
                         &assumptions,
                         context.next_kernel_variable,
                     )
@@ -262,6 +266,8 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                                     &pure_facts,
                                     &context.recorded_states,
                                     body,
+                                    update.as_ref(),
+                                    test.as_ref(),
                                     environment,
                                 )
                                 .map_err(|error| {
@@ -311,6 +317,8 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                             structural_measure.as_deref(),
                             condition,
                             body,
+                            update.as_ref(),
+                            test.as_ref(),
                             *do_while,
                             environment,
                         )

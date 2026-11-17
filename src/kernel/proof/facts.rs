@@ -200,7 +200,7 @@ fn commit_reserved_variables(
 /// the kernel's incrementally updated reasoning context. Forking shares both;
 /// adding one fact copies only logarithmic index/context paths.
 #[derive(Clone, Default)]
-pub(crate) struct ProofFacts {
+pub(crate) struct PureFactStore {
     ordered: PersistentSequence<Arc<Proposition>>,
     reserved_variables: PersistentSet<Variable>,
     /// The interned states whose every variable `reserved_variables`
@@ -209,6 +209,9 @@ pub(crate) struct ProofFacts {
     reserved_states: crate::kernel::reasoning::variable_collection::ReservedStates,
     prioritized: Option<Arc<PrioritizedProofFacts>>,
     top_level_exact: PersistentSet<Arc<Proposition>>,
+    /// Exact written conjunction nodes, without comparison or observation aliases.
+    /// Enabled for statement-local views; general proof stores do not build it.
+    stated_conjuncts: Option<PersistentSet<Arc<Proposition>>>,
     exact: PersistentSet<Arc<Proposition>>,
     /// Exact typed call payloads ignore only the native/shared argument
     /// carrier choice; they retain state, argument order and type keys.
@@ -270,8 +273,6 @@ pub(crate) struct ProofFacts {
     /// with one probe; unrelated universals are never visited.
     quantified_conjunct_projections:
         PersistentMap<QuantifiedEquivalenceKey, PersistentSequence<Arc<Proposition>>>,
-    /// Selected load identities checked while presenting a rewritten goal.
-    rewritten_load_evidence: PersistentSequence<CheckedLoadEquality>,
     implications_by_consequent:
         PersistentMap<MemoryErasedPropositionKey, PersistentSequence<ImplicationCandidate>>,
     /// Alpha-invariant selection for quantified implication consequents.
@@ -283,269 +284,118 @@ pub(crate) struct ProofFacts {
     by_predicate: PersistentMap<String, PersistentSequence<Arc<Proposition>>>,
 }
 
-/// A statement transition places its explicitly transported successor facts
-/// before the ambient facts retained at their original states. Prefix
-/// batches preserve that semantic order without copying the ambient sequence.
-struct PrioritizedProofFacts {
-    parent: Option<Arc<PrioritizedProofFacts>>,
-    facts: PrioritizedStatementFacts,
-    introduced: Arc<Vec<Proposition>>,
+/// Proof-local evidence paired with the scope's persistent pure fact store.
+/// Fact storage and reasoning indexes live only in `PureFactStore`.
+#[derive(Clone, Default)]
+pub(crate) struct ProofFacts {
+    store: PureFactStore,
+    rewritten_load_evidence: PersistentSequence<CheckedLoadEquality>,
 }
 
-struct PrioritizedStatementFacts {
-    prefix: ExecutionFacts,
-    suffix: Arc<Vec<Proposition>>,
-}
-impl PrioritizedStatementFacts {
-    fn iter(&self) -> impl Iterator<Item = &Proposition> {
-        self.prefix
-            .iter()
-            .map(ExecutionPureFact::proposition)
-            .chain(self.suffix.iter())
+// Read-only fact queries delegate to the store. Successor operations below
+// explicitly retain proof-local evidence rather than copying it into the store.
+impl std::ops::Deref for ProofFacts {
+    type Target = PureFactStore;
+    fn deref(&self) -> &Self::Target {
+        &self.store
     }
 }
 
-/// One indexed prefix of an available implication chain. The consequent key
-/// selects this small candidate; checking still validates every antecedent
-/// and the exact or alpha-equivalent quantified consequent.
-#[derive(Clone)]
-struct ImplicationCandidate {
-    antecedents: PersistentSequence<Proposition>,
-    consequent: Proposition,
-    /// For an entry filed under one conjunct of a conjunctive consequent,
-    /// that whole consequent. Such an entry serves only the search for a
-    /// conjunct (`discharged_implication_containing`); whole-consequent lookup
-    /// reads the entries without one.
-    whole: Option<Proposition>,
-}
-
-#[derive(Clone)]
-struct IntegerConditionAlphaCandidate {
-    key: IntegerConditionAlphaKey,
-    proposition: Proposition,
-}
-
-/// A bounded-comparison selector for equality rewrite provenance. Complex
-/// arithmetic operands remain on the kernel-derivation path; this index covers
-/// the atomic value/state operands that outcome arithmetic rewrites need.
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-enum BitvectorEqualityAtomKey {
-    Constant(u32),
-    Variable(Variable),
-    PointerReadSource(u64),
-    ClickFunctionApplication {
-        name: String,
-        arguments_hash: u64,
-        // Keep ID-based numeric keys alive as long as the indexed fact.
-        machine_identities: Vec<SharedMachineIntegerTerm>,
-    },
-    MemoryLoad {
-        memory: (u32, u32),
-        pointer_hash: u64,
-    },
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-enum AlgebraicCallOperandKey {
-    Call(AlgebraicType, SharedPureApplication),
-    Variable(AlgebraicType, Variable),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-enum CallPayloadKey {
-    Machine(
-        MachineIntegerType,
-        u8,
-        bool,
-        [crate::kernel::equality_graph::MachineAtom; 2],
-    ),
-    AlgebraicCondition(bool, [AlgebraicCallOperandKey; 2]),
-    AlgebraicEquation([AlgebraicCallOperandKey; 2]),
-}
-
-fn call_payload_identity_key(fact: &Proposition) -> Option<CallPayloadKey> {
-    fn algebraic(term: &AlgebraicTerm) -> Option<AlgebraicCallOperandKey> {
-        Some(match &term.node {
-            AlgebraicTermNode::PureFunctionApplication { name, arguments } => {
-                AlgebraicCallOperandKey::Call(
-                    term.algebraic_type.clone(),
-                    SharedPureApplication::intern(name.clone(), arguments.clone()),
-                )
-            }
-            AlgebraicTermNode::Variable(variable) => {
-                AlgebraicCallOperandKey::Variable(term.algebraic_type.clone(), *variable)
-            }
-            _ => return None,
-        })
-    }
-    let machine_call =
-        |term: &MachineTerm| matches!(term, MachineTerm::ClickFunctionApplication { .. });
-    let algebraic_call = |term: &AlgebraicTerm| {
-        matches!(term.node, AlgebraicTermNode::PureFunctionApplication { .. })
-    };
-    Some(match fact {
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format,
-                relation,
-                left,
-                right,
-            },
-            truth,
-        ) if machine_call(left) || machine_call(right) => CallPayloadKey::Machine(
-            *format,
-            *relation as u8,
-            *truth,
-            [
-                crate::kernel::equality_graph::MachineAtom::from_operand(
-                    *format,
-                    MachineOperandView::Legacy(left),
-                ),
-                crate::kernel::equality_graph::MachineAtom::from_operand(
-                    *format,
-                    MachineOperandView::Legacy(right),
-                ),
-            ],
-        ),
-        Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(left, right), truth)
-            if algebraic_call(left) || algebraic_call(right) =>
-        {
-            CallPayloadKey::AlgebraicCondition(*truth, [algebraic(left)?, algebraic(right)?])
-        }
-        Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right))
-            if algebraic_call(left) || algebraic_call(right) =>
-        {
-            CallPayloadKey::AlgebraicEquation([algebraic(left)?, algebraic(right)?])
-        }
-        _ => return None,
-    })
-}
-
-fn index_call_payload(
-    keys: PersistentSet<CallPayloadKey>,
-    fact: &Proposition,
-) -> PersistentSet<CallPayloadKey> {
-    match call_payload_identity_key(fact) {
-        Some(key) => keys.with_value(key),
-        None => keys,
-    }
-}
-
-/// Borrowed access to proposition premises. Persistent proofs supply their
-/// existing indexes; source/setup slices retain their ordered boundary view.
-/// This interface owns neither proof state nor completion evidence.
-pub(crate) trait PropositionSource {
-    fn propositions(&self) -> impl Iterator<Item = &Proposition>;
-    fn pure_context(&self) -> PureFactContext {
-        self.propositions()
-            .inspect(|_| crate::kernel::reasoning::path_facts::count_context_rebuild_entries(1))
-            .map(crate::kernel::clone_proposition_iteratively)
-            .fold(PureFactContext::new(), PureFactContext::assume_proposition)
-    }
-    fn exact_available(&self, required: &Proposition) -> bool {
-        self.propositions()
-            .any(|fact| exact_fact_contains_conjunct(fact, required))
-    }
-    /// Fresh proof facts indexing these propositions in order. A source
-    /// that keeps indexed facts for them extends those instead.
-    fn indexed_proof_facts(&self) -> ProofFacts {
-        ProofFacts::from_source(self)
-    }
-}
-impl PropositionSource for [Proposition] {
-    fn propositions(&self) -> impl Iterator<Item = &Proposition> {
-        self.iter()
-    }
-}
-impl PropositionSource for Vec<Proposition> {
-    fn propositions(&self) -> impl Iterator<Item = &Proposition> {
-        self.iter()
-    }
-}
-impl<const N: usize> PropositionSource for [Proposition; N] {
-    fn propositions(&self) -> impl Iterator<Item = &Proposition> {
-        self.iter()
-    }
-}
 impl PropositionSource for ProofFacts {
     fn propositions(&self) -> impl Iterator<Item = &Proposition> {
-        let mut seen = BTreeSet::new();
-        std::iter::successors(self.prioritized.as_deref(), |batch| batch.parent.as_deref())
-            .flat_map(|batch| batch.facts.iter())
-            .chain(self.ordered.iter().map(Arc::as_ref))
-            .filter(move |fact| seen.insert(*fact))
+        self.store.propositions()
     }
     fn pure_context(&self) -> PureFactContext {
-        self.assumptions().clone()
+        self.store.pure_context()
     }
     fn exact_available(&self, required: &Proposition) -> bool {
-        self.contains(required) || self.matching_quantified_fact(required).is_some()
+        self.store.exact_available(required)
     }
-}
-
-/// Whether `proposition` equates two constructors of different variants of
-/// one algebraic type, which no value satisfies.
-fn is_constructor_clash(proposition: &Proposition) -> bool {
-    matches!(proposition,
-        Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right))
-            if left.algebraic_type == right.algebraic_type
-                && matches!((&left.node, &right.node), (
-                    AlgebraicTermNode::Constructor { variant: left, .. },
-                    AlgebraicTermNode::Constructor { variant: right, .. },
-                ) if left != right))
-}
-
-/// What an implication chain `a implies .. z implies c` whose consequent `c`
-/// equates two constructors says once those are decided: for different
-/// variants, `c` is false, so `a implies .. not z`; for one variant, `c` is
-/// its fields' equalities, each `a implies .. z implies f`. Empty for any
-/// other proposition.
-pub(crate) fn constructor_consequent_instances(proposition: &Proposition) -> Vec<Proposition> {
-    let Proposition::Implies(antecedent, consequent) = proposition else {
-        return Vec::new();
-    };
-    if is_constructor_clash(consequent) {
-        return vec![match antecedent.as_ref() {
-            // The refuted condition in a positive form where one exists,
-            // `x > 100` rather than `x <= 100` false, as a branch states it.
-            Proposition::ConditionIs(condition, value) => {
-                let refuted = Proposition::ConditionIs(condition.clone(), !value);
-                condition_polarity_forms(&refuted)
-                    .into_iter()
-                    .rev()
-                    .find(|form| matches!(form, Proposition::ConditionIs(_, true)))
-                    .unwrap_or(refuted)
-            }
-            other => Proposition::Not(Box::new(other.clone())),
-        }];
+    fn indexed_proof_facts(&self) -> ProofFacts {
+        self.clone()
     }
-    let inner = match crate::kernel::assumptions::algebraic_constructor_field_equalities(consequent)
-    {
-        Some(fields) => fields,
-        None => constructor_consequent_instances(consequent),
-    };
-    inner
-        .into_iter()
-        .map(|instance| Proposition::Implies(antecedent.clone(), Box::new(instance)))
-        .collect()
 }
 
 impl ProofFacts {
-    /// Bounded newest-first view for diagnostics. This deliberately exposes
-    /// references into the persistent sequence and never materializes the
-    /// ambient proof history.
-    pub(crate) fn recent_facts(&self, limit: usize) -> Vec<&Proposition> {
-        self.ordered
-            .recent(limit)
-            .into_iter()
-            .map(Arc::as_ref)
-            .collect()
+    pub(crate) fn store(&self) -> &PureFactStore {
+        &self.store
     }
-
-    pub(crate) fn fact_count(&self) -> usize {
-        self.ordered.len()
+    pub(crate) fn from_store(store: PureFactStore) -> Self {
+        Self {
+            store,
+            rewritten_load_evidence: PersistentSequence::default(),
+        }
     }
-
+    pub(crate) fn from_ordered(facts: &[Proposition]) -> Self {
+        Self::from_store(PureFactStore::from_ordered(facts))
+    }
+    pub(crate) fn from_source(facts: &(impl PropositionSource + ?Sized)) -> Self {
+        Self::from_store(PureFactStore::from_source(facts))
+    }
+    fn with_store(&self, store: PureFactStore) -> Self {
+        Self {
+            store,
+            rewritten_load_evidence: self.rewritten_load_evidence.clone(),
+        }
+    }
+    pub(crate) fn with_reserved_variables(
+        self,
+        variables: impl IntoIterator<Item = Variable>,
+    ) -> Self {
+        Self {
+            store: self.store.with_reserved_variables(variables),
+            ..self
+        }
+    }
+    pub(crate) fn with_kernel_checked_fact(&self, fact: Proposition) -> Self {
+        self.with_store(self.store.with_kernel_checked_fact(fact))
+    }
+    pub(in crate::kernel) fn with_fact(&self, fact: Proposition) -> Self {
+        self.with_store(self.store.with_fact(fact))
+    }
+    pub(crate) fn retain_checked_read_fact(&mut self, fact: &ExecutionPureFact) {
+        self.store.retain_checked_read_fact(fact);
+    }
+    pub(super) fn prepare_entry_resources(&mut self, resources: &ResourceContext) {
+        self.store.prepare_entry_resources(resources);
+    }
+    pub(crate) fn with_selected_resource_separation(&self, goal: &Proposition) -> Self {
+        self.with_store(self.store.with_selected_resource_separation(goal))
+    }
+    pub(crate) fn with_exact_partition_separation(
+        &self,
+        goal: &Proposition,
+        resources: &ResourceContext,
+    ) -> Self {
+        self.with_store(self.store.with_exact_partition_separation(goal, resources))
+    }
+    pub(crate) fn with_selected_held_resource_separation(
+        &self,
+        goal: &Proposition,
+        state: &ExecutionState,
+    ) -> Self {
+        self.with_store(
+            self.store
+                .with_selected_held_resource_separation(goal, state),
+        )
+    }
+    pub(crate) fn with_selected_load_equality_bridge(&self, goal: &Proposition) -> Self {
+        self.with_store(self.store.with_selected_load_equality_bridge(goal))
+    }
+    #[cfg(test)]
+    pub(crate) fn with_statement_facts(&self, facts: Vec<Proposition>) -> Self {
+        self.with_store(self.store.with_statement_facts(facts))
+    }
+    pub(crate) fn with_statement_facts_retaining_prefix(
+        &self,
+        facts: Vec<Proposition>,
+        prefix: &ExecutionFacts,
+    ) -> Self {
+        self.with_store(
+            self.store
+                .with_statement_facts_retaining_prefix(facts, prefix),
+        )
+    }
     /// Check only corresponding leaves of two presentations of one goal.
     /// No ambient fact search or pairwise load census is performed.
     pub(crate) fn with_checked_rewritten_loads(
@@ -974,6 +824,331 @@ impl ProofFacts {
             None
         }
     }
+}
+
+/// A statement transition places its explicitly transported successor facts
+/// before the ambient facts retained at their original states. Prefix
+/// batches preserve that semantic order without copying the ambient sequence.
+struct PrioritizedProofFacts {
+    parent: Option<Arc<PrioritizedProofFacts>>,
+    facts: PrioritizedStatementFacts,
+    introduced: Arc<Vec<Proposition>>,
+}
+
+struct PrioritizedStatementFacts {
+    prefix: ExecutionFacts,
+    suffix: Arc<Vec<Proposition>>,
+}
+impl PrioritizedStatementFacts {
+    fn iter(&self) -> impl Iterator<Item = &Proposition> {
+        self.prefix
+            .iter()
+            .map(ExecutionPureFact::proposition)
+            .chain(self.suffix.iter())
+    }
+}
+
+/// One indexed prefix of an available implication chain. The consequent key
+/// selects this small candidate; checking still validates every antecedent
+/// and the exact or alpha-equivalent quantified consequent.
+#[derive(Clone)]
+struct ImplicationCandidate {
+    antecedents: PersistentSequence<Proposition>,
+    consequent: Proposition,
+    /// For an entry filed under one conjunct of a conjunctive consequent,
+    /// that whole consequent. Such an entry serves only the search for a
+    /// conjunct (`discharged_implication_containing`); the `extract` rule's
+    /// own lookup reads the entries without one.
+    whole: Option<Proposition>,
+}
+
+#[derive(Clone)]
+struct IntegerConditionAlphaCandidate {
+    key: IntegerConditionAlphaKey,
+    proposition: Proposition,
+}
+
+/// A bounded-comparison selector for equality rewrite provenance. Complex
+/// arithmetic operands remain on the kernel-derivation path; this index covers
+/// the atomic value/state operands that outcome arithmetic rewrites need.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+enum BitvectorEqualityAtomKey {
+    Constant(u32),
+    Variable(Variable),
+    PointerReadSource(u64),
+    ClickFunctionApplication {
+        name: String,
+        arguments_hash: u64,
+        // Keep ID-based numeric keys alive as long as the indexed fact.
+        machine_identities: Vec<SharedMachineIntegerTerm>,
+    },
+    MemoryLoad {
+        memory: (u32, u32),
+        pointer_hash: u64,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+enum AlgebraicCallOperandKey {
+    Call(AlgebraicType, SharedPureApplication),
+    Variable(AlgebraicType, Variable),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+enum CallPayloadKey {
+    Machine(
+        MachineIntegerType,
+        u8,
+        bool,
+        [crate::kernel::equality_graph::MachineAtom; 2],
+    ),
+    AlgebraicCondition(bool, [AlgebraicCallOperandKey; 2]),
+    AlgebraicEquation([AlgebraicCallOperandKey; 2]),
+}
+
+fn call_payload_identity_key(fact: &Proposition) -> Option<CallPayloadKey> {
+    fn algebraic(term: &AlgebraicTerm) -> Option<AlgebraicCallOperandKey> {
+        Some(match &term.node {
+            AlgebraicTermNode::PureFunctionApplication { name, arguments } => {
+                AlgebraicCallOperandKey::Call(
+                    term.algebraic_type.clone(),
+                    SharedPureApplication::intern(name.clone(), arguments.clone()),
+                )
+            }
+            AlgebraicTermNode::Variable(variable) => {
+                AlgebraicCallOperandKey::Variable(term.algebraic_type.clone(), *variable)
+            }
+            _ => return None,
+        })
+    }
+    let machine_call =
+        |term: &MachineTerm| matches!(term, MachineTerm::ClickFunctionApplication { .. });
+    let algebraic_call = |term: &AlgebraicTerm| {
+        matches!(term.node, AlgebraicTermNode::PureFunctionApplication { .. })
+    };
+    Some(match fact {
+        Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format,
+                relation,
+                left,
+                right,
+            },
+            truth,
+        ) if machine_call(left) || machine_call(right) => CallPayloadKey::Machine(
+            *format,
+            *relation as u8,
+            *truth,
+            [
+                crate::kernel::equality_graph::MachineAtom::from_operand(
+                    *format,
+                    MachineOperandView::Legacy(left),
+                ),
+                crate::kernel::equality_graph::MachineAtom::from_operand(
+                    *format,
+                    MachineOperandView::Legacy(right),
+                ),
+            ],
+        ),
+        Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(left, right), truth)
+            if algebraic_call(left) || algebraic_call(right) =>
+        {
+            CallPayloadKey::AlgebraicCondition(*truth, [algebraic(left)?, algebraic(right)?])
+        }
+        Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right))
+            if algebraic_call(left) || algebraic_call(right) =>
+        {
+            CallPayloadKey::AlgebraicEquation([algebraic(left)?, algebraic(right)?])
+        }
+        _ => return None,
+    })
+}
+
+fn index_call_payload(
+    keys: PersistentSet<CallPayloadKey>,
+    fact: &Proposition,
+) -> PersistentSet<CallPayloadKey> {
+    match call_payload_identity_key(fact) {
+        Some(key) => keys.with_value(key),
+        None => keys,
+    }
+}
+
+/// Borrowed access to proposition premises. Persistent proofs supply their
+/// existing indexes; source/setup slices retain their ordered boundary view.
+/// This interface owns neither proof state nor completion evidence.
+pub(crate) trait PropositionSource {
+    fn propositions(&self) -> impl Iterator<Item = &Proposition>;
+    fn pure_context(&self) -> PureFactContext {
+        self.propositions()
+            .inspect(|_| crate::kernel::reasoning::path_facts::count_context_rebuild_entries(1))
+            .map(crate::kernel::clone_proposition_iteratively)
+            .fold(PureFactContext::new(), PureFactContext::assume_proposition)
+    }
+    fn exact_available(&self, required: &Proposition) -> bool {
+        self.propositions()
+            .any(|fact| exact_fact_contains_conjunct(fact, required))
+    }
+    /// Fresh proof facts indexing these propositions in order. A source
+    /// that keeps indexed facts for them extends those instead.
+    fn indexed_proof_facts(&self) -> ProofFacts {
+        ProofFacts::from_source(self)
+    }
+}
+impl PropositionSource for [Proposition] {
+    fn propositions(&self) -> impl Iterator<Item = &Proposition> {
+        self.iter()
+    }
+}
+impl PropositionSource for Vec<Proposition> {
+    fn propositions(&self) -> impl Iterator<Item = &Proposition> {
+        self.iter()
+    }
+}
+impl<const N: usize> PropositionSource for [Proposition; N] {
+    fn propositions(&self) -> impl Iterator<Item = &Proposition> {
+        self.iter()
+    }
+}
+impl PropositionSource for PureFactStore {
+    fn propositions(&self) -> impl Iterator<Item = &Proposition> {
+        let mut seen = BTreeSet::new();
+        std::iter::successors(self.prioritized.as_deref(), |batch| batch.parent.as_deref())
+            .flat_map(|batch| batch.facts.iter())
+            .chain(self.ordered.iter().map(Arc::as_ref))
+            .filter(move |fact| seen.insert(*fact))
+    }
+    fn pure_context(&self) -> PureFactContext {
+        self.assumptions().clone()
+    }
+    fn exact_available(&self, required: &Proposition) -> bool {
+        self.contains(required) || self.matching_quantified_fact(required).is_some()
+    }
+    fn indexed_proof_facts(&self) -> ProofFacts {
+        ProofFacts::from_store(self.clone())
+    }
+}
+
+/// Whether `proposition` equates two constructors of different variants of
+/// one algebraic type, which no value satisfies.
+fn is_constructor_clash(proposition: &Proposition) -> bool {
+    matches!(proposition,
+        Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right))
+            if left.algebraic_type == right.algebraic_type
+                && matches!((&left.node, &right.node), (
+                    AlgebraicTermNode::Constructor { variant: left, .. },
+                    AlgebraicTermNode::Constructor { variant: right, .. },
+                ) if left != right))
+}
+
+/// What an implication chain `a implies .. z implies c` whose consequent `c`
+/// equates two constructors says once those are decided: for different
+/// variants, `c` is false, so `a implies .. not z`; for one variant, `c` is
+/// its fields' equalities, each `a implies .. z implies f`. Empty for any
+/// other proposition.
+pub(crate) fn constructor_consequent_instances(proposition: &Proposition) -> Vec<Proposition> {
+    let Proposition::Implies(antecedent, consequent) = proposition else {
+        return Vec::new();
+    };
+    if is_constructor_clash(consequent) {
+        return vec![match antecedent.as_ref() {
+            // The refuted condition in a positive form where one exists,
+            // `x > 100` rather than `x <= 100` false, as a branch states it.
+            Proposition::ConditionIs(condition, value) => {
+                let refuted = Proposition::ConditionIs(condition.clone(), !value);
+                condition_polarity_forms(&refuted)
+                    .into_iter()
+                    .rev()
+                    .find(|form| matches!(form, Proposition::ConditionIs(_, true)))
+                    .unwrap_or(refuted)
+            }
+            other => Proposition::Not(Box::new(other.clone())),
+        }];
+    }
+    let inner = match crate::kernel::assumptions::algebraic_constructor_field_equalities(consequent)
+    {
+        Some(fields) => fields,
+        None => constructor_consequent_instances(consequent),
+    };
+    inner
+        .into_iter()
+        .map(|instance| Proposition::Implies(antecedent.clone(), Box::new(instance)))
+        .collect()
+}
+
+fn index_stated_conjuncts(
+    mut index: PersistentSet<Arc<Proposition>>,
+    fact: &Arc<Proposition>,
+) -> PersistentSet<Arc<Proposition>> {
+    let mut pending = match fact.as_ref() {
+        Proposition::And(left, right) => vec![
+            Arc::new(left.as_ref().clone()),
+            Arc::new(right.as_ref().clone()),
+        ],
+        _ => return index,
+    };
+    while let Some(fact) = pending.pop() {
+        if let Proposition::And(left, right) = fact.as_ref() {
+            pending.push(Arc::new(left.as_ref().clone()));
+            pending.push(Arc::new(right.as_ref().clone()));
+        }
+        index = index.with_value(fact);
+    }
+    index
+}
+
+impl PureFactStore {
+    pub(crate) fn len(&self) -> usize {
+        self.top_level_exact.len()
+    }
+
+    /// Strict written membership for statement-local publication. This does
+    /// not admit the comparison aliases used by checked proof queries.
+    pub(crate) fn has_stated_conjunct(&self, fact: &Proposition) -> bool {
+        self.top_level_exact.contains(fact)
+            || self
+                .stated_conjuncts
+                .as_ref()
+                .expect("strict syntax membership requires a statement-local index")
+                .contains(fact)
+    }
+
+    pub(crate) fn from_statement_facts(
+        facts: &[Proposition],
+        context: Option<PureFactContext>,
+        reservations: Option<&Self>,
+    ) -> Self {
+        struct Selected<'a> {
+            facts: &'a [Proposition],
+            context: Option<PureFactContext>,
+        }
+        impl PropositionSource for Selected<'_> {
+            fn propositions(&self) -> impl Iterator<Item = &Proposition> {
+                self.facts.iter()
+            }
+            fn pure_context(&self) -> PureFactContext {
+                self.context
+                    .clone()
+                    .unwrap_or_else(|| self.facts.pure_context())
+            }
+        }
+        Self::from_source_indexing_syntax(&Selected { facts, context }, true, reservations)
+    }
+
+    /// Bounded newest-first view for diagnostics. This deliberately exposes
+    /// references into the persistent sequence and never materializes the
+    /// ambient proof history.
+    pub(crate) fn recent_facts(&self, limit: usize) -> Vec<&Proposition> {
+        self.ordered
+            .recent(limit)
+            .into_iter()
+            .map(Arc::as_ref)
+            .collect()
+    }
+
+    pub(crate) fn fact_count(&self) -> usize {
+        self.ordered.len()
+    }
 
     /// Exact premise-store identity, without comparing ambient propositions.
     pub(super) fn shares_premises_with(&self, other: &Self) -> bool {
@@ -1006,11 +1181,27 @@ impl ProofFacts {
     /// with entry resources; rebuilding it would disconnect that publication.
     /// Uncached sources build their context once through PropositionSource.
     pub(crate) fn from_source(facts: &(impl PropositionSource + ?Sized)) -> Self {
+        Self::from_source_indexing_syntax(facts, false, None)
+    }
+
+    fn from_source_indexing_syntax(
+        facts: &(impl PropositionSource + ?Sized),
+        syntax_index: bool,
+        reservations: Option<&Self>,
+    ) -> Self {
         let mut ordered = PersistentSequence::default();
-        let reserved_variables = PersistentSet::default();
-        let mut reserved_states =
-            crate::kernel::reasoning::variable_collection::ReservedStates::default();
+        // A local statement scope may reserve more names than its own facts
+        // mention. Sharing the enclosing scope's freshness indexes avoids
+        // enumerating variables of already-retained memory states again.
+        let reserved_variables = reservations.map_or_else(PersistentSet::default, |base| {
+            base.reserved_variables.clone()
+        });
+        let mut reserved_states = reservations.map_or_else(
+            crate::kernel::reasoning::variable_collection::ReservedStates::default,
+            |base| base.reserved_states.clone(),
+        );
         let mut top_level_exact = PersistentSet::default();
+        let mut stated_conjuncts = syntax_index.then(PersistentSet::default);
         let mut exact = PersistentSet::default();
         let mut call_payloads = PersistentSet::default();
         let mut proper_conjuncts = PersistentSet::default();
@@ -1046,6 +1237,9 @@ impl ProofFacts {
             INDEXED_FACT_ENTRIES.with(|count| count.set(count.get() + 1));
             // The one copy of this fact. Every index below shares it.
             let fact = &Arc::new(crate::kernel::clone_proposition_iteratively(fact));
+            if let Some(index) = &mut stated_conjuncts {
+                *index = index_stated_conjuncts(std::mem::take(index), fact);
+            }
             ordered.push(Arc::clone(fact));
             top_level_exact = top_level_exact.with_value(Arc::clone(fact));
             by_quantified_equivalence = index_quantified_fact(by_quantified_equivalence, fact);
@@ -1117,6 +1311,7 @@ impl ProofFacts {
             reserved_states,
             prioritized: None,
             top_level_exact,
+            stated_conjuncts,
             exact,
             call_payloads,
             proper_conjuncts,
@@ -1130,7 +1325,6 @@ impl ProofFacts {
             by_quantified_equivalence,
             by_quantified_identity,
             quantified_conjunct_projections,
-            rewritten_load_evidence: PersistentSequence::default(),
             implications_by_consequent,
             implications_by_quantified_consequent,
             assumptions,
@@ -1360,6 +1554,10 @@ impl ProofFacts {
             reserved_states,
             prioritized: self.prioritized.clone(),
             top_level_exact: self.top_level_exact.with_value(Arc::clone(&fact)),
+            stated_conjuncts: self
+                .stated_conjuncts
+                .as_ref()
+                .map(|index| index_stated_conjuncts(index.clone(), &fact)),
             exact,
             call_payloads,
             proper_conjuncts,
@@ -1373,7 +1571,6 @@ impl ProofFacts {
             by_quantified_equivalence,
             by_quantified_identity,
             quantified_conjunct_projections,
-            rewritten_load_evidence: self.rewritten_load_evidence.clone(),
             implications_by_consequent,
             implications_by_quantified_consequent,
             assumptions,

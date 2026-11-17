@@ -31,5 +31,5 @@ int32 fill(uint32 x) {
 ```
 
 ```expect
-fail: to_integer(3u32 - (at(statement(0).statement(0).entry, "an_unsigned_measure_that_wraps_upward_is_refused.c"::fill.parameter(0)) + 1u32)) < to_integer(3u32 - at(statement(0).statement(0).entry, "an_unsigned_measure_that_wraps_upward_is_refused.c"::fill.parameter(0)))
+fail: to_integer(3u32 - (at(statement(0).statement(0).entry, x) + 1u32)) < to_integer(3u32 - at(statement(0).statement(0).entry, x))
 ```

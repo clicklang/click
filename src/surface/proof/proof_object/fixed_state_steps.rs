@@ -1794,7 +1794,7 @@ impl<'a> Proof<'a> {
             ContractEnvironment::new(&values, &array_refs),
             view.fixed_state.pre_state,
             view.fixed_state.state,
-            view.fixed_state.result,
+            view.fixed_state.native_result().as_deref(),
             self.facts().assumptions(),
             view.spec_definitions,
             view.fixed_state.recorded_states,
@@ -3239,9 +3239,10 @@ impl<'a> Proof<'a> {
             fixed_state: FixedStateFrame::new(
                 context.old_reference_state(&execution.core.frontier, &execution.core.state),
                 &data.core.state,
-                Some(data.core.result.as_ref()),
+                None,
                 &data.recorded_states,
-            ),
+            )
+            .with_retained_result(&data.core.result),
             surface_propositions: &data.surface_propositions,
             spec_definitions: SpecDefinitions::new(
                 context.spec_definitions.predicates,

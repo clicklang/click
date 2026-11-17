@@ -19,7 +19,6 @@ verifies the proof and rejects a missing view, a false result, a shifted
 position invariant, a wrong step and a non-decreasing measure.
 
 The base case is proved at the literal `0u64`: the proof first states
-`bytes.len() - loop(0).iter.len() == 0u64` and rewrites with it. The proof uses
-ordinary `unfold` at this literal zero.
+`bytes.len() - loop(0).iter.len() == 0u64` and rewrites with it.
 The tools test `charon_slice_iter_tools_recheck_expanded_certificate`
 expands and re-verifies the proof.

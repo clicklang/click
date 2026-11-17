@@ -27,7 +27,7 @@ use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int64_constant, uint64_constant,
 };
 use num_bigint::BigInt;
-use num_traits::{One, Zero};
+use num_traits::{One, ToPrimitive, Zero};
 
 /// The constant a machine word spells, read as unsigned bits: a shift
 /// amount is a count, whatever word carries it.
@@ -38,6 +38,16 @@ fn unsigned_constant(term: &MachineTerm) -> Option<BigInt> {
         uint64_constant!(value) => Some(BigInt::from(constant_u64(*value))),
         _ => None,
     }
+}
+
+/// A count literal keeps its own promoted type, which need not be the
+/// shifted operand's type (for example a uint64 shifted by an int32 literal).
+pub(crate) fn constant_shift_count(count: crate::kernel::MachineOperandView<'_>) -> Option<u32> {
+    let literal = count.literal()?;
+    let MachineTerm::Constant { format, .. } = &literal else {
+        return None;
+    };
+    format.constant_from_term(&literal)?.to_integer().to_u32()
 }
 
 /// The bound a quotient, right shift or remainder by a constant takes from

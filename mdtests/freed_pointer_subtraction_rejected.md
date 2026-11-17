@@ -27,5 +27,5 @@ int f() {
 
 ```expect
 fail: use of a pointer into a freed allocation: its value is indeterminate after the free
-  operation: `"freed_diff.c"::f.local(1) - "freed_diff.c"::f.local(0)`
+  operation: `end - p`
 ```

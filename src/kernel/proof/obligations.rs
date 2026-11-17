@@ -9,8 +9,8 @@ use std::sync::Arc;
 
 use super::storage::SharedValue;
 use crate::kernel::{
-    ExecutionState, FunctionContractClaimKey, FunctionContractClaimTarget, ProgramValue,
-    Proposition, ResourceFact,
+    ExecutionState, FunctionContractClaimKey, FunctionContractClaimTarget, Proposition,
+    ResourceFact, StoredExecutionValue,
 };
 
 /// Diagnostic evidence returned when an allocation-lifetime obligation could
@@ -170,7 +170,7 @@ impl OutcomeIdentity {
 pub(crate) struct OutcomeProofCore {
     pub(crate) publication: Option<Arc<crate::kernel::PublishedFunctionOutcome>>,
     pub(crate) identity: OutcomeIdentity,
-    pub(crate) result: Arc<ProgramValue>,
+    pub(crate) result: StoredExecutionValue,
     pub(crate) store_consequences_available: bool,
     pub(crate) state: SharedValue<ExecutionState>,
     pub(crate) is_exceptional: bool,
@@ -755,7 +755,7 @@ mod outcome_claim_goal_tests {
         OutcomeProofCore {
             publication: None,
             identity: OutcomeIdentity::fresh(),
-            result: Arc::new(int32(0)),
+            result: int32(0).into(),
             state: ExecutionState::new().into(),
             store_consequences_available: false,
             is_exceptional: false,

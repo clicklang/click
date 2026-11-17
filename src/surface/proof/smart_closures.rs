@@ -3460,13 +3460,13 @@ impl<'a> Proof<'a> {
                 ),
             ),
             ProofContext::Execution(_) => self.outcome_fixed_state_view().map(|view| {
-                let post = view.fixed_state.result.map_or_else(
+                let post = view.fixed_state.native_result().map_or_else(
                     || view.fixed_state.state.clone(),
                     |result| {
                         view.fixed_state
                             .state
                             .clone()
-                            .with_local(crate::kernel::CONTRACT_RESULT, result.clone())
+                            .with_local(crate::kernel::CONTRACT_RESULT, result.into_owned())
                     },
                 );
                 super::surface_synthesis::synthesize_surface_proposition_at_entry_and_post(
@@ -5430,4 +5430,7 @@ pub(in crate::surface::proof) fn describe_recorded_store_separation_miss(
     )
 }
 
+mod division;
 mod fact_projection;
+mod machine_bridges;
+mod multiplication;

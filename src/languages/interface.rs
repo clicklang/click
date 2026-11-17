@@ -1732,8 +1732,18 @@ pub(super) fn declared_pointer_locals(
                 pending.push(then_branch);
                 pending.push(else_branch);
             }
-            ProgramStatement::Loop { body, .. } => pending.push(body),
-            ProgramStatement::ForStep { step, .. } => pending.push(step),
+            ProgramStatement::Loop {
+                test, update, body, ..
+            } => {
+                pending.push(body);
+                if let Some(test) = test {
+                    pending.push(&test.statement);
+                }
+                if let Some(update) = update {
+                    pending.push(update);
+                }
+            }
+
             ProgramStatement::TryCatchInt32 {
                 try_body, handler, ..
             } => {
@@ -1778,4 +1788,8 @@ pub enum RustIteratorKind {
     /// `RangeInclusive`: `_start`, `_end`, and `_done`, whether it has
     /// yielded its end.
     RangeInclusive,
+    /// A crate's own struct that implements `Iterator`: the struct itself,
+    /// whose `next` the loop calls. A proof reads its fields as the
+    /// program's local `iter` holds them, `iter.n`.
+    User,
 }

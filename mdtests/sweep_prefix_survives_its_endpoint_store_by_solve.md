@@ -1,7 +1,8 @@
 # an omitted proof carries the sweep's prefix count across the endpoint store
 
-This is `sweep_maintains_a_zero_unmarked_count.md` with its
-explicit `transport(...) using { ... }` replaced by a `have` with the omitted proof. Its
+This uses the same C and counting invariant as
+`sweep_maintains_a_zero_unmarked_count.md`, but leaves the prefix-preservation
+proof omitted. Its
 state transport closure proposes the iteration-entry fact as the source and
 asks the same checked transport, which reaches the checked fold read frame:
 `unmarked(visited, 0, i)` reads only `visited[0..i]`, and the store writes

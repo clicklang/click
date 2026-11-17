@@ -34,5 +34,5 @@ void mark_one(int32 a[], int32 n, int32 i, int32 m) {
 
 ```expect
 fail: equality: old(a[m]) == 5
-  goal: a["rewrite_names_the_memory_each_side_reads.c"::mark_one.parameter(3)] == 5
+  goal: a[m] == 5
 ```

@@ -8,6 +8,7 @@ mod rust_generic_functions;
 mod rust_generic_resources;
 mod rust_generic_traits;
 mod rust_literals;
+mod rust_reference_authority;
 use super::names;
 use crate::kernel::{bits32_constant, constant_u32};
 mod rust_syntax;
@@ -1610,6 +1611,14 @@ impl Parser {
                 positions,
                 written,
                 rust_generic_resources::rust_concrete,
+            )?;
+            // A reference parameter's type grants the authority a safe
+            // caller holds over its referent.
+            let (tokens, positions) = rust_reference_authority::derive_reference_authority(
+                tokens,
+                positions,
+                &parser.struct_layouts,
+                &parser.rust_enum_types,
             )?;
             parser.matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
             parser.tokens = tokens;

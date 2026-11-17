@@ -692,6 +692,7 @@ fn return_proof_publication_shares_candidate_fact_and_effect_objects() {
         .into();
         let candidate = crate::kernel::FunctionExecutionCandidate {
             data: Arc::new(crate::kernel::FunctionExecutionCandidateData {
+                completion_delta: None,
                 outcome: Arc::new(FunctionOutcome::Return {
                     value: int32(0).into(),
                     state: Box::new(state.clone()),
@@ -753,7 +754,7 @@ fn returned_proposition_event(
             Some(super::super::OutcomeProofCore {
                 publication: None,
                 identity: super::super::OutcomeIdentity::fresh(),
-                result: Arc::new(int32(0)),
+                result: int32(0).into(),
                 state: state.clone().into(),
                 store_consequences_available: false,
                 is_exceptional: false,
@@ -2553,6 +2554,8 @@ fn checked_condition_evidence_rejects_a_different_source_condition() {
 fn a_summarized_loop_matches_only_a_less_annotated_source_loop() {
     fn loop_statement(invariant: Vec<Proposition>, body: ProgramStatement) -> ProgramStatement {
         ProgramStatement::Loop {
+            test: None,
+            update: None,
             condition: ProgramExpression::Variable(("c".to_string()).into()),
             invariant,
             invariant_checks: Vec::new(),

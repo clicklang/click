@@ -59,5 +59,5 @@ void pool_checkout(struct pool* pool, struct object* object) {
 ```
 
 ```expect
-fail: 1 <= old(count(pool_slot("a_population_entry_count_is_spelled_in_a_diagnostic.c"::pool_checkout.parameter(0))))
+fail: 1 <= old(count(pool_slot(pool)))
 ```

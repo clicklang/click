@@ -20,13 +20,13 @@ module comment states the soundness argument in full.
 
 ## Status
 
-Checked summaries (step 1), the explicit framing rule (step 2), and the
-removal of the sweep example's prefix-frame scaffolding (step 4) have landed.
-`mdtests/sweep_maintains_a_zero_unmarked_count.md` carries
-`unmarked(visited, 0, i) == 0` across `visited[i] = 1` with one `transport`,
-and no C proof uses a hand-written frame lemma for it. Automatic reuse of an
-unchanged application (step 3) is not started and not authorized; its
-requirements are below.
+Checked summaries (step 1) and the explicit framing rule (step 2) have landed.
+The written proof in `mdtests/sweep_maintains_a_zero_unmarked_count.md` now uses
+pointwise separation and preservation followed by the existing `unmarked_frame`
+lemma, as part of retiring legacy transport. Its omitted-proof companion,
+`mdtests/sweep_prefix_survives_its_endpoint_store_by_solve.md`, retains coverage
+of the fold read frame. Automatic reuse of an unchanged application (step 3)
+is not started and not authorized; its requirements are below.
 
 An "arrays agree on `[lo, hi)`" relation that pure functions could consume,
 which would remove the `walk_frame` lemma the graph-search examples use to

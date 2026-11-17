@@ -1722,7 +1722,7 @@ fn proof_cases_after_c_branch_expand_and_reverify() {
     let expanded = expand_checked_grouped_claim(&click_source, &verified_for_expansion, "use_pick")
         .unwrap_or_else(|error| panic!("the caller proof should expand: {}", error.message()));
     assert!(
-        expanded.contains(" if at(region(3).entry, \"pick_cases.c\"::use_pick.local(0))"),
+        expanded.contains(" if at(region(3).entry, copied)"),
         "{expanded}"
     );
     assert!(
@@ -3886,9 +3886,7 @@ int32 early(int32 x) {
     let expanded = expand_checked_function_claim(click, &verified_for_label, "early.contract")
         .unwrap_or_else(|error| panic!("{}", error.message()));
     assert!(
-        expanded.contains(
-            "if at(region(3).entry, \"early.c\"::early.parameter(0)) == at(region(3).entry, 1) {"
-        ),
+        expanded.contains("if at(region(3).entry, x) == at(region(3).entry, 1) {"),
         "{expanded}"
     );
     verify_c_sources(&expanded, &sources)
@@ -8130,8 +8128,8 @@ fn post_execution_solve_unfolds_predicate_goal_explicitly() {
     let corrupted_result = { verify_c_sources(&corrupted, &[("compare_swap2.c", c_source)]) };
     corrupted_result.expect_err("a corrupted branched predicate expansion must be rejected");
 
-    let condition = "at(region(1).entry, \"compare_swap2.c\"::compare_swap2.parameter(0)[1]) < at(region(1).entry, \"compare_swap2.c\"::compare_swap2.parameter(0)[0])";
-    let wrong_condition = "at(region(1).entry, \"compare_swap2.c\"::compare_swap2.parameter(0)[0]) < at(region(1).entry, \"compare_swap2.c\"::compare_swap2.parameter(0)[1])";
+    let condition = "at(region(1).entry, p[1]) < at(region(1).entry, p[0])";
+    let wrong_condition = "at(region(1).entry, p[0]) < at(region(1).entry, p[1])";
     let corrupted = expanded.replacen(condition, wrong_condition, 1);
     assert_ne!(
         corrupted, expanded,
@@ -16090,14 +16088,11 @@ int32 select_when_positive(int32 limit, int32 left, int32 right) {
     verify_c_sources(&expanded, &sources).unwrap_or_else(|error| {
         panic!("expanded conditional proof failed independent verification: {error:?}\n{expanded}")
     });
-    let uncited = expanded.replacen(
-        "normalize() using {\n        limit > 0;\n    }",
-        "normalize();",
-        1,
-    );
-    assert_ne!(uncited, expanded, "{expanded}");
-    verify_c_sources(&uncited, &sources)
-        .expect_err("dropping the cited premise must leave the branch unresolved");
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    let unguarded = expanded.replace("    requires limit > 0;\n", "");
+    assert_ne!(unguarded, expanded, "{expanded}");
+    verify_c_sources(&unguarded, &sources)
+        .expect_err("dropping the guard must leave the branch unresolved");
     let wrong_branch = click_source.replace(
         "if limit > 0 { left } else { right }",
         "if limit > 0 { right } else { left }",
@@ -16339,7 +16334,7 @@ int read(int* p) {
 "#;
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_70")]
+#[ignore = "nightly: expansion and recheck took 1.09s in isolation"]
 fn match_arm_closer_anchors_the_case_fact_at_entry_and_reverifies() {
     // The arm's case fact is a statement about the scrutinee at unchanged
     // function entry, but its recorded spelling was the unanchored
@@ -16563,8 +16558,7 @@ fn omitted_preservation_over_two_sibling_c_ifs_expands_and_reverifies() {
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("the automatic preservation should expand");
     assert!(
-        expanded.contains("::two_ifs.local(1) == 0")
-            && expanded.contains("::two_ifs.local(2) == 0"),
+        expanded.contains("if x == 0 {") && expanded.contains("if y == 0 {"),
         "both sibling C `if`s should expand to proof cases: {expanded}"
     );
     verify_c_sources(&expanded, &sources).unwrap_or_else(|error| {
@@ -16636,7 +16630,7 @@ int spin(int n) {
 "#;
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_70")]
+#[ignore = "nightly: expansion and recheck took 3.96s in isolation"]
 fn each_smart_have_in_a_loop_initialize_script_expands_on_its_own() {
     // Reduced from the insert fixup loop in `examples/rbtree/rbtree-model`. The
     // per-invariant entry planner was handed the whole phase script as every
@@ -16670,7 +16664,7 @@ fn each_smart_have_in_a_loop_initialize_script_expands_on_its_own() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_70")]
+#[ignore = "nightly: expansion and recheck took 3.55s in isolation"]
 fn a_smart_loop_preserve_phase_tactic_expands_and_reverifies() {
     // `preserve by solve();` is one smart tactic standing for the whole phase,
     // like `initialize by solve();`. Every driver step under it is generated, so
@@ -16695,7 +16689,7 @@ fn a_smart_loop_preserve_phase_tactic_expands_and_reverifies() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_70")]
+#[ignore = "nightly: expansion and recheck took 2.99s in isolation"]
 fn a_helper_have_in_a_loop_initialize_script_is_expanded_once() {
     // The entry planner nested every sibling step inside every invariant's
     // proof, so expanding the closing `solve()` printed the helper once per
@@ -17231,7 +17225,11 @@ fn restricted_solve_does_not_borrow_the_ambient_equality_graph() {
     for source in [source.to_string(), source.replace("int32", "int32*")] {
         for goal in ["a == c", "(if a == c { 7 } else { 0 }) == 7"] {
             let omitted = source.replace("ensures a == c", &format!("ensures {goal}"));
-            assert!(verify_c_sources(&omitted, &[]).is_err());
+            assert!(
+                verify_c_sources(&omitted, &[]).is_err(),
+                "{omitted}\n{}",
+                expand_c_claim_source_by_label(&omitted, &[], "restricted.ensures_0").unwrap()
+            );
             let selected = omitted.replace("using { a == b; }", "using { a == b; b == c; }");
             verify_c_sources(&selected, &[]).expect("the selected graph establishes transitivity");
             // The simple tactic deliberately has broader ambient semantics.
@@ -21899,12 +21897,6 @@ test_batches! {
         specification_conditional_branch_is_an_expanded_proof_step,
         integer_quantifiers_substitute_checked_mixed_atoms_and_expand,
         smart_closer_after_a_return_inside_an_open_scope_expands_and_reverifies,
-    ],
-    expansion_batch_70: [
-        match_arm_closer_anchors_the_case_fact_at_entry_and_reverifies,
-        each_smart_have_in_a_loop_initialize_script_expands_on_its_own,
-        a_smart_loop_preserve_phase_tactic_expands_and_reverifies,
-        a_helper_have_in_a_loop_initialize_script_is_expanded_once,
     ],
     expansion_batch_71: [
         loop_initialization_duplicate_clauses_keep_distinct_bodies,

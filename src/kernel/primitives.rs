@@ -3449,7 +3449,7 @@ impl std::fmt::Display for PointerBlock {
             Self::ContractException => formatter.write_str("exception.storage()"),
             Self::StaticObject { binding } => write!(formatter, "{binding}.storage()"),
             Self::AutomaticLocal { binding, instance } => {
-                write!(formatter, "{binding}.storage({instance})")
+                write!(formatter, "{}.storage({instance})", binding.canonical())
             }
             Self::PureFunctionApplication(application) => write!(
                 formatter,
@@ -4122,30 +4122,6 @@ pub struct PurePointerResult {
     pub(crate) arguments: BTreeSet<usize>,
 }
 
-/// A pure function that is one field of its argument: `match s {
-/// V(.., x, ..) => x }` over parameter `argument`. Applied to a value built
-/// with constructor `variant`, it is that value's field `field`.
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct PureProjection {
-    pub(crate) argument: usize,
-    pub(crate) variant: String,
-    pub(crate) field: usize,
-}
-
-impl PureProjection {
-    pub(crate) fn argument_index(&self) -> usize {
-        self.argument
-    }
-
-    pub(crate) fn new(argument: usize, variant: String, field: usize) -> Self {
-        Self {
-            argument,
-            variant,
-            field,
-        }
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SpecExpression {
     Value(ProgramValue),
@@ -4221,9 +4197,6 @@ pub enum SpecExpression {
         /// The class of the object a pointer result designates, from the
         /// function's declared return type (`design/effective-types.md`).
         result_object_class: Option<crate::kernel::effective_type::CAccessClass>,
-        /// When the function is a field projection, the field a constructed
-        /// argument is built with is the result, by the function's definition.
-        projection: Option<PureProjection>,
     },
     LoopEntryState(Box<SpecExpression>),
     Subobject {
@@ -5607,14 +5580,7 @@ pub enum ProgramStatement {
     Goto {
         target: ControlTargetId,
     },
-    /// A for-loop update, after leaving the body scope. On a source
-    /// `continue` this also transfers control to the loop head; on ordinary
-    /// fallthrough it is the first statement of the update clause.
-    ForStep {
-        step: Box<ProgramStatement>,
-        exited_locals: Vec<BindingName>,
-        continue_after: bool,
-    },
+
     Declare {
         /// A scalar construction initializer, evaluated after fresh allocation.
         /// This is the only declaration transition permitted to initialize const storage.
@@ -5804,6 +5770,10 @@ pub enum ProgramStatement {
     },
     /// Shared loop form for structured loops and checked natural cycles.
     Loop {
+        /// The loop's shared effectful test, outside the body scope.
+        test: Option<LoopTestRegion>,
+        /// Shared update region, entered after leaving the body scope.
+        update: Option<std::sync::Arc<ProgramStatement>>,
         condition: ProgramExpression,
         invariant: Vec<Proposition>,
         invariant_checks: Vec<LoopInvariantCheck>,
@@ -5849,6 +5819,20 @@ pub enum ProgramStatement {
         names: Vec<BindingName>,
         steps: Vec<u32>,
     },
+}
+
+/// Where an effectful loop test runs relative to its body.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum LoopTestPosition {
+    BeforeBody,
+    AfterBody,
+}
+
+/// The one shared source region that prepares and decides an effectful test.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct LoopTestRegion {
+    pub statement: std::sync::Arc<ProgramStatement>,
+    pub position: LoopTestPosition,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -15136,6 +15120,7 @@ pub(super) struct CertifiedMemoryStore {
     pub(super) value: ProgramValue,
     pub(super) authorized_range: Option<MemoryRange>,
     pub(super) source: super::StatementStoreSource,
+    pub(super) value_equation: Option<Proposition>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -15588,8 +15573,11 @@ pub struct FunctionExecutionCandidate {
 /// An immutable candidate record retained across distinct terminal frontiers.
 /// Adding facts shares the original outcome and obligations as well as the
 /// unchanged fact streams. This is untrusted publication, never a theorem.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub(super) struct FunctionExecutionCandidateData {
+    /// Selected producer delta for a retained completion context. It changes
+    /// neither the candidate's facts nor its untrusted publication semantics.
+    pub(super) completion_delta: Option<ExecutionFacts>,
     pub(super) outcome: Arc<FunctionOutcome>,
     pub(super) facts: ExecutionFacts,
     pub(super) effect_facts: ExecutionFacts,
@@ -15599,6 +15587,18 @@ pub(super) struct FunctionExecutionCandidateData {
     pub(super) obligations: Arc<Vec<ProofObligation>>,
     pub(super) loan_evidence: super::loans::CheckedLoanCallEvidenceSequence,
 }
+
+impl PartialEq for FunctionExecutionCandidateData {
+    fn eq(&self, other: &Self) -> bool {
+        self.outcome == other.outcome
+            && self.facts == other.facts
+            && self.effect_facts == other.effect_facts
+            && self.effects_public_first == other.effects_public_first
+            && self.obligations == other.obligations
+            && self.loan_evidence == other.loan_evidence
+    }
+}
+impl Eq for FunctionExecutionCandidateData {}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SymbolicConditionEvaluation {

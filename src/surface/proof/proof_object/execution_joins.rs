@@ -111,18 +111,18 @@ impl<'a> Proof<'a> {
         };
         let source_condition = surface_program_condition(&condition, &current_state)?;
         let checked = surface_at_program_point(&source_condition, &entry_point)?;
-        if checked == *surface_condition {
+        if super::same_branch_condition(&checked, surface_condition) {
             return Ok(true);
         }
         // A current source condition follows the ordinary proof-if path.
         // Call results contain a region reference without being a condition
         // anchored at a different statement entry.
-        if source_condition == *surface_condition {
+        if super::same_branch_condition(&source_condition, surface_condition) {
             return Ok(false);
         }
         if proposition_contains_at_expression(surface_condition)
             && surface_at_program_point(surface_condition, &entry_point)
-                .is_ok_and(|reanchored| reanchored == checked)
+                .is_ok_and(|reanchored| super::same_branch_condition(&reanchored, &checked))
         {
             return Err(self.step_error(
                 "expanded execution branch condition does not match the checked C branch",
@@ -1738,13 +1738,15 @@ impl<'a> Proof<'a> {
                     // costs its introduced facts rather than its whole history.
                     let mut additional_facts = crate::kernel::ExecutionFacts::new();
                     for proposition in &introduced {
-                        let fact = ExecutionPureFact::new(proposition.clone());
-                        if !arm_case_facts.contains(&fact)
-                            && !path.facts().contains(&fact)
-                            && !path.effect_facts().contains(&fact)
-                            && !additional_facts.contains(&fact)
+                        // This is an ordinary logical introduction, not a new
+                        // producer record. An existing certified occurrence
+                        // already states it and retains its producer metadata.
+                        if !arm_case_facts.contains_proposition(proposition)
+                            && !path.facts().contains_proposition(proposition)
+                            && !path.effect_facts().contains_proposition(proposition)
+                            && !additional_facts.contains_proposition(proposition)
                         {
-                            additional_facts.push(fact);
+                            additional_facts.push(ExecutionPureFact::new(proposition.clone()));
                         }
                     }
                     // Equal-looking outcomes can carry different checked case
@@ -3240,9 +3242,9 @@ impl<'a> Proof<'a> {
                 kind: ProgramPointKind::Entry,
             },
         )?;
-        if surface_condition
-            .is_some_and(|surface_condition| surface_condition != &checked_condition)
-        {
+        if surface_condition.is_some_and(|surface_condition| {
+            !super::same_branch_condition(surface_condition, &checked_condition)
+        }) {
             return Err(self.step_error(
                 "expanded execution branch condition does not match the checked C branch",
             ));

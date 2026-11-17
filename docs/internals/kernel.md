@@ -1423,6 +1423,14 @@ statement the yielding outcome's own binding (`MirStatement::RangeNext`
 with `payload: Some(i)` and `option: None`), and the `Option` and its
 temporary are gone.
 
+A crate's own `Iterator::next` returns its `Option` through a call step.
+`user_iterators::test_user_next_results` turns the `match` on it into
+`MirTerminator::If` on `Expression::VariantIs`. `temporaries::call_steps`
+then makes the test read the result without ending it,
+`CallResult { keeps: true }`, which lowers to `StepResult { ends: false }`;
+the `Some` arm's payload read ends it. The loop's header holds the call, so
+it lowers as `while (1) { next; if (!is_some) break; body }`.
+
 These still stay a temporary:
 
 - a call's result read more than once, so a slice, chunk or `enumerate`
@@ -1659,10 +1667,11 @@ retirement. This includes a `for` initializer's scope. The saved loop-exit
 state still names its final index for proof provenance; the subsequent
 execution state has retired its storage.
 
-A lowered `ForStep` ends the body locals before evaluating the update clause,
-including on `continue`. A normal fallthrough update keeps its normal outcome;
-a continue update resumes the loop head. Nested loops keep their own control
-edges. A non-inline function also retires its body locals before postconditions
+A loop owns one shared update and, for an effectful condition, one shared test
+region. Body locals end before fallthrough or `continue` reaches the update or
+post-test. A continuing update resumes the loop head; a false post-test exits
+without a back edge. Nested loops keep their own control edges. A non-inline
+function also retires its body locals before postconditions
 are read, so exporting an address through a field or output parameter does not
 extend its lifetime. Address-backed scalar parameters expire too. Aggregate
 parameter storage expires before postconditions and returned resources are read.

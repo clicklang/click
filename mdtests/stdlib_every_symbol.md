@@ -37,7 +37,7 @@ The external catalog symbols `memcmp` and `strlen` are verified in
 [`strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md`](strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md),
 `memcpy` in
 [`byte_representation_scalar_copy.md`](byte_representation_scalar_copy.md),
-and `memset`'s precondition is checked at a call in
+and `memset`'s fill conversion is checked at a call in
 [`c_builtin_memset_header_checks_its_contract.md`](c_builtin_memset_header_checks_its_contract.md).
 
 The external catalog symbol `__click_constant_p_unknown`, the value of the C
@@ -1973,6 +1973,274 @@ theorem composition_differences(a: Integer, b: Integer) {
         apply(integer::difference_le(a, b, a - b)) using { a - b <= 0; a - b == a - b; };
     }
 }
+
+theorem check_integer_multiplication_equations(a: Integer, b: Integer) {
+    ensures a * b == b * a by { apply(integer::multiply_commutative(a, b)); }
+    ensures a * -b == -(a * b) by { apply(integer::multiply_negate(a, b)); }
+}
+
+theorem check_integer_order_composition(a: Integer, b: Integer, c: Integer) {
+    requires a <= b;
+    requires b <= c;
+    ensures a <= c by {
+        apply(integer::le_transitive(a, b, c)) using { a <= b; b <= c; };
+    }
+    ensures -b <= -a by {
+        apply(integer::negate_order(a, b)) using { a <= b; };
+    }
+}
+
+theorem check_integer_strict_weakening(a: Integer, b: Integer) {
+    requires a < b;
+    ensures a <= b by { apply(integer::lt_le(a, b)) using { a < b; }; }
+}
+
+theorem check_integer_product_interval(x: Integer, y: Integer) {
+    requires -2 <= x;
+    requires x <= 3;
+    requires -4 <= y;
+    requires y <= 5;
+    ensures -12 <= x * y by {
+        apply(integer::product_lower_bound(x, y, -2, 3, -4, 5, -12)) using {
+            -2 <= x; x <= 3; -4 <= y; y <= 5;
+            -12 <= (-2 * -4); -12 <= (-2 * 5);
+            -12 <= (3 * -4); -12 <= (3 * 5);
+        };
+    }
+    ensures x * y <= 15 by {
+        apply(integer::product_upper_bound(x, y, -2, 3, -4, 5, 15)) using {
+            -2 <= x; x <= 3; -4 <= y; y <= 5;
+            (-2 * -4) <= 15; (-2 * 5) <= 15;
+            (3 * -4) <= 15; (3 * 5) <= 15;
+        };
+    }
+}
+
+
+theorem check_add_right_order(a: Integer, b: Integer, c: Integer) {
+    requires a <= b;
+        ensures a + c <= b + c by {
+        apply(integer::add_right_order(a, b, c)) using { a <= b; };
+    }
+}
+
+theorem check_subtract_right_order(a: Integer, b: Integer, c: Integer) {
+    requires a <= b;
+        ensures a - c <= b - c by {
+        apply(integer::subtract_right_order(a, b, c)) using { a <= b; };
+    }
+}
+
+theorem check_subtract_left_order(a: Integer, b: Integer, c: Integer) {
+    requires a <= b;
+        ensures c - b <= c - a by {
+        apply(integer::subtract_left_order(a, b, c)) using { a <= b; };
+    }
+}
+
+theorem check_negate_multiply(a: Integer, b: Integer) {
+        ensures -a * b == -(a * b) by {
+        apply(integer::negate_multiply(a, b));
+    }
+}
+
+theorem check_equal_negate(a: Integer, b: Integer) {
+    requires a == b;
+        ensures -a == -b by {
+        apply(integer::equal_negate(a, b)) using { a == b; };
+    }
+}
+
+theorem check_sum_commute(a: Integer, b: Integer, c: Integer) {
+    requires a == b + c;
+        ensures a == c + b by {
+        apply(integer::sum_commute(a, b, c)) using { a == b + c; };
+    }
+}
+
+theorem check_sum_difference(a: Integer, b: Integer, c: Integer) {
+    requires a == b + c;
+        ensures a + -c == b by {
+        apply(integer::sum_difference(a, b, c)) using { a == b + c; };
+    }
+    ensures -b == -a + c by {
+        apply(integer::sum_difference(a, b, c)) using { a == b + c; };
+    }
+}
+
+theorem check_positive_divisor_quotient_upper_rounded(n: Integer, d: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires 0 <= n;
+    requires n <= (bound * d) + (d - 1);
+        ensures truncating_quotient(n, d) <= bound by {
+        apply(integer::positive_divisor_quotient_upper_rounded(n, d, bound)) using { d != 0; 1 <= d; 0 <= n; n <= (bound * d) + (d - 1); };
+    }
+}
+
+theorem check_positive_divisor_quotient_lower_rounded(n: Integer, d: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires n <= 0;
+    requires (bound * d) - (d - 1) <= n;
+        ensures bound <= truncating_quotient(n, d) by {
+        apply(integer::positive_divisor_quotient_lower_rounded(n, d, bound)) using { d != 0; 1 <= d; n <= 0; (bound * d) - (d - 1) <= n; };
+    }
+}
+
+theorem check_nonnegative_dividend_remainder_upper(n: Integer, d: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires 0 <= n;
+        ensures truncating_remainder(n, d) <= n by {
+        apply(integer::nonnegative_dividend_remainder_upper(n, d)) using { d != 0; 1 <= d; 0 <= n; };
+    }
+}
+
+theorem check_nonpositive_dividend_remainder_lower(n: Integer, d: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires n <= 0;
+        ensures n <= truncating_remainder(n, d) by {
+        apply(integer::nonpositive_dividend_remainder_lower(n, d)) using { d != 0; 1 <= d; n <= 0; };
+    }
+}
+
+theorem check_quotient_upper_interval_nonnegative(n: Integer, d: Integer, numerator_bound: Integer, endpoint: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires 0 <= bound;
+    requires endpoint <= d;
+    requires n <= numerator_bound;
+    requires numerator_bound <= bound * endpoint + (endpoint - 1);
+        ensures truncating_quotient(n, d) <= bound by {
+        apply(integer::quotient_upper_interval_nonnegative(n, d, numerator_bound, endpoint, bound)) using { d != 0; 1 <= d; 0 <= bound; endpoint <= d; n <= numerator_bound; numerator_bound <= bound * endpoint + (endpoint - 1); };
+    }
+}
+
+theorem check_quotient_lower_interval_nonpositive(n: Integer, d: Integer, numerator_bound: Integer, endpoint: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires bound <= 0;
+    requires endpoint <= d;
+    requires numerator_bound <= n;
+    requires bound * endpoint - (endpoint - 1) <= numerator_bound;
+        ensures bound <= truncating_quotient(n, d) by {
+        apply(integer::quotient_lower_interval_nonpositive(n, d, numerator_bound, endpoint, bound)) using { d != 0; 1 <= d; bound <= 0; endpoint <= d; numerator_bound <= n; bound * endpoint - (endpoint - 1) <= numerator_bound; };
+    }
+}
+
+theorem check_quotient_upper_interval_negative(n: Integer, d: Integer, numerator_bound: Integer, endpoint: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires bound <= 0;
+    requires d <= endpoint;
+    requires n <= numerator_bound;
+    requires numerator_bound <= bound * endpoint;
+        ensures truncating_quotient(n, d) <= bound by {
+        apply(integer::quotient_upper_interval_negative(n, d, numerator_bound, endpoint, bound)) using { d != 0; 1 <= d; bound <= 0; d <= endpoint; n <= numerator_bound; numerator_bound <= bound * endpoint; };
+    }
+}
+
+theorem check_quotient_lower_interval_positive(n: Integer, d: Integer, numerator_bound: Integer, endpoint: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires 0 <= bound;
+    requires d <= endpoint;
+    requires numerator_bound <= n;
+    requires bound * endpoint <= numerator_bound;
+        ensures bound <= truncating_quotient(n, d) by {
+        apply(integer::quotient_lower_interval_positive(n, d, numerator_bound, endpoint, bound)) using { d != 0; 1 <= d; 0 <= bound; d <= endpoint; numerator_bound <= n; bound * endpoint <= numerator_bound; };
+    }
+}
+
+theorem check_remainder_lower_from_dividend(n: Integer, d: Integer, numerator_bound: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires numerator_bound <= n;
+    requires bound <= numerator_bound;
+    requires bound <= 0;
+        ensures bound <= truncating_remainder(n, d) by {
+        apply(integer::remainder_lower_from_dividend(n, d, numerator_bound, bound)) using { d != 0; 1 <= d; numerator_bound <= n; bound <= numerator_bound; bound <= 0; };
+    }
+}
+
+theorem check_remainder_lower_from_divisor(n: Integer, d: Integer, endpoint: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires d <= endpoint;
+    requires bound <= 1 - endpoint;
+        ensures bound <= truncating_remainder(n, d) by {
+        apply(integer::remainder_lower_from_divisor(n, d, endpoint, bound)) using { d != 0; 1 <= d; d <= endpoint; bound <= 1 - endpoint; };
+    }
+}
+
+theorem check_remainder_upper_from_dividend(n: Integer, d: Integer, numerator_bound: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires n <= numerator_bound;
+    requires numerator_bound <= bound;
+    requires 0 <= bound;
+        ensures truncating_remainder(n, d) <= bound by {
+        apply(integer::remainder_upper_from_dividend(n, d, numerator_bound, bound)) using { d != 0; 1 <= d; n <= numerator_bound; numerator_bound <= bound; 0 <= bound; };
+    }
+}
+
+theorem check_remainder_upper_from_divisor(n: Integer, d: Integer, endpoint: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires d <= endpoint;
+    requires endpoint - 1 <= bound;
+        ensures truncating_remainder(n, d) <= bound by {
+        apply(integer::remainder_upper_from_divisor(n, d, endpoint, bound)) using { d != 0; 1 <= d; d <= endpoint; endpoint - 1 <= bound; };
+    }
+}
+
+theorem check_small_remainder_interval(n: Integer, d: Integer, lo_n: Integer, hi_n: Integer, endpoint: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires endpoint <= d;
+    requires lo_n <= n;
+    requires n <= hi_n;
+    requires 1 - endpoint <= lo_n;
+    requires hi_n <= endpoint - 1;
+        ensures truncating_remainder(n, d) == n by {
+        apply(integer::small_remainder_interval(n, d, lo_n, hi_n, endpoint)) using { d != 0; 1 <= d; endpoint <= d; lo_n <= n; n <= hi_n; 1 - endpoint <= lo_n; hi_n <= endpoint - 1; };
+    }
+}
+
+theorem check_nonzero_from_one(d: Integer) {
+    requires 1 <= d;
+    let one: Integer = 1;
+        ensures d != 0 by {
+        apply(integer::nonzero_from_one(d)) using { 1 <= d; };
+    }
+}
+
+theorem check_nonzero_from_negative_one(d: Integer) {
+    requires d <= -1;
+    let zero: Integer = 0;
+        ensures d != 0 by {
+        apply(integer::nonzero_from_negative_one(d)) using { d <= -1; };
+    }
+}
+
+theorem check_quotient_negate_divisor(n: Integer, d: Integer) {
+    requires d != 0;
+    requires -d != 0;
+        ensures truncating_quotient(n, d) == -truncating_quotient(n, -d) by {
+        apply(integer::quotient_negate_divisor(n, d)) using { d != 0; -d != 0; };
+    }
+}
+
+theorem check_remainder_negate_divisor(n: Integer, d: Integer) {
+    requires d != 0;
+    requires -d != 0;
+        ensures truncating_remainder(n, d) == truncating_remainder(n, -d) by {
+        apply(integer::remainder_negate_divisor(n, d)) using { d != 0; -d != 0; };
+    }
+}
+
 ```
 
 ```expect

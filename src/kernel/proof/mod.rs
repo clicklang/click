@@ -40,12 +40,12 @@ pub(crate) use branches::{BranchId, ProofBranch, ProofBranchState, ProofBranches
 pub(crate) use execution::{
     CheckedBranchSplit, CheckedBranchSplitError, CheckedCallEvent, CheckedCallEvents,
     CheckedCallOutcomeSplit, CheckedExecutionEvent, CheckedProofCasePartition,
-    ContractEntryAuthority, EvidenceRefusal, ExceptionalContinuation, ExecutionEvidence,
-    ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind, FrontierPosition, LoopControlExit,
-    OpenedContractEntry, OpenedEntryFactSource, OutcomeEvidenceFork, ProofExecutionContinuation,
-    ProofExecutionState, RejectedResourceRewriteFact, ResourceRewriteCheckError,
-    UnestablishedInterfaceGoal, checked_branch_fact_is_available, old_reference_state,
-    take_unestablished_interface_goal,
+    CompletedExecutionFacts, ContractEntryAuthority, EvidenceRefusal, ExceptionalContinuation,
+    ExecutionEvidence, ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind,
+    FrontierPosition, LoopControlExit, OpenedContractEntry, OpenedEntryFactSource,
+    OutcomeEvidenceFork, ProofExecutionContinuation, ProofExecutionState,
+    RejectedResourceRewriteFact, ResourceRewriteCheckError, UnestablishedInterfaceGoal,
+    checked_branch_fact_is_available, old_reference_state, take_unestablished_interface_goal,
 };
 pub(crate) use execution::{CheckedReturnSeed, OutcomeForkArm};
 #[allow(unused_imports)]
@@ -61,7 +61,7 @@ pub(crate) use fact_keys::{alpha_proposition_key_visits, reset_alpha_proposition
 pub(crate) use facts::reserved_fact_variable_entries;
 #[cfg(test)]
 pub(crate) use facts::take_fact_entry_counts;
-pub(crate) use facts::{ProofFacts, PropositionSource, is_definedness_guard};
+pub(crate) use facts::{ProofFacts, PropositionSource, PureFactStore, is_definedness_guard};
 pub(in crate::kernel) use facts::{clear_rewritten_load_syntax_cache, clear_selected_atom_cache};
 pub(crate) use object::{
     ExecutionUpdateError, FrontierSplitError, ProofFocusError, ProofJoinError, ProofObject,

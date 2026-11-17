@@ -2455,13 +2455,45 @@ pub(crate) fn program_function_execution_candidates_from_outcomes_with_loan_evid
         crate::kernel::loans::CheckedLoanCallEvidenceSequence,
     )>,
 ) -> FunctionExecutionCandidates {
+    program_function_execution_candidates_from_completed_outcomes(
+        state,
+        function,
+        arguments,
+        paths
+            .into_iter()
+            .map(|(outcome, facts, obligations, loan_evidence)| {
+                (
+                    outcome,
+                    crate::kernel::proof::CompletedExecutionFacts::from_facts(facts),
+                    obligations,
+                    loan_evidence,
+                )
+            })
+            .collect(),
+    )
+}
+
+pub(crate) fn program_function_execution_candidates_from_completed_outcomes(
+    state: ExecutionState,
+    function: ProgramFunction,
+    arguments: Vec<ProgramExpression>,
+    paths: Vec<(
+        FunctionOutcome,
+        crate::kernel::proof::CompletedExecutionFacts,
+        Vec<ProofObligation>,
+        crate::kernel::loans::CheckedLoanCallEvidenceSequence,
+    )>,
+) -> FunctionExecutionCandidates {
     let paths: Vec<_> = paths
         .into_iter()
-        .map(|(outcome, facts, obligations, loan_evidence)| {
+        .map(|(outcome, publication, obligations, loan_evidence)| {
+            let crate::kernel::proof::CompletedExecutionFacts { facts, additional } = publication;
+            let completion_delta = additional.map(|facts| public_execution_pure_facts(&facts));
             let effect_facts = memory_effect_execution_facts(&facts);
             let facts = public_execution_pure_facts(&facts);
             FunctionExecutionCandidate {
                 data: Arc::new(FunctionExecutionCandidateData {
+                    completion_delta,
                     outcome: Arc::new(outcome),
                     facts,
                     effects_public_first: execution_effects_are_public_first(&effect_facts),
@@ -2552,6 +2584,9 @@ pub(crate) fn program_function_execution_candidate_with_additional_facts(
     let added_effects = memory_effect_execution_facts(additional);
     let mut data = candidate.data.as_ref().clone();
     data.facts.extend_shared(&public);
+    if let Some(delta) = &mut data.completion_delta {
+        delta.extend_shared(&public);
+    }
     if !data.effects_public_first {
         // The former reconstruction reads existing public facts first, then
         // private effects. New facts follow that combined existing stream.

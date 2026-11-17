@@ -180,7 +180,10 @@ fn extending_a_candidate_retains_payload_and_classifies_only_new_facts() {
             crate::kernel::loans::empty_checked_loan_evidence_sequence(),
         )],
     );
-    let source = &original.paths()[0];
+    let mut retained = original.paths()[0].clone();
+    let delta = retained.facts().clone();
+    std::sync::Arc::make_mut(&mut retained.data).completion_delta = Some(delta);
+    let source = &retained;
     let new_public = ExecutionPureFact::new(Proposition::ConditionIs(
         ConditionTerm::equal(
             MachineTerm::Variable(Variable(971_001)),
@@ -201,6 +204,11 @@ fn extending_a_candidate_retains_payload_and_classifies_only_new_facts() {
         assert!(std::ptr::eq(&source.facts()[0], &extended.facts()[0]));
         assert_eq!(source.facts().len(), 1);
         assert_eq!(extended.facts()[1], new_public);
+        assert_eq!(
+            extended.data.completion_delta.as_ref().unwrap(),
+            extended.facts(),
+            "new public facts must also reach the retained completion delta"
+        );
         assert!(extended.facts()[0].is_certified());
         let mut combined = source.execution_facts();
         combined.extend_shared(&additional);
@@ -6357,7 +6365,7 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
             let core = OutcomeProofCore {
                 publication: None,
                 identity: OutcomeIdentity::fresh(),
-                result: Arc::new(value.clone().into_native()),
+                result: value.clone(),
                 store_consequences_available: true,
                 state: state.as_ref().clone().into(),
                 is_exceptional: false,
@@ -6403,7 +6411,7 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
                     OutcomeProofCore {
                         publication: None,
                         identity: OutcomeIdentity::fresh(),
-                        result: Arc::new(value.clone().into_native()),
+                        result: value.clone(),
                         store_consequences_available: true,
                         state: state.as_ref().clone().into(),
                         is_exceptional: false,

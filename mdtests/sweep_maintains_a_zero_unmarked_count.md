@@ -11,13 +11,13 @@ invariant past the cursor's own `i++` needs the array argument `unmarked`
 folds over to name the same state on both sides of a step that writes only
 a local, which is what a block epoch gives it.
 
-One explicit `transport` carries the entry invariant across `visited[i] = 1`.
-`unmarked` has a kernel-checked read summary: an application reads only
-`v[lo..hi]`, and the store writes the cell at the prefix's end, so the fold
-read frame equates the two applications without a frame lemma or a per-cell
-quantified transport. The enlarged prefix after `i++` still needs the fold's
-append law, which `unfold` opens. An omitted proof reaches the same
-transport (`sweep_prefix_survives_its_endpoint_store_by_solve.md`).
+The prefix is preserved by ordinary proof steps. For each `k < i`,
+`separate_elements` separates `visited[k]` from the endpoint store, and
+`preserve` establishes its equality with the iteration-entry read. The existing
+`unmarked_frame` lemma turns these cell equalities into equality of the prefix
+counts. Rewriting then reuses the entry invariant. The enlarged prefix after
+`i++` still needs the fold's append law, which `unfold` opens. The omitted-proof
+companion remains `sweep_prefix_survives_its_endpoint_store_by_solve.md`.
 
 ```c filename=sweep_maintains_a_zero_unmarked_count.c
 void sweep(int32 visited[], int32 n) {
@@ -56,14 +56,37 @@ void sweep(int32 visited[], int32 n) {
             have i < 2147483647 by {
                 solve() using { i < n; n <= 1073741823; };
             }
+            have viewable(visited[0..n]) by { observe(visited[0..n]); known(); }
             step();
             have unmarked(visited, 0, i) == 0 by {
-                transport(
-                    at(iter, unmarked(visited, 0, i)) == 0,
-                    unmarked(visited, 0, i) == 0
-                ) using {
-                    at(iter, unmarked(visited, 0, i)) == 0;
+                have forall (k: int32) {
+                    0 <= k and k < i implies visited[k] == at(iter, visited[k])
+                } by {
+                    intro(); intro();
+                    have k < n by { solve() using { k < i; i < n; }; }
+                    have i != k by { solve() using { k < i; }; }
+                    have separate(memory(visited[i]), memory(visited[k])) by {
+                        apply(click::separation::separate_elements(visited, i, k)) using { i != k; };
+                    }
+                    have separate(loop(0).statement(0).footprint, memory(visited[k])) by {
+                        normalize() using { separate(memory(visited[i]), memory(visited[k])); };
+                    }
+                    preserve(memory(visited[k]), loop(0).statement(0));
+                }
+                have viewable(visited[0..n]) by { observe(visited[0..n]); known(); }
+                have 0 <= 0 by { normalize(); }
+                have i <= i by { normalize(); }
+                apply(unmarked_frame(visited, at(iter, visited), 0, n, i, i)) using {
+                    0 <= 0;
+                    0 <= i;
+                    i <= i;
+                    i <= n;
+                    n <= 1073741823;
+                    viewable(visited[0..n]);
+                    at(iter, viewable(visited[0..n]));
+                    forall (k: int32) { 0 <= k and k < i implies visited[k] == at(iter, visited[k]) };
                 };
+                rewrite(unmarked(visited, 0, i), unmarked(at(iter, visited), 0, i));
                 known();
             }
             have unmarked(visited, 0, i + 1) == 0 by {

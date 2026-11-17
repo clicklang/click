@@ -1980,6 +1980,8 @@ pub(super) struct ProgramLoop<'a> {
     pub(super) ranking_measures: &'a [RankingComponent],
     pub(super) structural_measure: Option<&'a str>,
     pub(super) body: &'a ProgramStatement,
+    pub(super) update: Option<&'a ProgramStatement>,
+    pub(super) test: Option<&'a LoopTestRegion>,
     pub(super) do_while: bool,
     pub(super) backedge_target: Option<ControlTargetId>,
     pub(super) natural_exit_target: Option<ControlTargetId>,
@@ -1989,6 +1991,8 @@ impl<'a> ProgramLoop<'a> {
     /// The loop a program statement states, or `None` for any other statement.
     pub(super) fn of(statement: &'a ProgramStatement) -> Option<Self> {
         let ProgramStatement::Loop {
+            test,
+            update,
             condition,
             invariant,
             invariant_checks,
@@ -2005,6 +2009,8 @@ impl<'a> ProgramLoop<'a> {
             return None;
         };
         Some(Self {
+            test: test.as_ref(),
+            update: update.as_deref(),
             condition,
             invariant,
             invariant_checks,
@@ -4211,11 +4217,15 @@ fn execute_program_loop_exit_paths(
         effect_checks,
         resource_specs,
         body,
+        update,
+        test,
         do_while,
         backedge_target,
         natural_exit_target,
         ..
     } = program_loop;
+    let pass_body = program_loop_pass(body, update, test);
+    let body = &pass_body;
     let mut base_obligations = Vec::new();
     for proposition in invariant {
         if add_proof_obligation(&mut base_obligations, assumptions, proposition.clone()).is_none() {
@@ -5132,11 +5142,17 @@ pub(super) fn collect_loop_preservation_summary(
         ranking_measures,
         structural_measure,
         body,
+        update,
+        test,
         do_while,
         backedge_target,
         natural_exit_target,
         ..
     } = program_loop;
+    let body_region = program_loop_body_region(body, test);
+    let body = &body_region;
+    let continuation = program_loop_continuation(update, test);
+    let update = continuation.as_deref();
     let mut obligations = Vec::new();
     let mut final_exit_paths = Vec::new();
     let mut break_exits = Vec::new();
@@ -5196,7 +5212,7 @@ pub(super) fn collect_loop_preservation_summary(
             } = assumption;
             // The body is a scope: the objects the summarized iteration
             // declares stop existing at the back edge and at every exit.
-            for body_path in paths_after_scope_exit(
+            let body_paths = paths_after_scope_exit(
                 super::eval::execute_statement_paths_with_prefix(
                     top_state,
                     body,
@@ -5209,7 +5225,15 @@ pub(super) fn collect_loop_preservation_summary(
                     &mut super::eval::StatementJudgment::Verifies(variables),
                 )?,
                 &body_declared,
-            ) {
+            );
+            for body_path in super::eval::paths_after_loop_update(
+                body_paths,
+                update,
+                assumptions,
+                execution_context,
+                budget,
+                &mut super::eval::StatementJudgment::Verifies(variables),
+            )? {
                 let outcome = body_path.outcome;
                 let natural_backedge = matches!(
                     &outcome,
@@ -8760,8 +8784,18 @@ pub(super) fn statement_may_write_memory(
             statement_may_write_memory(state, then_branch)
                 || statement_may_write_memory(state, else_branch)
         }
-        ProgramStatement::ForStep { step, .. } => statement_may_write_memory(state, step),
-        ProgramStatement::Loop { body, .. } => statement_may_write_memory(state, body),
+
+        ProgramStatement::Loop {
+            test, update, body, ..
+        } => {
+            statement_may_write_memory(state, body)
+                || test
+                    .as_ref()
+                    .is_some_and(|test| statement_may_write_memory(state, &test.statement))
+                || update
+                    .as_ref()
+                    .is_some_and(|update| statement_may_write_memory(state, update))
+        }
         ProgramStatement::Switch { cases, .. } => cases
             .iter()
             .any(|case| statement_may_write_memory(state, &case.body)),
@@ -8849,11 +8883,17 @@ pub(super) fn collect_loop_modified_locals(
             collect_loop_modified_locals(then_branch, names);
             collect_loop_modified_locals(else_branch, names);
         }
-        ProgramStatement::ForStep { step, .. } => {
-            collect_loop_modified_locals(step, names);
-        }
-        ProgramStatement::Loop { body, .. } => {
+
+        ProgramStatement::Loop {
+            test, update, body, ..
+        } => {
             collect_loop_modified_locals(body, names);
+            if let Some(test) = test {
+                collect_loop_modified_locals(&test.statement, names);
+            }
+            if let Some(update) = update {
+                collect_loop_modified_locals(update, names);
+            }
         }
         ProgramStatement::Switch { cases, .. } => {
             for case in cases {
@@ -9094,12 +9134,22 @@ fn for_each_statement_expression<'a>(
             for_each_statement_expression(then_branch, visit);
             for_each_statement_expression(else_branch, visit);
         }
-        ProgramStatement::ForStep { step, .. } => for_each_statement_expression(step, visit),
+
         ProgramStatement::Loop {
-            condition, body, ..
+            test,
+            update,
+            condition,
+            body,
+            ..
         } => {
             visit(condition);
             for_each_statement_expression(body, visit);
+            if let Some(test) = test {
+                for_each_statement_expression(&test.statement, visit);
+            }
+            if let Some(update) = update {
+                for_each_statement_expression(update, visit);
+            }
         }
         ProgramStatement::Switch { expression, cases } => {
             visit(expression);
@@ -9196,14 +9246,22 @@ pub(crate) fn collect_address_taken_locals(
             collect_address_taken_locals(then_branch, names);
             collect_address_taken_locals(else_branch, names);
         }
-        ProgramStatement::ForStep { step, .. } => {
-            collect_address_taken_locals(step, names);
-        }
+
         ProgramStatement::Loop {
-            condition, body, ..
+            test,
+            update,
+            condition,
+            body,
+            ..
         } => {
             collect_address_taken_in_expression(condition, names);
             collect_address_taken_locals(body, names);
+            if let Some(test) = test {
+                collect_address_taken_locals(&test.statement, names);
+            }
+            if let Some(update) = update {
+                collect_address_taken_locals(update, names);
+            }
         }
         ProgramStatement::Switch { expression, cases } => {
             collect_address_taken_in_expression(expression, names);
@@ -9532,3 +9590,6 @@ mod frame_resource_tests {
         include!("../scaling_tests/kernel/loops/frame_resource_tests.rs");
     }
 }
+
+#[cfg(test)]
+mod shared_update_tests;

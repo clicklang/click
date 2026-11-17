@@ -21,7 +21,7 @@ fn charon_chunk_proof_preserves_source_and_checks_obligations() {
     let proof = fs::read_to_string(p.root.join("borrow.click")).unwrap();
     ProgramVerificationSession::new_program_prepared(&proof, &prepared).unwrap();
     for invalid in [
-        proof.replacen("views bytes[0..bytes.len()];", "", 1),
+        proof.replacen("views bytes[0..bytes.len()];", "views bytes[0..0];", 1),
         proof.replace(
             "ensures result == bytes.len() % 4u64;",
             "ensures result == 4u64;",

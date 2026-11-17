@@ -741,9 +741,10 @@ pub(in crate::kernel) fn selected_instance_match_arm<'a>(
     // Fold and unfold bind the arm's fields, so they need the constructor
     // itself: an arm merely entailed by the premises (D7) grants reading, not
     // the values a rewrite would substitute.
-    let Some(ResourceModelArmSelection::Constructor(constructor)) =
-        select_resource_model_arm(model, assumptions)
-    else {
+    // Rewrites require the constructor itself. A variant-only decision can
+    // never supply its payload, so do not enumerate refutation premises on
+    // this path merely to return the same missing-constructor refusal.
+    let Some(constructor) = assumptions.known_algebraic_constructor(model) else {
         return Err("resource match requires constructor evidence for the instance field");
     };
     let AlgebraicTermNode::Constructor { variant, .. } = &constructor.node else {

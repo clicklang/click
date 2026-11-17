@@ -67,3 +67,43 @@ fn publishing_one_closed_claim_ignores_other_goals_and_facts() {
         }
     }
 }
+
+#[test]
+fn publication_and_reopening_do_not_walk_shared_result_operands() {
+    use crate::kernel::{
+        ExecutionValue, KernelTerm, KernelTermExport, KernelType, MachineBinaryOp,
+    };
+    let _session = crate::kernel::VerificationSession::enter();
+    let (execution, _) = fixture();
+    let seed = execution.published_outcome(0);
+    let mut previous = None;
+    for depth in [8, 32, 128] {
+        let atom = KernelTerm::variable(KernelType::Program(ProgramType::UInt64), Variable(996910));
+        let mut root = atom.clone();
+        for _ in 0..depth {
+            root = KernelTerm::machine_binary_shared(
+                MachineIntegerType::UInt64,
+                MachineBinaryOp::Add,
+                [root, atom.clone()],
+            );
+        }
+        let value = StoredExecutionValue::from(ExecutionValue::Shared(root.clone()));
+        let exports = KernelTermExport::machine_export_count();
+        let (opened, work) = crate::instrumentation::measure_deterministic_work(|| {
+            publish_result(seed, value.clone(), false)
+                .open_core()
+                .unwrap()
+        });
+        assert_eq!(opened.result.shared(), Some(&root));
+        assert_eq!(opened.result, value);
+        assert!(opened.result.same_native_value(&value));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        if let Some(previous) = previous {
+            assert_eq!(
+                work, previous,
+                "publication must not traverse the return expression"
+            );
+        }
+        previous = Some(work);
+    }
+}

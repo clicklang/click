@@ -267,8 +267,21 @@ scalar type and binds as in Rust, tighter than a binary operator.
 
 A parameter may be a reference, `&T` or `&mut T`, to a scalar or a struct.
 The contract names what it refers to as Rust does: `*value` for the
-referent and `parent.left` for a field. The type does not grant authority;
-the contract still states `views` or `owns`. Lifetimes may be written or
+referent and `parent.left` for a field. The type grants the authority a
+safe caller holds: `value: &mut T` owns `*value` and `value: &T` views it,
+a slice `bytes: &mut [T]` or `bytes: &[T]` owns or views
+`bytes[0..bytes.len()]`, and an array `bytes: &[T; N]` owns or views
+`bytes[0..N]`, with no clause written. The derived clause is the
+one a sidecar would write, so the callee is checked against it and each
+caller must hold it. A sidecar that writes an `owns`, `views`, `consumes` or
+`produces` clause naming the parameter states its authority itself, and
+nothing is derived for it: `views parent.right` on a `&mut Pair` promises
+the caller the field is not written. `owns` through a shared reference is
+refused. The rule covers free functions and inherent methods whose referent
+is a scalar, a slice or array of scalars or a struct of scalar fields; a
+receiver, a trait method, a generic function, an `extern` or `contract`
+declaration, an enum and any other referent keep only their written clauses.
+Lifetimes may be written or
 left out, `fn pick<'a>(value: &'a u32) -> u32`; the contract does not use
 them. Type parameters are limited to the supported
 [callable bounds](#function-pointers-and-named-contracts) and
@@ -290,7 +303,6 @@ fn choose(x: i32) -> i32 {
 }
 
 fn set_seven(value: &mut i32) {
-    owns *value;
     ensures *value == 8;
 }
 
@@ -449,10 +461,8 @@ body of `half` unfolded, prints as its constructor at its element type,
 `Slice<u8>::Slice(&bytes[1], 2u64)`. In a theorem
 written in Click syntax, the library's calls print as calls,
 `slice::len(Slice<uint8>::Slice(p, n))`. `.len()` and `.as_ptr()` of a
-constructed slice, such as a subslice, reduce as they are read, so
-`bytes[k..].len()` is its length with no `unfold`; the same holds for a
-slice a theorem's parameter is bound to, so a library axiom over a slice
-applies to `Slice<u8>::Slice(bytes, bytes.len())`. A subslice,
+constructed slice, such as a subslice, stay the calls written; `unfold`
+opens one to the constructor's field, and `solve` opens it itself. A subslice,
 `bytes[a..b]`, `bytes[a..]` or `bytes[..b]` of a slice parameter or a slice
 value, is the slice value with data `bytes.as_ptr() + a` and length `b - a`
 (`b` defaults to the length). It has no memory effect: `bytes[1..3][0]` reads
@@ -1379,8 +1389,8 @@ the element's address and a copied pattern `(i, &x)` reads it.
 [`design/charon-trial/enumerate`](https://github.com/clicklang/click/blob/master/design/charon-trial/enumerate/enumerate.click)
 proves the last index a loop yields with `iter.count == xs.len() - iter.len()`
 and `iter.as_slice() == xs + iter.count`.
-`.iter_mut()`, by-value array iteration and custom iterators remain outside
-this subset.
+`.iter_mut()` and by-value array iteration remain outside this subset; a
+crate's own iterator is [below](#crate-iterators).
 
 ## Range loops
 
@@ -1504,6 +1514,56 @@ and regroups `(bytes + k) + 4u64` as `bytes + (k + 4u64)` from
 ([full-width pointer association](tactics/index.md#normalization-with-selected-premises),
 [proof](https://github.com/clicklang/click/blob/master/examples/rust-chunks-exact/chunks.click)).
 A read through the chunk, `chunk[3]`, is a read of `bytes` at `k + 3`.
+
+## Crate iterators
+
+A `for` loop over a value of a crate struct with its own `impl Iterator`
+calls that `next` each pass, as written. The struct is the loop's
+iterator, so a proof reads its fields as `iter.<field>` inside the loop and
+`loop(i).iter.<field>` anywhere. `next` is an ordinary crate function under
+its own contract, declared in the sidecar's `impl Iterator for S` block and
+proved from its body. The exporter checks that `into_iter` is the core
+`impl<I: Iterator> IntoIterator for I`, which moves the struct into the
+loop's iterator, and that `next` is the crate's local, non-generic
+`Iterator::next` for that struct.
+
+The `Option` that `next` returns is no local. The loop tests the call's
+result for `Some` without ending it, and the `Some` arm's payload read binds
+the loop variable and ends it. A pass is decided by `next`'s contract. When
+the contract's cases are stated over the iterator's fields, a `preserve`
+script splits on the same fields with a proof `if` and states the case's
+premise in the contract's own form before the call:
+
+```text
+fn count(n: u32) -> u32 {
+    ensures result == n;
+} by {
+    step_until(loop(0));
+    loop {
+        decreases iter.n;
+        invariant to_integer(passes) + to_integer(iter.n) == to_integer(n);
+        preserve by {
+            if 0u32 < iter.n {
+                mark iteration;
+                have iter.n != 0u32;
+                have passes <= 4294967294u32;
+                step_until(back_edge());
+                have to_integer(iter.n) == to_integer(at(iteration, iter.n)) - 1;
+            } else {
+                have iter.n == 0u32;
+                step(); step(); step();
+            }
+        }
+    }
+    step_until(function.exit);
+    solve();
+}
+```
+
+[`design/charon-trial/user-iterator`](https://github.com/clicklang/click/blob/master/design/charon-trial/user-iterator/countdown.click)
+proves the count of a countdown's passes and the last value it yields.
+Generic iterators, iterator adapters over a crate iterator and a `next`
+reached through a trait object remain outside this subset.
 
 ## Moves and drops
 
@@ -1933,8 +1993,9 @@ parameters use pointer-shaped sidecar parameters with explicit `owns` clauses;
 shared references use explicit `views` where access is required. Borrowed
 references carry no allocation or deallocation authority.
 
-This frontend does not infer sidecar authority from a Rust reference. Contracts
-must provide the resources they use. Reborrows of caller storage retain the
+A reference parameter's type grants authority over its referent (see
+[Signatures in Rust syntax](#signatures-in-rust-syntax)); every other resource
+a contract uses is written. Reborrows of caller storage retain the
 same modeled pointer: writes through the child are observed through its parent.
 The compiler establishes when parent reuse is legal; the kernel establishes
 that each modeled access is justified by the supplied resources.

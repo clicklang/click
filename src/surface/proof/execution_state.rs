@@ -1654,6 +1654,7 @@ mod proof_fact_store_tests {
                 ..ExecutionFrontier::default()
             };
             frontier.continuations.push(ProofExecutionContinuation {
+                continue_region: None,
                 remaining: Some(remaining.clone()),
                 next_statement_index: 1,
                 loop_exit_statement_index: 2,
@@ -1681,6 +1682,7 @@ mod proof_fact_store_tests {
             );
 
             frontier.continuations.push(ProofExecutionContinuation {
+                continue_region: None,
                 remaining: Some(remaining.clone()),
                 next_statement_index: 2,
                 loop_exit_statement_index: 3,

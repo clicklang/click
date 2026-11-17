@@ -584,7 +584,7 @@ mod tests {
                     publication: None,
                     identity: OutcomeIdentity::fresh(),
                     store_consequences_available: false,
-                    result: Arc::new(int32(0)),
+                    result: int32(0).into(),
                     state: ExecutionState::new().into(),
                     // Normal postconditions hold vacuously on a throwing path.
                     // The ordinary outcome operation still owes all closing goals.

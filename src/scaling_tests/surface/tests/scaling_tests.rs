@@ -9785,6 +9785,10 @@ fn early_return_finishing_curves(sizes: &[usize]) -> Vec<(&'static str, Vec<usiz
             curve(&|sample| named(sample, "contract claim: proposition")),
         ),
         ("path theorem premises", curve(&premises)),
+        (
+            "completion fact delta",
+            curve(&|sample| named(sample, "completion fact delta")),
+        ),
         // Uncharged work: an outcome goal merging its path's fact and effect
         // streams, and a join taking its arms' effect suffixes. Each is the
         // path's or arm's whole history when it is not shared.
@@ -9844,7 +9848,7 @@ fn assert_early_return_finishing_shares_prefixes(sizes: &[usize]) {
             );
         }
         assert!(
-            counter || work.iter().all(|units| *units > 0),
+            counter || *name == "completion fact delta" || work.iter().all(|units| *units > 0),
             "{name} was not measured: {work:?}"
         );
         assert!(
