@@ -5722,10 +5722,15 @@ pub enum ProgramStatement {
         try_body: Box<ProgramStatement>,
         binding: BindingName,
         handler: Box<ProgramStatement>,
-        /// This is an implementation cleanup edge inserted by a frontend,
-        /// rather than a source-level handler. Its handler runs cleanup and
-        /// rethrows the original payload.
-        cleanup_unwind: bool,
+    },
+    /// `body`, which may exit by throwing while destructible objects are
+    /// live, as a C++ call made in their scope can. On an int32 exceptional
+    /// exit, `cleanup` (their destructors) runs and the same exception
+    /// continues to propagate; every other outcome is `body`'s own. It is
+    /// not a source handler: nothing is caught, and no binding is introduced.
+    UnwindCleanup {
+        body: Box<ProgramStatement>,
+        cleanup: Box<ProgramStatement>,
     },
     Store {
         pointer: ProgramExpression,

@@ -66,9 +66,10 @@ mod timing;
 mod wide_arithmetic;
 use crate::kernel::fresh_int32_variable_for_propositions;
 use crate::kernel::proof::{
-    ExceptionalContinuation, ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind,
-    FrontierPosition, LoopControlExit, PersistentOrderedSet, PersistentSequence,
-    ProofExecutionContinuation, PureFactStore, old_reference_state,
+    ExceptionalContinuation, ExceptionalEntry, ExecutionFrontier, ExecutionProofCore,
+    ExecutionRegionKind, FrontierPosition, LoopControlExit, PersistentOrderedSet,
+    PersistentSequence, ProofExecutionContinuation, PureFactStore, exceptional_region,
+    old_reference_state,
 };
 
 pub(in crate::surface) use crate::kernel::proof::{

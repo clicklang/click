@@ -1087,12 +1087,14 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             try_body,
             binding,
             handler,
-            cleanup_unwind,
         } => ProgramStatement::TryCatchInt32 {
             try_body: Box::new(walk_execution_statement(try_body, s)),
             binding: binding.clone(),
             handler: Box::new(walk_execution_statement(handler, s)),
-            cleanup_unwind: *cleanup_unwind,
+        },
+        ProgramStatement::UnwindCleanup { body, cleanup } => ProgramStatement::UnwindCleanup {
+            body: Box::new(walk_execution_statement(body, s)),
+            cleanup: Box::new(walk_execution_statement(cleanup, s)),
         },
         ProgramStatement::Store { pointer, value } => ProgramStatement::Store {
             pointer: s.program_expression(pointer),
@@ -2757,6 +2759,10 @@ pub(in crate::kernel) fn collect_execution_statement_bound_variables(
         }
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
+        }
+        | ProgramStatement::UnwindCleanup {
+            body: try_body,
+            cleanup: handler,
         } => {
             collect_execution_statement_bound_variables(try_body, variables);
             collect_execution_statement_bound_variables(handler, variables);
