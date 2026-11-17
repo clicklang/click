@@ -283,10 +283,42 @@ fn conditional_atom(root: &crate::kernel::KernelTerm) -> Option<MachineTerm> {
         return None;
     }
     crate::instrumentation::record_deterministic_work(1);
-    let atom = |root| {
+    let atom = |root: &crate::kernel::KernelTerm| {
         let view = V::Shared(root);
         view.literal()
             .or_else(|| view.variable().copied().map(MachineTerm::Variable))
+    };
+    // One bitwise node over literal/variable leaves is still a bounded atom.
+    // Inspect its immediate children only; a nested arithmetic root declines
+    // without exporting or traversing the arithmetic DAG.
+    let arm = |root: &crate::kernel::KernelTerm| {
+        atom(root).or_else(|| {
+            let N::MachineBinary {
+                format,
+                operator,
+                arguments,
+            } = root.node()
+            else {
+                return None;
+            };
+            if !matches!(format.format().bits(), 32 | 64)
+                || !matches!(
+                    operator,
+                    crate::kernel::MachineBinaryOp::BitwiseAnd
+                        | crate::kernel::MachineBinaryOp::BitwiseOr
+                        | crate::kernel::MachineBinaryOp::BitwiseXor
+                )
+            {
+                return None;
+            }
+            crate::instrumentation::record_deterministic_work(1);
+            Some(MachineTerm::Binary {
+                format: *format,
+                op: *operator,
+                left: Box::new(atom(&arguments[0])?),
+                right: Box::new(atom(&arguments[1])?),
+            })
+        })
     };
     let condition = match arguments[0].node() {
         N::Variable(variable) => ConditionTerm::Variable(*variable),
@@ -312,8 +344,8 @@ fn conditional_atom(root: &crate::kernel::KernelTerm) -> Option<MachineTerm> {
     };
     Some(MachineTerm::If {
         condition: Box::new(condition),
-        then_term: Box::new(atom(&arguments[1])?),
-        else_term: Box::new(atom(&arguments[2])?),
+        then_term: Box::new(arm(&arguments[1])?),
+        else_term: Box::new(arm(&arguments[2])?),
     })
 }
 

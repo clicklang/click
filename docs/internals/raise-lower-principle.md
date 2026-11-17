@@ -424,7 +424,9 @@ guard during logical lowering. Their arm domains remain guarded, including
 unselected reads and invalid shifts. Checking selects the arm when needed.
 The comparison boundary recognizes conditionals guarded by a Boolean variable
 or a 32/64-bit comparison over literal/variable operands, with literal/variable
-arms, as fixed-size native atoms. Negated Boolean variables use the same guard
+arms or one bitwise operation (`&`, `|`, `^`) over literal/variable arm operands,
+as fixed-size native atoms. Bitwise recognition reads only the operation and
+its immediate leaves. Negated Boolean variables use the same guard
 with swapped arms. It retains the comparison family without exporting arithmetic
 DAGs or selecting an arm from ambient facts. Other result families retain their existing
 selected-arm behavior; literal Boolean and closed 32-bit equality guards keep

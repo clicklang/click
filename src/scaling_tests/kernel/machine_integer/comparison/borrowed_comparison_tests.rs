@@ -153,3 +153,66 @@ fn reflexive_variable_comparisons_do_not_walk_arithmetic_operands() {
         }
     }
 }
+
+#[test]
+fn bitwise_conditional_arms_read_only_fixed_roots() {
+    use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineBinaryOp as O};
+    for format in [
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int64,
+        MachineIntegerType::UInt64,
+    ] {
+        let mut baseline = None;
+        for size in [16, 64, 256, 1024] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let variable =
+                KernelTerm::variable(KernelType::Program(format.program_type()), Variable(999970));
+            let literal = |n: u64| {
+                KernelTerm::retained_native_machine_operand(
+                    format,
+                    &crate::kernel::machine_integer::range::constant_word(format, &n.into())
+                        .unwrap(),
+                )
+            };
+            let guard = KernelTerm::variable(KernelType::Bool, Variable(999971));
+            let mut arithmetic = variable.clone();
+            for _ in 0..size {
+                arithmetic =
+                    KernelTerm::machine_binary_shared(format, O::Add, [arithmetic, literal(1)]);
+            }
+            let cases = [O::BitwiseAnd, O::BitwiseOr, O::BitwiseXor].map(|op| {
+                let bitwise = |a, b| KernelTerm::machine_binary_shared(format, op, [a, b]);
+                let conditional =
+                    |a, b| KernelTerm::machine_if_shared(format, [guard.clone(), a, b]);
+                (
+                    conditional(bitwise(variable.clone(), literal(7)), literal(3)),
+                    conditional(literal(3), bitwise(literal(7), variable.clone())),
+                    conditional(bitwise(arithmetic.clone(), literal(7)), literal(3)),
+                    conditional(literal(3), bitwise(literal(7), arithmetic.clone())),
+                )
+            });
+            let exports = KernelTermExport::machine_export_count();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                for (left, right, left_miss, right_miss) in &cases {
+                    assert!(
+                        matches!(conditional_atom(left), Some(MachineTerm::If { then_term, .. })
+                        if matches!(then_term.as_ref(), MachineTerm::Binary { .. }))
+                    );
+                    assert!(
+                        matches!(conditional_atom(right), Some(MachineTerm::If { else_term, .. })
+                        if matches!(else_term.as_ref(), MachineTerm::Binary { .. }))
+                    );
+                    assert!(conditional_atom(left_miss).is_none());
+                    assert!(conditional_atom(right_miss).is_none());
+                }
+            });
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert_eq!(
+                work,
+                *baseline.get_or_insert(work),
+                "{format:?}, {size} nested arithmetic nodes"
+            );
+        }
+    }
+}

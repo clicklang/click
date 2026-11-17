@@ -7505,3 +7505,25 @@ fn closed_bool_literal_comparison_lowering_retains_its_comparison() {
         );
     }
 }
+
+#[test]
+fn bitwise_arm_conditionals_round_trip_after_rewrite() {
+    use crate::kernel::MachineIntegerType as T;
+    for (format, spelling) in [
+        (T::Int32, "int32"),
+        (T::UInt32, "uint32"),
+        (T::Int64, "int64"),
+        (T::UInt64, "uint64"),
+    ] {
+        for op in ["&", "|", "^"] {
+            let equality = format!("x == (z {op} (7 as {spelling}))");
+            for guard in ["flag", "not flag"] {
+                for reverse in [false, true] {
+                    check_conditional_round_trip_using_equality(
+                        format, spelling, guard, reverse, &equality,
+                    );
+                }
+            }
+        }
+    }
+}
