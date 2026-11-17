@@ -3777,17 +3777,17 @@ fn raise_kernel_term_dispatch(
             arguments,
         } => {
             // Wide equality reads unsigned literals as the same words. Keep
-            // their literal payloads: a signed cast would change those roots.
-            let unsigned_literals = *relation == CompareRelation::Equal
+            // their payloads even beside a variable: signed casts change literals.
+            let unsigned_literal = *relation == CompareRelation::Equal
                 && format.format().bits() == 64
-                && arguments.iter().all(|term| {
+                && arguments.iter().any(|term| {
                     crate::kernel::MachineOperandView::Shared(term)
                         .literal()
                         .is_some_and(|value| value.uint64_as_const().is_some())
                 });
             let operand = |term| {
                 let expression = recurse(term)?;
-                if unsigned_literals {
+                if unsigned_literal {
                     Some(expression)
                 } else {
                     synthesize_observation_operand(expression, format.program_type())

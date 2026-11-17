@@ -6992,70 +6992,78 @@ fn check_comparison_guard_conditional_round_trips(
     operators: &[&str],
     replacement: u64,
 ) {
-    use crate::kernel::proof::ProofFacts;
     for operator in operators {
         for &(guard, bound) in guards {
+            let guard = format!("{guard} {operator} ({bound} as {spelling})");
             for reverse in [false, true] {
-                let _session = crate::kernel::VerificationSession::enter();
-                let state = ExecutionState::new()
-                    .with_local(
-                        "x",
-                        format.value_from_term(MachineTerm::Variable(Variable(999708))),
-                    )
-                    .with_local(
-                        "y",
-                        format.value_from_term(MachineTerm::Variable(Variable(999709))),
-                    );
-                let parse = |text: &str| {
-                    let file = parser::parse(&format!(
-                        "theorem probe() {{ requires {text}; ensures true; }}"
-                    ))
-                    .unwrap();
-                    let Requirement::Proposition(p) = &file.theorem_definitions()[0].requires()[0]
-                    else {
-                        panic!("expected a proposition")
-                    };
-                    p.clone()
-                };
-                let equality = relower_written_proposition(
-                    &parse(&format!("x == ({replacement} as {spelling})")),
-                    &state,
-                )
-                .unwrap();
-                let value = format!(
-                    "to_integer(if {guard} {operator} ({bound} as {spelling}) {{ x }} else {{ 3 as {spelling} }})"
-                );
-                let goal = if reverse {
-                    format!("100 <= {value}")
-                } else {
-                    format!("{value} <= 100")
-                };
-                let original = relower_written_proposition(&parse(&goal), &state).unwrap();
-                let rewritten = ProofFacts::from_ordered(std::slice::from_ref(&equality))
-                    .check_equality_rewrite(&original, &equality)
-                    .unwrap()
-                    .proposition()
-                    .clone();
-                let Proposition::ConditionIs(condition, true) = rewritten else {
-                    panic!("expected a comparison")
-                };
-                for truth in [true, false] {
-                    let produced = Proposition::ConditionIs(condition.clone(), truth);
-                    let raised = synthesize_surface_proposition(
-                        &produced,
-                        ParameterBinding::default(),
-                        &state,
-                    )
-                    .unwrap();
-                    let text = crate::surface::printing::source_click_proposition(&raised);
-                    let restored = relower_written_proposition(&parse(&text), &state).unwrap();
-                    assert_eq!(
-                        restored, produced,
-                        "{spelling}, {operator}, bound={bound}, reverse={reverse}, truth={truth}: {text}"
-                    );
-                }
+                check_conditional_round_trip(format, spelling, &guard, reverse, replacement);
             }
         }
+    }
+}
+
+fn check_conditional_round_trip(
+    format: crate::kernel::MachineIntegerType,
+    spelling: &str,
+    guard: &str,
+    reverse: bool,
+    replacement: u64,
+) {
+    use crate::kernel::proof::ProofFacts;
+    let _session = crate::kernel::VerificationSession::enter();
+    let state = ExecutionState::new()
+        .with_local(
+            "x",
+            format.value_from_term(MachineTerm::Variable(Variable(999708))),
+        )
+        .with_local(
+            "y",
+            format.value_from_term(MachineTerm::Variable(Variable(999709))),
+        )
+        .with_local(
+            "z",
+            format.value_from_term(MachineTerm::Variable(Variable(999710))),
+        );
+    let parse = |text: &str| {
+        let file = parser::parse(&format!(
+            "theorem probe() {{ requires {text}; ensures true; }}"
+        ))
+        .unwrap();
+        let Requirement::Proposition(p) = &file.theorem_definitions()[0].requires()[0] else {
+            panic!("expected a proposition")
+        };
+        p.clone()
+    };
+    let equality = relower_written_proposition(
+        &parse(&format!("x == ({replacement} as {spelling})")),
+        &state,
+    )
+    .unwrap();
+    let value = format!("to_integer(if {guard} {{ x }} else {{ 3 as {spelling} }})");
+    let goal = if reverse {
+        format!("100 <= {value}")
+    } else {
+        format!("{value} <= 100")
+    };
+    let original = relower_written_proposition(&parse(&goal), &state).unwrap();
+    let rewritten = ProofFacts::from_ordered(std::slice::from_ref(&equality))
+        .check_equality_rewrite(&original, &equality)
+        .unwrap()
+        .proposition()
+        .clone();
+    let Proposition::ConditionIs(condition, true) = rewritten else {
+        panic!("expected a comparison")
+    };
+    for truth in [true, false] {
+        let produced = Proposition::ConditionIs(condition.clone(), truth);
+        let raised =
+            synthesize_surface_proposition(&produced, ParameterBinding::default(), &state).unwrap();
+        let text = crate::surface::printing::source_click_proposition(&raised);
+        let restored = relower_written_proposition(&parse(&text), &state).unwrap();
+        assert_eq!(
+            restored, produced,
+            "{spelling}, guard={guard}, reverse={reverse}, truth={truth}: {text}"
+        );
     }
 }
 
@@ -7132,4 +7140,47 @@ fn closed_unsigned_equality_guards_keep_high_bit_literals() {
         &["==", "!="],
         u64::MAX,
     );
+}
+
+#[test]
+fn symbolic_equality_guard_conditionals_round_trip_after_rewrite() {
+    use crate::kernel::MachineIntegerType as T;
+    for (format, spelling) in [
+        (T::Int32, "int32"),
+        (T::UInt32, "uint32"),
+        (T::Int64, "int64"),
+        (T::UInt64, "uint64"),
+    ] {
+        for op in ["==", "!="] {
+            for guard in [
+                format!("y {op} (8 as {spelling})"),
+                format!("(8 as {spelling}) {op} y"),
+                format!("y {op} z"),
+            ] {
+                for reverse in [false, true] {
+                    check_conditional_round_trip(format, spelling, &guard, reverse, 9);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn symbolic_unsigned_equality_guards_keep_high_bit_literals() {
+    for op in ["==", "!="] {
+        for guard in [
+            format!("y {op} {}u64", u64::MAX),
+            format!("{}u64 {op} y", u64::MAX),
+        ] {
+            for reverse in [false, true] {
+                check_conditional_round_trip(
+                    crate::kernel::MachineIntegerType::UInt64,
+                    "uint64",
+                    &guard,
+                    reverse,
+                    9,
+                );
+            }
+        }
+    }
 }
