@@ -146,7 +146,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
         initialize by { solve(); }
         preserve by {
             mark iter;
-            obtain (previous: Nat) { walk(next, from, previous) == cur }
+            let previous = obtain(exists (previous: Nat) { walk(next, from, previous) == cur });
             have at(iter, forall (k: int32) {
                 0 <= k and k < n implies 0 <= next[k] and next[k] < n
             }) by { known(); }

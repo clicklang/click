@@ -6174,7 +6174,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "obtain",
-        syntax: "obtain (",
+        syntax: "= obtain(",
         class: "simple",
     },
     PublicTacticForm {
