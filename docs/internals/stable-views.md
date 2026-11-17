@@ -268,10 +268,14 @@ is refused as unsupported unless its external block is proven distinct from
 the local loan blocks.
 
 A nonempty subrange loan prevents freeing or reallocating its allocation.
-Locals, heap, and globals use the same access checks; a `static const`
-block is read-only storage with permanent read support and is not a way to
-give mutable memory an unbounded loan. Loop-head and interface havocs keep a
-cell only when a loan protects it and drop zero-width cells.
+Plain `free` with live memory loans requires separation of the allocation's
+complete byte range from the retained active-loan footprint. The proof
+prerequisite uses the argument at the free's entry point. `free(NULL)`
+leaves the state alone.
+
+A `static const` block is read-only storage with permanent read support and
+cannot give mutable memory an unbounded loan. Loop-head and interface havocs
+keep a cell only when a loan protects it and drop zero-width cells.
 
 ## Facts, observations, and composites
 
@@ -408,7 +412,7 @@ between compiler-checked borrow legality and Click's functional claims.
 | Shares and scopes | `splitting_and_joining_require_exact_linear_siblings`, `shared_reader_recovery_rejects_wrong_sibling_reuse_and_stale_branch`, `nested_reborrow_must_rejoin_each_parent_before_scope_end`, `an_old_descriptor_is_refused_after_a_fresh_scope_over_the_same_resource`, `checked_call_evidence_rejects_stale_or_swapped_recovery` |
 | Aliased views and nested readers | `candidate_joint_planner_reuses_one_escrow_for_two_aliases`, `candidate_rejects_new_output_view`, `mdtests/stable_view_nested_reader.md` |
 | Partial borrows and widths | `mdtests/stable_view_partial_borrow.md`, `bytewise_overlap_is_decided_across_mismatched_element_widths`, `memory_entailment_relates_two_spellings_of_one_byte_footprint` |
-| Free and realloc under a loan | `active_stable_loan_rejects_overlapping_heap_free_and_realloc`, `undecided_continuity_retire_refuses_a_lent_allocation` |
+| Free and realloc under a loan | `heap_free_requires_separation_from_an_interior_loan_until_it_ends`, `active_stable_loan_rejects_overlapping_heap_realloc`, `undecided_continuity_retire_refuses_a_lent_allocation` |
 | Local loans, bounds, and lifetime | `candidate_local_array_view_uses_a_checked_loan_and_recovers`, `thread_local_view_blocks_writes_and_all_scope_exits_until_join`, `automatic_lifetime_event_rejects_active_local_loan_and_forged_retirement`, `local_views_preserve_aliases_check_bounds_and_mint_no_owned_escrow`, `mdtests/stable_view_local_job.md`, `local_job_views_expand_and_reverify_without_ownership_annotations` |
 | Locals and empty views | `active_stable_loan_rejects_direct_local_assignment_and_alias_store`, `candidate_local_array_view_out_of_bounds_is_refused`, `mdtests/empty_view_authorizes_nothing.md` |
 | Entry footprint | `field_derived_view_does_not_retarget_after_a_pointer_write` |

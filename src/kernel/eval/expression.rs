@@ -976,6 +976,29 @@ pub(in crate::kernel) fn cast_program_value_to_type(
     )
 }
 
+pub(super) fn cast_pointer_value(pointer: PointerValue, target_type: ProgramType) -> PointerValue {
+    // Character-to-character casts retain the selected byte view.
+    // Other casts to bytes, and every void cast, widen that view.
+    let byte_to_byte = matches!(
+        pointer.program_type(),
+        ProgramType::UInt8Pointer | ProgramType::Int8Pointer
+    ) && matches!(
+        target_type,
+        ProgramType::UInt8Pointer | ProgramType::Int8Pointer
+    );
+    let pointer = pointer.with_type(target_type);
+    if !byte_to_byte
+        && matches!(
+            target_type,
+            ProgramType::VoidPointer | ProgramType::UInt8Pointer | ProgramType::Int8Pointer
+        )
+    {
+        pointer.with_root_bounds()
+    } else {
+        pointer
+    }
+}
+
 fn cast_program_value_to_type_with_integer_origin(
     value: ProgramValue,
     target_type: ProgramType,
@@ -1031,30 +1054,10 @@ fn cast_program_value_to_type_with_integer_origin(
                 return Ok(ProgramValue::Pointer(pointer.with_type(target_type)));
             }
             ProgramValue::Pointer(pointer) => {
-                // Character-to-character casts retain the selected byte view.
-                // Other casts to bytes, and every void cast, widen that view.
-                let byte_to_byte = matches!(
-                    pointer.program_type(),
-                    ProgramType::UInt8Pointer | ProgramType::Int8Pointer
-                ) && matches!(
+                return Ok(ProgramValue::Pointer(cast_pointer_value(
+                    pointer,
                     target_type,
-                    ProgramType::UInt8Pointer | ProgramType::Int8Pointer
-                );
-                let pointer = pointer.with_type(target_type);
-                return Ok(ProgramValue::Pointer(
-                    if !byte_to_byte
-                        && matches!(
-                            target_type,
-                            ProgramType::VoidPointer
-                                | ProgramType::UInt8Pointer
-                                | ProgramType::Int8Pointer
-                        )
-                    {
-                        pointer.with_root_bounds()
-                    } else {
-                        pointer
-                    },
-                ));
+                )));
             }
             // An address without a complete representation record reconstructs
             // an opaque provenance. Numeric facts cannot supply pointer bounds.

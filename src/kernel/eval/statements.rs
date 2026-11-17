@@ -2721,7 +2721,7 @@ fn execute_program_heap_free_paths(
         let ExpressionPath {
             outcome,
             mut facts,
-            obligations,
+            mut obligations,
         } = path;
         let outcome = match outcome {
             ExpressionOutcome::Value(ProgramValue::Int32(bits)) if bits.as_const() == Some(0) => {
@@ -2759,6 +2759,9 @@ fn execute_program_heap_free_paths(
             ));
             continue;
         }
+
+        // Retain the argument's spelling for the proof at this program point.
+        let argument = pointer.clone();
 
         // Resolve the allocation's owned base through the same argument
         // equality used to consume its token. A proven alias names that
@@ -2920,13 +2923,30 @@ fn execute_program_heap_free_paths(
             ));
             continue;
         };
-        // The free is authorized by the allocation and its complete access, so
-        // a refusal here is about a live loan of these bytes, not ownership.
-        if let Some(outcome) =
-            allocation_retirement_outcome(state, &full_allocation_range, &effective_assumptions)
-        {
-            paths.push(StatementExecutionPath::new(outcome, facts, obligations));
+        if let Some(error) = super::super::mutexes::storage_retirement_refusal(
+            state,
+            &full_allocation_range,
+            &effective_assumptions,
+        ) {
+            paths.push(StatementExecutionPath::new(
+                StatementOutcome::RuntimeError(error),
+                facts,
+                obligations,
+            ));
             continue;
+        }
+        if let Some(ledger) = state.loan_ledger() {
+            // Check the full allocation at the argument's address, which was
+            // resolved to its live base above. Keep the Surface byte carrier
+            // so the separation can be stated at the free's entry.
+            let byte_pointer =
+                super::expression::cast_pointer_value(argument, ProgramType::UInt8Pointer);
+            let range = bytes
+                .byte_range(byte_pointer.pointer().clone())
+                .with_pointer_carrier(&byte_pointer);
+            if let Some(requirement) = ledger.memory_access_requirement(&range) {
+                obligations.push(ProofObligation::verification_condition(requirement));
+            }
         }
         // A free can invalidate only resources that refer to this block.
         // Most frees leave no such facts after consuming the allocation and
