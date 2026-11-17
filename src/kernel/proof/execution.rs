@@ -3380,6 +3380,11 @@ impl OpenedContractEntry {
         self.entry.caller_state()
     }
 
+    /// The one annotated function whose binder identities this entry owns.
+    pub(crate) fn function(&self) -> &ProgramFunction {
+        &self.entry.function
+    }
+
     /// Start the parent judgment for a function-proof session. Independent
     /// entry/execution APIs do not acquire whole-contract obligations.
     pub(crate) fn open_contract_root(

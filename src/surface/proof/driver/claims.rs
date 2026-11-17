@@ -564,35 +564,35 @@ fn prove_claims_by_checked_tactics(
         state.memory(),
     );
     crate::surface::diagnostics::enter_ambient_object_fields(parsed_function);
-    let function = annotated_function_with_assumptions(
-        function_block,
-        parsed_function,
-        &state,
-        &arguments,
-        spec_definitions,
-        resource_environment,
-        Some(ResourceFrameEntry {
-            assumptions: &assumptions_from_propositions(&pure_facts),
-            checked_entry_state: None,
-        }),
-        None,
-    )?;
-    let state = canonical_claim_caller_state(
-        state,
-        function_block.structural_clauses().any_loop(),
-        &function,
-        &arguments,
-        &pure_facts,
-        proof_label,
-    )?;
-    let state = install_borrowed_contract_inputs(
-        state,
-        &function,
-        &pure_facts,
-        ParameterBinding::new(parsed_function.parameters(), &arguments),
-        proof_label,
-    )?;
     let opened_entry = shared_entry.get_or_open(|| {
+        let function = annotated_function_with_assumptions(
+            function_block,
+            parsed_function,
+            &state,
+            &arguments,
+            spec_definitions,
+            resource_environment,
+            Some(ResourceFrameEntry {
+                assumptions: &assumptions_from_propositions(&pure_facts),
+                checked_entry_state: None,
+            }),
+            None,
+        )?;
+        let state = canonical_claim_caller_state(
+            state,
+            function_block.structural_clauses().any_loop(),
+            &function,
+            &arguments,
+            &pure_facts,
+            proof_label,
+        )?;
+        let state = install_borrowed_contract_inputs(
+            state,
+            &function,
+            &pure_facts,
+            ParameterBinding::new(parsed_function.parameters(), &arguments),
+            proof_label,
+        )?;
         crate::kernel::proof::OpenedContractEntry::open(
             &state,
             &function,
@@ -611,6 +611,9 @@ fn prove_claims_by_checked_tactics(
             ))
         })
     })?;
+    // Every clause uses the function produced by this generative entry.
+    // Re-lowering a sibling clause can allocate different binder identities.
+    let function = opened_entry.function().clone();
     let state = opened_entry.caller_state().clone();
     let function_entry_state = opened_entry.entry_state().clone();
     let entry_fact_origins = opened_entry
