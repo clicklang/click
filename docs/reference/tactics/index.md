@@ -2264,6 +2264,12 @@ search emits separate distribution and rewrite steps. All library proofs use
 ordinary tactics. The [library reference](../library/index.md#foundational-integer-order-axioms)
 states the named laws' exact guards.
 
+Integer inequality composition writes the equalities that convert bounds
+to and from `left - right <= 0`. `known()` checks the local equalities,
+and the algebra emitter writes named laws and rewrites for coefficient
+rearrangements. A cited fact that is false by computation can close with
+`contradiction(fact)` directly.
+
 Bounded cast identities expand by proving the exact destination range from
 the selected bounds and then closing the observation equality with
 `known()`. Native and Integer spellings of the source bounds can be cited.

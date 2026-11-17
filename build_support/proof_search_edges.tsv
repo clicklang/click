@@ -713,10 +713,10 @@ src/surface/proof/smart_closures/integer_composition.rs	search	ProofSearch::appl
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_equality_from_opposite_bounds	apply_arithmetic_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_equality_from_opposite_bounds	driver	3
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_equality_from_opposite_bounds	try_restricted_solve_closure	1
-src/surface/proof/smart_closures/integer_composition.rs	search	ProofSearch::apply_integer_composition	driver	9
+src/surface/proof/smart_closures/integer_composition.rs	search	ProofSearch::apply_integer_composition	driver	7
 src/surface/proof/smart_closures/integer_composition.rs	search	ProofSearch::apply_integer_composition	try_direct_logical_closure	1
 src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::apply_signed_interval_composition	driver	17
-src/surface/proof/smart_closures/integer_composition.rs	mixed	::run_scope	driver	5
+src/surface/proof/smart_closures/integer_composition.rs	mixed	::run_scope	driver	4
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_goal_conditional_normalization	driver	3
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_goal_conditional_normalization	try_solve_closure	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_product_bound_using	driver	3
