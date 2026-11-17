@@ -237,6 +237,19 @@ impl SpecValue {
         }
         let left = self.native();
         let right = right.native();
+        // A pointer compared with itself keeps its comparison; checking
+        // decides it (`ConditionTerm::reflexive_value`).
+        if matches!(op, ComparisonOperator::Equal | ComparisonOperator::NotEqual)
+            && let (ProgramValue::Pointer(a), ProgramValue::Pointer(b)) =
+                (left.as_ref(), right.as_ref())
+            && a == b
+            && !a.is_null()
+        {
+            return Ok(Some(Proposition::ConditionIs(
+                ConditionTerm::reflexive_pointer_value_equal(a),
+                op == ComparisonOperator::Equal,
+            )));
+        }
         Ok(bool_comparison_proposition(&left, op, &right)
             .transpose()?
             .or_else(|| program_value_comparison_proposition(&left, op, &right)))

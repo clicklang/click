@@ -212,6 +212,14 @@ pub(crate) fn closed_condition_value(condition: &ConditionTerm) -> Option<bool> 
     }
 }
 
+/// The value of a condition decided from its operands alone, without facts:
+/// a closed condition ([`closed_condition_value`]) or a comparison of an
+/// operand with itself (`ConditionTerm::reflexive_value`). Lowering retains
+/// both as written; checking and exact matching decide them here.
+pub(crate) fn fact_free_condition_value(condition: &ConditionTerm) -> Option<bool> {
+    closed_condition_value(condition).or_else(|| condition.reflexive_value())
+}
+
 /// Preserve literal, same-variable, and bounded bitwise comparisons during
 /// logical lowering. Inspect only operand roots; checking decides truth.
 pub(crate) fn logical_condition_for_operand_views(
@@ -229,11 +237,32 @@ fn retained_comparison_for_operand_views(
     operands: [crate::kernel::MachineOperandView<'_>; 2],
 ) -> Option<ConditionTerm> {
     let variables = operands.map(|operand| operand.variable().copied());
+    // A pointer's address compared with itself, `address(p) == address(p)`.
+    // Only two address leaves are compared, never an arithmetic tree.
+    let addresses = operands.map(|operand| match operand {
+        crate::kernel::MachineOperandView::Legacy(term @ MachineTerm::PointerAddress(..)) => {
+            Some(term)
+        }
+        crate::kernel::MachineOperandView::Shared(root)
+            if matches!(
+                root.node(),
+                crate::kernel::KernelTermNode::PointerAddress { .. }
+            ) =>
+        {
+            root.machine_conversion_leaf()
+        }
+        _ => None,
+    });
     let [left, right] = if matches!(format.format().bits(), 32 | 64)
         && let [Some(left), Some(right)] = variables
         && left == right
     {
         [MachineTerm::Variable(left), MachineTerm::Variable(right)]
+    } else if format.format().bits() == 64
+        && let [Some(left), Some(right)] = addresses
+        && left == right
+    {
+        [left.clone(), right.clone()]
     } else if let [Some(left), Some(right)] = operands.map(|operand| operand.literal()) {
         [left, right]
     } else {

@@ -7639,3 +7639,41 @@ fn a_non_null_pointer_equality_spells_each_address_by_its_parameter() {
         "address(node) == address(node)"
     );
 }
+
+#[test]
+fn reflexive_pointer_comparison_lowering_retains_its_comparison() {
+    use crate::kernel::PointerValue;
+    let _session = crate::kernel::VerificationSession::enter();
+    let p = PointerValue::new(
+        Address::symbolic(Variable(999_970)),
+        ProgramType::Int32Pointer,
+    );
+    let state = ExecutionState::new().with_local("p", ProgramValue::Pointer(p));
+    for (text, held) in [
+        ("p == p", true),
+        ("p != p", false),
+        ("address(p) == address(p)", true),
+    ] {
+        let file = parser::parse(&format!(
+            "theorem probe() {{ requires {text}; ensures true; }}"
+        ))
+        .unwrap();
+        let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0] else {
+            panic!("requirement")
+        };
+        let lowered = relower_written_proposition(written, &state).unwrap();
+        let Proposition::ConditionIs(condition, actual_held) = &lowered else {
+            panic!("{text}: {lowered:?}")
+        };
+        assert!(
+            !matches!(condition, ConditionTerm::Constant(_)),
+            "{text}: {lowered:?}"
+        );
+        assert_eq!(*actual_held, held, "{text}");
+        assert_eq!(
+            crate::kernel::machine_integer::comparison::fact_free_condition_value(condition),
+            Some(true),
+            "{text}: {condition:?}"
+        );
+    }
+}

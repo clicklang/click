@@ -1382,7 +1382,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // facts: like the goal `false`, only a refutation of the context
         // proves it, which the strategies after this one search for.
         if !literal(left) && !literal(right)
-            || crate::kernel::machine_integer::comparison::closed_condition_value(condition)
+            || crate::kernel::machine_integer::comparison::fact_free_condition_value(condition)
                 .is_some()
         {
             return false;

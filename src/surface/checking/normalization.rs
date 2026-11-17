@@ -188,9 +188,12 @@ pub(in crate::surface) fn normalize_condition_without_assumptions(
         ConditionTerm::Constant(value) => Some(*value),
         // A closed comparison, native at any width or of two `bool`
         // literals, which lowering retains.
-        condition @ (ConditionTerm::Compare { .. } | ConditionTerm::BoolEqual(..))
+        condition @ (ConditionTerm::Compare { .. }
+        | ConditionTerm::BoolEqual(..)
+        | ConditionTerm::PointerEqual(..)
+        | ConditionTerm::PointerValueEqual(..))
             if let Some(value) =
-                crate::kernel::machine_integer::comparison::closed_condition_value(condition) =>
+                crate::kernel::machine_integer::comparison::fact_free_condition_value(condition) =>
         {
             Some(value)
         }

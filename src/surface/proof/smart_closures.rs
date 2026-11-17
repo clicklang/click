@@ -4130,7 +4130,7 @@ pub(super) fn propositions_match_after_canonical_loads(
     true
 }
 
-use crate::kernel::machine_integer::comparison::closed_condition_value;
+use crate::kernel::machine_integer::comparison::fact_free_condition_value as closed_condition_value;
 
 #[test]
 fn literal_requirement_matching_respects_both_truth_and_polarity() {
