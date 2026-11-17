@@ -7346,6 +7346,30 @@ impl PureFactContext {
             return true;
         }
         match proposition {
+            Proposition::MemoryReadDefined {
+                memory,
+                pointer,
+                value_type,
+                ..
+            } => {
+                // Reuse a typed validity fact for this exact view. The fact's
+                // point remains distinct in exact membership and in proofs
+                // that construct a fact at a specific footprint endpoint.
+                // This lookup takes no alias or history steps.
+                self.memory_read_defined_facts
+                    .get(&(
+                        crate::kernel::api::canonicalize_pointer_loads(pointer),
+                        *value_type,
+                    ))
+                    .is_some_and(|facts| {
+                        facts.contains_key(&Proposition::MemoryReadDefined {
+                            at: None,
+                            memory: memory.clone(),
+                            pointer: pointer.clone(),
+                            value_type: *value_type,
+                        })
+                    })
+            }
             Proposition::Equal(
                 Term::ProgramValue(ProgramValue::Pointer(left)),
                 Term::ProgramValue(ProgramValue::Pointer(right)),
