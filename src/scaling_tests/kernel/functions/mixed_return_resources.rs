@@ -2836,3 +2836,91 @@ fn opaque_and_refused_family_dispatch_ignore_ambient_owners_and_aliases() {
         }
     }
 }
+
+#[test]
+fn opaque_matched_envelopes_scale_with_selected_leaves_not_ambient_state() {
+    use crate::kernel::program_expression::variable;
+    for unsupported in [false, true] {
+        for axis in ["owners", "aliases", "definitions", "leaves"] {
+            let mut samples = Vec::new();
+            for count in [4_u32, 16, 64] {
+                let _session = crate::kernel::VerificationSession::enter();
+                let p = Pointer::symbolic(Variable(8_931_000));
+                let (head, mut definitions) = super::opaque_boundary::tests::case(
+                    p.clone(),
+                    if axis == "leaves" { count } else { 1 },
+                    8_931_100,
+                );
+                if unsupported {
+                    definitions[1].matched.as_mut().unwrap().arms[1].children[0].arguments[0] =
+                        SpecExpression::ProgramExpression(variable("ptr"));
+                }
+                let mut facts = PureFactContext::new();
+                let mut owners = ResourceContext::new();
+                for i in 0..count {
+                    let q = Pointer::symbolic(Variable(8_932_000 + u64::from(i)));
+                    match axis {
+                        "owners" => {
+                            owners = owners.unchecked_with_fact(ResourceFact::own_memory(
+                                MemoryRange::new(
+                                    p.clone(),
+                                    (i * 2 + 1000).into(),
+                                    (i * 2 + 1001).into(),
+                                ),
+                            ))
+                        }
+                        "aliases" => {
+                            facts = facts
+                                .assume_condition(ConditionTerm::pointer_equal(p.clone(), q), true)
+                        }
+                        "definitions" => definitions.push(CompositeResourceDefinition::new(
+                            format!("unused_{i:04}"),
+                            vec![],
+                            None,
+                            false,
+                            vec![],
+                            vec![],
+                        )),
+                        _ => {}
+                    }
+                }
+                definitions.sort_by(|a, b| a.name().cmp(b.name()));
+                let state = ExecutionState::new().with_resource_context(owners);
+                let outputs = EvaluatedReturnResources::new(&facts)
+                    .admit(head, ReturnOwnershipOrigin::Description, &facts)
+                    .unwrap();
+                let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    let _fast =
+                        crate::kernel::search::FastOperationScope::enter("opaque envelope growth");
+                    let bodies =
+                        ConstructedReturnBodies::construct(&outputs, &definitions, &state, &facts);
+                    let body = bodies.get(outputs.occurrences[0].source).unwrap();
+                    assert!(body.frontier.is_empty() && body.viewed_children.is_empty());
+                    assert_eq!(
+                        body.boundary.len(),
+                        if unsupported {
+                            0
+                        } else if axis == "leaves" {
+                            count as usize
+                        } else {
+                            1
+                        }
+                    );
+                    assert_eq!(body.folded.is_empty(), !unsupported);
+                });
+                samples.push(work);
+            }
+            if axis == "leaves" {
+                assert!(
+                    samples[2] <= samples[0] * 32 + 8192,
+                    "{unsupported}, {axis}: {samples:?}"
+                );
+            } else {
+                assert!(
+                    samples.iter().all(|work| *work <= samples[0] + 256),
+                    "{unsupported}, {axis}: {samples:?}"
+                );
+            }
+        }
+    }
+}

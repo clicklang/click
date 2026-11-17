@@ -1858,6 +1858,14 @@ Generic expansion previously left these instances folded too. A selected
 instance with only logical fields and no body children introduces no hidden
 memory cut point; its exact head and fields remain in the projection. Other
 opaque instances retain their conservative ownership boundary.
+For a nonrecursive matched instance with flat named children, dispatch can
+retain a complete parameter-only envelope of all possible arms. This is boundary
+metadata, not an unfolding: the head, model and child identities remain opaque,
+and no views are published. Repeated alternative leaves are deduplicated; a
+bounded admission constructs the supported envelope. Its leaves reserve the
+same finite checked input supply as other returns, preventing input reuse.
+Constructor-dependent child addresses and unsupported envelopes retain the
+opaque boundary. Consumers never reconstruct this metadata.
 Sealed field-free composites keep their certified finite frontier; seal
 visibility does not erase internal memory boundaries. Iterated ownership is
 carried as one finite descriptor leaf, without enumerating its guarded elements.

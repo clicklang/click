@@ -1154,7 +1154,30 @@ impl ConstructedReturnBodies {
             // its bindings, without reconstructing any child descriptions.
             if matches!(support.resource(), Resource::Instance(_)) {
                 let mut body = ConstructedReturnBody::opaque(support, occurrence.source);
-                if definition.matched.is_none()
+                if support.owned_quantity_term() == Some(&MachineTerm::constant(1))
+                    && let Resource::Instance(instance) = support.resource()
+                    && let Some(bounds) = opaque_boundary::construct(
+                        instance,
+                        definition,
+                        definitions,
+                        state,
+                        assumptions,
+                    )
+                {
+                    body.folded.clear();
+                    for bound in bounds {
+                        let transferred = match admission.as_mut() {
+                            Some(admission) => admission.admit(&bound, assumptions)?,
+                            None => None,
+                        };
+                        if transferred.is_none() {
+                            body.boundary.push(bound);
+                        }
+                    }
+                    if let Some(admission) = admission.as_mut() {
+                        admission.finish_group(assumptions);
+                    }
+                } else if definition.matched.is_none()
                     && definition.contains().is_empty()
                     && definition.children.is_empty()
                 {
@@ -1631,6 +1654,7 @@ mod scaling_tests {
     include!("../../scaling_tests/kernel/functions/mixed_return_resources.rs");
 }
 
+mod opaque_boundary;
 mod specialized_returns;
 
 /// The producer's new ownership boundary, indexed by the actual returned

@@ -13662,17 +13662,22 @@ fn produced_composite_frontier_conflict<'a>(
         // A token-only body holds no memory, instance, or nested composite a
         // destination fact could overlap: token units are a count, and counts
         // add rather than collide.
-        if !body.frontier.iter().any(|piece| {
-            piece.is_own()
-                && matches!(
-                    piece.resource(),
-                    Resource::Memory(_)
-                        | Resource::Iterated(_)
-                        | Resource::PopulationAuthority(_)
-                        | Resource::Instance(_)
-                        | Resource::Composite { .. }
-                )
-        }) {
+        if !body
+            .frontier
+            .iter()
+            .chain(body.boundary().iter())
+            .any(|piece| {
+                piece.is_own()
+                    && matches!(
+                        piece.resource(),
+                        Resource::Memory(_)
+                            | Resource::Iterated(_)
+                            | Resource::PopulationAuthority(_)
+                            | Resource::Instance(_)
+                            | Resource::Composite { .. }
+                    )
+            })
+        {
             continue;
         }
         // The frontier was evaluated for one unit, and an ordinary composite
