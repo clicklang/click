@@ -310,14 +310,14 @@ fn scalar_array_state_region_does_not_scan_unrelated_sibling_cells() {
 }
 
 #[test]
-fn scalar_array_copy_loan_requirement_ignores_alias_and_loan_counts() {
+fn scalar_array_write_loan_requirement_ignores_alias_and_loan_counts() {
     use crate::kernel::loans::LoanLedger;
 
     let _session = crate::kernel::VerificationSession::enter();
-    let state = scalar_array_copy_state();
+    let state = scalar_array_region_state();
     let source = pointer("local:array-source", 0);
     for grow_aliases in [true, false] {
-        let mut samples = Vec::new();
+        let mut samples = [Vec::new(), Vec::new()];
         for count in [4, 16, 64] {
             let mut assumptions = PureFactContext::new();
             if grow_aliases {
@@ -349,22 +349,26 @@ fn scalar_array_copy_loan_requirement_ignores_alias_and_loan_counts() {
                 ledger = ledger.apply(&opening.transition).unwrap();
             }
             let state = state.clone().with_loan_ledger(Some(ledger));
-            let (copy, work) = crate::instrumentation::measure_deterministic_work(|| {
-                execute_test_scalar_array_copy(&state, 4, &assumptions)
-            });
-            assert!(matches!(copy.outcome, StatementOutcome::Normal(_)));
-            let [obligation] = copy.obligations.as_slice() else {
-                panic!("expected one loan separation obligation");
-            };
-            assert!(matches!(
-                obligation.proposition(),
-                Proposition::ResourceSeparate { .. }
-            ));
-            samples.push(work);
+            for (copy, samples) in [true, false].into_iter().zip(&mut samples) {
+                let (write, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    execute_test_scalar_array_write(&state, 4, copy, &assumptions)
+                });
+                assert!(matches!(write.outcome, StatementOutcome::Normal(_)));
+                let [obligation] = write.obligations.as_slice() else {
+                    panic!("expected one loan separation obligation");
+                };
+                assert!(matches!(
+                    obligation.proposition(),
+                    Proposition::ResourceSeparate { .. }
+                ));
+                samples.push(work);
+            }
         }
-        assert!(
-            samples.iter().all(|work| *work <= samples[0] + 32),
-            "{grow_aliases}: {samples:?}"
-        );
+        for samples in samples {
+            assert!(
+                samples.iter().all(|work| *work <= samples[0] + 32),
+                "{grow_aliases}: {samples:?}"
+            );
+        }
     }
 }

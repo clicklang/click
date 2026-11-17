@@ -140,7 +140,7 @@ pub(super) fn execute(
             }
             let write_refusal = if bytes == 0 {
                 None
-            } else if copy && !fresh {
+            } else if !fresh {
                 let destination = MemoryRange::from_pointer_value(
                     &target_pointer,
                     0u32.into(),
